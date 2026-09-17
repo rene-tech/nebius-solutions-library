@@ -52,6 +52,10 @@ release rule for customer, event, proof-of-concept and hackathon readiness. A
 component or synthetic pass may never be broadened into a customer-ready claim;
 the exact release, tenant policy, client integration, invocation path and workload
 shape must pass end to end.
+[Provenance-preserving public export](docs/PUBLIC_EXPORT.md) defines the only
+approved projection for canonical evidence that contains private checkout or
+provider identifiers; it binds source/export hashes without changing the
+historical record.
 [Optional scientific GPU snapshots](models/scientific-snapshot/ADMIN-STARTUP.md)
 explains Terraform bundle configuration, live admin startup selection, normal-load
 fallback, and the measured compatibility boundary for each qualified option.

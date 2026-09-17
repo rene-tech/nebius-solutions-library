@@ -226,7 +226,9 @@ function KeyTable({ keys, canOperate, onEdit, onRotate, onRevoke }: KeyTableProp
                 {apiKey.name ?? "Unnamed key"}
                 <code className="secondary-line">{apiKey.prefix}</code>
                 <span className="secondary-line" title={apiKey.fingerprint ?? undefined}>
-                  {apiKey.fingerprint ? `fingerprint ${apiKey.fingerprint.slice(0, 12)}…` : "fingerprint unavailable"}
+                  {apiKey.fingerprint
+                    ? `fingerprint ${apiKey.fingerprint.split(":").at(-1)?.slice(0, 12)}…`
+                    : "fingerprint unavailable"}
                 </span>
               </th>
               <td>

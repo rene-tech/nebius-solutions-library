@@ -111,8 +111,6 @@ class Store(Protocol):
 
     async def get_token(self, token_id: UUID) -> TokenView: ...
 
-    async def rehash_token(self, token_id: UUID, *, pepper_key_id: str, digest: str) -> None: ...
-
     async def rehash_token_with_fingerprint(
         self,
         token_id: UUID,

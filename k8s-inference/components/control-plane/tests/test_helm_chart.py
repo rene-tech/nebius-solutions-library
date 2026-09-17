@@ -3541,7 +3541,7 @@ def test_extra_kueue_namespace_must_not_repeat_the_model_namespace() -> None:
 
 
 def test_public_gateway_denies_trace_before_any_route_dispatch() -> None:
-    documents = render()
+    documents = render(*admin_console_values())
     policy = next(
         document
         for document in documents
@@ -3567,12 +3567,124 @@ def test_public_gateway_denies_trace_before_any_route_dispatch() -> None:
         ],
     }
 
-    public_paths = {
-        match["path"]["value"]
+    def targets_http_route(document: dict) -> bool:
+        spec = document["spec"]
+        targets = list(spec.get("targetRefs", [])) + list(spec.get("targetSelectors", []))
+        if spec.get("targetRef") is not None:
+            targets.append(spec["targetRef"])
+        return any(target.get("kind") == "HTTPRoute" for target in targets)
+
+    child_policies = [
+        document for document in documents if document["kind"] == "SecurityPolicy" and targets_http_route(document)
+    ]
+    assert all(child["spec"].get("mergeType") == "StrategicMerge" for child in child_policies)
+
+
+def test_internal_control_plane_routes_are_structurally_absent_from_every_public_route() -> None:
+    documents = render(*admin_console_values())
+    trace_policy = next(
+        document
+        for document in documents
+        if document["kind"] == "SecurityPolicy" and document["metadata"]["name"].endswith("-deny-trace")
+    )
+    gateway_name = trace_policy["spec"]["targetRefs"][0]["name"]
+    assert any(
+        document["kind"] == "Gateway" and document["metadata"]["name"] == gateway_name
+        for document in documents
+    )
+    runtime = gateway_deployment(documents)
+    runtime_labels = runtime["spec"]["template"]["metadata"]["labels"]
+    control_plane_services = {
+        document["metadata"]["name"]
+        for document in documents
+        if document["kind"] == "Service"
+        and document["spec"].get("selector")
+        and document["spec"]["selector"].items() <= runtime_labels.items()
+    }
+    assert application_route(documents)["spec"]["rules"][0]["backendRefs"][0]["name"] in control_plane_services
+    forbidden_paths = ("/admin/v1", "/admin/v1/tokens", "/internal/ext-authz")
+
+    def segments_overlap(left: str, right: str) -> bool:
+        left = left.rstrip("/") or "/"
+        right = right.rstrip("/") or "/"
+        return (
+            left == "/"
+            or right == "/"
+            or left == right
+            or left.startswith(f"{right}/")
+            or right.startswith(f"{left}/")
+        )
+
+    def match_accepts(path_match: dict | None, request_path: str) -> bool:
+        if path_match is None:
+            return True
+        match_type = path_match.get("type", "PathPrefix")
+        value = path_match["value"]
+        if match_type == "Exact":
+            return request_path == value
+        if match_type == "PathPrefix":
+            value = value.rstrip("/") or "/"
+            return value == "/" or request_path == value or request_path.startswith(f"{value}/")
+        raise AssertionError(f"public control-plane route uses non-exhaustive path matcher {match_type}")
+
+    def rewrite_findings(filters: list[dict]) -> list[str]:
+        findings: list[str] = []
+        for item in filters:
+            if item.get("type") == "ExtensionRef":
+                findings.append("ExtensionRef makes path behavior non-exhaustive")
+                continue
+            if item.get("type") != "URLRewrite":
+                continue
+            path = item.get("urlRewrite", {}).get("path")
+            if path is None:
+                continue
+            replacements = [
+                value for name, value in path.items() if name in {"replaceFullPath", "replacePrefixMatch"}
+            ]
+            if len(replacements) != 1:
+                findings.append("ambiguous URLRewrite path")
+                continue
+            if any(segments_overlap(replacements[0], forbidden) for forbidden in forbidden_paths):
+                findings.append(f"URLRewrite reaches protected path space: {replacements[0]}")
+        return findings
+
+    findings: list[str] = []
+    public_routes = [
+        document
         for document in documents
         if document["kind"] == "HTTPRoute"
-        for rule in document["spec"]["rules"]
-        for match in rule.get("matches", [])
-    }
-    assert "/admin/v1" not in public_paths
-    assert "/internal/ext-authz" not in public_paths
+        and any(
+            parent.get("kind", "Gateway") == "Gateway" and parent["name"] == gateway_name
+            for parent in document["spec"].get("parentRefs", [])
+        )
+    ]
+    assert public_routes
+    for route in public_routes:
+        for rule_index, rule in enumerate(route["spec"].get("rules", [])):
+            control_plane_backends = [
+                backend
+                for backend in rule.get("backendRefs", [])
+                if backend.get("kind", "Service") == "Service"
+                and backend.get("name") in control_plane_services
+            ]
+            for item in rule.get("filters", []):
+                if item.get("type") != "RequestMirror":
+                    continue
+                mirror = item.get("requestMirror", {}).get("backendRef", {})
+                if mirror.get("kind", "Service") == "Service" and mirror.get("name") in control_plane_services:
+                    control_plane_backends.append(mirror)
+            if not control_plane_backends:
+                continue
+            matches = rule.get("matches") or [{}]
+            for forbidden in forbidden_paths:
+                if any(match_accepts(match.get("path"), forbidden) for match in matches):
+                    findings.append(f"{route['metadata']['name']} rule {rule_index} dispatches {forbidden}")
+            filters = list(rule.get("filters", []))
+            for backend in control_plane_backends:
+                filters.extend(backend.get("filters", []))
+            findings.extend(
+                f"{route['metadata']['name']} rule {rule_index}: {finding}"
+                for finding in rewrite_findings(filters)
+            )
+
+    assert findings == []

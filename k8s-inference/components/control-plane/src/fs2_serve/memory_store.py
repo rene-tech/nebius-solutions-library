@@ -451,14 +451,6 @@ class MemoryStore:
                 raise NotFoundError("token not found")
             return row.view.model_copy(deep=True)
 
-    async def rehash_token(self, token_id: UUID, *, pepper_key_id: str, digest: str) -> None:
-        async with self._lock:
-            row = self.tokens.get(token_id)
-            if row is None or row.view.revoked_at is not None:
-                return
-            row.digest = digest
-            row.view = row.view.model_copy(update={"pepper_key_id": pepper_key_id})
-
     async def rehash_token_with_fingerprint(
         self,
         token_id: UUID,

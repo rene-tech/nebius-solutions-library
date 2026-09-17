@@ -17,7 +17,16 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from .access_models import BOOTSTRAP_OPERATOR_PRINCIPAL_ID, AdminApiKeyPolicyPatch, OperatorSession
-from .models import OperationView, Principal, Scope, TokenCreate, TokenIssued, TokenView
+from .models import (
+    TOKEN_FINGERPRINT_PREFIX,
+    OperationView,
+    Principal,
+    Scope,
+    TokenCreate,
+    TokenIssued,
+    TokenView,
+    operator_token_fingerprint,
+)
 from .store import ConflictError, NotFoundError, Store
 
 TOKEN_MARKER = "fs2_pat"  # noqa: S105 - public token format marker, not a credential
@@ -25,7 +34,6 @@ MAX_PAT_LENGTH = 256
 SESSION_MARKER = "fs2_admin"
 MAX_OPERATOR_SESSION_LENGTH = 256
 OPERATOR_SESSION_DIGEST_CONTEXT = b"fs2-serve.admin-session/v1\0"
-PAT_FINGERPRINT_CONTEXT = b"fs2-serve.pat-fingerprint/v2\0"
 
 
 class AuthenticationError(PermissionError):
@@ -111,14 +119,16 @@ class TokenService:
             raise AuthenticationError("token hash key is unavailable") from exc
         return hmac.new(pepper, token.encode(), hashlib.sha256).hexdigest()
 
-    def _fingerprint(self, token: str, key_id: str) -> str:
-        """Return a domain-separated operator identifier, never a raw-token hash."""
+    @staticmethod
+    def _fingerprint(token: str) -> str:
+        """Return a stable versioned identifier without persisting a full PAT hash."""
 
-        try:
-            pepper = self._peppers.keys[key_id]
-        except KeyError as exc:
-            raise AuthenticationError("token fingerprint key is unavailable") from exc
-        return hmac.new(pepper, PAT_FINGERPRINT_CONTEXT + token.encode(), hashlib.sha256).hexdigest()
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        return f"{TOKEN_FINGERPRINT_PREFIX}{digest[:32]}"
+
+    @staticmethod
+    def _operator_view(view: TokenView) -> TokenView:
+        return view.model_copy(update={"fingerprint": operator_token_fingerprint(view.fingerprint)})
 
     @staticmethod
     def _parse(token: str) -> tuple[UUID, str]:
@@ -145,8 +155,7 @@ class TokenService:
         prefix = f"{TOKEN_MARKER}_{token_id.hex[:12]}"
         pepper_key_id = self._peppers.active_key_id
         digest = self._hasher.hash(self._prehash(token, pepper_key_id))
-        fingerprint = hashlib.sha256(token.encode()).hexdigest()
-        fingerprint = self._fingerprint(token, pepper_key_id)
+        fingerprint = self._fingerprint(token)
         view = await self.store.issue_token(
             token_id=token_id,
             prefix=prefix,
@@ -171,13 +180,10 @@ class TokenService:
         if request.expires_at is not None and request.expires_at <= now:
             raise ValueError("expires_at must be in the future")
         token_id, prefix = self._parse(token)
-        fingerprint = hashlib.sha256(token.encode()).hexdigest()
+        fingerprint = self._fingerprint(token)
         stored = await self.store.token_for_verification(token_id)
-        fingerprint_key_id = self._peppers.active_key_id if stored is None else stored[0].pepper_key_id
-        keyed_fingerprint = self._fingerprint(token, fingerprint_key_id)
         if stored is None:
             pepper_key_id = self._peppers.active_key_id
-            fingerprint = keyed_fingerprint
             digest = self._hasher.hash(self._prehash(token, pepper_key_id))
             try:
                 return await self.store.issue_token(
@@ -197,11 +203,10 @@ class TokenService:
                     raise
 
         view, digest = stored
-        if view.fingerprint is not None and secrets.compare_digest(keyed_fingerprint, view.fingerprint):
-            fingerprint = keyed_fingerprint
         if not secrets.compare_digest(prefix, view.prefix):
             raise AuthenticationError("bootstrap token identity conflicts with stored token")
-        if view.fingerprint is not None and not secrets.compare_digest(fingerprint, view.fingerprint):
+        stored_fingerprint = operator_token_fingerprint(view.fingerprint)
+        if stored_fingerprint is not None and not secrets.compare_digest(fingerprint, stored_fingerprint):
             raise AuthenticationError("bootstrap token identity conflicts with stored token")
         try:
             valid = self._hasher.verify(digest, self._prehash(token, view.pepper_key_id))
@@ -240,19 +245,19 @@ class TokenService:
                 request=AdminApiKeyPolicyPatch(**changes),
                 actor=created_by,
             )
-        if view.pepper_key_id != self._peppers.active_key_id:
-            active_id = self._peppers.active_key_id
-            replacement = self._hasher.hash(self._prehash(token, active_id))
-            active_fingerprint = self._fingerprint(token, active_id)
+        active_id = self._peppers.active_key_id
+        if view.pepper_key_id != active_id or view.fingerprint != fingerprint:
+            replacement = digest
+            if view.pepper_key_id != active_id:
+                replacement = self._hasher.hash(self._prehash(token, active_id))
             await self.store.rehash_token_with_fingerprint(
                 view.id,
                 pepper_key_id=active_id,
                 digest=replacement,
-                fingerprint=active_fingerprint,
+                fingerprint=fingerprint,
             )
-            await self.store.rehash_token(view.id, pepper_key_id=active_id, digest=replacement)
-            view = view.model_copy(update={"pepper_key_id": active_id, "fingerprint": active_fingerprint})
-        return view
+            view = view.model_copy(update={"pepper_key_id": active_id, "fingerprint": fingerprint})
+        return self._operator_view(view)
 
     async def verify(self, token: str) -> Principal:
         token_id, expected_prefix = self._parse(token)
@@ -272,16 +277,18 @@ class TokenService:
         if view.expires_at is not None and view.expires_at <= now:
             await self.store.record_token_expired(view.id, actor="token-verifier")
             raise AuthenticationError("invalid bearer token")
-        if view.pepper_key_id != self._peppers.active_key_id:
-            active_id = self._peppers.active_key_id
-            replacement = self._hasher.hash(self._prehash(token, active_id))
+        active_id = self._peppers.active_key_id
+        fingerprint = self._fingerprint(token)
+        if view.pepper_key_id != active_id or view.fingerprint != fingerprint:
+            replacement = digest
+            if view.pepper_key_id != active_id:
+                replacement = self._hasher.hash(self._prehash(token, active_id))
             await self.store.rehash_token_with_fingerprint(
                 view.id,
                 pepper_key_id=active_id,
                 digest=replacement,
-                fingerprint=self._fingerprint(token, active_id),
+                fingerprint=fingerprint,
             )
-            await self.store.rehash_token(view.id, pepper_key_id=active_id, digest=replacement)
         principal = Principal(
             token_id=view.id,
             token_prefix=view.prefix,
@@ -297,7 +304,8 @@ class TokenService:
         return await self.principal_policy(principal) if self.principal_policy else principal
 
     async def list(self, *, tenant_id: str | None = None, limit: int = 200) -> list[TokenView]:
-        return await self.store.list_tokens(tenant_id=tenant_id, limit=limit)
+        views = await self.store.list_tokens(tenant_id=tenant_id, limit=limit)
+        return [self._operator_view(view) for view in views]
 
     async def rotate(
         self,
@@ -316,8 +324,7 @@ class TokenService:
         prefix = f"{TOKEN_MARKER}_{successor_id.hex[:12]}"
         pepper_key_id = self._peppers.active_key_id
         digest = self._hasher.hash(self._prehash(token, pepper_key_id))
-        fingerprint = hashlib.sha256(token.encode()).hexdigest()
-        fingerprint = self._fingerprint(token, pepper_key_id)
+        fingerprint = self._fingerprint(token)
         view = await self.store.rotate_token(
             token_id,
             token_id=successor_id,
@@ -332,7 +339,7 @@ class TokenService:
         return TokenIssued(**view.model_dump(), token=token)
 
     async def revoke(self, token_id: UUID, *, actor: str) -> TokenView:
-        return await self.store.revoke_token(token_id, actor=actor)
+        return self._operator_view(await self.store.revoke_token(token_id, actor=actor))
 
 
 class OperatorSessionService:

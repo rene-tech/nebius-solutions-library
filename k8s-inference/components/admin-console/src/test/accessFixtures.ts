@@ -43,7 +43,7 @@ export const testKey: AdminApiKey = {
   id: "c19da908-cb0e-421c-b849-4cb50086ec65",
   name: "Agent A key",
   prefix: "fs2_pat_c19da908cb0e",
-  fingerprint: "d".repeat(64),
+  fingerprint: `fp:v2:sha256-128:${"d".repeat(32)}`,
   principal_id: "agent-a",
   tenant_id: "tenant-a",
   scopes: ["inference.invoke", "mcp.invoke"],

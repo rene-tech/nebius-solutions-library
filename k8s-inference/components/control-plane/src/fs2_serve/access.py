@@ -25,7 +25,7 @@ from .access_models import (
     OperatorRole,
 )
 from .auth import TokenService
-from .models import TokenIssued, TokenView
+from .models import TokenIssued, TokenView, operator_token_fingerprint
 from .store import NotFoundError, Store
 
 
@@ -236,7 +236,7 @@ class AdminAccessService:
                     id=token.id,
                     name=token.name,
                     prefix=token.prefix,
-                    fingerprint=token.fingerprint,
+                    fingerprint=operator_token_fingerprint(token.fingerprint),
                     principal_id=token.principal_id,
                     tenant_id=token.tenant_id,
                     scopes=token.scopes,

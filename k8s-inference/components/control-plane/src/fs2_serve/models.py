@@ -6,18 +6,49 @@ from enum import StrEnum
 from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_serializer,
+    model_validator,
+)
 from pydantic.alias_generators import to_camel
 
 MAX_MODEL_ID_LENGTH = 128
 MIN_IDEMPOTENCY_KEY_LENGTH = 8
 MAX_IDEMPOTENCY_KEY_LENGTH = 200
+TOKEN_FINGERPRINT_PREFIX = "fp:v2:sha256-128:"
+TOKEN_FINGERPRINT_PATTERN = r"^(?:[a-f0-9]{64}|fp:v2:sha256-128:[a-f0-9]{32})$"
+OPERATOR_TOKEN_FINGERPRINT_PATTERN = r"^fp:v2:sha256-128:[a-f0-9]{32}$"
 
 ModelId = Annotated[str, StringConstraints(min_length=1, max_length=MAX_MODEL_ID_LENGTH)]
 IdempotencyKey = Annotated[
     str,
     StringConstraints(min_length=MIN_IDEMPOTENCY_KEY_LENGTH, max_length=MAX_IDEMPOTENCY_KEY_LENGTH),
 ]
+
+
+def operator_token_fingerprint(value: str | None) -> str | None:
+    """Return the safe, versioned operator identifier for a stored PAT fingerprint.
+
+    Legacy rows contain the full unsalted SHA-256 digest. Only its first 128
+    bits may cross an API boundary. Successful PAT proof upgrades the durable
+    row to this same representation, so the compatibility projection does not
+    change operator correlation.
+    """
+
+    if value is None:
+        return None
+    if value.startswith(TOKEN_FINGERPRINT_PREFIX):
+        suffix = value.removeprefix(TOKEN_FINGERPRINT_PREFIX)
+        if len(suffix) == 32 and all(character in "0123456789abcdef" for character in suffix):
+            return value
+    if len(value) == 64 and all(character in "0123456789abcdef" for character in value):
+        return f"{TOKEN_FINGERPRINT_PREFIX}{value[:32]}"
+    raise ValueError("unsupported PAT fingerprint scheme")
 
 
 class StrictModel(BaseModel):
@@ -224,7 +255,7 @@ class TokenView(StrictModel):
     created_by: str
     revoked_at: AwareDatetime | None
     name: str | None = None
-    fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    fingerprint: str | None = Field(default=None, pattern=TOKEN_FINGERPRINT_PATTERN)
     last_used_at: AwareDatetime | None = None
     rotation_parent_id: UUID | None = None
     rotated_at: AwareDatetime | None = None
@@ -232,6 +263,12 @@ class TokenView(StrictModel):
     rate_window_seconds: int | None = Field(default=None, ge=1)
     rate_window_started_at: AwareDatetime | None = None
     rate_window_requests: int = Field(default=0, ge=0)
+
+    @field_serializer("fingerprint")
+    def serialize_operator_fingerprint(self, value: str | None) -> str | None:
+        """Fail closed instead of serializing a legacy full-token hash."""
+
+        return operator_token_fingerprint(value)
 
 
 class TokenIssued(TokenView):

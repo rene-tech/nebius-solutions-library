@@ -143,7 +143,7 @@ const fixtureKey = {
   id: "21d54dd4-931e-4988-95d2-eef0ead8bd40",
   name: "Research agent production",
   prefix: "fs2_pat_21d54dd4931e",
-  fingerprint: "a58974af8e91b3f99c8bf77721bfc39945c61b79d8cdb5520333df395bf7861f",
+  fingerprint: "fp:v2:sha256-128:a58974af8e91b3f99c8bf77721bfc399",
   principal_id: "research-agent",
   tenant_id: "tenant-fixture",
   scopes: ["inference.invoke", "mcp.invoke", "operations.read"],

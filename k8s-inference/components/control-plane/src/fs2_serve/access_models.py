@@ -7,7 +7,15 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from .models import AuditEvent, ModalityUsage, ModelId, Scope, StrictModel, TokenCreate
+from .models import (
+    OPERATOR_TOKEN_FINGERPRINT_PATTERN,
+    AuditEvent,
+    ModalityUsage,
+    ModelId,
+    Scope,
+    StrictModel,
+    TokenCreate,
+)
 
 BOOTSTRAP_OPERATOR_PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000001")
 
@@ -189,7 +197,7 @@ class AdminApiKey(StrictModel):
     id: UUID
     name: str | None = None
     prefix: str
-    fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    fingerprint: str | None = Field(default=None, pattern=OPERATOR_TOKEN_FINGERPRINT_PATTERN)
     principal_id: str
     tenant_id: str
     scopes: list[str]

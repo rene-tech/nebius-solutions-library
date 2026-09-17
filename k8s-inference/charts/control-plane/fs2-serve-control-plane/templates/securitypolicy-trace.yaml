@@ -6,6 +6,9 @@ metadata:
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
 spec:
+  # Envoy Gateway selects only the most-specific SecurityPolicy by default.
+  # Every HTTPRoute/HTTPRouteRule child policy in this repository must declare
+  # mergeType: StrategicMerge so this parent denial remains effective.
   targetRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway

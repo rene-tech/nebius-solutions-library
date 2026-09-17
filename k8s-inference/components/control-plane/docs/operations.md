@@ -230,7 +230,17 @@ the end of an operator session.
 
 API-key issue and rotation responses disclose the new opaque PAT exactly once
 and carry `Cache-Control: no-store`. List and audit responses expose only
-bounded metadata, fingerprint/prefix, and durable totals. `last_used_at` means
+bounded metadata, a prefix, the stable versioned
+`fp:v2:sha256-128:<32-hex>` correlation identifier, and durable totals. The
+fingerprint is the first 128 bits of SHA-256 over the 256-bit random PAT; it is
+not a verifier and is independent of the rotatable PAT pepper. An expand-only
+schema migration stores truncated identifiers separately and nulls the legacy
+field so old pods remain compatible during rollout. A database trigger projects
+legacy-column writes from an old pod into the safe column before they are stored
+or returned. The response serializer also projects any not-yet-migrated legacy
+row to the versioned truncated form, and successful token proof persists that
+form without requiring pepper rotation.
+`last_used_at` means
 the last accepted, non-replay inference admission; bearer verification and
 catalog-only calls do not add a PostgreSQL write to the authentication hot
 path. Bounded integer `prompt_tokens`/`completion_tokens` (or the exact
@@ -606,8 +616,10 @@ Use this staged rotation procedure; do not change a key in one pod at a time:
 2. Switch `active_key_id` to the new key and roll all replicas. New writes use
    the new ID; old rows remain readable/verifiable.
 3. For a PAT pepper, successful authentication rehashes that token to the
-   active pepper. Keep the old pepper through the maximum token deletion
-   horizon for inactive tokens that cannot rehash.
+   active pepper in one transaction together with any pending fingerprint
+   migration. The stable operator fingerprint does not change. Keep the old
+   pepper through the maximum token deletion horizon for inactive tokens that
+   cannot rehash.
 4. Keep an old payload key for at least the payload TTL plus rollout/clock
    margin. Keep an old ledger HMAC key for at least the operation/idempotency
    retention horizon plus rollout/clock margin. Removing an HMAC key early

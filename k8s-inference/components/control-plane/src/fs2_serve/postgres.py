@@ -772,7 +772,7 @@ class PostgresStore:
             created_by=row["created_by"],
             revoked_at=row["revoked_at"],
             name=row["name"],
-            fingerprint=row["fingerprint"],
+            fingerprint=row["operator_fingerprint"] or row["fingerprint"],
             last_used_at=row["last_used_at"],
             rotation_parent_id=row["rotation_parent_id"],
             rotated_at=row["rotated_at"],
@@ -981,7 +981,7 @@ class PostgresStore:
                     """
                     INSERT INTO fs2_tokens
                         (id,prefix,pepper_key_id,digest,principal_id,tenant_id,scopes,models,expires_at,
-                         request_budget,gpu_seconds_budget,max_concurrency,created_by,name,fingerprint,
+                         request_budget,gpu_seconds_budget,max_concurrency,created_by,name,operator_fingerprint,
                          rate_limit_requests,rate_window_seconds)
                     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *
                     """,
@@ -1036,20 +1036,6 @@ class PostgresStore:
         return self._token(row)
 
     @retry_serialization
-    async def rehash_token(self, token_id: UUID, *, pepper_key_id: str, digest: str) -> None:
-        async with self.pool.acquire() as connection, connection.transaction():
-            await self._token_lock(connection, token_id)
-            await connection.execute(
-                """
-                UPDATE fs2_tokens SET pepper_key_id=$2,digest=$3
-                WHERE id=$1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>clock_timestamp())
-                """,
-                token_id,
-                pepper_key_id,
-                digest,
-            )
-
-    @retry_serialization
     async def rehash_token_with_fingerprint(
         self,
         token_id: UUID,
@@ -1062,7 +1048,8 @@ class PostgresStore:
             await self._token_lock(connection, token_id)
             await connection.execute(
                 """
-                UPDATE fs2_tokens SET pepper_key_id=$2,digest=$3,fingerprint=$4
+                UPDATE fs2_tokens
+                SET pepper_key_id=$2,digest=$3,operator_fingerprint=$4,fingerprint=NULL
                 WHERE id=$1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>clock_timestamp())
                 """,
                 token_id,
@@ -1151,7 +1138,7 @@ class PostgresStore:
                     INSERT INTO fs2_tokens(
                         id,prefix,pepper_key_id,digest,principal_id,tenant_id,scopes,models,expires_at,
                         request_budget,requests_used,gpu_seconds_budget,gpu_seconds_used,gpu_seconds_reserved,
-                        max_concurrency,created_by,name,fingerprint,rotation_parent_id,rate_limit_requests,
+                        max_concurrency,created_by,name,operator_fingerprint,rotation_parent_id,rate_limit_requests,
                         rate_window_seconds,rate_window_started_at,rate_window_requests
                     ) VALUES (
                         $1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::timestamptz,$10),$11,$12,$13,$14,0,$15,$16,

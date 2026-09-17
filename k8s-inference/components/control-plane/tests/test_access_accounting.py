@@ -155,7 +155,8 @@ async def test_key_fingerprint_last_use_rate_window_and_atomic_rotation(cipher, 
     tokens = TokenService(store, PepperRing(active_key_id="pepper-v1", keys={"pepper-v1": b"p" * 32}))
     issued = await tokens.issue(token_request(rate_limit=2), created_by="operator-a")
     assert issued.name == "agent key"
-    assert issued.fingerprint is not None and len(issued.fingerprint) == 64
+    assert issued.fingerprint is not None and issued.fingerprint.startswith("fp:v2:sha256-128:")
+    assert len(issued.fingerprint.removeprefix("fp:v2:sha256-128:")) == 32
     assert issued.token not in repr(store.tokens)
 
     principal = await tokens.verify(issued.token)
