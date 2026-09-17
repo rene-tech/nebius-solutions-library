@@ -48,37 +48,7 @@
         "provider_issuer_sha256": { "$ref": "#/$defs/sha256" },
         "tenant_sha256": { "$ref": "#/$defs/sha256" },
         "query_sha256": { "$ref": "#/$defs/sha256" },
-        "provider_authorization": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "whoami", "access_binding_pages", "principal_bindings", "role",
-            "whoami_sha256", "access_bindings_sha256", "role_sha256", "permissions_sha256"
-          ],
-          "properties": {
-            "whoami": { "type": "object" },
-            "access_binding_pages": {
-              "type": "array", "minItems": 1, "maxItems": 10000,
-              "items": { "$ref": "#/$defs/rawPage" }
-            },
-            "principal_bindings": {
-              "type": "array", "minItems": 1, "maxItems": 1,
-              "items": {
-                "type": "object", "additionalProperties": false,
-                "required": ["subject_id", "role_id"],
-                "properties": {
-                  "subject_id": { "type": "string", "pattern": "^serviceaccount-[A-Za-z0-9-]{8,128}$" },
-                  "role_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{8,253}$" }
-                }
-              }
-            },
-            "role": { "type": "object" },
-            "whoami_sha256": { "$ref": "#/$defs/sha256" },
-            "access_bindings_sha256": { "$ref": "#/$defs/sha256" },
-            "role_sha256": { "$ref": "#/$defs/sha256" },
-            "permissions_sha256": { "$ref": "#/$defs/sha256" }
-          }
-        },
+        "provider_authorization": { "$ref": "#/$defs/providerAuthorization" },
         "complete": { "const": true },
         "pagination": {
           "type": "object",
@@ -155,6 +125,92 @@
         "request_token": { "type": "string", "maxLength": 8192 },
         "response": { "type": "object" },
         "next_token": { "type": "string", "maxLength": 8192 }
+      }
+    },
+    "providerAuthorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consistency", "collections"],
+      "properties": {
+        "consistency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "passes", "collection_sha256"],
+          "properties": {
+            "mode": { "const": "double-collect-byte-identical" },
+            "passes": { "const": 2 },
+            "collection_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "collections": {
+          "type": "array", "minItems": 2, "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["index", "evidence", "sha256"],
+            "properties": {
+              "index": { "type": "integer", "minimum": 0, "maximum": 1 },
+              "evidence": { "$ref": "#/$defs/providerAuthorizationEvidence" },
+              "sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        }
+      }
+    },
+    "providerAuthorizationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "whoami", "membership_pages", "principal_group_ids", "access_binding_pages",
+        "effective_bindings", "effective_roles", "effective_permissions",
+        "effective_permissions_sha256", "page_count", "record_count"
+      ],
+      "properties": {
+        "whoami": { "type": "object" },
+        "membership_pages": {
+          "type": "array", "minItems": 1, "maxItems": 10000,
+          "items": { "$ref": "#/$defs/rawPage" }
+        },
+        "principal_group_ids": {
+          "type": "array", "maxItems": 100000, "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{8,253}$" }
+        },
+        "access_binding_pages": {
+          "type": "array", "minItems": 1, "maxItems": 10000,
+          "items": { "$ref": "#/$defs/rawPage" }
+        },
+        "effective_bindings": {
+          "type": "array", "minItems": 1, "maxItems": 100000,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["subject_id", "subject_kind", "role_id"],
+            "properties": {
+              "subject_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{8,253}$" },
+              "subject_kind": { "enum": ["service-account", "group"] },
+              "role_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{8,253}$" }
+            }
+          }
+        },
+        "effective_roles": {
+          "type": "array", "minItems": 1, "maxItems": 100000,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["role_id", "document", "document_sha256", "permissions_sha256"],
+            "properties": {
+              "role_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{8,253}$" },
+              "document": { "type": "object" },
+              "document_sha256": { "$ref": "#/$defs/sha256" },
+              "permissions_sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        },
+        "effective_permissions": {
+          "type": "array", "minItems": 1, "maxItems": 128, "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z0-9._/-]+\\.(get|list)$" }
+        },
+        "effective_permissions_sha256": { "$ref": "#/$defs/sha256" },
+        "page_count": { "type": "integer", "minimum": 2, "maximum": 10000 },
+        "record_count": { "type": "integer", "minimum": 1, "maximum": 100000 }
       }
     },
     "page": {

@@ -477,7 +477,7 @@ def _provider_document(
     return document
 
 
-def _capture_provider_authorization(trust: dict[str, Any]) -> dict[str, Any]:
+def _capture_provider_authorization_once(trust: dict[str, Any]) -> dict[str, Any]:
     execution = trust["directory_execution"]
     query = trust["directory_query"]
     whoami = _provider_document(execution, query, ["iam", "whoami"], label="whoami")
@@ -492,6 +492,41 @@ def _capture_provider_authorization(trust: dict[str, Any]) -> dict[str, Any]:
     ):
         raise AdapterError("provider whoami does not match the parsed credential principal")
     budgets = {"pages": query["max_pages"], "records": query["max_records"]}
+    membership_operation = (
+        "group-membership.list-member-of:"
+        f"{hashlib.sha256(execution['principal_id'].encode()).hexdigest()}"
+    )
+    memberships, membership_pages = _list_pages(
+        execution,
+        query,
+        [
+            "iam",
+            "group-membership",
+            "list-member-of",
+            "--subject-id",
+            execution["principal_id"],
+        ],
+        membership_operation,
+        budgets,
+    )
+    principal_group_ids: list[str] = []
+    for membership in memberships:
+        metadata = membership.get("metadata", {}) if isinstance(membership, dict) else {}
+        spec = membership.get("spec", {}) if isinstance(membership, dict) else {}
+        group_id = metadata.get("parent_id") if isinstance(metadata, dict) else None
+        if (
+            not isinstance(spec, dict)
+            or set(spec) != {"member_id"}
+            or spec.get("member_id") != execution["principal_id"]
+            or not isinstance(group_id, str)
+            or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", group_id)
+        ):
+            raise AdapterError("provider directory-reader group membership is malformed")
+        principal_group_ids.append(group_id)
+    if len(principal_group_ids) != len(set(principal_group_ids)):
+        raise AdapterError("provider directory-reader group membership is duplicated")
+    principal_group_ids.sort()
+    effective_subject_ids = {execution["principal_id"], *principal_group_ids}
     bindings, binding_pages = _list_pages(
         execution,
         query,
@@ -499,52 +534,120 @@ def _capture_provider_authorization(trust: dict[str, Any]) -> dict[str, Any]:
         "access-binding.list",
         budgets,
     )
-    principal_bindings: list[dict[str, str]] = []
+    effective_bindings: list[dict[str, str]] = []
     for binding in bindings:
         spec = binding.get("spec", {}) if isinstance(binding, dict) else {}
-        if spec.get("subject_id") == execution["principal_id"]:
-            if set(spec) != {"subject_id", "role_id"} or not isinstance(spec.get("role_id"), str):
-                raise AdapterError("provider directory-reader access binding is malformed")
-            principal_bindings.append(
-                {"subject_id": spec["subject_id"], "role_id": spec["role_id"]}
-            )
-    role_contract = execution["directory_reader_role"]
-    if principal_bindings != [
-        {"subject_id": execution["principal_id"], "role_id": role_contract["id"]}
-    ]:
-        raise AdapterError("provider directory reader does not have exactly one approved role")
-    role = _provider_document(
-        execution,
-        query,
-        ["iam", "role", "get", "--id", role_contract["id"]],
-        label="directory-reader role",
-    )
-    role_metadata = role.get("metadata", {}) if isinstance(role, dict) else {}
-    role_spec = role.get("spec", {}) if isinstance(role, dict) else {}
-    permissions = role_spec.get("permissions") if isinstance(role_spec, dict) else None
-    if (
-        not isinstance(role_metadata, dict)
-        or role_metadata.get("id") != role_contract["id"]
-        or not isinstance(permissions, list)
-        or sorted(permissions) != sorted(role_contract["permissions"])
-        or hashlib.sha256(canonical(sorted(permissions)).encode()).hexdigest()
-        != role_contract["permissions_sha256"]
-        or any(
-            not isinstance(permission, str)
-            or not re.fullmatch(r"[a-z0-9._/-]+\.(?:get|list)", permission)
-            for permission in permissions
-        )
+        if (
+            not isinstance(spec, dict)
+            or set(spec) != {"subject_id", "role_id"}
+            or not isinstance(spec.get("subject_id"), str)
+            or not isinstance(spec.get("role_id"), str)
+            or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", spec["subject_id"])
+            or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", spec["role_id"])
+        ):
+            raise AdapterError("provider access binding inventory is malformed")
+        if spec["subject_id"] in effective_subject_ids:
+            effective_bindings.append({
+                "subject_id": spec["subject_id"],
+                "subject_kind": (
+                    "service-account"
+                    if spec["subject_id"] == execution["principal_id"]
+                    else "group"
+                ),
+                "role_id": spec["role_id"],
+            })
+    effective_bindings.sort(key=canonical)
+    if not effective_bindings or len({canonical(value) for value in effective_bindings}) != len(
+        effective_bindings
     ):
-        raise AdapterError("provider directory-reader role is not read-only exact")
+        raise AdapterError("provider effective access binding closure is empty or duplicated")
+    role_contract = execution["directory_reader_role"]
+    role_ids = sorted({binding["role_id"] for binding in effective_bindings})
+    if role_contract["id"] not in role_ids or len(role_ids) > query["max_records"]:
+        raise AdapterError("provider effective role closure omits the approved directory-reader role")
+    approved_permissions = set(role_contract["permissions"])
+    effective_permissions: set[str] = set()
+    effective_roles: list[dict[str, Any]] = []
+    for role_id in role_ids:
+        role = _provider_document(
+            execution,
+            query,
+            ["iam", "role", "get", "--id", role_id],
+            label="effective directory-reader role",
+        )
+        role_metadata = role.get("metadata", {}) if isinstance(role, dict) else {}
+        role_spec = role.get("spec", {}) if isinstance(role, dict) else {}
+        permissions = role_spec.get("permissions") if isinstance(role_spec, dict) else None
+        if (
+            not isinstance(role_metadata, dict)
+            or role_metadata.get("id") != role_id
+            or not isinstance(permissions, list)
+            or not permissions
+            or any(
+                not isinstance(permission, str)
+                or not re.fullmatch(r"[a-z0-9._/-]+\.(?:get|list)", permission)
+                for permission in permissions
+            )
+            or len(permissions) != len(set(permissions))
+            or not set(permissions) <= approved_permissions
+            or (
+                role_id == role_contract["id"]
+                and sorted(permissions) != sorted(role_contract["permissions"])
+            )
+        ):
+            raise AdapterError("provider effective role permission closure is not read-only exact")
+        effective_permissions.update(permissions)
+        effective_roles.append({
+            "role_id": role_id,
+            "document": role,
+            "document_sha256": hashlib.sha256(canonical(role).encode()).hexdigest(),
+            "permissions_sha256": hashlib.sha256(
+                canonical(sorted(permissions)).encode()
+            ).hexdigest(),
+        })
+    if (
+        effective_permissions != approved_permissions
+        or hashlib.sha256(canonical(sorted(effective_permissions)).encode()).hexdigest()
+        != role_contract["permissions_sha256"]
+    ):
+        raise AdapterError("provider effective permissions differ from the approved read-only set")
+    record_count = query["max_records"] - budgets["records"]
+    page_count = query["max_pages"] - budgets["pages"]
     return {
         "whoami": whoami,
+        "membership_pages": membership_pages,
+        "principal_group_ids": principal_group_ids,
         "access_binding_pages": binding_pages,
-        "principal_bindings": principal_bindings,
-        "role": role,
-        "whoami_sha256": hashlib.sha256(canonical(whoami).encode()).hexdigest(),
-        "access_bindings_sha256": hashlib.sha256(canonical(binding_pages).encode()).hexdigest(),
-        "role_sha256": hashlib.sha256(canonical(role).encode()).hexdigest(),
-        "permissions_sha256": role_contract["permissions_sha256"],
+        "effective_bindings": effective_bindings,
+        "effective_roles": effective_roles,
+        "effective_permissions": sorted(effective_permissions),
+        "effective_permissions_sha256": role_contract["permissions_sha256"],
+        "page_count": page_count,
+        "record_count": record_count,
+    }
+
+
+def _capture_provider_authorization(trust: dict[str, Any]) -> dict[str, Any]:
+    passes = trust["directory_query"]["consistency_passes"]
+    captures = [_capture_provider_authorization_once(trust) for _ in range(passes)]
+    baseline = captures[0]
+    if any(capture != baseline for capture in captures[1:]):
+        raise AdapterError("provider authorization changed across the required repeat-stability fence")
+    collection_sha256 = hashlib.sha256(canonical(baseline).encode()).hexdigest()
+    return {
+        "consistency": {
+            "mode": "double-collect-byte-identical",
+            "passes": passes,
+            "collection_sha256": collection_sha256,
+        },
+        "collections": [
+            {
+                "index": index,
+                "evidence": capture,
+                "sha256": hashlib.sha256(canonical(capture).encode()).hexdigest(),
+            }
+            for index, capture in enumerate(captures)
+        ],
     }
 
 

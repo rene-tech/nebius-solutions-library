@@ -833,11 +833,16 @@ that file: it is declared by the separately custodied, root-owned
 canonical digest is pinned by the trust anchor; the corresponding private
 signing key remains outside both documents. The signed provider snapshot
 binds the exact trust anchor, separate collection authority, adapter and
-executable/authentication hashes, provider `whoami`, the sole approved
-principal-to-role binding, the exact read-only role definition, and two
+executable/authentication hashes, provider `whoami`, the complete bounded
+`list-member-of` group closure, every direct or group-inherited tenant binding,
+every referenced role definition, the exact effective read-only permission
+union, and two
 byte-identical, bounded, terminal provider-directory sweeps including their raw
-JSON responses. Preflight recomputes every page/collection receipt and executes
-the source-pinned adapter again with no caller input; the fresh authoritative
+JSON responses. The authorization closure is independently collected twice and
+must also be byte-identical; an additional role is accepted only when all of its
+permissions are within the approved read-only set and the total effective union
+equals that set exactly. Preflight recomputes every page/collection receipt and
+executes the source-pinned adapter again with no caller input; the fresh authoritative
 collection must match the signed collection fields byte-for-byte. The adapter supplies an empty,
 fixed execution environment, explicit endpoint/config/profile and no stdin, so
 ambient CLI state cannot select another backend or principal. A fixed,

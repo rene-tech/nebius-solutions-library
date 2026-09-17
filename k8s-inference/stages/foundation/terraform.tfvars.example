@@ -34,8 +34,11 @@ project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 # verification key lives in the separate root-owned collection-authority file
 # whose digest is pinned by the trust anchor; its private signing key remains
 # outside both documents. The adapter clears inherited environment state
-# and enumerates provider whoami, role/binding evidence, users, groups and
-# memberships directly; it never accepts a caller-provided transcript. The
+# and enumerates provider whoami, the directory-reader service account's
+# complete group-membership closure, every direct/group-inherited binding and
+# referenced role, plus users, groups and memberships directly; it never
+# accepts a caller-provided transcript. Effective permissions and authorization
+# evidence must be exact and byte-identical across two collections. The
 # provider receipt includes the raw responses for two byte-identical complete
 # bounded pagination sweeps. Preflight executes the pinned adapter again and
 # requires the fresh output to match, then has the selected API server
