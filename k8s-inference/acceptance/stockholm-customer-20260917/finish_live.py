@@ -32,7 +32,8 @@ def expected_operations(receipt):
             identifier = str(UUID(operation["id"]))
             check(identifier not in expected and operation["status"] == "succeeded", "duplicate_or_failed_operation")
             expected.add(identifier)
-            pods.add(operation["runtime"]["pod_uid"])
+            if operation["runtime"]["pod_uid"]:
+                pods.add(operation["runtime"]["pod_uid"])
             revisions.setdefault(operation["model_id"], set()).add(operation["model_revision"])
         batch = cohort["batch"]
         check(batch["terminal_state"] == {"operation": "succeeded", "batch": "succeeded",
@@ -128,6 +129,10 @@ asyncio.run(run())
     runtime = {"collected_at": now(), "scope": "operation-bound-runtime-and-current-observer-readback",
                "model_revisions": revisions, "pods": used,
                "missing_pod_uids": sorted(pod_ids - {row["uid"] for row in used}),
+               "serving_operations_without_runtime_uid": [
+                   row["operation_id"] for cohort in receipt["cohorts"]
+                   for row in cohort["calls"] + cohort["mixed_calls"]
+                   if not row["terminal_operation"]["runtime"]["pod_uid"]],
                "observers_on_used_gpu_nodes": [row for row in observers if row["node"] in nodes],
                "gaps": ["Observer readiness is a readback snapshot, not continuous interval coverage.",
                         "Shared serving usage is not additive GPU occupancy."]}

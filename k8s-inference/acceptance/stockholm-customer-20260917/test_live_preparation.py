@@ -220,6 +220,31 @@ def test_teardown_refuses_partial_cohort_receipt():
         finalizer.expected_operations({"outcome": "partial_scope_passed", "cohorts": [{}]})
 
 
+def test_missing_serving_runtime_uid_remains_a_gap_not_a_fabricated_id():
+    from uuid import uuid4
+
+    cohorts = []
+    for _ in range(2):
+        rows = []
+        for index in range(13):
+            operation_id = str(uuid4())
+            rows.append({"operation_id": operation_id, "state": "passed", "semantic_validated": True,
+                         "terminal_operation": {"id": operation_id, "status": "succeeded",
+                            "model_id": runner.MODELS[index % 2], "model_revision": "pinned-model-revision",
+                            "runtime": {"pod_uid": None}}})
+        cohorts.append({"calls": rows[:8], "mixed_calls": rows[8:], "observed_peak_outstanding": 5,
+            "verified_batch_downloads": [{"sha256": "verified"}], "batch": {
+                "operation_identity": {"operation_id": str(uuid4())},
+                "terminal_state": {"operation": "succeeded", "batch": "succeeded",
+                                   "result": "succeeded", "semantic_validation": "passed"},
+                "queue": {"observed_stages": [{"attempts": [{"resource_released": True}]}]},
+                "attempts": [{"pod_uids": [str(uuid4())]}], "execution_identity": {"model": "pinned"}}})
+    expected, pod_ids, revisions = finalizer.expected_operations(
+        {"outcome": "partial_scope_passed", "cohorts": cohorts})
+    assert len(expected) == 28 and len(pod_ids) == 2 and None not in pod_ids
+    assert set(revisions) == set(runner.MODELS)
+
+
 def batch_transport(failures):
     from types import SimpleNamespace
 

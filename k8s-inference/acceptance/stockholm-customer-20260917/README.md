@@ -54,6 +54,15 @@ new uploads or inference. That recovery is not a clean initial transport run.
 The next cohort was paused for the release owner's separate Cosmos CP fix;
 this is still intermediate release-142 evidence, not a final qualifying pair.
 
+The ordered serving operations also lack per-operation Pod/node/GPU identities
+(all 13 public runtime objects are empty). Correct model revisions, scientific
+outputs and independent runtime Pod/image snapshots do not fill that correlation
+gap or establish zero GPU usage. The read-only usage export marks online quality
+unavailable and excludes shared serving from additive totals. The release owner
+has the contrasting earlier attributed and later unattributed receipts for
+diagnosis. Batch provenance independently records application-observed GPU
+occupancy 65s (28s active, 37s startup), with scheduler-event Pod/node correlation.
+
 Private evidence is under
 `/home/tux/secure-handoff/stockholm-live-acceptance-20260917/`, mode 0700; files
 are 0600. A new same-policy `stockholm-canary-*` key expires at
