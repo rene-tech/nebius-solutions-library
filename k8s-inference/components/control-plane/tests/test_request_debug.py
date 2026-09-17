@@ -1727,29 +1727,124 @@ async def test_queue_drain_recovers_after_worker_cancellation_without_hanging():
     await queue.aclose()
 
 
-def test_bounded_for_summary_gates_on_whole_exchange_ceiling_above_the_body_cap():
-    """SAI-01 (blocker 1): boundedness is decided by the WHOLE-EXCHANGE stored size vs a ceiling that is
-    DISTINCT FROM and ABOVE the per-body cap (per-body cap + bounded envelope/overhead + crypto framing) —
-    NOT the per-body cap itself. So a near-cap request (body + envelope > body cap) stays bounded/served
-    instead of being wrongly withheld. The ceiling scales with the per-body cap and applies even when the
-    cap is None (uses the hard per-body ceiling)."""
-    from fs2_serve.request_debug import _MAX_SANITIZE_BODY, _bounded_for_summary, _stored_payload_ceiling
+def test_bounded_for_summary_ceiling_accounts_for_6x_escaping_and_enforced_overhead():
+    """SAI-01 (blocker 1): the whole-exchange ceiling accounts for the 6x worst-case JSON control-char
+    escaping of a within-cap body (\\u00XX = 6 chars/byte), NOT base64's 4/3, so a legit near-cap body of
+    ANY byte content stays bounded/served; and it is the sum of the per-body-cap*6 plus the ENFORCED
+    per-field overhead budgets plus the crypto tag (a provable bound, not an assumption). It is distinct
+    from and above the per-body cap and stable when the cap is None (clamped to the hard per-body cap)."""
+    from fs2_serve.request_debug import (
+        _BODY_JSON_EXPANSION,
+        _MAX_SANITIZE_BODY,
+        _bounded_for_summary,
+        _effective_cap,
+        _stored_payload_ceiling,
+    )
 
     cap = 1024
     ceiling = _stored_payload_ceiling(cap)
+    assert ceiling >= _BODY_JSON_EXPANSION * _effective_cap(cap)  # covers a 6x-expanded within-cap body
     assert ceiling > cap  # DISTINCT budget ABOVE the per-body cap, not the body cap
     # signature: (stored_payload_size, max_body_bytes)
-    assert _bounded_for_summary(100, cap) is True  # small whole exchange -> bounded
-    assert _bounded_for_summary(cap * 2, cap) is True  # > per-body cap but < whole-exchange ceiling -> bounded (served)
+    assert _bounded_for_summary(_BODY_JSON_EXPANSION * cap, cap) is True  # a fully control-char body still fits
     assert _bounded_for_summary(ceiling, cap) is True  # exactly at the whole-exchange ceiling -> bounded
     assert _bounded_for_summary(ceiling + 1, cap) is False  # over the whole-exchange ceiling -> non-bounded
     assert _bounded_for_summary(10**9, cap) is False  # huge whole exchange -> non-bounded
-    # No cap configured uses the hard per-body ceiling as the basis, and a configured cap larger than the
-    # hard ceiling cannot raise the body basis (clamped), so the whole-exchange ceiling is stable.
+    # No cap configured / a cap above the hard per-body ceiling both clamp to the hard cap, so the ceiling
+    # is stable.
     assert _stored_payload_ceiling(None) == _stored_payload_ceiling(_MAX_SANITIZE_BODY)
     assert _stored_payload_ceiling(10**9) == _stored_payload_ceiling(_MAX_SANITIZE_BODY)
     assert _bounded_for_summary(_stored_payload_ceiling(None), None) is True
     assert _bounded_for_summary(_stored_payload_ceiling(None) + 1, None) is False
+
+
+async def test_all_control_char_within_cap_request_is_served_not_withheld():
+    """SAI-01 regression (blocker 1): a valid within-cap request body of all NUL bytes JSON-escapes to 6x
+    (\\u0000 = 6 chars/byte), but the whole-exchange ceiling uses the 6x factor, so the row stays BOUNDED
+    and its request is SERVED — not wrongly withheld. Serializes a REAL worst-case exchange (all-NUL body)
+    rather than an invented size. Authored; not executed here."""
+    cap = 4096
+    store = InMemoryDebugStore(max_body_bytes=cap)
+    nul_body = "\x00" * cap  # valid UTF-8, stored as utf-8, JSON-escapes to 6x its raw size
+    legit = row(
+        request_body=DebugBody(
+            encoding="utf-8",
+            data=nul_body,
+            content_type="application/json",
+            observed_bytes=cap,
+            complete=True,
+            redacted=False,
+            truncated=False,
+        ),
+    )
+    await store.record(legit)
+    detail = await store.get(legit.id)
+    assert detail is not None
+    # 6x-serialized body is within the whole-exchange ceiling -> BOUNDED -> the request is SERVED.
+    assert detail.request_body.data == nul_body and detail.request_body.redacted is False
+    assert (await store.list()).items[0].request_redacted is False  # list agrees: served, not withheld
+
+
+def test_bound_debug_metadata_whole_or_withholds_oversized_fields():
+    """SAI-01 regression (blocker 2): non-body debug fields (headers/query/error) are ENFORCED to their
+    budgets at capture, whole-or-withhold with a disclosed marker, so the ceiling overhead is a true bound
+    not an assumption. Real (small) fields are untouched; a pathologically large field is withheld."""
+    from fs2_serve.request_debug import (
+        _MAX_DEBUG_HEADERS_BYTES,
+        _MAX_DEBUG_QUERY_BYTES,
+        _bound_debug_metadata,
+        _json_len,
+    )
+
+    small = row(request_headers=[("content-type", "application/json")], query_string="a=1", error_detail="boom")
+    assert _bound_debug_metadata(small) is small  # nothing over budget -> same object, untouched
+    big = row(
+        request_headers=[("x", "v" * (_MAX_DEBUG_HEADERS_BYTES + 100))],
+        query_string="q=" + "z" * (_MAX_DEBUG_QUERY_BYTES + 100),
+        error_type="ValueError",
+        error_detail="e" * (10 * 1024 * 1024),  # 10 MiB exception string
+    )
+    bounded = _bound_debug_metadata(big)
+    assert _json_len(bounded.request_headers) <= _MAX_DEBUG_HEADERS_BYTES  # within budget after whole-or-withhold
+    assert _json_len(bounded.query_string) <= _MAX_DEBUG_QUERY_BYTES
+    assert "withheld" in bounded.request_headers[0][1] and "withheld" in bounded.query_string
+    assert bounded.error_detail is not None and len(bounded.error_detail) < 1024  # error withheld to a marker
+
+
+async def test_persist_bounds_oversized_debug_metadata_at_capture():
+    """SAI-01 regression (blocker 2): persist_debug_exchange enforces the field budgets at the single
+    storage choke point, so a stored row's headers/query are within budget (the ceiling is a true bound),
+    without touching a normal small-header row. Authored; not executed here."""
+    from fs2_serve.request_debug import _MAX_DEBUG_HEADERS_BYTES, _json_len, persist_debug_exchange
+
+    store = InMemoryDebugStore(max_body_bytes=64 * 1024)
+    ex = row(request_headers=[("x", "v" * (_MAX_DEBUG_HEADERS_BYTES + 100))])
+    assert await persist_debug_exchange(store, ex) is True
+    stored = store.exchanges[ex.id]
+    assert _json_len(stored.request_headers) <= _MAX_DEBUG_HEADERS_BYTES  # bounded at capture (choke point)
+
+
+async def test_in_memory_size_is_cached_at_record_not_serialized_on_read(monkeypatch):
+    """SAI-01 regression (blocker 3): the in-memory stored size is computed ONCE at record() and cached;
+    a READ (list/get) never serializes the (possibly huge legacy) payload to measure it. Proven by counting
+    _serialized_size calls: one per record(), zero per read. Authored; not executed here."""
+    import fs2_serve.request_debug as rd
+
+    calls = {"n": 0}
+    real = rd._serialized_size
+
+    def _counting(exchange):
+        calls["n"] += 1
+        return real(exchange)
+
+    monkeypatch.setattr(rd, "_serialized_size", _counting)
+    store = InMemoryDebugStore(max_body_bytes=64 * 1024)
+    ex_id = uuid4()
+    await store.record(row(id=ex_id))
+    assert calls["n"] == 1  # computed once at record()
+    await store.list()
+    await store.get(ex_id)
+    assert calls["n"] == 1  # reads used the cached size; no re-serialization of any payload
 
 
 async def test_queue_reprocesses_item_after_mid_item_cancellation():

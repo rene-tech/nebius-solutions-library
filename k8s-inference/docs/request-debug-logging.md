@@ -268,12 +268,19 @@ HTTP 0 or success.
   derivation so they can never disagree. Because the 90-day no-delete retention preserves rows
   (including legacy rows captured under an earlier, narrower contract), a read applies the CURRENT
   contract on the way out. Boundedness is decided by the ACTUAL WHOLE-EXCHANGE STORED SIZE against a
-  whole-exchange ceiling that is DISTINCT FROM and ABOVE the per-body cap (per-body cap + a bounded
-  canonical overhead for redacted headers/query/error/metadata/JSON structure + the AES-GCM tag), measured
-  in identical byte units in both stores (the encrypted store uses `octet_length(ciphertext)`; the
-  in-memory store uses the serialized-row byte length plus the same tag constant). This whole-exchange
-  budget is used precisely so a legitimate near-cap request (its ciphertext = the within-cap body plus the
-  envelope, which always exceeds the per-body cap) is NOT wrongly withheld. A BOUNDED row is decrypted and
+  whole-exchange ceiling that is DISTINCT FROM and ABOVE the per-body cap and is a PROVABLE upper bound on
+  a legitimate current exchange, not an assumption: it is the per-body cap times the 6x worst-case
+  JSON-string escaping factor (a within-cap body of control bytes serializes to `\u00XX` = 6 chars/byte,
+  which dominates base64's 4/3), PLUS ENFORCED per-field byte budgets for the non-body debug fields, PLUS
+  the AES-GCM tag. Those non-body fields (request/response headers, query string, error_detail) are bounded
+  at CAPTURE (whole-or-withhold with a disclosed marker, off the request path, in `persist_debug_exchange`),
+  so the overhead is enforced rather than assumed — only a pathologically large field is withheld; real
+  headers/query/error are far under budget and untouched, and the customer's request/response processing is
+  unaffected. The size is measured in identical byte units in both stores (the encrypted store uses
+  `octet_length(ciphertext)`; the in-memory store computes the serialized-row byte length plus the same tag
+  constant ONCE at record() and caches it, so a read never serializes a payload to measure it). This
+  whole-exchange budget is used precisely so a legitimate near-cap request (its ciphertext = the within-cap
+  body plus the envelope, which always exceeds the per-body cap) is NOT wrongly withheld. A BOUNDED row is decrypted and
   re-sanitized via `normalize_exchange_for_read` — response withheld; a wire-incomplete, legacy-prefixed,
   or over-cap request body withheld; `error_detail` replaced with a generic marker; response headers
   reduced to structural-only; request headers/query re-scrubbed. A current row (request within cap +
