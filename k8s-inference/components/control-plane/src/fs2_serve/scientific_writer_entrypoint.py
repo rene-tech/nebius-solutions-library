@@ -29,6 +29,7 @@ async def serve() -> None:
             settings.scientific_writer_execution_map_file,
             expected_sha256=settings.scientific_writer_execution_map_sha256 or "",
             tools_image=settings.scientific_writer_tools_image or "",
+            internal_api_url=settings.scientific_batch_internal_api_url,
         ),
         timeout_seconds=settings.scientific_batch_api_timeout_seconds,
     )

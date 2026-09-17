@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import copy
 import fcntl
 import hashlib
 import ipaddress
@@ -13,6 +14,7 @@ import json
 import os
 import re
 import secrets
+import socket
 import ssl
 import subprocess
 import sys
@@ -20,7 +22,7 @@ import tempfile
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
@@ -2378,11 +2380,62 @@ def apply_plan(
     root: Path,
     plan_path: Path,
     environment: Mapping[str, str],
+    *,
+    custody_guard: Callable[[], datetime] | None = None,
 ) -> None:
-    run(
-        [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)],
-        env=environment,
-    )
+    arguments = [
+        terraform,
+        f"-chdir={root}",
+        "apply",
+        "-input=false",
+        str(plan_path),
+    ]
+    if custody_guard is None:
+        run(arguments, env=environment)
+        return
+    print(f"+ {command_text(arguments)}", file=sys.stderr)
+    expires_at = custody_guard()
+    if expires_at - datetime.now(UTC) < timedelta(minutes=10):
+        raise DeploymentError(
+            "provider custody has less than ten minutes remaining before apply"
+        )
+    try:
+        process = subprocess.Popen(arguments, env=dict(environment))
+    except FileNotFoundError as exc:
+        raise DeploymentError(f"required executable not found: {terraform}") from exc
+    while True:
+        try:
+            return_code = process.wait(timeout=5)
+            break
+        except subprocess.TimeoutExpired:
+            try:
+                refreshed_expiry = custody_guard()
+                if refreshed_expiry < expires_at:
+                    raise DeploymentError(
+                        "provider custody validity regressed during apply"
+                    )
+                expires_at = refreshed_expiry
+                if refreshed_expiry - datetime.now(UTC) < timedelta(seconds=90):
+                    raise DeploymentError(
+                        "provider custody expiry approached during apply"
+                    )
+            except BaseException:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                raise
+    if return_code != 0:
+        raise DeploymentError(
+            f"command failed with exit code {return_code}: {command_text(arguments)}"
+        )
+    refreshed_expiry = custody_guard()
+    if refreshed_expiry < expires_at or refreshed_expiry - datetime.now(UTC) < timedelta(seconds=60):
+        raise DeploymentError(
+            "provider custody changed or expired before the post-apply fence"
+        )
 
 
 def _exact_kubernetes_user_info(document: Mapping[str, Any], label: str) -> dict[str, Any]:
@@ -2733,9 +2786,26 @@ def _finite_release_match_conditions(
     ]
 
 
+def _provider_custody_stable_sha256(attestation: Mapping[str, Any]) -> str:
+    """Bind renewable custody assertions to one immutable transaction/policy."""
+
+    stable = copy.deepcopy(dict(attestation))
+    stable.pop("observed_at", None)
+    stable.pop("expires_at", None)
+    stable.pop("payload_sha256", None)
+    freeze = stable.get("mutation_freeze")
+    if isinstance(freeze, dict):
+        freeze.pop("active_from", None)
+        freeze.pop("active_until", None)
+    return _json_sha256(stable)
+
+
 def _verified_provider_custody(
     *,
     cluster_id: str,
+    project_id: str,
+    nebius: str,
+    nebius_profile: str,
     provider_trust_root_sha256: str,
 ) -> tuple[dict[str, Any], str, datetime]:
     """Verify the independent provider/IAM custody assertion.
@@ -2815,12 +2885,13 @@ def _verified_provider_custody(
     now = datetime.now(UTC)
     if (
         attestation.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v3"
+        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v4"
         or attestation.get("cluster_id") != cluster_id
+        or attestation.get("project_id") != project_id
         or attestation.get("payload_sha256") != _json_sha256(payload)
         or observed_at.tzinfo is None
         or expires_at.tzinfo is None
-        or expires_at - observed_at > timedelta(minutes=30)
+        or expires_at - observed_at > timedelta(hours=2)
         or observed_at > now + timedelta(seconds=30)
         or not (observed_at <= now < expires_at)
         or not isinstance(mutation_freeze, dict)
@@ -2900,6 +2971,48 @@ def _verified_provider_custody(
         raise DeploymentError(
             "provider custody credentials do not define six gateway certificate principals"
         )
+    kubernetes_authorization = attestation.get("kubernetes_authorization")
+    expected_privileged_certificates = sorted(expected_gateway_principals)
+    if (
+        not isinstance(kubernetes_authorization, dict)
+        or set(kubernetes_authorization)
+        != {
+            "source_cluster_sha256",
+            "authorizers",
+            "anonymous_authentication_enabled",
+            "static_token_authentication_enabled",
+            "legacy_abac_enabled",
+            "service_account_issuer",
+            "service_account_signing_key_sha256",
+            "privileged_client_certificate_sha256",
+        }
+        or kubernetes_authorization.get("authorizers") != ["Node", "RBAC"]
+        or kubernetes_authorization.get("anonymous_authentication_enabled")
+        is not False
+        or kubernetes_authorization.get("static_token_authentication_enabled")
+        is not False
+        or kubernetes_authorization.get("legacy_abac_enabled") is not False
+        or re.fullmatch(
+            r"https://[^\s]+",
+            str(kubernetes_authorization.get("service_account_issuer", "")),
+        )
+        is None
+        or not re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(
+                kubernetes_authorization.get(
+                    "service_account_signing_key_sha256", ""
+                )
+            ),
+        )
+        or kubernetes_authorization.get(
+            "privileged_client_certificate_sha256"
+        )
+        != expected_privileged_certificates
+    ):
+        raise DeploymentError(
+            "provider custody does not prove the closed Node/RBAC control-plane authorizer inventory"
+        )
     expected_operation_locks = {
         "leases.coordination.k8s.io/fs2-system/fs2-model-network-transition": {
             "principal_id": credentials["transition"].get("provider_principal_id"),
@@ -2925,23 +3038,29 @@ def _verified_provider_custody(
     gateway = attestation.get("provider_gateway")
     if not isinstance(gateway, dict):
         raise DeploymentError("provider custody has no concrete preventive gateway")
-    status_url = gateway.get("status_url")
-    parsed_status_url = urlsplit(status_url if isinstance(status_url, str) else "")
+    gateway_members = gateway.get("members")
+    member_ids = [
+        member.get("member_id")
+        for member in gateway_members
+        if isinstance(member, dict)
+    ] if isinstance(gateway_members, list) else []
+    member_cidrs = [
+        member.get("host_cidr")
+        for member in gateway_members
+        if isinstance(member, dict)
+    ] if isinstance(gateway_members, list) else []
+    provider_inventory = {
+        "cluster": {
+            "id": gateway.get("cluster_id"),
+            "resource_version": gateway.get("cluster_resource_version"),
+            "allowed_cidrs": gateway.get("gateway_egress_host_cidrs"),
+        },
+        "members": gateway_members,
+    }
     if (
-        parsed_status_url.scheme != "https"
-        or not parsed_status_url.hostname
-        or parsed_status_url.path != "/v1/custody/status"
-        or parsed_status_url.query
-        or parsed_status_url.fragment
-        or gateway.get("direct_control_plane_access")
-        != "provider-firewall-gateway-host-routes-only"
-        or not isinstance(gateway.get("provider_resource_ids"), dict)
-        or set(gateway["provider_resource_ids"])
-        != {"gateway", "gateway_firewall", "cluster_endpoint_access"}
-        or any(
-            not isinstance(resource_id, str) or not resource_id
-            for resource_id in gateway["provider_resource_ids"].values()
-        )
+        gateway.get("direct_control_plane_access")
+        != "provider-firewall-all-external-paths-plus-zero-in-cluster-authority"
+        or gateway.get("cluster_id") != cluster_id
         or not isinstance(gateway.get("cluster_resource_version"), int)
         or isinstance(gateway.get("cluster_resource_version"), bool)
         or gateway["cluster_resource_version"] < 0
@@ -2952,9 +3071,293 @@ def _verified_provider_custody(
         or gateway["gateway_egress_host_cidrs"]
         != sorted(gateway["gateway_egress_host_cidrs"])
         or not all(_is_exact_host_route(cidr) for cidr in gateway["gateway_egress_host_cidrs"])
+        or not isinstance(gateway_members, list)
+        or not 2 <= len(gateway_members) <= 8
+        or len(member_ids) != len(gateway_members)
+        or member_ids != sorted(member_ids)
+        or len(member_ids) != len(set(member_ids))
+        or member_cidrs != gateway["gateway_egress_host_cidrs"]
+        or any(
+            not isinstance(member, dict)
+            or set(member)
+            != {
+                "member_id",
+                "status_url",
+                "host_cidr",
+                "server_certificate_sha256",
+                "iam_principal_id",
+                "instance",
+                "security_group",
+                "security_rules",
+                "access_permits",
+            }
+            or (lambda parsed: (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.path != "/v1/custody/status"
+                or bool(parsed.query)
+                or bool(parsed.fragment)
+            ))(urlsplit(str(member.get("status_url", ""))))
+            for member in gateway_members
+        )
+        or gateway.get("provider_inventory_sha256")
+        != _json_sha256(provider_inventory)
+        or gateway.get("kubernetes_authorization_sha256")
+        != _json_sha256(kubernetes_authorization)
         or not re.fullmatch(r"[a-f0-9]{64}", str(gateway.get("policy_sha256", "")))
     ):
         raise DeploymentError("provider custody gateway identity is incomplete")
+
+    def provider_collection(
+        arguments: Sequence[str], label: str
+    ) -> tuple[list[dict[str, Any]], str]:
+        result = subprocess.run(
+            [
+                nebius,
+                "--profile",
+                nebius_profile,
+                *arguments,
+                "--all",
+                "--format",
+                "json",
+            ],
+            env=clean_environment(),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        try:
+            document = json.loads(result.stdout)
+            items = document["items"]
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise DeploymentError(
+                f"provider {label} enumeration is malformed"
+            ) from exc
+        if result.returncode != 0 or not isinstance(items, list) or not all(
+            isinstance(item, dict) for item in items
+        ):
+            raise DeploymentError(f"provider {label} enumeration failed closed")
+        semantic_items = sorted(
+            items,
+            key=lambda item: str(item.get("metadata", {}).get("id", "")),
+        )
+        ids = [
+            item.get("metadata", {}).get("id") for item in semantic_items
+        ]
+        if any(not isinstance(item_id, str) or not item_id for item_id in ids) or len(ids) != len(set(ids)):
+            raise DeploymentError(f"provider {label} enumeration has no unique IDs")
+        return semantic_items, _json_sha256(semantic_items)
+
+    def provider_object(
+        arguments: Sequence[str], label: str
+    ) -> tuple[dict[str, Any], str]:
+        result = subprocess.run(
+            [
+                nebius,
+                "--profile",
+                nebius_profile,
+                *arguments,
+                "--format",
+                "json",
+            ],
+            env=clean_environment(),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        try:
+            document = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise DeploymentError(f"provider {label} read is malformed") from exc
+        if result.returncode != 0 or not isinstance(document, dict):
+            raise DeploymentError(f"provider {label} read failed closed")
+        return document, _json_sha256(document)
+
+    project, project_sha256 = provider_object(
+        ["iam", "project", "get", "--id", project_id],
+        "project",
+    )
+    cluster, cluster_sha256 = provider_object(
+        ["mk8s", "cluster", "get", "--id", cluster_id],
+        "managed Kubernetes cluster",
+    )
+    if (
+        project.get("metadata", {}).get("id") != project_id
+        or cluster.get("metadata", {}).get("id") != cluster_id
+        or cluster.get("metadata", {}).get("parent_id") != project_id
+    ):
+        raise DeploymentError(
+            "provider project/cluster provenance differs from the custody target"
+        )
+
+    instances, instances_sha256 = provider_collection(
+        ["compute", "instance", "list", "--parent-id", project_id],
+        "gateway instance",
+    )
+    security_groups, security_groups_sha256 = provider_collection(
+        ["vpc", "security-group", "list", "--parent-id", project_id],
+        "gateway security-group",
+    )
+    service_accounts, service_accounts_sha256 = provider_collection(
+        ["iam", "service-account", "list", "--parent-id", project_id],
+        "gateway service account",
+    )
+    instances_by_id = {
+        item["metadata"]["id"]: item for item in instances
+    }
+    security_groups_by_id = {
+        item["metadata"]["id"]: item for item in security_groups
+    }
+    service_accounts_by_id = {
+        item["metadata"]["id"]: item for item in service_accounts
+    }
+    gateway_labels = {
+        "security-boundary": "model-network-provider-custody",
+        "custody-cluster-id": cluster_id,
+    }
+    declared_instance_ids = sorted(member["instance"]["id"] for member in gateway_members)
+    declared_security_group_ids = sorted(
+        member["security_group"]["id"] for member in gateway_members
+    )
+    declared_principal_ids = sorted(
+        member["iam_principal_id"] for member in gateway_members
+    )
+    discovered_instance_ids = sorted(
+        item["metadata"]["id"]
+        for item in instances
+        if all(
+            item.get("metadata", {}).get("labels", {}).get(name) == value
+            for name, value in gateway_labels.items()
+        )
+    )
+    discovered_security_group_ids = sorted(
+        item["metadata"]["id"]
+        for item in security_groups
+        if all(
+            item.get("metadata", {}).get("labels", {}).get(name) == value
+            for name, value in gateway_labels.items()
+        )
+    )
+    discovered_principal_ids = sorted(
+        item["metadata"]["id"]
+        for item in service_accounts
+        if all(
+            item.get("metadata", {}).get("labels", {}).get(name) == value
+            for name, value in gateway_labels.items()
+        )
+    )
+    if (
+        declared_instance_ids != discovered_instance_ids
+        or declared_security_group_ids != discovered_security_group_ids
+        or declared_principal_ids != discovered_principal_ids
+        or len(declared_principal_ids) != len(set(declared_principal_ids))
+    ):
+        raise DeploymentError(
+            "declared gateway members do not equal the complete provider-labeled instance, firewall, and principal inventory"
+        )
+    security_rule_hashes: dict[str, str] = {}
+    access_permit_hashes: dict[str, str] = {}
+    for member in gateway_members:
+        instance_id = member["instance"]["id"]
+        security_group_id = member["security_group"]["id"]
+        principal_id = member["iam_principal_id"]
+        instance = instances_by_id.get(instance_id)
+        service_account = service_accounts_by_id.get(principal_id)
+        security_group = security_groups_by_id.get(security_group_id)
+        if instance is None or security_group is None or service_account is None:
+            raise DeploymentError(
+                f"provider gateway member {member['member_id']} is absent from authoritative project enumeration"
+            )
+        expected_objects = (
+            (instance, member["instance"], "instance"),
+            (security_group, member["security_group"], "security group"),
+        )
+        for live_object, claimed_object, object_label in expected_objects:
+            if (
+                live_object.get("metadata", {}).get("resource_version")
+                != claimed_object.get("resource_version")
+                or _json_sha256(live_object) != claimed_object.get("semantic_sha256")
+            ):
+                raise DeploymentError(
+                    f"provider gateway member {member['member_id']} {object_label} differs from the signed full-object projection"
+                )
+        public_addresses = sorted(
+            str(interface.get("public_ip_address", {}).get("address", ""))
+            for interface in instance.get("status", {}).get("network_interfaces", [])
+            if isinstance(interface, dict)
+            and isinstance(interface.get("public_ip_address"), dict)
+            and interface.get("public_ip_address", {}).get("address")
+        )
+        if str(ipaddress.ip_network(member["host_cidr"], strict=True).network_address) not in public_addresses:
+            raise DeploymentError(
+                f"provider gateway member {member['member_id']} host route is not a live instance address"
+            )
+        if instance.get("spec", {}).get("service_account_id") != principal_id:
+            raise DeploymentError(
+                f"provider gateway member {member['member_id']} IAM principal differs from its live instance"
+            )
+        rules, rule_sha256 = provider_collection(
+            ["vpc", "security-rule", "list", "--parent-id", security_group_id],
+            f"security rules for {member['member_id']}",
+        )
+        rule_ids = sorted(item["metadata"]["id"] for item in rules)
+        if rule_ids != sorted(item["id"] for item in member["security_rules"]):
+            raise DeploymentError(
+                f"provider gateway member {member['member_id']} has undeclared or missing firewall rules"
+            )
+        rule_claims = {item["id"]: item for item in member["security_rules"]}
+        if any(
+            rule.get("metadata", {}).get("resource_version")
+            != rule_claims[rule["metadata"]["id"]].get("resource_version")
+            or _json_sha256(rule)
+            != rule_claims[rule["metadata"]["id"]].get("semantic_sha256")
+            for rule in rules
+        ):
+            raise DeploymentError(
+                f"provider gateway member {member['member_id']} firewall rule semantics drifted"
+            )
+        security_rule_hashes[security_group_id] = rule_sha256
+        permits, permit_sha256 = provider_collection(
+            ["iam", "access-permit", "list", "--parent-id", principal_id],
+            f"IAM access permits for {member['member_id']}",
+        )
+        permit_ids = sorted(item["metadata"]["id"] for item in permits)
+        if permit_ids != sorted(item["id"] for item in member["access_permits"]):
+            raise DeploymentError(
+                f"provider gateway member {member['member_id']} has undeclared or missing IAM permits"
+            )
+        permit_claims = {item["id"]: item for item in member["access_permits"]}
+        if any(
+            permit.get("metadata", {}).get("resource_version")
+            != permit_claims[permit["metadata"]["id"]].get("resource_version")
+            or _json_sha256(permit)
+            != permit_claims[permit["metadata"]["id"]].get("semantic_sha256")
+            for permit in permits
+        ):
+            raise DeploymentError(
+                f"provider gateway member {member['member_id']} IAM permit semantics drifted"
+            )
+        access_permit_hashes[principal_id] = permit_sha256
+    live_provider_enumeration = {
+        "project_id": project_id,
+        "project_sha256": project_sha256,
+        "cluster_sha256": cluster_sha256,
+        "instances_sha256": instances_sha256,
+        "security_groups_sha256": security_groups_sha256,
+        "service_accounts_sha256": service_accounts_sha256,
+        "security_rules_sha256": dict(sorted(security_rule_hashes.items())),
+        "access_permits_sha256": dict(sorted(access_permit_hashes.items())),
+    }
+    if attestation.get("provider_enumeration") != live_provider_enumeration:
+        raise DeploymentError(
+            "signed provider inventory differs from authoritative provider/IAM enumeration"
+        )
+    if kubernetes_authorization.get("source_cluster_sha256") != cluster_sha256:
+        raise DeploymentError(
+            "control-plane authorization evidence is not bound to the live provider cluster object"
+        )
     gateway_paths = {
         "CA": Path(os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_GATEWAY_CA", "")),
         "client certificate": Path(
@@ -2974,52 +3377,84 @@ def _verified_provider_custody(
             raise DeploymentError(
                 f"the provider custody gateway {label} must be an absolute mode-0600 regular file"
             )
-    challenge = secrets.token_hex(32)
-    request_body = json.dumps(
-        {"challenge": challenge, "cluster_id": cluster_id},
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode()
     ssl_context = ssl.create_default_context(cafile=str(gateway_paths["CA"]))
     ssl_context.load_cert_chain(
         str(gateway_paths["client certificate"]),
         str(gateway_paths["client key"]),
     )
-    try:
-        with urlopen(
-            Request(
-                status_url,
-                data=request_body,
-                method="POST",
-                headers={"Content-Type": "application/json"},
+    for member in gateway_members:
+        parsed_status_url = urlsplit(str(member["status_url"]))
+        try:
+            with socket.create_connection(
+                (str(parsed_status_url.hostname), parsed_status_url.port or 443),
+                timeout=5,
+            ) as connection:
+                with ssl_context.wrap_socket(
+                    connection,
+                    server_hostname=str(parsed_status_url.hostname),
+                ) as tls_connection:
+                    peer_certificate = tls_connection.getpeercert(binary_form=True)
+        except OSError as exc:
+            raise DeploymentError(
+                f"provider custody gateway member {member['member_id']} TLS peer is unavailable"
+            ) from exc
+        if (
+            not peer_certificate
+            or hashlib.sha256(peer_certificate).hexdigest()
+            != member.get("server_certificate_sha256")
+        ):
+            raise DeploymentError(
+                f"provider custody gateway member {member['member_id']} serving certificate is not the signed leaf"
+            )
+        challenge = secrets.token_hex(32)
+        request_body = json.dumps(
+            {"challenge": challenge, "cluster_id": cluster_id},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        try:
+            with urlopen(
+                Request(
+                    str(member["status_url"]),
+                    data=request_body,
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                ),
+                context=ssl_context,
+                timeout=5,
+            ) as response:
+                if response.status != 200 or response.headers.get_content_type() != "application/json":
+                    raise DeploymentError("provider custody gateway status failed closed")
+                live_status = json.loads(response.read(262_145))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            raise DeploymentError(
+                f"provider custody gateway member {member['member_id']} is unavailable"
+            ) from exc
+        expected_live_status = {
+            "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v2",
+            "challenge": challenge,
+            "cluster_id": cluster_id,
+            "policy_id": attestation.get("policy_id"),
+            "policy_revision": attestation.get("policy_revision"),
+            "policy_sha256": gateway.get("policy_sha256"),
+            "member_id": member["member_id"],
+            "member": member,
+            "provider_inventory_sha256": gateway.get("provider_inventory_sha256"),
+            "kubernetes_authorization_sha256": gateway.get(
+                "kubernetes_authorization_sha256"
             ),
-            context=ssl_context,
-            timeout=5,
-        ) as response:
-            if response.status != 200 or response.headers.get_content_type() != "application/json":
-                raise DeploymentError("provider custody gateway status failed closed")
-            live_status = json.loads(response.read(262_145))
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        raise DeploymentError("provider custody gateway status is unavailable") from exc
-    expected_live_status = {
-        "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v1",
-        "challenge": challenge,
-        "cluster_id": cluster_id,
-        "policy_id": attestation.get("policy_id"),
-        "policy_revision": attestation.get("policy_revision"),
-        "policy_sha256": gateway.get("policy_sha256"),
-        "provider_resource_ids": gateway.get("provider_resource_ids"),
-        "cluster_resource_version": gateway.get("cluster_resource_version"),
-        "control_plane_allowed_cidrs": gateway.get("gateway_egress_host_cidrs"),
-        "direct_control_plane_access": "provider-firewall-gateway-host-routes-only",
-        "principal_bindings": dict(sorted(expected_gateway_principals.items())),
-        "mutation_freeze": mutation_freeze,
-        "operation_locks": operation_locks,
-    }
-    if live_status != expected_live_status:
-        raise DeploymentError(
-            "live provider custody gateway state differs from the signed full-inventory freeze"
-        )
+            "gateway_members": gateway_members,
+            "cluster_resource_version": gateway.get("cluster_resource_version"),
+            "control_plane_allowed_cidrs": gateway.get("gateway_egress_host_cidrs"),
+            "direct_control_plane_access": "provider-firewall-all-external-paths-plus-zero-in-cluster-authority",
+            "principal_bindings": dict(sorted(expected_gateway_principals.items())),
+            "mutation_freeze": mutation_freeze,
+            "operation_locks": operation_locks,
+        }
+        if live_status != expected_live_status:
+            raise DeploymentError(
+                f"live provider custody gateway member {member['member_id']} differs from the signed full inventory"
+            )
     return attestation, _sha256_file(paths["attestation"]), freeze_active_until
 
 
@@ -3297,6 +3732,9 @@ def model_network_boundary_authority_custody(
     kubectl: str,
     context: str,
     cluster_id: str,
+    project_id: str,
+    nebius: str,
+    nebius_profile: str,
     credential: Path,
     credential_kind: str,
     expected_username: str,
@@ -3313,6 +3751,9 @@ def model_network_boundary_authority_custody(
         freeze_active_until,
     ) = _verified_provider_custody(
         cluster_id=cluster_id,
+        project_id=project_id,
+        nebius=nebius,
+        nebius_profile=nebius_profile,
         provider_trust_root_sha256=provider_trust_root_sha256,
     )
     reconstructed_identity = _provider_bound_kubeconfig_identity(
@@ -3383,7 +3824,7 @@ def model_network_boundary_authority_custody(
     now = datetime.now(UTC)
     if (
         receipt.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-authority/v3"
+        != "fs2-serve.nebius.ai/model-network-boundary-authority/v4"
         or receipt.get("phase") != expected_receipt_phase
         or receipt.get("cluster_id") != cluster_id
         or receipt.get("authority_namespace") != "fs2-network-security"
@@ -3477,8 +3918,24 @@ def model_network_boundary_authority_custody(
         != provider_trust_root_sha256
         or external_custody.get("attestation_sha256")
         != provider_attestation_sha256
+        or external_custody.get("stable_policy_sha256")
+        != _provider_custody_stable_sha256(provider_attestation)
         or external_custody.get("gateway_policy_sha256")
         != provider_attestation.get("provider_gateway", {}).get("policy_sha256")
+        or external_custody.get("provider_inventory_sha256")
+        != provider_attestation.get("provider_gateway", {}).get(
+            "provider_inventory_sha256"
+        )
+        or external_custody.get("kubernetes_authorization_sha256")
+        != _json_sha256(provider_attestation.get("kubernetes_authorization", {}))
+        or external_custody.get("gateway_member_ids")
+        != [
+            member.get("member_id")
+            for member in provider_attestation.get("provider_gateway", {}).get(
+                "members", []
+            )
+            if isinstance(member, dict)
+        ]
         or external_custody.get("cluster_resource_version")
         != provider_attestation.get("provider_gateway", {}).get(
             "cluster_resource_version"
@@ -4373,6 +4830,130 @@ def model_network_boundary_authority_custody(
             for rule in rules
         )
 
+    def grants_authority_control_access(item: Mapping[str, Any]) -> bool:
+        """Identify permissions that can invalidate the external freeze.
+
+        The public provider gateway cannot govern calls made with an in-cluster
+        bearer token to kubernetes.default.svc.  Global custody therefore
+        requires every binding of these permissions to resolve only to one of
+        the six external X.509 users; Group and ServiceAccount subjects fail
+        closed even when they are present in the broader privileged census.
+        """
+
+        rules = item.get("rules", [])
+        if not isinstance(rules, list):
+            return False
+        mutating_verbs = {
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+            "*",
+        }
+        frozen_resources = {
+            "": {
+                "configmaps",
+                "endpoints",
+                "pods",
+                "replicationcontrollers",
+                "secrets",
+                "serviceaccounts",
+                "services",
+            },
+            "apps": {"daemonsets", "deployments", "replicasets", "statefulsets"},
+            "batch": {"cronjobs", "jobs"},
+            "jobset.x-k8s.io": {"jobsets"},
+            "coordination.k8s.io": {"leases"},
+            "networking.k8s.io": {"networkpolicies"},
+            "policy": {"poddisruptionbudgets"},
+            "cert-manager.io": {"certificates", "issuers"},
+            "admissionregistration.k8s.io": {
+                "validatingadmissionpolicies",
+                "validatingadmissionpolicybindings",
+                "validatingwebhookconfigurations",
+            },
+            "rbac.authorization.k8s.io": {
+                "roles",
+                "rolebindings",
+                "clusterroles",
+                "clusterrolebindings",
+            },
+        }
+        for rule in rules:
+            if (
+                not isinstance(rule, Mapping)
+                or not isinstance(rule.get("verbs"), list)
+                or not isinstance(rule.get("resources"), list)
+                or not isinstance(rule.get("apiGroups", []), list)
+            ):
+                continue
+            verbs = set(rule["verbs"])
+            resources = set(rule["resources"])
+            groups = set(rule["apiGroups"])
+            if verbs.intersection(
+                {"impersonate", "bind", "escalate", "approve", "sign", "*"}
+            ):
+                return True
+            if verbs.intersection(mutating_verbs) and any(
+                (group in groups or "*" in groups)
+                and (bool(resource_names.intersection(resources)) or "*" in resources)
+                for group, resource_names in frozen_resources.items()
+            ):
+                return True
+            if verbs.intersection(
+                {"create", "get", "list", "watch", "update", "patch", "*"}
+            ) and (
+                (
+                    ("" in groups or "*" in groups)
+                    and bool(
+                        {"serviceaccounts/token", "secrets", "*"}.intersection(
+                            resources
+                        )
+                    )
+                )
+                or (
+                    ("certificates.k8s.io" in groups or "*" in groups)
+                    and bool(
+                        {
+                            "certificatesigningrequests",
+                            "certificatesigningrequests/approval",
+                            "signers",
+                            "*",
+                        }.intersection(resources)
+                    )
+                )
+            ):
+                return True
+        return False
+
+    def binding_subjects(item: Mapping[str, Any]) -> list[dict[str, str]]:
+        raw_subjects = item.get("subjects", [])
+        if not isinstance(raw_subjects, list) or not raw_subjects:
+            raise DeploymentError("a privileged RBAC binding has no exact subjects")
+        subjects = [
+            {
+                "kind": str(subject.get("kind", "")),
+                "name": str(subject.get("name", "")),
+                "namespace": str(subject.get("namespace", "")),
+            }
+            for subject in raw_subjects
+            if isinstance(subject, Mapping)
+        ]
+        if len(subjects) != len(raw_subjects) or any(
+            subject["kind"] not in {"User", "Group", "ServiceAccount"}
+            or not subject["name"]
+            or (subject["kind"] == "ServiceAccount") != bool(subject["namespace"])
+            for subject in subjects
+        ):
+            raise DeploymentError("a privileged RBAC binding subject is malformed")
+        return sorted(
+            subjects,
+            key=lambda subject: (
+                subject["kind"], subject["namespace"], subject["name"]
+            ),
+        )
+
     capable_cluster_roles = sorted(
         item.get("metadata", {}).get("name")
         for item in collections["cluster_roles"]["items"]
@@ -4390,28 +4971,68 @@ def model_network_boundary_authority_custody(
         raise DeploymentError(
             "the signed privileged identity, Secret-read, workload-mutation, and exec role census is incomplete"
         )
+    authority_cluster_roles = sorted(
+        item.get("metadata", {}).get("name")
+        for item in collections["cluster_roles"]["items"]
+        if grants_authority_control_access(item)
+    )
+    authority_roles = sorted(
+        f"{item.get('metadata', {}).get('namespace')}/{item.get('metadata', {}).get('name')}"
+        for item in collections["roles"]["items"]
+        if grants_authority_control_access(item)
+    )
+    if (
+        authority_cluster_roles != census_claim.get("authority_control_cluster_roles")
+        or authority_roles != census_claim.get("authority_control_roles")
+    ):
+        raise DeploymentError(
+            "the signed admission/RBAC/credential authority census is incomplete"
+        )
     bound_privileged_roles: list[str] = []
-    privileged_bindings: list[dict[str, str]] = []
+    privileged_bindings: list[dict[str, Any]] = []
+    authority_control_bindings: list[dict[str, Any]] = []
+    external_gateway_users = {
+        str(credential.get("username", ""))
+        for credential in credentials.values()
+    }
     for item in collections["cluster_role_bindings"]["items"]:
         role_ref = item.get("roleRef", {})
-        if role_ref.get("kind") == "ClusterRole" and role_ref.get("name") in capable_cluster_roles:
+        role_name = role_ref.get("name")
+        capable = role_ref.get("kind") == "ClusterRole" and role_name in capable_cluster_roles
+        authority_capable = (
+            role_ref.get("kind") == "ClusterRole"
+            and role_name in authority_cluster_roles
+        )
+        if capable or authority_capable:
             metadata = item.get("metadata", {})
-            identifier = f"clusterrolebinding//{metadata.get('name')}"
-            bound_privileged_roles.append(identifier)
-            privileged_bindings.append(
-                {
-                    "kind": "ClusterRoleBinding",
-                    "namespace": "",
-                    "name": str(metadata.get("name", "")),
-                    "role_ref": (
-                        f"{role_ref.get('apiGroup', '')}/{role_ref.get('kind', '')}/"
-                        f"{role_ref.get('name', '')}"
-                    ),
-                    "object_sha256": _json_sha256(
-                        _semantic_kubernetes_object(item)
-                    ),
-                }
-            )
+            subjects = binding_subjects(item)
+            projection = {
+                "kind": "ClusterRoleBinding",
+                "namespace": "",
+                "name": str(metadata.get("name", "")),
+                "role_ref": (
+                    f"{role_ref.get('apiGroup', '')}/{role_ref.get('kind', '')}/"
+                    f"{role_ref.get('name', '')}"
+                ),
+                "subjects": subjects,
+                "access_path": (
+                    "provider-gateway-user"
+                    if all(
+                        subject["kind"] == "User"
+                        and subject["name"] in external_gateway_users
+                        for subject in subjects
+                    )
+                    else "in-cluster-bounded"
+                ),
+                "object_sha256": _json_sha256(_semantic_kubernetes_object(item)),
+            }
+            if capable:
+                bound_privileged_roles.append(
+                    f"clusterrolebinding//{metadata.get('name')}"
+                )
+                privileged_bindings.append(projection)
+            if authority_capable:
+                authority_control_bindings.append(projection)
     for item in collections["role_bindings"]["items"]:
         metadata = item.get("metadata", {})
         role_ref = item.get("roleRef", {})
@@ -4425,25 +5046,45 @@ def model_network_boundary_authority_custody(
             if role_ref.get("kind") == "ClusterRole"
             else referenced in capable_roles
         )
-        if capable:
-            identifier = f"rolebinding/{metadata.get('namespace')}/{metadata.get('name')}"
-            bound_privileged_roles.append(identifier)
-            privileged_bindings.append(
-                {
-                    "kind": "RoleBinding",
-                    "namespace": str(metadata.get("namespace", "")),
-                    "name": str(metadata.get("name", "")),
-                    "role_ref": (
-                        f"{role_ref.get('apiGroup', '')}/{role_ref.get('kind', '')}/"
-                        f"{role_ref.get('name', '')}"
-                    ),
-                    "object_sha256": _json_sha256(
-                        _semantic_kubernetes_object(item)
-                    ),
-                }
-            )
+        authority_capable = (
+            referenced in authority_cluster_roles
+            if role_ref.get("kind") == "ClusterRole"
+            else referenced in authority_roles
+        )
+        if capable or authority_capable:
+            subjects = binding_subjects(item)
+            projection = {
+                "kind": "RoleBinding",
+                "namespace": str(metadata.get("namespace", "")),
+                "name": str(metadata.get("name", "")),
+                "role_ref": (
+                    f"{role_ref.get('apiGroup', '')}/{role_ref.get('kind', '')}/"
+                    f"{role_ref.get('name', '')}"
+                ),
+                "subjects": subjects,
+                "access_path": (
+                    "provider-gateway-user"
+                    if all(
+                        subject["kind"] == "User"
+                        and subject["name"] in external_gateway_users
+                        for subject in subjects
+                    )
+                    else "in-cluster-bounded"
+                ),
+                "object_sha256": _json_sha256(_semantic_kubernetes_object(item)),
+            }
+            if capable:
+                bound_privileged_roles.append(
+                    f"rolebinding/{metadata.get('namespace')}/{metadata.get('name')}"
+                )
+                privileged_bindings.append(projection)
+            if authority_capable:
+                authority_control_bindings.append(projection)
     bound_privileged_roles.sort()
     privileged_bindings.sort(
+        key=lambda item: (item["kind"], item["namespace"], item["name"])
+    )
+    authority_control_bindings.sort(
         key=lambda item: (item["kind"], item["namespace"], item["name"])
     )
     if (
@@ -4457,6 +5098,25 @@ def model_network_boundary_authority_custody(
         raise DeploymentError(
             "live privileged identity, Secret, workload, and exec bindings differ "
             "from the provider-authorized finite inventory"
+        )
+    if (
+        census_claim.get("bound_authority_control_bindings")
+        != authority_control_bindings
+        or provider_attestation.get("authorized_authority_control_bindings")
+        != authority_control_bindings
+        or any(
+            binding.get("access_path") != "provider-gateway-user"
+            or any(
+                subject.get("kind") != "User"
+                or subject.get("name") not in external_gateway_users
+                or subject.get("namespace") != ""
+                for subject in binding.get("subjects", [])
+            )
+            for binding in authority_control_bindings
+        )
+    ):
+        raise DeploymentError(
+            "an in-cluster principal retains frozen-object, admission, RBAC, credential-mint, or impersonation authority during the provider freeze"
         )
 
     static_binding = next(
@@ -4564,36 +5224,54 @@ def model_network_boundary_authority_custody(
     )
     if not isinstance(jobset_writer, dict) or jobset_match is None:
         raise DeploymentError("the live authority has no exact run-scoped JobSet writer")
-    jobset_deployment = subprocess.run(
-        [
-            kubectl,
-            "--kubeconfig",
-            str(auditor),
-            "--context",
-            context,
-            "--namespace",
-            "jobset-system",
-            "get",
-            "deployment.apps",
-            jobset_match.group(1),
-            "--output",
-            "json",
-        ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    try:
-        jobset_metadata = json.loads(jobset_deployment.stdout)["metadata"]
-    except (KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise DeploymentError("the run-scoped JobSet controller is unavailable") from exc
+    def read_jobset_writer() -> dict[str, str]:
+        jobset_deployment = subprocess.run(
+            [
+                kubectl,
+                "--kubeconfig",
+                str(auditor),
+                "--context",
+                context,
+                "--namespace",
+                "jobset-system",
+                "get",
+                "deployment.apps",
+                jobset_match.group(1),
+                "--output",
+                "json",
+            ],
+            env=clean_environment(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        try:
+            jobset_document = json.loads(jobset_deployment.stdout)
+            jobset_metadata = jobset_document["metadata"]
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise DeploymentError(
+                "the run-scoped JobSet controller is unavailable"
+            ) from exc
+        if jobset_deployment.returncode != 0:
+            raise DeploymentError(
+                "the run-scoped JobSet controller read failed"
+            )
+        return {
+            "username": str(live_jobset_writer),
+            "deployment_uid": str(jobset_metadata.get("uid", "")),
+            "deployment_resource_version": str(
+                jobset_metadata.get("resourceVersion", "")
+            ),
+            "deployment_object_sha256": _json_sha256(
+                _semantic_kubernetes_object(jobset_document)
+            ),
+        }
+
+    first_jobset_writer = read_jobset_writer()
     if (
-        jobset_deployment.returncode != 0
-        or jobset_writer.get("username") != live_jobset_writer
-        or jobset_writer.get("deployment_uid") != jobset_metadata.get("uid")
-        or jobset_writer.get("deployment_resource_version")
-        != jobset_metadata.get("resourceVersion")
+        jobset_writer != first_jobset_writer
+        or not first_jobset_writer["deployment_uid"]
+        or not first_jobset_writer["deployment_resource_version"]
     ):
         raise DeploymentError(
             "the authority JobSet writer differs from the live foundation controller"
@@ -4751,7 +5429,7 @@ def model_network_boundary_authority_custody(
         "ready_endpoints": ready_endpoints,
         "service_endpoints": service_endpoints,
         "serving_certificate_sha256": live_serving_certificate_sha256,
-        "jobset_writer": jobset_writer,
+        "jobset_writer": first_jobset_writer,
         "acquisition_writer": acquisition_writer,
         "scientific_writer": scientific_writer,
         "provider_attestation_sha256": provider_attestation_sha256,
@@ -4842,6 +5520,7 @@ def model_network_boundary_authority_custody(
         context=context,
         serving_certificate_sha256=live_serving_certificate_sha256,
     )
+    second_jobset_writer = read_jobset_writer()
     second_snapshot_projection = {
         **snapshot_projection,
         "protected_objects": second_object_snapshot,
@@ -4854,9 +5533,11 @@ def model_network_boundary_authority_custody(
         },
         "ready_endpoints": second_service_endpoints["ready_endpoints"],
         "service_endpoints": second_service_endpoints,
+        "jobset_writer": second_jobset_writer,
     }
     if (
         second_object_snapshot != first_object_snapshot
+        or second_jobset_writer != first_jobset_writer
         or _json_sha256(second_snapshot_projection) != snapshot_sha256
     ):
         raise DeploymentError(
@@ -4881,6 +5562,9 @@ def model_network_boundary_credential(
     context: str,
     phase: str,
     cluster_id: str,
+    project_id: str,
+    nebius: str,
+    nebius_profile: str,
     trust_root_sha256: str,
     provider_trust_root_sha256: str,
 ) -> tuple[str, str, dict[str, Any]]:
@@ -4967,6 +5651,9 @@ def model_network_boundary_credential(
         kubectl=kubectl,
         context=context,
         cluster_id=cluster_id,
+        project_id=project_id,
+        nebius=nebius,
+        nebius_profile=nebius_profile,
         credential=credential,
         credential_kind=credential_kind,
         expected_username=expected_username,
@@ -5442,6 +6129,9 @@ def apply_stack(
             context=dynamic["kube_context"],
             phase=transition_phase,
             cluster_id=dynamic["cluster_id"],
+            project_id=contract["target"]["project_id"],
+            nebius=args.nebius,
+            nebius_profile=args.nebius_profile,
             trust_root_sha256=trust_root_sha256,
             provider_trust_root_sha256=provider_trust_root_sha256,
         )
@@ -5452,6 +6142,38 @@ def apply_stack(
         operation_lock_identity: str = "",
         operation_writer_username: str = "",
     ) -> None:
+        expected_external_custody = authority_receipt.get("external_custody", {})
+
+        def custody_guard() -> datetime:
+            attestation, _attestation_sha256, active_until = (
+                _verified_provider_custody(
+                    cluster_id=dynamic["cluster_id"],
+                    project_id=contract["target"]["project_id"],
+                    nebius=args.nebius,
+                    nebius_profile=args.nebius_profile,
+                    provider_trust_root_sha256=provider_trust_root_sha256,
+                )
+            )
+            if (
+                not isinstance(expected_external_custody, Mapping)
+                or _provider_custody_stable_sha256(attestation)
+                != expected_external_custody.get("stable_policy_sha256")
+                or attestation.get("mutation_freeze", {}).get("transaction_id")
+                != expected_external_custody.get("freeze_transaction_id")
+                or attestation.get("provider_gateway", {}).get(
+                    "provider_inventory_sha256"
+                )
+                != expected_external_custody.get("provider_inventory_sha256")
+                or _json_sha256(attestation.get("kubernetes_authorization", {}))
+                != expected_external_custody.get(
+                    "kubernetes_authorization_sha256"
+                )
+            ):
+                raise DeploymentError(
+                    "provider custody changed during the saved-plan transaction"
+                )
+            return active_until
+
         overrides = {
             "FS2_NETWORK_TRANSITION_LOCK_IDENTITY": boundary_holder_identity,
             "FS2_NETWORK_TRANSITION_WRITER_USERNAME": operation_writer_username,
@@ -5503,6 +6225,9 @@ def apply_stack(
                 context=dynamic["kube_context"],
                 phase=transition_phase,
                 cluster_id=dynamic["cluster_id"],
+                project_id=contract["target"]["project_id"],
+                nebius=args.nebius,
+                nebius_profile=args.nebius_profile,
                 trust_root_sha256=trust_root_sha256,
                 provider_trust_root_sha256=provider_trust_root_sha256,
             )
@@ -5515,7 +6240,13 @@ def apply_stack(
             raise DeploymentError(
                 "the model-network custody snapshot changed after planning; discard the saved plan"
             )
-        apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
+        apply_plan(
+            args.terraform,
+            WORKLOADS_ROOT,
+            plan_path,
+            environment,
+            custody_guard=custody_guard,
+        )
         if operation_lock_identity:
             ensure_control_plane_helm_release_idle(
                 kubectl=args.kubectl,
@@ -5533,6 +6264,9 @@ def apply_stack(
                 context=dynamic["kube_context"],
                 phase="prepare-transition",
                 cluster_id=dynamic["cluster_id"],
+                project_id=contract["target"]["project_id"],
+                nebius=args.nebius,
+                nebius_profile=args.nebius_profile,
                 trust_root_sha256=trust_root_sha256,
                 provider_trust_root_sha256=provider_trust_root_sha256,
             )
@@ -5725,6 +6459,9 @@ def plan_stack(
             context=dynamic["kube_context"],
             phase=transition_phase,
             cluster_id=dynamic["cluster_id"],
+            project_id=contract["target"]["project_id"],
+            nebius=args.nebius,
+            nebius_profile=args.nebius_profile,
             trust_root_sha256=transition.get("authority_trust_root_sha256", ""),
             provider_trust_root_sha256=transition.get(
                 "provider_trust_root_sha256", ""

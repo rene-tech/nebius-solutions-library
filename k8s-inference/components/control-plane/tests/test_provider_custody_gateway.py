@@ -56,17 +56,18 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProviderCu
         for index in range(1, 7)
     }
     value: dict[str, Any] = {
+        "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v2",
         "cluster_id": "mk8scluster-test",
         "policy_id": "network-boundary-test",
         "policy_revision": "1",
         "cluster_resource_version": 7,
         "upstream_api_url": "https://cluster.example.test",
-        "direct_control_plane_access": "provider-firewall-gateway-host-routes-only",
-        "provider_resource_ids": {
-            "gateway": "gateway-test",
-            "gateway_firewall": "firewall-test",
-            "cluster_endpoint_access": "cluster-access-test",
-        },
+        "direct_control_plane_access": (
+            "provider-firewall-all-external-paths-plus-zero-in-cluster-authority"
+        ),
+        "gateway_members": [],
+        "provider_inventory_sha256": "7" * 64,
+        "kubernetes_authorization_sha256": "8" * 64,
         "control_plane_allowed_cidrs": ["192.0.2.10/32", "192.0.2.11/32"],
         "principals": {},
         "mutation_freeze": {
@@ -83,6 +84,32 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProviderCu
             }
         },
     }
+    member = {
+        "member_id": "gateway-a",
+        "status_url": "https://192.0.2.10/v1/custody/status",
+        "host_cidr": "192.0.2.10/32",
+        "server_certificate_sha256": "9" * 64,
+        "iam_principal_id": "serviceaccount-gateway-a",
+        "instance": {"id": "instance-a", "resource_version": 1, "semantic_sha256": "a" * 64},
+        "security_group": {"id": "security-group-a", "resource_version": 1, "semantic_sha256": "b" * 64},
+        "security_rules": [{"id": "security-rule-a", "resource_version": 1, "semantic_sha256": "c" * 64}],
+        "access_permits": [{"id": "access-permit-a", "resource_version": 1, "semantic_sha256": "d" * 64}],
+    }
+    value["gateway_members"] = [
+        member,
+        {
+            **member,
+            "member_id": "gateway-b",
+            "status_url": "https://192.0.2.11/v1/custody/status",
+            "host_cidr": "192.0.2.11/32",
+            "server_certificate_sha256": "e" * 64,
+            "iam_principal_id": "serviceaccount-gateway-b",
+            "instance": {"id": "instance-b", "resource_version": 1, "semantic_sha256": "f" * 64},
+            "security_group": {"id": "security-group-b", "resource_version": 1, "semantic_sha256": "1" * 64},
+            "security_rules": [{"id": "security-rule-b", "resource_version": 1, "semantic_sha256": "2" * 64}],
+            "access_permits": [{"id": "access-permit-b", "resource_version": 1, "semantic_sha256": "3" * 64}],
+        },
+    ]
     client = StubClient()
     policy = GatewayPolicy(
         "a" * 64,
@@ -95,6 +122,8 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProviderCu
             "rolebindings.rbac.authorization.k8s.io/",
             "roles.rbac.authorization.k8s.io/",
         ),
+        "gateway-a",
+        member,
     )
     return ProviderCustodyGateway(policy, client=client), client  # type: ignore[arg-type]
 

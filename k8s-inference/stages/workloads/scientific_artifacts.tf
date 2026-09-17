@@ -19,6 +19,32 @@ locals {
   scientific_artifacts_secret_key     = "credentials.json"
   scientific_runtime_cache_claim_name = "fs2-scientific-runtime-cache"
   scientific_runtime_cache_mount_path = "/cache"
+  scientific_writer_policy = {
+    schema = "fs2-serve.nebius.ai/scientific-writer-policy/v1"
+    model_eligible_pool_ids = {
+      for model_id, pool_ids in local.model_eligible_pool_ids : model_id => sort(pool_ids)
+    }
+    placements = merge(
+      {
+        for pool_id, pool in local.selected_queue_pools : pool_id => {
+          accelerator_resource = pool.resource_api.resource_name
+          resource_class       = "gpu"
+          node_selector        = {}
+          tolerations          = []
+        }
+      },
+      merge({}, [
+        for class_name in sort(keys(local.scientific_cpu_classes)) : {
+          (try(local.scientific_cpu_classes[class_name].pool_id, local.scientific_cpu_classes[class_name].pool_resolution.pool_id)) = {
+            accelerator_resource = null
+            resource_class       = "cpu"
+            node_selector        = local.scientific_cpu_classes[class_name].node_selector
+            tolerations          = local.scientific_cpu_classes[class_name].tolerations
+          }
+        }
+      ]...),
+    )
+  }
   scientific_runtime_cache_mounts = flatten([
     for model in try(var.scientific_batch.execution_map.models, []) : [
       for stage in try(model.stages, []) : [
@@ -242,10 +268,13 @@ locals {
       schedulingContractSha256        = local.scheduling_contract_ref.sha256
       executionMapConfigMapName       = "fs2-${var.run_id}-scientific-execution"
       executionMapKey                 = "execution-map.json"
-      executionMap = merge(var.scientific_batch.execution_map,
+      executionMap = merge(
+        var.scientific_batch.execution_map,
+        { writer_policy = local.scientific_writer_policy },
         length(var.scientific_batch.gpu_snapshots.bundles) == 0 ? {} : {
           snapshot_bundles = var.scientific_batch.gpu_snapshots.bundles
-      })
+        },
+      )
       workers                = var.scientific_batch.workers
       pollSeconds            = var.scientific_batch.poll_seconds
       leaseSeconds           = var.scientific_batch.lease_seconds

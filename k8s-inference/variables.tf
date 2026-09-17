@@ -174,6 +174,16 @@ variable "deployment" {
         authority_trust_root_sha256        = optional(string, "")
         provider_trust_root_sha256         = optional(string, "")
         provider_gateway_egress_host_cidrs = optional(set(string), [])
+        provider_gateway_members = optional(map(object({
+          status_url                = string
+          host_cidr                 = string
+          server_certificate_sha256 = string
+          iam_principal_id          = string
+          instance_id               = string
+          security_group_id         = string
+          security_rule_ids         = set(string)
+          iam_access_permit_ids     = set(string)
+        })), {})
         inventory_receipt = optional(object({
           schema          = string
           cluster_id      = string
@@ -824,7 +834,8 @@ variable "deployment" {
   validation {
     condition = (
       var.deployment.models.network_policy.provider_trust_root_sha256 == "" ? (
-        length(var.deployment.models.network_policy.provider_gateway_egress_host_cidrs) == 0
+        length(var.deployment.models.network_policy.provider_gateway_egress_host_cidrs) == 0 &&
+        length(var.deployment.models.network_policy.provider_gateway_members) == 0
         ) : (
         length(var.deployment.models.network_policy.provider_gateway_egress_host_cidrs) >= 2 &&
         length(var.deployment.models.network_policy.provider_gateway_egress_host_cidrs) <= 8 &&
@@ -834,11 +845,27 @@ variable "deployment" {
             strcontains(cidr, ":") ? endswith(cidr, "/128") : endswith(cidr, "/32")
           )
         ]) &&
+        length(var.deployment.models.network_policy.provider_gateway_members) >= 2 &&
+        length(var.deployment.models.network_policy.provider_gateway_members) <= 8 &&
+        alltrue([
+          for member_id, member in var.deployment.models.network_policy.provider_gateway_members :
+          can(regex("^[a-z][a-z0-9-]{2,62}$", member_id)) &&
+          can(regex("^https://[^/?#]+/v1/custody/status$", member.status_url)) &&
+          can(regex("^[a-f0-9]{64}$", member.server_certificate_sha256)) &&
+          contains(var.deployment.models.network_policy.provider_gateway_egress_host_cidrs, member.host_cidr) &&
+          length(member.instance_id) > 0 &&
+          length(member.iam_principal_id) > 0 &&
+          length(member.security_group_id) > 0 &&
+          length(member.security_rule_ids) > 0 &&
+          length(member.iam_access_permit_ids) > 0
+        ]) &&
+        toset([for member in values(var.deployment.models.network_policy.provider_gateway_members) : member.host_cidr]) ==
+        var.deployment.models.network_policy.provider_gateway_egress_host_cidrs &&
         var.deployment.models.network_policy.provider_gateway_egress_host_cidrs ==
         var.deployment.cluster.control_plane_allowed_cidrs
       )
     )
-    error_message = "Live network-boundary custody requires two to eight exact provider-gateway /32 or /128 egress routes, and they must be the complete cluster control-plane allowlist; offline source checks require none."
+    error_message = "Live network-boundary custody requires two to eight exact provider-gateway members, provider instance/firewall/IAM IDs, and /32 or /128 routes equal to the complete cluster control-plane allowlist; offline source checks require none."
   }
 
   validation {

@@ -1,15 +1,18 @@
 """External preventive gateway for the model-network Kubernetes boundary.
 
 This process is deployed on provider-owned hosts, outside the Kubernetes
-cluster.  The provider firewall makes its egress host routes the cluster API's
-only public callers.  A fronting mTLS proxy verifies client certificates,
+cluster.  The provider firewall makes the complete member set the cluster
+API's only external callers.  A fronting mTLS proxy verifies client certificates,
 removes all inbound identity/impersonation headers, and supplies only the
 certificate SHA-256 header on this loopback-only ASGI listener.
 
-The gateway is deliberately not a Kubernetes admission controller.  It denies
+The gateway is deliberately not a Kubernetes admission controller and cannot
+govern in-cluster calls to kubernetes.default.svc.  It denies
 mutations to the complete frozen inventory before they reach kube-apiserver and
 admits only resourceVersion-CAS PATCH requests to the two retained
-operation Leases from their distinct provider principals.
+operation Leases from their distinct provider principals.  Global custody is
+claimed only when the verifier also proves that no Group or ServiceAccount has
+RBAC authority to mutate the boundary during the same freeze.
 """
 
 from __future__ import annotations
@@ -106,6 +109,8 @@ class GatewayPolicy:
     principals: Mapping[str, Principal]
     frozen_resources: frozenset[str]
     frozen_resource_prefixes: tuple[str, ...]
+    member_id: str
+    member: Mapping[str, Any]
 
     @classmethod
     def load(cls) -> GatewayPolicy:
@@ -120,7 +125,7 @@ class GatewayPolicy:
         except json.JSONDecodeError as exc:
             raise ProviderCustodyError("provider custody policy is not JSON") from exc
         if not isinstance(value, Mapping) or value.get("schema") != (
-            "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v1"
+            "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v2"
         ):
             raise ProviderCustodyError("provider custody policy schema is not exact")
         if (
@@ -132,7 +137,9 @@ class GatewayPolicy:
                 "policy_revision",
                 "upstream_api_url",
                 "direct_control_plane_access",
-                "provider_resource_ids",
+                "gateway_members",
+                "provider_inventory_sha256",
+                "kubernetes_authorization_sha256",
                 "cluster_resource_version",
                 "control_plane_allowed_cidrs",
                 "principals",
@@ -148,7 +155,7 @@ class GatewayPolicy:
         ):
             raise ProviderCustodyError("provider custody policy identity is not exact")
         if value.get("direct_control_plane_access") != (
-            "provider-firewall-gateway-host-routes-only"
+            "provider-firewall-all-external-paths-plus-zero-in-cluster-authority"
         ):
             raise ProviderCustodyError("provider custody policy does not close direct API access")
         upstream_api_url = value.get("upstream_api_url")
@@ -157,18 +164,92 @@ class GatewayPolicy:
             or re.fullmatch(r"https://[^/?#]+(?::[0-9]{1,5})?", upstream_api_url) is None
         ):
             raise ProviderCustodyError("provider custody upstream API URL is not exact HTTPS")
-        provider_resources = _mapping(
-            value.get("provider_resource_ids"), "provider_resource_ids"
+        provider_inventory_sha256 = value.get("provider_inventory_sha256")
+        kubernetes_authorization_sha256 = value.get(
+            "kubernetes_authorization_sha256"
         )
-        if set(provider_resources) != {
-            "gateway",
-            "gateway_firewall",
-            "cluster_endpoint_access",
-        } or any(
-            not isinstance(item, str) or not item
-            for item in provider_resources.values()
+        raw_members = value.get("gateway_members")
+        if (
+            not isinstance(provider_inventory_sha256, str)
+            or _CERTIFICATE_SHA256.fullmatch(provider_inventory_sha256) is None
+            or not isinstance(kubernetes_authorization_sha256, str)
+            or _CERTIFICATE_SHA256.fullmatch(kubernetes_authorization_sha256)
+            is None
+            or not isinstance(raw_members, list)
+            or not 2 <= len(raw_members) <= 8
+            or not all(isinstance(member, Mapping) for member in raw_members)
         ):
             raise ProviderCustodyError("provider custody resource inventory is incomplete")
+        member_ids: list[str] = []
+        member_cidrs: list[str] = []
+        member_urls: list[str] = []
+        for member in raw_members:
+            if set(member) != {
+                "member_id",
+                "status_url",
+                "host_cidr",
+                "server_certificate_sha256",
+                "iam_principal_id",
+                "instance",
+                "security_group",
+                "security_rules",
+                "access_permits",
+            }:
+                raise ProviderCustodyError("provider gateway member inventory is not exact")
+            member_id = member.get("member_id")
+            status_url = member.get("status_url")
+            host_cidr = member.get("host_cidr")
+            provider_objects = [
+                member.get("instance"),
+                member.get("security_group"),
+                *(member.get("security_rules", []) if isinstance(member.get("security_rules"), list) else []),
+                *(member.get("access_permits", []) if isinstance(member.get("access_permits"), list) else []),
+            ]
+            if (
+                not isinstance(member_id, str)
+                or re.fullmatch(r"[a-z][a-z0-9-]{2,62}", member_id) is None
+                or not isinstance(status_url, str)
+                or re.fullmatch(r"https://[^/?#]+/v1/custody/status", status_url) is None
+                or not _is_exact_host_route(host_cidr)
+                or not isinstance(member.get("server_certificate_sha256"), str)
+                or _CERTIFICATE_SHA256.fullmatch(member["server_certificate_sha256"])
+                is None
+                or not isinstance(member.get("iam_principal_id"), str)
+                or not member["iam_principal_id"]
+                or not isinstance(member.get("security_rules"), list)
+                or not member["security_rules"]
+                or not isinstance(member.get("access_permits"), list)
+                or not member["access_permits"]
+                or not all(
+                    isinstance(item, Mapping)
+                    and set(item) == {"id", "resource_version", "semantic_sha256"}
+                    and isinstance(item.get("id"), str)
+                    and bool(item["id"])
+                    and isinstance(item.get("resource_version"), int)
+                    and not isinstance(item.get("resource_version"), bool)
+                    and item["resource_version"] >= 0
+                    and isinstance(item.get("semantic_sha256"), str)
+                    and _CERTIFICATE_SHA256.fullmatch(item["semantic_sha256"]) is not None
+                    for item in provider_objects
+                )
+            ):
+                raise ProviderCustodyError("provider gateway member inventory is malformed")
+            member_ids.append(member_id)
+            member_urls.append(status_url)
+            member_cidrs.append(str(host_cidr))
+        if (
+            member_ids != sorted(member_ids)
+            or len(member_ids) != len(set(member_ids))
+            or len(member_urls) != len(set(member_urls))
+            or len(member_cidrs) != len(set(member_cidrs))
+        ):
+            raise ProviderCustodyError("provider gateway members are not unique and sorted")
+        local_member_id = os.environ.get("FS2_PROVIDER_CUSTODY_MEMBER_ID", "")
+        local_members = [
+            member for member in raw_members if member.get("member_id") == local_member_id
+        ]
+        if len(local_members) != 1:
+            raise ProviderCustodyError("this gateway host has no unique provider member identity")
         if (
             not isinstance(value.get("cluster_resource_version"), int)
             or isinstance(value.get("cluster_resource_version"), bool)
@@ -184,6 +265,7 @@ class GatewayPolicy:
             or len(cidrs) != len(set(cidrs))
             or cidrs != sorted(cidrs)
             or any(not _is_exact_host_route(cidr) for cidr in cidrs)
+            or cidrs != sorted(member_cidrs)
         ):
             raise ProviderCustodyError("gateway egress must be a finite redundant host-route set")
         raw_principals = _mapping(value.get("principals"), "principals")
@@ -262,7 +344,7 @@ class GatewayPolicy:
             or active_from.tzinfo is None
             or active_until.tzinfo is None
             or active_from >= active_until
-            or active_until - active_from > timedelta(minutes=30)
+            or active_until - active_from > timedelta(hours=2)
             or frozen_prefixes
             != [
                 "clusterrolebindings.rbac.authorization.k8s.io/_cluster/",
@@ -297,6 +379,8 @@ class GatewayPolicy:
             principals,
             frozenset(frozen),
             tuple(frozen_prefixes),
+            local_member_id,
+            local_members[0],
         )
 
 
@@ -390,13 +474,21 @@ class ProviderCustodyGateway:
         ):
             raise ProviderCustodyError("provider custody status request is unauthorized")
         return {
-            "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v1",
+            "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v2",
             "challenge": challenge,
             "cluster_id": self.policy.value["cluster_id"],
             "policy_id": self.policy.value["policy_id"],
             "policy_revision": self.policy.value["policy_revision"],
             "policy_sha256": self.policy.raw_sha256,
-            "provider_resource_ids": self.policy.value["provider_resource_ids"],
+            "member_id": self.policy.member_id,
+            "member": self.policy.member,
+            "provider_inventory_sha256": self.policy.value[
+                "provider_inventory_sha256"
+            ],
+            "kubernetes_authorization_sha256": self.policy.value[
+                "kubernetes_authorization_sha256"
+            ],
+            "gateway_members": self.policy.value["gateway_members"],
             "cluster_resource_version": self.policy.value[
                 "cluster_resource_version"
             ],
@@ -554,14 +646,13 @@ class ProviderCustodyGateway:
         if (
             method in _MUTATING_METHODS
             and identity is not None
-            and active_from <= now < active_until
             and any(
                 identity.startswith(prefix)
                 for prefix in self.policy.frozen_resource_prefixes
             )
         ):
             raise ProviderCustodyError(
-                "provider full-inventory freeze denies RBAC collection mutation"
+                "provider custody requires a separately versioned policy for RBAC collection mutation"
             )
         if identity in _LOCK_RESOURCES:
             lock = _mapping(

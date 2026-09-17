@@ -350,6 +350,21 @@ def _validate_pod_security(
         isinstance(volume, Mapping) for volume in volumes
     ):
         raise NetworkBoundaryError(f"{label} has a malformed volume")
+    if any(
+        "secret" in volume
+        or "projected" in volume
+        or any(
+            isinstance(source, Mapping) and "serviceAccountToken" in source
+            for source in _mapping(
+                volume.get("projected", {}), f"{label} projected volume"
+            ).get("sources", [])
+            if isinstance(source, Mapping)
+        )
+        for volume in volumes
+    ):
+        raise NetworkBoundaryError(
+            f"{label} can mount a Secret or projected service-account token"
+        )
     pod_security = spec.get("securityContext", {})
     if not isinstance(pod_security, Mapping):
         raise NetworkBoundaryError(f"{label} Pod securityContext is malformed")

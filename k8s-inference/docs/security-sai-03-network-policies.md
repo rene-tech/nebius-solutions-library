@@ -1,10 +1,10 @@
 # SAI-03 model-runtime network isolation
 
 Status: unreviewed additive corrective successor whose direct parent is rejected
-source commit `7194ef74a9c9cf08c36788b81498b456fc643b8e` / tree
-`71440591189881a996a7d71c42ad1cd5483a01b2`; that exact commit and every
-predecessor remain preserved as negative evidence. Its exact static review
-remained SOURCE/INTEGRATION/LIVE NO-GO. Rejected commits
+source commit `3212a466b546132a39cbfa2a37cc9f88fc04b709` / tree
+`a08ede4d8044f4860541a4ee07c3e12bb98e2cbe`; that exact commit and every
+predecessor remain preserved as negative evidence. Its exact final static review
+remained SOURCE/INTEGRATION/LIVE NO-GO on nine enumerated blockers. Rejected commits
 `6dc67038698ed4d0412873e02baa1d50b179ff3c` and
 `093798f53cb4249887e59513a3b0114246f7e94c`, plus final-NO-GO
 `9b71b8a58b1e23a1d5f9d9ac11243dbad9a4652f` and
@@ -191,19 +191,32 @@ the rule before either can integrate.
    from the in-cluster admission mechanisms that would otherwise protect them.
    The repository now supplies a concrete provider-host gateway implementation,
    mTLS NGINX boundary, systemd hardening template, immutable JSON policy
-   contract, and provider-refreshed cluster endpoint gate. Two or more external
-   gateway hosts are the complete `/32` or `/128` public API allowlist. Their
+   contract, and provider-refreshed cluster endpoint gate. The public gateway is
+   not itself represented as a global API-server deny: in-cluster callers can
+   use `kubernetes.default.svc`. The gate therefore also requires an exhaustive
+   live RBAC graph in which every binding capable of mutating admission/RBAC,
+   credentials, Services, Secrets, ServiceAccounts, NetworkPolicies, Pods, or
+   Pod-producing controllers resolves only to the six external gateway users;
+   any ServiceAccount, Group, `system:masters`, or other in-cluster writer fails
+   closed. Two or more external gateway hosts are the complete `/32` or `/128`
+   public API allowlist. Their
    digest-pinned policy denies every mutation of the full receipt inventory
    before kube-apiserver, freezes all RBAC collection prefixes while the
    exhaustive census is sealed, rejects unresolvable/collection-wide writes, and
-   exposes a nonce-bound mTLS status projection. Immediately before receipt
-   capture the provider activates a short-lived transaction freeze with no
-   allowed principal. That external freeze—not a signed assertion, cooperative
+   exposes a nonce-bound mTLS status projection. Provider CLI reads independently
+   enumerate the project, cluster, all instances, security groups, service
+   accounts, and every declared gateway's complete firewall-rule and IAM-permit
+   children. The declared members must equal the complete fixed-label custody
+   set, every provider object digest/resourceVersion must match, every live
+   member address must equal its exact endpoint route, and every HA endpoint's
+   actual TLS leaf digest and challenge response must match. Immediately before
+   receipt capture the provider activates a renewable transaction freeze with no
+   allowed principal. That external freeze—not a signed assertion alone, cooperative
    Lease, VAP, or in-cluster webhook—is the apply-time serialization boundary.
    The chart grants no in-cluster cainjector VWC mutation.
    cert-manager may rotate only the two exact labeled TLS Secrets and exact
    Certificate/Issuer status; an external custodian performs an exact VWC
-   `caBundle` update. Platform Security signs an authority v3 receipt valid for
+   `caBundle` update. Platform Security signs an authority v4 receipt valid for
    at most 15 minutes containing
    every live UID, resourceVersion and full semantic hash, complete RBAC and
    impersonation census, exact TLS Secret hashes, and the webhook CA hash. The
@@ -246,7 +259,7 @@ the rule before either can integrate.
    all callers; another intercepts every write from a release credential. The
    authority requires the exact semantic object hash, operation, external
    identity, and phase Lease, so self-asserted Helm labels provide no authority.
-4. `prepare` uses the external authorizer credential and bootstrap-phase v3
+4. `prepare` uses the external authorizer credential and bootstrap-phase v4
    receipt. The authority and transition Lease already exist, while the
    scientific writer may legitimately be absent until the finite signed Helm
    inventory creates the workloads release. `prepare` creates or updates finite
@@ -312,7 +325,13 @@ the rule before either can integrate.
    and the exact running controller digest unlock `default-deny`. The admission
    freezes reject an external Helm release write or direct model-controller
    mutation after verification; the Lease serializes every supported
-   post-prepare transition.
+   post-prepare transition. `inference-stack` repeats the complete provider/IAM,
+   HA TLS/status, stable-policy, and zero-in-cluster-authority verifier every
+   five seconds while Terraform is running. It accepts only an extended expiry
+   for the same transaction and stable policy, terminates before the remaining
+   window falls below 90 seconds, and performs a final custody check after a
+   successful apply. A nominal two-hour maximum assertion therefore cannot
+   silently expire during an unbounded apply.
    Concurrent arbitrary-App changes remain safe because admission permits them
    only with a finite immutable profile. The receipt can be refreshed while the
    phase remains `enforce`, so normal App additions and recreations do not force
@@ -428,6 +447,24 @@ and workload/exec authority. This additive successor supplies source
 corrections for those six findings and source-only regression cases. They have
 not been executed under the no-test constraint and remain subject to a fresh
 independent exact-commit review.
+
+The final independent review of the immediate parent
+`3212a466b546132a39cbfa2a37cc9f88fc04b709` / tree
+`a08ede4d8044f4860541a4ee07c3e12bb98e2cbe` was also
+**SOURCE/INTEGRATION/LIVE NO-GO**. It found that the public proxy did not close
+in-cluster API paths, provider inventory and HA retirement were asserted rather
+than independently enumerated, custody could expire during apply, projected
+tokens/Secret volumes and scientific behavior fields remained open, writer
+DELETE lacked read RBAC, the second snapshot omitted JobSet, and the binding
+schema could not represent namespaced receipts. The interrupted successor audit
+confirmed that projected/Secret volumes, DELETE read RBAC, JobSet second-read,
+and namespaced binding schema were closed, but retained four custody and
+scientific-closure blockers. This successor adds the provider enumeration,
+complete labeled-member equality, per-member TLS observation, global mutation-
+capable RBAC rejection, renewable same-policy apply watchdog/postcheck, exact
+scientific metadata/environment/placement envelope, and source regression cases.
+Those changes are static and unexecuted; they are presented only as a candidate
+for another independent exact review, not as a GO finding.
 
 Run from `k8s-inference` unless a command changes directory:
 

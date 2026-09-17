@@ -871,6 +871,8 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     provider_trust_root_sha256          = var.model_network_provider_trust_root_sha256
     provider_cluster_resource_version  = local.live_model_network_cluster_resource_version
     provider_gateway_egress_host_cidrs = local.live_model_network_control_plane_allowed_cidrs
+    provider_gateway_members           = local.live_model_network_provider_gateway_members
+    provider_inventory_sha256          = local.live_model_network_provider_inventory_sha256
     jobset_writer_username             = local.model_runtime_jobset_writer
     control_plane_image                = var.control_plane_image
     inventory_receipt_sha256           = try(var.model_runtime_network_policy.inventory_receipt.payload_sha256, null)
@@ -885,7 +887,17 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     precondition {
       condition = var.model_network_provider_trust_root_sha256 == "" ? true : (
         length(var.model_network_provider_gateway_egress_host_cidrs) >= 2 &&
+        length(var.model_network_provider_gateway_members) >= 2 &&
         local.live_model_network_control_plane_allowed_cidrs == sort(var.model_network_provider_gateway_egress_host_cidrs) &&
+        sort(keys(var.model_network_provider_gateway_members)) == [for member in local.live_model_network_provider_gateway_members : member.member_id] &&
+        alltrue([
+          for member_id in keys(var.model_network_provider_gateway_members) :
+          try(data.nebius_compute_v1_instance.model_network_provider_gateway[member_id].metadata.labels["security-boundary"], "") == "model-network-provider-custody" &&
+          try(data.nebius_compute_v1_instance.model_network_provider_gateway[member_id].metadata.labels["custody-cluster-id"], "") == var.cluster_id &&
+          try(data.nebius_vpc_v1_security_group.model_network_provider_gateway[member_id].metadata.labels["security-boundary"], "") == "model-network-provider-custody" &&
+          try(data.nebius_vpc_v1_security_group.model_network_provider_gateway[member_id].metadata.labels["custody-cluster-id"], "") == var.cluster_id
+        ]) &&
+        local.live_model_network_provider_inventory_sha256 != null &&
         local.live_model_network_cluster_resource_version != null &&
         local.live_model_network_cluster_resource_version >= 0
       )
@@ -895,7 +907,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     precondition {
       condition = nonsensitive(var.model_network_boundary_kubeconfig_path) == "/var/run/fs2-network-boundary/credential-required" || try(
         var.model_network_boundary_trust_root_sha256 != "" &&
-        var.model_network_boundary_authority_receipt.schema == "fs2-serve.nebius.ai/model-network-boundary-authority/v3" &&
+        var.model_network_boundary_authority_receipt.schema == "fs2-serve.nebius.ai/model-network-boundary-authority/v4" &&
         var.model_network_boundary_authority_receipt.phase == (var.model_runtime_network_policy.phase == "prepare" ? "bootstrap" : "armed") &&
         var.model_network_boundary_authority_receipt.cluster_id == var.cluster_id &&
         var.model_network_boundary_authority_receipt.authority_namespace == "fs2-network-security" &&
@@ -923,10 +935,14 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         var.model_network_boundary_authority_receipt.jobset_writer.username == local.model_runtime_jobset_writer &&
         var.model_network_boundary_authority_receipt.custody.trust_root_sha256 == var.model_network_boundary_trust_root_sha256 &&
         var.model_network_boundary_authority_receipt.custody.provider.kind == "nebius-iam" &&
-        var.model_network_boundary_authority_receipt.external_custody.schema == "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v3" &&
+        var.model_network_boundary_authority_receipt.external_custody.schema == "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v4" &&
         var.model_network_boundary_authority_receipt.external_custody.provider_trust_root_sha256 == var.model_network_provider_trust_root_sha256 &&
         can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.attestation_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.stable_policy_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.gateway_policy_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.kubernetes_authorization_sha256)) &&
+        var.model_network_boundary_authority_receipt.external_custody.provider_inventory_sha256 == local.live_model_network_provider_inventory_sha256 &&
+        var.model_network_boundary_authority_receipt.external_custody.gateway_member_ids == [for member in local.live_model_network_provider_gateway_members : member.member_id] &&
         var.model_network_boundary_authority_receipt.external_custody.cluster_resource_version == local.live_model_network_cluster_resource_version &&
         var.model_network_boundary_authority_receipt.external_custody.gateway_egress_host_cidrs == local.live_model_network_control_plane_allowed_cidrs &&
         can(regex("^[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}$", var.model_network_boundary_authority_receipt.external_custody.freeze_transaction_id)) &&
@@ -938,13 +954,21 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
           "${lower(binding.kind)}/${binding.namespace}/${binding.name}"
         ])) &&
         length(var.model_network_boundary_authority_receipt.rbac_census.privileged_capability_cluster_roles) > 0 &&
+        alltrue([
+          for binding in var.model_network_boundary_authority_receipt.rbac_census.bound_authority_control_bindings :
+          binding.access_path == "provider-gateway-user" &&
+          alltrue([
+            for subject in binding.subjects :
+            subject.kind == "User" && subject.namespace == ""
+          ])
+        ]) &&
         var.model_network_boundary_authority_receipt.payload_sha256 == sha256(jsonencode({
           for key, value in var.model_network_boundary_authority_receipt : key => value
           if key != "payload_sha256"
         })),
         false,
       )
-      error_message = "Every live model-network phase requires a signature-verified v3 authority receipt, a separately signed provider/IAM custody assertion, live TLS/Service/VWC/RBAC semantics, an exact run-scoped JobSet writer, and phase-correct bootstrap or armed identities."
+      error_message = "Every live model-network phase requires a signature-verified v4 authority receipt, provider-refreshed multi-gateway/firewall/IAM inventory, zero in-cluster authority-control subjects, live TLS/Service/VWC/RBAC semantics, a twice-read exact JobSet writer, and phase-correct bootstrap or armed identities."
     }
 
     precondition {

@@ -250,7 +250,7 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
     )
     if (
         authority.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-authority/v3"
+        != "fs2-serve.nebius.ai/model-network-boundary-authority/v4"
         or authority.get("phase") != "armed"
         or authority.get("cluster_id") != cluster_id
         or authority.get("authority_namespace") != "fs2-network-security"
@@ -271,8 +271,27 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
         not isinstance(provider_root, str)
         or re.fullmatch(r"[a-f0-9]{64}", provider_root) is None
         or external_custody.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v3"
+        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v4"
         or external_custody.get("provider_trust_root_sha256") != provider_root
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(external_custody.get("stable_policy_sha256", "")),
+        )
+        is None
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(external_custody.get("provider_inventory_sha256", "")),
+        )
+        is None
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(external_custody.get("kubernetes_authorization_sha256", "")),
+        )
+        is None
+        or not isinstance(external_custody.get("gateway_member_ids"), list)
+        or not 2 <= len(external_custody["gateway_member_ids"]) <= 8
+        or external_custody["gateway_member_ids"]
+        != sorted(set(external_custody["gateway_member_ids"]))
         or re.fullmatch(
             r"[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}",
             str(external_custody.get("freeze_transaction_id", "")),
@@ -609,6 +628,21 @@ def _validate_pod_security(
         isinstance(volume, dict) for volume in volumes
     ):
         raise ReceiptError(f"{label} has a malformed volume")
+    if any(
+        "secret" in volume
+        or "projected" in volume
+        or any(
+            isinstance(source, dict) and "serviceAccountToken" in source
+            for source in _object(
+                volume.get("projected", {}), f"{label} projected volume"
+            ).get("sources", [])
+            if isinstance(source, dict)
+        )
+        for volume in volumes
+    ):
+        raise ReceiptError(
+            f"{label} can mount a Secret or projected service-account token"
+        )
     pod_security = spec.get("securityContext", {})
     if not isinstance(pod_security, dict):
         raise ReceiptError(f"{label} Pod securityContext is malformed")

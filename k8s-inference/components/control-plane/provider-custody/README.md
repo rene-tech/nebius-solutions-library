@@ -36,29 +36,67 @@ Helm ownership is preserved; any attempted drift causes the gateway to reject
 the release rather than weakening the lock.
 
 The signed provider attestation contains the immutable policy digest, exact
-provider gateway/firewall/cluster-endpoint resource IDs, the current managed
-cluster resourceVersion, sorted endpoint host routes, six certificate
-principal bindings, freeze transaction, and operation-lock policy. Before
-every plan, Terraform refreshes `nebius_mk8s_v1_cluster` and requires the live
-resourceVersion and complete endpoint allowlist to equal the signed receipt.
-Immediately before apply, `inference-stack` performs a fresh nonce-bound mTLS
-status challenge and requires byte-for-byte equality with the signed policy.
+provider gateway/firewall/IAM inventory, the current managed-cluster object,
+sorted endpoint host routes, six certificate principal bindings, freeze
+transaction, and operation-lock policy. It is not accepted on signature alone.
+`inference-stack` independently reads the exact provider project and cluster,
+enumerates every project instance, security group, and service account, then
+enumerates every declared gateway firewall rule and IAM permit. The declared
+members must equal the complete set carrying both fixed custody labels
+`security-boundary=model-network-provider-custody` and the exact cluster ID;
+each member's full-object digest/resourceVersion, service-account attachment,
+public host address, child-rule set, and permit set must equal the signed
+projection. The managed-cluster endpoint allowlist must contain exactly those
+members' `/32` or `/128` routes, closing undeclared old routes and gateways.
+
+Every declared member is challenged independently. Before the HTTP challenge,
+the verifier performs a fresh mTLS connection and compares the actual leaf
+certificate DER digest with that member's signed certificate digest. The
+nonce-bound response must report the same complete member set, provider
+inventory hash, Kubernetes authorization hash, policy hash, freeze transaction,
+and exact six-principal certificate map. A stale HA member, policy, leaf
+certificate, route, firewall rule, principal, or permit therefore fails closed.
+
+The Kubernetes-side census is the other half of the boundary. It enumerates
+every Role/ClusterRole and binding capable of mutating admission, RBAC,
+credentials, Services, Secrets, ServiceAccounts, NetworkPolicies, or any
+Pod-producing controller/Pod. While custody is asserted, every such binding
+must resolve only to one of the six external X.509 usernames. A ServiceAccount,
+Group, default cluster-admin/system:masters binding, or other in-cluster writer
+fails the gate even if it appears in the signed broad census. This is how the
+source closes the `kubernetes.default.svc` path that a public reverse proxy
+cannot mediate; the gateway is not claimed to be an API-server deny by itself.
+
+Before every plan, Terraform also refreshes `nebius_mk8s_v1_cluster` and the
+named provider resources and requires the live resourceVersion, complete
+endpoint allowlist, labels, and semantic digests to equal the signed receipt.
+Immediately before apply, `inference-stack` repeats provider enumeration and
+every member challenge. During apply it repeats the full custody verifier every
+five seconds, accepts only a later expiry for the same stable transaction and
+policy, terminates the apply before the remaining window falls below 90
+seconds, and repeats custody after a successful apply. A two-hour assertion is
+therefore only a maximum renewal envelope, not permission for an unbounded
+unwatched apply.
 
 Provider rollout requirements, intentionally not executed by this source-only
 task:
 
 1. Independently review and publish a digest-pinned control-plane package.
 2. Provision at least two provider-owned gateway hosts in separate failure
-   domains and bind ASGI only to loopback using the supplied systemd template.
+   domains, label every gateway instance, security group, and service account
+   with the fixed custody labels, and bind ASGI only to loopback using the
+   supplied systemd template.
 3. Install the NGINX template with TLS 1.3 and provider-issued client CA.
 4. Create the two idle operation Leases before restricting API access.
-5. Write and sign the exact gateway policy and provider custody attestation.
+5. Write and sign the exact gateway policy and provider custody attestation,
+   including the complete provider enumeration and each gateway TLS leaf.
 6. Restrict the cluster endpoint to the sorted gateway host routes, capture the
    resulting cluster resourceVersion, and issue phase kubeconfigs whose server
    is the gateway URL.
 7. Prove denial for a frozen object, collection DELETE, wrong-principal lock
-   patch, missing-CAS patch, and direct endpoint access before any SAI-03
-   prepare phase.
+   patch, missing-CAS patch, and direct endpoint access; prove that no
+   in-cluster RBAC subject retains a mutation path; and exercise custody renewal
+   across a bounded apply before any SAI-03 prepare phase.
 
 There is no destructive break-glass operation. A future recovery policy is a
 new signed, versioned provider policy and in-place update; it never deletes a

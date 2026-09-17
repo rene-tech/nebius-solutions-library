@@ -509,6 +509,47 @@ variable "model_network_provider_gateway_egress_host_cidrs" {
   }
 }
 
+variable "model_network_provider_gateway_members" {
+  description = "Finite identities of every external custody gateway. Provider data sources refresh each named instance, firewall, rule, and IAM permit before a live transition."
+  type = map(object({
+    status_url                = string
+    host_cidr                 = string
+    server_certificate_sha256 = string
+    iam_principal_id          = string
+    instance_id               = string
+    security_group_id         = string
+    security_rule_ids         = set(string)
+    iam_access_permit_ids     = set(string)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = (
+      length(var.model_network_provider_gateway_members) == 0 ||
+      (
+        length(var.model_network_provider_gateway_members) >= 2 &&
+        length(var.model_network_provider_gateway_members) <= 8 &&
+        alltrue([
+          for member_id, member in var.model_network_provider_gateway_members :
+          can(regex("^[a-z][a-z0-9-]{2,62}$", member_id)) &&
+          can(regex("^https://[^/?#]+/v1/custody/status$", member.status_url)) &&
+          can(regex("^[a-f0-9]{64}$", member.server_certificate_sha256)) &&
+          contains(var.model_network_provider_gateway_egress_host_cidrs, member.host_cidr) &&
+          length(member.instance_id) > 0 &&
+          length(member.iam_principal_id) > 0 &&
+          length(member.security_group_id) > 0 &&
+          length(member.security_rule_ids) > 0 &&
+          length(member.iam_access_permit_ids) > 0
+        ]) &&
+        sort([for member in values(var.model_network_provider_gateway_members) : member.host_cidr]) ==
+        sort(var.model_network_provider_gateway_egress_host_cidrs)
+      )
+    )
+    error_message = "Live custody requires two to eight unique gateway members whose exact host routes cover the complete endpoint allowlist and whose provider instance, firewall-rule, and IAM-permit identities are finite."
+  }
+}
+
 variable "model_network_boundary_authority_receipt" {
   description = "Signature-verified, non-secret external custody receipt supplied only by inference-stack after live authority preflight."
   type        = any

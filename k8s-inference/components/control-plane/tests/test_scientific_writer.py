@@ -23,6 +23,46 @@ PROFILE_LABELS = {
     "fs2-serve.nebius.ai/network-workload-class": "internal-job",
     "fs2-serve.nebius.ai/network-profile": "job-internal-v1",
 }
+INTERNAL_API_URL = "http://fs2-serve-scientific-artifacts.fs2-system.svc:8080"
+
+
+def stage_environment() -> list[dict[str, str]]:
+    values = {
+        "FS2_OPERATION_ID": "10000000-0000-4000-8000-000000000001",
+        "FS2_BATCH_ID": "10000000-0000-4000-8000-000000000004",
+        "FS2_WORKLOAD_ID": "10000000-0000-4000-8000-000000000002",
+        "FS2_ATTEMPT_ID": "10000000-0000-4000-8000-000000000003",
+        "FS2_STAGE_ID": "prepare-input",
+        "FS2_SHARD_ID": "gang",
+        "FS2_VARIANT_ID": "default",
+        "FS2_INPUT_ARTIFACT_ID": "10000000-0000-4000-8000-000000000005",
+        "FS2_TENANT_ID": "tenant-a",
+        "FS2_ARTIFACT_ACCESS_PROFILE": "customer",
+        "FS2_ARTIFACT_ACCESS_RECEIPT_DIGEST": "",
+        "FS2_COLLECTOR_ID": "scientific-collector-v1",
+        "FS2_VALIDATOR_ID": "scientific-validator-v1",
+        "FS2_RUN_ROOT": "/mnt/fs2-scientific",
+        "FS2_LOGICAL_OUTPUT_ID": "prepared-input",
+        "FS2_RUNTIME_ARTIFACTS_JSON": "[]",
+        "FS2_RUNTIME_LOCALIZATION_MARKER": (
+            "/mnt/fs2-scientific/work/prepare-input/main/.fs2/runtime-localization.json"
+        ),
+        "FS2_RUNTIME_IMAGE_DIGEST": "sha256:" + "a" * 64,
+        "FS2_STAGE_IMAGE_DIGEST": "sha256:" + "a" * 64,
+    }
+    return [{"name": name, "value": value} for name, value in sorted(values.items())]
+
+
+def companion_environment() -> list[dict[str, str]]:
+    values = {
+        "FS2_CATALOG_DIR": "/opt/fs2/catalog",
+        "FS2_RUNTIME_IMAGE_DIGEST": "sha256:" + "a" * 64,
+        "FS2_SCIENTIFIC_INTERNAL_API_URL": INTERNAL_API_URL,
+        "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY": "x" * 64,
+        "FS2_STAGE_IMAGE_DIGEST": "sha256:" + "a" * 64,
+        "FS2_STAGE_INVOCATION_JSON": "{}",
+    }
+    return [{"name": name, "value": value} for name, value in sorted(values.items())]
 
 
 class StubClient:
@@ -129,8 +169,21 @@ def execution_policy() -> ScientificExecutionPolicy:
                     ],
                 }
             ],
+            "writer_policy": {
+                "schema": "fs2-serve.nebius.ai/scientific-writer-policy/v1",
+                "model_eligible_pool_ids": {"esmfold2": ["general-cpu"]},
+                "placements": {
+                    "general-cpu": {
+                        "accelerator_resource": None,
+                        "resource_class": "cpu",
+                        "node_selector": {},
+                        "tolerations": [],
+                    }
+                },
+            },
         },
         tools_image="registry.example/tools@sha256:" + "b" * 64,
+        internal_api_url=INTERNAL_API_URL,
     )
 
 
@@ -144,6 +197,11 @@ def live_scientific_job() -> dict[str, Any]:
         "fs2.nebius.ai/model-id": "esmfold2",
         "fs2.nebius.ai/variant-id": "default",
         "fs2.nebius.ai/stage-id": "prepare-input",
+        "fs2.nebius.ai/tenant-id": "tenant-a",
+        "fs2.nebius.ai/service-class": "customer-batch",
+        "fs2.nebius.ai/local-queue": "scientific",
+        "kueue.x-k8s.io/queue-name": "scientific",
+        "kueue.x-k8s.io/priority-class": "customer-batch",
     }
     container_security = {
         "allowPrivilegeEscalation": False,
@@ -163,6 +221,19 @@ def live_scientific_job() -> dict[str, Any]:
             "annotations": {
                 "fs2.nebius.ai/scientific-manifest-sha256": "c" * 64,
                 "fs2.nebius.ai/scientific-controller-fence": "controller.example:7",
+                "fs2.nebius.ai/scheduling-snapshot-digest": "d" * 64,
+                "fs2.nebius.ai/variant-id": "default",
+                "fs2.nebius.ai/cluster-queue": "scientific",
+                "fs2.nebius.ai/pool-preference": "general-cpu",
+                "fs2.nebius.ai/preemption-mode": "restartable",
+                "fs2.nebius.ai/accelerator-resource": "",
+                "fs2.nebius.ai/accelerator-count": "0",
+                "fs2.nebius.ai/workload-namespace": "fs2-models",
+                "fs2.nebius.ai/route-namespace": "fs2-models",
+                "fs2.nebius.ai/podset-resource-envelope": "{}",
+                "fs2.nebius.ai/podset-resource-envelope-sha256": hashlib.sha256(
+                    b"{}"
+                ).hexdigest(),
             },
         },
         "spec": {
@@ -194,7 +265,7 @@ def live_scientific_job() -> dict[str, Any]:
                                 "prepare-input",
                             ],
                             "workingDir": "/mnt/fs2-scientific/work/prepare-input/main",
-                            "env": [],
+                            "env": stage_environment(),
                             "volumeMounts": [
                                 {
                                     "name": "artifact-workspace",
@@ -221,7 +292,7 @@ def live_scientific_job() -> dict[str, Any]:
                             "image": "registry.example/tools@sha256:" + "b" * 64,
                             "imagePullPolicy": "IfNotPresent",
                             "command": ["fs2-serve", "scientific-collect"],
-                            "env": [],
+                            "env": companion_environment(),
                             "volumeMounts": [
                                 {
                                     "name": "artifact-workspace",
@@ -245,7 +316,10 @@ def live_scientific_job() -> dict[str, Any]:
                             "image": "registry.example/tools@sha256:" + "b" * 64,
                             "imagePullPolicy": "IfNotPresent",
                             "command": ["fs2-serve", "scientific-prepare-workspace"],
-                            "env": [],
+                            "env": [
+                                {"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": "[]"},
+                                {"name": "FS2_STAGE_INVOCATION_JSON", "value": "{}"},
+                            ],
                             "volumeMounts": [
                                 {
                                     "name": "artifact-workspace",
@@ -430,6 +504,71 @@ async def test_writer_rejects_unreviewed_container_fields_before_forwarding(
     boundary.execution_policy = execution_policy()
     manifest = submission_scientific_job()
     manifest["spec"]["template"]["spec"]["containers"][0][field] = value
+    seal_submission(manifest)
+    with pytest.raises(ScientificWriterError, match=message):
+        await boundary.mutate(
+            Mutation(
+                method="POST",
+                path="/apis/batch/v1/namespaces/fs2-models/jobs",
+                body=manifest,
+            )
+        )
+    assert client.mutations == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (
+            lambda value: value["metadata"]["annotations"].update(
+                {"example.invalid/unreviewed": "true"}
+            ),
+            "labels or annotations",
+        ),
+        (
+            lambda value: value["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ].append({"name": "UNREVIEWED_BEHAVIOR", "value": "enabled"}),
+            "environment contains an unreviewed behavior control",
+        ),
+        (
+            lambda value: value["spec"]["template"]["spec"].update(
+                {"nodeSelector": {"example.invalid/privileged-pool": "true"}}
+            ),
+            "scheduling differs",
+        ),
+        (
+            lambda value: value["spec"]["template"]["spec"]["volumes"].append(
+                {
+                    "name": "caller-token",
+                    "projected": {
+                        "sources": [
+                            {
+                                "serviceAccountToken": {
+                                    "audience": "https://kubernetes.default.svc",
+                                    "path": "token",
+                                }
+                            }
+                        ]
+                    },
+                }
+            ),
+            "absent from the execution map",
+        ),
+    ],
+)
+async def test_writer_rejects_resealed_metadata_environment_scheduling_and_token_volume(
+    tmp_path: Path,
+    mutation: Any,
+    message: str,
+) -> None:
+    client = StubClient(token_review())
+    boundary = writer(tmp_path, client)
+    boundary.execution_policy = execution_policy()
+    manifest = submission_scientific_job()
+    assert callable(mutation)
+    mutation(manifest)
     seal_submission(manifest)
     with pytest.raises(ScientificWriterError, match=message):
         await boundary.mutate(

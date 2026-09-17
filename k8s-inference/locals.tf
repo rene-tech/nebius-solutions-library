@@ -1129,6 +1129,7 @@ locals {
     model_network_boundary_trust_root_sha256         = var.deployment.models.network_policy.authority_trust_root_sha256
     model_network_provider_trust_root_sha256         = var.deployment.models.network_policy.provider_trust_root_sha256
     model_network_provider_gateway_egress_host_cidrs = sort(tolist(var.deployment.models.network_policy.provider_gateway_egress_host_cidrs))
+    model_network_provider_gateway_members           = var.deployment.models.network_policy.provider_gateway_members
     model_scaling_mode                               = var.deployment.models.scaling.mode
     hot_model_ids                                    = sort(tolist(var.deployment.models.scaling.hot))
     model_scaling_overrides                          = var.deployment.models.scaling.overrides

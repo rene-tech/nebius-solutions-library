@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 import httpx
 from fastapi import FastAPI, Header
@@ -131,6 +131,205 @@ _DIRECT_STAGE_COMMAND_PREFIXES: dict[tuple[str, str], tuple[str, ...]] = {
     ),
 }
 
+_RENDERER_STAGE_ENVIRONMENT_NAMES = frozenset(
+    {
+        "FS2_OPERATION_ID",
+        "FS2_BATCH_ID",
+        "FS2_WORKLOAD_ID",
+        "FS2_ATTEMPT_ID",
+        "FS2_STAGE_ID",
+        "FS2_SHARD_ID",
+        "FS2_VARIANT_ID",
+        "FS2_INPUT_ARTIFACT_ID",
+        "FS2_TENANT_ID",
+        "FS2_ARTIFACT_ACCESS_PROFILE",
+        "FS2_ARTIFACT_ACCESS_RECEIPT_DIGEST",
+        "FS2_COLLECTOR_ID",
+        "FS2_VALIDATOR_ID",
+        "FS2_RUN_ROOT",
+        "FS2_LOGICAL_OUTPUT_ID",
+        "FS2_RUNTIME_ARTIFACTS_JSON",
+        "FS2_RUNTIME_LOCALIZATION_MARKER",
+        "FS2_RUNTIME_IMAGE_DIGEST",
+        "FS2_STAGE_IMAGE_DIGEST",
+    }
+)
+_ADAPTER_STAGE_ENVIRONMENT_NAMES: dict[str, frozenset[str]] = {
+    "alphafold3": frozenset(
+        {"FS2_NETWORK_MODE", "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"}
+    ),
+    "bindcraft": frozenset(
+        {
+            "FS2_ARTIFACT_ROOT",
+            "FS2_BINDCRAFT_ACCEPTED_DESIGNS",
+            "FS2_BINDCRAFT_BINDER_LENGTH_MAX",
+            "FS2_BINDCRAFT_BINDER_LENGTH_MIN",
+            "FS2_BINDCRAFT_EXTERNAL_TREES",
+            "FS2_BINDCRAFT_EXTERNAL_TREE_ROLES",
+            "FS2_BINDCRAFT_INPUT_MANIFEST_JSON",
+            "FS2_BINDCRAFT_MPNN_SOLUBLE_TREE",
+            "FS2_BINDCRAFT_MPNN_VANILLA_TREE",
+            "FS2_BINDCRAFT_MPNN_WEIGHTS",
+            "FS2_BINDCRAFT_PYROSETTA_TREE",
+            "FS2_BINDCRAFT_REQUEST_JSON",
+            "FS2_BINDCRAFT_TARGET_PDB",
+            "FS2_NETWORK_MODE",
+            "FS2_SCIENTIFIC_COLLECTOR_ID",
+            "FS2_SCIENTIFIC_VALIDATOR_ID",
+            "FS2_SOURCE_REVISION",
+            "HF_HUB_OFFLINE",
+            "PYTHONPATH",
+            "TRANSFORMERS_OFFLINE",
+        }
+    ),
+    "boltzgen": frozenset(
+        {
+            "FS2_BOLTZGEN_BUDGET",
+            "FS2_BOLTZGEN_NUM_DESIGNS",
+            "FS2_BOLTZGEN_REQUEST_SHA256",
+            "HF_HUB_DISABLE_TELEMETRY",
+            "HF_HUB_OFFLINE",
+            "TRANSFORMERS_OFFLINE",
+        }
+    ),
+    "esmfold2": frozenset(
+        {
+            "ESMCFOLD_CCD_PATH",
+            "FS2_ESMC_MODEL_DIR",
+            "FS2_MODEL_DIR",
+            "FS2_NETWORK_MODE",
+            "FS2_SCIENTIFIC_COLLECTOR_ID",
+            "FS2_SCIENTIFIC_VALIDATOR_ID",
+            "HF_HUB_OFFLINE",
+            "TRANSFORMERS_OFFLINE",
+        }
+    ),
+    "esmfold2-fast": frozenset(
+        {
+            "ESMCFOLD_CCD_PATH",
+            "FS2_ESMC_MODEL_DIR",
+            "FS2_MODEL_DIR",
+            "FS2_NETWORK_MODE",
+            "FS2_SCIENTIFIC_COLLECTOR_ID",
+            "FS2_SCIENTIFIC_VALIDATOR_ID",
+            "HF_HUB_OFFLINE",
+            "TRANSFORMERS_OFFLINE",
+        }
+    ),
+    "mosaic": frozenset(
+        {
+            "FS2_ARTIFACT_ROOT",
+            "FS2_INPUT_ARTIFACT_ROOT",
+            "FS2_MOSAIC_BASE_SEED",
+            "FS2_MOSAIC_BINDER_LENGTH",
+            "FS2_MOSAIC_REQUEST_SHA256",
+            "FS2_MOSAIC_SHARD_COUNT",
+            "HF_HUB_OFFLINE",
+            "TRANSFORMERS_OFFLINE",
+        }
+    ),
+    "openfold3-openbind": frozenset(
+        {
+            "FS2_NETWORK_MODE",
+            "FS2_SCIENTIFIC_COLLECTOR_ID",
+            "FS2_SCIENTIFIC_VALIDATOR_ID",
+            "HF_HUB_OFFLINE",
+            "TORCH_EXTENSIONS_DIR",
+            "TRANSFORMERS_OFFLINE",
+            "TRITON_CACHE_DIR",
+            "XDG_CACHE_HOME",
+        }
+    ),
+    "proteina-complexa": frozenset(
+        {
+            "AF2_DIR",
+            "COMPLEXA_INIT",
+            "DATA_PATH",
+            "HF_HUB_OFFLINE",
+            "RF3_CKPT_PATH",
+            "RF3_EXEC_PATH",
+            "TRANSFORMERS_OFFLINE",
+        }
+    ),
+    "protenix-v2": frozenset(
+        {
+            "FS2_NETWORK_MODE",
+            "FS2_SCIENTIFIC_COLLECTOR_ID",
+            "FS2_SCIENTIFIC_VALIDATOR_ID",
+            "HF_HUB_OFFLINE",
+            "TRANSFORMERS_OFFLINE",
+        }
+    ),
+    "rfdiffusion": frozenset(
+        {
+            "FS2_INPUT_ARTIFACT_ROOT",
+            "FS2_RFDIFFUSION_DESIGN_COUNT",
+            "FS2_RFDIFFUSION_HOME",
+            "FS2_RFDIFFUSION_REQUEST_SHA256",
+            "FS2_RFDIFFUSION_SEED",
+            "HF_HUB_OFFLINE",
+            "MKL_NUM_THREADS",
+            "NUMEXPR_NUM_THREADS",
+            "OMP_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS",
+            "TRANSFORMERS_OFFLINE",
+        }
+    ),
+}
+_PREPARE_ENVIRONMENT_NAMES = frozenset(
+    {"FS2_RUNTIME_ARTIFACTS_JSON", "FS2_STAGE_INVOCATION_JSON"}
+)
+_VERIFY_ENVIRONMENT_NAMES = frozenset({"FS2_RUNTIME_ARTIFACTS_JSON"})
+_COMPANION_ENVIRONMENT_NAMES = frozenset(
+    {
+        "FS2_CATALOG_DIR",
+        "FS2_RUNTIME_IMAGE_DIGEST",
+        "FS2_SCIENTIFIC_INTERNAL_API_URL",
+        "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY",
+        "FS2_STAGE_IMAGE_DIGEST",
+        "FS2_STAGE_INVOCATION_JSON",
+    }
+)
+_WORKLOAD_LABELS = frozenset(
+    {
+        PART_OF_LABEL,
+        OPERATION_LABEL,
+        WORKLOAD_LABEL,
+        ATTEMPT_LABEL,
+        MODEL_LABEL,
+        VARIANT_LABEL,
+        "fs2.nebius.ai/tenant-id",
+        STAGE_LABEL,
+        "fs2.nebius.ai/shard-id",
+        "fs2.nebius.ai/service-class",
+        "fs2.nebius.ai/local-queue",
+        "kueue.x-k8s.io/queue-name",
+        "kueue.x-k8s.io/priority-class",
+        "kueue.x-k8s.io/max-exec-time-seconds",
+        PROFILE_LABEL,
+        CLASS_LABEL,
+        "fs2-serve.nebius.ai/job-kind",
+    }
+)
+_WORKLOAD_ANNOTATIONS = frozenset(
+    {
+        FENCE_ANNOTATION,
+        MANIFEST_ANNOTATION,
+        "fs2.nebius.ai/scheduling-snapshot-digest",
+        "fs2.nebius.ai/variant-id",
+        "fs2.nebius.ai/cluster-queue",
+        "fs2.nebius.ai/pool-preference",
+        "fs2.nebius.ai/preemption-mode",
+        "fs2.nebius.ai/max-queue-seconds",
+        "fs2.nebius.ai/accelerator-resource",
+        "fs2.nebius.ai/accelerator-count",
+        "fs2.nebius.ai/workload-namespace",
+        "fs2.nebius.ai/route-namespace",
+        "fs2.nebius.ai/podset-resource-envelope",
+        "fs2.nebius.ai/podset-resource-envelope-sha256",
+    }
+)
+
 
 class ScientificWriterError(RuntimeError):
     """A mutation cannot be proven to be a bounded scientific write."""
@@ -161,14 +360,202 @@ def _profile(metadata: Mapping[str, Any], label: str) -> None:
         raise ScientificWriterError(f"{label} does not select the internal scientific profile")
 
 
+def _strict_workload_metadata(
+    metadata: Mapping[str, Any], *, namespace: str
+) -> tuple[Mapping[str, str], Mapping[str, str], tuple[str, ...]]:
+    if set(metadata) != {"name", "namespace", "labels", "annotations"}:
+        raise ScientificWriterError(
+            "scientific workload metadata contains an unreviewed field"
+        )
+    name = metadata.get("name")
+    if (
+        not isinstance(name, str)
+        or re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?", name) is None
+        or metadata.get("namespace") != namespace
+    ):
+        raise ScientificWriterError("scientific workload identity is malformed")
+    labels = _mapping(metadata.get("labels"), "workload.metadata.labels")
+    annotations = _mapping(
+        metadata.get("annotations"), "workload.metadata.annotations"
+    )
+    required_labels = {
+        PART_OF_LABEL,
+        OPERATION_LABEL,
+        WORKLOAD_LABEL,
+        ATTEMPT_LABEL,
+        MODEL_LABEL,
+        VARIANT_LABEL,
+        "fs2.nebius.ai/tenant-id",
+        STAGE_LABEL,
+        "fs2.nebius.ai/service-class",
+        "fs2.nebius.ai/local-queue",
+        "kueue.x-k8s.io/queue-name",
+        "kueue.x-k8s.io/priority-class",
+        PROFILE_LABEL,
+        CLASS_LABEL,
+        "fs2-serve.nebius.ai/job-kind",
+    }
+    required_annotations = {
+        FENCE_ANNOTATION,
+        MANIFEST_ANNOTATION,
+        "fs2.nebius.ai/scheduling-snapshot-digest",
+        "fs2.nebius.ai/variant-id",
+        "fs2.nebius.ai/cluster-queue",
+        "fs2.nebius.ai/pool-preference",
+        "fs2.nebius.ai/preemption-mode",
+        "fs2.nebius.ai/accelerator-resource",
+        "fs2.nebius.ai/accelerator-count",
+        "fs2.nebius.ai/workload-namespace",
+        "fs2.nebius.ai/route-namespace",
+        "fs2.nebius.ai/podset-resource-envelope",
+        "fs2.nebius.ai/podset-resource-envelope-sha256",
+    }
+    if (
+        not required_labels.issubset(labels)
+        or not set(labels).issubset(_WORKLOAD_LABELS)
+        or not required_annotations.issubset(annotations)
+        or not set(annotations).issubset(_WORKLOAD_ANNOTATIONS)
+        or not all(isinstance(value, str) for value in labels.values())
+        or not all(isinstance(value, str) for value in annotations.values())
+    ):
+        raise ScientificWriterError(
+            "scientific workload labels or annotations are outside the renderer"
+        )
+    label_values = labels  # Narrowed by the all-string check above.
+    annotation_values = annotations
+    if (
+        label_values.get(PART_OF_LABEL) != "fs2-serve"
+        or label_values.get(CLASS_LABEL) != INTERNAL_CLASS
+        or label_values.get(PROFILE_LABEL) != INTERNAL_PROFILE
+        or label_values.get("fs2-serve.nebius.ai/job-kind") != "batch"
+        or label_values.get("fs2.nebius.ai/local-queue")
+        != label_values.get("kueue.x-k8s.io/queue-name")
+        or label_values.get("fs2.nebius.ai/service-class")
+        not in {"presentation", "interactive", "customer-batch", "bulk-backfill"}
+        or any(
+            re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?", str(label_values.get(name, "")))
+            is None
+            for name in (
+                MODEL_LABEL,
+                VARIANT_LABEL,
+                STAGE_LABEL,
+                "fs2.nebius.ai/local-queue",
+                "kueue.x-k8s.io/priority-class",
+            )
+        )
+        or annotation_values.get("fs2.nebius.ai/workload-namespace") != namespace
+        or annotation_values.get("fs2.nebius.ai/route-namespace") != namespace
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(annotation_values.get("fs2.nebius.ai/scheduling-snapshot-digest", "")),
+        )
+        is None
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(annotation_values.get("fs2.nebius.ai/podset-resource-envelope-sha256", "")),
+        )
+        is None
+        or annotation_values.get("fs2.nebius.ai/preemption-mode")
+        not in {"non_preemptible", "restartable", "checkpointable"}
+        or re.fullmatch(
+            r"[0-9]+", str(annotation_values.get("fs2.nebius.ai/accelerator-count", ""))
+        )
+        is None
+        or not 0
+        <= int(str(annotation_values.get("fs2.nebius.ai/accelerator-count", "-1")))
+        <= 256
+        or (
+            annotation_values.get("fs2.nebius.ai/accelerator-resource") != ""
+            and re.fullmatch(
+                r"[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?",
+                str(annotation_values.get("fs2.nebius.ai/accelerator-resource", "")),
+            )
+            is None
+        )
+        or (
+            "kueue.x-k8s.io/max-exec-time-seconds" in label_values
+            and re.fullmatch(
+                r"[1-9][0-9]{0,6}",
+                str(label_values["kueue.x-k8s.io/max-exec-time-seconds"]),
+            )
+            is None
+        )
+        or (
+            "fs2.nebius.ai/max-queue-seconds" in annotation_values
+            and re.fullmatch(
+                r"[1-9][0-9]{0,6}",
+                str(annotation_values["fs2.nebius.ai/max-queue-seconds"]),
+            )
+            is None
+        )
+    ):
+        raise ScientificWriterError(
+            "scientific workload metadata bindings are inconsistent"
+        )
+    envelope = annotation_values["fs2.nebius.ai/podset-resource-envelope"]
+    try:
+        envelope_value = json.loads(envelope)
+    except json.JSONDecodeError as exc:
+        raise ScientificWriterError(
+            "scientific workload PodSet envelope is malformed"
+        ) from exc
+    if (
+        json.dumps(
+            envelope_value,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        != envelope
+        or hashlib.sha256(envelope.encode()).hexdigest()
+        != annotation_values["fs2.nebius.ai/podset-resource-envelope-sha256"]
+    ):
+        raise ScientificWriterError(
+            "scientific workload PodSet envelope digest is inconsistent"
+        )
+    raw_pools = annotation_values["fs2.nebius.ai/pool-preference"]
+    pool_preference = tuple(raw_pools.split(",")) if raw_pools else ()
+    if (
+        not pool_preference
+        or pool_preference != tuple(dict.fromkeys(pool_preference))
+        or any(
+            re.fullmatch(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?", pool_id)
+            is None
+            for pool_id in pool_preference
+        )
+    ):
+        raise ScientificWriterError(
+            "scientific workload pool preference is not finite and exact"
+        )
+    return label_values, annotation_values, pool_preference
+
+
 class ScientificExecutionPolicy:
     """Immutable execution-map projection enforced by the isolated writer."""
 
-    def __init__(self, value: Mapping[str, Any], *, tools_image: str) -> None:
+    def __init__(
+        self,
+        value: Mapping[str, Any],
+        *,
+        tools_image: str,
+        internal_api_url: str,
+    ) -> None:
         if value.get("schema") != "fs2-serve.nebius.ai/scientific-execution-map/v3":
             raise ScientificWriterError("scientific writer execution-map schema is not exact")
         if re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", tools_image) is None:
             raise ScientificWriterError("scientific writer tools image is not digest pinned")
+        parsed_internal_api = urlsplit(internal_api_url)
+        if (
+            parsed_internal_api.scheme != "http"
+            or parsed_internal_api.hostname is None
+            or not parsed_internal_api.hostname.endswith(".svc")
+            or parsed_internal_api.path not in {"", "/"}
+            or parsed_internal_api.query
+            or parsed_internal_api.fragment
+        ):
+            raise ScientificWriterError(
+                "scientific writer internal API authority is not an exact cluster service"
+            )
         models = value.get("models")
         if not isinstance(models, list):
             raise ScientificWriterError("scientific writer execution map has no model list")
@@ -213,9 +600,118 @@ class ScientificExecutionPolicy:
             raise ScientificWriterError(
                 "scientific execution map contains a stage absent from the independent writer command inventory"
             )
+        writer_policy = _mapping(
+            value.get("writer_policy"), "scientific writer policy"
+        )
+        if (
+            set(writer_policy)
+            != {"schema", "model_eligible_pool_ids", "placements"}
+            or writer_policy.get("schema")
+            != "fs2-serve.nebius.ai/scientific-writer-policy/v1"
+        ):
+            raise ScientificWriterError("scientific writer policy is not exact")
+        raw_model_pools = _mapping(
+            writer_policy.get("model_eligible_pool_ids"),
+            "scientific writer model pool policy",
+        )
+        model_pools: dict[str, tuple[str, ...]] = {}
+        for model_id, raw_pools in raw_model_pools.items():
+            if (
+                not isinstance(model_id, str)
+                or model_id not in namespaces
+                or not isinstance(raw_pools, list)
+                or not raw_pools
+                or not all(
+                    isinstance(pool_id, str)
+                    and re.fullmatch(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?", pool_id)
+                    is not None
+                    for pool_id in raw_pools
+                )
+                or raw_pools != sorted(set(raw_pools))
+            ):
+                raise ScientificWriterError(
+                    "scientific writer model pool policy is malformed"
+                )
+            model_pools[model_id] = tuple(raw_pools)
+        if set(model_pools) != set(namespaces):
+            raise ScientificWriterError(
+                "scientific writer pool policy must cover every execution-map model exactly"
+            )
+        raw_placements = _mapping(
+            writer_policy.get("placements"), "scientific writer placement policy"
+        )
+        placements: dict[str, Mapping[str, Any]] = {}
+        for pool_id, raw_placement in raw_placements.items():
+            placement = _mapping(raw_placement, "scientific writer placement")
+            selector = placement.get("node_selector")
+            tolerations = placement.get("tolerations")
+            if (
+                not isinstance(pool_id, str)
+                or re.fullmatch(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?", pool_id)
+                is None
+                or set(placement)
+                != {
+                    "accelerator_resource",
+                    "resource_class",
+                    "node_selector",
+                    "tolerations",
+                }
+                or placement.get("resource_class") not in {"cpu", "gpu"}
+                or (
+                    placement.get("resource_class") == "gpu"
+                    and (
+                        not isinstance(placement.get("accelerator_resource"), str)
+                        or "/" not in placement["accelerator_resource"]
+                    )
+                )
+                or (
+                    placement.get("resource_class") == "cpu"
+                    and placement.get("accelerator_resource") is not None
+                )
+                or not isinstance(selector, Mapping)
+                or not all(
+                    isinstance(name, str)
+                    and name
+                    and isinstance(expected, str)
+                    and expected
+                    for name, expected in selector.items()
+                )
+                or not isinstance(tolerations, list)
+                or not all(
+                    isinstance(item, Mapping)
+                    and set(item).issubset({"key", "operator", "value", "effect"})
+                    and set(item).issuperset({"key", "operator", "effect"})
+                    and isinstance(item.get("key"), str)
+                    and item.get("operator") in {"Equal", "Exists"}
+                    and isinstance(item.get("effect"), str)
+                    and item.get("effect") in {"NoSchedule", "PreferNoSchedule", "NoExecute"}
+                    and (
+                        item.get("operator") == "Exists"
+                        and (item.get("value") is None or item.get("value") == "")
+                        or item.get("operator") == "Equal"
+                        and isinstance(item.get("value"), str)
+                    )
+                    for item in tolerations
+                )
+            ):
+                raise ScientificWriterError(
+                    "scientific writer placement policy is malformed"
+                )
+            placements[pool_id] = placement
+        if any(
+            pool_id not in placements
+            for pool_ids in model_pools.values()
+            for pool_id in pool_ids
+        ):
+            raise ScientificWriterError(
+                "scientific writer model pool policy names an unknown placement"
+            )
         self.stages = stages
         self.namespaces = namespaces
+        self.model_pools = model_pools
+        self.placements = placements
         self.tools_image = tools_image
+        self.internal_api_url = internal_api_url.rstrip("/")
 
     @classmethod
     def load(
@@ -224,6 +720,7 @@ class ScientificExecutionPolicy:
         *,
         expected_sha256: str,
         tools_image: str,
+        internal_api_url: str,
     ) -> ScientificExecutionPolicy:
         try:
             raw = path.read_bytes()
@@ -236,7 +733,11 @@ class ScientificExecutionPolicy:
             or not isinstance(value, Mapping)
         ):
             raise ScientificWriterError("scientific writer execution-map digest differs from release")
-        return cls(value, tools_image=tools_image)
+        return cls(
+            value,
+            tools_image=tools_image,
+            internal_api_url=internal_api_url,
+        )
 
     @staticmethod
     def _container_security(container: Mapping[str, Any], *, tools: bool, uid: int, gid: int) -> None:
@@ -314,6 +815,122 @@ class ScientificExecutionPolicy:
                 raise ScientificWriterError(f"{label} environment is not literal and bounded")
             result[name] = value
         return result
+
+    @staticmethod
+    def _bounded_environment(
+        environment: Mapping[str, str],
+        *,
+        allowed_names: frozenset[str],
+        label: str,
+        require_exact_names: bool = False,
+    ) -> None:
+        names = frozenset(environment)
+        if (require_exact_names and names != allowed_names) or not names.issubset(
+            allowed_names
+        ):
+            raise ScientificWriterError(
+                f"{label} environment contains an unreviewed behavior control"
+            )
+        for name, value in environment.items():
+            if name in {
+                "FS2_NETWORK_MODE",
+            } and value != "offline":
+                raise ScientificWriterError(f"{label} can enable network access")
+            if name in {
+                "HF_HUB_DISABLE_TELEMETRY",
+                "HF_HUB_OFFLINE",
+                "TRANSFORMERS_OFFLINE",
+                "OMP_NUM_THREADS",
+                "MKL_NUM_THREADS",
+                "OPENBLAS_NUM_THREADS",
+                "NUMEXPR_NUM_THREADS",
+                "COMPLEXA_INIT",
+            } and value != "1":
+                raise ScientificWriterError(
+                    f"{label} offline/thread environment is not exact"
+                )
+            if name.endswith("_SHA256") and re.fullmatch(r"[a-f0-9]{64}", value) is None:
+                raise ScientificWriterError(f"{label} digest environment is malformed")
+            if name.endswith("_IMAGE_DIGEST") and re.fullmatch(
+                r"sha256:[a-f0-9]{64}", value
+            ) is None:
+                raise ScientificWriterError(f"{label} image digest is malformed")
+            if name.endswith("_JSON"):
+                try:
+                    decoded = json.loads(value)
+                except json.JSONDecodeError as exc:
+                    raise ScientificWriterError(
+                        f"{label} JSON environment is malformed"
+                    ) from exc
+                if json.dumps(
+                    decoded,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ) != value:
+                    raise ScientificWriterError(
+                        f"{label} JSON environment is not canonical"
+                    )
+            if name.endswith(("_DIR", "_HOME", "_PATH", "_ROOT", "_MARKER")):
+                paths = value.split(":") if name == "PYTHONPATH" else [value]
+                if any(
+                    not PurePosixPath(path).is_absolute()
+                    or ".." in PurePosixPath(path).parts
+                    or not any(
+                        path == root or path.startswith(root + "/")
+                        for root in (
+                            "/cache",
+                            "/databases",
+                            "/mnt/fs2-scientific",
+                            "/models",
+                            "/opt",
+                        )
+                    )
+                    for path in paths
+                ):
+                    raise ScientificWriterError(
+                        f"{label} path environment escapes reviewed roots"
+                    )
+
+    def _companion_environment(
+        self,
+        container: Mapping[str, Any], *, label: str, allowed_names: frozenset[str]
+    ) -> Mapping[str, str]:
+        environment = ScientificExecutionPolicy._literal_environment(
+            container, label=label
+        )
+        ScientificExecutionPolicy._bounded_environment(
+            environment,
+            allowed_names=allowed_names,
+            label=label,
+            require_exact_names=True,
+        )
+        if "FS2_CATALOG_DIR" in environment and environment["FS2_CATALOG_DIR"] != "/opt/fs2/catalog":
+            raise ScientificWriterError(f"{label} catalog root is not exact")
+        if "FS2_SCIENTIFIC_INTERNAL_API_URL" in environment:
+            parsed = urlsplit(environment["FS2_SCIENTIFIC_INTERNAL_API_URL"])
+            if (
+                environment["FS2_SCIENTIFIC_INTERNAL_API_URL"]
+                != self.internal_api_url
+                or parsed.scheme != "http"
+                or not parsed.hostname
+                or not parsed.hostname.endswith(".svc")
+                or parsed.username is not None
+                or parsed.password is not None
+                or bool(parsed.query)
+                or bool(parsed.fragment)
+            ):
+                raise ScientificWriterError(
+                    f"{label} internal API URL differs from the writer's exact cluster service"
+                )
+        capability = environment.get("FS2_SCIENTIFIC_WORKLOAD_CAPABILITY")
+        if capability is not None and (
+            not 32 <= len(capability) <= 8192 or any(character.isspace() for character in capability)
+        ):
+            raise ScientificWriterError(
+                f"{label} workload capability is malformed"
+            )
+        return environment
 
     @staticmethod
     def _command(container: Mapping[str, Any], *, label: str) -> tuple[str, ...]:
@@ -415,7 +1032,16 @@ class ScientificExecutionPolicy:
         assert direct is not None
         return direct
 
-    def validate_pod(self, pod: Mapping[str, Any], *, namespace: str, label: str) -> None:
+    def validate_pod(
+        self,
+        pod: Mapping[str, Any],
+        *,
+        namespace: str,
+        label: str,
+        pool_preference: tuple[str, ...],
+        accelerator_resource: str,
+        accelerator_count: int,
+    ) -> None:
         metadata = _mapping(pod.get("metadata"), f"{label}.metadata")
         labels = _mapping(metadata.get("labels"), f"{label}.metadata.labels")
         key = (labels.get(MODEL_LABEL), labels.get(VARIANT_LABEL), labels.get(STAGE_LABEL))
@@ -431,6 +1057,9 @@ class ScientificExecutionPolicy:
             "automountServiceAccountToken",
             "containers",
             "enableServiceLinks",
+            "hostIPC",
+            "hostNetwork",
+            "hostPID",
             "initContainers",
             "nodeSelector",
             "restartPolicy",
@@ -520,14 +1149,34 @@ class ScientificExecutionPolicy:
             raise ScientificWriterError("scientific stage command differs from the reviewed adapter entrypoint")
         stage_environment = self._literal_environment(stage_container, label="scientific stage")
         declared_environment = stage.get("environment")
-        if not isinstance(declared_environment, Mapping) or any(
-            stage_environment.get(name) != value for name, value in declared_environment.items()
+        if (
+            not isinstance(declared_environment, Mapping)
+            or not all(
+                isinstance(name, str) and isinstance(value, str)
+                for name, value in declared_environment.items()
+            )
+            or any(
+                stage_environment.get(name) != value
+                for name, value in declared_environment.items()
+            )
+            or not _RENDERER_STAGE_ENVIRONMENT_NAMES.issubset(stage_environment)
         ):
             raise ScientificWriterError("scientific stage lost an execution-map environment binding")
+        self._bounded_environment(
+            stage_environment,
+            allowed_names=frozenset(declared_environment)
+            | _RENDERER_STAGE_ENVIRONMENT_NAMES
+            | _ADAPTER_STAGE_ENVIRONMENT_NAMES.get(model_id, frozenset()),
+            label="scientific stage",
+        )
         collector_command = self._command(collector, label="scientific collector")
         if collector_command[:2] != ("fs2-serve", "scientific-collect"):
             raise ScientificWriterError("scientific collector command differs from the renderer")
-        self._literal_environment(collector, label="scientific collector")
+        self._companion_environment(
+            collector,
+            label="scientific collector",
+            allowed_names=_COMPANION_ENVIRONMENT_NAMES,
+        )
         self._exact_companion_resources(collector, label="scientific collector")
         init_names: set[str] = set()
         for container in init_containers:
@@ -560,7 +1209,17 @@ class ScientificExecutionPolicy:
             )
             if not allowed_prefix or init_command[: len(allowed_prefix)] != allowed_prefix:
                 raise ScientificWriterError("scientific init command differs from the renderer")
-            self._literal_environment(container, label=f"scientific init {name}")
+            self._companion_environment(
+                container,
+                label=f"scientific init {name}",
+                allowed_names=(
+                    _PREPARE_ENVIRONMENT_NAMES
+                    if name == "prepare-workspace"
+                    else _VERIFY_ENVIRONMENT_NAMES
+                    if name == "verify-runtime-artifacts"
+                    else _COMPANION_ENVIRONMENT_NAMES
+                ),
+            )
             self._exact_companion_resources(container, label=f"scientific init {name}")
         if "prepare-workspace" not in init_names:
             raise ScientificWriterError("scientific Pod lacks its workspace initializer")
@@ -672,13 +1331,119 @@ class ScientificExecutionPolicy:
         ):
             raise ScientificWriterError("scientific stage resources differ from the execution map")
         node_selector = spec.get("nodeSelector", {})
-        if not isinstance(node_selector, Mapping):
-            raise ScientificWriterError("scientific Pod node selector is malformed")
         required_labels = stage.get("required_node_labels", {})
-        if not isinstance(required_labels, Mapping) or any(
-            node_selector.get(key_name) != expected for key_name, expected in required_labels.items()
+        if (
+            not isinstance(node_selector, Mapping)
+            or not isinstance(required_labels, Mapping)
+            or not all(
+                isinstance(name, str)
+                and name
+                and isinstance(expected, str)
+                and expected
+                for name, expected in required_labels.items()
+            )
+            or not pool_preference
+            or pool_preference != tuple(dict.fromkeys(pool_preference))
         ):
-            raise ScientificWriterError("scientific Pod lost an execution-map node constraint")
+            raise ScientificWriterError("scientific Pod placement identity is malformed")
+        placement_values = [self.placements.get(pool_id) for pool_id in pool_preference]
+        if any(not isinstance(placement, Mapping) for placement in placement_values):
+            raise ScientificWriterError("scientific Pod names an unknown placement")
+        placements = [
+            placement for placement in placement_values if isinstance(placement, Mapping)
+        ]
+        eligible = self.model_pools.get(model_id)
+        if eligible is None or not set(pool_preference).issubset(eligible):
+            raise ScientificWriterError(
+                "scientific Pod selects a pool outside its model qualification"
+            )
+        resource_classes = {placement.get("resource_class") for placement in placements}
+        if len(resource_classes) != 1:
+            raise ScientificWriterError("scientific Pod mixes CPU and GPU placements")
+        resource_class = next(iter(resource_classes))
+        expected_selectors = {
+            json.dumps(
+                dict(_mapping(placement.get("node_selector"), "placement node selector")),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            for placement in placements
+        }
+        expected_tolerations = {
+            json.dumps(
+                placement.get("tolerations"),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            for placement in placements
+        }
+        if len(expected_selectors) != 1 or len(expected_tolerations) != 1:
+            raise ScientificWriterError(
+                "scientific Pod placement alternatives have ambiguous scheduling"
+            )
+        placement_selector = json.loads(next(iter(expected_selectors)))
+        placement_tolerations = json.loads(next(iter(expected_tolerations)))
+        expected_node_selector = {**required_labels, **placement_selector}
+        if (
+            any(
+                name in required_labels and required_labels[name] != expected
+                for name, expected in placement_selector.items()
+            )
+            or dict(node_selector) != expected_node_selector
+            or spec.get("tolerations", []) != placement_tolerations
+        ):
+            raise ScientificWriterError(
+                "scientific Pod scheduling differs from its exact placement"
+            )
+        if resource_class == "gpu":
+            accelerator_resources = {
+                placement.get("accelerator_resource") for placement in placements
+            }
+            expected_affinity = {
+                "nodeAffinity": {
+                    "requiredDuringSchedulingIgnoredDuringExecution": {
+                        "nodeSelectorTerms": [
+                            {
+                                "matchExpressions": [
+                                    {
+                                        "key": "accelerator.fs2.nebius/pool-id",
+                                        "operator": "In",
+                                        "values": list(pool_preference),
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            }
+            if (
+                eligible is None
+                or not set(pool_preference).issubset(eligible)
+                or len(accelerator_resources) != 1
+                or extra_request_keys != accelerator_resources
+                or accelerator_resource not in accelerator_resources
+                or accelerator_count < 1
+                or any(
+                    actual_resources[side].get(accelerator_resource)
+                    != str(accelerator_count)
+                    for side in ("requests", "limits")
+                )
+                or spec.get("affinity") != expected_affinity
+            ):
+                raise ScientificWriterError(
+                    "scientific GPU Pod differs from its eligible pool affinity"
+                )
+        elif (
+            resource_class != "cpu"
+            or len(pool_preference) != 1
+            or extra_request_keys
+            or accelerator_resource != ""
+            or accelerator_count != 0
+            or "affinity" in spec
+        ):
+            raise ScientificWriterError(
+                "scientific CPU Pod carries an unreviewed accelerator placement"
+            )
 
 
 def _manifest_digest(value: Mapping[str, Any]) -> str:
@@ -702,14 +1467,65 @@ def validate_scientific_manifest(
     expected = ("batch/v1", "Job") if resource == "jobs" else ("jobset.x-k8s.io/v1alpha2", "JobSet")
     if (value.get("apiVersion"), value.get("kind")) != expected:
         raise ScientificWriterError("scientific mutation has the wrong API kind")
+    if verify_submission_digest and set(value) != {"apiVersion", "kind", "metadata", "spec"}:
+        raise ScientificWriterError(
+            "scientific mutation contains an unreviewed top-level field"
+        )
     _profile(_mapping(value.get("metadata"), "workload.metadata"), "workload.metadata")
     spec = _mapping(value.get("spec"), "workload.spec")
     metadata = _mapping(value.get("metadata"), "workload.metadata")
     namespace = metadata.get("namespace")
+    if not isinstance(namespace, str) or not namespace:
+        raise ScientificWriterError("scientific manifest namespace is absent")
+    pool_preference: tuple[str, ...] = ()
+    accelerator_resource = ""
+    accelerator_count = 0
     if execution_policy is not None:
         labels = _mapping(metadata.get("labels"), "workload.metadata.labels")
+        annotations = _mapping(
+            metadata.get("annotations"), "workload.metadata.annotations"
+        )
+        if verify_submission_digest:
+            labels, annotations, pool_preference = _strict_workload_metadata(
+                metadata, namespace=namespace
+            )
+        else:
+            raw_pools = annotations.get("fs2.nebius.ai/pool-preference")
+            if not isinstance(raw_pools, str) or not raw_pools:
+                raise ScientificWriterError(
+                    "stored scientific workload lost its pool preference"
+                )
+            pool_preference = tuple(raw_pools.split(","))
+            if (
+                not pool_preference
+                or pool_preference != tuple(dict.fromkeys(pool_preference))
+                or any(
+                    re.fullmatch(
+                        r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?", pool_id
+                    )
+                    is None
+                    for pool_id in pool_preference
+                )
+            ):
+                raise ScientificWriterError(
+                    "stored scientific workload pool preference is malformed"
+                )
+        accelerator_resource = str(
+            annotations.get("fs2.nebius.ai/accelerator-resource", "")
+        )
+        raw_accelerator_count = annotations.get(
+            "fs2.nebius.ai/accelerator-count", ""
+        )
         if (
-            labels.get("fs2-serve.nebius.ai/job-kind") not in {"batch", "evaluation"}
+            not isinstance(raw_accelerator_count, str)
+            or re.fullmatch(r"[0-9]+", raw_accelerator_count) is None
+        ):
+            raise ScientificWriterError(
+                "scientific workload accelerator count is malformed"
+            )
+        accelerator_count = int(raw_accelerator_count)
+        if (
+            labels.get("fs2-serve.nebius.ai/job-kind") != "batch"
             or any(
                 not isinstance(labels.get(label_name), str)
                 or UUID_LABEL_PATTERN.fullmatch(labels[label_name]) is None
@@ -719,9 +1535,6 @@ def validate_scientific_manifest(
             raise ScientificWriterError(
                 "scientific workload ownership labels are absent or malformed"
             )
-        annotations = _mapping(
-            metadata.get("annotations"), "workload.metadata.annotations"
-        )
         manifest_digest = annotations.get(MANIFEST_ANNOTATION)
         fence = annotations.get(FENCE_ANNOTATION)
         if (
@@ -736,27 +1549,47 @@ def validate_scientific_manifest(
             )
         if verify_submission_digest and manifest_digest != _manifest_digest(value):
             raise ScientificWriterError("scientific manifest digest is absent or inconsistent")
-    if not isinstance(namespace, str) or not namespace:
-        raise ScientificWriterError("scientific manifest namespace is absent")
     if resource == "jobs":
-        if verify_submission_digest and (
+        if execution_policy is not None and verify_submission_digest and (
             set(spec) != {"activeDeadlineSeconds", "backoffLimit", "suspend", "template"}
             or not isinstance(spec.get("activeDeadlineSeconds"), int)
             or isinstance(spec.get("activeDeadlineSeconds"), bool)
             or not 1 <= spec["activeDeadlineSeconds"] <= 7 * 24 * 3600
             or spec.get("backoffLimit") != 0
             or spec.get("suspend") is not True
+            or (
+                "kueue.x-k8s.io/max-exec-time-seconds" in labels
+                and labels["kueue.x-k8s.io/max-exec-time-seconds"]
+                != str(spec.get("activeDeadlineSeconds"))
+            )
         ):
             raise ScientificWriterError("scientific Job controller envelope differs from the renderer")
         template = _mapping(spec.get("template"), "Job.spec.template")
-        _profile(_mapping(template.get("metadata"), "Job Pod template metadata"), "Job Pod template")
+        template_metadata = _mapping(
+            template.get("metadata"), "Job Pod template metadata"
+        )
+        _profile(template_metadata, "Job Pod template")
+        if execution_policy is not None and verify_submission_digest and (
+            set(template_metadata) != {"labels"}
+            or template_metadata.get("labels") != labels
+        ):
+            raise ScientificWriterError(
+                "scientific Job Pod metadata differs from its controller identity"
+            )
         if execution_policy is not None:
-            execution_policy.validate_pod(template, namespace=namespace, label="Job Pod template")
+            execution_policy.validate_pod(
+                template,
+                namespace=namespace,
+                label="Job Pod template",
+                pool_preference=pool_preference,
+                accelerator_resource=accelerator_resource,
+                accelerator_count=accelerator_count,
+            )
         return
     replicated = spec.get("replicatedJobs")
     if not isinstance(replicated, list) or not replicated:
         raise ScientificWriterError("JobSet has no replicated Jobs")
-    if verify_submission_digest and (
+    if execution_policy is not None and verify_submission_digest and (
         set(spec) != {"failurePolicy", "replicatedJobs", "suspend"}
         or spec.get("failurePolicy") != {"maxRestarts": 0}
         or spec.get("suspend") is not True
@@ -765,7 +1598,7 @@ def validate_scientific_manifest(
         raise ScientificWriterError("scientific JobSet controller envelope differs from the renderer")
     for index, raw in enumerate(replicated):
         job = _mapping(raw, f"JobSet replicatedJobs[{index}]")
-        if verify_submission_digest and (
+        if execution_policy is not None and verify_submission_digest and (
             set(job) != {"name", "replicas", "template"}
             or job.get("name") != "gang"
             or not isinstance(job.get("replicas"), int)
@@ -774,26 +1607,52 @@ def validate_scientific_manifest(
         ):
             raise ScientificWriterError("scientific JobSet member differs from the renderer")
         template = _mapping(job.get("template"), f"JobSet replicatedJobs[{index}].template")
+        job_metadata = _mapping(
+            template.get("metadata"), f"JobSet replicatedJobs[{index}] metadata"
+        )
         _profile(
-            _mapping(template.get("metadata"), f"JobSet replicatedJobs[{index}] metadata"),
+            job_metadata,
             f"JobSet replicatedJobs[{index}]",
         )
+        if execution_policy is not None and verify_submission_digest and (
+            set(job_metadata) != {"labels"} or job_metadata.get("labels") != labels
+        ):
+            raise ScientificWriterError(
+                "scientific JobSet Job metadata differs from its controller identity"
+            )
         job_spec = _mapping(template.get("spec"), "Job template spec")
-        if verify_submission_digest and (
+        if execution_policy is not None and verify_submission_digest and (
             set(job_spec) != {"activeDeadlineSeconds", "backoffLimit", "template"}
             or job_spec.get("backoffLimit") != 0
             or not isinstance(job_spec.get("activeDeadlineSeconds"), int)
             or isinstance(job_spec.get("activeDeadlineSeconds"), bool)
             or not 1 <= job_spec["activeDeadlineSeconds"] <= 7 * 24 * 3600
+            or (
+                "kueue.x-k8s.io/max-exec-time-seconds" in labels
+                and labels["kueue.x-k8s.io/max-exec-time-seconds"]
+                != str(job_spec.get("activeDeadlineSeconds"))
+            )
         ):
             raise ScientificWriterError("scientific JobSet Job envelope differs from the renderer")
         pod = _mapping(job_spec.get("template"), "Job Pod template")
-        _profile(_mapping(pod.get("metadata"), "JobSet Pod template metadata"), "JobSet Pod template")
+        pod_metadata = _mapping(
+            pod.get("metadata"), "JobSet Pod template metadata"
+        )
+        _profile(pod_metadata, "JobSet Pod template")
+        if execution_policy is not None and verify_submission_digest and (
+            set(pod_metadata) != {"labels"} or pod_metadata.get("labels") != labels
+        ):
+            raise ScientificWriterError(
+                "scientific JobSet Pod metadata differs from its controller identity"
+            )
         if execution_policy is not None:
             execution_policy.validate_pod(
                 pod,
                 namespace=namespace,
                 label=f"JobSet replicatedJobs[{index}] Pod template",
+                pool_preference=pool_preference,
+                accelerator_resource=accelerator_resource,
+                accelerator_count=accelerator_count,
             )
 
 

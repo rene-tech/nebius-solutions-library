@@ -676,7 +676,7 @@ def boundary_webhooks() -> dict[str, object]:
 def boundary_authority() -> dict[str, object]:
     webhook = boundary_webhooks()["items"][0]
     payload: dict[str, object] = {
-        "schema": "fs2-serve.nebius.ai/model-network-boundary-authority/v3",
+        "schema": "fs2-serve.nebius.ai/model-network-boundary-authority/v4",
         "phase": "armed",
         "cluster_id": "mk8scluster-test",
         "authority_namespace": "fs2-network-security",
@@ -703,12 +703,16 @@ def boundary_authority() -> dict[str, object]:
             "serving_certificate_sha256": "3" * 64,
         },
         "external_custody": {
-            "schema": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v3",
+            "schema": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v4",
             "policy_id": "network-boundary-test",
             "policy_revision": "1",
             "provider_trust_root_sha256": "f" * 64,
             "attestation_sha256": "4" * 64,
+            "stable_policy_sha256": "8" * 64,
             "gateway_policy_sha256": "7" * 64,
+            "provider_inventory_sha256": "9" * 64,
+            "kubernetes_authorization_sha256": "a" * 64,
+            "gateway_member_ids": ["gateway-a", "gateway-b"],
             "cluster_resource_version": 17,
             "gateway_egress_host_cidrs": [
                 "192.0.2.10/32",
@@ -1355,8 +1359,8 @@ def test_external_boundary_authority_is_separate_and_narrowly_scoped() -> None:
     assert "variables.oldMetadata" in static_custody
     assert "fs2-model-network-helm-writer" in helm_writer
     assert "fs2-model-network-maintenance" in helm_writer
-    assert receipt_schema["properties"]["schema"]["const"].endswith("/v3")
-    assert provider_schema["properties"]["schema"]["const"].endswith("/v3")
+    assert receipt_schema["properties"]["schema"]["const"].endswith("/v4")
+    assert provider_schema["properties"]["schema"]["const"].endswith("/v4")
     assert "protected_kubernetes_resources" in provider_schema["properties"][
         "mutation_freeze"
     ]["required"]
@@ -1379,6 +1383,41 @@ def test_external_boundary_authority_is_separate_and_narrowly_scoped() -> None:
         in wrapper
     )
     assert "revalidated_receipt != authority_receipt" in wrapper
+
+
+def test_provider_custody_closes_in_cluster_ha_inventory_and_apply_expiry_paths() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    provider = (ROOT / "stages/workloads/provider_custody.tf").read_text()
+    transition = (ROOT / "stages/workloads/network_policies.tf").read_text()
+    schema = json.loads(
+        (
+            ROOT
+            / "stages/workloads/contracts/model-network-boundary-provider-custody.schema.json"
+        ).read_text()
+    )
+
+    assert '["iam", "project", "get", "--id", project_id]' in wrapper
+    assert '["mk8s", "cluster", "get", "--id", cluster_id]' in wrapper
+    assert '["compute", "instance", "list", "--parent-id", project_id]' in wrapper
+    assert '["vpc", "security-group", "list", "--parent-id", project_id]' in wrapper
+    assert '["iam", "service-account", "list", "--parent-id", project_id]' in wrapper
+    assert "declared gateway members do not equal the complete provider-labeled" in wrapper
+    assert "server_certificate_sha256" in wrapper
+    assert "socket.create_connection" in wrapper
+    assert '"jobset.x-k8s.io": {"jobsets"}' in wrapper
+    assert '"batch": {"cronjobs", "jobs"}' in wrapper
+    assert "an in-cluster principal retains frozen-object" in wrapper
+    assert "process.wait(timeout=5)" in wrapper
+    assert "provider custody expiry approached during apply" in wrapper
+    assert "post-apply fence" in wrapper
+    assert "server_certificate_sha256" in provider
+    assert 'metadata.labels["security-boundary"]' in transition
+    assert schema["properties"]["provider_enumeration"]["properties"][
+        "service_accounts_sha256"
+    ]["$ref"] == "#/$defs/sha256"
+    assert "server_certificate_sha256" in schema["$defs"]["gatewayMember"][
+        "required"
+    ]
 
 
 def test_terraform_enforcement_orders_apply_fence_before_default_deny() -> None:
