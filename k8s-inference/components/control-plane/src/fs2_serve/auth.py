@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
 import secrets
+import time
+from collections import OrderedDict, deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -22,9 +25,18 @@ from .store import ConflictError, NotFoundError, Store
 
 TOKEN_MARKER = "fs2_pat"  # noqa: S105 - public token format marker, not a credential
 MAX_PAT_LENGTH = 256
+TOKEN_VERIFICATION_CACHE_CONTEXT = b"fs2-serve.pat-verification-cache/v1\0"
+TOKEN_VERIFICATION_CONCURRENCY = 4
+TOKEN_VERIFICATION_CACHE_TTL_SECONDS = 5.0
+TOKEN_VERIFICATION_CACHE_MAX_ENTRIES = 4096
+TOKEN_FAILURE_LIMIT = 5
+TOKEN_FAILURE_WINDOW_SECONDS = 30.0
+TOKEN_FAILURE_BUCKET_MAX_ENTRIES = 4096
 SESSION_MARKER = "fs2_admin"
 MAX_OPERATOR_SESSION_LENGTH = 256
 OPERATOR_SESSION_DIGEST_CONTEXT = b"fs2-serve.admin-session/v1\0"
+
+VerificationCacheKey = tuple[UUID, str, str, str]
 
 
 class AuthenticationError(PermissionError):
@@ -97,11 +109,39 @@ class TokenService:
         peppers: PepperRing,
         *,
         principal_policy: Callable[[Principal], Awaitable[Principal]] | None = None,
+        verification_concurrency: int = TOKEN_VERIFICATION_CONCURRENCY,
+        verification_cache_ttl_seconds: float = TOKEN_VERIFICATION_CACHE_TTL_SECONDS,
+        verification_cache_max_entries: int = TOKEN_VERIFICATION_CACHE_MAX_ENTRIES,
+        failure_limit: int = TOKEN_FAILURE_LIMIT,
+        failure_window_seconds: float = TOKEN_FAILURE_WINDOW_SECONDS,
+        failure_bucket_max_entries: int = TOKEN_FAILURE_BUCKET_MAX_ENTRIES,
+        monotonic_clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        if not 1 <= verification_concurrency <= 64:
+            raise ValueError("PAT verification concurrency is outside the bound")
+        if not 0 < verification_cache_ttl_seconds <= 60:
+            raise ValueError("PAT verification cache TTL is outside the bound")
+        if not 1 <= verification_cache_max_entries <= 100_000:
+            raise ValueError("PAT verification cache size is outside the bound")
+        if not 1 <= failure_limit <= 100:
+            raise ValueError("PAT verification failure limit is outside the bound")
+        if not 1 <= failure_window_seconds <= 3600:
+            raise ValueError("PAT verification failure window is outside the bound")
+        if not 1 <= failure_bucket_max_entries <= 100_000:
+            raise ValueError("PAT verification failure bucket count is outside the bound")
         self.store = store
         self._peppers = peppers
         self.principal_policy = principal_policy
         self._hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2, hash_len=32, salt_len=16)
+        self._verification_slots = asyncio.BoundedSemaphore(verification_concurrency)
+        self._verification_cache_ttl_seconds = verification_cache_ttl_seconds
+        self._verification_cache_max_entries = verification_cache_max_entries
+        self._verification_cache: OrderedDict[VerificationCacheKey, float] = OrderedDict()
+        self._failure_limit = failure_limit
+        self._failure_window_seconds = failure_window_seconds
+        self._failure_bucket_max_entries = failure_bucket_max_entries
+        self._failed_verifications: OrderedDict[UUID, deque[float]] = OrderedDict()
+        self._monotonic_clock = monotonic_clock
 
     def _prehash(self, token: str, key_id: str) -> str:
         try:
@@ -109,6 +149,133 @@ class TokenService:
         except KeyError as exc:
             raise AuthenticationError("token hash key is unavailable") from exc
         return hmac.new(pepper, token.encode(), hashlib.sha256).hexdigest()
+
+    def _verification_cache_key(
+        self,
+        token_id: UUID,
+        token: str,
+        key_id: str,
+        digest: str,
+    ) -> VerificationCacheKey:
+        try:
+            pepper = self._peppers.keys[key_id]
+        except KeyError as exc:
+            raise AuthenticationError("token hash key is unavailable") from exc
+        token_hmac = hmac.new(
+            pepper,
+            TOKEN_VERIFICATION_CACHE_CONTEXT + token.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        digest_fingerprint = hashlib.sha256(digest.encode()).hexdigest()
+        return token_id, key_id, digest_fingerprint, token_hmac
+
+    def _verification_is_cached(self, key: VerificationCacheKey) -> bool:
+        expires_at = self._verification_cache.get(key)
+        if expires_at is None:
+            return False
+        if expires_at <= self._monotonic_clock():
+            self._verification_cache.pop(key, None)
+            return False
+        self._verification_cache.move_to_end(key)
+        return True
+
+    def _cache_verification(self, key: VerificationCacheKey) -> None:
+        self._verification_cache[key] = self._monotonic_clock() + self._verification_cache_ttl_seconds
+        self._verification_cache.move_to_end(key)
+        while len(self._verification_cache) > self._verification_cache_max_entries:
+            self._verification_cache.popitem(last=False)
+
+    def _discard_token_auth_state(self, token_id: UUID) -> None:
+        self._failed_verifications.pop(token_id, None)
+        for key in tuple(self._verification_cache):
+            if key[0] == token_id:
+                self._verification_cache.pop(key, None)
+
+    def _recent_failures(self, token_id: UUID) -> deque[float] | None:
+        failures = self._failed_verifications.get(token_id)
+        if failures is None:
+            return None
+        cutoff = self._monotonic_clock() - self._failure_window_seconds
+        while failures and failures[0] <= cutoff:
+            failures.popleft()
+        if not failures:
+            self._failed_verifications.pop(token_id, None)
+            return None
+        self._failed_verifications.move_to_end(token_id)
+        return failures
+
+    def _verification_is_throttled(self, token_id: UUID) -> bool:
+        failures = self._recent_failures(token_id)
+        return failures is not None and len(failures) >= self._failure_limit
+
+    def _record_failed_verification(self, token_id: UUID) -> None:
+        failures = self._recent_failures(token_id)
+        if failures is None:
+            failures = deque()
+            self._failed_verifications[token_id] = failures
+        failures.append(self._monotonic_clock())
+        self._failed_verifications.move_to_end(token_id)
+        while len(self._failed_verifications) > self._failure_bucket_max_entries:
+            self._failed_verifications.popitem(last=False)
+
+    async def _verify_digest(
+        self,
+        *,
+        token_id: UUID,
+        cache_key: VerificationCacheKey,
+        digest: str,
+        prehash: str,
+    ) -> None:
+        try:
+            valid = await asyncio.to_thread(self._hasher.verify, digest, prehash)
+        except (InvalidHashError, VerifyMismatchError) as exc:
+            self._record_failed_verification(token_id)
+            raise AuthenticationError("invalid bearer token") from exc
+        if not valid:
+            self._record_failed_verification(token_id)
+            raise AuthenticationError("invalid bearer token")
+        self._failed_verifications.pop(token_id, None)
+        self._cache_verification(cache_key)
+
+    def _verification_finished(self, task: asyncio.Task[None]) -> None:
+        self._verification_slots.release()
+        if not task.cancelled():
+            task.exception()
+
+    async def _verify_digest_bounded(
+        self,
+        *,
+        token_id: UUID,
+        cache_key: VerificationCacheKey,
+        digest: str,
+        prehash: str,
+    ) -> None:
+        if self._verification_is_cached(cache_key):
+            self._failed_verifications.pop(token_id, None)
+            return
+        if self._verification_is_throttled(token_id):
+            raise AuthenticationError("invalid bearer token")
+        await self._verification_slots.acquire()
+        if self._verification_is_cached(cache_key):
+            self._failed_verifications.pop(token_id, None)
+            self._verification_slots.release()
+            return
+        if self._verification_is_throttled(token_id):
+            self._verification_slots.release()
+            raise AuthenticationError("invalid bearer token")
+        task = asyncio.create_task(
+            self._verify_digest(
+                token_id=token_id,
+                cache_key=cache_key,
+                digest=digest,
+                prehash=prehash,
+            )
+        )
+        # A disconnected request cannot release a slot while its worker thread
+        # still consumes Argon2 memory and CPU. The callback releases only when
+        # the actual worker finishes; shield keeps caller cancellation local.
+        task.add_done_callback(self._verification_finished)
+        await asyncio.shield(task)
 
     @staticmethod
     def _parse(token: str) -> tuple[UUID, str]:
@@ -237,22 +404,30 @@ class TokenService:
         if stored is None:
             raise AuthenticationError("invalid bearer token")
         view, digest = stored
-        if not secrets.compare_digest(expected_prefix, view.prefix):
-            raise AuthenticationError("invalid bearer token")
-        try:
-            valid = self._hasher.verify(digest, self._prehash(token, view.pepper_key_id))
-        except (InvalidHashError, VerifyMismatchError) as exc:
-            raise AuthenticationError("invalid bearer token") from exc
         now = datetime.now(UTC)
-        if not valid or view.revoked_at is not None:
+        if view.revoked_at is not None:
+            self._failed_verifications.pop(view.id, None)
             raise AuthenticationError("invalid bearer token")
         if view.expires_at is not None and view.expires_at <= now:
+            self._failed_verifications.pop(view.id, None)
             await self.store.record_token_expired(view.id, actor="token-verifier")
             raise AuthenticationError("invalid bearer token")
+        if not secrets.compare_digest(expected_prefix, view.prefix):
+            raise AuthenticationError("invalid bearer token")
+        prehash = self._prehash(token, view.pepper_key_id)
+        cache_key = self._verification_cache_key(view.id, token, view.pepper_key_id, digest)
+        await self._verify_digest_bounded(
+            token_id=view.id,
+            cache_key=cache_key,
+            digest=digest,
+            prehash=prehash,
+        )
         if view.pepper_key_id != self._peppers.active_key_id:
             active_id = self._peppers.active_key_id
             replacement = self._hasher.hash(self._prehash(token, active_id))
             await self.store.rehash_token(view.id, pepper_key_id=active_id, digest=replacement)
+            self._verification_cache.pop(cache_key, None)
+            self._cache_verification(self._verification_cache_key(view.id, token, active_id, replacement))
         principal = Principal(
             token_id=view.id,
             token_prefix=view.prefix,
@@ -302,7 +477,9 @@ class TokenService:
         return TokenIssued(**view.model_dump(), token=token)
 
     async def revoke(self, token_id: UUID, *, actor: str) -> TokenView:
-        return await self.store.revoke_token(token_id, actor=actor)
+        view = await self.store.revoke_token(token_id, actor=actor)
+        self._discard_token_auth_state(token_id)
+        return view
 
 
 class OperatorSessionService:
