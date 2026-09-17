@@ -206,10 +206,13 @@ locals {
     }
     publicGateway = { enabled = local.public_edge_enabled }
     edgeClientIdentity = {
-      verified               = var.public_edge_client_identity.verified
-      trustedHops            = var.public_edge_client_identity.trusted_hops
-      providerContractSha256 = var.public_edge_client_identity.provider_contract_sha256
-      directAccessExcluded   = var.public_edge_client_identity.direct_access_excluded
+      verified                      = local.verified_edge_client_identity.verified
+      trustedHops                   = local.verified_edge_client_identity.trusted_hops
+      providerContractSha256        = local.verified_edge_client_identity.provider_contract_sha256
+      evidenceReceiptSha256         = local.verified_edge_client_identity.receipt_sha256
+      issuerKeyId                   = local.verified_edge_client_identity.issuer_key_id
+      providerLoadBalancerId        = local.verified_edge_client_identity.provider_load_balancer_id
+      directAccessExcluded          = local.verified_edge_client_identity.direct_access_excluded
     }
     httpRoute = {
       enabled       = local.public_edge_enabled

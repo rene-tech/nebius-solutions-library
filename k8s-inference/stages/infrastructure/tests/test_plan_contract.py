@@ -238,7 +238,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
             )
             public_ip = "203.0.113.17" if public_edge_mode == "public" else None
             public_edge_contract = {
-                "schema": "fs2-serve.nebius.ai/public-edge/v1",
+                "schema": "fs2-serve.nebius.ai/public-edge/v2",
                 "mode": public_edge_mode,
                 "transport": (
                     "public-https"
@@ -253,6 +253,21 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 ),
                 "allocation_id": allocation_id,
                 "public_ipv4_address": public_ip,
+                "cluster_id": (
+                    "mk8scluster-test" if public_edge_mode == "public" else None
+                ),
+                "network_id": (
+                    "vpcnetwork-test" if public_edge_mode == "public" else None
+                ),
+                "subnet_id": (
+                    "vpcsubnet-test" if public_edge_mode == "public" else None
+                ),
+                "worker_security_group_id": (
+                    "vpcsecuritygroup-test" if public_edge_mode == "public" else None
+                ),
+                "public_edge_ingress_rule_id": (
+                    "vpcsecurityrule-test" if public_edge_mode == "public" else None
+                ),
                 "external_traffic_policy": "Cluster",
                 "service_ports": document["variables"]["public_edge_service_ports"][
                     "value"
@@ -297,6 +312,9 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                     if public_edge_mode == "public"
                     else []
                 ),
+                "security_group_source_cidrs": (
+                    ["0.0.0.0/0"] if public_edge_mode == "public" else []
+                ),
             }
             document["planned_values"] = {
                 "outputs": {
@@ -307,7 +325,15 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                         "value": f"{public_ip}/32" if public_ip is not None else None
                     },
                     "owned_resource_ids": {
-                        "value": {"gateway_allocation": allocation_id}
+                        "value": {
+                            "gateway_allocation": allocation_id,
+                            "worker_sg": "vpcsecuritygroup-test",
+                            "worker_public_edge_ingress_rule": (
+                                "vpcsecurityrule-test"
+                                if public_edge_mode == "public"
+                                else None
+                            ),
+                        }
                     },
                 }
             }

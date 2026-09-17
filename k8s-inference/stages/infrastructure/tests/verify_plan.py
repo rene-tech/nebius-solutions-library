@@ -586,7 +586,7 @@ def validate_public_edge_outputs(
     ):
         return ["planned port_forward_local_ports variable is invalid"]
     if (
-        edge.get("schema") != "fs2-serve.nebius.ai/public-edge/v1"
+        edge.get("schema") != "fs2-serve.nebius.ai/public-edge/v2"
         or edge.get("mode") != public_edge_mode
         or edge.get("external_traffic_policy") != "Cluster"
         or edge.get("service_ports") != expected_ports
@@ -609,6 +609,11 @@ def validate_public_edge_outputs(
                     "allocation_project_id",
                     "allocation_id",
                     "public_ipv4_address",
+                    "cluster_id",
+                    "network_id",
+                    "subnet_id",
+                    "worker_security_group_id",
+                    "public_edge_ingress_rule_id",
                 )
             )
             or allocation_id is not None
@@ -621,6 +626,7 @@ def validate_public_edge_outputs(
                 )
             )
             or edge.get("security_group_destination_ports") != []
+            or edge.get("security_group_source_cidrs") != []
             or port_forward.get("enabled") is not True
             or port_forward.get("bind_address") != "127.0.0.1"
             or port_forward.get("application_origin")
@@ -645,11 +651,19 @@ def validate_public_edge_outputs(
             or allocation_id != edge.get("allocation_id")
             or not isinstance(owned, dict)
             or owned.get("gateway_allocation") != edge.get("allocation_id")
+            or edge.get("cluster_id") is None
+            or edge.get("network_id") is None
+            or edge.get("subnet_id") is None
+            or edge.get("worker_security_group_id") != owned.get("worker_sg")
+            or edge.get("public_edge_ingress_rule_id")
+            != owned.get("worker_public_edge_ingress_rule")
             or not isinstance(public_ip, str)
             or public_cidr != f"{public_ip}/32"
             or edge.get("public_origin") != f"https://{public_ip}"
             or edge.get("security_group_destination_ports") is None
             or len(edge["security_group_destination_ports"]) != 6
+            or edge.get("security_group_source_cidrs")
+            != variable(document, "public_edge_source_cidrs")
             or port_forward.get("enabled") is not False
         ):
             errors.append("public no-op outputs lack the concrete run-owned allocation contract")

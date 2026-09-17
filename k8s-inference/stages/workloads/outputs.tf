@@ -8,6 +8,19 @@ output "port_forward_contract" {
   value       = local.public_edge_enabled ? null : var.public_edge_contract.port_forward
 }
 
+output "public_edge_client_identity_evidence" {
+  description = "Non-secret authenticated receipt projection used by both ClientTrafficPolicies; null in internal-only mode."
+  value = local.public_edge_enabled ? {
+    verifier                  = var.public_edge_client_identity_receipt.verifier
+    receipt_sha256            = local.verified_edge_client_identity.receipt_sha256
+    payload_sha256            = local.verified_edge_client_identity.provider_contract_sha256
+    issuer_key_id             = local.verified_edge_client_identity.issuer_key_id
+    provider_load_balancer_id = local.verified_edge_client_identity.provider_load_balancer_id
+    trusted_hops              = local.verified_edge_client_identity.trusted_hops
+    direct_access_excluded    = local.verified_edge_client_identity.direct_access_excluded
+  } : null
+}
+
 output "mcp_endpoint_url" {
   description = "Resolved Streamable HTTP MCP endpoint. Internal-only deployments require the run-scoped operator proxy described by port_forward_contract."
   value       = "${trimsuffix(local.public_base_url, "/")}/mcp"

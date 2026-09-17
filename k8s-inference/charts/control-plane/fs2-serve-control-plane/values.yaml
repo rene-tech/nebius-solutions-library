@@ -703,14 +703,18 @@ publicTls:
     accountPrivateKeySecretName: fs2-serve-ip-acme-account
     profile: shortlived
 
-# Public client identity is deliberately unusable by default. A release owner
-# must supply a digest-bound provider/LB contract proving which hop appends or
-# overwrites X-Forwarded-For and that direct access cannot forge that position.
-# The templates fail before rendering a public Gateway until all gates hold.
+# Public client identity is deliberately unusable by default. The supported
+# Terraform path replaces these values only with the output of the source-owned
+# signed-receipt verifier; direct Helm assertion is not a supported public-edge
+# deployment path. The receipt binds the actual LB/listener/backend/SG/routing
+# identities and derives the hop count and direct-access verdict.
 edgeClientIdentity:
   verified: false
   trustedHops: 0
   providerContractSha256: ""
+  evidenceReceiptSha256: ""
+  issuerKeyId: ""
+  providerLoadBalancerId: ""
   directAccessExcluded: false
 
 # Shared edge abuse protection. Envoy Gateway's global rate-limit service uses

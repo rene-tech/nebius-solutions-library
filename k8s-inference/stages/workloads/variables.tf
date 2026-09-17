@@ -1383,14 +1383,19 @@ variable "enable_dcgm_cold_start_campaign" {
 variable "public_edge_contract" {
   description = "Exact typed infra-disposable public_edge_contract output. Internal-only mode carries null public identities and a bounded loopback port-forward contract."
   type = object({
-    schema                  = string
-    mode                    = string
-    transport               = string
-    public_origin           = optional(string)
-    allocation_project_id   = optional(string)
-    allocation_id           = optional(string)
-    public_ipv4_address     = optional(string)
-    external_traffic_policy = string
+    schema                      = string
+    mode                        = string
+    transport                   = string
+    public_origin               = optional(string)
+    allocation_project_id       = optional(string)
+    allocation_id               = optional(string)
+    public_ipv4_address         = optional(string)
+    cluster_id                  = optional(string)
+    network_id                  = optional(string)
+    subnet_id                   = optional(string)
+    worker_security_group_id    = optional(string)
+    public_edge_ingress_rule_id = optional(string)
+    external_traffic_policy     = string
     service_ports = object({
       http  = object({ listener_port = number, target_port = number, node_port = number })
       https = object({ listener_port = number, target_port = number, node_port = number })
@@ -1409,18 +1414,30 @@ variable "public_edge_contract" {
       admin_console_local_port = optional(number)
     })
     security_group_destination_ports = list(number)
+    security_group_source_cidrs      = optional(list(string), [])
   })
   nullable = false
 
   validation {
     condition = try(
-      var.public_edge_contract.schema == "fs2-serve.nebius.ai/public-edge/v1" &&
+      var.public_edge_contract.schema == "fs2-serve.nebius.ai/public-edge/v2" &&
       contains(["public", "internal-only"], var.public_edge_contract.mode) &&
       var.public_edge_contract.external_traffic_policy == "Cluster" &&
       var.public_edge_contract.service_ports.http.listener_port == 80 &&
       var.public_edge_contract.service_ports.http.target_port == 10080 &&
       var.public_edge_contract.service_ports.https.listener_port == 443 &&
       var.public_edge_contract.service_ports.https.target_port == 10443 &&
+      (
+        var.public_edge_contract.mode != "public" ||
+        (
+          can(regex("^mk8scluster-[a-z0-9]+$", var.public_edge_contract.cluster_id)) &&
+          can(regex("^vpcnetwork-[a-z0-9]+$", var.public_edge_contract.network_id)) &&
+          can(regex("^vpcsubnet-[a-z0-9]+$", var.public_edge_contract.subnet_id)) &&
+          can(regex("^vpcsecuritygroup-[a-z0-9]+$", var.public_edge_contract.worker_security_group_id)) &&
+          can(regex("^vpcsecurityrule-[a-z0-9]+$", var.public_edge_contract.public_edge_ingress_rule_id)) &&
+          length(var.public_edge_contract.security_group_source_cidrs) > 0
+        )
+      ) &&
       var.public_edge_contract.port_forward.control_plane_service == "fs2-serve-control-plane" &&
       var.public_edge_contract.port_forward.control_plane_port == 8080 &&
       var.public_edge_contract.port_forward.admin_console_service == "fs2-serve-control-plane-admin-console" &&
@@ -1454,32 +1471,27 @@ variable "public_edge_contract" {
   }
 }
 
-variable "public_edge_client_identity" {
-  description = "Fail-closed XFF trust proof. Public edge rendering is forbidden until a provider/LB contract digest and direct-access exclusion are supplied."
+variable "public_edge_client_identity_receipt" {
+  description = "Source-fixed descriptor for the signed provider/LB receipt. The verifier derives identity facts; callers cannot supply verified booleans or a hop count."
   type = object({
-    verified                 = bool
-    trusted_hops             = number
-    provider_contract_sha256 = string
-    direct_access_excluded   = bool
+    filename    = string
+    verifier    = string
+    trust_store = string
   })
   default = {
-    verified                 = false
-    trusted_hops             = 0
-    provider_contract_sha256 = ""
-    direct_access_excluded   = false
+    filename    = "edge-client-identity-receipt.json"
+    verifier    = "ed25519-source-trust-registry-v1"
+    trust_store = "contracts/trusted-edge-evidence-issuers.json"
   }
   nullable = false
 
   validation {
-    condition = !var.public_edge_client_identity.verified || (
-      floor(var.public_edge_client_identity.trusted_hops) == var.public_edge_client_identity.trusted_hops &&
-      var.public_edge_client_identity.trusted_hops >= 1 &&
-      var.public_edge_client_identity.trusted_hops <= 8 &&
-      can(regex("^[a-f0-9]{64}$", var.public_edge_client_identity.provider_contract_sha256)) &&
-      var.public_edge_client_identity.provider_contract_sha256 != "0000000000000000000000000000000000000000000000000000000000000000" &&
-      var.public_edge_client_identity.direct_access_excluded
-    )
-    error_message = "A verified public_edge_client_identity requires one to eight trusted hops, a nonzero provider contract SHA-256, and direct-access exclusion."
+    condition = var.public_edge_client_identity_receipt == {
+      filename    = "edge-client-identity-receipt.json"
+      verifier    = "ed25519-source-trust-registry-v1"
+      trust_store = "contracts/trusted-edge-evidence-issuers.json"
+    }
+    error_message = "public_edge_client_identity_receipt is a source-owned verifier contract and cannot be overridden."
   }
 }
 

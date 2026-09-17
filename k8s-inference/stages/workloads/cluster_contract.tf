@@ -76,7 +76,7 @@ resource "terraform_data" "cluster_contract" {
     infrastructure_contract          = var.infrastructure_contract
     infrastructure_contract_sha256   = local.infrastructure_contract_sha256
     public_edge_contract             = var.public_edge_contract
-    public_edge_client_identity      = var.public_edge_client_identity
+    public_edge_client_identity      = local.verified_edge_client_identity
   }
 
   lifecycle {
@@ -87,18 +87,26 @@ resource "terraform_data" "cluster_contract" {
           var.public_edge_contract.transport == "public-https" &&
           var.public_edge_contract.public_origin == format("https://%s", var.public_edge_contract.public_ipv4_address) &&
           var.public_edge_contract.allocation_project_id == nonsensitive(var.project_id) &&
+          var.public_edge_contract.cluster_id == var.cluster_id &&
           can(regex("^vpcallocation-[a-z0-9]+$", var.public_edge_contract.allocation_id)) &&
+          can(regex("^vpcnetwork-[a-z0-9]+$", var.public_edge_contract.network_id)) &&
+          can(regex("^vpcsubnet-[a-z0-9]+$", var.public_edge_contract.subnet_id)) &&
+          can(regex("^vpcsecuritygroup-[a-z0-9]+$", var.public_edge_contract.worker_security_group_id)) &&
+          can(regex("^vpcsecurityrule-[a-z0-9]+$", var.public_edge_contract.public_edge_ingress_rule_id)) &&
           can(cidrhost(format("%s/32", var.public_edge_contract.public_ipv4_address), 0)) &&
           !var.public_edge_contract.port_forward.enabled &&
           length(var.public_edge_contract.security_group_destination_ports) == 6 &&
+          length(var.public_edge_contract.security_group_source_cidrs) > 0 &&
           var.acme_email != null &&
-          var.public_edge_client_identity.verified &&
-          floor(var.public_edge_client_identity.trusted_hops) == var.public_edge_client_identity.trusted_hops &&
-          var.public_edge_client_identity.trusted_hops >= 1 &&
-          var.public_edge_client_identity.trusted_hops <= 8 &&
-          can(regex("^[a-f0-9]{64}$", var.public_edge_client_identity.provider_contract_sha256)) &&
-          var.public_edge_client_identity.provider_contract_sha256 != "0000000000000000000000000000000000000000000000000000000000000000" &&
-          var.public_edge_client_identity.direct_access_excluded,
+          local.verified_edge_client_identity.verified &&
+          floor(local.verified_edge_client_identity.trusted_hops) == local.verified_edge_client_identity.trusted_hops &&
+          local.verified_edge_client_identity.trusted_hops >= 1 &&
+          local.verified_edge_client_identity.trusted_hops <= 8 &&
+          can(regex("^[a-f0-9]{64}$", local.verified_edge_client_identity.provider_contract_sha256)) &&
+          can(regex("^[a-f0-9]{64}$", local.verified_edge_client_identity.receipt_sha256)) &&
+          can(regex("^sha256:[a-f0-9]{64}$", local.verified_edge_client_identity.issuer_key_id)) &&
+          can(regex("^[a-z][a-z0-9-]{7,127}$", local.verified_edge_client_identity.provider_load_balancer_id)) &&
+          local.verified_edge_client_identity.direct_access_excluded,
           false,
         )
         ) || (
@@ -109,6 +117,11 @@ resource "terraform_data" "cluster_contract" {
           var.public_edge_contract.allocation_project_id == null &&
           var.public_edge_contract.allocation_id == null &&
           var.public_edge_contract.public_ipv4_address == null &&
+          var.public_edge_contract.cluster_id == null &&
+          var.public_edge_contract.network_id == null &&
+          var.public_edge_contract.subnet_id == null &&
+          var.public_edge_contract.worker_security_group_id == null &&
+          var.public_edge_contract.public_edge_ingress_rule_id == null &&
           var.public_edge_contract.port_forward.enabled &&
           var.public_edge_contract.port_forward.bind_address == "127.0.0.1" &&
           var.public_edge_contract.port_forward.application_origin == format("http://localhost:%d", var.public_edge_contract.port_forward.operator_proxy_port) &&
@@ -126,11 +139,12 @@ resource "terraform_data" "cluster_contract" {
             var.public_edge_contract.port_forward.operator_proxy_port,
           ])) == 3 &&
           length(var.public_edge_contract.security_group_destination_ports) == 0 &&
+          length(var.public_edge_contract.security_group_source_cidrs) == 0 &&
           var.acme_email == null,
           false,
         )
       )
-      error_message = "public_edge_contract, ACME inputs, and the digest-bound client-identity proof do not match the exact public or internal-only topology."
+      error_message = "public_edge_contract, ACME inputs, and the source-trusted signed client-identity receipt do not match the exact public or internal-only topology."
     }
     precondition {
       condition     = local.public_edge_enabled || !data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled

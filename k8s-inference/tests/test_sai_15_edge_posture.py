@@ -101,6 +101,9 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert "rateLimit:\n    local:" not in policy
     assert "verified edgeClientIdentity provider/LB contract" in policy
     assert "providerContractSha256" in policy
+    assert "evidenceReceiptSha256" in policy
+    assert "issuerKeyId" in policy
+    assert "providerLoadBalancerId" in policy
     assert "directAccessExcluded" in policy
     assert "numTrustedHops: {{ .Values.edgeClientIdentity.trustedHops }}" in client_policy
     assert client_policy.count("clientIPDetection:") == 2
@@ -119,6 +122,9 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         "verified": False,
         "trustedHops": 0,
         "providerContractSha256": "",
+        "evidenceReceiptSha256": "",
+        "issuerKeyId": "",
+        "providerLoadBalancerId": "",
         "directAccessExcluded": False,
     }
     assert values["edgeConnectionLimits"]["maxStreamDuration"] == "7500s"
@@ -128,8 +134,43 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     workload_contract = (ROOT / "stages/workloads/cluster_contract.tf").read_text(
         encoding="utf-8"
     )
-    assert "var.deployment.edge.client_identity.verified" in root_variables
-    assert "provider_contract_sha256" in root_variables
-    assert "direct_access_excluded" in root_variables
-    assert "var.public_edge_client_identity.verified" in workload_contract
-    assert "var.public_edge_client_identity.trusted_hops >= 1" in workload_contract
+    adapter_contract = (ROOT / "stages/workloads/edge_client_identity.tf").read_text(
+        encoding="utf-8"
+    )
+    adapter = (
+        ROOT / "stages/workloads/scripts/verify-edge-client-identity-receipt.py"
+    ).read_text(encoding="utf-8")
+    trust_store = yaml.safe_load(
+        (ROOT / "stages/workloads/contracts/trusted-edge-evidence-issuers.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    infrastructure_outputs = (ROOT / "stages/infrastructure/outputs.tf").read_text(
+        encoding="utf-8"
+    )
+    assert "client_identity = optional(any)" in root_variables
+    assert "var.deployment.edge.client_identity == null" in root_variables
+    assert "var.deployment.edge.client_identity.verified" not in root_variables
+    assert 'data "external" "edge_client_identity_receipt"' in adapter_contract
+    assert "expected_subject_json" in adapter_contract
+    assert "local.verified_edge_client_identity.verified" in workload_contract
+    assert "local.verified_edge_client_identity.trusted_hops >= 1" in workload_contract
+    assert "payload digest does not match the reopened payload" in adapter
+    assert "reopened provider/LB evidence bytes" in adapter
+    assert "source-trusted authority" in adapter
+    assert "provider listeners do not bind the exact Gateway listeners" in adapter
+    assert "signed SG/routing facts do not exclude direct Envoy access" in adapter
+    assert "return len(chain)" in adapter
+    assert trust_store == {
+        "schema": "fs2-serve.nebius.ai/trusted-edge-evidence-issuers/v1",
+        "issuers": [],
+    }
+    for identity in (
+        "cluster_id",
+        "network_id",
+        "subnet_id",
+        "worker_security_group_id",
+        "public_edge_ingress_rule_id",
+        "security_group_source_cidrs",
+    ):
+        assert identity in infrastructure_outputs

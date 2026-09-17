@@ -16,14 +16,33 @@ Requests under `/admin` also enter a separate 30 requests/minute client bucket.
 The ordinary ACME challenge volume remains below the HTTP listener's per-client
 baseline and does not match the `/admin` rule.
 
-Client identity is fail-closed at source. The chart defaults to unverified,
-zero trusted hops, an empty evidence digest, and no direct-access attestation.
-Root Terraform, the workloads stage, and the chart each refuse a public edge
-until a release owner supplies a nonzero SHA-256 of an authoritative provider
-or load-balancer contract, the proven integral hop count, and proof that direct
-access cannot forge the trusted XFF position. The HTTP and HTTPS
-`ClientTrafficPolicy` objects then consume that single reviewed value. Source
-does not assume that the current topology has one trusted hop.
+Client identity is fail-closed at source. No root or workloads variable accepts
+a verification verdict, trusted-hop count, provider digest, signer key, or
+direct-access boolean. Public workloads planning instead reopens the fixed
+mode-0600 `<run_root>/edge-client-identity-receipt.json`, recomputes its payload
+SHA-256, and verifies its Ed25519 signature against the source-owned issuer
+registry. The registry is intentionally empty in this source candidate, so no
+public activation is possible until Platform Security onboards its public key
+in a separately reviewed commit. An arbitrary caller key cannot be supplied by
+tfvars or the external-provider query.
+
+The signed payload must equal the exact Terraform project, cluster, allocation,
+public IPv4, network, subnet, worker security group, ingress rule, source CIDRs,
+destination ports, Gateway, and HTTP/HTTPS listener contract. It also names the
+actual provider load balancer, both provider listeners, backend identity,
+Kubernetes Service name/UID, route tables, and the same SG/rule. Nonzero raw
+provider-export and probe digests, a maximum 24-hour validity window, canonical
+JSON, a nonce, and the authenticated issuer are mandatory.
+
+The verifier—not the receipt author—derives `numTrustedHops` from the ordered
+provider proxy chain. It accepts only observed append/overwrite semantics that
+append the downstream remote address and make an untrusted client-supplied XFF
+prefix irrelevant. For this exact topology the sole hop must be the signed
+provider LB. It derives direct-access exclusion only when signed SG/routing
+facts show the LB as the sole public entrypoint, no worker public addresses,
+and no public ClusterIP, NodePort, or target-port route. The HTTP and HTTPS
+`ClientTrafficPolicy` objects consume only that verifier projection. Direct
+Helm assertion is not a supported public-edge deployment path.
 
 Global counters use Envoy Gateway's rate-limit service and a network-isolated,
 three-member Redis replication group supervised by a three-Sentinel quorum.
@@ -56,7 +75,50 @@ The first source candidate, `f60ba3f8bfe8818a343bb16c2eda9ab9bdff6289`
 (tree `7b7903d928bf9d49ae12bf197c3ca1f0b5a6f25a`), is preserved as rejected
 evidence. It omitted the Terraform count, used a fail-open standalone store,
 shortened audio streams, omitted the HTTP request limit, and hard-coded an
-unproven trusted hop. This document describes its additive successor only.
+unproven trusted hop. Its successor,
+`678c3606d33c05388559063f51df1b3620933451` (tree
+`f1b8fd9820409953c59156146281b09450075043`), corrected the store, count,
+listener, and stream issues but still trusted caller-asserted XFF booleans,
+hop count, and digest. Both commits remain rejected evidence; this document now
+describes their direct additive authenticated-receipt successor.
+
+### Receipt and issuer custody
+
+The production trust registry is
+`stages/workloads/contracts/trusted-edge-evidence-issuers.json`. Each future
+entry must contain exactly an authority ID, the fixed
+`platform-security-edge-evidence` role, a `sha256:<hex>` key ID derived from the
+raw 32-byte Ed25519 public key, and that key in canonical unpadded base64url.
+The adapter rejects duplicate authorities, key-ID/key mismatches, alternate
+roles, caller-supplied registry paths, and all receipts while this registry is
+empty. Public keys are non-secret, but onboarding one grants evidence-signing
+authority and therefore requires its own Platform Security provenance and
+source review.
+
+The receipt is canonical JSON followed by one newline and contains exactly the
+receipt schema, `ed25519` algorithm, payload, recomputed payload SHA-256, and
+signature. The signature covers the schema, algorithm, payload and digest. The
+payload contains the issuer, nonce, whole-second UTC issue/expiry timestamps,
+exact Terraform subject, provider topology, derived-fact inputs, and seven raw
+evidence digests. The fixed mode-0700
+`<run_root>/edge-client-identity-evidence/` directory must contain mode-0600
+`provider-load-balancer.json`, `provider-listeners.json`,
+`provider-backend.json`, `security-group.json`, `routing.json`,
+`xff-probe.json`, and `direct-access-probe.json`. The adapter opens those exact
+names relative to a no-follow directory descriptor, reads each stable regular
+inode once, and refuses any byte digest that differs from the signed receipt.
+
+The receipt itself is also opened through `O_NOFOLLOW` and must be a stable
+mode-0600 regular inode no larger than 128 KiB. Signature verification uses
+root-owned OpenSSL with anonymous in-memory file descriptors and creates no
+verification files. Only non-secret digests and resource identities are
+returned to Terraform.
+
+The Terraform output `public_edge_client_identity_evidence` records the
+accepted receipt digest, payload digest, signer key ID, exact provider LB ID,
+derived hop count, and derived direct-access verdict. It is null in
+internal-only mode. Raw provider exports, probes, signatures, or credentials
+must not be copied into Terraform state or Helm values.
 
 ## Required integration and live evidence
 
@@ -72,8 +134,12 @@ the coordinator's static-only boundary. A later reviewed integration must:
 4. Stage the foundation store and prove one primary, two replicas, three
    agreeing Sentinels, quorum failover, and RLS recovery before enabling policy;
    retain the previous Helm revision and state-backed plan for rollback.
-5. Supply and verify the authoritative LB/XFF contract digest, exact hop count,
-   and direct-access exclusion; prove them with an unforgeable address test.
+5. Onboard the exact Platform Security evidence-signing public key by reviewed
+   source commit. Produce a fresh signed receipt from independent provider/LB,
+   listener, backend, SG, route-table, XFF-mutation, and direct-access captures;
+   store it mode 0600 at the fixed run-root path, and store the seven reopened
+   raw inputs under the fixed mode-0700 evidence directory. Prove the derived
+   address cannot be forged.
 6. Saturate client A's general and admin buckets while client B continues to
    receive non-429 responses, then repeat against HTTP redirect/ACME, website,
    API, admin, and Grafana routes.
@@ -83,7 +149,11 @@ the coordinator's static-only boundary. A later reviewed integration must:
 8. Show at least two Ready Envoy proxy replicas on distinct nodes, an effective
    PDB, bounded resources, two Ready rate-limit-service replicas, three Ready
    store members on spread nodes, and accepted traffic policies.
-9. Exercise landing/catalog, PAT/model authorization, sync/stream inference,
+9. Prove the existing Deployment/Service to StatefulSet/headless/Sentinel
+   transition is a non-destructive staged migration: no old resource is deleted
+   or replaced before the new single-primary/quorum contract is Ready, and no
+   policy is enabled before authenticated identity evidence passes.
+10. Exercise landing/catalog, PAT/model authorization, sync/stream inference,
    MCP, admin, operations/results/artifacts/uploads, storage, queue/model
    admission, observability, and rollback. Include an active audio stream and
    confirm idle, 7,500-second stream, and 7,800-second connection ceilings.

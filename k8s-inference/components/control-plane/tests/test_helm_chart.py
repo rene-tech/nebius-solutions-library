@@ -30,6 +30,9 @@ TEST_TARGET_PROJECT_ID = "project-e00abc123xyz"
 TEST_ALLOCATION_ID = "vpcallocation-e00abc123xyz"
 TEST_ACME_EMAIL = "edge-owner@unit.test"
 TEST_EDGE_PROVIDER_CONTRACT_SHA256 = "d" * 64
+TEST_EDGE_RECEIPT_SHA256 = "e" * 64
+TEST_EDGE_ISSUER_KEY_ID = "sha256:" + "f" * 64
+TEST_EDGE_LOAD_BALANCER_ID = "loadbalancer-e00abc123xyz"
 TEST_HTTP_NODE_PORT = 31425
 TEST_HTTPS_NODE_PORT = 32633
 TEST_CATALOG_ROLLOUT_DIGEST = "sha256:" + "3" * 64
@@ -79,6 +82,12 @@ def helm_values() -> list[str]:
         "edgeClientIdentity.trustedHops=1",
         "--set",
         f"edgeClientIdentity.providerContractSha256={TEST_EDGE_PROVIDER_CONTRACT_SHA256}",
+        "--set",
+        f"edgeClientIdentity.evidenceReceiptSha256={TEST_EDGE_RECEIPT_SHA256}",
+        "--set",
+        f"edgeClientIdentity.issuerKeyId={TEST_EDGE_ISSUER_KEY_ID}",
+        "--set",
+        f"edgeClientIdentity.providerLoadBalancerId={TEST_EDGE_LOAD_BALANCER_ID}",
         "--set",
         "edgeClientIdentity.directAccessExcluded=true",
     ]

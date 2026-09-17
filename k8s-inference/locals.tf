@@ -1205,11 +1205,10 @@ locals {
     }
     acme_email       = var.deployment.edge.acme_email
     acme_environment = var.deployment.edge.acme_environment
-    public_edge_client_identity = {
-      verified                 = var.deployment.edge.client_identity.verified
-      trusted_hops             = var.deployment.edge.client_identity.trusted_hops
-      provider_contract_sha256 = var.deployment.edge.client_identity.provider_contract_sha256
-      direct_access_excluded   = var.deployment.edge.client_identity.direct_access_excluded
+    public_edge_client_identity_receipt = {
+      filename    = "edge-client-identity-receipt.json"
+      verifier    = "ed25519-source-trust-registry-v1"
+      trust_store = "contracts/trusted-edge-evidence-issuers.json"
     }
     run_acceptance_job = var.deployment.acceptance.create_probe_job
     control_plane_image = {

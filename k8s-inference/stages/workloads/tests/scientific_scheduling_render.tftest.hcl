@@ -154,7 +154,7 @@ variables {
   }
 
   public_edge_contract = {
-    schema                  = "fs2-serve.nebius.ai/public-edge/v1"
+    schema                  = "fs2-serve.nebius.ai/public-edge/v2"
     mode                    = "internal-only"
     transport               = "kubectl-port-forward"
     public_origin           = null

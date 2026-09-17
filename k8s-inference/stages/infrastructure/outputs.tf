@@ -177,7 +177,11 @@ output "owned_resource_ids" {
     external_reader_groups = {
       for registry_id, group in nebius_iam_v1_group.external_registry_readers : registry_id => group.id
     }
-    worker_sg          = nebius_vpc_v1_security_group.workers.id
+    worker_sg                       = nebius_vpc_v1_security_group.workers.id
+    worker_public_edge_ingress_rule = try(
+      one(nebius_vpc_v1_security_rule.workers_public_edge_ingress[*].id),
+      null,
+    )
     gateway_allocation = try(one(nebius_vpc_v1_allocation.gateway[*].id), null)
   }
 }
@@ -297,13 +301,23 @@ output "gateway_public_cidr" {
 output "public_edge_contract" {
   description = "Typed handoff for the workload edge. Internal-only mode contains no placeholder allocation identity."
   value = {
-    schema                  = "fs2-serve.nebius.ai/public-edge/v1"
-    mode                    = var.public_edge_mode
-    transport               = var.public_edge_mode == "public" ? "public-https" : "kubectl-port-forward"
-    public_origin           = var.public_edge_mode == "public" ? try("https://${split("/", one(nebius_vpc_v1_allocation.gateway[*].status.details.allocated_cidr))[0]}", null) : null
-    allocation_project_id   = var.public_edge_mode == "public" ? nonsensitive(var.project_id) : null
-    allocation_id           = try(one(nebius_vpc_v1_allocation.gateway[*].id), null)
-    public_ipv4_address     = try(split("/", one(nebius_vpc_v1_allocation.gateway[*].status.details.allocated_cidr))[0], null)
+    schema                = "fs2-serve.nebius.ai/public-edge/v2"
+    mode                  = var.public_edge_mode
+    transport             = var.public_edge_mode == "public" ? "public-https" : "kubectl-port-forward"
+    public_origin         = var.public_edge_mode == "public" ? try("https://${split("/", one(nebius_vpc_v1_allocation.gateway[*].status.details.allocated_cidr))[0]}", null) : null
+    allocation_project_id = var.public_edge_mode == "public" ? nonsensitive(var.project_id) : null
+    allocation_id         = try(one(nebius_vpc_v1_allocation.gateway[*].id), null)
+    public_ipv4_address   = try(split("/", one(nebius_vpc_v1_allocation.gateway[*].status.details.allocated_cidr))[0], null)
+    cluster_id            = var.public_edge_mode == "public" ? nebius_mk8s_v1_cluster.validation.id : null
+    network_id            = var.public_edge_mode == "public" ? data.nebius_vpc_v1_network.target.id : null
+    subnet_id             = var.public_edge_mode == "public" ? data.nebius_vpc_v1_subnet.target.id : null
+    worker_security_group_id = (
+      var.public_edge_mode == "public" ? nebius_vpc_v1_security_group.workers.id : null
+    )
+    public_edge_ingress_rule_id = try(
+      one(nebius_vpc_v1_security_rule.workers_public_edge_ingress[*].id),
+      null,
+    )
     external_traffic_policy = "Cluster"
     service_ports           = var.public_edge_service_ports
     port_forward = {
@@ -327,6 +341,9 @@ output "public_edge_contract" {
       var.public_edge_service_ports.http.node_port,
       var.public_edge_service_ports.https.node_port,
     ] : []
+    security_group_source_cidrs = (
+      var.public_edge_mode == "public" ? sort(tolist(var.public_edge_source_cidrs)) : []
+    )
   }
 }
 

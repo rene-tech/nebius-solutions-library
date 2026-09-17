@@ -313,14 +313,11 @@ deployment = {
     source_cidrs     = ["0.0.0.0/0"]
     acme_email       = "operator@example.com"
     acme_environment = "production"
-    # Public mode remains plan-blocked until an authoritative load-balancer
-    # contract proves the XFF hop and that clients cannot reach Envoy directly.
-    client_identity = {
-      verified                 = false
-      trusted_hops             = 0
-      provider_contract_sha256 = ""
-      direct_access_excluded   = false
-    }
+    # No XFF verdict, hop count, evidence digest, or direct-access boolean is
+    # accepted here. The workloads stage reopens the fixed mode-0600
+    # <run_root>/edge-client-identity-receipt.json, authenticates its Platform
+    # Security issuer against a source-owned registry, binds its exact
+    # LB/listener/backend/SG/routing identities, and derives the hop count.
   }
 
   observability = {

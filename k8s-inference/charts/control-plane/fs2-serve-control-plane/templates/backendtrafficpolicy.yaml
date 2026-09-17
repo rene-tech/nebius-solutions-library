@@ -12,6 +12,15 @@
 {{- if not (regexMatch "^[a-f0-9]{64}$" $identity.providerContractSha256) }}
 {{- fail "a verified edgeClientIdentity requires an exact provider contract SHA-256" }}
 {{- end }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" $identity.evidenceReceiptSha256) }}
+{{- fail "a verified edgeClientIdentity requires the reopened signed receipt SHA-256" }}
+{{- end }}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $identity.issuerKeyId) }}
+{{- fail "a verified edgeClientIdentity requires a source-trusted issuer key ID" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z][a-z0-9-]{7,127}$" $identity.providerLoadBalancerId) }}
+{{- fail "a verified edgeClientIdentity requires the exact authenticated provider load-balancer ID" }}
+{{- end }}
 {{- if not $identity.directAccessExcluded }}
 {{- fail "a verified edgeClientIdentity requires proof that direct access cannot forge X-Forwarded-For" }}
 {{- end }}

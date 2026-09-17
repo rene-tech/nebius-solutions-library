@@ -26,6 +26,14 @@ deployment_profile = "minimal"
 # acme_email null/omitted.
 # acme_email = "operator@example.com"
 # acme_environment = "production"
+# Public mode also requires the fixed mode-0600 file
+# <run_root>/edge-client-identity-receipt.json. Do not add verdicts, hop counts,
+# signer keys, or alternate receipt paths to tfvars. The source-owned verifier
+# authenticates and derives those facts; the committed issuer registry is
+# intentionally empty until Platform Security onboards its public key. The
+# seven raw inputs named in docs/security/sai-15-edge-denial-of-service.md must
+# be mode-0600 files under the fixed mode-0700 edge-client-identity-evidence/
+# directory; the adapter reopens and hashes them before accepting the receipt.
 
 # Static is backward-compatible and creates no ScaledObjects. For an elastic
 # run set keda and choose zero or more canonical models for the loaded floor.

@@ -2076,6 +2076,9 @@
         "verified",
         "trustedHops",
         "providerContractSha256",
+        "evidenceReceiptSha256",
+        "issuerKeyId",
+        "providerLoadBalancerId",
         "directAccessExcluded"
       ],
       "properties": {
@@ -2090,6 +2093,18 @@
         "providerContractSha256": {
           "type": "string",
           "pattern": "^$|^[a-f0-9]{64}$"
+        },
+        "evidenceReceiptSha256": {
+          "type": "string",
+          "pattern": "^$|^[a-f0-9]{64}$"
+        },
+        "issuerKeyId": {
+          "type": "string",
+          "pattern": "^$|^sha256:[a-f0-9]{64}$"
+        },
+        "providerLoadBalancerId": {
+          "type": "string",
+          "pattern": "^$|^[a-z][a-z0-9-]{7,127}$"
         },
         "directAccessExcluded": {
           "type": "boolean"

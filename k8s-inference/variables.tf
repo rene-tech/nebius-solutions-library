@@ -630,12 +630,10 @@ variable "deployment" {
       source_cidrs     = optional(set(string), [])
       acme_email       = optional(string)
       acme_environment = optional(string, "production")
-      client_identity = optional(object({
-        verified                 = optional(bool, false)
-        trusted_hops             = optional(number, 0)
-        provider_contract_sha256 = optional(string, "")
-        direct_access_excluded   = optional(bool, false)
-      }), {})
+      # Retain the legacy key only to reject it explicitly. Terraform object
+      # conversion would otherwise discard unknown nested attributes and make
+      # an operator believe self-asserted identity facts were still honored.
+      client_identity = optional(any)
       port_forward_ports = optional(object({
         control_plane  = optional(number, 18080)
         admin_console  = optional(number, 18081)
@@ -706,6 +704,11 @@ variable "deployment" {
   })
 
   nullable = false
+
+  validation {
+    condition     = var.deployment.edge.client_identity == null
+    error_message = "edge.client_identity assertions are forbidden; the workloads stage derives client identity only from its source-trusted signed receipt."
+  }
 
   validation {
     condition = (
@@ -1772,18 +1775,11 @@ variable "deployment" {
           for cidr in var.deployment.edge.source_cidrs :
           can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$", cidr)) && can(cidrhost(cidr, 0))
         ]) &&
-        var.deployment.edge.acme_email != null && can(regex("^[^@[:space:]]+@[^@[:space:]]+$", var.deployment.edge.acme_email)) &&
-        var.deployment.edge.client_identity.verified &&
-        floor(var.deployment.edge.client_identity.trusted_hops) == var.deployment.edge.client_identity.trusted_hops &&
-        var.deployment.edge.client_identity.trusted_hops >= 1 &&
-        var.deployment.edge.client_identity.trusted_hops <= 8 &&
-        can(regex("^[a-f0-9]{64}$", var.deployment.edge.client_identity.provider_contract_sha256)) &&
-        var.deployment.edge.client_identity.provider_contract_sha256 != "0000000000000000000000000000000000000000000000000000000000000000" &&
-        var.deployment.edge.client_identity.direct_access_excluded :
+        var.deployment.edge.acme_email != null && can(regex("^[^@[:space:]]+@[^@[:space:]]+$", var.deployment.edge.acme_email)) :
         length(var.deployment.edge.source_cidrs) == 0 && var.deployment.edge.acme_email == null
       )
     )
-    error_message = "Public edge mode requires CIDRs, ACME identity, and a verified digest-bound client-identity contract with one to eight trusted hops and direct access excluded; internal-only mode requires neither CIDRs nor email."
+    error_message = "Public edge mode requires CIDRs and an ACME identity; the workloads stage separately requires a source-trusted signed edge-client-identity receipt. Internal-only mode requires neither CIDRs nor email."
   }
 
   validation {
