@@ -168,6 +168,8 @@ class PolicyManifestTest(unittest.TestCase):
                 "automation-service-accounts",
                 "workload-service-accounts",
                 "deploy-credential-csi-driver",
+                "deploy-credential-spc",
+                "workload-csi-drivers",
             )
             if f"params.data['{key}']" in variable_expressions
         }
@@ -270,8 +272,17 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertIn("!variables.usesForeignAudienceProjection", expressions[6])
         self.assertIn("!variables.usesSecretEnv", expressions[6])
         # The automation-pod volume allowlist admits only the owner-named
-        # credential CSI driver besides projections/config/scratch volumes.
+        # credential CSI driver (readOnly, pinned SecretProviderClass)
+        # besides projections/config/scratch volumes, and projected sources
+        # may never carry Secrets.
         self.assertIn("deployCredentialCsiDriver", expressions[4])
+        self.assertIn("deployCredentialSpc", expressions[4])
+        self.assertIn("v.csi.readOnly == true", expressions[4])
+        self.assertIn("!has(s.secret)", expressions[4])
+        self.assertIn("!variables.usesProjectedSecretSource", expressions[6])
+        self.assertIn("variables.allContainersRefusePrivEsc", expressions[6])
+        self.assertIn("workloadCsiDrivers.exists", expressions[6])
+        self.assertIn("has(v.persistentVolumeClaim)", expressions[6])
         for validation in self.policy["spec"]["validations"]:
             self.assertIn("SAI-09", validation["message"])
             self.assertEqual(validation["reason"], "Forbidden")
@@ -287,6 +298,8 @@ def render_allowlist_fixture(*args, **kwargs):
         "workload_service_accounts", ["fs2-system:fs2-release-automation"]
     )
     kwargs.setdefault("deploy_credential_csi_driver", "secrets-store.csi.k8s.io")
+    kwargs.setdefault("deploy_credential_spc", "fs2-release-helm-dsn")
+    kwargs.setdefault("workload_csi_drivers", ["secrets-store.csi.k8s.io"])
     return TOOL.render_allowlist(*args, **kwargs)
 
 
@@ -788,6 +801,7 @@ PROVIDER_PARENT_IDS = (
     "folder-fixture-id",
     "cloud-fixture-id",
 )
+PROVIDER_PRINCIPAL_FIXTURE = "provider-reader@fixture.invalid"
 
 
 def provider_cli_fixture(
@@ -795,11 +809,30 @@ def provider_cli_fixture(
     extra_bindings: list | None = None,
     retention_days: int = 90,
     lock_enabled: bool = True,
+    lock_mode: str = "COMPLIANCE",
+    principal: str = PROVIDER_PRINCIPAL_FIXTURE,
+    anchor_source: Path | None = None,
+    bucket_folder: str = "folder-fixture-id",
 ):
-    """Answer the pinned provider CLI's live IAM/WORM queries."""
+    """Answer the pinned provider CLI's live queries: whoami, ancestry
+    derivation, paginated IAM listings (stable across the double pass),
+    strict-field bucket configuration, and the WORM anchor object download.
+    """
 
     def responder(command):
-        if command[:4] == ["nebius", "iam", "access-binding", "list"]:
+        if not command or command[0] != "nebius":
+            return None
+        if command[1:3] == ["iam", "whoami"]:
+            return json.dumps({"id": principal})
+        if command[1:4] == ["mk8s", "cluster", "get"]:
+            return json.dumps(
+                {"id": command[5], "folder_id": "folder-fixture-id"}
+            )
+        if command[1:4] == ["resource-manager", "folder", "get"]:
+            return json.dumps(
+                {"id": command[5], "cloud_id": "cloud-fixture-id"}
+            )
+        if command[1:4] == ["iam", "access-binding"] and command[4] == "list":
             parent = command[command.index("--parent-id") + 1]
             bindings = [
                 {
@@ -812,23 +845,73 @@ def provider_cli_fixture(
                 for binding in (extra_bindings or [])
                 if binding.get("parent", parent) in (parent, None)
             ]
+            for binding in bindings:
+                binding.pop("parent", None)
             return json.dumps({"items": bindings})
-        if command[:4] == ["nebius", "storage", "bucket", "get"]:
+        if command[1:4] == ["storage", "bucket", "get"]:
             lock = (
                 {
                     "object_lock": {
                         "status": "enabled",
-                        "default_retention": {"mode": "COMPLIANCE",
-                                              "days": retention_days},
+                        "default_retention": {
+                            "mode": lock_mode,
+                            "days": retention_days,
+                        },
                     }
                 }
                 if lock_enabled
                 else {}
             )
-            return json.dumps({"name": command[5], **lock})
-        return None
+            return json.dumps(
+                {
+                    "name": command[command.index("--name") + 1],
+                    "folder_id": bucket_folder,
+                    "versioning": "enabled",
+                    **lock,
+                }
+            )
+        if command[1:4] == ["storage", "object", "download"]:
+            assert anchor_source is not None, "anchor download not configured"
+            attestation = json.loads(anchor_source.read_bytes())
+            return json.dumps(attestation["anchored_heads"], sort_keys=True)
+        raise AssertionError(f"unexpected provider command: {command}")
 
     return responder
+
+
+IAM_BOUNDARY_PATH = PROVENANCE_DIR / "iam-boundary.yaml"
+
+
+def iam_boundary_documents() -> dict:
+    return {
+        (document["kind"], document["metadata"]["name"]): document
+        for document in yaml.safe_load_all(
+            IAM_BOUNDARY_PATH.read_text(encoding="utf-8")
+        )
+        if document
+    }
+
+
+def iam_boundary_live_answer(command):
+    """Serve LIVE boundary-object gets from the committed manifest."""
+    kinds = {
+        "namespace": "Namespace",
+        "serviceaccount": "ServiceAccount",
+        "clusterrole": "ClusterRole",
+        "role": "Role",
+        "clusterrolebinding": "ClusterRoleBinding",
+        "rolebinding": "RoleBinding",
+    }
+    if (
+        len(command) >= 4
+        and command[:2] == ["kubectl", "get"]
+        and command[2] in kinds
+        and command[3] not in ("kube-system",)
+    ):
+        document = iam_boundary_documents().get((kinds[command[2]], command[3]))
+        if document is not None:
+            return json.dumps(document)
+    return None
 
 
 def write_attestation_fixture(
@@ -863,6 +946,15 @@ def write_attestation_fixture(
         "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "expires_at": (now + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    document["anchor_object"] = {
+        "key": "anchors/latest.json",
+        "version_id": "v1-fixture",
+        "sha256": hashlib.sha256(
+            json.dumps(document["anchored_heads"], sort_keys=True).encode(
+                "utf-8"
+            )
+        ).hexdigest(),
+    }
     document.update(overrides)
     payload = json.dumps(document).encode("utf-8")
     attestation = base / name
@@ -875,7 +967,9 @@ def write_attestation_fixture(
     return attestation
 
 
-def default_scope_fixture(key_sha256: str) -> dict:
+def default_scope_fixture(
+    key_sha256: str, run_root: "Path | str" = "/fixture-run-root"
+) -> dict:
     import hashlib
 
     return {
@@ -899,6 +993,8 @@ def default_scope_fixture(key_sha256: str) -> dict:
             "fs2-system:fs2-serve-control-plane",
         ],
         "deploy_credential_csi_driver": "secrets-store.csi.k8s.io",
+        "deploy_credential_spc": "fs2-release-helm-dsn",
+        "workload_csi_drivers": ["secrets-store.csi.k8s.io"],
         "security_principals": [SECURITY_PRINCIPAL],
         "verification_key_sha256": key_sha256,
         "attestation_key_sha256": hashlib.sha256(
@@ -906,16 +1002,27 @@ def default_scope_fixture(key_sha256: str) -> dict:
         ).hexdigest(),
         "iam_exempt_subjects": [],
         "token_audience": "fs2-release",
+        "run_root": str(run_root),
+        "provider_endpoint": "https://provider.fixture.invalid",
+        "provider_principal": PROVIDER_PRINCIPAL_FIXTURE,
+        "provider_cluster_id": "cluster-fixture-id",
         "provider_parent_ids": list(PROVIDER_PARENT_IDS),
+        "provider_readonly_roles": ["viewer"],
         "worm_store_uri": FIXTURE_WORM_STORE,
         "worm_bucket": FIXTURE_WORM_BUCKET,
         "stage_binding_authority": {
             "namespace": "fs2-system",
             "workload": "deployment/fs2-serve-control-plane",
         },
-        "tooling": {"kubectl": "/usr/bin/kubectl", "helm": "/usr/bin/helm",
-                    "nebius": "/usr/bin/nebius"},
+        "tooling": {
+            "kubectl": {"path": "/usr/bin/kubectl", "sha256": "1" * 64},
+            "helm": {"path": "/usr/bin/helm", "sha256": "2" * 64},
+            "nebius": {"path": "/usr/bin/nebius", "sha256": "3" * 64},
+        },
         "policy_sha256": hashlib.sha256(POLICY_PATH.read_bytes()).hexdigest(),
+        "iam_boundary_sha256": hashlib.sha256(
+            IAM_BOUNDARY_PATH.read_bytes()
+        ).hexdigest(),
     }
 
 
@@ -1025,7 +1132,10 @@ def write_inventory_fixture(
         "captured_at": captured_at or now,
         "scope": scope
         or default_scope_fixture(
-            fixture_hashlib.sha256(TEST_KEY_CONTENT.encode("utf-8")).hexdigest()
+            fixture_hashlib.sha256(
+                TEST_KEY_CONTENT.encode("utf-8")
+            ).hexdigest(),
+            run_root=base,
         ),
         "sources": {
             "live_workloads": source(
@@ -1105,6 +1215,17 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 TOOL, "ATTESTATION_KEY_SHA256", self._original_attestor_pin
             )
         )
+        # The fixtures simulate the RATIFIED state: the owner has originated
+        # the attestor key; the shipped constant stays a refused placeholder.
+        self._original_attestor_provenance = TOOL.ATTESTATION_KEY_PROVENANCE
+        TOOL.ATTESTATION_KEY_PROVENANCE = "owner-originated"
+        self.addCleanup(
+            lambda: setattr(
+                TOOL,
+                "ATTESTATION_KEY_PROVENANCE",
+                self._original_attestor_provenance,
+            )
+        )
         self._run_root_holder = tempfile.TemporaryDirectory()
         self.addCleanup(self._run_root_holder.cleanup)
         self.run_root = Path(self._run_root_holder.name)
@@ -1126,7 +1247,9 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 None,
                 capture=built.capture,
             )
-        self.scope = default_scope_fixture(self.key_sha256)
+        self.scope = default_scope_fixture(
+            self.key_sha256, run_root=self.run_root
+        )
         self.scope_path = write_scope_fixture(self.run_root, self.scope)
         self.attestation_path = write_attestation_fixture(self.run_root)
         self.inventory = write_inventory_fixture(
@@ -1214,13 +1337,16 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 ("ValidatingAdmissionPolicyBinding", "fs2-image-provenance")
             ] = live_binding
 
-        provider = provider_cli_fixture()
+        provider = provider_cli_fixture(anchor_source=self.attestation_path)
 
         def runner(command):
             joined = " ".join(str(part) for part in command)
             provider_answer = provider(command)
             if provider_answer is not None:
                 return provider_answer
+            boundary_answer = iam_boundary_live_answer(command)
+            if boundary_answer is not None:
+                return boundary_answer
             if command[:3] == ["kubectl", "auth", "whoami"]:
                 return json.dumps(
                     {"status": {"userInfo": {"username": identity}}}
@@ -1625,27 +1751,35 @@ class VerifiedAllowlistTest(unittest.TestCase):
             grown["chains"]["acceptance-heads"]["count"],
             earlier["chains"]["acceptance-heads"]["count"],
         )
-        # The honest older anchor verifies as a strict prefix.
+        # The honest older anchor verifies as a strict prefix (and advances
+        # the monotonic checkpoint).
         TOOL._assert_anchored_heads(self.run_root, earlier)
-        # A forged anchor at the same older count (history rewritten beneath
-        # the growth) refuses.
+        # A forged anchor at the checkpointed count now refuses as a FORKED
+        # anchor history (monotonic anti-replay sees the same count with a
+        # different head).
         forged = json.loads(json.dumps(earlier))
         forged["chains"]["acceptance-heads"]["head"] = "0" * 64
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "NOT a prefix"):
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "forked anchor"):
             TOOL._assert_anchored_heads(self.run_root, forged)
-        # Same for the hash-chained JSONL ledgers.
+        # Ledger prefix continuity: a forged anchor whose count sits BETWEEN
+        # the checkpoint and the longer local chain fails the PREFIX check.
         TOOL._record_consumed(self.run_root, "3" * 64, "test")
         mid = TOOL._anchor_snapshot(self.run_root)
         TOOL._record_consumed(self.run_root, "4" * 64, "test")
         TOOL._assert_anchored_heads(self.run_root, mid)
-        forged_ledger = json.loads(json.dumps(mid))
+        TOOL._record_consumed(self.run_root, "5" * 64, "test")
+        forged_ledger = TOOL._anchor_snapshot(self.run_root)
+        forged_ledger["chains"]["consumed"]["count"] -= 1
         forged_ledger["chains"]["consumed"]["head"] = "1" * 64
         with self.assertRaisesRegex(TOOL.ProvenanceError, "NOT a prefix"):
             TOOL._assert_anchored_heads(self.run_root, forged_ledger)
-        # A snapshot omitting a required chain anchors nothing and refuses.
-        omitting = json.loads(json.dumps(mid))
+        # An anchor REGRESSING behind the best verified one never replays,
+        # and a snapshot omitting a required chain refuses the same way.
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "never replays"):
+            TOOL._assert_anchored_heads(self.run_root, earlier)
+        omitting = TOOL._anchor_snapshot(self.run_root)
         del omitting["chains"]["consumed"]
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "OMITTED"):
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "never replays"):
             TOOL._assert_anchored_heads(self.run_root, omitting)
 
     def test_authority_identity_mismatch_refuses_rendering(self) -> None:
@@ -2428,8 +2562,21 @@ class VerifiedAllowlistTest(unittest.TestCase):
                         "validatingadmissionpolicies",
                         "validatingadmissionpolicybindings",
                     ],
-                    "verbs": ["get", "list", "create", "update", "patch"],
-                }
+                    "verbs": ["get", "list", "create"],
+                },
+                {
+                    "apiGroups": ["admissionregistration.k8s.io"],
+                    "resources": [
+                        "validatingadmissionpolicies",
+                        "validatingadmissionpolicybindings",
+                    ],
+                    "resourceNames": [
+                        "fs2-image-provenance",
+                        "fs2-helm-release-governance",
+                        "fs2-provenance-guard",
+                    ],
+                    "verbs": ["update", "patch"],
+                },
             ],
         }
         reconciler_binding = {
@@ -2446,6 +2593,95 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 cluster_role_bindings=[reconciler_binding],
             )
         )
+        # The allowance is GRANT-SHAPE-BOUND: delete-capable, unnamed, or
+        # wildcard admission grants violate even for the security principal.
+        for broad_rules, label in (
+            (
+                [
+                    {
+                        "apiGroups": ["admissionregistration.k8s.io"],
+                        "resources": [
+                            "validatingadmissionpolicies",
+                            "validatingadmissionpolicybindings",
+                        ],
+                        "verbs": ["get", "list", "create", "update", "patch",
+                                  "delete"],
+                    }
+                ],
+                "delete-capable",
+            ),
+            (
+                [
+                    {
+                        "apiGroups": ["admissionregistration.k8s.io"],
+                        "resources": [
+                            "validatingadmissionpolicies",
+                            "validatingadmissionpolicybindings",
+                        ],
+                        "verbs": ["update", "patch"],
+                    }
+                ],
+                "unnamed update",
+            ),
+            (
+                [
+                    {
+                        "apiGroups": ["admissionregistration.k8s.io"],
+                        "resources": ["*"],
+                        "verbs": ["create"],
+                    }
+                ],
+                "wildcard resources",
+            ),
+        ):
+            broad_role = {
+                "metadata": {"name": "broad-security"},
+                "rules": broad_rules,
+            }
+            broad_binding = {
+                "metadata": {"name": "broad-security"},
+                "roleRef": {"kind": "ClusterRole", "name": "broad-security"},
+                "subjects": [dict(security_subject)],
+            }
+            with self.assertRaisesRegex(
+                TOOL.ProvenanceError, "identity boundary", msg=label
+            ):
+                self.render(
+                    live_runner=self.live_runner(
+                        cluster_roles=[broad_role],
+                        cluster_role_bindings=[broad_binding],
+                    )
+                )
+        # A deploy grant COMBINED with serviceaccounts writes violates even
+        # for the deploy principal (identity substitution).
+        combined_role = {
+            "metadata": {"name": "deploy-plus-sa"},
+            "rules": [
+                {
+                    "apiGroups": ["", "apps"],
+                    "resources": ["pods", "deployments", "serviceaccounts"],
+                    "verbs": ["create", "update", "patch"],
+                }
+            ],
+        }
+        combined_binding = {
+            "metadata": {"name": "deploy-plus-sa", "namespace": "fs2-system"},
+            "roleRef": {"kind": "ClusterRole", "name": "deploy-plus-sa"},
+            "subjects": [
+                {
+                    "kind": "ServiceAccount",
+                    "namespace": "fs2-system",
+                    "name": "fs2-release-automation",
+                }
+            ],
+        }
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "identity boundary"):
+            self.render(
+                live_runner=self.live_runner(
+                    cluster_roles=[combined_role],
+                    namespaced_role_bindings=[combined_binding],
+                )
+            )
         impersonator_role = {
             "metadata": {"name": "security-impersonator"},
             "rules": [
@@ -2693,23 +2929,27 @@ class VerifiedAllowlistTest(unittest.TestCase):
         )
 
     def test_pinned_runner_enforces_the_owner_helm_backend(self) -> None:
-        # The Helm storage backend is owner authority: a missing driver env,
-        # a wrong driver, or a DSN pointing at a different backend identity
-        # all fail closed BEFORE any enumeration; the matching DSN passes
-        # through with only its non-secret identity compared.
+        # The runner refuses ambient identity and ambient backends: no
+        # KUBECONFIG, no Helm driver, an unparsable DSN, redirecting query
+        # parameters, or a foreign backend identity all fail closed BEFORE
+        # any enumeration; the pinned DSN passes with only safe query keys.
         from unittest import mock
 
         base_env = {"PATH": "/usr/bin:/bin", "HOME": "/home/fixture"}
         with mock.patch.dict(os.environ, base_env, clear=True):
+            with self.assertRaisesRegex(TOOL.ProvenanceError, "KUBECONFIG"):
+                TOOL._pinned_live_runner(self.scope)
+        kube_env = {**base_env, "KUBECONFIG": "/home/fixture/kubeconfig"}
+        with mock.patch.dict(os.environ, kube_env, clear=True):
             with self.assertRaisesRegex(TOOL.ProvenanceError, "HELM_DRIVER"):
                 TOOL._pinned_live_runner(self.scope)
         with mock.patch.dict(
-            os.environ, {**base_env, "HELM_DRIVER": "sql"}, clear=True
+            os.environ, {**kube_env, "HELM_DRIVER": "sql"}, clear=True
         ):
             with self.assertRaisesRegex(TOOL.ProvenanceError, "parsable"):
                 TOOL._pinned_live_runner(self.scope)
         alternate = {
-            **base_env,
+            **kube_env,
             "HELM_DRIVER": "sql",
             "HELM_DRIVER_SQL_CONNECTION_STRING": (
                 "postgresql://fs2_helm:secret@evil.invalid:5432/helm_releases"
@@ -2720,16 +2960,229 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 TOOL.ProvenanceError, "alternate backend"
             ):
                 TOOL._pinned_live_runner(self.scope)
-        pinned = {
-            **base_env,
+        # libpq-style query overrides (host=, options=, search_path) are
+        # refused even when the URL authority matches the pin.
+        redirecting = {
+            **kube_env,
             "HELM_DRIVER": "sql",
             "HELM_DRIVER_SQL_CONNECTION_STRING": (
                 "postgresql://fs2_helm:secret@db.fixture.invalid:5432/"
-                "helm_releases"
+                "helm_releases?host=evil.invalid"
+            ),
+        }
+        with mock.patch.dict(os.environ, redirecting, clear=True):
+            with self.assertRaisesRegex(TOOL.ProvenanceError, "allowlist"):
+                TOOL._pinned_live_runner(self.scope)
+        reshaping = {
+            **kube_env,
+            "HELM_DRIVER": "sql",
+            "HELM_DRIVER_SQL_CONNECTION_STRING": (
+                "postgresql://fs2_helm:secret@db.fixture.invalid:5432/"
+                "helm_releases?options=-csearch_path%3Devil"
+            ),
+        }
+        with mock.patch.dict(os.environ, reshaping, clear=True):
+            with self.assertRaisesRegex(TOOL.ProvenanceError, "allowlist"):
+                TOOL._pinned_live_runner(self.scope)
+        pinned = {
+            **kube_env,
+            "HELM_DRIVER": "sql",
+            "HELM_DRIVER_SQL_CONNECTION_STRING": (
+                "postgresql://fs2_helm:secret@db.fixture.invalid:5432/"
+                "helm_releases?sslmode=verify-full"
             ),
         }
         with mock.patch.dict(os.environ, pinned, clear=True):
-            TOOL._pinned_live_runner(self.scope)
+            runner = TOOL._pinned_live_runner(self.scope)
+        self.assertTrue(callable(runner))
+
+    def test_placeholder_attestor_key_is_never_trusted(self) -> None:
+        # The committed attestor key was generated inside the remediation
+        # session: with the shipped ATTESTATION_KEY_PROVENANCE it is a
+        # BOOTSTRAP PLACEHOLDER and every attestation-consuming path refuses
+        # until the OWNER originates the real key and flips the provenance
+        # in the same reviewed commit.
+        TOOL.ATTESTATION_KEY_PROVENANCE = "bootstrap-placeholder"
+        try:
+            with self.assertRaisesRegex(
+                TOOL.ProvenanceError, "BOOTSTRAP PLACEHOLDER"
+            ):
+                self.render()
+        finally:
+            TOOL.ATTESTATION_KEY_PROVENANCE = "owner-originated"
+
+    def test_run_root_must_resolve_to_the_owner_pinned_root(self) -> None:
+        # Single-use state binds globally: pointing --run-root at a fresh
+        # directory (which would reset consumption ledgers and locks) is
+        # refused against the owner-signed scope pin.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as elsewhere:
+            with self.assertRaisesRegex(
+                TOOL.ProvenanceError, "owner-pinned scope run_root"
+            ):
+                TOOL.verified_allowlist(
+                    self._tmp.name,
+                    [],
+                    [REGISTRY_PREFIX],
+                    PLATFORM_PREFIX,
+                    Path(elsewhere),
+                    self.inventory,
+                    self.scope_path,
+                    self.attestation_path,
+                    self._attestor_key.name,
+                    deploy_principals=[AUTOMATION_PRINCIPAL],
+                    key_path="release.key",
+                    verifier=authority_checking_verifier,
+                    capture=self.capture,
+                    live_runner=self.live_runner(),
+                )
+
+    def test_torn_ledger_tail_is_crash_tolerated_and_sealed(self) -> None:
+        # A crash mid-append leaves an UNTERMINATED fragment. When the
+        # checkpoint accounts for the valid records, reads tolerate it and
+        # the next append continues in a chained continuation segment — the
+        # torn bytes are preserved, never deleted. An unaccounted torn tail
+        # stays a hard refusal (tampering).
+        ledger = self.run_root / "release-authorization-consumed.jsonl"
+        TOOL._record_consumed(self.run_root, "a" * 64, "test")
+        TOOL._record_consumed(self.run_root, "b" * 64, "test")
+        with open(ledger, "ab") as handle:
+            handle.write(b'{"partial":')  # no newline: crash artifact
+        self.assertTrue(TOOL._is_consumed(self.run_root, "b" * 64))
+        TOOL._record_consumed(self.run_root, "c" * 64, "test")
+        continuation = Path(str(ledger) + ".cont1")
+        self.assertTrue(continuation.exists())
+        self.assertTrue(TOOL._is_consumed(self.run_root, "c" * 64))
+        scan = TOOL._ledger_scan(ledger)
+        self.assertEqual(scan["count"], 3)
+        # Unaccounted torn tail (in the continuation, checkpoint behind by
+        # more than the fragment) is tampering and fails closed.
+        with open(continuation, "ab") as handle:
+            handle.write(b'{"forged": 1}\n{"tail":')
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "hash chain|account"):
+            TOOL._is_consumed(self.run_root, "c" * 64)
+
+    def test_resume_grace_survives_authorization_expiry(self) -> None:
+        # Expiry bounds FIRST USE; a consumed authorization stays resumable
+        # inside the grace window and is refused beyond it.
+        import hashlib as h
+        from datetime import UTC, datetime, timedelta
+
+        plan = [
+            {"argv": ["kubectl", "apply", "-f", "-"], "stdin_sha256": "6" * 64,
+             "verify": None}
+        ]
+        now = datetime.now(UTC)
+
+        def write_expired(name: str, hours_ago: float) -> Path:
+            document = {
+                "schema": TOOL.ROLLOUT_AUTHORIZATION_SCHEMA,
+                "cluster": "fixture-cluster",
+                "plan": plan,
+                "plan_sha256": h.sha256(
+                    json.dumps(plan, sort_keys=True).encode("utf-8")
+                ).hexdigest(),
+                "executor": SECURITY_PRINCIPAL,
+                "reason": "change:CH-20 grace",
+                "issued_at": (
+                    now - timedelta(hours=hours_ago + 4)
+                ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "expires_at": (now - timedelta(hours=hours_ago)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                ),
+            }
+            payload = json.dumps(document).encode("utf-8")
+            target = self.run_root / name
+            target.write_bytes(payload)
+            target.chmod(0o644)
+            signature = self.run_root / (name + ".sig")
+            signature.write_text("s\n", encoding="utf-8")
+            signature.chmod(0o644)
+            SIGNED_AUTHORITY_HASHES.add(h.sha256(payload).hexdigest())
+            return target
+
+        recent = write_expired("expired-recent.json", hours_ago=2)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "expired"):
+            TOOL.load_rollout_authorization(
+                recent, self._tmp.name, "fixture-cluster", None,
+                self.run_root, NOOP_VERIFIER,
+            )
+        payload = recent.read_bytes()
+        import hashlib as h2
+
+        TOOL._record_consumed(
+            self.run_root, h2.sha256(payload).hexdigest(), "rollout-authorization"
+        )
+        TOOL.load_rollout_authorization(
+            recent, self._tmp.name, "fixture-cluster", None, self.run_root,
+            NOOP_VERIFIER, allow_consumed=True,
+        )
+        ancient = write_expired(
+            "expired-ancient.json",
+            hours_ago=(TOOL.RESUME_GRACE_DAYS * 24) + 5,
+        )
+        TOOL._record_consumed(
+            self.run_root,
+            h2.sha256(ancient.read_bytes()).hexdigest(),
+            "rollout-authorization",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "grace window"):
+            TOOL.load_rollout_authorization(
+                ancient, self._tmp.name, "fixture-cluster", None,
+                self.run_root, NOOP_VERIFIER, allow_consumed=True,
+            )
+
+    def test_foreign_privileged_namespace_theft_is_audited(self) -> None:
+        # A foreign namespace becomes PROTECTED when it is home to a
+        # ServiceAccount holding forbidden/cluster authority: secrets-read
+        # there is a transitive path to that SA's credentials.
+        powerful_sa_crb = {
+            "metadata": {"name": "powerful-foreign-sa"},
+            "roleRef": {"kind": "ClusterRole", "name": "impersonator"},
+            "subjects": [
+                {
+                    "kind": "ServiceAccount",
+                    "namespace": "totally-elsewhere",
+                    "name": "powerful",
+                }
+            ],
+        }
+        impersonator_role = {
+            "metadata": {"name": "impersonator"},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["users"],
+                    "verbs": ["impersonate"],
+                }
+            ],
+        }
+        reader_role = {
+            "metadata": {"name": "reader", "namespace": "totally-elsewhere"},
+            "rules": [
+                {"apiGroups": [""], "resources": ["secrets"], "verbs": ["get"]}
+            ],
+        }
+        reader_binding = {
+            "metadata": {
+                "name": "thief-reads-elsewhere",
+                "namespace": "totally-elsewhere",
+            },
+            "roleRef": {"kind": "Role", "name": "reader"},
+            "subjects": [{"kind": "User", "name": "thief"}],
+        }
+        with self.assertRaisesRegex(
+            TOOL.ProvenanceError, "stored-credential"
+        ):
+            self.render(
+                live_runner=self.live_runner(
+                    cluster_roles=[impersonator_role],
+                    cluster_role_bindings=[powerful_sa_crb],
+                    namespaced_roles=[reader_role],
+                    namespaced_role_bindings=[reader_binding],
+                )
+            )
 
     def test_bootstrap_masters_recognition_is_attestation_driven(self) -> None:
         # The one bootstrap cluster-admin -> system:masters binding is
@@ -3336,6 +3789,9 @@ class _FakeAdmissionCluster:
         provider_answer = self.provider(command)
         if provider_answer is not None:
             return provider_answer
+        boundary_answer = iam_boundary_live_answer(command)
+        if boundary_answer is not None:
+            return boundary_answer
         if command[:3] == ["kubectl", "auth", "whoami"]:
             return json.dumps(
                 {"status": {"userInfo": {"username": self.identity}}}
@@ -3466,13 +3922,29 @@ class ReconcileBoundaryTest(unittest.TestCase):
                 TOOL, "ATTESTATION_KEY_SHA256", self._original_attestor_pin
             )
         )
+        # The fixtures simulate the RATIFIED state: the owner has originated
+        # the attestor key; the shipped constant stays a refused placeholder.
+        self._original_attestor_provenance = TOOL.ATTESTATION_KEY_PROVENANCE
+        TOOL.ATTESTATION_KEY_PROVENANCE = "owner-originated"
+        self.addCleanup(
+            lambda: setattr(
+                TOOL,
+                "ATTESTATION_KEY_PROVENANCE",
+                self._original_attestor_provenance,
+            )
+        )
         self._run_root_holder = tempfile.TemporaryDirectory()
         self.addCleanup(self._run_root_holder.cleanup)
         self.run_root = Path(self._run_root_holder.name)
-        self.scope = default_scope_fixture(self.key_sha256)
+        self.scope = default_scope_fixture(
+            self.key_sha256, run_root=self.run_root
+        )
         self.scope_path = write_scope_fixture(self.run_root, self.scope)
         self.attestation_path = write_attestation_fixture(self.run_root)
         self.cluster = _FakeAdmissionCluster()
+        self.cluster.provider = provider_cli_fixture(
+            anchor_source=self.attestation_path
+        )
 
     def write_recovery(self, name: str, *, prior, actions) -> tuple[Path, str]:
         import hashlib as h
@@ -3768,22 +4240,55 @@ class ReconcileBoundaryTest(unittest.TestCase):
         # attested enumeration refuses, and so does a WORM bucket without an
         # object-lock or with insufficient retention.
         self.cluster.provider = provider_cli_fixture(
+            anchor_source=self.attestation_path,
             extra_bindings=[
                 {
                     "subject": {"id": "mallory@example.invalid"},
                     "role_id": "k8s.editor",
                 }
-            ]
+            ],
         )
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "admin-class"):
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "non-read-only"):
             self.plan_document(None)
-        self.cluster.provider = provider_cli_fixture(lock_enabled=False)
+        # An UNKNOWN role is admin-class by default (fail closed), even
+        # without admin/editor/owner in its name.
+        self.cluster.provider = provider_cli_fixture(
+            anchor_source=self.attestation_path,
+            extra_bindings=[
+                {
+                    "subject": {"id": "mystery@example.invalid"},
+                    "role_id": "custom.exotic-capability",
+                }
+            ],
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "non-read-only"):
+            self.plan_document(None)
+        self.cluster.provider = provider_cli_fixture(
+            anchor_source=self.attestation_path, lock_enabled=False
+        )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "object-lock"):
             self.plan_document(None)
-        self.cluster.provider = provider_cli_fixture(retention_days=1)
+        self.cluster.provider = provider_cli_fixture(
+            anchor_source=self.attestation_path, retention_days=1
+        )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "retention"):
             self.plan_document(None)
-        self.cluster.provider = provider_cli_fixture()
+        # GOVERNANCE lock mode is bypassable and refused.
+        self.cluster.provider = provider_cli_fixture(
+            anchor_source=self.attestation_path, lock_mode="GOVERNANCE"
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "COMPLIANCE"):
+            self.plan_document(None)
+        # A wrong provider principal is refused before anything is trusted.
+        self.cluster.provider = provider_cli_fixture(
+            anchor_source=self.attestation_path,
+            principal="somebody-else@fixture.invalid",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "provider_principal"):
+            self.plan_document(None)
+        self.cluster.provider = provider_cli_fixture(
+            anchor_source=self.attestation_path
+        )
         self.plan_document(None)
 
     def test_atomic_consumption_has_no_partial_crash_window(self) -> None:

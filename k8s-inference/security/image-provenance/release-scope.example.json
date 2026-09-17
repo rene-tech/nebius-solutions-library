@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/release-scope/v11",
+  "schema": "fs2-serve.nebius.ai/release-scope/v12",
   "scope": {
     "cluster": "<kube-system-namespace-uid>",
     "namespaces": [
@@ -23,6 +23,10 @@
       "fs2-system:fs2-serve-control-plane"
     ],
     "deploy_credential_csi_driver": "secrets-store.csi.k8s.io",
+    "deploy_credential_spc": "fs2-release-helm-dsn",
+    "workload_csi_drivers": [
+      "secrets-store.csi.k8s.io"
+    ],
     "security_principals": [
       "system:serviceaccount:fs2-security:fs2-admission-guard"
     ],
@@ -35,19 +39,37 @@
       "workload": "deployment/fs2-serve-control-plane"
     },
     "tooling": {
-      "kubectl": "/usr/bin/kubectl",
-      "helm": "/usr/bin/helm",
-      "nebius": "/usr/bin/nebius"
+      "kubectl": {
+        "path": "/usr/bin/kubectl",
+        "sha256": "<sha256 of the kubectl binary bytes>"
+      },
+      "helm": {
+        "path": "/usr/bin/helm",
+        "sha256": "<sha256 of the helm binary bytes>"
+      },
+      "nebius": {
+        "path": "/usr/bin/nebius",
+        "sha256": "<sha256 of the nebius binary bytes>"
+      }
     },
+    "run_root": "/var/lib/fs2-release/run-root",
+    "provider_endpoint": "https://api.example-region.example.invalid",
+    "provider_principal": "<read-only provider service-account id the CLI must authenticate as>",
+    "provider_cluster_id": "<managed-k8s-cluster-id>",
     "provider_parent_ids": [
       "<managed-k8s-cluster-id>",
       "<folder-or-project-id>",
       "<cloud-or-tenant-id>"
     ],
+    "provider_readonly_roles": [
+      "viewer",
+      "auditor"
+    ],
     "worm_store_uri": "<off-host WORM store URI holding the anchored-heads exports>",
     "worm_bucket": "<object-storage bucket name whose object-lock configuration is verified live>",
     "verification_key_sha256": "<sha256 of cosign.pub>",
-    "attestation_key_sha256": "78090e41cde862bc91bc61c1b65041bf113ad5bc641690578ba4184f14bda687",
-    "policy_sha256": "<sha256 of policy.yaml>"
+    "attestation_key_sha256": "<the OWNER-ORIGINATED attestor public key sha256; the committed 78090e41... fingerprint is a bootstrap placeholder that never verifies (ATTESTATION_KEY_PROVENANCE gate)>",
+    "policy_sha256": "<sha256 of policy.yaml>",
+    "iam_boundary_sha256": "<sha256 of iam-boundary.yaml>"
   }
 }

@@ -30,7 +30,11 @@
 #     attestation document — verified against the SEPARATE attestor key
 #     pinned by the owner-signed scope's attestation_key_sha256 (required to
 #     differ from the release verification key, so the pipeline can never
-#     attest its own boundary). The provider facts are checked LIVE through
+#     attest its own boundary; the CURRENTLY committed attestor key is an
+#     ENFORCED bootstrap placeholder — ATTESTATION_KEY_PROVENANCE — that
+#     every path refuses until the OWNER originates the real key).
+#     This manifest itself is pinned by the scope (iam_boundary_sha256) and
+#     every object below must exist LIVE and equal it at verification time. The provider facts are checked LIVE through
 #     the owner-pinned provider CLI: every scope-enumerated ancestry level's
 #     access bindings (admin-class grants must name attestation-enumerated
 #     subjects) and the WORM bucket's object-lock/retention configuration.

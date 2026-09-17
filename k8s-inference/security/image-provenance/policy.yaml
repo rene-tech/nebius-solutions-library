@@ -191,6 +191,37 @@ spec:
       expression: >-
         'deploy-credential-csi-driver' in params.data
         ? params.data['deploy-credential-csi-driver'] : ''
+    - name: deployCredentialSpc
+      expression: >-
+        'deploy-credential-spc' in params.data
+        ? params.data['deploy-credential-spc'] : ''
+    - name: workloadCsiDrivers
+      expression: >-
+        ('workload-csi-drivers' in params.data
+         ? params.data['workload-csi-drivers'] : '')
+        .split("\n").filter(d, d != '')
+    - name: usesProjectedSecretSource
+      expression: >-
+        has(variables.podSpec.volumes) &&
+        variables.podSpec.volumes.exists(v,
+          has(v.projected) && has(v.projected.sources) &&
+          v.projected.sources.exists(s, has(s.secret)))
+    - name: allContainersRefusePrivEsc
+      expression: >-
+        variables.podSpec.containers.all(c,
+          has(c.securityContext) &&
+          has(c.securityContext.allowPrivilegeEscalation) &&
+          c.securityContext.allowPrivilegeEscalation == false)
+        && (!has(variables.podSpec.initContainers) ||
+            variables.podSpec.initContainers.all(c,
+              has(c.securityContext) &&
+              has(c.securityContext.allowPrivilegeEscalation) &&
+              c.securityContext.allowPrivilegeEscalation == false))
+        && (!has(variables.podSpec.ephemeralContainers) ||
+            variables.podSpec.ephemeralContainers.all(c,
+              has(c.securityContext) &&
+              has(c.securityContext.allowPrivilegeEscalation) &&
+              c.securityContext.allowPrivilegeEscalation == false))
     - name: usesHostPath
       expression: >-
         has(variables.podSpec.volumes) &&
@@ -306,14 +337,20 @@ spec:
              (has(v.projected) || has(v.configMap) || has(v.emptyDir) ||
               has(v.downwardAPI) ||
               (has(v.csi) && variables.deployCredentialCsiDriver != '' &&
-               v.csi.driver == variables.deployCredentialCsiDriver)) &&
+               v.csi.driver == variables.deployCredentialCsiDriver &&
+               has(v.csi.readOnly) && v.csi.readOnly == true &&
+               has(v.csi.volumeAttributes) &&
+               'secretProviderClass' in v.csi.volumeAttributes &&
+               v.csi.volumeAttributes['secretProviderClass'] ==
+                 variables.deployCredentialSpc)) &&
              (!has(v.projected) || !has(v.projected.sources) ||
               v.projected.sources.all(s,
-                !has(s.serviceAccountToken) || (
+                !has(s.secret) &&
+                (!has(s.serviceAccountToken) || (
                   has(s.serviceAccountToken.audience) &&
                   s.serviceAccountToken.audience == variables.tokenAudience &&
                   has(s.serviceAccountToken.expirationSeconds) &&
-                  s.serviceAccountToken.expirationSeconds <= 3600))))) &&
+                  s.serviceAccountToken.expirationSeconds <= 3600)))))) &&
           !variables.usesSecretEnv)
       message: >-
         pods running as an automation identity must disable token automount,
@@ -347,16 +384,25 @@ spec:
           !variables.setsNodeName &&
           !variables.usesForeignAudienceProjection &&
           !variables.usesSecretEnv &&
+          !variables.usesProjectedSecretSource &&
+          variables.allContainersRefusePrivEsc &&
           (!has(variables.podSpec.volumes) ||
-           variables.podSpec.volumes.all(v, !has(v.secret))))
+           variables.podSpec.volumes.all(v,
+             has(v.projected) || has(v.configMap) || has(v.emptyDir) ||
+             has(v.downwardAPI) || has(v.persistentVolumeClaim) ||
+             (has(v.csi) && variables.workloadCsiDrivers.exists(
+               d, d == v.csi.driver)))))
       message: >-
         workloads written by an automation identity must run as an
-        owner-enumerated ServiceAccount and may not use hostPath volumes,
-        privileged containers, host network/PID/IPC namespaces, added
-        capabilities or privilege escalation, direct nodeName scheduling,
-        Secret volumes or Secret env values, or token projections outside
-        the bounded automation audience; workload-create rights never become
-        identity, credential, host, node, or privilege escalation (SAI-09)
+        owner-enumerated ServiceAccount, set allowPrivilegeEscalation false
+        on every container, and may mount only
+        projected(no Secret sources)/configMap/emptyDir/downwardAPI/PVC
+        volumes plus owner-listed CSI drivers — never hostPath, privileged
+        containers, host network/PID/IPC namespaces, added capabilities,
+        direct nodeName scheduling, Secret volumes/env, or token projections
+        outside the bounded automation audience; workload-create rights
+        never become identity, credential, host, node, storage, or privilege
+        escalation (SAI-09)
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

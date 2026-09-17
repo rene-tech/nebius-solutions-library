@@ -126,12 +126,15 @@ provenance gate (see `security/image-provenance/README.md`):
    in-cluster admission, so their non-removability is the external
    provider/IAM owner control, attested by an ATTESTOR-SIGNED provider
    attestation whose key fingerprint is SOURCE-PINNED in reviewed code —
-   separately from the release key, so a release-key holder can never
-   rotate the attestor — and enforced against the provider's LIVE answers
-   through the owner-pinned provider CLI (ancestry-wide admin-binding
-   enumeration and the WORM bucket's object-lock/retention configuration),
-   with the off-host anchored-heads snapshot enforced with prefix
-   continuity; the
+   separately from the release key; the currently committed attestor key is
+   an ENFORCED bootstrap placeholder that every path refuses until the
+   owner originates the real key — and enforced against the provider's
+   LIVE answers through the owner-pinned, digest-verified provider CLI
+   (whoami-verified principal, derived ancestry, double-pass paginated
+   admin-binding enumeration with fail-closed role semantics, exact-field
+   WORM lock proof, and the attested anchor OBJECT downloaded and
+   byte-verified), with anchors monotonic anti-replay and prefix-continuous;
+   the
    renderer detects and refuses drift or deletion of every policy object at
    render), with a reversible,
    owner-signed break-glass (never deletion) whose weaken/restore/crash-

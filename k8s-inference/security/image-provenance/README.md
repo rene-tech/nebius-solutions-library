@@ -533,7 +533,15 @@ policies; only new admissions are.
   hash-chained AND head-checkpointed with the chain verified on every read
   and before every append — rewriting, splicing, and suffix truncation all
   fail closed, so a truncated consume ledger can never silently un-consume
-  an authorization; `export-anchored-heads` emits the canonical chain-head
+  an authorization; appends WRITE-LOOP until every byte is down (a short
+  os.write can never tear silently), a crash-torn unterminated tail is
+  tolerated ONLY when the checkpoint accounts for the records before it
+  (anything else is tampering) and is then sealed by continuing the chain
+  in a continuation segment — nothing deleted; an authorization and its
+  recovery document are consumed in ONE atomic chained append, so no crash
+  window can strand a half-consumed pair; a consumed authorization stays
+  resumable within a bounded grace window past expiry (first use is
+  strictly expiry-bounded); `export-anchored-heads` emits the canonical chain-head
   snapshot for the owner's off-host WORM store (EVERY required chain is
   always enumerated, count 0 included) and `verify-anchored-heads` — the
   same enforcement that runs inside every render and every
@@ -543,11 +551,20 @@ policies; only new admissions are.
   rewrite), and when a LONGER local chain's element at the anchored
   position no longer hashes to the anchored head — the anchor must be a
   strict PREFIX, so history rewritten beneath new growth is refused, not
-  just counted past. kubectl and helm are OWNER-PINNED absolute
-  paths in the signed scope (`tooling`), executed with a from-scratch
-  environment (only KUBECONFIG/HOME pass through, and the authenticated
-  identity they select is then proven via whoami) — ambient PATH is never a
-  trust root. The frozen authority is identity-bound end to end: the signed
+  just counted past. kubectl, helm, and the provider CLI are
+  OWNER-PINNED in the signed scope (`tooling`) by absolute path AND binary
+  digest — the tool's bytes are hash-verified before first use, so a
+  repointed or overwritten binary never runs — and executed with a
+  from-scratch environment: HOME is /nonexistent, private fresh XDG/Helm
+  state directories, KUBECONFIG must be EXPLICIT (the authenticated
+  identity is then proven via whoami), and the Helm SQL DSN must parse
+  fully with its non-secret identity equal to the owner pin and only
+  safe query keys (sslmode/sslrootcert/connect_timeout/application_name);
+  libpq redirect keys (host/hostaddr/port/dbname/user/options/service) are
+  refused. The run root itself is OWNER-PINNED (`run_root`): locks,
+  consumption ledgers, and journals bind globally to one root, so a
+  caller-selected directory can never reset single-use state. Ambient
+  anything is never a trust root. The frozen authority is identity-bound end to end: the signed
   inventory records the authority workload UID + image (digest-pinned
   platform code; a same-name replacement changes the UID), the database
   name, the latest applied migration (version + sha256 from
@@ -584,31 +601,36 @@ policies; only new admissions are.
   enters as the ATTESTOR-SIGNED provider attestation (`--attestation` +
   `--attestation-key`, required by every render and by every
   execute/resume): a cluster-pinned, time-bounded document verified ONLY
-  against the committed attestor.pub whose fingerprint is SOURCE-PINNED in
-  reviewed code (`ATTESTATION_KEY_SHA256`, POPULATED; the owner-signed
-  scope must carry the SAME value and it must differ from the release
-  verification key — the pipeline cannot attest its own boundary and a
-  release-key holder cannot rotate the attestor; the attestor PRIVATE key
-  lives outside the release key directory, and moving its custody to the
-  security owner is the remaining rollout-window step, stated, not
-  claimed). The provider facts are then checked against the provider
-  itself: the owner-pinned provider CLI enumerates the LIVE access
-  bindings of every scope-enumerated ancestry level (cluster, folder,
-  cloud — `provider_parent_ids`, so no level can be omitted) and every
-  admin-class binding must name an attestation-enumerated subject
-  (conditions never exempt; unparseable or unreachable answers fail
-  closed), and the WORM bucket's LIVE object-lock configuration must show
-  immutability enabled with at least the required default retention — a
-  URI string alone proves nothing. The attestation's worm_store must equal
-  the owner scope's `worm_store_uri`, and it embeds the latest off-host
-  anchored-heads snapshot (every required chain enumerated; empty/omitted
-  chains refuse), which the renderer and the reconciler enforce against
-  the local chains with strict PREFIX continuity; checkpoint-less LEGACY
-  ledgers are adopted ONLY when that signed anchor confirms their exact
-  content, and a zero-count anchor adopts nothing. The shipped
-  release-scope remains `scope: null` (fail-closed) until the owner
-  ratifies the production values — that population is an owner act this
-  tree does not perform. Identity hygiene is verified for BOTH
+  against the attestor key whose fingerprint is SOURCE-PINNED in reviewed
+  code. HONEST STATUS: the committed attestor.pub was generated inside the
+  remediation session, so it is a BOOTSTRAP PLACEHOLDER — the reviewed
+  constant ATTESTATION_KEY_PROVENANCE says so, and EVERY
+  attestation-consuming path REFUSES until the OWNER originates the real
+  attestor key and replaces attestor.pub + ATTESTATION_KEY_SHA256 +
+  the provenance constant ("owner-originated") in one reviewed commit; the
+  placeholder key is never trusted and never deleted. Once ratified, the
+  provider facts are checked against the provider itself through the
+  owner-pinned, digest-verified CLI at the owner-pinned endpoint,
+  authenticated as the owner-pinned read-only principal (whoami-verified):
+  the ancestry is DERIVED live (cluster -> folder -> cloud) and must equal
+  the owner enumeration; every level's access bindings are fetched fully
+  paginated and enumerated TWICE (instability refuses); role semantics are
+  FAIL-CLOSED — a role must be owner-listed read-only or its subject
+  attestation-enumerated, and unknown roles are admin-class. WORM is proven
+  by exact normalized fields (bucket name equality, ancestry membership,
+  versioning enabled, lock status exactly enabled, mode exactly COMPLIANCE
+  — governance refused — retention >= the minimum) and then by the OBJECT:
+  the attestation pins the exact anchor object (key + version id + sha256),
+  that exact version is DOWNLOADED from the bucket, its bytes must hash to
+  the pin and equal the embedded anchored-heads snapshot. Anchors are
+  ANTI-REPLAY monotonic: a run-root checkpoint records the best verified
+  anchor; older, zero, or forked anchors never verify again, and
+  checkpoint-less legacy ledgers adopt ONLY on EXACT anchored content
+  (equal length — an unanchored suffix refuses; zero-count anchors adopt
+  nothing). The attestation's worm_store must equal the owner scope's
+  `worm_store_uri`. The shipped release-scope remains `scope: null`
+  (fail-closed) until the owner ratifies the production values — that
+  population is an owner act this tree does not perform. Identity hygiene is verified for BOTH
   automation identities (security and deploy): existence, automount
   disabled on the ServiceAccount AND explicitly on every pod running as
   it, no legacy token Secret, at least one REQUIRED pod-bound projection
@@ -637,9 +659,19 @@ policies; only new admissions are.
   ConfigMap writes namespaced and name-scoped to the two parameter
   ConfigMaps, no secret/pod/serviceaccount reads). The IAM audit itself
   matches subresource wildcards (`pods/*`, `*/token`) and enumerates
-  Roles/RoleBindings in EVERY namespace, so cluster-effect grants (token
-  minting, CSR, RBAC mutation, impersonation) in foreign namespaces are
-  audited too. The wholesale
+  Roles/RoleBindings in EVERY namespace: cluster-effect grants (token
+  minting, CSR, RBAC mutation, impersonation, proxy, node/PV/StorageClass
+  mutation) are audited everywhere, and namespaces HOME to a
+  ServiceAccount holding forbidden authority become protected for
+  secrets/exec/portforward/workload rules too (transitive theft closed
+  without flagging unrelated app namespaces). The permitted_role
+  allowances are GRANT-SHAPE-BOUND: the security identity's admission
+  grant may not carry delete or wildcards and must resourceName-scope its
+  update/patch to the three protected objects, and the deploy identity's
+  workload grant may never include ServiceAccount writes or delete. The
+  committed iam-boundary.yaml is pinned by the scope
+  (`iam_boundary_sha256`) and every object it defines must exist live and
+  EQUAL it — the same live-equality treatment the policy manifest has. The wholesale
   kube-system ServiceAccount GROUP is not exemptible (controllers are
   exempted individually by name), Secret READS AND WRITES in protected
   namespaces are forbidden identity paths (exfiltration and legacy token

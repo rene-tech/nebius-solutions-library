@@ -45,6 +45,9 @@ spec:
           # REPLACE with the digest-pinned, receipted release-tooling image:
           # <registry>/<registryid>/fs2-platform/release-tooling@sha256:<64hex>
           image: cr.example-region.example.invalid/registryid/fs2-platform/release-tooling@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
           command:
             - /bin/sh
             - -ec
