@@ -326,16 +326,123 @@ def test_authority_requires_source_trust_and_exact_automation_identity() -> None
 
 def test_optional_addresses_gen1_and_composite_generations_fail_closed() -> None:
     provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    guard_source = (ROOT / "scripts/secret_migration_guard.py").read_text()
     assert 'key.partition(":")[0]' in provider
     assert '"uninstantiated_declared_addresses"' in provider
-    assert '"availability": "not-observed"' in provider
-    assert "state_binding.get(\"immutable\") is not True" in provider
-    assert "live.get(\"immutable\") is not True" in provider
+    assert '"availability": "disabled-absent"' in provider
+    assert "def credential_presence_sets(" in provider
+    assert "optional credential class is only partially enabled" in provider
+    assert "def legacy_v1_adoption_classes(" in provider
+    assert "def legacy_v1_adoption_classes(" in guard_source
+    assert "not legacy_adoption and binding.get(\"immutable\") is not True" in provider
+    assert "not legacy_adoption and not live_is_immutable" in guard_source
+    assert "mutable legacy predecessor cannot be selected current-write" in provider
     assert "Historical fixed-v1 Secrets predate the annotations" in provider
     assert "if missing_declared:" not in provider
     assert generation_from_address('kubernetes_secret_v1.database_versioned["2:owner"]') == 2
     assert generation_from_address('kubernetes_secret_v1.database_versioned["2:consumer"]') == 2
     assert generation_from_address("kubernetes_secret_v1.database") == 1
+
+
+def test_exact_mutable_legacy_predecessor_is_adopted_without_weakening_successor() -> None:
+    registry = GUARD.load_registry()
+    content_sha256 = "a" * 64
+    observed_at = "2026-09-17T00:00:00Z"
+
+    def state(address: str, *, annotations: dict[str, str], immutable: bool) -> dict:
+        return {
+            "values": {
+                "root_module": {
+                    "resources": [
+                        {
+                            "address": address,
+                            "values": {
+                                "metadata": [
+                                    {
+                                        "namespace": "fs2-system",
+                                        "name": "fs2-admin-v1",
+                                        "uid": "uid-v1",
+                                        "resource_version": "41",
+                                        "annotations": annotations,
+                                    }
+                                ],
+                                "immutable": immutable,
+                            },
+                        }
+                    ]
+                }
+            }
+        }
+
+    def live(*, annotations: dict[str, str], immutable: bool) -> dict:
+        return {
+            "items": [
+                {
+                    "metadata": {
+                        "namespace": "fs2-system",
+                        "name": "fs2-admin-v1",
+                        "uid": "uid-v1",
+                        "resourceVersion": "41",
+                        "annotations": annotations,
+                    },
+                    "immutable": immutable,
+                    "authorityContentSha256": content_sha256,
+                    "authorityEvidenceId": "provider-observation-v1",
+                    "authorityObservedAt": observed_at,
+                }
+            ]
+        }
+
+    adopted = GUARD.live_secret_bindings(
+        state("kubernetes_secret_v1.admin", annotations={}, immutable=False),
+        live(annotations={}, immutable=False),
+        registry=registry,
+        terraform_root="workloads",
+    )
+    assert adopted["kubernetes_secret_v1.admin"]["credential_class"] == "admin-token"
+    assert adopted["kubernetes_secret_v1.admin"]["generation"] == "1"
+    assert adopted["kubernetes_secret_v1.admin"]["immutable"] == "false"
+
+    successor_annotations = {
+        "fs2.nebius.ai/credential-class": "admin-token",
+        "fs2.nebius.ai/credential-generation": "2",
+        "fs2.nebius.ai/content-sha256": content_sha256,
+    }
+    with pytest.raises(GUARD.GuardError, match="immutable binding differs"):
+        GUARD.live_secret_bindings(
+            state(
+                'kubernetes_secret_v1.admin_versioned["2"]',
+                annotations=successor_annotations,
+                immutable=False,
+            ),
+            live(annotations=successor_annotations, immutable=False),
+            registry=registry,
+            terraform_root="workloads",
+        )
+
+
+def test_presence_policy_is_exhaustive_and_optional_absence_is_explicit() -> None:
+    registry = GUARD.load_registry()
+    identifiers = {item["id"] for item in registry["credentials"]}
+    presence = registry["credential_presence"]
+    assert set(presence["required"]).isdisjoint(presence["optional"])
+    assert set(presence["required"]) | set(presence["optional"]) == identifiers
+    assert set(presence["optional"]) == {
+        "postgresql-backup-s3",
+        "postgresql-backup-s3-secret",
+    }
+    for policy in presence["optional"].values():
+        assert policy["activation"] == "all-authoritative-addresses-observed"
+        assert policy["required_addresses"]
+
+    adoptions = registry["legacy_v1_secret_adoptions"]
+    assert all("_versioned" not in item["address"] for item in adoptions)
+    assert len(adoptions) == len(
+        {
+            (item["root"], item["address"], item["credential_class"])
+            for item in adoptions
+        }
+    )
 
 
 def test_expiry_is_future_valid_not_merely_present() -> None:
@@ -405,7 +512,7 @@ def test_class_adapters_receive_only_exact_class_source_material() -> None:
     assert '"kubernetes_secrets": secrets' not in dispatch
     assert '"nebius_inventory": provider_inventory' not in dispatch
     assert 'parameters.get("source_trust") != source_trust' in dispatch
-    assert "exact_requested_secret_bindings(parameters, expected_bindings, secrets)" in dispatch
+    assert "parameters, expected_bindings, secrets, registry" in dispatch
 
 
 def test_authorized_reader_files_are_narrow_and_global_inventory_is_root_private() -> None:

@@ -1535,7 +1535,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                     "purpose": "NVIDIA registry pulls and API access",
                     "generation": 1,
                     "fingerprint": "1" * 64,
-                    "status": "active",
+                    "status": "source-observed",
                     **provider_inventory(["model-runtimes"]),
                 },
                 "successor_generation": 2,
@@ -1675,8 +1675,18 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 provider_command=["provider"],
                 project_id="project-test",
             )
+            inventory_response = {
+                "items": items,
+                "required_classes": registry["credential_presence"]["required"],
+                "enabled_classes": sorted(
+                    item["id"] for item in registry["credentials"]
+                ),
+                "absent_optional_classes": [],
+                "externalEvidence": {},
+                "authorityObservation": {},
+            }
             with mock.patch.object(
-                ROTATION, "provider_call", return_value={"items": items}
+                ROTATION, "provider_call", return_value=inventory_response
             ):
                 result = ROTATION.audit_inventory(args)
             self.assertEqual(result["credential_classes"], len(registry["credentials"]))
@@ -1691,7 +1701,9 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             args.directory = Path(temporary) / "inventory"
             with (
                 mock.patch.object(
-                    ROTATION, "provider_call", return_value={"items": items[:-1]}
+                    ROTATION,
+                    "provider_call",
+                    return_value={**inventory_response, "items": items[:-1]},
                 ),
                 self.assertRaisesRegex(ROTATION.RotationError, "omits"),
             ):

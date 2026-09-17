@@ -296,6 +296,16 @@ def attested_backend_identity(
         or identity.get("purpose") != purpose
         or identity.get("audience") != f"terraform-backend:{purpose}"
         or identity.get("credential_kind") != "workload_identity_session"
+        or identity.get("credential_source")
+        != "provider-workload-identity-exchange"
+        or not isinstance(identity.get("credential_identity_sha256"), str)
+        or re.fullmatch(
+            r"[0-9a-f]{64}", identity["credential_identity_sha256"]
+        )
+        is None
+        or identity.get("shared_credentials_file_used") is not False
+        or identity.get("environment_credentials_used") is not False
+        or identity.get("instance_metadata_used") is not False
         or identity.get("human_principal_allowed") is not False
         or identity.get("impersonation_allowed") is not False
         or issued > now
@@ -316,6 +326,22 @@ def attested_backend_identity(
         reader_uid=identity.get("reader_uid"),
         reader_gid=identity.get("reader_gid"),
     )
+    result["shared_credentials_file_path"] = attested_file(
+        identity.get("shared_credentials_file_path"),
+        identity.get("shared_credentials_file_sha256"),
+        label=f"{purpose} disabled AWS shared-credentials sentinel",
+        private=False,
+    )
+    shared_credentials_file = Path(result["shared_credentials_file_path"])
+    if (
+        stat.S_IMODE(shared_credentials_file.stat().st_mode) != 0o644
+        or shared_credentials_file.stat().st_size != 0
+        or identity.get("shared_credentials_file_sha256")
+        != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ):
+        raise DeploymentError(
+            "backend shared-credentials sentinel is not exact and empty"
+        )
     return result
 
 
@@ -596,6 +622,14 @@ def require_terraform_version(terraform: str) -> tuple[int, int, int]:
 
 def terraform_environment(run_root: Path, stage: str) -> dict[str, str]:
     environment = clean_environment()
+    # Do not let an SDK rediscover ~/.aws/credentials through the inherited
+    # user database/home chain. The explicit empty sentinel below disables the
+    # shared-credentials branch while the attested config selects the one
+    # purpose-bound workload-identity exchange.
+    environment.pop("HOME", None)
+    environment.pop("USERPROFILE", None)
+    environment.pop("XDG_CONFIG_HOME", None)
+    environment.pop("BOTO_CONFIG", None)
     data_directory = run_root / "terraform-data" / stage
     private_directory(data_directory)
     environment["TF_DATA_DIR"] = str(data_directory)
@@ -604,6 +638,9 @@ def terraform_environment(run_root: Path, stage: str) -> dict[str, str]:
         raise DeploymentError("Terraform requires a purpose-bound backend identity")
     environment["AWS_CONFIG_FILE"] = ACTIVE_BACKEND_IDENTITY["config_path"]
     environment["AWS_PROFILE"] = ACTIVE_BACKEND_IDENTITY["profile"]
+    environment["AWS_SHARED_CREDENTIALS_FILE"] = ACTIVE_BACKEND_IDENTITY[
+        "shared_credentials_file_path"
+    ]
     environment["AWS_SDK_LOAD_CONFIG"] = "1"
     environment["AWS_EC2_METADATA_DISABLED"] = "true"
     if ACTIVE_RELEASE_IDENTITY is not None:

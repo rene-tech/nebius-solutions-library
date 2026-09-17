@@ -1134,7 +1134,29 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
             {"operation": "credential-inventory"},
         )
         raw_items = response.get("items")
-        if not isinstance(raw_items, list):
+        enabled_classes = response.get("enabled_classes")
+        absent_optional_classes = response.get("absent_optional_classes")
+        required_classes = response.get("required_classes")
+        presence = registry.get("credential_presence")
+        if (
+            not isinstance(raw_items, list)
+            or not isinstance(enabled_classes, list)
+            or not isinstance(absent_optional_classes, list)
+            or not isinstance(required_classes, list)
+            or not all(
+                isinstance(value, str) and value
+                for value in (
+                    required_classes + enabled_classes + absent_optional_classes
+                )
+            )
+            or not isinstance(presence, dict)
+            or set(required_classes) != set(presence.get("required", []))
+            or set(enabled_classes) | set(absent_optional_classes)
+            != {item["id"] for item in registry["credentials"]}
+            or set(enabled_classes) & set(absent_optional_classes)
+            or not set(absent_optional_classes)
+            <= set(presence.get("optional", {}))
+        ):
             raise RotationError("provider returned no complete credential inventory")
         items = [exact_identity(item) for item in raw_items]
         ids = [item["id"] for item in items]
@@ -1152,6 +1174,13 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
             matches = [
                 item for item in items if item["credential_class"] == credential_class
             ]
+            if credential_class in absent_optional_classes:
+                if matches:
+                    raise RotationError(
+                        f"disabled optional class has observed identities: {credential_class}"
+                    )
+                classes[credential_class] = []
+                continue
             if not matches:
                 raise RotationError(
                     f"provider inventory omits credential class {credential_class}"
@@ -1191,6 +1220,8 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
             "external_evidence": response["externalEvidence"],
             "authority_observation": response["authorityObservation"],
             "audited_at": utc_timestamp(),
+            "enabled_classes": sorted(enabled_classes),
+            "absent_optional_classes": sorted(absent_optional_classes),
             "classes": dict(sorted(classes.items())),
         }
         try:

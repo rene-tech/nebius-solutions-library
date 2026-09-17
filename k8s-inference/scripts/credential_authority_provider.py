@@ -444,6 +444,9 @@ def terraform_inventory(policy: dict[str, Any]) -> list[dict[str, Any]]:
             "TF_IN_AUTOMATION": "1",
             "AWS_CONFIG_FILE": backend_identity["config_path"],
             "AWS_PROFILE": backend_identity["profile"],
+            "AWS_SHARED_CREDENTIALS_FILE": backend_identity[
+                "shared_credentials_file_path"
+            ],
             "AWS_SDK_LOAD_CONFIG": "1",
             "AWS_EC2_METADATA_DISABLED": "true",
         }
@@ -1407,6 +1410,14 @@ def backend_access_identity_proof(
             reader_gid=configured["reader_gid"],
             expected_sha256=configured["config_sha256"],
         )
+    shared_credentials_file = Path(configured["shared_credentials_file_path"])
+    shared_credentials_file_sha256 = root_public_configuration_file(
+        shared_credentials_file,
+        label=f"{purpose} disabled AWS shared-credentials sentinel",
+        expected_sha256=configured["shared_credentials_file_sha256"],
+    )
+    if shared_credentials_file.stat().st_size != 0:
+        raise ProviderError("AWS shared-credentials sentinel is not empty")
     adapter = policy["backend_access_identity_adapter"]
     response = command_json_input(
         verified_adapter_command(adapter, label="backend access identity"),
@@ -1420,6 +1431,7 @@ def backend_access_identity_proof(
             "provider_issuer": configured["provider_issuer"],
             "token_exchange_source": configured["token_exchange_source"],
             "config_sha256": config_sha256,
+            "shared_credentials_file_sha256": shared_credentials_file_sha256,
         },
         timeout=adapter["timeout_seconds"],
     )
@@ -1429,6 +1441,9 @@ def backend_access_identity_proof(
         "token_exchange_source", "issued_at", "expires_at", "actor_type",
         "human_principal", "interactive_login", "impersonation_allowed",
         "config_sha256", "observed_at", "complete", "data_fields_returned",
+        "credential_source", "credential_identity_sha256",
+        "shared_credentials_file_sha256", "shared_credentials_file_used",
+        "environment_credentials_used", "instance_metadata_used",
     }
     if (
         not isinstance(response, dict)
@@ -1447,6 +1462,18 @@ def backend_access_identity_proof(
         or response.get("interactive_login") is not False
         or response.get("impersonation_allowed") is not False
         or response.get("config_sha256") != config_sha256
+        or response.get("credential_source")
+        != "provider-workload-identity-exchange"
+        or not isinstance(response.get("credential_identity_sha256"), str)
+        or re.fullmatch(
+            r"[0-9a-f]{64}", response["credential_identity_sha256"]
+        )
+        is None
+        or response.get("shared_credentials_file_sha256")
+        != shared_credentials_file_sha256
+        or response.get("shared_credentials_file_used") is not False
+        or response.get("environment_credentials_used") is not False
+        or response.get("instance_metadata_used") is not False
         or response.get("complete") is not True
         or response.get("data_fields_returned") != 0
         or not isinstance(response.get("provider_session_id"), str)
@@ -1469,6 +1496,9 @@ def backend_access_identity_proof(
         "provider_issuer": response["provider_issuer"],
         "token_exchange_source": response["token_exchange_source"],
         "config_sha256": config_sha256,
+        "credential_source": response["credential_source"],
+        "credential_identity_sha256": response["credential_identity_sha256"],
+        "shared_credentials_file_sha256": shared_credentials_file_sha256,
     }
     return {
         "purpose": purpose,
@@ -1482,6 +1512,13 @@ def backend_access_identity_proof(
         "profile": configured["profile"],
         "config_path": str(config_path),
         "config_sha256": config_sha256,
+        "credential_source": response["credential_source"],
+        "credential_identity_sha256": response["credential_identity_sha256"],
+        "shared_credentials_file_path": str(shared_credentials_file),
+        "shared_credentials_file_sha256": shared_credentials_file_sha256,
+        "shared_credentials_file_used": False,
+        "environment_credentials_used": False,
+        "instance_metadata_used": False,
         "reader_uid": configured["reader_uid"],
         "reader_gid": configured["reader_gid"],
         "human_principal_allowed": False,
@@ -1566,7 +1603,165 @@ def load_registry(policy: dict[str, Any]) -> dict[str, Any]:
     )
     if registry.get("schema") != "fs2-serve.nebius.ai/durable-credential-registry/v2":
         raise ProviderError("durable credential registry schema is unsupported")
+    credentials = registry.get("credentials")
+    presence = registry.get("credential_presence")
+    resources = registry.get("terraform_resource_addresses")
+    adoptions = registry.get("legacy_v1_secret_adoptions")
+    if (
+        not isinstance(credentials, list)
+        or not all(
+            isinstance(item, dict) and isinstance(item.get("id"), str)
+            for item in credentials
+        )
+        or not isinstance(resources, list)
+        or not all(
+            isinstance(item, dict)
+            and set(item) == {"root", "address"}
+            and isinstance(item.get("root"), str)
+            and isinstance(item.get("address"), str)
+            for item in resources
+        )
+        or not isinstance(presence, dict)
+        or set(presence) != {"required", "optional"}
+        or not isinstance(presence.get("required"), list)
+        or not all(
+            isinstance(value, str) and value for value in presence["required"]
+        )
+        or len(presence["required"]) != len(set(presence["required"]))
+        or not isinstance(presence.get("optional"), dict)
+        or not all(
+            isinstance(value, str) and value for value in presence["optional"]
+        )
+        or not isinstance(adoptions, list)
+    ):
+        raise ProviderError("durable credential registry custody policy is malformed")
+    identifiers = {item["id"] for item in credentials}
+    required = set(presence["required"])
+    optional = set(presence["optional"])
+    if required & optional or required | optional != identifiers:
+        raise ProviderError("durable credential class presence is not exhaustive")
+    declared = {(item["root"], item["address"]) for item in resources}
+    for credential_class, activation in presence["optional"].items():
+        if (
+            not isinstance(activation, dict)
+            or set(activation) != {"activation", "required_addresses"}
+            or activation.get("activation")
+            != "all-authoritative-addresses-observed"
+            or not isinstance(activation.get("required_addresses"), list)
+            or not activation["required_addresses"]
+            or any(
+                not isinstance(item, dict)
+                or set(item) != {"root", "address"}
+                or (item["root"], item["address"]) not in declared
+                or not any(
+                    entry["id"] == credential_class
+                    and entry["terraform_root"] == item["root"]
+                    and any(
+                        re.fullmatch(pattern, item["address"])
+                        for pattern in entry.get("address_regexes", [])
+                    )
+                    for entry in credentials
+                )
+                for item in activation["required_addresses"]
+            )
+        ):
+            raise ProviderError(
+                f"optional credential activation is malformed: {credential_class}"
+            )
+    adoption_keys: set[tuple[str, str, str]] = set()
+    for adoption in adoptions:
+        if (
+            not isinstance(adoption, dict)
+            or set(adoption) != {"credential_class", "root", "address"}
+            or adoption.get("credential_class") not in identifiers
+            or (adoption.get("root"), adoption.get("address")) not in declared
+            or not str(adoption.get("address", "")).startswith(
+                "kubernetes_secret_v1."
+            )
+            or "_versioned" in str(adoption.get("address", ""))
+            or not any(
+                item["id"] == adoption.get("credential_class")
+                and item["terraform_root"] == adoption.get("root")
+                and any(
+                    re.fullmatch(pattern, str(adoption.get("address", "")))
+                    for pattern in item.get("address_regexes", [])
+                )
+                for item in credentials
+            )
+        ):
+            raise ProviderError("legacy v1 Secret adoption is malformed")
+        key = (
+            adoption["root"],
+            adoption["address"],
+            adoption["credential_class"],
+        )
+        if key in adoption_keys:
+            raise ProviderError("legacy v1 Secret adoption is duplicated")
+        adoption_keys.add(key)
+    legacy_secret_addresses = {
+        (root, address)
+        for root, address in declared
+        if address.startswith("kubernetes_secret_v1.")
+        and "_versioned" not in address
+    }
+    adopted_secret_addresses = {(root, address) for root, address, _ in adoption_keys}
+    if adopted_secret_addresses != legacy_secret_addresses:
+        raise ProviderError(
+            "legacy v1 Secret adoption registry does not cover exact fixed addresses"
+        )
     return registry
+
+
+def legacy_v1_adoption_classes(
+    registry: dict[str, Any], *, terraform_root: str, address: str
+) -> frozenset[str]:
+    """Return exact source-approved classes for one retained fixed predecessor."""
+
+    return frozenset(
+        item["credential_class"]
+        for item in registry["legacy_v1_secret_adoptions"]
+        if item["root"] == terraform_root and item["address"] == address
+    )
+
+
+def credential_presence_sets(
+    registry: dict[str, Any], grouped: dict[tuple[str, int], list[dict[str, Any]]]
+) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+    """Resolve required, enabled, and source-proven disabled optional classes."""
+
+    required = frozenset(registry["credential_presence"]["required"])
+    optional_policies = registry["credential_presence"]["optional"]
+    observed_by_class: dict[str, set[tuple[str, str]]] = {}
+    for (credential_class, _generation), resources in grouped.items():
+        observed_by_class.setdefault(credential_class, set()).update(
+            (item["terraform_root"], base_address(item["terraform_address"]))
+            for item in resources
+        )
+    absent_required = sorted(required - set(observed_by_class))
+    if absent_required:
+        raise ProviderError(
+            "required credential classes are absent from authoritative state: "
+            + ", ".join(absent_required)
+        )
+    enabled_optional: set[str] = set()
+    absent_optional: set[str] = set()
+    for credential_class, policy in optional_policies.items():
+        expected = {
+            (item["root"], item["address"])
+            for item in policy["required_addresses"]
+        }
+        observed = observed_by_class.get(credential_class, set())
+        present = expected & observed
+        if not present:
+            absent_optional.add(credential_class)
+        elif present != expected:
+            raise ProviderError(
+                f"optional credential class is only partially enabled: {credential_class}"
+            )
+        else:
+            enabled_optional.add(credential_class)
+    enabled = required | frozenset(enabled_optional)
+    return required, enabled, frozenset(absent_optional)
 
 
 def classes_for_address(
@@ -1834,9 +2029,22 @@ def reconcile_global_provider_inventory(
                 isinstance(value, str) and value
                 for value in live_annotations.values()
             )
-            fixed_v1_without_complete_annotations = (
+            legacy_adoption = (
                 expected_generation == "1"
-                and binding_annotations == live_annotations
+                and len(matching_classes) == 1
+                and matching_classes
+                <= legacy_v1_adoption_classes(
+                    registry,
+                    terraform_root=source_root,
+                    address=source_address,
+                )
+            )
+            legacy_annotations_nonconflicting = (
+                legacy_adoption
+                and binding_annotations["class"] in {None, *matching_classes}
+                and binding_annotations["generation"] in {None, "1"}
+                and binding_annotations["content"]
+                in {None, item.get("authorityContentSha256")}
                 and live_annotations["class"] in {None, *matching_classes}
                 and live_annotations["generation"] in {None, "1"}
                 and live_annotations["content"]
@@ -1846,7 +2054,7 @@ def reconcile_global_provider_inventory(
                 binding.get("namespace") != item["metadata"]["namespace"]
                 or binding.get("name") != item["metadata"]["name"]
                 or binding.get("immutable") != item.get("immutable")
-                or binding.get("immutable") is not True
+                or (not legacy_adoption and binding.get("immutable") is not True)
                 or not isinstance(binding.get("uid"), str)
                 or binding.get("uid") != item["metadata"]["uid"]
                 or not isinstance(binding.get("resource_version"), str)
@@ -1865,7 +2073,7 @@ def reconcile_global_provider_inventory(
                 )
                 or (
                     not complete_annotations
-                    and not fixed_v1_without_complete_annotations
+                    and not legacy_annotations_nonconflicting
                 )
             ):
                 raise ProviderError(
@@ -2004,15 +2212,33 @@ def credential_inventory(
                     (state_binding.get("namespace"), state_binding.get("name"))
                 )
                 metadata = live.get("metadata") if isinstance(live, dict) else None
+                legacy_classes = legacy_v1_adoption_classes(
+                    registry,
+                    terraform_root=state["root"],
+                    address=resource["address"],
+                )
+                expected_classes = {item["id"] for item in credential_classes}
+                legacy_adoption = (
+                    generation == 1
+                    and len(expected_classes) == 1
+                    and expected_classes <= legacy_classes
+                )
                 if (
                     not isinstance(metadata, dict)
                     or state_binding.get("uid") != metadata.get("uid")
                     or str(state_binding.get("resource_version"))
                     != metadata.get("resourceVersion")
-                    or state_binding.get("content_sha256")
-                    != live.get("authorityContentSha256")
-                    or state_binding.get("immutable") is not True
-                    or live.get("immutable") is not True
+                    or state_binding.get("immutable")
+                    != (live.get("immutable") is True)
+                    or (
+                        not legacy_adoption
+                        and (
+                            state_binding.get("content_sha256")
+                            != live.get("authorityContentSha256")
+                            or state_binding.get("immutable") is not True
+                            or live.get("immutable") is not True
+                        )
+                    )
                 ):
                     raise ProviderError(
                         f"Terraform Secret state is not an exact immutable live binding: {resource['address']}"
@@ -2031,6 +2257,8 @@ def credential_inventory(
                 if annotation_complete:
                     if (
                         not annotated_generation.isdigit()
+                        or annotated_class not in expected_classes
+                        or int(annotated_generation) != generation
                         or annotated_content != live.get("authorityContentSha256")
                     ):
                         raise ProviderError(
@@ -2042,10 +2270,10 @@ def credential_inventory(
                     # when it cannot contradict the registry-derived v1 class
                     # and provider-observed content binding.
                     if (
-                        generation != 1
+                        not legacy_adoption
                         or annotated_generation not in {None, "1"}
                         or annotated_class
-                        not in {None, *(item["id"] for item in credential_classes)}
+                        not in {None, *expected_classes}
                         or annotated_content
                         not in {None, live.get("authorityContentSha256")}
                     ):
@@ -2055,6 +2283,10 @@ def credential_inventory(
                     annotated_class = None
                     annotated_generation = None
                     annotated_content = None
+                elif not legacy_adoption:
+                    raise ProviderError(
+                        f"versioned Secret lacks complete custody annotations: {resource['address']}"
+                    )
                 secret_binding = {
                     "namespace": metadata["namespace"],
                     "name": metadata["name"],
@@ -2064,7 +2296,9 @@ def credential_inventory(
                     "authority_evidence_id": live["authorityEvidenceId"],
                     "credential_class": annotated_class,
                     "generation": annotated_generation,
-                    "immutable": "true",
+                    "immutable": (
+                        "true" if live.get("immutable") is True else "false"
+                    ),
                 }
             for credential_class in credential_classes:
                 exact_secret_binding = None
@@ -2077,12 +2311,12 @@ def credential_inventory(
                             and secret_binding["generation"] == str(generation)
                         ):
                             exact_secret_binding = secret_binding
-                    elif generation == 1:
+                    elif generation == 1 and credential_class["id"] in legacy_classes:
                         # Historical fixed-v1 Secrets predate the annotations.
                         # Classify them only through the exact registry address,
-                        # while retaining provider-observed immutable UID/RV and
-                        # decoded-byte content commitments.  This never changes
-                        # the Secret and cannot classify a successor as v1.
+                        # while retaining the provider-observed UID/RV,
+                        # mutability state, and decoded-byte commitment. This
+                        # never changes the Secret or classifies a successor v1.
                         exact_secret_binding = {
                             **secret_binding,
                             "credential_class": credential_class["id"],
@@ -2105,6 +2339,9 @@ def credential_inventory(
         for item in registry["credentials"]
         if item["id"] not in pending
     }
+    required_classes, enabled_classes, absent_optional_classes = (
+        credential_presence_sets(registry, grouped)
+    )
     items: list[dict[str, Any]] = []
     for (credential_class, generation), resources in sorted(grouped.items()):
         resources = sorted(resources, key=lambda item: (item["terraform_root"], item["terraform_address"]))
@@ -2162,8 +2399,13 @@ def credential_inventory(
     for policy_entry in policies.values():
         matches = [item for item in items if item["credential_class"] == policy_entry["id"]]
         if not matches:
+            if policy_entry["id"] not in absent_optional_classes:
+                raise ProviderError(
+                    f"required credential class is absent: {policy_entry['id']}"
+                )
             classes[policy_entry["id"]] = {
-                "availability": "not-observed",
+                "availability": "disabled-absent",
+                "presence": "optional",
                 "current_generation": None,
                 "retained_generations": [],
                 "identities_sha256": canonical_sha256([]),
@@ -2208,6 +2450,11 @@ def credential_inventory(
         }
         classes[policy_entry["id"]] = {
             "availability": "source-observed",
+            "presence": (
+                "required"
+                if policy_entry["id"] in required_classes
+                else "optional-enabled"
+            ),
             "current_generation": max(generations),
             "retained_generations": generations,
             "identities_sha256": canonical_sha256(matches),
@@ -2218,7 +2465,13 @@ def credential_inventory(
     fingerprints = [item["fingerprint"] for item in items]
     if len(ids) != len(set(ids)) or len(fingerprints) != len(set(fingerprints)):
         raise ProviderError("credential IDs or fingerprints are reused")
-    return {"items": items, "classes": classes}
+    return {
+        "items": items,
+        "classes": classes,
+        "required_classes": sorted(required_classes),
+        "enabled_classes": sorted(enabled_classes),
+        "absent_optional_classes": sorted(absent_optional_classes),
+    }
 
 
 def exact_class_source_material(
@@ -2726,7 +2979,10 @@ def load_consumer_contracts(policy: dict[str, Any]) -> dict[str, Any]:
 
 
 def exact_requested_secret_bindings(
-    parameters: dict[str, Any], expected: dict[str, Any], secrets: list[dict[str, Any]]
+    parameters: dict[str, Any],
+    expected: dict[str, Any],
+    secrets: list[dict[str, Any]],
+    registry: dict[str, Any],
 ) -> dict[str, Any]:
     supplied = parameters.get("credential_bindings")
     if not isinstance(supplied, dict) or supplied != expected:
@@ -2742,11 +2998,27 @@ def exact_requested_secret_bindings(
             "retained_generations", []
         )
     }
+    credential_class = parameters.get("credential_class")
+    registry_entries = [
+        item
+        for item in registry["credentials"]
+        if item["id"] == credential_class
+    ]
+    if len(registry_entries) != 1:
+        raise ProviderError("consumer Secret class is absent from the registry")
+    terraform_root = registry_entries[0]["terraform_root"]
     for address, binding in supplied.items():
         if not isinstance(binding, dict):
             raise ProviderError("consumer Secret binding is malformed")
         live = by_identity.get((binding.get("namespace"), binding.get("name")))
         live_metadata = live.get("metadata") if isinstance(live, dict) else None
+        legacy_adoption = (
+            binding.get("generation") == "1"
+            and credential_class
+            in legacy_v1_adoption_classes(
+                registry, terraform_root=terraform_root, address=address
+            )
+        )
         if (
             not isinstance(live_metadata, dict)
             or live_metadata.get("uid") != binding.get("uid")
@@ -2756,8 +3028,11 @@ def exact_requested_secret_bindings(
             or live.get("authorityEvidenceId")
             != binding.get("authority_evidence_id")
             or binding.get("credential_class")
-            != parameters.get("credential_class")
+            != credential_class
             or binding.get("generation") not in retained_generations
+            or (live.get("immutable") is True)
+            != (binding.get("immutable") == "true")
+            or (not legacy_adoption and binding.get("immutable") != "true")
         ):
             raise ProviderError(
                 f"consumer Secret binding is stale or belongs to another class: {address}"
@@ -2814,10 +3089,20 @@ def class_adapter_result(
         raise ProviderError(
             f"{operation} source trust differs from authority state"
         )
-    exact_requested_secret_bindings(parameters, expected_bindings, secrets)
+    exact_requested_secret_bindings(
+        parameters, expected_bindings, secrets, registry
+    )
     if operation == "consumer-readiness":
         if parameters.get("generation") != class_entry["current_generation"]:
             raise ProviderError("consumer readiness generation is invalid")
+        if parameters.get("phase") == "current-write-ready" and any(
+            binding.get("generation") == str(class_entry["current_generation"])
+            and binding.get("immutable") != "true"
+            for binding in expected_bindings.values()
+        ):
+            raise ProviderError(
+                "mutable legacy predecessor cannot be selected current-write"
+            )
     class_sources = [
         {
             "credential_class": credential_class,

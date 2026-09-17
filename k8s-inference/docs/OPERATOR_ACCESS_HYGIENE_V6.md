@@ -1,5 +1,9 @@
 # Purpose-bound operator and backend access v6
 
+> Superseded by [v7](OPERATOR_ACCESS_HYGIENE_V7.md), which adds an exact
+> no-mutation path for mutable fixed-v1 predecessors, authoritative optional
+> class activation, and a closed AWS shared-credentials provider chain.
+
 This source-only successor supersedes v5. It does not authorize integration or
 deployment. Production trust, provider adapters, and accepted SAI-08/SAI-09
 integration remain absent; SAI-06 has static SOURCE GO only. No live state,

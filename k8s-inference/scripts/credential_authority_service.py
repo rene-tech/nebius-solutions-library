@@ -211,6 +211,34 @@ def root_reader_file(
     return metadata
 
 
+def root_empty_public_file(path: Path, *, label: str) -> os.stat_result:
+    """Bind the explicit empty AWS shared-credentials sentinel."""
+
+    if path.is_symlink() or not path.is_file():
+        raise AuthorityServiceError(f"{label} must be a regular file")
+    metadata = path.stat()
+    if (
+        metadata.st_uid != 0
+        or stat.S_IMODE(metadata.st_mode) != 0o644
+        or metadata.st_size != 0
+        or file_sha256(path)
+        != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ):
+        raise AuthorityServiceError(
+            f"{label} must be the exact root-owned empty mode-0644 sentinel"
+        )
+    for parent in path.parents:
+        parent_metadata = parent.stat()
+        if (
+            parent.is_symlink()
+            or not parent.is_dir()
+            or parent_metadata.st_uid != 0
+            or stat.S_IMODE(parent_metadata.st_mode) & 0o022
+        ):
+            raise AuthorityServiceError(f"{label} parent chain is mutable")
+    return metadata
+
+
 def process_cgroup(pid: int) -> str:
     """Return one exact unified-cgroup path for a kernel-authenticated peer."""
 
@@ -531,6 +559,8 @@ def _validate_policy(policy: Any) -> None:
     backend_fields = {
         "config_path",
         "config_sha256",
+        "shared_credentials_file_path",
+        "shared_credentials_file_sha256",
         "profile",
         "project_id",
         "service_account_id",
@@ -579,6 +609,18 @@ def _validate_policy(policy: Any) -> None:
         if file_sha256(config_path) != identity["config_sha256"]:
             raise AuthorityServiceError(
                 f"purpose-bound backend identity config differs: {purpose}"
+            )
+        shared_credentials_file = Path(identity["shared_credentials_file_path"])
+        root_empty_public_file(
+            shared_credentials_file,
+            label=f"{purpose} disabled AWS shared-credentials sentinel",
+        )
+        if (
+            file_sha256(shared_credentials_file)
+            != identity["shared_credentials_file_sha256"]
+        ):
+            raise AuthorityServiceError(
+                f"purpose-bound backend shared-credentials sentinel differs: {purpose}"
             )
     automation = policy.get("evidence_identity")
     if (
@@ -1034,10 +1076,31 @@ def _validate_policy(policy: Any) -> None:
             "every one of the 21 credential classes must be admitted by an exact adapter"
         )
     contract_ids = set(contracts.get("contracts", {}))
-    class_adapters = policy.get("class_adapters")
-    if not isinstance(class_adapters, dict) or set(class_adapters) != contract_ids:
+    registry = json.loads(
+        Path(policy["credential_registry_path"]).read_text(encoding="utf-8")
+    )
+    presence = registry.get("credential_presence")
+    required_class_ids = (
+        set(presence.get("required", [])) if isinstance(presence, dict) else set()
+    )
+    optional_class_ids = (
+        set(presence.get("optional", {})) if isinstance(presence, dict) else set()
+    )
+    if (
+        not required_class_ids
+        or required_class_ids & optional_class_ids
+        or required_class_ids | optional_class_ids != contract_ids
+    ):
         raise AuthorityServiceError(
-            "authority must configure one pinned adapter for every active credential class"
+            "credential class-presence policy does not cover every contract"
+        )
+    class_adapters = policy.get("class_adapters")
+    if (
+        not isinstance(class_adapters, dict)
+        or not required_class_ids <= set(class_adapters) <= contract_ids
+    ):
+        raise AuthorityServiceError(
+            "authority must configure every required class and only registered optional adapters"
         )
     allowed_adapter_operations = {
         "consumer-readiness",

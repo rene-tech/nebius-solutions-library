@@ -253,6 +253,14 @@ def test_every_command_has_purpose_bound_backend_auth_and_no_ambient_profile() -
     assert 'key.startswith(("AWS_", "S3_"))' in wrapper
     assert 'environment["AWS_CONFIG_FILE"] = ACTIVE_BACKEND_IDENTITY["config_path"]' in wrapper
     assert 'environment["AWS_PROFILE"] = ACTIVE_BACKEND_IDENTITY["profile"]' in wrapper
+    assert 'environment.pop("HOME", None)' in wrapper
+    assert 'environment["AWS_SHARED_CREDENTIALS_FILE"]' in wrapper
+    assert '"AWS_SHARED_CREDENTIALS_FILE": backend_identity[' in provider
+    assert '"shared_credentials_file_used") is not False' in provider
+    assert '"environment_credentials_used") is not False' in provider
+    assert '"instance_metadata_used") is not False' in provider
+    assert '"credential_identity_sha256"' in provider
+    assert "root_empty_public_file(" in service
     assert "def attested_backend_identity" in wrapper
     for purpose in (
         "release-automation",

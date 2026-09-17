@@ -982,6 +982,97 @@ def load_registry(path: Path = DEFAULT_REGISTRY) -> dict[str, Any]:
             compiled += 1
     if compiled == 0:
         raise GuardError("durable credential registry has no Terraform addresses")
+    presence = document.get("credential_presence")
+    if (
+        not isinstance(presence, dict)
+        or set(presence) != {"required", "optional"}
+        or not isinstance(presence.get("required"), list)
+        or not all(isinstance(value, str) and value for value in presence["required"])
+        or len(presence["required"]) != len(set(presence["required"]))
+        or not isinstance(presence.get("optional"), dict)
+    ):
+        raise GuardError("durable credential class-presence policy is malformed")
+    optional_ids = set(presence["optional"])
+    if set(presence["required"]) & optional_ids or (
+        set(presence["required"]) | optional_ids
+    ) != identifiers:
+        raise GuardError("durable credential class-presence policy is not exhaustive")
+    declared_resources = {
+        (item["root"], item["address"]) for item in resources
+    }
+    for identifier, activation in presence["optional"].items():
+        if (
+            not isinstance(activation, dict)
+            or set(activation) != {"activation", "required_addresses"}
+            or activation.get("activation")
+            != "all-authoritative-addresses-observed"
+            or not isinstance(activation.get("required_addresses"), list)
+            or not activation["required_addresses"]
+            or any(
+                not isinstance(address, dict)
+                or set(address) != {"root", "address"}
+                or (address["root"], address["address"])
+                not in declared_resources
+                or not any(
+                    entry["id"] == identifier
+                    and entry["terraform_root"] == address["root"]
+                    and any(
+                        re.fullmatch(pattern, address["address"])
+                        for pattern in entry["address_regexes"]
+                    )
+                    for entry in credentials
+                )
+                for address in activation["required_addresses"]
+            )
+        ):
+            raise GuardError(
+                f"optional credential activation policy is malformed: {identifier}"
+            )
+    adoptions = document.get("legacy_v1_secret_adoptions")
+    adoption_keys: set[tuple[str, str, str]] = set()
+    if not isinstance(adoptions, list) or not adoptions:
+        raise GuardError("legacy v1 Secret adoption registry is absent")
+    for adoption in adoptions:
+        if (
+            not isinstance(adoption, dict)
+            or set(adoption) != {"credential_class", "root", "address"}
+            or adoption.get("credential_class") not in identifiers
+            or (adoption.get("root"), adoption.get("address"))
+            not in declared_resources
+            or not str(adoption.get("address", "")).startswith(
+                "kubernetes_secret_v1."
+            )
+            or "_versioned" in str(adoption.get("address", ""))
+            or not any(
+                entry["id"] == adoption.get("credential_class")
+                and entry["terraform_root"] == adoption.get("root")
+                and any(
+                    re.fullmatch(pattern, str(adoption.get("address", "")))
+                    for pattern in entry["address_regexes"]
+                )
+                for entry in credentials
+            )
+        ):
+            raise GuardError("legacy v1 Secret adoption entry is malformed")
+        key = (
+            adoption["root"],
+            adoption["address"],
+            adoption["credential_class"],
+        )
+        if key in adoption_keys:
+            raise GuardError("legacy v1 Secret adoption entry is duplicated")
+        adoption_keys.add(key)
+    legacy_secret_addresses = {
+        (root, address)
+        for root, address in declared_resources
+        if address.startswith("kubernetes_secret_v1.")
+        and "_versioned" not in address
+    }
+    adopted_secret_addresses = {(root, address) for root, address, _ in adoption_keys}
+    if adopted_secret_addresses != legacy_secret_addresses:
+        raise GuardError(
+            "legacy v1 Secret adoption registry does not cover exact fixed addresses"
+        )
     for resource in resources:
         matches = [
             entry["id"]
@@ -1005,6 +1096,22 @@ def load_registry(path: Path = DEFAULT_REGISTRY) -> dict[str, Any]:
                 f"at least one class: {resource['root']}:{resource['address']}"
             )
     return document
+
+
+def legacy_v1_adoption_classes(
+    registry: dict[str, Any], *, terraform_root: str, address: str
+) -> frozenset[str]:
+    """Return source-approved classes for one exact, never-mutated predecessor.
+
+    This is deliberately address exact.  A versioned successor, moved address,
+    or caller-provided alias can never enter the legacy exception.
+    """
+
+    return frozenset(
+        item["credential_class"]
+        for item in registry["legacy_v1_secret_adoptions"]
+        if item["root"] == terraform_root and item["address"] == address
+    )
 
 
 def registry_sha256(registry: dict[str, Any]) -> str:
@@ -1368,6 +1475,13 @@ def live_secret_bindings(
             )
         expected_class = next(iter(matching_classes))
         expected_generation = str(generation_from_address(address))
+        legacy_adoption = (
+            expected_generation == "1"
+            and expected_class
+            in legacy_v1_adoption_classes(
+                registry, terraform_root=terraform_root, address=address
+            )
+        )
         state_class = (
             state_annotations.get("fs2.nebius.ai/credential-class")
             if isinstance(state_annotations, dict)
@@ -1385,22 +1499,27 @@ def live_secret_bindings(
         )
         complete_annotations = all(
             isinstance(value, str) and value
-            for value in (binding["credential_class"], binding["generation"], declared_content)
+            for value in (
+                binding["credential_class"],
+                binding["generation"],
+                declared_content,
+            )
         )
-        fixed_v1_without_complete_annotations = (
-            expected_generation == "1"
-            and state_class == binding["credential_class"]
-            and state_generation == binding["generation"]
-            and state_content == declared_content
+        legacy_annotations_nonconflicting = (
+            legacy_adoption
+            and state_class in {None, expected_class}
+            and state_generation in {None, "1"}
+            and state_content in {None, binding["content_sha256"]}
             and binding["credential_class"] in {None, expected_class}
             and binding["generation"] in {None, "1"}
             and declared_content in {None, binding["content_sha256"]}
         )
+        state_is_immutable = values.get("immutable") is True
+        live_is_immutable = binding["immutable"] == "true"
         if (
             state_uid != binding["uid"]
             or str(state_rv) != binding["resource_version"]
-            or values.get("immutable") is not True
-            or binding["immutable"] != "true"
+            or state_is_immutable != live_is_immutable
             or (
                 complete_annotations
                 and (
@@ -1414,8 +1533,9 @@ def live_secret_bindings(
             )
             or (
                 not complete_annotations
-                and not fixed_v1_without_complete_annotations
+                and not legacy_annotations_nonconflicting
             )
+            or (not legacy_adoption and not live_is_immutable)
         ):
             raise GuardError(
                 f"live Secret UID/RV/class/generation/content/immutable binding differs from Terraform state: {address}"
@@ -1751,6 +1871,7 @@ def validate_consumer_readiness_payload(
     expected_phase: str,
 ) -> dict[str, Any]:
     contracts = load_consumer_contracts()
+    registry = load_registry()
     if (
         not isinstance(payload, dict)
         or set(payload)
@@ -1760,6 +1881,9 @@ def validate_consumer_readiness_payload(
             "contracts_sha256",
             "bindings",
             "bindings_sha256",
+            "inventory",
+            "enabled_classes",
+            "absent_optional_classes",
             "sources",
             "classes",
         }
@@ -1770,18 +1894,70 @@ def validate_consumer_readiness_payload(
         or payload.get("bindings_sha256") != expected_bindings_sha256
         or not isinstance(payload.get("bindings"), dict)
         or canonical_sha256(payload["bindings"]) != expected_bindings_sha256
+        or not isinstance(payload.get("inventory"), dict)
+        or not isinstance(payload.get("enabled_classes"), list)
+        or not isinstance(payload.get("absent_optional_classes"), list)
+        or not all(
+            isinstance(value, str) and value
+            for value in (
+                payload["enabled_classes"]
+                + payload["absent_optional_classes"]
+            )
+        )
         or not isinstance(payload.get("classes"), dict)
-        or set(payload["classes"]) != set(contracts)
         or not isinstance(payload.get("sources"), dict)
-        or set(payload["sources"]) != set(contracts)
     ):
         raise GuardError(
             "consumer readiness authority returned an incomplete inventory"
         )
+    verify_external_evidence(payload["inventory"])
+    required = set(registry["credential_presence"]["required"])
+    optional = set(registry["credential_presence"]["optional"])
+    enabled = set(payload["enabled_classes"])
+    absent_optional = set(payload["absent_optional_classes"])
+    if (
+        len(payload["enabled_classes"]) != len(enabled)
+        or len(payload["absent_optional_classes"]) != len(absent_optional)
+        or enabled & absent_optional
+        or enabled | absent_optional != set(contracts)
+        or not required <= enabled
+        or not absent_optional <= optional
+        or set(payload["classes"]) != enabled
+        or set(payload["sources"]) != enabled
+        or payload["inventory"].get("enabled_classes")
+        != sorted(enabled)
+        or payload["inventory"].get("absent_optional_classes")
+        != sorted(absent_optional)
+        or payload["inventory"].get("required_classes")
+        != sorted(required)
+    ):
+        raise GuardError(
+            "consumer readiness class activation differs from authoritative inventory"
+        )
+    inventory_classes = payload["inventory"].get("classes")
+    if not isinstance(inventory_classes, dict) or set(inventory_classes) != set(
+        contracts
+    ):
+        raise GuardError("consumer readiness inventory omits registered classes")
+    for credential_class in absent_optional:
+        class_entry = inventory_classes[credential_class]
+        if (
+            not isinstance(class_entry, dict)
+            or class_entry.get("availability") != "disabled-absent"
+            or class_entry.get("presence") != "optional"
+            or class_entry.get("current_generation") is not None
+            or class_entry.get("retained_generations") != []
+            or class_entry.get("source_trust") is not None
+            or class_entry.get("secret_bindings") != {}
+        ):
+            raise GuardError(
+                f"optional credential absence is not authoritative: {credential_class}"
+            )
     now = utc_now()
     evidence_ids: set[str] = set()
     assigned_addresses: set[str] = set()
-    for credential_class, contract in contracts.items():
+    for credential_class in sorted(enabled):
+        contract = contracts[credential_class]
         item = payload["classes"][credential_class]
         source = payload["sources"][credential_class]
         if (
@@ -1936,15 +2112,31 @@ def write_consumer_readiness_receipt(
         raise GuardError("consumer inventory registry differs from custody identity")
     generations = inventory.get("classes")
     inventory_items = inventory.get("items")
+    required_classes = inventory.get("required_classes")
+    enabled_classes = inventory.get("enabled_classes")
+    absent_optional_classes = inventory.get("absent_optional_classes")
     if (
         not isinstance(generations, dict)
         or set(generations) != set(contracts)
         or not isinstance(inventory_items, list)
+        or not isinstance(required_classes, list)
+        or not isinstance(enabled_classes, list)
+        or not isinstance(absent_optional_classes, list)
+        or not all(
+            isinstance(value, str) and value
+            for value in (
+                required_classes + enabled_classes + absent_optional_classes
+            )
+        )
+        or set(required_classes)
+        != set(load_registry()["credential_presence"]["required"])
+        or set(enabled_classes) | set(absent_optional_classes) != set(contracts)
+        or set(enabled_classes) & set(absent_optional_classes)
     ):
         raise GuardError("credential inventory omits a registered class")
     classes: dict[str, Any] = {}
     sources: dict[str, Any] = {}
-    for credential_class in sorted(contracts):
+    for credential_class in sorted(enabled_classes):
         class_source = generations[credential_class]
         generation = (
             class_source.get("current_generation")
@@ -2003,6 +2195,9 @@ def write_consumer_readiness_receipt(
         "contracts_sha256": canonical_sha256(contracts),
         "bindings": bindings,
         "bindings_sha256": bindings_sha256,
+        "inventory": inventory,
+        "enabled_classes": sorted(enabled_classes),
+        "absent_optional_classes": sorted(absent_optional_classes),
         "sources": sources,
         "classes": classes,
     }
