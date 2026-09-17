@@ -1,6 +1,16 @@
 locals {
   grafana_publication    = data.terraform_remote_state.foundation.outputs.grafana_publication_contract
   observability_operator = data.terraform_remote_state.foundation.outputs.observability_operator_contract
+  loki_client_compatibility_payload = {
+    schema                 = "fs2-serve.nebius.ai/loki-client-compatibility/v1"
+    run_id                 = var.run_id
+    write_tenant_id        = "fs2-platform"
+    read_tenant_header     = "fake|fs2-platform"
+    writer_release         = "fs2-${var.run_id}-otel-gateway"
+    reader_release         = "fs2-serve-control-plane"
+    grafana_datasource_uid = "fs2-${var.run_id}-loki"
+  }
+  loki_client_compatibility_receipt = sha256(jsonencode(local.loki_client_compatibility_payload))
   alertmanager_grafana_url = (
     local.grafana_publication.enabled && local.observability_operator.alertmanager.enabled ?
     "${local.grafana_publication.external_url}/alerting/silences?alertmanager=${local.observability_operator.alertmanager.grafana_datasource_uid}" : null

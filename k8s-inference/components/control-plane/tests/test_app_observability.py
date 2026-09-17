@@ -129,7 +129,9 @@ async def test_gpu_attribution_requires_uuid_and_allocation_time_not_exporter_po
     queries = []
 
     def handler(request):
-        assert request.headers["X-Scope-OrgID"] == "fs2-platform"
+        # Prometheus is not a Loki client and must never receive a Loki tenant
+        # header, especially the temporary legacy/scoped read set.
+        assert "X-Scope-OrgID" not in request.headers
         queries.append(request.url.params["query"])
         return httpx.Response(
             200,
@@ -205,6 +207,7 @@ async def test_deleted_pod_logs_are_retained_and_queries_are_exact_and_escaped()
     queries = []
 
     def handler(request):
+        assert request.headers["X-Scope-OrgID"] == "fake|fs2-platform"
         queries.append(request.url.params["query"])
         return httpx.Response(
             200,

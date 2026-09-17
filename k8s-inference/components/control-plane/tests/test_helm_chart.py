@@ -3298,7 +3298,8 @@ def test_observability_adapter_has_explicit_prometheus_peer_and_optional_config(
 
     assert env["FS2_ADMIN_PROMETHEUS_URL"].endswith(".fs2-observability.svc:9090")
     assert env["FS2_ADMIN_LOKI_URL"].endswith(".fs2-observability.svc:3100")
-    assert env["FS2_ADMIN_LOKI_TENANT_ID"] == "fs2-platform"
+    assert env["FS2_ADMIN_LOKI_READ_TENANT_HEADER"] == "fake|fs2-platform"
+    assert "FS2_ADMIN_LOKI_TENANT_ID" not in env
     assert env["FS2_ADMIN_OBSERVABILITY_CONFIG_FILE"].endswith("/config.json")
     assert volume == {
         "name": "admin-observability",

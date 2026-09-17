@@ -1452,7 +1452,7 @@
           "required": [
             "enabled",
             "prometheusUrl",
-            "lokiTenantId",
+            "lokiReadTenantHeader",
             "installed",
             "datasourceUids",
             "links"
@@ -1472,11 +1472,9 @@
               "maxLength": 2048,
               "pattern": "^$|^https?://[^/?#]+$"
             },
-            "lokiTenantId": {
+            "lokiReadTenantHeader": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 150,
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+              "const": "fake|fs2-platform"
             },
             "installed": {
               "type": "object",

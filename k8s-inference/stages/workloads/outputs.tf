@@ -468,6 +468,26 @@ output "managed_resource_count" {
   )
 }
 
+output "loki_client_compatibility_receipt" {
+  description = "Non-secret receipt emitted only after the scoped writer-compatible control plane and bounded dual-read Grafana datasource are applied; pass it to the reviewed foundation auth-enforcement phase."
+  value       = local.loki_client_compatibility_receipt
+
+  depends_on = [
+    helm_release.control_plane,
+    kubernetes_secret_v1.grafana_datasource,
+  ]
+}
+
+output "loki_client_compatibility_payload" {
+  description = "Canonical non-secret SAI-22 client transition payload hashed by loki_client_compatibility_receipt."
+  value       = local.loki_client_compatibility_payload
+
+  depends_on = [
+    helm_release.control_plane,
+    kubernetes_secret_v1.grafana_datasource,
+  ]
+}
+
 output "sensitive_state_notice" {
   value = "Generated admin, MCP/inference, Grafana, database, and cryptographic bootstrap material is stored in the run-owned local workloads state; keep the run root mode 0700/state files mode 0600 and destroy it after acceptance."
 }

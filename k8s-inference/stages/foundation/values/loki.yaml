@@ -10,7 +10,9 @@ gateway: {enabled: false}
 indexGateway: {replicas: 0}
 ingester: {replicas: 0}
 loki:
-  auth_enabled: true
+  # The source baseline is the first serialized transition phase. Terraform
+  # overlays true only after the exact client and identity-custody gates pass.
+  auth_enabled: false
   commonConfig:
     replication_factor: 1
   compactor:
@@ -28,6 +30,7 @@ loki:
     max_label_names_per_series: 20
     max_query_length: 168h
     max_query_lookback: 168h
+    multi_tenant_queries_enabled: true
     reject_old_samples: true
     reject_old_samples_max_age: 168h
     retention_period: 168h

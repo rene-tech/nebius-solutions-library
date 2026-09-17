@@ -3281,7 +3281,9 @@ class DeploymentContractTests(unittest.TestCase):
         )
         self.assertIs(values["monitoring"]["serviceMonitor"]["enabled"], True)
         self.assertIs(values["monitoring"]["dashboards"]["enabled"], True)
-        self.assertIs(values["loki"]["auth_enabled"], True)
+        self.assertIs(values["loki"]["auth_enabled"], False)
+        self.assertIs(values["loki"]["limits_config"]["multi_tenant_queries_enabled"], True)
+        self.assertEqual(values["loki"]["limits_config"]["retention_period"], "168h")
 
         gateway = yaml.safe_load(
             (DEPLOY_ROOT / "stages/foundation/values/otel-gateway.yaml").read_text(encoding="utf-8")
@@ -3299,13 +3301,34 @@ class DeploymentContractTests(unittest.TestCase):
             '"kubernetes.io/metadata.name" = "fs2-system"',
             '"app.kubernetes.io/part-of"   = "fs2-serve"',
             'port     = "3100"',
-            'tenant_id              = local.loki_tenant_id',
+            'loki_legacy_tenant_id           = "fake"',
+            'loki_write_tenant_id            = "fs2-platform"',
+            'accepted_loki_identity_custody_receipt = null',
+            'read_tenant_header                    = local.loki_read_tenant_header',
+            'transition_order                      = ["network-policy-auth-off", "scoped-writer-and-dual-read-clients", "auth-enforced-dual-read"]',
         ):
             self.assertIn(expected, foundation)
 
         workloads = (DEPLOY_ROOT / "stages/workloads/database.tf").read_text(encoding="utf-8")
         self.assertIn('httpHeaderName1 = "X-Scope-OrgID"', workloads)
-        self.assertIn("httpHeaderValue1 = local.observability_operator.loki.tenant_id", workloads)
+        self.assertIn("httpHeaderValue1 = local.observability_operator.loki.read_tenant_header", workloads)
+
+        releases = (DEPLOY_ROOT / "stages/foundation/releases.tf").read_text(encoding="utf-8")
+        self.assertIn("kubernetes_network_policy_v1.loki_ingress,", releases)
+        self.assertIn('resource "terraform_data" "loki_enforced_dual_read_floor"', releases)
+        self.assertIn("prevent_destroy = true", releases)
+        self.assertIn("helm_release.otel_gateway,", releases)
+        self.assertIn("terraform_data.loki_enforced_dual_read_floor,", releases)
+        self.assertIn("var.loki_rollback_floor == \"enforced-dual-read\"", releases)
+
+        outputs = (DEPLOY_ROOT / "stages/foundation/outputs.tf").read_text(encoding="utf-8")
+        self.assertIn("32 +", outputs)
+        self.assertIn("(local.loki_auth_enforced ? 1 : 0) +", outputs)
+
+        workload_outputs = (DEPLOY_ROOT / "stages/workloads/outputs.tf").read_text(encoding="utf-8")
+        self.assertIn('output "loki_client_compatibility_receipt"', workload_outputs)
+        self.assertIn("helm_release.control_plane,", workload_outputs)
+        self.assertIn("kubernetes_secret_v1.grafana_datasource,", workload_outputs)
 
     def test_lean_route_config_map_name_covers_its_complete_data_map(self) -> None:
         locals_source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(

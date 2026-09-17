@@ -485,6 +485,36 @@ resource "kubernetes_cluster_role_binding_v1" "kueue_metrics_reader" {
   ]
 }
 
+# Auth enforcement creates a state-retained rollback floor. A later normal
+# plan that tries to return to the auth-off phase would destroy this instance
+# and is rejected by prevent_destroy. Never bypass it with state removal: the
+# scoped fs2-platform cohort may remain for the full retention window.
+resource "terraform_data" "loki_enforced_dual_read_floor" {
+  count = local.loki_auth_enforced ? 1 : 0
+
+  input = {
+    schema                       = "fs2-serve.nebius.ai/loki-rollback-floor/v1"
+    run_id                       = var.run_id
+    phase                        = "enforced-dual-read"
+    read_tenant_header           = local.loki_read_tenant_header
+    client_compatibility_receipt = var.loki_client_compatibility_receipt
+    identity_custody_receipt     = var.loki_identity_custody_receipt
+  }
+
+  lifecycle {
+    prevent_destroy = true
+
+    precondition {
+      condition = (
+        local.loki_identity_custody_ready &&
+        var.loki_client_compatibility_receipt == local.expected_loki_client_compatibility_receipt &&
+        var.loki_rollback_floor == "enforced-dual-read"
+      )
+      error_message = "The enforced Loki cohort floor requires both reviewed receipts and the enforced-dual-read rollback floor."
+    }
+  }
+}
+
 resource "helm_release" "loki" {
   name             = "fs2-${var.run_id}-loki"
   namespace        = kubernetes_namespace_v1.platform["fs2-observability"].metadata[0].name
@@ -497,9 +527,41 @@ resource "helm_release" "loki" {
   wait             = true
   timeout          = 1200
 
-  values = [file("${path.module}/values/loki.yaml")]
+  values = [
+    file("${path.module}/values/loki.yaml"),
+    yamlencode({ loki = { auth_enabled = local.loki_auth_enforced } }),
+  ]
 
-  depends_on = [helm_release.monitoring]
+  lifecycle {
+    precondition {
+      condition = (
+        local.loki_phase_rank[var.loki_access_phase] >=
+        local.loki_phase_rank[var.loki_rollback_floor]
+      )
+      error_message = "loki_access_phase cannot move below the persisted rollback floor."
+    }
+
+    precondition {
+      condition = (
+        !local.loki_auth_enforced ||
+        (
+          local.loki_identity_custody_ready &&
+          var.loki_client_compatibility_receipt == local.expected_loki_client_compatibility_receipt &&
+          var.loki_rollback_floor == "enforced-dual-read"
+        )
+      )
+      error_message = "Loki auth enforcement requires the source-pinned SAI-03 custody receipt, the exact applied workloads client receipt, and an enforced-dual-read rollback floor."
+    }
+  }
+
+  # Existing Loki remains auth-off while policy and the scoped writer are
+  # updated. Auth can change only after this dependency chain and the separate
+  # workloads compatibility receipt gate above have both completed.
+  depends_on = [
+    helm_release.monitoring,
+    helm_release.otel_gateway,
+    terraform_data.loki_enforced_dual_read_floor,
+  ]
 }
 
 resource "helm_release" "otel_gateway" {
@@ -517,7 +579,7 @@ resource "helm_release" "otel_gateway" {
   values = [file("${path.module}/values/otel-gateway.yaml")]
 
   depends_on = [
-    helm_release.loki,
+    kubernetes_network_policy_v1.loki_ingress,
     helm_release.tempo,
   ]
 }

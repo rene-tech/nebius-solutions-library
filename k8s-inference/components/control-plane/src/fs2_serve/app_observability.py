@@ -39,7 +39,7 @@ from .runtime_kubernetes import GPU_ALLOCATION_OBSERVED_AT_ANNOTATION, GPU_UUIDS
 MAX_PODS = 2000
 MAX_POINTS = 720
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-DEFAULT_LOKI_TENANT_ID = "fs2-platform"
+DEFAULT_LOKI_READ_TENANT_HEADER = "fake|fs2-platform"
 
 
 def _timestamp(value: object) -> datetime | None:
@@ -237,7 +237,7 @@ class AppObservabilityService:
         kubernetes: KubernetesListReader | None,
         prometheus_url: str | None,
         loki_url: str | None,
-        loki_tenant_id: str = DEFAULT_LOKI_TENANT_ID,
+        loki_read_tenant_header: str = DEFAULT_LOKI_READ_TENANT_HEADER,
         history: AppObservationHistory | None = None,
         timeout_seconds: float = 8,
         transport: httpx.AsyncBaseTransport | None = None,
@@ -245,7 +245,7 @@ class AppObservabilityService:
         self.kubernetes = kubernetes
         self.prometheus_url = prometheus_url
         self.loki_url = loki_url
-        self.loki_tenant_id = loki_tenant_id
+        self.loki_read_tenant_header = loki_read_tenant_header
         self.history = history
         self.timeout_seconds = timeout_seconds
         self.transport = transport
@@ -591,7 +591,7 @@ class AppObservabilityService:
                     "limit": "5000",
                     "direction": "backward",
                 },
-                headers={"X-Scope-OrgID": self.loki_tenant_id},
+                headers={"X-Scope-OrgID": self.loki_read_tenant_header},
             )
             if data.get("resultType") != "streams":
                 raise AdminAdapterUnavailableError("Loki returned an unexpected log format")

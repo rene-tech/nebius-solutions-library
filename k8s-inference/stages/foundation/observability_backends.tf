@@ -6,7 +6,35 @@ locals {
   alertmanager_grafana_datasource = "alertmanager"
   tempo_service_name              = "fs2-tempo"
   tempo_grafana_datasource        = "fs2-${var.run_id}-tempo"
-  loki_tenant_id                  = "fs2-platform"
+  loki_legacy_tenant_id           = "fake"
+  loki_write_tenant_id            = "fs2-platform"
+  loki_read_tenant_header         = "${local.loki_legacy_tenant_id}|${local.loki_write_tenant_id}"
+  loki_legacy_retention_hours     = 168
+  loki_auth_enforced              = var.loki_access_phase == "enforced-dual-read"
+  loki_phase_rank = {
+    network-bound      = 0
+    enforced-dual-read = 1
+  }
+  loki_client_compatibility_payload = {
+    schema                      = "fs2-serve.nebius.ai/loki-client-compatibility/v1"
+    run_id                      = var.run_id
+    write_tenant_id             = local.loki_write_tenant_id
+    read_tenant_header          = local.loki_read_tenant_header
+    writer_release              = "fs2-${var.run_id}-otel-gateway"
+    reader_release              = "fs2-serve-control-plane"
+    grafana_datasource_uid      = "fs2-${var.run_id}-loki"
+  }
+  expected_loki_client_compatibility_receipt = sha256(jsonencode(local.loki_client_compatibility_payload))
+
+  # SAI-03 admission/label custody remains independently NO-GO. Do not replace
+  # this null with a caller-provided value: a reviewed successor must pin the
+  # exact accepted receipt in source before this label-selected policy can be
+  # treated as an identity boundary or applied.
+  accepted_loki_identity_custody_receipt = null
+  loki_identity_custody_ready = (
+    local.accepted_loki_identity_custody_receipt != null &&
+    var.loki_identity_custody_receipt == local.accepted_loki_identity_custody_receipt
+  )
 }
 
 # Loki's tenant header is meaningful only behind a network identity boundary.
@@ -119,7 +147,20 @@ resource "kubernetes_network_policy_v1" "loki_ingress" {
     }
   }
 
-  depends_on = [helm_release.loki]
+  lifecycle {
+    precondition {
+      condition     = local.loki_identity_custody_ready
+      error_message = "SAI-22 is blocked: pin the independently accepted SAI-03 admission/label-custody receipt in source before applying the Loki label-selected identity boundary."
+    }
+
+    precondition {
+      condition = (
+        local.loki_phase_rank[var.loki_access_phase] >=
+        local.loki_phase_rank[var.loki_rollback_floor]
+      )
+      error_message = "loki_access_phase cannot move below loki_rollback_floor; after scoped writes begin, retain enforced dual-read so neither the legacy nor scoped cohort is hidden."
+    }
+  }
 }
 
 # Single-binary Tempo is deliberately sized for the cluster-local seven-day
@@ -241,11 +282,22 @@ output "observability_operator_contract" {
       grafana_datasource_uid = local.tempo_grafana_datasource
     }
     loki = {
-      auth_enabled           = true
-      service_name           = "fs2-loki"
-      service_port           = 3100
-      tenant_id              = local.loki_tenant_id
-      ingress_policy_name    = kubernetes_network_policy_v1.loki_ingress.metadata[0].name
+      access_phase                          = var.loki_access_phase
+      rollback_floor                        = var.loki_rollback_floor
+      auth_enabled                          = local.loki_auth_enforced
+      service_name                          = "fs2-loki"
+      service_port                          = 3100
+      legacy_tenant_id                      = local.loki_legacy_tenant_id
+      write_tenant_id                       = local.loki_write_tenant_id
+      read_tenant_header                    = local.loki_read_tenant_header
+      multi_tenant_queries_enabled          = true
+      legacy_retention_hours                = local.loki_legacy_retention_hours
+      legacy_read_retirement_boundary       = "not-before-168h-after-auth-enforcement"
+      ingress_policy_name                   = kubernetes_network_policy_v1.loki_ingress.metadata[0].name
+      identity_custody_ready                = local.loki_identity_custody_ready
+      enforcement_authorized                = local.loki_identity_custody_ready && var.loki_client_compatibility_receipt == local.expected_loki_client_compatibility_receipt
+      expected_client_compatibility_receipt = local.expected_loki_client_compatibility_receipt
+      transition_order                      = ["network-policy-auth-off", "scoped-writer-and-dual-read-clients", "auth-enforced-dual-read"]
     }
     raw_backends_public = false
     operator_surface    = "grafana-native-auth"

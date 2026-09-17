@@ -14,13 +14,38 @@ global `OPERATOR` or `ADMIN` principal and records the distinct
 `app.logs.read` authorization action. A tenant-scoped principal cannot use the
 global observability routes.
 
-Loki runs with multi-tenancy enabled. Grafana, the OTel gateway, and the
-control plane use the fixed `fs2-platform` tenant header. Loki ingress is
-selected by an explicit NetworkPolicy and admits port 3100 only from those
-three application consumers plus the Prometheus health scraper. The policy
-also admits only the Loki self-traffic needed by its single-binary workload.
-Scientific and model-runtime namespaces are not Loki peers and must not be
-given an exception to this policy.
+Loki migration is a serialized two-state protocol, not a one-apply flag flip.
+Retained data written while Loki authentication was disabled belongs to Loki's
+implicit `fake` tenant. New OTel writes use the distinct `fs2-platform` tenant.
+During migration, Grafana and the control plane send the exact bounded
+multi-tenant read header `fake|fs2-platform`; Loki enables
+`multi_tenant_queries_enabled`. No caller can add a third tenant. The legacy
+read cohort must remain for at least 168 hours after auth enforcement, matching
+the configured retention period and maximum lookback. Removing `fake` requires
+a later reviewed source change and evidence that the entire legacy TTL has
+elapsed.
+
+The transition order is executable in Terraform and must not be collapsed:
+
+1. apply the Loki ingress policy while `loki_access_phase = "network-bound"`
+   keeps Loki auth disabled, then update the OTel gateway to write with
+   `X-Scope-OrgID: fs2-platform`;
+2. apply workloads so the control-plane and Grafana readers use
+   `fake|fs2-platform`, then capture the exact
+   `loki_client_compatibility_receipt` output;
+3. pass that receipt to foundation, set both `loki_access_phase` and
+   `loki_rollback_floor` to `"enforced-dual-read"`, and only then allow the
+   Loki release to enable auth.
+
+The policy admits port 3100 only from Grafana, the OTel gateway, the control
+plane, and the Prometheus health scraper, plus Loki self-traffic. Scientific
+and model-runtime namespaces are not peers. Kubernetes Pod labels alone are
+not an authenticated identity, however. SAI-03 admission/label custody is
+currently NO-GO, so this source pins the accepted custody receipt to `null` and
+Terraform fails closed before applying the policy. A reviewed successor must
+pin the exact independently accepted SAI-03 receipt in source; a caller cannot
+self-assert it through tfvars. Until that dependency is resolved, this SAI-22
+candidate is not authorized for integration or live use.
 
 Prometheus scrapes the control plane through the dedicated `metrics` service
 port (8081), which is served by a same-Pod, fixed-loopback proxy. The
@@ -62,6 +87,13 @@ deployment = {
     }
   }
 }
+
+# SAI-22 starts in the auth-off preparation phase. These values cannot advance
+# until the source-pinned SAI-03 custody dependency is accepted.
+loki_access_phase    = "network-bound"
+loki_rollback_floor  = "network-bound"
+# loki_client_compatibility_receipt = "<exact workloads output after phase 2>"
+# loki_identity_custody_receipt     = "<exact source-pinned SAI-03 receipt>"
 ```
 
 `retention` is Alertmanager's data-retention duration. The generated
@@ -109,11 +141,12 @@ not a second public backend.
 
 ## Verification and rollback
 
-The SAI-22 source candidate adds regressions for all of these contracts, but
+The SAI-22 source candidate authors regressions for all of these contracts, but
 the coordinator's static-source boundary for its authoring task prohibited
 executing tests, Helm/Terraform commands, scanners, builds, live probes, or
-deployment. A later authorized integration review must execute the checks
-below from the exact candidate descendant before any rollout.
+deployment. SAI-03 custody is also still unresolved. A later authorized
+integration review must first accept and pin that dependency, then execute the
+checks below from the exact candidate descendant before any rollout.
 
 Before apply, run Terraform formatting/validation, the deployment-contract and
 observability tests, and Helm lint/template for the control-plane chart. On the
@@ -144,14 +177,23 @@ and a model workload cannot retrieve tenant-labelled samples from either
 control-plane port. Run the exact-image payload-marker negative test without
 displaying or retaining payloads.
 
-Rollback is a reviewed Terraform change that restores the previous application
-digests and/or sets `deployment.observability.alertmanager.enabled = false`,
-then applies foundation before workloads. The StatefulSet claim remains
-retained; rollback must not delete the namespace or PVC.
+Alertmanager-only rollback is a reviewed Terraform change that restores the
+previous application digests and/or sets
+`deployment.observability.alertmanager.enabled = false`, then applies
+foundation before workloads. The StatefulSet claim remains retained; rollback
+must not delete the namespace or PVC.
 
 For an SAI-22 rollout, capture the prior control-plane image digest and Helm
-revision first. Roll back the workload release to that revision and restore
-the prior reviewed foundation configuration as one serialized operation. Do
-not remove the Loki policy in isolation while multi-tenant clients are active,
-and do not collapse metrics back onto the workload-reachable listener. Re-run
-both the operator-positive and workload-negative checks after rollback.
+revision first. Before auth enforcement, rollback may return to the exact
+auth-off `network-bound` cohort while retaining the policy and scoped writer.
+Auth enforcement begins `fs2-platform` data, so the same change must raise
+`loki_rollback_floor` to `enforced-dual-read`. After that point, rollback may
+use only header-capable control-plane/Grafana versions and must retain Loki
+auth, `fake|fs2-platform`, and the NetworkPolicy. A pre-migration release is
+not a valid rollback target because it would hide the scoped cohort. Auth
+enforcement creates the state-retained
+`terraform_data.loki_enforced_dual_read_floor` sentinel with
+`prevent_destroy`; a normal downgrade plan therefore fails. Never bypass that
+guard with state removal. Do not remove the policy in isolation or collapse
+metrics back onto the workload-reachable listener. Re-run both the
+operator-positive and workload-negative checks after rollback.

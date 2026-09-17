@@ -204,7 +204,7 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
             httpHeaderName1 = "X-Scope-OrgID"
           }
           secureJsonData = {
-            httpHeaderValue1 = local.observability_operator.loki.tenant_id
+            httpHeaderValue1 = local.observability_operator.loki.read_tenant_header
           }
         },
       ]

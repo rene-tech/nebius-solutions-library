@@ -535,7 +535,9 @@ adminReadAdapters:
     enabled: false
     prometheusUrl: http://fs2-monitoring-prometheus.fs2-observability.svc:9090
     lokiUrl: http://fs2-loki.fs2-observability.svc:3100
-    lokiTenantId: fs2-platform
+    # Bounded migration read set: retained auth-off data plus scoped writes.
+    # Remove `fake` only after the enforced-auth timestamp plus the 168h TTL.
+    lokiReadTenantHeader: fake|fs2-platform
     # Only explicit absences are configured. Installed/health/data for active
     # components still require successful bounded Prometheus probes.
     installed:

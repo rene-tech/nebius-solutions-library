@@ -228,6 +228,52 @@ variable "bootstrap_grafana_credentials" {
   default   = null
 }
 
+variable "loki_access_phase" {
+  description = "Serialized SAI-22 transition phase. Start network-bound with auth off; use enforced-dual-read only after the workloads compatibility receipt and accepted SAI-03 custody receipt are present."
+  type        = string
+  default     = "network-bound"
+
+  validation {
+    condition     = contains(["network-bound", "enforced-dual-read"], var.loki_access_phase)
+    error_message = "loki_access_phase must be network-bound or enforced-dual-read."
+  }
+}
+
+variable "loki_rollback_floor" {
+  description = "Lowest safe Loki phase for this data cohort. Raise to enforced-dual-read in the same reviewed change that enables auth; never lower it while fs2-platform data may remain."
+  type        = string
+  default     = "network-bound"
+
+  validation {
+    condition     = contains(["network-bound", "enforced-dual-read"], var.loki_rollback_floor)
+    error_message = "loki_rollback_floor must be network-bound or enforced-dual-read."
+  }
+}
+
+variable "loki_client_compatibility_receipt" {
+  description = "Exact non-secret workloads output proving the scoped OTel writer and bounded fake|fs2-platform readers were applied before Loki auth enforcement."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.loki_client_compatibility_receipt == null || can(regex("^[0-9a-f]{64}$", var.loki_client_compatibility_receipt))
+    error_message = "loki_client_compatibility_receipt must be null or an exact lowercase SHA-256 digest."
+  }
+}
+
+variable "loki_identity_custody_receipt" {
+  description = "Exact non-secret SAI-03 admission/label-custody receipt. It is unusable until an independently accepted digest is pinned in source."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.loki_identity_custody_receipt == null || can(regex("^[0-9a-f]{64}$", var.loki_identity_custody_receipt))
+    error_message = "loki_identity_custody_receipt must be null or an exact lowercase SHA-256 digest."
+  }
+}
+
 variable "alertmanager" {
   description = "Persistent Alertmanager settings generated from deployment.observability.alertmanager. The service remains cluster-private and is operated through authenticated Grafana."
   type = object({

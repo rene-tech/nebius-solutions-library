@@ -20,12 +20,14 @@ output "cluster_contract" {
 
 output "managed_resource_count" {
   description = "Expected managed Terraform address count for plan review."
-  # 29 pre-existing addresses, the Kueue release verification, and the always
-  # present jobset-system namespace. The JobSet module itself contributes five
-  # addresses only when it is enabled.
+  # 29 pre-existing addresses, the Kueue release verification, the always
+  # present jobset-system namespace, and the Loki ingress NetworkPolicy. The
+  # The auth-enforced cohort adds one prevent-destroy rollback-floor sentinel.
+  # The JobSet module itself contributes five addresses only when it is enabled.
   value = (
-    31 +
+    32 +
     (nonsensitive(var.bootstrap_grafana_credentials == null) ? 0 : 1) +
+    (local.loki_auth_enforced ? 1 : 0) +
     (var.jobset.enabled ? 5 : 0)
   )
 }

@@ -157,12 +157,10 @@ class Settings(BaseSettings):
     admin_node_scaler_provider: Literal["nebius-managed-node-group-autoscaler"] | None = None
     admin_prometheus_url: str | None = Field(default=None, max_length=2048)
     admin_loki_url: str | None = Field(default=None, max_length=2048)
-    admin_loki_tenant_id: str = Field(
-        default="fs2-platform",
-        min_length=1,
-        max_length=150,
-        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
-    )
+    # This exact bounded value bridges only the retained pre-auth `fake`
+    # cohort and the scoped writer cohort. It is not a caller-selected tenant
+    # list and must be retired only after the 168-hour legacy TTL has elapsed.
+    admin_loki_read_tenant_header: Literal["fake|fs2-platform"] = "fake|fs2-platform"
     admin_observability_config_file: Path | None = None
     admin_adapter_timeout_seconds: float = Field(default=2.0, ge=0.1, le=10)
     admin_source_max_age_seconds: float = Field(default=90.0, ge=1, le=3600)

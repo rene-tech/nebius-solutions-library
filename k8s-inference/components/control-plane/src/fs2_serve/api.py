@@ -587,7 +587,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         kubernetes=getattr(admin_read.capacity_adapter, "reader", None),
         prometheus_url=runtime.settings.admin_prometheus_url,
         loki_url=runtime.settings.admin_loki_url,
-        loki_tenant_id=runtime.settings.admin_loki_tenant_id,
+        loki_read_tenant_header=runtime.settings.admin_loki_read_tenant_header,
         history=AppObservationHistory(pool) if pool is not None else None,
     )
     app.state.apps = apps_service

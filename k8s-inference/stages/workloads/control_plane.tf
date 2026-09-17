@@ -117,8 +117,8 @@ locals {
       observability = {
         enabled       = true
         prometheusUrl = local.prometheus_server_address
-        lokiUrl       = local.grafana_loki_datasource_url
-        lokiTenantId  = local.observability_operator.loki.tenant_id
+        lokiUrl              = local.grafana_loki_datasource_url
+        lokiReadTenantHeader = local.observability_operator.loki.read_tenant_header
         installed = {
           alertmanager = local.observability_operator.alertmanager.enabled
           tempo        = local.observability_operator.tempo.enabled
@@ -250,10 +250,15 @@ resource "helm_release" "control_plane" {
         local.observability_operator.tempo.enabled &&
         local.observability_operator.tempo.service_port == 3200 &&
         length(local.observability_operator.tempo.grafana_datasource_uid) > 0 &&
-        local.observability_operator.loki.auth_enabled &&
+        contains(["network-bound", "enforced-dual-read"], local.observability_operator.loki.access_phase) &&
         local.observability_operator.loki.service_name == "fs2-loki" &&
         local.observability_operator.loki.service_port == 3100 &&
-        length(local.observability_operator.loki.tenant_id) > 0 &&
+        local.observability_operator.loki.legacy_tenant_id == "fake" &&
+        local.observability_operator.loki.write_tenant_id == "fs2-platform" &&
+        local.observability_operator.loki.read_tenant_header == "fake|fs2-platform" &&
+        local.observability_operator.loki.multi_tenant_queries_enabled &&
+        local.observability_operator.loki.legacy_retention_hours == 168 &&
+        local.observability_operator.loki.expected_client_compatibility_receipt == local.loki_client_compatibility_receipt &&
         length(local.observability_operator.loki.ingress_policy_name) > 0 &&
         local.observability_operator.alertmanager.service_port == 9093 &&
         (
@@ -263,7 +268,7 @@ resource "helm_release" "control_plane" {
         !local.observability_operator.raw_backends_public &&
         local.observability_operator.operator_surface == "grafana-native-auth"
       )
-      error_message = "The foundation observability handoff must retain private raw backends and the reviewed Grafana-native Alertmanager/Tempo operator surface."
+      error_message = "The foundation observability handoff must retain private raw backends, bounded Loki legacy/scoped dual-read, and the reviewed Grafana-native Alertmanager/Tempo operator surface."
     }
 
     precondition {
