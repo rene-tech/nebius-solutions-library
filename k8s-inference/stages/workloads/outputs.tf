@@ -58,6 +58,11 @@ output "grafana_url" {
   value       = local.grafana_publication.enabled ? local.grafana_publication.external_url : null
 }
 
+output "grafana_admin_session_url" {
+  description = "Admin-session-protected Grafana URL, or null while the SAI-26 successor is disabled."
+  value       = local.grafana_admin_session_enabled ? local.grafana_admin_session_publication.external_url : null
+}
+
 output "alertmanager_url" {
   description = "Authenticated Grafana Silences URL with the private Alertmanager datasource selected, or null when Alertmanager or Grafana publication is disabled."
   value       = local.alertmanager_grafana_url
@@ -133,6 +138,7 @@ output "access_bundle" {
       mcp_url            = "${trimsuffix(local.public_base_url, "/")}/mcp"
       inference_base_url = "${trimsuffix(local.public_base_url, "/")}/v1"
       grafana_url        = local.grafana_publication.enabled ? local.grafana_publication.external_url : null
+      grafana_admin_session_url = local.grafana_admin_session_enabled ? local.grafana_admin_session_publication.external_url : null
       alertmanager_url   = local.alertmanager_grafana_url
       tempo_explore_url  = local.tempo_grafana_explore_url
     }
@@ -429,6 +435,11 @@ output "managed_resource_count" {
     (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +
     # Grafana authorization and rate-limit policies are distinct managed addresses.
     (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +
+    # The successor owns the moved ReferenceGrant/HTTPRoute, two policies, and
+    # the additive direct-403 quarantine filter.
+    (data.terraform_remote_state.foundation.outputs.grafana_admin_session_publication_contract.enabled ? 5 : 0) +
+    # Attach adds immutable pre- and post-attachment status receipts.
+    (data.terraform_remote_state.foundation.outputs.grafana_admin_session_publication_contract.phase == "attach" ? 2 : 0) +
     (var.run_acceptance_job ? 4 : 0) +
     (var.run_acceptance_job && var.deployment_profile == "full_catalog" ? 1 : 0)
     + (var.model_express.enabled ? 1 : 0)

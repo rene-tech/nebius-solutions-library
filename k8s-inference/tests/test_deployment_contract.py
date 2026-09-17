@@ -503,6 +503,9 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("at most 63 characters", result.stderr)
 
     def test_alertmanager_is_a_tfvars_only_foundation_contract(self) -> None:
+        self.skipTest(
+            "preserved historical source-IP Grafana fixture; SAI-26 rejects this publication path"
+        )
         deployment = {
             "schema_version": 1,
             "name": "fs2-alertmanager-contract",
@@ -556,6 +559,80 @@ class DeploymentContractTests(unittest.TestCase):
             ],
             ["192.0.2.0/24"],
         )
+
+    def test_admin_session_grafana_is_the_only_accepted_external_contract(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-grafana-admin-session-contract",
+            "target": self.catalog_target(),
+            "observability": {
+                "grafana": {"admin_session_publication_phase": "prepare"},
+                "alertmanager": {
+                    "enabled": True,
+                    "retention": "240h",
+                    "storage": {
+                        "storage_class_name": "compute-csi-default-sc",
+                        "size_gib": 20,
+                    },
+                },
+            },
+            "edge": {
+                "mode": "public",
+                "source_cidrs": ["192.0.2.0/24"],
+                "acme_email": "operator@example.invalid",
+            },
+        }
+        variable_file = self._write_configuration(
+            "grafana-admin-session-contract", deployment
+        )
+        outputs = self._planned_outputs(
+            variable_file, "grafana-admin-session-contract"
+        )
+
+        foundation = outputs["deployment_contract"]["stages"]["foundation"]
+        workloads = outputs["deployment_contract"]["stages"]["workloads"]
+        self.assertEqual(
+            foundation["grafana_admin_session_publication"],
+            {"phase": "prepare", "external_base_url": ""},
+        )
+        self.assertEqual(
+            workloads["grafana_admin_session_publication_phase"], "prepare"
+        )
+        self.assertEqual(
+            outputs["effective_configuration"]["observability"][
+                "grafana_admin_session_publication_phase"
+            ],
+            "prepare",
+        )
+        self.assertEqual(workloads["grafana_allowed_source_cidrs"], [])
+        self.assertEqual(
+            foundation["alertmanager"], deployment["observability"]["alertmanager"]
+        )
+
+    def test_legacy_source_ip_grafana_contract_is_rejected_even_with_cidrs(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-grafana-legacy-source-ip",
+            "target": self.catalog_target(),
+            "observability": {
+                "grafana": {
+                    "publish_external": True,
+                    "allowed_source_cidrs": ["192.0.2.0/24"],
+                }
+            },
+            "edge": {
+                "mode": "public",
+                "source_cidrs": ["192.0.2.0/24"],
+                "acme_email": "operator@example.invalid",
+            },
+        }
+        variable_file = self._write_configuration(
+            "grafana-legacy-source-ip", deployment
+        )
+        result, _ = self._plan_file(variable_file, "grafana-legacy-source-ip")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("rejected source-IP publication path", result.stderr)
 
     def test_external_grafana_without_an_operator_allowlist_is_rejected(self) -> None:
         deployment = {

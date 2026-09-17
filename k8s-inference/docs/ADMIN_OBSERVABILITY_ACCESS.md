@@ -1,5 +1,10 @@
 # Admin observability access
 
+> **SAI-26 source correction:** examples below that set
+> `publish_external = true` are preserved rejected-history fixtures and are no
+> longer valid inputs. Use the additive admin-session successor described in
+> [SAI-26 Grafana admin-session remediation](SAI_26_GRAFANA_ADMIN_SESSION_REMEDIATION.md).
+
 The inference solution uses authenticated Grafana as its only public
 observability application. Prometheus, Loki, Tempo, and Alertmanager remain
 cluster-private. The admin portal exposes launch actions only after the
@@ -154,7 +159,41 @@ test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}'
   "${GRAFANA_ORIGIN}/admin/observability/grafana/login")" = "403"
 ```
 
+**Rejected predecessor claim (not true for the current topology):**
+
 Envoy Gateway evaluates the original downstream client address. Do not add an
 `X-Forwarded-For` trust rule as a rollout shortcut. If the real outside and
 inside probes do not prove the expected addresses and status codes, stop the
 rollout and inspect the load-balancer source-IP path before changing policy.
+
+## SAI-26 correction: admin-session gate replaces source-IP authorization
+
+The preceding **Grafana edge authorization** section is preserved as rejected
+design history for candidate `f05b61c14411ee54679b717ba05e6a17983131e7`.
+Do not deploy it. The Nebius LoadBalancer path uses
+`externalTrafficPolicy = "Cluster"`, while the Envoy Gateway
+`ClientTrafficPolicy` configures TLS only. Consequently, the route has no
+reviewed, spoof-resistant original-client identity on which `clientCIDRs` can
+rely. Its 200-request/second per-proxy limit is also not a login brute-force
+control.
+
+The additive SAI-26 successor is documented in
+[`SAI_26_GRAFANA_ADMIN_SESSION_REMEDIATION.md`](SAI_26_GRAFANA_ADMIN_SESSION_REMEDIATION.md).
+It statically rejects `publish_external = true` and replaces that path with a
+two-phase `admin_session_publication_phase` contract. The successor authorizes
+every Grafana request through the existing opaque, revocable admin-session
+cookie and applies a five-request/minute local limit only to Grafana's `/login`
+rule as secondary protection. No source IP or forwarded header is trusted.
+
+The successor must first be applied with phase `prepare`, which keeps the
+HTTPRoute attached only to a gateway-native direct-403 `HTTPRouteFilter`; it
+has no Grafana backend. Phase `attach` reads the live prepared objects and
+refuses the backend switch unless the exact route reports current-generation
+`Accepted=True` and `ResolvedRefs=True` and both policies report
+current-generation `Accepted=True`. A separate post-attachment gate rechecks
+those statuses after the Grafana backend rules are selected. Rollback changes
+`attach` back to `prepare`; the Kubernetes successor resources use
+`prevent_destroy`, so rollback restores the direct-403 quarantine without
+deleting Grafana, its telemetry backends, credentials, dashboards, or
+datasources. Record the two Terraform-only attachment receipts outside active
+state before rollback retires those receipt instances.

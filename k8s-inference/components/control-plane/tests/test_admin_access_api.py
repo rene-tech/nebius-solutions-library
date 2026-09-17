@@ -198,6 +198,38 @@ def _principal_cookie(runtime: AppRuntime, principal_id: UUID) -> str:
     return asyncio.run(runtime.operator_sessions.issue(principal_id, actor="test-bootstrap")).cookie_value
 
 
+def test_grafana_external_authorization_requires_a_live_operator_session(
+    registry: Any,
+    cipher: Any,
+    hasher: Any,
+) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    with _client(runtime) as client:
+        missing = client.get("/admin/api/v1/grafana-authorization")
+        client.cookies.set(ADMIN_SESSION_COOKIE, "invalid-session-material")
+        invalid = client.get("/admin/api/v1/grafana-authorization")
+        client.cookies.clear()
+        handoff = client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH)
+        authorized = {
+            method: client.request(method, "/admin/api/v1/grafana-authorization")
+            for method in ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+        }
+        logout = client.delete("/admin/api/v1/session")
+        revoked = client.get("/admin/api/v1/grafana-authorization")
+
+    assert missing.status_code == 403
+    assert invalid.status_code == 403
+    assert handoff.status_code == 200
+    assert {response.status_code for response in authorized.values()} == {204}
+    assert {response.content for response in authorized.values()} == {b""}
+    assert {
+        response.headers["cache-control"] for response in authorized.values()
+    } == {"no-store"}
+    assert logout.status_code == 204
+    assert revoked.status_code == 403
+    assert BOOTSTRAP_TOKEN not in missing.text + invalid.text + revoked.text
+
+
 def test_curl_session_handoff_is_no_store_strict_cookie_and_never_reflects_credentials(
     registry: Any, cipher: Any, hasher: Any, caplog: Any
 ) -> None:

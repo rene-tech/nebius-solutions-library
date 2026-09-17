@@ -643,6 +643,8 @@ variable "deployment" {
       grafana = optional(object({
         publish_external = optional(bool, false)
         allowed_source_cidrs = optional(set(string), [])
+
+        admin_session_publication_phase = optional(string, "disabled")
       }), {})
       alertmanager = optional(object({
         enabled   = optional(bool, false)
@@ -1791,6 +1793,25 @@ variable "deployment" {
       length(var.deployment.observability.grafana.allowed_source_cidrs) == 0
     )
     error_message = "External Grafana publication requires one to eight explicit IPv4 operator CIDRs with prefix length /8 or narrower; 0.0.0.0/0 and stale allow-lists on disabled publication are rejected."
+  }
+
+  validation {
+    condition     = !var.deployment.observability.grafana.publish_external
+    error_message = "observability.grafana.publish_external is a rejected source-IP publication path. Keep it false and use admin_session_publication_phase for the fail-closed successor."
+  }
+
+  validation {
+    condition = (
+      contains(
+        ["disabled", "prepare", "attach"],
+        var.deployment.observability.grafana.admin_session_publication_phase,
+      ) &&
+      (
+        var.deployment.observability.grafana.admin_session_publication_phase == "disabled" ||
+        var.deployment.edge.mode == "public"
+      )
+    )
+    error_message = "observability.grafana.admin_session_publication_phase must be disabled, prepare, or attach; prepare and attach require the public HTTPS edge."
   }
 
   validation {

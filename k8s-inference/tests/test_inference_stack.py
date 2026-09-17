@@ -713,6 +713,46 @@ class InferenceStackTests(unittest.TestCase):
                 },
             )
 
+    def test_admin_session_grafana_origin_is_derived_for_prepare_without_cidrs(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-grafana-admin-session-"
+        ) as temporary:
+            run_root = Path(temporary)
+            configuration = contract()
+            configuration["stages"]["foundation"][
+                "grafana_admin_session_publication"
+            ] = {
+                "phase": "prepare",
+                "external_base_url": "",
+            }
+            dynamic = dynamic_outputs(run_root)
+            dynamic["public_edge_contract"] = {
+                "mode": "public",
+                "public_origin": "https://192.0.2.26",
+            }
+            foundation_path, workloads_path = STACK.write_downstream_variables(
+                run_root, configuration, dynamic
+            )
+
+            foundation = json.loads(foundation_path.read_text(encoding="utf-8"))
+            workloads = json.loads(workloads_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                foundation["grafana_admin_session_publication"],
+                {
+                    "phase": "prepare",
+                    "external_base_url": "https://192.0.2.26",
+                },
+            )
+            self.assertEqual(
+                workloads["admin_observability_links"]["grafana"],
+                {
+                    "url": "https://192.0.2.26/admin/observability/grafana",
+                    "verified_external_route": True,
+                },
+            )
+
     def test_public_alertmanager_launch_is_derived_only_when_installed(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix="inference-stack-alertmanager-"

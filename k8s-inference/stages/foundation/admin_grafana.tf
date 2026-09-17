@@ -39,6 +39,11 @@ variable "grafana_publication" {
     )
     error_message = "grafana_publication.service_port must be an integer from 1 through 65535."
   }
+
+  validation {
+    condition     = !var.grafana_publication.enabled
+    error_message = "grafana_publication.enabled is the rejected native-login/source-IP path. Use grafana_admin_session_publication instead."
+  }
 }
 
 locals {

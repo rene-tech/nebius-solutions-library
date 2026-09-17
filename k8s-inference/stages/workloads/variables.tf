@@ -1401,6 +1401,20 @@ variable "grafana_allowed_source_cidrs" {
   }
 }
 
+variable "grafana_admin_session_publication_phase" {
+  description = "Two-phase Grafana external-authorization rollout: prepare attaches direct-403 quarantine rules and reconciled policies; attach requires a live status receipt before selecting Grafana backends."
+  type        = string
+  default     = "disabled"
+
+  validation {
+    condition = contains(
+      ["disabled", "prepare", "attach"],
+      var.grafana_admin_session_publication_phase,
+    )
+    error_message = "grafana_admin_session_publication_phase must be disabled, prepare, or attach."
+  }
+}
+
 variable "public_edge_contract" {
   description = "Exact typed infra-disposable public_edge_contract output. Internal-only mode carries null public identities and a bounded loopback port-forward contract."
   type = object({

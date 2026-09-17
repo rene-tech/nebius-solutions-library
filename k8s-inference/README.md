@@ -416,6 +416,9 @@ reference-data node templates.
 
 Alertmanager and operator observability access are described in
 [`docs/ADMIN_OBSERVABILITY_ACCESS.md`](docs/ADMIN_OBSERVABILITY_ACCESS.md).
+The additive SAI-26 admin-session successor, deny-before-publication gate, and
+source-only verification boundary are documented in
+[`docs/SAI_26_GRAFANA_ADMIN_SESSION_REMEDIATION.md`](docs/SAI_26_GRAFANA_ADMIN_SESSION_REMEDIATION.md).
 Alertmanager enablement, retained storage, and retention are tfvars settings;
 authenticated Grafana remains the only public observability application and
 Tempo launches through a datasource-selected Grafana Explore link.

@@ -154,6 +154,9 @@ output "effective_configuration" {
       }
       grafana_publish_external = var.deployment.observability.grafana.publish_external
       grafana_allowed_source_cidrs = sort(tolist(var.deployment.observability.grafana.allowed_source_cidrs))
+
+      grafana_admin_session_publication_phase = var.deployment.observability.grafana.admin_session_publication_phase
+
       dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
       request_debug_enabled    = var.deployment.observability.request_debug_enabled
     }

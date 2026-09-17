@@ -714,6 +714,18 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             raise AdminProblemError(401, "operator_session_invalid", "operator session is invalid") from None
         return session
 
+    async def grafana_operator_session(
+        cookie_value: Annotated[str | None, Cookie(alias=ADMIN_SESSION_COOKIE)] = None,
+    ) -> OperatorSession:
+        try:
+            return await operator_session(cookie_value)
+        except AdminProblemError:
+            raise AdminProblemError(
+                403,
+                "grafana_operator_session_required",
+                "a valid operator session is required",
+            ) from None
+
     async def operator(
         request: Request,
         session: Annotated[OperatorSession, Depends(operator_session)],
@@ -1482,6 +1494,21 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         )
         set_operator_cookie(response, secret)
         return access_envelope(session)
+
+    @app.api_route(
+        "/admin/api/v1/grafana-authorization",
+        methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        status_code=status.HTTP_204_NO_CONTENT,
+        include_in_schema=False,
+        responses=admin_problem_responses,
+    )
+    async def authorize_grafana_session(
+        _: Annotated[OperatorSession, Depends(grafana_operator_session)],
+    ) -> Response:
+        return Response(
+            status_code=status.HTTP_204_NO_CONTENT,
+            headers={"cache-control": "no-store"},
+        )
 
     @app.get(
         "/admin/api/v1/session",

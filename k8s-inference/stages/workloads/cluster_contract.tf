@@ -129,6 +129,20 @@ resource "terraform_data" "cluster_contract" {
       error_message = "internal-only mode requires the foundation public Grafana route to remain disabled."
     }
     precondition {
+      condition = (
+        local.public_edge_enabled ||
+        !data.terraform_remote_state.foundation.outputs.grafana_admin_session_publication_contract.enabled
+      )
+      error_message = "internal-only mode requires the admin-session Grafana publication successor to remain disabled."
+    }
+    precondition {
+      condition = (
+        var.grafana_admin_session_publication_phase ==
+        data.terraform_remote_state.foundation.outputs.grafana_admin_session_publication_contract.phase
+      )
+      error_message = "workloads and foundation must use the same Grafana admin-session publication phase."
+    }
+    precondition {
       condition     = abspath(var.kubeconfig_path) == local.expected_kubeconfig_path
       error_message = "kubeconfig_path must be the exact run-owned <run_root>/kubeconfig file."
     }

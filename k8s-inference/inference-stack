@@ -2039,6 +2039,79 @@ def write_downstream_variables(
                 "verified_external_route": True,
             },
         }
+    grafana_admin_session = foundation.get("grafana_admin_session_publication", {})
+    if (
+        isinstance(grafana_admin_session, Mapping)
+        and grafana_admin_session.get("phase") in {"prepare", "attach"}
+    ):
+        edge = dynamic["public_edge_contract"]
+        origin = edge.get("public_origin")
+        parsed = urlsplit(origin or "")
+        if (
+            edge.get("mode") != "public"
+            or parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.path not in ("", "/")
+            or parsed.query
+            or parsed.fragment
+            or parsed.username
+            or parsed.password
+        ):
+            raise DeploymentError(
+                "admin-session Grafana publication requires an exact HTTPS public origin from the infrastructure output"
+            )
+        origin = origin.rstrip("/")
+        foundation["grafana_admin_session_publication"] = {
+            **grafana_admin_session,
+            "external_base_url": origin,
+        }
+        alertmanager_enabled = (
+            isinstance(foundation.get("alertmanager"), Mapping)
+            and foundation["alertmanager"].get("enabled") is True
+        )
+        workloads["admin_observability_links"] = {
+            "allowed_hosts": [parsed.hostname],
+            "grafana": {
+                "url": f"{origin}/admin/observability/grafana",
+                "verified_external_route": True,
+            },
+            "prometheus": {
+                "url": f"{origin}/admin/observability/grafana/explore",
+                "verified_external_route": True,
+            },
+            "loki": {
+                "url": f"{origin}/admin/observability/grafana/explore",
+                "verified_external_route": True,
+            },
+            "otel": {
+                "url": f"{origin}/admin/observability/grafana/dashboards",
+                "verified_external_route": True,
+            },
+            "dcgm": {
+                "url": f"{origin}/admin/observability/grafana/dashboards",
+                "verified_external_route": True,
+            },
+            "kueue": {
+                "url": f"{origin}/admin/observability/grafana/dashboards",
+                "verified_external_route": True,
+            },
+            "keda": {
+                "url": f"{origin}/admin/observability/grafana/dashboards",
+                "verified_external_route": True,
+            },
+            "alertmanager": (
+                {
+                    "url": f"{origin}/admin/observability/grafana/alerting/silences",
+                    "verified_external_route": True,
+                }
+                if alertmanager_enabled
+                else {"url": "", "verified_external_route": False}
+            ),
+            "tempo": {
+                "url": f"{origin}/admin/observability/grafana/explore",
+                "verified_external_route": True,
+            },
+        }
     foundation_path = run_root / "foundation.tfvars.json"
     workloads_path = run_root / "workloads.tfvars.json"
     private_json(foundation_path, foundation)

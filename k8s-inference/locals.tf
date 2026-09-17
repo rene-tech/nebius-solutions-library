@@ -963,6 +963,9 @@ locals {
   )
 
   grafana_external_enabled = var.deployment.observability.grafana.publish_external
+
+  grafana_admin_session_publication_phase = var.deployment.observability.grafana.admin_session_publication_phase
+
   modelexpress_managed_nvcr_server_required = (
     var.deployment.acceleration.model_express.enabled &&
     var.deployment.acceleration.model_express.deployment_mode == "managed" &&
@@ -1073,6 +1076,10 @@ locals {
       enabled           = local.grafana_external_enabled
       external_base_url = ""
     }
+    grafana_admin_session_publication = {
+      phase             = local.grafana_admin_session_publication_phase
+      external_base_url = ""
+    }
     alertmanager = var.deployment.observability.alertmanager
   }
 
@@ -1135,6 +1142,9 @@ locals {
     enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
     request_debug_enabled           = var.deployment.observability.request_debug_enabled
     grafana_allowed_source_cidrs     = sort(tolist(var.deployment.observability.grafana.allowed_source_cidrs))
+
+    grafana_admin_session_publication_phase = local.grafana_admin_session_publication_phase
+
     # core_pool_capacity is declared inside the workloads stage's scheduling
     # object and read as var.scheduling.core_pool_capacity, so it must travel
     # inside that object. Emitted as a sibling it was an undeclared variable:

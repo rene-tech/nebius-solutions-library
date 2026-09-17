@@ -451,6 +451,7 @@ resource "helm_release" "monitoring" {
       }
     }),
     yamlencode(local.grafana_publication_values),
+    yamlencode(local.grafana_admin_session_publication_values),
   ]
 
   depends_on = [
