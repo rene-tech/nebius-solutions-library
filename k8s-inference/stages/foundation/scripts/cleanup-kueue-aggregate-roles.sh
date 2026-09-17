@@ -9,6 +9,8 @@ set -eu
 
 readonly timeout_seconds="${FS2_CLEANUP_TIMEOUT_SECONDS:-180}"
 readonly retry_seconds="${FS2_CLEANUP_RETRY_SECONDS:-2}"
+FS2_CLEANUP_KUBECONFIG="${FS2_PROVIDER_KUBECONFIG:-${FS2_CLEANUP_KUBECONFIG:-}}"
+export FS2_CLEANUP_KUBECONFIG
 
 fail() {
   printf 'ERROR: Kueue teardown cleanup: %s\n' "$1" >&2
@@ -29,7 +31,6 @@ require_environment() {
 require_local_target_safety() {
   command -v kubectl >/dev/null 2>&1 || fail "kubectl is required"
   command -v jq >/dev/null 2>&1 || fail "jq is required"
-  command -v realpath >/dev/null 2>&1 || fail "realpath is required"
 
   printf '%s' "$timeout_seconds" | grep -Eq '^[1-9][0-9]*$' \
     || fail "timeout must be a positive integer"
@@ -58,16 +59,19 @@ require_local_target_safety() {
     || fail "run root must be owned by the invoking user"
 
   [ -f "$FS2_CLEANUP_KUBECONFIG" ] || fail "kubeconfig is not a regular file"
-  [ ! -L "$FS2_CLEANUP_KUBECONFIG" ] || fail "kubeconfig must not be a symlink"
-  [ "$(stat -c '%a' "$FS2_CLEANUP_KUBECONFIG")" = "600" ] \
-    || fail "kubeconfig must be mode 0600"
+  printf '%s' "$FS2_CLEANUP_KUBECONFIG" \
+    | grep -Eq '^/proc/[1-9][0-9]*/fd/[0-9]+$' \
+    || fail "kubeconfig must be the inference-stack descriptor path"
+  [ "$(stat -c '%a' "$FS2_CLEANUP_KUBECONFIG")" = "400" ] \
+    || fail "provider kubeconfig snapshot must be mode 0400"
   [ "$(stat -c '%u' "$FS2_CLEANUP_KUBECONFIG")" = "$(id -u)" ] \
     || fail "kubeconfig must be owned by the invoking user"
-
-  run_root_real="$(realpath "$FS2_CLEANUP_RUN_ROOT")"
-  kubeconfig_real="$(realpath "$FS2_CLEANUP_KUBECONFIG")"
-  [ "$kubeconfig_real" = "$run_root_real/kubeconfig" ] \
-    || fail "kubeconfig is not the exact run-owned file"
+  provider_target="$(readlink "$FS2_CLEANUP_KUBECONFIG")" \
+    || fail "cannot resolve provider kubeconfig descriptor"
+  case "$provider_target" in
+    /memfd:sai20-provider-kubeconfig*) ;;
+    *) fail "kubeconfig descriptor is not the source-owned sealed snapshot" ;;
+  esac
 
   # `kubectl config view` is local-only. Keep the redacted document in memory
   # and expose only the selected API server to the checks below.

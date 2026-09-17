@@ -9,6 +9,17 @@ variable "kubeconfig_path" {
   }
 }
 
+variable "provider_kubeconfig_path" {
+  description = "Immutable sealed-memfd kubeconfig retained by inference-stack across the exact foundation/workloads plan/apply sequence."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^/proc/[1-9][0-9]*/fd/[0-9]+$", var.provider_kubeconfig_path))
+    error_message = "provider_kubeconfig_path must be the inference-stack-owned /proc/<pid>/fd/<fd> sealed snapshot."
+  }
+}
+
 variable "run_root" {
   description = "Absolute run-owned directory. The selected kubeconfig must be exactly <run_root>/kubeconfig."
   type        = string

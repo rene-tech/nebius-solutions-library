@@ -1,8 +1,9 @@
 """Unexecuted regressions for the additive SAI-20 v5 successor gate.
 
 The coordinator explicitly forbids executing tests or parsers in this task.
-These assertions include the credential-equivalent Pod-subresource blocker
-reported against 17469ed79eb56ae63327f0ddecb81d21b2170722, in addition to the
+These assertions include the provider-identity, target-classification,
+credential-workload and scoped-debug blockers finally reported against
+6e1bf0f00d85a80d228a7cea803511391076fb5a, in addition to the
 four final blocker groups reported against 948e1836b4058779aff2c0c91c62aa898968da5d.
 They are authored evidence only;
 this task's coordinator boundary forbids executing them.
@@ -20,8 +21,17 @@ V4_TF = ROOT / "stages/workloads/sai20_database_authority_v4.tf"
 V5_TF = ROOT / "stages/workloads/sai20_database_authority_v5.tf"
 V4_PY = ROOT / "stages/workloads/scripts/sai20_database_authority_v4.py"
 V5_PY = ROOT / "stages/workloads/scripts/sai20_database_authority_v5.py"
+PROVIDERS = ROOT / "stages/workloads/providers.tf"
+LOCALS = ROOT / "stages/workloads/locals.tf"
+VARIABLES = ROOT / "stages/workloads/variables.tf"
+FOUNDATION_PROVIDERS = ROOT / "stages/foundation/providers.tf"
+FOUNDATION_LOCALS = ROOT / "stages/foundation/locals.tf"
+FOUNDATION_RELEASES = ROOT / "stages/foundation/releases.tf"
+FOUNDATION_GATE = ROOT / "stages/foundation/kueue_admission_gate.tf"
+STACK = ROOT / "inference-stack"
 INGRESS = ROOT / "stages/workloads/contracts/sai20-control-db-ingress-v4.json"
 BOOTSTRAP = ROOT / "stages/workloads/contracts/sai20-bootstrap-guard-v5.json"
+DEBUG_AUTHORIZER = ROOT / "stages/workloads/contracts/sai20-debug-authorizer-v1.json"
 ROOTS = ROOT / "security/sai20/authority-roots-v1.json"
 ANCHORS = ROOT / "security/sai20/enrollment-authorities-v1.json"
 RECEIPTS = ROOT / "security/sai20/root-enrollment-receipts-v1.json"
@@ -34,8 +44,17 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         cls.v5_tf = V5_TF.read_text(encoding="utf-8")
         cls.v4_py = V4_PY.read_text(encoding="utf-8")
         cls.v5_py = V5_PY.read_text(encoding="utf-8")
+        cls.providers = PROVIDERS.read_text(encoding="utf-8")
+        cls.locals_tf = LOCALS.read_text(encoding="utf-8")
+        cls.variables_tf = VARIABLES.read_text(encoding="utf-8")
+        cls.foundation_providers = FOUNDATION_PROVIDERS.read_text(encoding="utf-8")
+        cls.foundation_locals = FOUNDATION_LOCALS.read_text(encoding="utf-8")
+        cls.foundation_releases = FOUNDATION_RELEASES.read_text(encoding="utf-8")
+        cls.foundation_gate = FOUNDATION_GATE.read_text(encoding="utf-8")
+        cls.stack = STACK.read_text(encoding="utf-8")
         cls.ingress = json.loads(INGRESS.read_text(encoding="utf-8"))
         cls.bootstrap = json.loads(BOOTSTRAP.read_text(encoding="utf-8"))
+        cls.debug_authorizer = json.loads(DEBUG_AUTHORIZER.read_text(encoding="utf-8"))
         cls.roots = json.loads(ROOTS.read_text(encoding="utf-8"))
         cls.anchors = json.loads(ANCHORS.read_text(encoding="utf-8"))
         cls.receipts = json.loads(RECEIPTS.read_text(encoding="utf-8"))
@@ -46,6 +65,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("a51b1d80738a66774eaef945c6870ba79549a816", self.v5_py)
         self.assertIn("948e1836b4058779aff2c0c91c62aa898968da5d", self.v5_py)
         self.assertIn("17469ed79eb56ae63327f0ddecb81d21b2170722", self.v5_py)
+        self.assertIn("6e1bf0f00d85a80d228a7cea803511391076fb5a", self.v5_py)
         self.assertIn("source is a preserved rejected candidate", self.v5_py)
         self.assertIn("sai20_database_authority_v5_plan.output.successor_verified", self.v4_tf)
         self.assertIn("sai20_database_authority_v5_identity.output.bootstrap_reobserved", self.v4_tf)
@@ -128,7 +148,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn('"serviceaccounts" in resources', self.v5_py)
         self.assertIn("metadata-only Secret inventory changed at apply", self.v4_py)
 
-    def test_credential_equivalent_pod_and_node_subresources_are_custodian_only(self) -> None:
+    def test_credential_equivalent_subresources_are_target_classified(self) -> None:
         for resource in (
             "pods/exec",
             "pods/attach",
@@ -145,10 +165,88 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn('"subresource": subresource', self.v4_py)
         self.assertIn('"name": name', self.v4_py)
         self.assertIn("*v4.CREDENTIAL_PIVOT_RESOURCES", self.v5_py)
-        self.assertIn("v4.credential_pivot_rule(rule)", self.v5_py)
-        self.assertIn("dangerous RoleBinding/ClusterRoleBinding authority is not constrained to an exact custodian", self.v5_py)
+        self.assertIn("targeted_pod_pivot(rule, binding_namespace)", self.v5_py)
+        self.assertIn(
+            "dangerous binding is neither exact-custodian nor an audited TTL debug lease",
+            self.v5_py,
+        )
         self.assertIn('for principal_id, identity in sorted(context["principal_identities"].items())', self.v4_py)
         self.assertIn("non-custodian gained dangerous authority at apply", self.v4_py)
+        self.assertIn(
+            '"pods/proxy": ("create", "delete", "get", "patch", "update")',
+            self.v4_py,
+        )
+
+    def test_actual_terraform_providers_share_the_launchers_sealed_snapshot(self) -> None:
+        self.assertEqual(self.providers.count("config_path    = var.provider_kubeconfig_path"), 2)
+        self.assertNotIn("config_path    = pathexpand(var.kubeconfig_path)", self.providers)
+        self.assertIn('variable "provider_kubeconfig_path"', self.variables_tf)
+        self.assertIn('^/proc/[1-9][0-9]*/fd/[0-9]+$', self.variables_tf)
+        self.assertIn("filesha256(var.provider_kubeconfig_path)", self.locals_tf)
+        self.assertIn('os.memfd_create(\n            "sai20-provider-kubeconfig"', self.stack)
+        self.assertIn("with sealed_provider_kubeconfig(run_root) as provider_kubeconfig_path", self.stack)
+        self.assertIn("provider_kubeconfig_path=provider_kubeconfig_path", self.stack)
+        self.assertIn("provider kubeconfig descriptor is not immutable", self.v4_py)
+        self.assertIn("provider kubeconfig is not the source-owned sealed memfd", self.v4_py)
+        self.assertIn("sealed_kubeconfig_sha256 == local.provider_kubeconfig_sha256", self.v4_tf)
+        self.assertIn("sealed_kubeconfig_sha256 == local.provider_kubeconfig_sha256", self.v5_tf)
+        self.assertEqual(
+            self.foundation_providers.count(
+                "config_path    = var.provider_kubeconfig_path"
+            ),
+            2,
+        )
+        self.assertIn("file(var.provider_kubeconfig_path)", self.foundation_locals)
+        self.assertIn("kubeconfig_path    = var.provider_kubeconfig_path", self.foundation_releases)
+        self.assertIn("FS2_GATE_KUBECONFIG      = var.provider_kubeconfig_path", self.foundation_gate)
+        self.assertIn(
+            "Keep one exact sealed descriptor alive across both stages",
+            self.stack,
+        )
+        self.assertIn(
+            "Downstream planning uses one immutable credential snapshot",
+            self.stack,
+        )
+
+    def test_credential_targets_and_debug_access_are_scoped_not_blanket_denied(self) -> None:
+        for marker in (
+            "credential_workload_inventory",
+            "protected_service_accounts",
+            "protected_secrets",
+            "protected_pod_targets",
+            "debug_access_leases",
+            "DEBUG_LEASE_MAX_SECONDS = 900",
+            "generic Pod connect authority over protected targets",
+            "without an audited TTL lease",
+        ):
+            self.assertIn(marker, self.v5_py)
+        self.assertIn("scoped_pod_connection_review", self.v4_py)
+        self.assertIn("exact-custodian nor an audited TTL debug lease", self.v5_py)
+        self.assertIn("fs2-workload-credential-custody-v6", self.v5_tf)
+        self.assertIn("fs2-debug-access-custody-v6", self.v5_tf)
+        self.assertIn("unchangedCredentialSurface", self.v5_tf)
+        self.assertIn("controllerOwnedCredentialChild", self.v5_tf)
+        self.assertIn("exactWorkloadWriter", self.v5_tf)
+        self.assertIn("exactWorkloadCreate", self.v5_tf)
+        self.assertIn("workload_create_contracts", self.v5_py)
+        self.assertIn("Pod spec digest differs", self.v5_py)
+        self.assertIn("exactDebugRole", self.v5_tf)
+        self.assertIn("exactDebugBinding", self.v5_tf)
+        self.assertIn("exactSignedDebugLease", self.v5_tf)
+        self.assertIn("debug_access_bindings_json", self.v5_py)
+        self.assertIn("duration('900s')", self.v5_tf)
+        self.assertIn("debug-audit-id", self.v5_tf)
+        self.assertIn("debug-tenant-id", self.v5_tf)
+        self.assertIn("debug-reason-sha256", self.v5_tf)
+        self.assertIn("fs2-debug-request-authorizer-v6", self.v5_tf)
+        self.assertIn('failurePolicy           = "Fail"', self.v5_tf)
+        self.assertIn('operations  = ["CONNECT"]', self.v5_tf)
+        self.assertIn("debug authorizer attestation does not bind", self.v5_py)
+        decision = self.debug_authorizer["decision_contract"]
+        self.assertEqual(decision["maximum_lease_seconds"], 900)
+        self.assertEqual(decision["maximum_clock_skew_seconds"], 5)
+        self.assertEqual(decision["stale_or_replayed_lease"], "deny")
+        self.assertEqual(decision["unavailable_or_invalid_evidence"], "deny")
 
     def test_kubectl_is_executed_only_from_a_sealed_static_elf_snapshot(self) -> None:
         self.assertIn('os.memfd_create("sai20-kubectl"', self.v4_py)
@@ -183,12 +281,43 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
             "sai20_database_exact_owner_binding_v4.manifest",
             "sai20_database_peer_identity_v5.manifest",
             "sai20_database_peer_identity_binding_v5.manifest",
+            "sai20_workload_credential_custody_v6.manifest",
+            "sai20_workload_credential_custody_binding_v6.manifest",
+            "sai20_debug_access_custody_v6.manifest",
+            "sai20_debug_access_custody_binding_v6.manifest",
+            "sai20_cluster_rbac_custody_v6.manifest",
+            "sai20_cluster_rbac_custody_binding_v6.manifest",
+            "sai20_debug_request_authorizer_v6.manifest",
         ):
             self.assertIn(resource, self.v5_tf)
         self.assertIn("source-rendered successor admission object set differs", self.v5_py)
         self.assertIn("source-rendered successor admission digest differs from the signed transition", self.v5_py)
         self.assertIn("v5 apply successor object is not source-exact", self.v5_py)
         self.assertIn("live successor admission digest differs from signed source render", self.v5_py)
+
+    def test_cluster_scoped_rbac_cannot_bypass_target_aware_debug_custody(self) -> None:
+        self.assertIn("fs2-cluster-rbac-custody-v6", self.v5_tf)
+        self.assertIn('resources   = ["clusterroles", "clusterrolebindings"]', self.v5_tf)
+        self.assertIn(
+            "cluster-scoped RBAC mutation requires the freshly re-observed exact custodian",
+            self.v5_tf,
+        )
+        bootstrap_rules = self.bootstrap["policy"]["spec"]["matchConstraints"][
+            "resourceRules"
+        ]
+        self.assertTrue(
+            any(
+                rule["resources"] == ["clusterroles", "clusterrolebindings"]
+                and rule["operations"] == ["CREATE", "UPDATE", "DELETE"]
+                for rule in bootstrap_rules
+            )
+        )
+        self.assertTrue(
+            any(
+                variable["name"] == "clusterRbacObject"
+                for variable in self.bootstrap["policy"]["spec"]["variables"]
+            )
+        )
 
     def test_root_enrollment_requires_preexisting_external_signature(self) -> None:
         self.assertEqual(self.roots["status"], "ENROLLMENT_REQUIRED")
@@ -220,7 +349,10 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn('(\"cnpg-system\", \"roles\")', self.v4_py)
         self.assertIn('(\"cnpg-system\", \"rolebindings\")', self.v4_py)
         self.assertIn('record["binding_resource"] == "clusterrolebindings"', self.v5_py)
-        self.assertIn("dangerous RoleBinding/ClusterRoleBinding authority is not constrained to an exact custodian", self.v5_py)
+        self.assertIn(
+            "dangerous binding is neither exact-custodian nor an audited TTL debug lease",
+            self.v5_py,
+        )
         self.assertIn("sensitive RoleBinding/ClusterRoleBinding authority is not constrained to an exact admitted principal", self.v5_py)
         self.assertIn("admitted_subjects", self.v5_py)
 

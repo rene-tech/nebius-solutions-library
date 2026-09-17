@@ -207,7 +207,8 @@ locals {
     }
   })
 
-  kubeconfig                  = yamldecode(file(var.kubeconfig_path))
+  provider_kubeconfig_sha256  = filesha256(var.provider_kubeconfig_path)
+  kubeconfig                  = yamldecode(file(var.provider_kubeconfig_path))
   selected_context            = try(one([for context in local.kubeconfig.contexts : context if context.name == var.kube_context]), null)
   selected_kubeconfig_cluster = try(local.selected_context.context.cluster, null)
   selected_cluster            = try(one([for cluster in local.kubeconfig.clusters : cluster if cluster.name == local.selected_kubeconfig_cluster]), null)

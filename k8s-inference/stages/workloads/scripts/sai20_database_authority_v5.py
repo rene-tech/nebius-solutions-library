@@ -14,9 +14,11 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -38,8 +40,37 @@ REJECTED_COMMITS = {
     "a51b1d80738a66774eaef945c6870ba79549a816",
     "948e1836b4058779aff2c0c91c62aa898968da5d",
     "17469ed79eb56ae63327f0ddecb81d21b2170722",
+    "6e1bf0f00d85a80d228a7cea803511391076fb5a",
 }
 ROLLOUT_LINEAGE_LABEL = "security.fs2.nebius.ai/sai20-rollout-lineage"
+CREDENTIAL_CUSTODY_NAMESPACES = (
+    "cnpg-system",
+    "fs2-data",
+    "fs2-observability",
+    "fs2-system",
+)
+DEBUG_LEASE_PREFIX = "fs2-debug-lease-"
+DEBUG_LEASE_MAX_SECONDS = 900
+POD_CONNECT_ACTIONS = {
+    resource: actions
+    for resource, actions in v4.CREDENTIAL_PIVOT_ACTIONS.items()
+    if resource.startswith("pods/")
+}
+WORKLOAD_CONTROLLER_CHILDREN = {
+    "cronjobs": "jobs",
+    "daemonsets": "pods",
+    "deployments": "replicasets",
+    "jobs": "pods",
+    "replicationcontrollers": "pods",
+    "replicasets": "pods",
+    "statefulsets": "pods",
+}
+NATIVE_WORKLOAD_CONTROLLER_IDENTITY = {
+    "uid": "",
+    "username": "system:kube-controller-manager",
+    "groups": ["system:authenticated"],
+    "extra": {},
+}
 PEER_NAMESPACES = ("fs2-data", "cnpg-system")
 PEER_RESOURCES = tuple(sorted(v4.WORKLOAD_TYPES))
 PEER_ENDPOINTS = {
@@ -56,6 +87,7 @@ PEER_ENDPOINTS = {
 CNPG_CLUSTER_ENDPOINT = "/apis/postgresql.cnpg.io/v1/namespaces/fs2-data/clusters/fs2-control-db"
 ADMISSION_POLICY_ENDPOINT = "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicies"
 ADMISSION_BINDING_ENDPOINT = "/apis/admissionregistration.k8s.io/v1/validatingadmissionpolicybindings"
+ADMISSION_WEBHOOK_ENDPOINT = "/apis/admissionregistration.k8s.io/v1/validatingwebhookconfigurations"
 SUPPLEMENTAL_ENDPOINTS = {
     **{
         f"k8s/peer-workloads/{namespace}/{resource}": endpoint
@@ -64,6 +96,7 @@ SUPPLEMENTAL_ENDPOINTS = {
     "k8s/cnpg-cluster/fs2-data/fs2-control-db": CNPG_CLUSTER_ENDPOINT,
     "k8s/admission/validatingadmissionpolicies": ADMISSION_POLICY_ENDPOINT,
     "k8s/admission/validatingadmissionpolicybindings": ADMISSION_BINDING_ENDPOINT,
+    "k8s/admission/validatingwebhookconfigurations": ADMISSION_WEBHOOK_ENDPOINT,
 }
 TRANSITION_ADMISSION_NAMES = {
     "fs2-database-authority-object-custody-v4",
@@ -74,13 +107,34 @@ TRANSITION_ADMISSION_NAMES = {
     "fs2-database-exact-owner-binding-v4",
     "fs2-database-peer-identity-v5",
     "fs2-database-peer-identity-binding-v5",
+    "fs2-workload-credential-custody-v6",
+    "fs2-workload-credential-custody-binding-v6",
+    "fs2-debug-access-custody-v6",
+    "fs2-debug-access-custody-binding-v6",
+    "fs2-cluster-rbac-custody-v6",
+    "fs2-cluster-rbac-custody-binding-v6",
+    "fs2-debug-request-authorizer-v6",
 }
 SUCCESSOR_SOURCE_PATHS = {
+    "k8s-inference/inference-stack",
+    "k8s-inference/modules/jobset-controller/main.tf",
     "k8s-inference/security/sai20/enrollment-authorities-v1.json",
     "k8s-inference/security/sai20/root-enrollment-receipts-v1.json",
     "k8s-inference/stages/workloads/contracts/sai20-bootstrap-guard-v5.json",
+    "k8s-inference/stages/workloads/contracts/sai20-debug-authorizer-v1.json",
     "k8s-inference/stages/workloads/sai20_database_authority_v5.tf",
+    "k8s-inference/stages/workloads/locals.tf",
+    "k8s-inference/stages/workloads/providers.tf",
+    "k8s-inference/stages/workloads/variables.tf",
+    "k8s-inference/stages/workloads/scripts/sai20_database_authority_v4.py",
     "k8s-inference/stages/workloads/scripts/sai20_database_authority_v5.py",
+    "k8s-inference/stages/foundation/cluster_contract.tf",
+    "k8s-inference/stages/foundation/kueue_admission_gate.tf",
+    "k8s-inference/stages/foundation/locals.tf",
+    "k8s-inference/stages/foundation/providers.tf",
+    "k8s-inference/stages/foundation/releases.tf",
+    "k8s-inference/stages/foundation/scripts/cleanup-kueue-aggregate-roles.sh",
+    "k8s-inference/stages/foundation/variables.tf",
     "k8s-inference/tests/test_sai20_database_authority_v5.py",
 }
 
@@ -289,10 +343,581 @@ def verify_successor_signatures(packet: dict[str, Any], roots: dict[str, dict[st
     return payload
 
 
+def workload_pod_spec(item: dict[str, Any], resource: str) -> dict[str, Any]:
+    if resource == "pods":
+        value = item.get("spec", {})
+    elif resource == "cronjobs":
+        value = (
+            item.get("spec", {})
+            .get("jobTemplate", {})
+            .get("spec", {})
+            .get("template", {})
+            .get("spec", {})
+        )
+    else:
+        value = item.get("spec", {}).get("template", {}).get("spec", {})
+    require(isinstance(value, dict), "workload Pod spec must be an object")
+    return value
+
+
+def pod_secret_names(spec: dict[str, Any]) -> list[str]:
+    """Extract every Secret reference without reading Secret contents."""
+
+    names: set[str] = set()
+
+    def visit(value: Any, parent_key: str = "") -> None:
+        if isinstance(value, dict):
+            for key, entry in value.items():
+                if key == "secretName" and isinstance(entry, str) and entry:
+                    names.add(entry)
+                elif key in {"secretRef", "secretKeyRef", "secret"} and isinstance(entry, dict):
+                    name = entry.get("name")
+                    if isinstance(name, str) and name:
+                        names.add(name)
+                elif key == "imagePullSecrets" and isinstance(entry, list):
+                    for reference in entry:
+                        if isinstance(reference, dict) and isinstance(reference.get("name"), str) and reference["name"]:
+                            names.add(reference["name"])
+                visit(entry, key)
+        elif isinstance(value, list):
+            for entry in value:
+                visit(entry, parent_key)
+
+    visit(spec)
+    return sorted(names)
+
+
+def credential_workload_inventory(
+    entries: dict[str, dict[str, Any]],
+    v4_context: dict[str, Any],
+    privileged_service_accounts: set[tuple[str, str]],
+) -> dict[str, Any]:
+    protected_accounts = sorted(
+        {
+            (item["namespace"], item["name"])
+            for item in v4_context["service_accounts"]
+            if item["namespace"] in CREDENTIAL_CUSTODY_NAMESPACES
+            and (item["namespace"], item["name"])
+            in privileged_service_accounts
+        }
+    )
+    protected_secrets = sorted(
+        {
+            (namespace, name)
+            for namespace, name in v4_context["secret_names"]
+            if namespace in CREDENTIAL_CUSTODY_NAMESPACES
+        }
+    )
+    account_set = set(protected_accounts)
+    secret_set = set(protected_secrets)
+    workloads: list[dict[str, Any]] = []
+    for namespace in CREDENTIAL_CUSTODY_NAMESPACES:
+        for resource in sorted(v4.WORKLOAD_TYPES):
+            if (namespace, resource) in v4.WORKLOAD_ENDPOINTS:
+                body = v4_context["entries"][f"k8s/workloads/{namespace}/{resource}"]["body"]
+            else:
+                body = entries[f"k8s/peer-workloads/{namespace}/{resource}"]["body"]
+            for item in body["items"]:
+                metadata = item.get("metadata", {})
+                spec = workload_pod_spec(item, resource)
+                service_account = spec.get("serviceAccountName") or "default"
+                require(isinstance(service_account, str), "workload serviceAccountName must be a string")
+                secret_names = pod_secret_names(spec)
+                protected_secret_references = sorted(
+                    name for name in secret_names if (namespace, name) in secret_set
+                )
+                protected_account = (namespace, service_account) in account_set
+                surface = {
+                    "service_account_name": service_account,
+                    "automount_service_account_token": spec.get("automountServiceAccountToken", True),
+                    "secret_names": secret_names,
+                    "protected_service_account": protected_account,
+                    "protected_secret_names": protected_secret_references,
+                }
+                workloads.append(
+                    {
+                        "namespace": namespace,
+                        "resource": resource,
+                        "name": text(metadata.get("name"), "credential workload name"),
+                        "uid": text(metadata.get("uid"), "credential workload UID"),
+                        "resource_version": text(
+                            metadata.get("resourceVersion"),
+                            "credential workload resourceVersion",
+                        ),
+                        "credential_bearing": protected_account
+                        or bool(protected_secret_references),
+                        "credential_surface": surface,
+                        "credential_surface_sha256": digest(surface),
+                    }
+                )
+    workloads.sort(
+        key=lambda item: (
+            item["namespace"],
+            item["resource"],
+            item["name"],
+            item["uid"],
+        )
+    )
+    protected_pods = [
+        {
+            "namespace": item["namespace"],
+            "name": item["name"],
+            "uid": item["uid"],
+            "credential_surface_sha256": item["credential_surface_sha256"],
+        }
+        for item in workloads
+        if item["resource"] == "pods" and item["credential_bearing"]
+    ]
+    protected_parents: list[dict[str, Any]] = []
+    protected_objects: list[dict[str, Any]] = []
+    controller_identities = {
+        NATIVE_WORKLOAD_CONTROLLER_IDENTITY["username"]:
+        NATIVE_WORKLOAD_CONTROLLER_IDENTITY
+    }
+    for item in workloads:
+        child_resource = WORKLOAD_CONTROLLER_CHILDREN.get(item["resource"])
+        if not item["credential_bearing"]:
+            continue
+        protected_objects.append(
+            {
+                "namespace": item["namespace"],
+                "resource": item["resource"],
+                "name": item["name"],
+                "uid": item["uid"],
+                "controller_uid": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["uid"],
+                "controller_username": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["username"],
+                "controller_groups": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["groups"],
+                "controller_extra": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["extra"],
+                "service_account_name": item["credential_surface"]["service_account_name"],
+                "protected_secret_names": item["credential_surface"]["protected_secret_names"],
+            }
+        )
+        if child_resource is None:
+            continue
+        surface = item["credential_surface"]
+        protected_parents.append(
+            {
+                "namespace": item["namespace"],
+                "resource": item["resource"],
+                "api_version": v4.WORKLOAD_TYPES[item["resource"]][0],
+                "kind": v4.WORKLOAD_TYPES[item["resource"]][1],
+                "name": item["name"],
+                "uid": item["uid"],
+                "child_resource": child_resource,
+                "controller_uid": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["uid"],
+                "controller_username": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["username"],
+                "controller_groups": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["groups"],
+                "controller_extra": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["extra"],
+                "service_account_name": surface["service_account_name"],
+                "protected_secret_names": surface["protected_secret_names"],
+                "credential_surface_sha256": item["credential_surface_sha256"],
+            }
+        )
+    protected_parents.sort(
+        key=lambda item: (
+            item["namespace"], item["resource"], item["name"], item["uid"]
+        )
+    )
+    protected_objects.sort(
+        key=lambda item: (
+            item["namespace"], item["resource"], item["name"], item["uid"]
+        )
+    )
+    return {
+        "workloads": workloads,
+        "protected_service_accounts": [
+            {"namespace": namespace, "name": name}
+            for namespace, name in protected_accounts
+        ],
+        "protected_secrets": [
+            {"namespace": namespace, "name": name}
+            for namespace, name in protected_secrets
+        ],
+        "protected_pods": protected_pods,
+        "protected_parents": protected_parents,
+        "protected_objects": protected_objects,
+        "controller_identities": sorted(
+            controller_identities.values(), key=lambda item: item["username"]
+        ),
+    }
+
+
+def verify_debug_leases(
+    authorization: dict[str, Any],
+    v4_context: dict[str, Any],
+    boundary: dict[str, Any],
+    observed: datetime,
+    valid_until: datetime,
+) -> tuple[
+    list[dict[str, Any]],
+    set[tuple[str, str, str]],
+    list[dict[str, Any]],
+]:
+    principals = {
+        principal["id"]: principal
+        for principal in v4_context["legacy"]["rbac_inventory"]["principals"]
+    }
+    broker_id = text(authorization["debug_broker_principal_id"], "debug_broker_principal_id")
+    require(
+        broker_id in principals
+        and principals[broker_id]["class"] == "controller"
+        and principals[broker_id]["subject"]["kind"] == "ServiceAccount",
+        "debug broker must be one exact authenticated controller ServiceAccount",
+    )
+    targets = {
+        (item["namespace"], item["name"], item["uid"]): item
+        for item in boundary["protected_pods"]
+    }
+    raw_roles: dict[tuple[str, str], dict[str, Any]] = {}
+    raw_bindings: dict[tuple[str, str], dict[str, Any]] = {}
+    for namespace in v4_context["namespaces"]:
+        for item in v4_context["entries"][f"k8s/rbac/{namespace}/roles"]["body"]["items"]:
+            raw_roles[(namespace, item["metadata"]["name"])] = item
+        for item in v4_context["entries"][f"k8s/rbac/{namespace}/rolebindings"]["body"]["items"]:
+            raw_bindings[(namespace, item["metadata"]["name"])] = item
+    normalized: list[dict[str, Any]] = []
+    approved_bindings: set[tuple[str, str, str]] = set()
+    rendered_bindings: list[dict[str, Any]] = []
+    debug_access_leases = authorization["debug_access_leases"]
+    require(isinstance(debug_access_leases, list), "debug_access_leases must be a list")
+    for index, lease in enumerate(debug_access_leases):
+        where = f"debug_access_leases[{index}]"
+        require(isinstance(lease, dict), f"{where} must be an object")
+        exact_keys(
+            lease,
+            {
+                "lease_id", "principal_id", "tenant_id", "namespace", "pod_name",
+                "pod_uid", "operations", "issued_at", "expires_at", "audit_id",
+                "reason_sha256",
+            },
+            where,
+        )
+        lease_id = text(lease["lease_id"], f"{where}.lease_id")
+        require(re.fullmatch(r"[a-z0-9]{12,40}", lease_id) is not None, f"{where}.lease_id invalid")
+        principal_id = text(lease["principal_id"], f"{where}.principal_id")
+        require(principal_id in principals and principal_id != broker_id, f"{where} debug principal is not independently authenticated")
+        target_key = (lease["namespace"], lease["pod_name"], lease["pod_uid"])
+        require(target_key in targets, f"{where} target is not an exact protected Pod")
+        issued_at = v3.parse_time(lease["issued_at"], f"{where}.issued_at")
+        expires_at = v3.parse_time(lease["expires_at"], f"{where}.expires_at")
+        require(
+            issued_at <= observed <= datetime.now(timezone.utc) <= expires_at <= valid_until
+            and expires_at - issued_at <= timedelta(seconds=DEBUG_LEASE_MAX_SECONDS),
+            f"{where} is not an active bounded debug lease",
+        )
+        operations = lease["operations"]
+        require(
+            isinstance(operations, dict)
+            and operations
+            and set(operations) <= set(POD_CONNECT_ACTIONS),
+            f"{where}.operations invalid",
+        )
+        for subresource, verbs in operations.items():
+            require(
+                isinstance(verbs, list)
+                and verbs == sorted(set(verbs))
+                and verbs
+                and set(verbs) <= set(POD_CONNECT_ACTIONS[subresource]),
+                f"{where}.operations[{subresource}] invalid",
+            )
+        text(lease["tenant_id"], f"{where}.tenant_id")
+        text(lease["audit_id"], f"{where}.audit_id")
+        sha256(lease["reason_sha256"], f"{where}.reason_sha256")
+        role_name = DEBUG_LEASE_PREFIX + lease_id
+        role = raw_roles.get((lease["namespace"], role_name))
+        binding = raw_bindings.get((lease["namespace"], role_name))
+        require(role is not None and binding is not None, f"{where} exact Role and RoleBinding are missing")
+        expected_rules = [
+            {
+                "apiGroups": [""],
+                "resources": [subresource],
+                "verbs": verbs,
+                "resourceNames": [lease["pod_name"]],
+            }
+            for subresource, verbs in sorted(operations.items())
+        ]
+        require(role.get("rules") == expected_rules, f"{where} Role is not exact-name and least-privilege")
+        principal = principals[principal_id]
+        require(
+            binding.get("roleRef")
+            == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": role_name}
+            and binding.get("subjects") == [principal["subject"]],
+            f"{where} RoleBinding subject or role reference differs",
+        )
+        expected_annotations = {
+            "security.fs2.nebius.ai/debug-audit-id": lease["audit_id"],
+            "security.fs2.nebius.ai/debug-expires-at": lease["expires_at"],
+            "security.fs2.nebius.ai/debug-issued-at": lease["issued_at"],
+            "security.fs2.nebius.ai/debug-pod-uid": lease["pod_uid"],
+            "security.fs2.nebius.ai/debug-reason-sha256": lease["reason_sha256"],
+            "security.fs2.nebius.ai/debug-tenant-id": lease["tenant_id"],
+        }
+        for obj in (role, binding):
+            annotations = obj.get("metadata", {}).get("annotations", {})
+            require(
+                all(annotations.get(key) == value for key, value in expected_annotations.items()),
+                f"{where} audit/TTL annotations differ",
+            )
+        normalized.append(lease)
+        approved_bindings.add((lease["namespace"], role_name, principal_id))
+        rendered_bindings.append(
+            {
+                "namespace": lease["namespace"],
+                "name": role_name,
+                "annotations": expected_annotations,
+                "rules": expected_rules,
+                "role_ref": {
+                    "apiGroup": "rbac.authorization.k8s.io",
+                    "kind": "Role",
+                    "name": role_name,
+                },
+                "subjects": [principal["subject"]],
+            }
+        )
+    require(len({item["lease_id"] for item in normalized}) == len(normalized), "debug lease IDs are not unique")
+    rendered_bindings.sort(key=lambda item: (item["namespace"], item["name"]))
+    return normalized, approved_bindings, rendered_bindings
+
+
+def verify_scoped_pod_connection_authority(
+    v4_context: dict[str, Any],
+    boundary: dict[str, Any],
+    leases: list[dict[str, Any]],
+) -> None:
+    protected_by_namespace: dict[str, set[str]] = {}
+    for target in boundary["protected_pods"]:
+        protected_by_namespace.setdefault(target["namespace"], set()).add(target["name"])
+    approved: set[tuple[str, str, str, str, str]] = set()
+    for lease in leases:
+        for subresource, verbs in lease["operations"].items():
+            for verb in verbs:
+                approved.add(
+                    (
+                        lease["principal_id"],
+                        lease["namespace"],
+                        lease["pod_name"],
+                        subresource,
+                        verb,
+                    )
+                )
+    for principal_id, identity in sorted(v4_context["principal_identities"].items()):
+        if identity["class"] == "custodian":
+            continue
+        decisions = v4_context["signed_authority_decisions"][principal_id]
+        for review_name, attributes in v4_context["authority_reviews"].items():
+            if not v4.scoped_pod_connection_review(review_name) or not decisions[review_name]:
+                continue
+            namespace = attributes.get("namespace", "")
+            protected_names = protected_by_namespace.get(namespace, set())
+            target_name = attributes.get("name")
+            if target_name is None:
+                require(not protected_names, f"{principal_id} has generic Pod connect authority over protected targets in {namespace}")
+                continue
+            if target_name in protected_names:
+                pivot = f"{attributes['resource']}/{attributes['subresource']}"
+                require(
+                    (principal_id, namespace, target_name, pivot, attributes["verb"])
+                    in approved,
+                    f"{principal_id} has protected Pod connect authority without an audited TTL lease",
+                )
+
+
+def verify_workload_create_contracts(
+    authorization: dict[str, Any],
+    v4_context: dict[str, Any],
+    boundary: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Bind privileged credential selection to exact signed Pod templates."""
+
+    principals = {
+        principal["id"]: principal
+        for principal in v4_context["legacy"]["rbac_inventory"]["principals"]
+    }
+    identities = v4_context["principal_identities"]
+    known_accounts = {
+        (item["namespace"], item["name"])
+        for item in v4_context["service_accounts"]
+    }
+    known_secrets = set(v4_context["secret_names"])
+    protected_accounts = {
+        (item["namespace"], item["name"])
+        for item in boundary["protected_service_accounts"]
+    }
+    protected_secrets = {
+        (item["namespace"], item["name"])
+        for item in boundary["protected_secrets"]
+    }
+    contracts = authorization["workload_create_contracts"]
+    require(isinstance(contracts, list), "workload_create_contracts must be a list")
+    normalized: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for index, contract in enumerate(contracts):
+        where = f"workload_create_contracts[{index}]"
+        require(isinstance(contract, dict), f"{where} must be an object")
+        exact_keys(
+            contract,
+            {
+                "principal_id", "namespace", "resource", "name", "pod_spec",
+                "pod_spec_sha256",
+            },
+            where,
+        )
+        principal_id = text(contract["principal_id"], f"{where}.principal_id")
+        require(
+            principal_id in principals
+            and principals[principal_id]["class"] in {"release", "controller"},
+            f"{where} principal is not an exact release/controller identity",
+        )
+        namespace = text(contract["namespace"], f"{where}.namespace")
+        resource = text(contract["resource"], f"{where}.resource")
+        name = text(contract["name"], f"{where}.name")
+        require(namespace in CREDENTIAL_CUSTODY_NAMESPACES, f"{where} namespace is outside credential custody")
+        require(resource in v4.WORKLOAD_TYPES, f"{where} resource is not a Pod-bearing workload")
+        key = (principal_id, namespace, resource, name)
+        require(key not in seen, f"{where} duplicates an exact create contract")
+        seen.add(key)
+        require(
+            principals[principal_id]["class"] == "controller"
+            or any(
+                grant["namespace"] == namespace
+                and grant["resource"] == resource
+                and name in grant["names"]
+                and "CREATE" in grant["operations"]
+                for grant in principals[principal_id]["grants"]
+            ),
+            f"{where} is outside the principal's exact signed CREATE grant",
+        )
+        pod_spec = contract["pod_spec"]
+        require(isinstance(pod_spec, dict), f"{where}.pod_spec must be an object")
+        require(digest(pod_spec) == contract["pod_spec_sha256"], f"{where} Pod spec digest differs")
+        service_account = pod_spec.get("serviceAccountName") or "default"
+        require(
+            isinstance(service_account, str)
+            and (namespace, service_account) in known_accounts,
+            f"{where} selects an unknown ServiceAccount",
+        )
+        secret_names = pod_secret_names(pod_spec)
+        require(
+            all((namespace, secret_name) in known_secrets for secret_name in secret_names),
+            f"{where} selects a Secret outside the metadata-only inventory",
+        )
+        require(
+            (namespace, service_account) in protected_accounts
+            or any((namespace, secret_name) in protected_secrets for secret_name in secret_names),
+            f"{where} is not a privileged credential-bearing CREATE",
+        )
+        normalized.append(
+            {
+                **contract,
+                "identity": identities[principal_id],
+            }
+        )
+    normalized.sort(
+        key=lambda item: (
+            item["principal_id"], item["namespace"], item["resource"], item["name"]
+        )
+    )
+    return normalized
+
+
+def verify_debug_authorizer(
+    authorization: dict[str, Any],
+    leases: list[dict[str, Any]],
+    boundary: dict[str, Any],
+    query: dict[str, str],
+    observed: datetime,
+    valid_until: datetime,
+    roots: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Validate the dual-signed fail-closed per-request debug authorizer."""
+
+    value = authorization["debug_authorizer"]
+    require(isinstance(value, dict), "debug_authorizer must be an object")
+    exact_keys(
+        value,
+        {
+            "schema", "url", "ca_bundle_base64", "ca_sha256",
+            "server_spki_sha256", "lease_payload_sha256",
+            "protected_pod_targets_sha256",
+            "max_clock_skew_seconds", "failure_policy", "policy_sha256",
+            "attested_at", "operator_principal_id",
+        },
+        "debug_authorizer",
+    )
+    require(
+        value["schema"] == "fs2-serve.nebius.ai/sai20-debug-authorizer/v1",
+        "debug authorizer schema mismatch",
+    )
+    source_json(
+        query,
+        "debug_authorizer_contract_path",
+        "expected_debug_authorizer_contract_sha256",
+        "debug authorizer contract",
+    )
+    require(
+        value["policy_sha256"]
+        == query["expected_debug_authorizer_contract_sha256"],
+        "debug authorizer attestation does not bind the source-owned policy",
+    )
+    attested_at = v3.parse_time(value["attested_at"], "debug_authorizer.attested_at")
+    require(
+        observed <= attested_at <= valid_until,
+        "debug authorizer attestation falls outside the evidence window",
+    )
+    operator_principal = text(
+        value["operator_principal_id"],
+        "debug_authorizer.operator_principal_id",
+    )
+    require(
+        operator_principal
+        in {
+            root["principal_id"]
+            for root in roots.values()
+            if root["role"] == "independent-reviewer"
+        },
+        "debug authorizer operator is not the externally enrolled security reviewer",
+    )
+    parsed = urllib.parse.urlsplit(text(value["url"], "debug_authorizer.url"))
+    require(
+        parsed.scheme == "https"
+        and bool(parsed.hostname)
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.query == ""
+        and parsed.fragment == ""
+        and parsed.path == "/validate/sai20-debug",
+        "debug authorizer URL must be one exact HTTPS validation endpoint",
+    )
+    ca_bytes = v4.decode_base64(value["ca_bundle_base64"], "debug_authorizer.ca_bundle_base64")
+    require(
+        0 < len(ca_bytes) <= 1024 * 1024
+        and hashlib.sha256(ca_bytes).hexdigest() == value["ca_sha256"],
+        "debug authorizer CA bundle differs from its digest",
+    )
+    sha256(value["server_spki_sha256"], "debug_authorizer.server_spki_sha256")
+    require(
+        value["lease_payload_sha256"] == digest(leases),
+        "debug authorizer does not bind the exact active lease payload",
+    )
+    require(
+        value["protected_pod_targets_sha256"]
+        == digest(boundary["protected_pods"]),
+        "debug authorizer does not bind the exact protected Pod targets",
+    )
+    require(
+        type(value["max_clock_skew_seconds"]) is int
+        and 0 <= value["max_clock_skew_seconds"] <= 5,
+        "debug authorizer clock skew exceeds five seconds",
+    )
+    require(value["failure_policy"] == "Fail", "debug authorizer must fail closed")
+    return value
+
+
 def binding_authority_records(
     v4_entries: dict[str, dict[str, Any]],
     namespaces: list[str],
     mode: str,
+    protected_pods: list[dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     raw: dict[tuple[str, str], list[dict[str, Any]]] = {}
     roles: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
@@ -314,36 +939,71 @@ def binding_authority_records(
         "certificatesigningrequests", "certificatesigningrequests/approval", "signers",
     }
 
-    def dangerous_rule(rule: dict[str, Any]) -> bool:
+    protected_names: dict[str, set[str]] = {}
+    for target in protected_pods or []:
+        protected_names.setdefault(target["namespace"], set()).add(target["name"])
+
+    def targeted_pod_pivot(rule: dict[str, Any], binding_namespace: str) -> bool:
+        groups = set(rule.get("apiGroups", []))
+        resources = set(rule.get("resources", []))
+        verbs = set(rule.get("verbs", []))
+        if not ({"", "*"} & groups):
+            return False
+        for pivot_resource, actions in v4.CREDENTIAL_PIVOT_ACTIONS.items():
+            if pivot_resource == "nodes/proxy":
+                if (pivot_resource in resources or "*" in resources) and (
+                    set(actions) & verbs or "*" in verbs
+                ):
+                    return True
+                continue
+            if pivot_resource not in resources and "*" not in resources:
+                continue
+            if not (set(actions) & verbs or "*" in verbs):
+                continue
+            names = rule.get("resourceNames")
+            if names:
+                target_names = (
+                    set().union(*protected_names.values())
+                    if not binding_namespace
+                    else protected_names.get(binding_namespace, set())
+                )
+                if set(names) & target_names:
+                    return True
+            elif (
+                (not binding_namespace and any(protected_names.values()))
+                or protected_names.get(binding_namespace)
+            ):
+                return True
+        return False
+
+    def dangerous_rule(rule: dict[str, Any], binding_namespace: str) -> bool:
         verbs = set(rule.get("verbs", []))
         resources = set(rule.get("resources", []))
         groups = set(rule.get("apiGroups", []))
-        if "*" in verbs:
-            return True
         if verbs & {"impersonate", "bind", "escalate", "approve"}:
             return True
-        if "create" in verbs and (
+        if {"create", "*"} & verbs and (
             "serviceaccounts/token" in resources
             or "certificatesigningrequests" in resources
             or "*" in resources
         ):
             return True
-        if verbs & {"update", "patch"} and (
+        if verbs & {"update", "patch", "*"} and (
             "certificatesigningrequests/approval" in resources or "*" in resources
         ):
             return True
-        if verbs & {"get", "list", "watch"} and (
+        if verbs & {"get", "list", "watch", "*"} and (
             "secrets" in resources or "*" in resources
         ) and ("" in groups or "*" in groups):
             return True
-        if verbs & {"create", "update", "patch"} and (
+        if verbs & {"create", "update", "patch", "*"} and (
             "serviceaccounts" in resources or "*" in resources
         ) and ("" in groups or "*" in groups):
             return True
-        if v4.credential_pivot_rule(rule):
+        if targeted_pod_pivot(rule, binding_namespace):
             return True
         return bool(
-            "impersonate" in verbs
+            ({"impersonate", "*"} & verbs)
             and (
                 "*" in groups
                 or "authentication.k8s.io" in groups
@@ -361,7 +1021,7 @@ def binding_authority_records(
             role_scope = namespace if role_resource == "roles" else ""
             rules = roles.get((role_resource, role_scope, role_ref.get("name", "")), [])
             if mode == "dangerous":
-                selected = any(dangerous_rule(rule) for rule in rules)
+                selected = any(dangerous_rule(rule, namespace) for rule in rules)
             else:
                 selected = any(
                     mutation_verbs & set(rule.get("verbs", []))
@@ -704,7 +1364,11 @@ def normalized_admission_object(item: Any, where: str) -> dict[str, Any]:
     )
     require(
         item.get("apiVersion") == "admissionregistration.k8s.io/v1"
-        and item.get("kind") in {"ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding"},
+        and item.get("kind") in {
+            "ValidatingAdmissionPolicy",
+            "ValidatingAdmissionPolicyBinding",
+            "ValidatingWebhookConfiguration",
+        },
         f"{where} API identity is invalid",
     )
     return {
@@ -715,7 +1379,11 @@ def normalized_admission_object(item: Any, where: str) -> dict[str, Any]:
         "resource_version": metadata.get("resourceVersion", ""),
         "labels": dict(sorted(labels.items())),
         "annotations": dict(sorted(annotations.items())),
-        "spec": item.get("spec", {}),
+        "spec": (
+            {"webhooks": item.get("webhooks", [])}
+            if item["kind"] == "ValidatingWebhookConfiguration"
+            else item.get("spec", {})
+        ),
     }
 
 
@@ -748,6 +1416,7 @@ def verify_bootstrap_guard(
     rendered = render_bootstrap_contract(contract, executor)
     policy_body = v4.list_body(entries["k8s/admission/validatingadmissionpolicies"], ADMISSION_POLICY_ENDPOINT, "ValidatingAdmissionPolicy list")
     binding_body = v4.list_body(entries["k8s/admission/validatingadmissionpolicybindings"], ADMISSION_BINDING_ENDPOINT, "ValidatingAdmissionPolicyBinding list")
+    webhook_body = v4.list_body(entries["k8s/admission/validatingwebhookconfigurations"], ADMISSION_WEBHOOK_ENDPOINT, "ValidatingWebhookConfiguration list")
     policies = [item for item in policy_body["items"] if item.get("metadata", {}).get("name") == rendered["policy"]["name"]]
     bindings = [item for item in binding_body["items"] if item.get("metadata", {}).get("name") == rendered["binding"]["name"]]
     require(len(policies) == 1 and len(bindings) == 1, "pre-existing bootstrap guard policy and binding must both be uniquely active")
@@ -757,7 +1426,7 @@ def verify_bootstrap_guard(
     }
     require(TRANSITION_ADMISSION_NAMES < reserved_successor_names, "bootstrap contract omits a transition admission name")
     live_admission = admission_objects_by_name(
-        policy_body["items"] + binding_body["items"],
+        policy_body["items"] + binding_body["items"] + webhook_body["items"],
         "pre-activation admission objects",
     )
     preexisting_successor_names = set(live_admission) & reserved_successor_names
@@ -881,6 +1550,11 @@ def verify_supplemental_bundle(
             "bootstrap_guard_sha256", "successor_transition",
             "provider_group_response_sha256", "provider_observer_sha256",
             "provider_observer_credential_subject_sha256",
+            "credential_workload_inventory_sha256", "protected_service_accounts",
+            "protected_secrets", "protected_pod_targets",
+            "debug_broker_principal_id", "debug_access_leases",
+            "debug_access_leases_sha256", "workload_create_contracts",
+            "workload_create_contracts_sha256", "debug_authorizer",
         },
         "v5 authorization",
     )
@@ -889,9 +1563,86 @@ def verify_supplemental_bundle(
         "cnpg_cluster_identity_sha256", "bootstrap_guard_sha256",
         "provider_group_response_sha256", "provider_observer_sha256",
         "provider_observer_credential_subject_sha256",
+        "credential_workload_inventory_sha256", "debug_access_leases_sha256",
+        "workload_create_contracts_sha256",
     ):
         sha256(authorization[field], f"v5 authorization.{field}")
-    dangerous = binding_authority_records(v4_context["entries"], v4_context["namespaces"], "dangerous")
+    preliminary_sensitive = binding_authority_records(
+        v4_context["entries"], v4_context["namespaces"], "sensitive"
+    )
+    preliminary_dangerous = binding_authority_records(
+        v4_context["entries"], v4_context["namespaces"], "dangerous", []
+    )
+    privileged_service_accounts = {
+        (record["subject_namespace"], record["subject_name"])
+        for record in preliminary_sensitive + preliminary_dangerous
+        if record["subject_kind"] == "ServiceAccount"
+    }
+    privileged_service_accounts.update(
+        (principal["subject"]["namespace"], principal["subject"]["name"])
+        for principal in v4_context["legacy"]["rbac_inventory"]["principals"]
+        if principal["subject"]["kind"] == "ServiceAccount"
+    )
+    boundary = credential_workload_inventory(
+        entries,
+        v4_context,
+        privileged_service_accounts,
+    )
+    require(
+        digest(boundary["workloads"])
+        == authorization["credential_workload_inventory_sha256"],
+        "credential-bearing workload inventory is not content-derived",
+    )
+    require(
+        boundary["protected_service_accounts"]
+        == authorization["protected_service_accounts"],
+        "protected ServiceAccount targets differ from authoritative inventory",
+    )
+    require(
+        boundary["protected_secrets"] == authorization["protected_secrets"],
+        "protected Secret targets differ from authoritative metadata inventory",
+    )
+    require(
+        boundary["protected_pods"] == authorization["protected_pod_targets"],
+        "protected Pod targets differ from authoritative workload inventory",
+    )
+    leases, approved_debug_bindings, rendered_debug_bindings = verify_debug_leases(
+        authorization,
+        v4_context,
+        boundary,
+        observed,
+        valid_until,
+    )
+    require(
+        digest(leases) == authorization["debug_access_leases_sha256"],
+        "debug access lease digest is not content-derived",
+    )
+    debug_authorizer = verify_debug_authorizer(
+        authorization,
+        leases,
+        boundary,
+        query,
+        observed,
+        valid_until,
+        roots,
+    )
+    verify_scoped_pod_connection_authority(v4_context, boundary, leases)
+    workload_create_contracts = verify_workload_create_contracts(
+        authorization,
+        v4_context,
+        boundary,
+    )
+    require(
+        digest(authorization["workload_create_contracts"])
+        == authorization["workload_create_contracts_sha256"],
+        "workload CREATE contract digest is not content-derived",
+    )
+    dangerous = binding_authority_records(
+        v4_context["entries"],
+        v4_context["namespaces"],
+        "dangerous",
+        boundary["protected_pods"],
+    )
     sensitive = binding_authority_records(v4_context["entries"], v4_context["namespaces"], "sensitive")
     require(dangerous == authorization["all_dangerous_rbac_bindings"], "cluster-inclusive dangerous RBAC closure differs")
     require(sensitive == authorization["all_sensitive_mutation_bindings"], "cluster-inclusive sensitive mutation closure differs")
@@ -909,13 +1660,38 @@ def verify_supplemental_bundle(
         for principal in v4_context["legacy"]["rbac_inventory"]["principals"]
         if principal["class"] == "custodian"
     }
+    principal_ids_by_subject = {
+        (
+            principal["subject"]["kind"],
+            principal["subject"]["namespace"],
+            principal["subject"]["name"],
+        ): principal["id"]
+        for principal in v4_context["legacy"]["rbac_inventory"]["principals"]
+    }
     require(
         all(
-            (record["subject_kind"], record["subject_namespace"], record["subject_name"])
+            (
+                record["subject_kind"],
+                record["subject_namespace"],
+                record["subject_name"],
+            )
             in custodian_subjects
+            or (
+                record["binding_namespace"],
+                record["binding_name"],
+                principal_ids_by_subject.get(
+                    (
+                        record["subject_kind"],
+                        record["subject_namespace"],
+                        record["subject_name"],
+                    ),
+                    "",
+                ),
+            )
+            in approved_debug_bindings
             for record in dangerous
         ),
-        "dangerous RoleBinding/ClusterRoleBinding authority is not constrained to an exact custodian subject",
+        "dangerous binding is neither exact-custodian nor an audited TTL debug lease",
     )
     require(
         all(
@@ -946,6 +1722,19 @@ def verify_supplemental_bundle(
         )
         principal_identities.append({"id": principal["id"], "class": principal["class"], **observed})
     principal_identities.sort(key=lambda item: item["id"])
+    workload_mutation_grants = []
+    identities_by_id = {item["id"]: item for item in principal_identities}
+    for principal in v4_context["legacy"]["rbac_inventory"]["principals"]:
+        if principal["class"] != "release":
+            continue
+        workload_mutation_grants.append(
+            {
+                "principal_id": principal["id"],
+                "identity": identities_by_id[principal["id"]],
+                "grants": principal["grants"],
+            }
+        )
+    workload_mutation_grants.sort(key=lambda item: item["principal_id"])
     provider_body = v4_context["entries"]["nebius/legacy-group-membership"]["body"]
     require(digest(provider_body) == authorization["provider_group_response_sha256"], "v5 provider group receipt differs from the authenticated response")
 
@@ -977,6 +1766,38 @@ def verify_supplemental_bundle(
         "successor_payload_sha256": packet["payload_sha256"],
         "external_enrollment_receipts_sha256": enrollment_receipts_sha256,
         "cluster_authority_review_sha256": authorization["cluster_authority_review_sha256"],
+        "credential_workload_inventory_sha256": authorization["credential_workload_inventory_sha256"],
+        "debug_access_leases_sha256": authorization["debug_access_leases_sha256"],
+        "debug_authorizer_sha256": digest(debug_authorizer),
+        "workload_create_contracts_sha256": authorization["workload_create_contracts_sha256"],
+        "protected_service_accounts_json": json.dumps(
+            boundary["protected_service_accounts"], sort_keys=True, separators=(",", ":")
+        ),
+        "protected_secret_names_json": json.dumps(
+            boundary["protected_secrets"], sort_keys=True, separators=(",", ":")
+        ),
+        "protected_pod_targets_json": json.dumps(
+            boundary["protected_pods"], sort_keys=True, separators=(",", ":")
+        ),
+        "protected_workload_parents_json": json.dumps(
+            boundary["protected_parents"], sort_keys=True, separators=(",", ":")
+        ),
+        "protected_workload_objects_json": json.dumps(
+            boundary["protected_objects"], sort_keys=True, separators=(",", ":")
+        ),
+        "workload_controller_identities_json": json.dumps(
+            boundary["controller_identities"], sort_keys=True, separators=(",", ":")
+        ),
+        "debug_broker_principal_id": authorization["debug_broker_principal_id"],
+        "debug_access_leases_json": json.dumps(
+            leases, sort_keys=True, separators=(",", ":")
+        ),
+        "debug_authorizer_json": json.dumps(
+            debug_authorizer, sort_keys=True, separators=(",", ":")
+        ),
+        "debug_access_bindings_json": json.dumps(
+            rendered_debug_bindings, sort_keys=True, separators=(",", ":")
+        ),
         "bootstrap_guard_sha256": bootstrap_sha,
         "successor_transition_mode": successor_transition["mode"],
         "successor_old_objects_sha256": successor_transition["old_objects_sha256"],
@@ -984,6 +1805,16 @@ def verify_supplemental_bundle(
         "provider_observer_sha256": authorization["provider_observer_sha256"],
         "principal_identities_json": json.dumps(
             principal_identities,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "workload_mutation_grants_json": json.dumps(
+            workload_mutation_grants,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "workload_create_contracts_json": json.dumps(
+            workload_create_contracts,
             sort_keys=True,
             separators=(",", ":"),
         ),
@@ -1043,18 +1874,20 @@ def reobserve_supplemental_kubernetes(
         if allow_successor_admission_additions and name in {
             "k8s/admission/validatingadmissionpolicies",
             "k8s/admission/validatingadmissionpolicybindings",
+            "k8s/admission/validatingwebhookconfigurations",
         }:
             before = admission_objects_by_name(entry["body"]["items"], f"signed {name}")
             after = admission_objects_by_name(current["items"], f"apply {name}")
             transition_names = set(after) & TRANSITION_ADMISSION_NAMES
+            expected_kind = {
+                "k8s/admission/validatingadmissionpolicies": "ValidatingAdmissionPolicy",
+                "k8s/admission/validatingadmissionpolicybindings": "ValidatingAdmissionPolicyBinding",
+                "k8s/admission/validatingwebhookconfigurations": "ValidatingWebhookConfiguration",
+            }[name]
             expected_names = {
                 object_name
                 for object_name, expected in expected_objects.items()
-                if expected["kind"] == (
-                    "ValidatingAdmissionPolicy"
-                    if name.endswith("validatingadmissionpolicies")
-                    else "ValidatingAdmissionPolicyBinding"
-                )
+                if expected["kind"] == expected_kind
             }
             require(transition_names == expected_names, f"v5 apply transition object set differs: {name}")
             mode = context["successor_transition"]["mode"]
@@ -1211,6 +2044,7 @@ def main() -> int:
             "enrollment_authorities_path", "expected_enrollment_authorities_sha256",
             "root_enrollment_receipts_path", "expected_root_enrollment_receipts_sha256",
             "bootstrap_guard_contract_path", "expected_bootstrap_guard_contract_sha256",
+            "debug_authorizer_contract_path", "expected_debug_authorizer_contract_sha256",
         }
         runtime = {"kubeconfig_path", "kube_context", "kubectl_path", "provider_group_observer_path", "apply_nonce"}
         apply_only = {"expected_successor_admission_objects_json"}

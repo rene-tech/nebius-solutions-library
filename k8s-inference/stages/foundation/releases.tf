@@ -218,7 +218,7 @@ module "jobset_controller" {
   enabled            = true
   run_id             = var.run_id
   namespace          = kubernetes_namespace_v1.platform["jobset-system"].metadata[0].name
-  kubeconfig_path    = var.kubeconfig_path
+  kubeconfig_path    = var.provider_kubeconfig_path
   kube_context       = var.kube_context
   run_root           = var.run_root
   cluster_id         = var.cluster_id

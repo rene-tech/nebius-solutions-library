@@ -434,6 +434,17 @@ variable "kubeconfig_path" {
   }
 }
 
+variable "provider_kubeconfig_path" {
+  description = "Immutable sealed-memfd kubeconfig retained by inference-stack across the exact workloads plan/apply pair. Direct Terraform invocation is intentionally fail-closed."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^/proc/[1-9][0-9]*/fd/[0-9]+$", var.provider_kubeconfig_path))
+    error_message = "provider_kubeconfig_path must be the inference-stack-owned /proc/<pid>/fd/<fd> sealed snapshot."
+  }
+}
+
 variable "run_id" {
   description = "Disposable lifecycle ID shared with infrastructure and foundation state."
   type        = string

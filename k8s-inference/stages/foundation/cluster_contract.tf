@@ -24,7 +24,7 @@ resource "terraform_data" "cluster_contract" {
       cluster_name    = var.cluster_name
       kube_context    = var.kube_context
       kube_system_uid = var.kube_system_uid
-      kubeconfig_path = abspath(var.kubeconfig_path)
+      kubeconfig_sha256 = local.provider_kubeconfig_sha256
       release_name    = "fs2-${var.run_id}-kueue"
       run_id          = var.run_id
       run_root        = abspath(var.run_root)
@@ -49,7 +49,6 @@ resource "terraform_data" "cluster_contract" {
     environment = {
       FS2_CLEANUP_CLUSTER_ID      = self.input.kueue_teardown_cleanup.cluster_id
       FS2_CLEANUP_CLUSTER_NAME    = self.input.kueue_teardown_cleanup.cluster_name
-      FS2_CLEANUP_KUBECONFIG      = self.input.kueue_teardown_cleanup.kubeconfig_path
       FS2_CLEANUP_KUBE_CONTEXT    = self.input.kueue_teardown_cleanup.kube_context
       FS2_CLEANUP_KUBE_SYSTEM_UID = self.input.kueue_teardown_cleanup.kube_system_uid
       FS2_CLEANUP_KUEUE_RELEASE   = self.input.kueue_teardown_cleanup.release_name
@@ -64,6 +63,10 @@ resource "terraform_data" "cluster_contract" {
     precondition {
       condition     = abspath(var.kubeconfig_path) == local.expected_kubeconfig_path
       error_message = "kubeconfig_path must be the exact run-owned <run_root>/kubeconfig file."
+    }
+    precondition {
+      condition     = filesha256(var.kubeconfig_path) == local.provider_kubeconfig_sha256
+      error_message = "the durable run-owned kubeconfig differs from the sealed provider snapshot selected for this foundation plan."
     }
     precondition {
       condition     = var.kube_context == var.cluster_name

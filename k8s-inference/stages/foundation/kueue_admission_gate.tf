@@ -39,7 +39,7 @@ resource "terraform_data" "kueue_deployment_admission_ready" {
     quiet   = true
 
     environment = {
-      FS2_GATE_KUBECONFIG      = abspath(var.kubeconfig_path)
+      FS2_GATE_KUBECONFIG      = var.provider_kubeconfig_path
       FS2_GATE_RUN_ROOT        = abspath(var.run_root)
       FS2_GATE_KUBE_CONTEXT    = var.kube_context
       FS2_GATE_CLUSTER_ID      = var.cluster_id

@@ -103,7 +103,7 @@ data "external" "sai20_database_authority_v4_identity" {
 
   query = merge(local.sai20_authority_v4_common_query, {
     mode            = "identity"
-    kubeconfig_path = var.kubeconfig_path
+    kubeconfig_path = var.provider_kubeconfig_path
     kube_context    = var.kube_context
     kubectl_path    = var.sai20_database_authority_v4.kubectl_path
     apply_nonce     = terraform_data.sai20_database_authority_v4_identity_nonce.output.nonce
@@ -134,6 +134,7 @@ resource "terraform_data" "sai20_database_authority_v4_identity" {
         data.external.sai20_database_authority_v4_identity.result.secret_metadata_inventory_sha256 == terraform_data.sai20_database_authority_v4_plan.output.secret_metadata_inventory_sha256 &&
         data.external.sai20_database_authority_v4_identity.result.secret_names_json == terraform_data.sai20_database_authority_v4_plan.output.secret_names_json &&
         data.external.sai20_database_authority_v4_identity.result.sealed_kubeconfig_sha256 == terraform_data.sai20_database_authority_v5_identity.output.sealed_kubeconfig_sha256 &&
+        data.external.sai20_database_authority_v4_identity.result.sealed_kubeconfig_sha256 == local.provider_kubeconfig_sha256 &&
         data.external.sai20_database_authority_v4_identity.result.executor_uid == terraform_data.sai20_database_authority_v4_plan.output.executor_uid &&
         data.external.sai20_database_authority_v4_identity.result.executor_uid == terraform_data.sai20_database_authority_v5_identity.output.executor_uid &&
         data.external.sai20_database_authority_v4_identity.result.executor_username == terraform_data.sai20_database_authority_v4_plan.output.executor_username &&
@@ -176,7 +177,7 @@ data "external" "sai20_database_authority_v4_apply" {
 
   query = merge(local.sai20_authority_v4_common_query, {
     mode            = "apply"
-    kubeconfig_path = var.kubeconfig_path
+    kubeconfig_path = var.provider_kubeconfig_path
     kube_context    = var.kube_context
     kubectl_path    = var.sai20_database_authority_v4.kubectl_path
     apply_nonce     = terraform_data.sai20_database_authority_v4_apply_nonce.output.nonce
@@ -211,6 +212,7 @@ resource "terraform_data" "sai20_database_authority_v4_apply" {
         data.external.sai20_database_authority_v4_apply.result.secret_names_json == terraform_data.sai20_database_authority_v4_plan.output.secret_names_json &&
         data.external.sai20_database_authority_v4_apply.result.sealed_kubeconfig_sha256 == terraform_data.sai20_database_authority_v4_identity.output.sealed_kubeconfig_sha256 &&
         data.external.sai20_database_authority_v4_apply.result.sealed_kubeconfig_sha256 == terraform_data.sai20_database_authority_v5_apply.output.sealed_kubeconfig_sha256 &&
+        data.external.sai20_database_authority_v4_apply.result.sealed_kubeconfig_sha256 == local.provider_kubeconfig_sha256 &&
         data.external.sai20_database_authority_v4_apply.result.executor_uid == terraform_data.sai20_database_authority_v4_plan.output.executor_uid &&
         data.external.sai20_database_authority_v4_apply.result.executor_uid == terraform_data.sai20_database_authority_v4_identity.output.executor_uid &&
         data.external.sai20_database_authority_v4_apply.result.executor_uid == terraform_data.sai20_database_authority_v5_apply.output.executor_uid &&

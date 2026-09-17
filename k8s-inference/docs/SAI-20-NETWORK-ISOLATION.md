@@ -542,3 +542,92 @@ formatter, Terraform, Helm, build, package manager, scanner, cluster,
 provider, database, registry, credential, deployment, probe, cleanup or
 deletion action ran. This remains a source-only candidate for fresh exact
 review and makes no SOURCE GO, integration, deployment or live claim.
+
+## Final independent-review correction after `6e1bf0f00`
+
+Exact `6e1bf0f00d85a80d228a7cea803511391076fb5a` / tree
+`9c99de4e4eacf44fc36f7323a8befa16b4bedbb0` remains preserved
+SOURCE/INTEGRATION/LIVE NO-GO evidence. The successor closes four distinct
+gaps without treating every tenant Pod as a platform credential target.
+
+The Kubernetes and Helm providers no longer receive the durable run-root
+kubeconfig pathname. The source-bound `inference-stack` launcher copies that
+private file once into a mode-0400 sealed memfd, retains the descriptor across
+the complete workloads plan/apply pair, and passes
+`/proc/<launcher-pid>/fd/<fd>` as a required Terraform variable. Both providers,
+Terraform's kubeconfig parsing and the v4/v5 identity gates consume that same
+descriptor. The verifier rejects a non-memfd, a missing seal, a foreign owner,
+an unexpected mode or name, and Terraform compares its own file digest with
+both verifier phases. The durable pathname remains only an operator recovery
+input and must hash to the sealed plan snapshot; it is not provider authority.
+
+`pods/proxy` now closes `create`, `delete`, `get`, `patch` and `update` in the
+generic and `resourceNames`-exact Role/ClusterRole, SAR and final-apply paths.
+The other Pod-connect, ephemeral-container and node-proxy actions retain their
+source-defined verb sets.
+
+The signed evidence now derives a credential workload inventory from exact raw
+Pod/controller lists plus the all-namespace ServiceAccount and metadata-only
+Secret inventories. Every ServiceAccount and Secret in `fs2-system`,
+`fs2-observability`, `fs2-data` and `cnpg-system`, and every live Pod selecting
+one, becomes an exact protected target. A new source-exact admission pair
+denies selecting those credentials unless the actor is the exact custodian,
+an exact signed release writer retaining the existing credential surface, or
+an exact kube-system controller creating a source-derived owner child with the
+same surface. Deployment ReplicaSets and CronJob Jobs are admitted only inert;
+their exact UID must enter a fresh signed renewal before dependent Pods start.
+This prevents an innocuously labelled direct Pod or controller from mounting a
+platform Secret or selecting a privileged ServiceAccount.
+
+Pod-connect authority is target-classified. Generic authority is rejected for
+any namespace containing a protected Pod, while credential-free tenant targets
+outside that set are not converted into custodian-only operations. A protected
+target exception must be an exact-name Role and RoleBinding, reference the
+exact live Pod UID, name an independently authenticated principal, carry tenant,
+audit, issued/expiry and reason-digest fields, and expire within 900 seconds.
+The exact debug broker is separately authenticated; admission permits it to
+manage only the source-defined Pod-subresource lease shape. All active leases,
+their exact SAR decisions and their RBAC objects are signed and reobserved at
+the final unknown-nonce apply. HTTP request-debug capture is untouched.
+
+The successor activation set now contains twelve exact policy/binding objects,
+including workload-credential and debug-access custody. The bootstrap guard,
+signed INITIAL/RENEWAL transition and final source/live digest cover the entire
+set. Empty external enrollment registries still fail closed. Tests were
+authored but not executed, and no Terraform, Helm, provider, cluster, database,
+credential, deployment, cleanup or deletion action was performed.
+
+### Superseding dirty-WIP correction: authorization lifetime and release custody
+
+The twelve-object draft above is preserved as negative evidence. The successor
+set now has fifteen source-bound objects. It adds a fail-closed, independently
+operated validating webhook for every protected Pod connect request and a
+cluster-scoped RBAC custody policy/binding. The authorizer contract binds the
+exact principal, operation, tenant, Pod UID, lease digest, source policy digest,
+issued time and expiry to each decision. Stale, replayed, mismatched or
+unavailable authorization is denied, so an expired Role/RoleBinding cannot
+continue granting protected access even if the RBAC objects still exist.
+
+Credential custody no longer classifies every ServiceAccount as privileged.
+It derives privileged identities from admitted principals and the exact
+dangerous/sensitive RBAC closure, keeps metadata-only Secret inventories, and
+allows ordinary credential-free creation. A privileged CREATE instead needs a
+signed exact principal, namespace, resource, name and complete Pod-spec digest;
+native controller children and managed updates remain bound to exact live
+owner UID and unchanged credential surface. This preserves normal release,
+scientific workload and customer controller paths without reopening arbitrary
+ServiceAccount or Secret selection.
+
+One sealed, descriptor-backed kubeconfig snapshot is now retained across both
+foundation and workloads plan/apply paths, foundation helper invocations and
+destroy planning. Kubernetes and Helm providers receive only that snapshot;
+the durable pathname is retained solely as the read-only source whose digest
+must match the sealed copy. The pre-existing bootstrap guard also covers
+arbitrary ClusterRole and ClusterRoleBinding changes until the source-exact
+successor custody policy is active.
+
+The external authorizer and enrollment roots remain explicit integration gates;
+this source candidate does not claim they exist. Regression tests were authored
+but not executed under the coordinator boundary. No Terraform, Helm, provider,
+cluster, database, credential, deployment, cleanup or deletion action was
+performed, and this candidate is not a source, integration or live GO claim.

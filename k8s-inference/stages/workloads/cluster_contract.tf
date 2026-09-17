@@ -133,6 +133,10 @@ resource "terraform_data" "cluster_contract" {
       error_message = "kubeconfig_path must be the exact run-owned <run_root>/kubeconfig file."
     }
     precondition {
+      condition     = filesha256(var.kubeconfig_path) == local.provider_kubeconfig_sha256
+      error_message = "the durable run-owned kubeconfig differs from the sealed provider snapshot selected for this plan."
+    }
+    precondition {
       condition     = var.kube_context == var.cluster_name
       error_message = "kube_context must equal the exact bounded cluster_name emitted by infrastructure."
     }

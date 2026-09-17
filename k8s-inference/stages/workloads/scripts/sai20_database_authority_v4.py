@@ -95,7 +95,7 @@ CREDENTIAL_PIVOT_ACTIONS = {
     "pods/exec": ("create", "get"),
     "pods/attach": ("create", "get"),
     "pods/portforward": ("create", "get"),
-    "pods/proxy": ("create", "get"),
+    "pods/proxy": ("create", "delete", "get", "patch", "update"),
     "pods/ephemeralcontainers": ("patch", "update"),
     "nodes/proxy": ("create", "delete", "get", "patch", "update"),
 }
@@ -113,6 +113,18 @@ def credential_pivot_rule(rule: dict[str, Any]) -> bool:
         and (bool(set(actions) & verbs) or "*" in verbs)
         for pivot_resource, actions in CREDENTIAL_PIVOT_ACTIONS.items()
     )
+
+
+def scoped_pod_connection_review(review_name: str) -> bool:
+    """Return whether v5 must classify this Pod target before denying it.
+
+    Pod connect authority is not intrinsically custodian-only: exact,
+    credential-free tenant targets and short-lived audited debug leases remain
+    supported.  Node proxy and every non-connect authority stay dangerous in
+    v4 without deferral.
+    """
+
+    return review_name.startswith("credential-pivot/") and "/pods/" in review_name
 
 
 def rbac_endpoints(namespaces: list[str]) -> dict[tuple[str, str], str]:
@@ -332,6 +344,7 @@ def dangerous_reviews(
             }
     return dict(sorted(reviews.items()))
 REQUIRED_SOURCE_PATHS = {
+    "k8s-inference/inference-stack",
     "k8s-inference/security/sai20/README.md",
     "k8s-inference/security/sai20/authority-roots-v1.json",
     "k8s-inference/stages/workloads/contracts/sai20-control-db-ingress-v4.json",
@@ -1251,7 +1264,11 @@ def verify_identities(
                 allowed.append(review_name)
             review_bodies.append(body)
         if principal["class"] != "custodian":
-            require(not allowed, f"non-custodian principal {principal_id} retains token, certificate or impersonation authority")
+            unscoped = [name for name in allowed if not scoped_pod_connection_review(name)]
+            require(
+                not unscoped,
+                f"non-custodian principal {principal_id} retains token, certificate, node-proxy or impersonation authority",
+            )
         if allowed:
             capable.append(
                 {
@@ -1630,6 +1647,7 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
         "executor": executor,
         "namespaces": namespaces,
         "secret_names": sorted((item["namespace"], item["name"]) for item in secrets),
+        "service_accounts": service_accounts,
         "principal_identities": principal_identities,
         "authority_reviews": reviews,
         "signed_authority_decisions": signed_decisions,
@@ -1800,14 +1818,31 @@ def prepare_kubectl(query: dict[str, str], context: dict[str, Any]) -> None:
         require(fcntl.fcntl(sealed_fd, fcntl.F_GET_SEALS) == seal_mask, "kubectl snapshot is not immutable")
         os.lseek(sealed_fd, 0, os.SEEK_SET)
 
-        kubeconfig = Path(query["kubeconfig_path"])
-        require(kubeconfig.is_absolute(), "kubeconfig_path must be absolute")
-        kubeconfig_source_fd = os.open(str(kubeconfig), os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        kubeconfig_path = query["kubeconfig_path"]
+        require(
+            re.fullmatch(r"/proc/[1-9][0-9]*/fd/[0-9]+", kubeconfig_path) is not None,
+            "provider kubeconfig must be a launcher-owned descriptor path",
+        )
+        # /proc/<launcher>/fd/<fd> is necessarily a magic link. The exact
+        # syntax is constrained above; the opened object, seals, owner and
+        # memfd identity are checked below before any bytes are trusted.
+        kubeconfig_source_fd = os.open(kubeconfig_path, os.O_RDONLY | os.O_CLOEXEC)
         kubeconfig_before = os.fstat(kubeconfig_source_fd)
         require(stat.S_ISREG(kubeconfig_before.st_mode), "kubeconfig must be a regular file")
-        require(kubeconfig_before.st_uid in {0, os.geteuid()}, "kubeconfig must be owned by root or the verifier user")
-        require(kubeconfig_before.st_mode & 0o022 == 0, "kubeconfig must not be group- or world-writable")
+        require(kubeconfig_before.st_uid == os.geteuid(), "provider kubeconfig memfd must be owned by the Terraform launcher user")
+        require(kubeconfig_before.st_mode & 0o777 == 0o400, "provider kubeconfig memfd must be mode 0400")
         require(0 < kubeconfig_before.st_size <= 4 * 1024 * 1024, "kubeconfig size is invalid")
+        seal_mask = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL
+        try:
+            provider_seals = fcntl.fcntl(kubeconfig_source_fd, fcntl.F_GET_SEALS)
+        except OSError as exc:
+            raise v3.ContractError("provider kubeconfig is not a sealable memfd") from exc
+        require(provider_seals == seal_mask, "provider kubeconfig descriptor is not immutable")
+        provider_target = os.readlink(f"/proc/self/fd/{kubeconfig_source_fd}")
+        require(
+            provider_target.startswith("/memfd:sai20-provider-kubeconfig"),
+            "provider kubeconfig is not the source-owned sealed memfd",
+        )
         kubeconfig_fd = os.memfd_create("sai20-kubeconfig", os.MFD_ALLOW_SEALING)
         kubeconfig_hash = hashlib.sha256()
         kubeconfig_bytes = bytearray()
@@ -1847,6 +1882,10 @@ def prepare_kubectl(query: dict[str, str], context: dict[str, Any]) -> None:
                 kubeconfig_after.st_ctime_ns,
             ),
             "kubeconfig source changed during authenticated copy",
+        )
+        require(
+            fcntl.fcntl(kubeconfig_source_fd, fcntl.F_GET_SEALS) == seal_mask,
+            "provider kubeconfig descriptor lost its immutable seals",
         )
         os.fchmod(kubeconfig_fd, 0o400)
         fcntl.fcntl(kubeconfig_fd, fcntl.F_ADD_SEALS, seal_mask)
@@ -2006,7 +2045,7 @@ def verify_apply(query: dict[str, str], context: dict[str, Any], _roots: dict[st
                 status["allowed"] == context["signed_authority_decisions"][principal_id][review_name],
                 f"apply dangerous authority changed: {principal_id}/{review_name}",
             )
-            if identity["class"] != "custodian":
+            if identity["class"] != "custodian" and not scoped_pod_connection_review(review_name):
                 require(not status["allowed"], f"non-custodian gained dangerous authority at apply: {principal_id}/{review_name}")
 
 

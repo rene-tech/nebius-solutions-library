@@ -1,6 +1,8 @@
 {
   "schema": "fs2-serve.nebius.ai/sai20-bootstrap-guard/v5",
   "protected_names": [
+    "fs2-cluster-rbac-custody-binding-v6",
+    "fs2-cluster-rbac-custody-v6",
     "fs2-database-authority-bootstrap-guard-binding-v5",
     "fs2-database-authority-bootstrap-guard-v5",
     "fs2-database-authority-object-custody-binding-v4",
@@ -12,7 +14,12 @@
     "fs2-database-peer-identity-binding-v5",
     "fs2-database-peer-identity-v5",
     "fs2-database-policy-freeze-binding-v4",
-    "fs2-database-policy-freeze-v4"
+    "fs2-database-policy-freeze-v4",
+    "fs2-debug-access-custody-binding-v6",
+    "fs2-debug-access-custody-v6",
+    "fs2-debug-request-authorizer-v6",
+    "fs2-workload-credential-custody-binding-v6",
+    "fs2-workload-credential-custody-v6"
   ],
   "policy": {
     "name": "fs2-database-authority-bootstrap-guard-v5",
@@ -35,7 +42,26 @@
             ],
             "resources": [
               "validatingadmissionpolicies",
-              "validatingadmissionpolicybindings"
+              "validatingadmissionpolicybindings",
+              "validatingwebhookconfigurations"
+            ],
+            "scope": "Cluster"
+          },
+          {
+            "apiGroups": [
+              "rbac.authorization.k8s.io"
+            ],
+            "apiVersions": [
+              "v1"
+            ],
+            "operations": [
+              "CREATE",
+              "UPDATE",
+              "DELETE"
+            ],
+            "resources": [
+              "clusterroles",
+              "clusterrolebindings"
             ],
             "scope": "Cluster"
           }
@@ -51,6 +77,10 @@
           "name": "protectedObject"
         },
         {
+          "expression": "request.resource.group == 'rbac.authorization.k8s.io' && request.resource.resource in ['clusterroles','clusterrolebindings']",
+          "name": "clusterRbacObject"
+        },
+        {
           "expression": "has(request.userInfo.uid) && request.userInfo.uid == ${executor_uid_json} && request.userInfo.username == ${executor_username_json} && request.userInfo.groups.size() == ${executor_group_count} && request.userInfo.groups.all(group, group in ${executor_groups_json}) && ((${executor_extra_json} == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == ${executor_extra_json}))",
           "name": "custodian"
         }
@@ -64,6 +94,11 @@
         {
           "expression": "!variables.protectedObject || variables.custodian",
           "message": "SAI-20 bootstrap and successor authority mutation requires the exact externally enrolled custodian",
+          "reason": "Forbidden"
+        },
+        {
+          "expression": "!variables.clusterRbacObject || variables.custodian",
+          "message": "SAI-20 bootstrap transition freezes cluster-scoped RBAC to the exact externally enrolled custodian",
           "reason": "Forbidden"
         }
       ]

@@ -9,10 +9,11 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
@@ -166,6 +167,82 @@ def terraform_environment(run_root: Path, stage: str) -> dict[str, str]:
     return environment
 
 
+@contextmanager
+def sealed_provider_kubeconfig(run_root: Path) -> Iterator[str]:
+    """Retain one immutable kubeconfig snapshot for downstream plan/apply work.
+
+    Terraform's Kubernetes and Helm providers accept only a pathname.  The
+    pathname yielded here addresses a sealed memfd owned by this long-lived
+    launcher process, so every provider subprocess and the SAI-20 verifier
+    reopen the same immutable object rather than the mutable run-root file.
+    """
+
+    source = run_root / "kubeconfig"
+    if source.is_symlink() or not source.is_file():
+        raise DeploymentError(
+            "workloads require a regular run-owned kubeconfig before sealing"
+        )
+    source_fd = os.open(source, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    sealed_fd = -1
+    try:
+        before = os.fstat(source_fd)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.geteuid()
+            or before.st_mode & 0o077 != 0
+            or before.st_size <= 0
+            or before.st_size > 4 * 1024 * 1024
+        ):
+            raise DeploymentError(
+                "run-owned kubeconfig must be a private regular file owned by the launcher"
+            )
+        sealed_fd = os.memfd_create(
+            "sai20-provider-kubeconfig", os.MFD_ALLOW_SEALING
+        )
+        remaining = before.st_size
+        while remaining:
+            chunk = os.read(source_fd, min(1024 * 1024, remaining))
+            if not chunk:
+                raise DeploymentError("kubeconfig changed during sealed copy")
+            view = memoryview(chunk)
+            while view:
+                written = os.write(sealed_fd, view)
+                if written <= 0:
+                    raise DeploymentError("sealed kubeconfig copy made no progress")
+                view = view[written:]
+            remaining -= len(chunk)
+        if os.read(source_fd, 1):
+            raise DeploymentError("kubeconfig exceeds its authenticated size")
+        after = os.fstat(source_fd)
+        identity = lambda value: (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_uid,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+        if identity(before) != identity(after):
+            raise DeploymentError("kubeconfig changed during sealed copy")
+        os.fchmod(sealed_fd, 0o400)
+        seal_mask = (
+            fcntl.F_SEAL_WRITE
+            | fcntl.F_SEAL_GROW
+            | fcntl.F_SEAL_SHRINK
+            | fcntl.F_SEAL_SEAL
+        )
+        fcntl.fcntl(sealed_fd, fcntl.F_ADD_SEALS, seal_mask)
+        if fcntl.fcntl(sealed_fd, fcntl.F_GET_SEALS) != seal_mask:
+            raise DeploymentError("provider kubeconfig snapshot is not immutable")
+        os.lseek(sealed_fd, 0, os.SEEK_SET)
+        yield f"/proc/{os.getpid()}/fd/{sealed_fd}"
+    finally:
+        if sealed_fd >= 0:
+            os.close(sealed_fd)
+        os.close(source_fd)
+
+
 def terraform_init(
     terraform: str,
     root: Path,
@@ -270,6 +347,7 @@ def plan_json(
     plan_path: Path,
     json_path: Path,
     destroy: bool = False,
+    provider_kubeconfig_path: str | None = None,
 ) -> dict[str, Any]:
     if plan_path.is_symlink() or json_path.is_symlink():
         raise DeploymentError("plan and plan JSON paths must not be symlinks")
@@ -280,8 +358,10 @@ def plan_json(
         "-input=false",
         "-lock=true",
         f"-var-file={variable_file}",
-        f"-out={plan_path}",
     ]
+    if provider_kubeconfig_path is not None:
+        arguments.append(f"-var=provider_kubeconfig_path={provider_kubeconfig_path}")
+    arguments.append(f"-out={plan_path}")
     if destroy:
         arguments.insert(3, "-destroy")
     run(arguments, env=environment)
@@ -2054,6 +2134,7 @@ def plan_stage(
     contract: Mapping[str, Any],
     variable_file: Path,
     destroy: bool = False,
+    provider_kubeconfig_path: str | None = None,
 ) -> tuple[Path, dict[str, Any], dict[str, str]]:
     if stage == "workloads" and not destroy:
         expected_batch = (
@@ -2082,6 +2163,21 @@ def plan_stage(
                     "the generated scientific batch input differs from the customer "
                     "configuration; regenerate staged inputs with inference-stack"
                 )
+    if stage in {"foundation", "workloads"} and provider_kubeconfig_path is None:
+        with sealed_provider_kubeconfig(run_root) as sealed_path:
+            return plan_stage(
+                terraform,
+                run_root=run_root,
+                stage=stage,
+                contract=contract,
+                variable_file=variable_file,
+                destroy=destroy,
+                provider_kubeconfig_path=sealed_path,
+            )
+    if stage not in {"foundation", "workloads"} and provider_kubeconfig_path is not None:
+        raise DeploymentError(
+            "provider kubeconfig snapshots are valid only for foundation and workloads"
+        )
     root = stage_root(stage)
     state, _, _ = stage_paths(run_root, stage)
     environment = stage_environment(
@@ -2090,6 +2186,8 @@ def plan_stage(
         contract,
         include_secrets=not destroy,
     )
+    if provider_kubeconfig_path is not None:
+        environment["FS2_PROVIDER_KUBECONFIG"] = provider_kubeconfig_path
     terraform_init(terraform, root, state, environment)
     suffix = "destroy" if destroy else "plan"
     plan_path = run_root / f"{stage}-{suffix}.tfplan"
@@ -2101,6 +2199,7 @@ def plan_stage(
         plan_path=plan_path,
         json_path=run_root / f"{stage}-{suffix}.plan.json",
         destroy=destroy,
+        provider_kubeconfig_path=provider_kubeconfig_path,
     )
     return plan_path, document, environment
 
@@ -2500,23 +2599,29 @@ def apply_stack(
         run_root, contract, dynamic
     )
 
-    plan_path, _, environment = plan_stage(
-        args.terraform,
-        run_root=run_root,
-        stage="foundation",
-        contract=contract,
-        variable_file=foundation_variables,
-    )
-    apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
+    # Keep one exact sealed descriptor alive across both stages and all four
+    # commands. Foundation/workloads providers and local-exec children address
+    # this same immutable object; neither stage reopens the durable pathname.
+    with sealed_provider_kubeconfig(run_root) as provider_kubeconfig_path:
+        plan_path, _, environment = plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage="foundation",
+            contract=contract,
+            variable_file=foundation_variables,
+            provider_kubeconfig_path=provider_kubeconfig_path,
+        )
+        apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
 
-    plan_path, _, environment = plan_stage(
-        args.terraform,
-        run_root=run_root,
-        stage="workloads",
-        contract=contract,
-        variable_file=workloads_variables,
-    )
-    apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
+        plan_path, _, environment = plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage="workloads",
+            contract=contract,
+            variable_file=workloads_variables,
+            provider_kubeconfig_path=provider_kubeconfig_path,
+        )
+        apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
 
     # Record the accepted root contract after all of its staged consumers converge.
     apply_plan(
@@ -2588,48 +2693,56 @@ def plan_stack(
     foundation_variables, workloads_variables = write_downstream_variables(
         run_root, contract, dynamic
     )
-    if not state_ready(args.terraform, run_root, "foundation", contract):
-        plan_stage(
+    # Downstream planning uses one immutable credential snapshot just like
+    # apply and destroy; a pathname change cannot select different identities
+    # for foundation and workloads within one invocation.
+    with sealed_provider_kubeconfig(run_root) as provider_kubeconfig_path:
+        if not state_ready(args.terraform, run_root, "foundation", contract):
+            plan_stage(
+                args.terraform,
+                run_root=run_root,
+                stage="foundation",
+                contract=contract,
+                variable_file=foundation_variables,
+                provider_kubeconfig_path=provider_kubeconfig_path,
+            )
+            print("Planned foundation. Apply it before custom resources can be planned.")
+            return
+
+        _, foundation_plan, _ = plan_stage(
             args.terraform,
             run_root=run_root,
             stage="foundation",
             contract=contract,
             variable_file=foundation_variables,
+            provider_kubeconfig_path=provider_kubeconfig_path,
         )
-        print("Planned foundation. Apply it before custom resources can be planned.")
-        return
+        if plan_changes_managed_resources_or_outputs(foundation_plan):
+            print(
+                "Planned foundation changes. Apply foundation and rerun plan before planning workloads."
+            )
+            return
 
-    _, foundation_plan, _ = plan_stage(
-        args.terraform,
-        run_root=run_root,
-        stage="foundation",
-        contract=contract,
-        variable_file=foundation_variables,
-    )
-    if plan_changes_managed_resources_or_outputs(foundation_plan):
-        print(
-            "Planned foundation changes. Apply foundation and rerun plan before planning workloads."
-        )
-        return
+        if not state_ready(args.terraform, run_root, "workloads", contract):
+            plan_stage(
+                args.terraform,
+                run_root=run_root,
+                stage="workloads",
+                contract=contract,
+                variable_file=workloads_variables,
+                provider_kubeconfig_path=provider_kubeconfig_path,
+            )
+            print("Planned workloads.")
+            return
 
-    if not state_ready(args.terraform, run_root, "workloads", contract):
         plan_stage(
             args.terraform,
             run_root=run_root,
             stage="workloads",
             contract=contract,
             variable_file=workloads_variables,
+            provider_kubeconfig_path=provider_kubeconfig_path,
         )
-        print("Planned workloads.")
-        return
-
-    plan_stage(
-        args.terraform,
-        run_root=run_root,
-        stage="workloads",
-        contract=contract,
-        variable_file=workloads_variables,
-    )
     print("Planned all three existing states after upstream handoffs converged.")
 
 
@@ -2767,23 +2880,46 @@ def destroy_stack(
         destroy_order += (("infrastructure", infrastructure_variables),)
 
     destroyed_stages: list[str] = []
-    for stage, variable_file in destroy_order:
-        if not resources[stage]:
-            continue
-        if variable_file is None:
-            raise DeploymentError(
-                f"cannot destroy {stage}: its generated private variable file is unavailable"
-            )
-        plan_path, _, environment = plan_stage(
-            args.terraform,
-            run_root=run_root,
-            stage=stage,
-            contract=contract,
-            variable_file=variable_file,
-            destroy=True,
-        )
-        apply_plan(args.terraform, stage_root(stage), plan_path, environment)
-        destroyed_stages.append(stage)
+    needs_cluster_snapshot = resources["workloads"] or resources["foundation"]
+    provider_context = (
+        sealed_provider_kubeconfig(run_root)
+        if needs_cluster_snapshot
+        else nullcontext(None)
+    )
+    with provider_context as provider_kubeconfig_path:
+        for stage, variable_file in destroy_order:
+            if not resources[stage]:
+                continue
+            if variable_file is None:
+                raise DeploymentError(
+                    f"cannot destroy {stage}: its generated private variable file is unavailable"
+                )
+            if stage in {"foundation", "workloads"}:
+                if provider_kubeconfig_path is None:
+                    raise DeploymentError(
+                        "foundation/workloads destroy requires one sealed provider kubeconfig"
+                    )
+                plan_path, _, environment = plan_stage(
+                    args.terraform,
+                    run_root=run_root,
+                    stage=stage,
+                    contract=contract,
+                    variable_file=variable_file,
+                    destroy=True,
+                    provider_kubeconfig_path=provider_kubeconfig_path,
+                )
+                apply_plan(args.terraform, stage_root(stage), plan_path, environment)
+            else:
+                plan_path, _, environment = plan_stage(
+                    args.terraform,
+                    run_root=run_root,
+                    stage=stage,
+                    contract=contract,
+                    variable_file=variable_file,
+                    destroy=True,
+                )
+                apply_plan(args.terraform, stage_root(stage), plan_path, environment)
+            destroyed_stages.append(stage)
 
     if retain_infrastructure:
         assert dynamic is not None

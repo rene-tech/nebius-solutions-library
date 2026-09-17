@@ -174,3 +174,46 @@ derivation classify the grants as dangerous and sensitive, dangerous subjects
 must be exact custodians, and final apply refreshes the entire expanded review
 set for every authenticated principal. This changes no workload or debugging
 feature and does not read Pod, node or credential contents.
+
+## Post-`6e1bf0f00` provider and credential-target closure
+
+Exact `6e1bf0f00d85a80d228a7cea803511391076fb5a` is rejected and must not be
+used as activation authority. The actual Kubernetes and Helm providers now
+consume one launcher-retained, mode-0400, fully sealed memfd kubeconfig for the
+whole workloads plan/apply pair. Direct Terraform invocation without that
+descriptor fails closed; verifier and Terraform digests must match it.
+
+The Pod-connect closure is target-aware. All platform-namespace
+ServiceAccounts and metadata-only Secret names, the exact credential-bearing
+Pod targets, and every active debug lease are content-derived from signed raw
+inventories. Generic access to a protected namespace is custodian-only;
+credential-free tenant targets remain available. Protected access requires an
+exact-name, exact-Pod-UID, audited and tenant-scoped lease of at most 900
+seconds from the exact broker. Admission separately prevents new unlabeled
+workloads from selecting protected ServiceAccounts or Secrets and prevents
+future broad RBAC from bypassing the signed closure. `pods/proxy` covers all of
+`create`, `delete`, `get`, `patch` and `update`.
+
+## Superseding dirty-WIP correction
+
+The prior twelve-object draft is retained as negative evidence. The successor
+activation set contains fifteen exact objects: a per-request, fail-closed debug
+authorizer webhook and cluster-scoped RBAC custody policy/binding were added.
+Protected Pod connect requests must match a currently active, exact-principal,
+exact-operation, exact-tenant and exact-Pod-UID lease. The signed authorizer
+contract denies stale, replayed, mismatched and unavailable decisions, so RBAC
+objects that outlive their annotations do not extend authorization.
+
+Credential protection is now derived from admitted principals plus the exact
+dangerous/sensitive RBAC closure instead of treating every ServiceAccount as
+privileged. Ordinary credential-free creates remain available; privileged
+creates require a signed full Pod-spec contract, and controller children remain
+bound to exact live owner UID and unchanged credential surface. ClusterRole and
+ClusterRoleBinding mutation is custodian-only and is covered by the pre-existing
+bootstrap guard during activation.
+
+The same sealed descriptor-backed kubeconfig is retained across foundation and
+workloads provider/helper paths. Empty external enrollment and debug-authorizer
+roots remain fail-closed integration gates. Tests were authored but not run;
+there was no Terraform, Helm, provider, live, credential, cleanup or deletion
+action. This is a static candidate, not a source/integration/live GO claim.
