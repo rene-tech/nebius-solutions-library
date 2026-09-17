@@ -24,6 +24,13 @@
 #      token-audience: the release audience is exclusive to the automation
 #      identities, so an app pod cannot mint a token that impersonates the
 #      release identity toward its verifiers.
+#   6. Workloads WRITTEN BY an automation identity (request.userInfo is a
+#      listed automation ServiceAccount) may only run as an OWNER-ENUMERATED
+#      ServiceAccount (workload-service-accounts key) and may carry no
+#      hostPath volumes and no privileged containers — the deploy identity's
+#      workload-create right cannot be pivoted into scheduling pods under an
+#      arbitrary ServiceAccount to harvest its tokens/Secrets, onto the
+#      host filesystem, or into privileged execution.
 #
 # Matching workload controllers as well as Pods means a direct `helm upgrade`
 # or `kubectl apply` that introduces an unpinned or non-allow-listed image
@@ -166,6 +173,32 @@ spec:
       expression: >-
         variables.automationServiceAccounts.exists(
           a, a == variables.serviceAccountRow)
+    - name: workloadServiceAccounts
+      expression: >-
+        ('workload-service-accounts' in params.data
+         ? params.data['workload-service-accounts'] : '')
+        .split("\n").filter(a, a != '')
+    - name: writerIsAutomation
+      expression: >-
+        variables.automationServiceAccounts.exists(a,
+          'system:serviceaccount:' + a == request.userInfo.username)
+    - name: usesHostPath
+      expression: >-
+        has(variables.podSpec.volumes) &&
+        variables.podSpec.volumes.exists(v, has(v.hostPath))
+    - name: usesPrivileged
+      expression: >-
+        variables.podSpec.containers.exists(c,
+          has(c.securityContext) && has(c.securityContext.privileged) &&
+          c.securityContext.privileged == true)
+        || (has(variables.podSpec.initContainers) &&
+            variables.podSpec.initContainers.exists(c,
+              has(c.securityContext) && has(c.securityContext.privileged) &&
+              c.securityContext.privileged == true))
+        || (has(variables.podSpec.ephemeralContainers) &&
+            variables.podSpec.ephemeralContainers.exists(c,
+              has(c.securityContext) && has(c.securityContext.privileged) &&
+              c.securityContext.privileged == true))
     - name: usesSecretEnv
       expression: >-
         variables.podSpec.containers.exists(c,
@@ -247,6 +280,18 @@ spec:
         the automation token-audience is exclusive to the automation
         identities; no other pod may project a token carrying it (SAI-09)
       reason: Forbidden
+    - expression: >-
+        !variables.writerIsAutomation || (
+          variables.workloadServiceAccounts.exists(
+            a, a == variables.serviceAccountRow) &&
+          !variables.usesHostPath &&
+          !variables.usesPrivileged)
+      message: >-
+        workloads written by an automation identity must run as an
+        owner-enumerated ServiceAccount and may not use hostPath volumes or
+        privileged containers; workload-create rights never become identity,
+        host, or privilege escalation (SAI-09)
+      reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -277,13 +322,18 @@ spec:
 # upgrade admission-visible. Under the DECIDED release-identity contract
 # (owner decision 2026-09-16; defined in iam-boundary.yaml and applied at the
 # separately authorized rollout window), Helm release state moves out of
-# Secrets entirely (HELM_DRIVER=sql against the control-plane PostgreSQL) and
-# the release Role holds NO Secret verbs — the allow-list's deploy-principals
-# key is then EMPTY, and this policy denies EVERY helm.sh/release.v1 Secret
-# write outright, strictly stronger than principal pinning. Until that
-# rollout executes, the policy enforces the pinned deploy-principal list and
-# Terraform's no-drift plan remains the compensating detective control for
-# config-only kubectl drift outside admission's view.
+# Secrets entirely (HELM_DRIVER=sql against the control-plane PostgreSQL —
+# the renderer's pinned tool runner passes HELM_DRIVER and
+# HELM_DRIVER_SQL_CONNECTION_STRING through so its Helm enumeration reads the
+# SQL backend too, and Helm OPERATES without any release-Secret write) and
+# the release Role holds NO Secret verbs. The scope's helm_secret_writers
+# field (rendered into this policy's deploy-principals key) is then EMPTY —
+# the CONTRACT IS FEASIBLE: an empty writer list denies EVERY
+# helm.sh/release.v1 Secret write outright while Helm keeps working on the
+# SQL driver, strictly stronger than principal pinning. Until that rollout
+# executes, the owner may keep a non-empty writer list and Terraform's
+# no-drift plan remains the compensating detective control for config-only
+# kubectl drift outside admission's view.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:

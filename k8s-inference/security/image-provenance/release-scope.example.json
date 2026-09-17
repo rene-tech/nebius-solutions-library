@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/release-scope/v9",
+  "schema": "fs2-serve.nebius.ai/release-scope/v10",
   "scope": {
     "cluster": "<kube-system-namespace-uid>",
     "namespaces": [
@@ -12,6 +12,12 @@
     "platform_repository_prefix": "cr.example-region.example.invalid/registryid/fs2-platform/",
     "deploy_principals": [
       "system:serviceaccount:fs2-system:fs2-release-automation"
+    ],
+    "helm_secret_writers": [],
+    "workload_service_accounts": [
+      "fs2-system:fs2-release-automation",
+      "fs2-system:fs2-serve-control-plane",
+      "fs2-models:default"
     ],
     "security_principals": [
       "system:serviceaccount:fs2-security:fs2-admission-guard"
@@ -28,8 +34,9 @@
       "kubectl": "/usr/bin/kubectl",
       "helm": "/usr/bin/helm"
     },
+    "worm_store_uri": "<off-host WORM store URI holding the anchored-heads exports>",
     "verification_key_sha256": "<sha256 of cosign.pub>",
-    "attestation_key_sha256": "<sha256 of the SEPARATE attestor public key; must differ from verification_key_sha256>",
+    "attestation_key_sha256": "<sha256 of the SEPARATE attestor public key; must equal the reviewed ATTESTATION_KEY_SHA256 source constant and differ from verification_key_sha256>",
     "policy_sha256": "<sha256 of policy.yaml>"
   }
 }

@@ -136,15 +136,8 @@ class PolicyManifestTest(unittest.TestCase):
 
     def test_policy_reads_exactly_the_rendered_allowlist_keys(self) -> None:
         rendered_keys = set(
-            TOOL.render_allowlist(
-                [REGISTRY_PREFIX],
-                PLATFORM_PREFIX,
-                [DIGEST_A],
-                ["deployer"],
-                token_audience="fs2-release",
-                automation_service_accounts=[
-                    "fs2-system:fs2-release-automation"
-                ],
+            render_allowlist_fixture(
+                [REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], ["deployer"]
             )["data"]
         )
         variable_expressions = " ".join(
@@ -173,6 +166,7 @@ class PolicyManifestTest(unittest.TestCase):
                 "namespaces",
                 "token-audience",
                 "automation-service-accounts",
+                "workload-service-accounts",
             )
             if f"params.data['{key}']" in variable_expressions
         }
@@ -242,7 +236,7 @@ class PolicyManifestTest(unittest.TestCase):
             validation["expression"]
             for validation in self.policy["spec"]["validations"]
         ]
-        self.assertEqual(len(expressions), 6)
+        self.assertEqual(len(expressions), 7)
         # The request namespace must be part of the owner-approved scope
         # recorded in the rendered allow-list, so claimed and enforced
         # coverage can never drift apart silently.
@@ -262,6 +256,13 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertIn("!variables.usesSecretEnv", expressions[4])
         # Audience exclusivity: nobody else may project the release audience.
         self.assertIn("serviceAccountToken.audience != variables.tokenAudience", expressions[5])
+        # Automation-WRITER constraint: pods/controllers written by an
+        # automation identity run only as owner-enumerated ServiceAccounts,
+        # with no hostPath and no privileged containers.
+        self.assertIn("writerIsAutomation", expressions[6])
+        self.assertIn("workloadServiceAccounts.exists", expressions[6])
+        self.assertIn("!variables.usesHostPath", expressions[6])
+        self.assertIn("!variables.usesPrivileged", expressions[6])
         for validation in self.policy["spec"]["validations"]:
             self.assertIn("SAI-09", validation["message"])
             self.assertEqual(validation["reason"], "Forbidden")
@@ -272,6 +273,9 @@ def render_allowlist_fixture(*args, **kwargs):
     kwargs.setdefault("token_audience", "fs2-release")
     kwargs.setdefault(
         "automation_service_accounts", ["fs2-system:fs2-release-automation"]
+    )
+    kwargs.setdefault(
+        "workload_service_accounts", ["fs2-system:fs2-release-automation"]
     )
     return TOOL.render_allowlist(*args, **kwargs)
 
@@ -296,6 +300,19 @@ class AllowlistRenderingTest(unittest.TestCase):
             manifest["data"]["automation-service-accounts"],
             "fs2-system:fs2-release-automation",
         )
+        self.assertEqual(
+            manifest["data"]["workload-service-accounts"],
+            "fs2-system:fs2-release-automation",
+        )
+
+    def test_empty_helm_secret_writers_render_the_deny_all_state(self) -> None:
+        # The HELM_DRIVER=sql contract is FEASIBLE: an EMPTY writer list is
+        # the stronger state (the governance policy denies every
+        # helm.sh/release.v1 write), never an error.
+        manifest = render_allowlist_fixture(
+            [REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], []
+        )
+        self.assertEqual(manifest["data"]["deploy-principals"], "")
 
     def test_rejects_malformed_digests_prefixes_and_principals(self) -> None:
         with self.assertRaises(TOOL.ProvenanceError):
@@ -321,11 +338,23 @@ class AllowlistRenderingTest(unittest.TestCase):
             )
         with self.assertRaises(TOOL.ProvenanceError):
             render_allowlist_fixture(
-                [REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], []
+                [REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], ["bad\nprincipal"]
             )
         with self.assertRaises(TOOL.ProvenanceError):
             render_allowlist_fixture(
-                [REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], ["bad\nprincipal"]
+                [REGISTRY_PREFIX],
+                PLATFORM_PREFIX,
+                [DIGEST_A],
+                ["deployer"],
+                workload_service_accounts=[],
+            )
+        with self.assertRaises(TOOL.ProvenanceError):
+            render_allowlist_fixture(
+                [REGISTRY_PREFIX],
+                PLATFORM_PREFIX,
+                [DIGEST_A],
+                ["deployer"],
+                workload_service_accounts=["no-colon-row"],
             )
         # The identity keys fail closed too: a missing/invalid audience or an
         # empty/malformed automation account list never renders.
@@ -729,23 +758,64 @@ AUTHORITY_FIXTURE = {
 }
 
 
+FIXTURE_WORM_STORE = "https://worm.example.invalid/fs2/anchored-heads"
+PROVIDER_ADMIN_SUBJECT = "owner@example.invalid"
+
+
+def write_provider_export_fixture(
+    base: Path,
+    cluster: str = "fixture-cluster",
+    bindings: list | None = None,
+    name: str = "provider-iam-export.json",
+    **overrides,
+) -> Path:
+    """The ACTUAL provider IAM export whose bytes the attestation pins."""
+    from datetime import UTC, datetime, timedelta
+
+    document = {
+        "schema": TOOL.PROVIDER_IAM_EXPORT_SCHEMA,
+        "cluster": cluster,
+        "exported_at": (datetime.now(UTC) - timedelta(minutes=5)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        ),
+        "bindings": bindings
+        if bindings is not None
+        else [
+            {"subject": PROVIDER_ADMIN_SUBJECT, "role": "managed-k8s.admin"},
+            {"subject": "auditor@example.invalid", "role": "viewer"},
+        ],
+    }
+    document.update(overrides)
+    path = base / name
+    path.write_bytes(json.dumps(document).encode("utf-8"))
+    path.chmod(0o644)
+    return path
+
+
 def write_attestation_fixture(
     base: Path,
     cluster: str = "fixture-cluster",
     anchored: dict | None = None,
     name: str = "provider-attestation.json",
+    export_path: Path | None = None,
     **overrides,
 ) -> Path:
     """Attestor-signed provider attestation (fixture signature registry).
 
     The default anchored-heads snapshot is a REAL export of the run root's
     current chains (all required chains enumerated), and the evidence object
-    binds a fixture provider IAM export digest — matching the loader's
-    refusal of empty/omitted chains and bare provider-held strings.
+    pins a REAL provider-IAM-export fixture file written next to it —
+    matching the loader's refusal of empty/omitted chains, bare provider-held
+    strings, and hash-only evidence.
     """
     import hashlib
     from datetime import UTC, datetime, timedelta
 
+    if export_path is None:
+        export_path = base / "provider-iam-export.json"
+        if not export_path.exists():
+            write_provider_export_fixture(base, cluster=cluster)
+    export_sha = hashlib.sha256(export_path.read_bytes()).hexdigest()
     now = datetime.now(UTC)
     document = {
         "schema": TOOL.PROVIDER_ATTESTATION_SCHEMA,
@@ -753,10 +823,11 @@ def write_attestation_fixture(
         "masters_certificate_issuance": "provider-held",
         "apiserver_control": "provider-held",
         "etcd_access": "provider-held",
-        "worm_store": "https://worm.example.invalid/fs2/anchored-heads",
+        "worm_store": FIXTURE_WORM_STORE,
         "evidence": {
-            "provider_iam_export_sha256": "9" * 64,
+            "provider_iam_export_sha256": export_sha,
             "reference": "ticket:FS2-SAI-09-boundary",
+            "provider_admin_subjects": [PROVIDER_ADMIN_SUBJECT],
         },
         "anchored_heads": anchored or TOOL._anchor_snapshot(base),
         "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -783,6 +854,13 @@ def default_scope_fixture(key_sha256: str) -> dict:
         "registry_prefixes": [REGISTRY_PREFIX],
         "platform_repository_prefix": PLATFORM_PREFIX,
         "deploy_principals": [AUTOMATION_PRINCIPAL],
+        # The decided HELM_DRIVER=sql contract: NO Helm release-Secret
+        # writers — the governance policy denies every such write outright.
+        "helm_secret_writers": [],
+        "workload_service_accounts": [
+            "fs2-system:fs2-release-automation",
+            "fs2-system:fs2-serve-control-plane",
+        ],
         "security_principals": [SECURITY_PRINCIPAL],
         "verification_key_sha256": key_sha256,
         "attestation_key_sha256": hashlib.sha256(
@@ -790,6 +868,7 @@ def default_scope_fixture(key_sha256: str) -> dict:
         ).hexdigest(),
         "iam_exempt_subjects": [],
         "token_audience": "fs2-release",
+        "worm_store_uri": FIXTURE_WORM_STORE,
         "stage_binding_authority": {
             "namespace": "fs2-system",
             "workload": "deployment/fs2-serve-control-plane",
@@ -846,6 +925,8 @@ def authority_checking_verifier(command):
     if isinstance(document, dict) and document.get("schema") in (
         TOOL.SCOPE_SCHEMA,
         TOOL.PROVIDER_ATTESTATION_SCHEMA,
+        TOOL.RECOVERY_SCHEMA,
+        TOOL.ROLLOUT_AUTHORIZATION_SCHEMA,
     ):
         if hashlib.sha256(payload).hexdigest() not in SIGNED_AUTHORITY_HASHES:
             raise sp.CalledProcessError(1, command)
@@ -966,12 +1047,22 @@ class VerifiedAllowlistTest(unittest.TestCase):
             lambda: Path(self._attestor_key.name).unlink(missing_ok=True)
         )
         self.key_sha256 = h.sha256(TEST_KEY_CONTENT.encode("utf-8")).hexdigest()
-        # The fixture key is pinned exactly as production pins the committed
-        # key: by patching the source constant for this test's lifetime.
+        # The fixture keys are pinned exactly as production pins the
+        # committed keys: by patching BOTH source constants for this test's
+        # lifetime (release key AND the separately designated attestor key).
         self._original_pin = TOOL.RELEASE_KEY_SHA256
         TOOL.RELEASE_KEY_SHA256 = self.key_sha256
         self.addCleanup(
             lambda: setattr(TOOL, "RELEASE_KEY_SHA256", self._original_pin)
+        )
+        self._original_attestor_pin = TOOL.ATTESTATION_KEY_SHA256
+        TOOL.ATTESTATION_KEY_SHA256 = h.sha256(
+            ATTESTOR_KEY_CONTENT.encode("utf-8")
+        ).hexdigest()
+        self.addCleanup(
+            lambda: setattr(
+                TOOL, "ATTESTATION_KEY_SHA256", self._original_attestor_pin
+            )
         )
         self._run_root_holder = tempfile.TemporaryDirectory()
         self.addCleanup(self._run_root_holder.cleanup)
@@ -997,6 +1088,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.scope = default_scope_fixture(self.key_sha256)
         self.scope_path = write_scope_fixture(self.run_root, self.scope)
         self.attestation_path = write_attestation_fixture(self.run_root)
+        self.provider_export = self.run_root / "provider-iam-export.json"
         self.inventory = write_inventory_fixture(
             self.run_root, [self.REFERENCE_A, self.REFERENCE_B]
         )
@@ -1309,6 +1401,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
         live_runner=None,
         attestation_path=None,
         attestation_key_path=None,
+        provider_export_path=None,
     ):
         return TOOL.verified_allowlist(
             self._tmp.name,
@@ -1320,6 +1413,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             scope_path or self.scope_path,
             attestation_path or self.attestation_path,
             attestation_key_path or self._attestor_key.name,
+            provider_export_path or self.provider_export,
             deploy_principals=list(deploy_principals),
             key_path="release.key",
             verifier=verifier,
@@ -1651,6 +1745,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.scope_path,
             self.attestation_path,
             self._attestor_key.name,
+            self.provider_export,
             deploy_principals=[AUTOMATION_PRINCIPAL],
             key_path="release.key",
             verifier=authority_checking_verifier,
@@ -1783,6 +1878,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.scope_path,
             self.attestation_path,
             self._attestor_key.name,
+            self.provider_export,
             deploy_principals=[AUTOMATION_PRINCIPAL],
             key_path="release.key",
             capture=self.randomized_signing_capture(),
@@ -2150,6 +2246,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 self.scope_path,
                 self.attestation_path,
                 self._attestor_key.name,
+                self.provider_export,
                 deploy_principals=["deployer"],
                 key_path="release.key",
                 verifier=authority_checking_verifier,
@@ -2621,11 +2718,14 @@ class VerifiedAllowlistTest(unittest.TestCase):
         ).hexdigest()
 
         def write_authorization(name: str, **overrides) -> Path:
+            import hashlib as fixture_hashlib
+
             document = {
                 "schema": TOOL.ROLLOUT_AUTHORIZATION_SCHEMA,
                 "cluster": "fixture-cluster",
                 "plan": plan,
                 "plan_sha256": plan_sha,
+                "executor": SECURITY_PRINCIPAL,
                 "reason": "change:CH-9 boundary rollout",
                 "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "expires_at": (now + timedelta(hours=4)).strftime(
@@ -2640,6 +2740,9 @@ class VerifiedAllowlistTest(unittest.TestCase):
             signature = self.run_root / (name + ".sig")
             signature.write_text("fixture-owner-signature\n", encoding="utf-8")
             signature.chmod(0o644)
+            SIGNED_AUTHORITY_HASHES.add(
+                fixture_hashlib.sha256(payload).hexdigest()
+            )
             return path
 
         good = write_authorization("authorization.json")
@@ -2654,6 +2757,20 @@ class VerifiedAllowlistTest(unittest.TestCase):
             TOOL.load_rollout_authorization(
                 lying, self._tmp.name, "fixture-cluster", None, self.run_root,
                 NOOP_VERIFIER,
+            )
+        # The named executor is required: execution/resume bind to ONE
+        # owner-designated automation identity.
+        headless = write_authorization("headless.json", executor="")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "executor"):
+            TOOL.load_rollout_authorization(
+                headless, self._tmp.name, "fixture-cluster", None,
+                self.run_root, NOOP_VERIFIER,
+            )
+        human_led = write_authorization("human-led.json", executor="admin")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "executor"):
+            TOOL.load_rollout_authorization(
+                human_led, self._tmp.name, "fixture-cluster", None,
+                self.run_root, NOOP_VERIFIER,
             )
         # A live recomputation that differs from the signed plan refuses.
         with self.assertRaisesRegex(TOOL.ProvenanceError, "freshly recomputed"):
@@ -2959,6 +3076,541 @@ class VerifiedAllowlistTest(unittest.TestCase):
 
         with self.assertRaisesRegex(TOOL.ProvenanceError, "not trustworthy"):
             self.render(verifier=failing_after_inventory)
+
+
+class _FakeAdmissionCluster:
+    """Stateful fake API server for reconcile orchestration proofs.
+
+    Serves the committed policy objects with server defaults, real UIDs and
+    resourceVersions; a merge patch honors UID/resourceVersion PRECONDITIONS
+    (stale fences conflict exactly like a real API server) and bumps the RV;
+    `kubectl apply` replaces the supplied documents with fresh RVs while
+    PRESERVING objects it was not given — so the stale-RV recovery wedge and
+    crash-resume are reproduced faithfully, not assumed away.
+    """
+
+    def __init__(self, identity: str = SECURITY_PRINCIPAL) -> None:
+        import copy
+
+        self.identity = identity
+        self.raise_after_next_patch = False
+        self._rv = 1000
+        self.objects: dict[tuple[str, str], dict] = {}
+        for document in load_policy_documents():
+            live = copy.deepcopy(document)
+            spec = live.setdefault("spec", {})
+            if live["kind"] == "ValidatingAdmissionPolicy":
+                spec.setdefault("failurePolicy", "Fail")
+                constraints = spec.setdefault("matchConstraints", {})
+                constraints.setdefault("matchPolicy", "Equivalent")
+                for rule in constraints.get("resourceRules") or []:
+                    rule.setdefault("scope", "*")
+            else:
+                matches = spec.setdefault("matchResources", {})
+                matches.setdefault("matchPolicy", "Equivalent")
+                matches.setdefault("namespaceSelector", {})
+                matches.setdefault("objectSelector", {})
+            name = live["metadata"]["name"]
+            live["metadata"]["uid"] = self._uid(live["kind"], name)
+            live["metadata"]["resourceVersion"] = self._next_rv()
+            self.objects[(live["kind"], name)] = live
+
+    @staticmethod
+    def _uid(kind: str, name: str) -> str:
+        import hashlib as fixture_hashlib
+
+        # Recovery documents pin UIDs with a hex-shaped pattern; the fake
+        # cluster's UIDs must look like real ones.
+        return fixture_hashlib.sha256(f"{kind}/{name}".encode()).hexdigest()[
+            :32
+        ]
+
+    def _next_rv(self) -> str:
+        self._rv += 1
+        return str(self._rv)
+
+    def binding(self, name: str) -> dict:
+        return self.objects[("ValidatingAdmissionPolicyBinding", name)]
+
+    def runner(self, command, input_text=None):
+        import subprocess as sp
+
+        if command[:3] == ["kubectl", "auth", "whoami"]:
+            return json.dumps(
+                {"status": {"userInfo": {"username": self.identity}}}
+            )
+        if command[:4] == ["kubectl", "get", "namespace", "kube-system"]:
+            return "fixture-cluster"
+        if command[:3] == ["kubectl", "get", "validatingadmissionpolicy"]:
+            return json.dumps(
+                self.objects[("ValidatingAdmissionPolicy", command[3])]
+            )
+        if command[:3] == ["kubectl", "get", "validatingadmissionpolicybinding"]:
+            return json.dumps(self.binding(command[3]))
+        if command[:3] == ["kubectl", "get", "configmap"]:
+            if command[3] == "fs2-security-guard-params":
+                return json.dumps(
+                    {
+                        "metadata": {"name": command[3]},
+                        "data": {"security-principals": SECURITY_PRINCIPAL},
+                    }
+                )
+            raise sp.CalledProcessError(1, command)
+        if command[:3] in (
+            ["kubectl", "get", "clusterroles"],
+            ["kubectl", "get", "clusterrolebindings"],
+            ["kubectl", "get", "roles"],
+            ["kubectl", "get", "rolebindings"],
+        ):
+            return json.dumps({"items": []})
+        if command[:3] == ["kubectl", "patch", "validatingadmissionpolicybinding"]:
+            name = command[3]
+            patch = json.loads(command[command.index("-p") + 1])
+            live = self.binding(name)
+            metadata = patch.get("metadata") or {}
+            if (
+                str(metadata.get("uid", ""))
+                != str(live["metadata"]["uid"])
+                or str(metadata.get("resourceVersion", ""))
+                != str(live["metadata"]["resourceVersion"])
+            ):
+                # Exactly what a real API server does with a stale
+                # UID/resourceVersion precondition: 409 conflict.
+                raise sp.CalledProcessError(1, command)
+            live["spec"]["validationActions"] = list(
+                (patch.get("spec") or {}).get("validationActions") or []
+            )
+            annotations = live["metadata"].setdefault("annotations", {})
+            annotations.update(metadata.get("annotations") or {})
+            live["metadata"]["resourceVersion"] = self._next_rv()
+            if self.raise_after_next_patch:
+                self.raise_after_next_patch = False
+                raise RuntimeError(
+                    "simulated crash immediately after the patch landed"
+                )
+            return "patched"
+        if command[:4] == ["kubectl", "apply", "-f", "-"]:
+            import copy
+
+            for document in yaml.safe_load_all(input_text or ""):
+                if not document:
+                    continue
+                kind = document.get("kind")
+                if kind not in (
+                    "ValidatingAdmissionPolicy",
+                    "ValidatingAdmissionPolicyBinding",
+                ):
+                    continue
+                name = document["metadata"]["name"]
+                live = copy.deepcopy(document)
+                spec = live.setdefault("spec", {})
+                if kind == "ValidatingAdmissionPolicy":
+                    spec.setdefault("failurePolicy", "Fail")
+                    constraints = spec.setdefault("matchConstraints", {})
+                    constraints.setdefault("matchPolicy", "Equivalent")
+                    for rule in constraints.get("resourceRules") or []:
+                        rule.setdefault("scope", "*")
+                else:
+                    matches = spec.setdefault("matchResources", {})
+                    matches.setdefault("matchPolicy", "Equivalent")
+                    matches.setdefault("namespaceSelector", {})
+                    matches.setdefault("objectSelector", {})
+                previous = self.objects.get((kind, name))
+                live["metadata"]["uid"] = (
+                    previous["metadata"]["uid"]
+                    if previous
+                    else self._uid(kind, name)
+                )
+                live["metadata"]["resourceVersion"] = self._next_rv()
+                self.objects[(kind, name)] = live
+            return "applied"
+        raise AssertionError(f"unexpected reconcile command: {command}")
+
+
+class ReconcileBoundaryTest(unittest.TestCase):
+    """PROVES the reconcile orchestration: fenced recovery sequencing (no
+    stale-RV wedge on Audit/Warn -> Deny/Audit restore), filtered repair
+    apply that never touches the recovery target, crash-resume, and executor
+    lineage — against a stateful fake API server with real RV semantics.
+    """
+
+    def setUp(self) -> None:
+        import hashlib as h
+        import tempfile
+
+        self._tmp = tempfile.NamedTemporaryFile("w", suffix=".pub", delete=False)
+        self._tmp.write(TEST_KEY_CONTENT)
+        self._tmp.close()
+        self.addCleanup(lambda: Path(self._tmp.name).unlink(missing_ok=True))
+        self._attestor_key = tempfile.NamedTemporaryFile(
+            "w", suffix=".pub", delete=False
+        )
+        self._attestor_key.write(ATTESTOR_KEY_CONTENT)
+        self._attestor_key.close()
+        self.addCleanup(
+            lambda: Path(self._attestor_key.name).unlink(missing_ok=True)
+        )
+        self.key_sha256 = h.sha256(TEST_KEY_CONTENT.encode("utf-8")).hexdigest()
+        self._original_pin = TOOL.RELEASE_KEY_SHA256
+        TOOL.RELEASE_KEY_SHA256 = self.key_sha256
+        self.addCleanup(
+            lambda: setattr(TOOL, "RELEASE_KEY_SHA256", self._original_pin)
+        )
+        self._original_attestor_pin = TOOL.ATTESTATION_KEY_SHA256
+        TOOL.ATTESTATION_KEY_SHA256 = h.sha256(
+            ATTESTOR_KEY_CONTENT.encode("utf-8")
+        ).hexdigest()
+        self.addCleanup(
+            lambda: setattr(
+                TOOL, "ATTESTATION_KEY_SHA256", self._original_attestor_pin
+            )
+        )
+        self._run_root_holder = tempfile.TemporaryDirectory()
+        self.addCleanup(self._run_root_holder.cleanup)
+        self.run_root = Path(self._run_root_holder.name)
+        self.scope = default_scope_fixture(self.key_sha256)
+        self.scope_path = write_scope_fixture(self.run_root, self.scope)
+        self.attestation_path = write_attestation_fixture(self.run_root)
+        self.provider_export = self.run_root / "provider-iam-export.json"
+        self.cluster = _FakeAdmissionCluster()
+
+    def write_recovery(self, name: str, *, prior, actions) -> tuple[Path, str]:
+        import hashlib as h
+        from datetime import UTC, datetime, timedelta
+
+        live = self.cluster.binding("fs2-image-provenance")
+        now = datetime.now(UTC)
+        document = {
+            "schema": TOOL.RECOVERY_SCHEMA,
+            "cluster": "fixture-cluster",
+            "target": "fs2-image-provenance",
+            "target_uid": live["metadata"]["uid"],
+            "target_resource_version": live["metadata"]["resourceVersion"],
+            "prior_actions": prior,
+            "actions": actions,
+            "reason": "incident:INC-9 sequencing proof",
+            "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (now + timedelta(hours=2)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+        }
+        payload = json.dumps(document).encode("utf-8")
+        path = self.run_root / name
+        path.write_bytes(payload)
+        path.chmod(0o644)
+        signature = self.run_root / (name + ".sig")
+        signature.write_text("fixture-owner-signature\n", encoding="utf-8")
+        signature.chmod(0o644)
+        sha = h.sha256(payload).hexdigest()
+        SIGNED_AUTHORITY_HASHES.add(sha)
+        return path, sha
+
+    def plan_document(self, recovery_path: Path | None) -> list[dict]:
+        lines: list[str] = []
+        code = TOOL.reconcile_boundary(
+            self._tmp.name,
+            self.scope_path,
+            self.run_root,
+            attestation_path=self.attestation_path,
+            attestation_key_path=self._attestor_key.name,
+            provider_export_path=self.provider_export,
+            recovery_path=recovery_path,
+            verifier=authority_checking_verifier,
+            live_runner=self.cluster.runner,
+            output=lines.append,
+        )
+        self.assertEqual(code, 0)
+        document_line = next(
+            line for line in lines if line.startswith("PLAN-DOCUMENT: ")
+        )
+        return json.loads(document_line[len("PLAN-DOCUMENT: "):])
+
+    def write_authorization(self, name: str, plan: list[dict]) -> Path:
+        import hashlib as h
+        from datetime import UTC, datetime, timedelta
+
+        now = datetime.now(UTC)
+        document = {
+            "schema": TOOL.ROLLOUT_AUTHORIZATION_SCHEMA,
+            "cluster": "fixture-cluster",
+            "plan": plan,
+            "plan_sha256": h.sha256(
+                json.dumps(plan, sort_keys=True).encode("utf-8")
+            ).hexdigest(),
+            "executor": SECURITY_PRINCIPAL,
+            "reason": "change:CH-16 sequencing proof",
+            "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (now + timedelta(hours=4)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+        }
+        payload = json.dumps(document).encode("utf-8")
+        path = self.run_root / name
+        path.write_bytes(payload)
+        path.chmod(0o644)
+        signature = self.run_root / (name + ".sig")
+        signature.write_text("fixture-owner-signature\n", encoding="utf-8")
+        signature.chmod(0o644)
+        SIGNED_AUTHORITY_HASHES.add(h.sha256(payload).hexdigest())
+        return path
+
+    def run_boundary(self, *, recovery, authorization, execute=False,
+                     resume=False):
+        return TOOL.reconcile_boundary(
+            self._tmp.name,
+            self.scope_path,
+            self.run_root,
+            attestation_path=self.attestation_path,
+            attestation_key_path=self._attestor_key.name,
+            provider_export_path=self.provider_export,
+            recovery_path=recovery,
+            authorization_path=authorization,
+            execute=execute,
+            resume=resume,
+            verifier=authority_checking_verifier,
+            live_runner=self.cluster.runner,
+            rollout_window_authorized=True,
+            output=lambda line: None,
+        )
+
+    def journal_phases(self) -> list[str]:
+        journal = self.run_root / "release-reconcile-journal.jsonl"
+        return [
+            str(record.get("phase"))
+            for record in TOOL._read_chained_records(journal)
+        ]
+
+    def test_weaken_then_restore_never_wedges_on_stale_rv(self) -> None:
+        # The decisive round-16 scenario: an authorized Audit/Warn
+        # break-glass followed by an authorized Deny/Audit RESTORE. The
+        # restore plan must be the fenced patch ALONE (no bulk apply that
+        # would bump the target's resourceVersion first), so the fence pinned
+        # by the owner still holds when the patch runs.
+        weaken_path, weaken_sha = self.write_recovery(
+            "weaken.json", prior=["Deny", "Audit"], actions=["Audit", "Warn"]
+        )
+        weaken_plan = self.plan_document(weaken_path)
+        self.assertEqual(len(weaken_plan), 1)
+        self.assertEqual(weaken_plan[0]["argv"][1], "patch")
+        weaken_auth = self.write_authorization("weaken-auth.json", weaken_plan)
+        self.assertEqual(
+            self.run_boundary(
+                recovery=weaken_path, authorization=weaken_auth, execute=True
+            ),
+            0,
+        )
+        live = self.cluster.binding("fs2-image-provenance")
+        self.assertEqual(
+            sorted(live["spec"]["validationActions"]), ["Audit", "Warn"]
+        )
+        self.assertEqual(
+            live["metadata"]["annotations"][
+                "security.fs2.nebius.ai/recovery-authorization"
+            ],
+            weaken_sha,
+        )
+        # RESTORE against the moved state: fenced to the CURRENT
+        # resourceVersion, patch-only plan, completes — this exact flow
+        # wedged before the sequencing fix.
+        restore_path, restore_sha = self.write_recovery(
+            "restore.json", prior=["Audit", "Warn"], actions=["Deny", "Audit"]
+        )
+        restore_plan = self.plan_document(restore_path)
+        self.assertEqual(
+            [entry["argv"][1] for entry in restore_plan], ["patch"]
+        )
+        restore_auth = self.write_authorization(
+            "restore-auth.json", restore_plan
+        )
+        self.assertEqual(
+            self.run_boundary(
+                recovery=restore_path, authorization=restore_auth,
+                execute=True,
+            ),
+            0,
+        )
+        live = self.cluster.binding("fs2-image-provenance")
+        self.assertEqual(
+            sorted(live["spec"]["validationActions"]), ["Audit", "Deny"]
+        )
+        self.assertEqual(
+            live["metadata"]["annotations"][
+                "security.fs2.nebius.ai/recovery-authorization"
+            ],
+            restore_sha,
+        )
+        self.assertEqual(
+            self.journal_phases(),
+            ["intent", "complete", "intent", "complete"],
+        )
+
+    def test_repair_apply_excludes_the_recovery_target(self) -> None:
+        # OTHER drifted objects are repaired alongside a recovery, but the
+        # apply must never touch the recovery target: its stdin manifest
+        # excludes the target binding, so the fence survives in any order.
+        helm = self.cluster.binding("fs2-helm-release-governance")
+        helm["spec"]["validationActions"] = ["Audit"]
+        weaken_path, weaken_sha = self.write_recovery(
+            "weaken2.json", prior=["Deny", "Audit"], actions=["Audit", "Warn"]
+        )
+        plan = self.plan_document(weaken_path)
+        self.assertEqual(
+            [entry["argv"][1] for entry in plan], ["patch", "apply"]
+        )
+        apply_entry = plan[1]
+        stdin_bytes = TOOL._reconcile_load_input(
+            self.run_root, apply_entry["stdin_sha256"]
+        )
+        applied_docs = [
+            document
+            for document in yaml.safe_load_all(stdin_bytes.decode("utf-8"))
+            if document
+        ]
+        applied_bindings = {
+            document["metadata"]["name"]
+            for document in applied_docs
+            if document["kind"] == "ValidatingAdmissionPolicyBinding"
+        }
+        self.assertNotIn("fs2-image-provenance", applied_bindings)
+        self.assertEqual(len(applied_docs), 5)
+        self.assertEqual(
+            apply_entry["verify"],
+            {"kind": "policy-equality", "skip": ["fs2-image-provenance"]},
+        )
+        authorization = self.write_authorization("weaken2-auth.json", plan)
+        # CRASH-RESUME PROOF: the process dies immediately after the patch
+        # lands; intent + consumption exist, completion does not.
+        self.cluster.raise_after_next_patch = True
+        with self.assertRaisesRegex(RuntimeError, "simulated crash"):
+            self.run_boundary(
+                recovery=weaken_path, authorization=authorization,
+                execute=True,
+            )
+        self.assertEqual(self.journal_phases(), ["intent"])
+        live = self.cluster.binding("fs2-image-provenance")
+        self.assertEqual(
+            sorted(live["spec"]["validationActions"]), ["Audit", "Warn"]
+        )
+        helm = self.cluster.binding("fs2-helm-release-governance")
+        self.assertEqual(helm["spec"]["validationActions"], ["Audit"])
+        # Resume with the SAME signed documents: the patch entry is
+        # satisfied (actions + this document's annotation), the filtered
+        # apply still runs, and completion lands.
+        self.assertEqual(
+            self.run_boundary(
+                recovery=weaken_path, authorization=authorization,
+                resume=True,
+            ),
+            0,
+        )
+        helm = self.cluster.binding("fs2-helm-release-governance")
+        self.assertEqual(
+            sorted(helm["spec"]["validationActions"]), ["Audit", "Deny"]
+        )
+        live = self.cluster.binding("fs2-image-provenance")
+        self.assertEqual(
+            live["metadata"]["annotations"][
+                "security.fs2.nebius.ai/recovery-authorization"
+            ],
+            weaken_sha,
+        )
+        self.assertEqual(self.journal_phases(), ["intent", "complete"])
+        # Idempotent re-resume: nothing to do, already complete.
+        self.assertEqual(
+            self.run_boundary(
+                recovery=weaken_path, authorization=authorization,
+                resume=True,
+            ),
+            0,
+        )
+        self.assertEqual(self.journal_phases(), ["intent", "complete"])
+
+    def test_execution_is_bound_to_the_named_executor(self) -> None:
+        weaken_path, _ = self.write_recovery(
+            "weaken3.json", prior=["Deny", "Audit"], actions=["Audit", "Warn"]
+        )
+        plan = self.plan_document(weaken_path)
+        authorization = self.write_authorization("weaken3-auth.json", plan)
+        # A DIFFERENT security principal is refused: execution binds to the
+        # authorization's named executor, not to whichever principal shows
+        # up. (The impostor must be in the scope's security principals to
+        # even reach the executor check.)
+        impostor = "system:serviceaccount:fs2-security:fs2-other-guard"
+        impostor_scope = dict(
+            self.scope,
+            security_principals=[SECURITY_PRINCIPAL, impostor],
+        )
+        impostor_scope_path = write_scope_fixture(
+            self.run_root, impostor_scope, name="impostor-scope.json"
+        )
+        self.cluster.identity = impostor
+        try:
+            with self.assertRaisesRegex(TOOL.ProvenanceError, "named executor"):
+                TOOL.reconcile_boundary(
+                    self._tmp.name,
+                    impostor_scope_path,
+                    self.run_root,
+                    attestation_path=self.attestation_path,
+                    attestation_key_path=self._attestor_key.name,
+                    provider_export_path=self.provider_export,
+                    recovery_path=weaken_path,
+                    authorization_path=authorization,
+                    execute=True,
+                    verifier=authority_checking_verifier,
+                    live_runner=self.cluster.runner,
+                    rollout_window_authorized=True,
+                    output=lambda line: None,
+                )
+        finally:
+            self.cluster.identity = SECURITY_PRINCIPAL
+        self.assertEqual(self.journal_phases(), [])
+
+    def test_provider_export_semantics_are_enforced(self) -> None:
+        # A provider export showing admin-class access OUTSIDE the attested
+        # enumeration refuses; so does a substituted export whose bytes do
+        # not hash to the attestation's pin.
+        rogue_export = write_provider_export_fixture(
+            self.run_root,
+            bindings=[
+                {"subject": PROVIDER_ADMIN_SUBJECT, "role": "managed-k8s.admin"},
+                {"subject": "mallory@example.invalid", "role": "k8s.editor"},
+            ],
+            name="rogue-export.json",
+        )
+        rogue_attestation = write_attestation_fixture(
+            self.run_root,
+            export_path=rogue_export,
+            name="rogue-attestation.json",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "admin-class"):
+            self.plan_document_with(
+                rogue_attestation, rogue_export, None
+            )
+        substituted = write_provider_export_fixture(
+            self.run_root,
+            bindings=[{"subject": PROVIDER_ADMIN_SUBJECT, "role": "viewer"}],
+            name="substituted-export.json",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "pins"):
+            self.plan_document_with(
+                self.attestation_path, substituted, None
+            )
+
+    def plan_document_with(
+        self, attestation: Path, export: Path, recovery: Path | None
+    ):
+        return TOOL.reconcile_boundary(
+            self._tmp.name,
+            self.scope_path,
+            self.run_root,
+            attestation_path=attestation,
+            attestation_key_path=self._attestor_key.name,
+            provider_export_path=export,
+            recovery_path=recovery,
+            verifier=authority_checking_verifier,
+            live_runner=self.cluster.runner,
+            output=lambda line: None,
+        )
 
 
 class ReceiptBindingTest(unittest.TestCase):

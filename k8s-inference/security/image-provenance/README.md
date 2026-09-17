@@ -21,7 +21,12 @@ application happens only at the separately authorized rollout window):** the
 owner decided (a) an automation-only, short-lived, non-impersonable release
 identity and a DISJOINT security identity (`iam-boundary.yaml` defines both,
 with the release Role holding no Secret verbs under the HELM_DRIVER=sql
-contract), (b) admission protection of the two parameter ConfigMaps through
+contract — a FEASIBLE contract: the scope's `helm_secret_writers` list MAY
+be empty, an empty list renders an empty deploy-principals key that denies
+every helm.sh/release.v1 Secret write outright, and the renderer's pinned
+tool runner passes the Helm SQL driver settings through so Helm operates
+and is enumerated on the SQL backend), (b) admission protection of the two
+parameter ConfigMaps through
 `fs2-provenance-guard` (once applied, only the security identity writes
 them), and (c) removal of human workload/ConfigMap-mutation/impersonation
 rights, which the renderer's read-only IAM audit ENFORCES at every render —
@@ -104,12 +109,18 @@ bump — in order:
    --run-root <run> --inventory inventory.json --scope
    security/image-provenance/release-scope.json --attestation
    <provider-attestation.json> --attestation-key <attestor.pub>
-   --registry-prefix … --platform-repository-prefix … --deploy-principal
+   --provider-export <provider-iam-export.json> --registry-prefix …
+   --platform-repository-prefix … --deploy-principal
    system:serviceaccount:<ns>:<name>` (`--key` signs the acceptance-chain
    head on success; deploy principals are AUTOMATION ServiceAccounts by
    owner decision — a human username is refused; the attestation verifies
-   ONLY against the SEPARATE attestor key pinned by the scope's
-   `attestation_key_sha256`, never the release key; optional
+   ONLY against the SEPARATE attestor key whose fingerprint is
+   SOURCE-PINNED as `ATTESTATION_KEY_SHA256` — reviewed code, which the
+   owner-signed scope must equal, so a release-key holder can never rotate
+   the attestor — and `--provider-export` must supply the ACTUAL provider
+   IAM export whose exact bytes the attestation pins, whose cluster and
+   freshness are checked, and whose admin-role bindings must all name
+   subjects the attestation enumerates; optional
    `--image` arguments must equal the inventory exactly and exist only as a
    cross-check). The inventory additionally carries a strictly increasing
    integer `generation` and a typed collector
@@ -464,25 +475,44 @@ policies; only new admissions are.
   identity-path violations, prints the canonical PLAN-SHA256, and emits the
   UID/resourceVersion-fenced annotated recovery patch; `--execute` is not an
   environment flag — it requires the caller's AUTHENTICATED identity to be a
-  scope security principal, an OWNER-SIGNED single-use rollout authorization
+  scope security principal AND the authorization's NAMED `executor`
+  (rollout-authorization v3 binds execution and resume to ONE
+  owner-designated automation identity — never whichever security principal
+  shows up), an OWNER-SIGNED single-use rollout authorization
   EMBEDDING the byte-bound plan and pinning its hash and the cluster UID
   (consumed through a chained ledger), the attestor-signed provider
-  attestation (whose anchored-heads snapshot and cluster pin are enforced;
+  attestation (whose anchored-heads snapshot and cluster pin are enforced
+  UNDER the exclusive lock on every execute and resume;
   `--execute`/`--resume` refuse without it), zero identity-path violations,
   and it writes chained intent/complete journal records with a post-check
-  that the applied state equals the authorized intent. `--resume` completes
+  that the applied state equals the authorized intent. RECOVERY SEQUENCING
+  is fence-preserving by construction: when a recovery document is
+  presented, its target binding is owned EXCLUSIVELY by the
+  UID/resourceVersion-fenced patch — the patch comes FIRST in the plan, and
+  any repair `kubectl apply` for OTHER drifted objects uses a filtered
+  manifest that EXCLUDES the target binding, so the apply can never bump
+  the target's resourceVersion and wedge the fence. That makes the
+  authorized Audit/Warn -> Deny/Audit RESTORE completable: drift detection
+  skips exactly the recovery target (everything else must equal committed),
+  the fenced patch transitions it, and the post-check then requires the
+  authorized actions plus the authorizing annotation. `--resume` completes
   ONLY a post-consume crash and re-binds everything live under the lock:
   the re-presented signed authorization (its embedded plan digest must
-  equal the journaled intent's), the journaled caller (must be a scope
-  security principal), the original recovery document (required when the
-  plan carries a recovery action; its hash must equal the intent's and the
-  signed plan entry's annotation, and it must already be consumed), the
-  live cluster UID, and a fresh plan recomputation whose every outstanding
-  entry must be one the owner signed — new live drift never executes under
-  an old authorization. A plan entry counts as already satisfied only when
-  the live actions AND the recovery-authorization annotation match the
-  signed entry; a same-actions state from any other patch is unaccounted
-  drift and is re-patched under the pinned fences. The post-check accepts
+  equal the journaled intent's), the journaled caller (must equal the
+  authorization's named executor), the original recovery document (required
+  when the plan carries a recovery action; its hash must equal the intent's
+  and the signed plan entry's annotation, and it must already be consumed),
+  the live cluster UID, and a fresh plan recomputation — resume executes
+  the RECOMPUTED still-outstanding entries, each of which must be one the
+  owner signed; new live drift never executes under an old authorization,
+  and signed entries the live state already satisfies are never replayed.
+  A patch entry counts as already satisfied only when the live actions AND
+  the recovery-authorization annotation match the signed entry (a
+  same-actions state from any other patch is unaccounted drift and is
+  re-patched under the pinned fences), and an apply entry is satisfied by
+  policy equality itself. The full weaken -> restore -> crash -> resume
+  sequence is PROVEN against a stateful fake API server with real
+  resourceVersion-precondition semantics in the regression suite. The post-check accepts
   exactly ONE divergence from the committed policy: the recovery target
   carrying the authorized actions plus the authorizing annotation
   (everything else must equal the committed definitions) — so a sanctioned
@@ -544,21 +574,30 @@ policies; only new admissions are.
   at the authorized rollout window, while the PROVIDER-HELD arm
   (system:masters certificate issuance, apiserver/static admission, etcd)
   enters as the ATTESTOR-SIGNED provider attestation (`--attestation` +
-  `--attestation-key`, required by every render and by every
-  execute/resume): a cluster-pinned, time-bounded document verified ONLY
-  against the SEPARATE attestor key whose fingerprint the owner-signed
-  scope pins (`attestation_key_sha256`, REQUIRED to differ from the
-  release verification key — the pipeline can never attest its own
-  boundary), binding the exported provider IAM policy by SHA-256 plus a
-  tracking reference, and embedding the latest off-host anchored-heads
-  snapshot (every required chain enumerated; empty/omitted chains refuse)
-  and WORM store URI, which the renderer and the reconciler enforce
-  against the local chains with strict PREFIX continuity — nothing here is
-  a comment or a manual export, and nothing in this tree claims
-  source-applied prevention: key separation makes the attestation
-  non-self-attestable BY CONSTRUCTION in source, and the remaining step —
-  custody of the attestor private key outside the pipeline — is completed
-  by the owner at the rollout window. Identity hygiene is verified for BOTH
+  `--attestation-key` + `--provider-export`, required by every render and
+  by every execute/resume): a cluster-pinned, time-bounded document
+  verified ONLY against the SEPARATE attestor key whose fingerprint is
+  SOURCE-PINNED in reviewed code (`ATTESTATION_KEY_SHA256`; the owner-signed
+  scope must carry the SAME value and it must differ from the release
+  verification key — the pipeline can never attest its own boundary, and a
+  release-key holder can never rotate the attestor by re-signing the scope;
+  the constant SHIPS EMPTY, so every attestation path fails closed until
+  the owner designates the attestor through code review). The attestation
+  must bind the exported provider IAM policy — and `--provider-export`
+  supplies the ACTUAL export, whose exact bytes must hash to the pin, whose
+  cluster and freshness are checked, and whose SEMANTICS are enforced:
+  every admin/editor/owner-class provider binding must name a subject the
+  attestation explicitly enumerates (an unenumerated provider admin fails
+  closed; live provider-API cross-checking remains a rollout-window owner
+  action). Its worm_store must equal the owner scope's `worm_store_uri`,
+  and it embeds the latest off-host anchored-heads snapshot (every required
+  chain enumerated; empty/omitted chains refuse), which the renderer and
+  the reconciler enforce against the local chains with strict PREFIX
+  continuity — nothing here is a comment or a manual export, and nothing
+  in this tree claims source-applied prevention: key separation and source
+  pinning make the attestation non-self-attestable BY CONSTRUCTION, and
+  the remaining step — custody of the attestor private key outside the
+  pipeline — is completed by the owner at the rollout window. Identity hygiene is verified for BOTH
   automation identities (security and deploy): existence, automount
   disabled on the ServiceAccount AND explicitly on every pod running as
   it, no legacy token Secret, at least one REQUIRED pod-bound projection
@@ -569,10 +608,17 @@ policies; only new admissions are.
   pods — no Secret volumes and no env/envFrom Secret references. The same
   contract is enforced PREVENTIVELY in admission: the fs2-image-provenance
   policy denies automation-identity pods that automount, project a foreign
-  audience, or mount Secret material, and denies EVERY other pod that
-  projects the automation token-audience — so the deploy identity's
-  workload-create right cannot be pivoted into identity-token minting or
-  stored-credential exfiltration. The wholesale
+  audience, or mount Secret material, denies EVERY other pod that
+  projects the automation token-audience, and — writer-scoped — denies any
+  workload WRITTEN BY an automation identity that runs as a ServiceAccount
+  outside the owner-enumerated `workload_service_accounts`, uses hostPath
+  volumes, or requests privileged containers. So the deploy identity's
+  workload-create right cannot be pivoted into identity-token minting,
+  stored-credential exfiltration, arbitrary-ServiceAccount scheduling, host
+  filesystem access, or privileged execution; the security identity's RBAC
+  is equally narrow (admission-object writes name-scoped to the three
+  protected objects, ConfigMap writes namespaced and name-scoped to the two
+  parameter ConfigMaps, no secret/pod/serviceaccount reads). The wholesale
   kube-system ServiceAccount GROUP is not exemptible (controllers are
   exempted individually by name), Secret READS AND WRITES in protected
   namespaces are forbidden identity paths (exfiltration and legacy token

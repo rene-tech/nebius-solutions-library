@@ -67,7 +67,15 @@ metadata:
     security.fs2.nebius.ai/finding: sai-09
 automountServiceAccountToken: false
 ---
-# SECURITY identity: parameter-ConfigMap writes + reconciler reads/patches.
+# SECURITY identity: the MINIMUM its reconciler function needs, nothing
+# broad. Mutation is resourceName-scoped to the three protected admission
+# objects (update/patch cannot reach any other policy; `create` cannot be
+# name-scoped by Kubernetes RBAC, but creating the protected objects IS the
+# bootstrap function and creating anything else is caught by the render-time
+# audit and the live-equality check). NO secrets verbs, NO pod/serviceaccount
+# reads, NO cluster-wide ConfigMap authority: the reconciler never reads
+# stored credentials, and the function-scoped audit refuses a security
+# identity holding anything beyond admission-configuration writes.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -75,19 +83,22 @@ metadata:
   labels:
     security.fs2.nebius.ai/finding: sai-09
 rules:
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "create", "update", "patch"]
   - apiGroups: ["admissionregistration.k8s.io"]
     resources:
       - validatingadmissionpolicies
       - validatingadmissionpolicybindings
-    verbs: ["get", "list", "create", "update", "patch"]
-  # NO secrets verbs: the reconciler never reads stored credentials, and the
-  # function-scoped audit would refuse a security identity holding
-  # secret access (the allowance covers admission-configuration writes only).
+    verbs: ["get", "list", "create"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources:
+      - validatingadmissionpolicies
+      - validatingadmissionpolicybindings
+    resourceNames:
+      - fs2-image-provenance
+      - fs2-helm-release-governance
+      - fs2-provenance-guard
+    verbs: ["update", "patch"]
   - apiGroups: [""]
-    resources: ["namespaces", "pods", "serviceaccounts"]
+    resources: ["namespaces"]
     verbs: ["get", "list"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]
@@ -103,6 +114,44 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: fs2-security-boundary-operator
+subjects:
+  - kind: ServiceAccount
+    namespace: fs2-security
+    name: fs2-admission-guard
+---
+# SECURITY identity's ConfigMap authority: NAMESPACED to fs2-system and
+# name-scoped to exactly the two parameter ConfigMaps (create is
+# namespace-bounded; updates/patches are name-bounded; the guard VAP
+# additionally denies any other principal writing these two names).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-security-guard-params-writer
+  namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "create"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames:
+      - fs2-image-provenance-allowlist
+      - fs2-security-guard-params
+    verbs: ["update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-security-guard-params-writer
+  namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-security-guard-params-writer
 subjects:
   - kind: ServiceAccount
     namespace: fs2-security
@@ -124,10 +173,16 @@ subjects:
 # running as an automation identity disables token automount, projects only
 # the exact bounded token-audience, and mounts no Secret volumes or Secret
 # env values — and that NO other pod projects the automation token-audience.
-# The render-time hygiene audit re-verifies the same facts live. So the
-# workload-create grant below cannot be pivoted into minting an
-# apiserver-audience token for the release identity or exfiltrating stored
-# credentials through an identity pod.
+# ADDITIONALLY, any workload WRITTEN BY an automation identity may only run
+# as an OWNER-ENUMERATED ServiceAccount (scope.workload_service_accounts,
+# rendered into the allow-list) and may not use hostPath volumes or
+# privileged containers — so the grant below cannot schedule a pod under an
+# arbitrary ServiceAccount to harvest its tokens/Secrets, reach the host
+# filesystem, or gain privileged execution. The render-time hygiene audit
+# re-verifies the identity-pod facts live. So the workload-create grant
+# below cannot be pivoted into minting an apiserver-audience token for the
+# release identity or exfiltrating stored credentials through an identity
+# pod.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
