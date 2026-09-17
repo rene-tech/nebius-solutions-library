@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-provider-operation-settlement/v1",
+  "title": "Provider-authoritative settlement of an interrupted Terraform apply",
+  "type": "object",
+  "required": [
+    "schema", "observed_at", "provider_request_ids", "provider_response_sha256",
+    "project_id", "cluster_id", "aborted_freeze_transaction_id", "apply_id",
+    "started_at", "correlation", "accepted_operations", "active_operation_ids",
+    "completeness", "observation_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/provider-operation-settlement-observation/v1"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "provider_request_ids": {
+      "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 253}
+    },
+    "provider_response_sha256": {"$ref": "#/$defs/sha256"},
+    "project_id": {"type": "string", "pattern": "^project-[a-z0-9]+$"},
+    "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
+    "aborted_freeze_transaction_id": {"type": "string", "pattern": "^[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}$"},
+    "apply_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+    "started_at": {"type": "string", "format": "date-time"},
+    "correlation": {"const": "provider-audit-log-exact-user-agent-and-credential-epoch"},
+    "accepted_operations": {
+      "type": "array", "maxItems": 4096, "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["operation_id", "service", "target_resource_id", "accepted_at", "terminal_at", "terminal_status", "semantic_sha256"],
+        "properties": {
+          "operation_id": {"type": "string", "minLength": 1, "maxLength": 253},
+          "service": {"type": "string", "minLength": 1, "maxLength": 253},
+          "target_resource_id": {"type": "string", "minLength": 1, "maxLength": 512},
+          "accepted_at": {"type": "string", "format": "date-time"},
+          "terminal_at": {"type": ["string", "null"], "format": "date-time"},
+          "terminal_status": {"enum": ["ACTIVE", "SUCCEEDED", "FAILED", "CANCELLED"]},
+          "semantic_sha256": {"$ref": "#/$defs/sha256"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "active_operation_ids": {
+      "type": "array", "maxItems": 4096, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 253}
+    },
+    "completeness": {
+      "type": "object",
+      "required": ["all_accepted_operations_enumerated", "all_credential_epochs_included", "all_services_included", "audit_log_closed_through"],
+      "properties": {
+        "all_accepted_operations_enumerated": {"const": true},
+        "all_credential_epochs_included": {"const": true},
+        "all_services_included": {"const": true},
+        "audit_log_closed_through": {"type": "string", "format": "date-time"}
+      },
+      "additionalProperties": false
+    },
+    "observation_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

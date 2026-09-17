@@ -18,3 +18,12 @@ provider custody v7 document, and be installed root-owned and non-writable.
 digest, rejects scripts and ELF `PT_INTERP`, copies the exact bytes to a sealed
 memfd, and executes with a minimal environment. CA, client certificate, and
 client key bytes are likewise inherited only through sealed memfds.
+
+The binary supports the normal nonce-bound authority `snapshot` and a separate
+read-only `settlement` request used after a fenced apply. Settlement asks the
+provider authority API to enumerate every operation accepted under the aborted
+apply's unique Terraform user-agent and credential epoch, including an empty
+set, and to report active/terminal state plus an audit-log high-water mark.
+`inference-stack` requires two stable observations with no active operation IDs
+before it refreshes local Terraform state. The command never cancels or mutates
+a provider operation.

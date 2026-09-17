@@ -1812,13 +1812,26 @@ class InferenceStackTests(unittest.TestCase):
     def test_network_custody_tool_and_process_fences_are_structural(self) -> None:
         source = STACK_PATH.read_text(encoding="utf-8")
         self.assertNotIn('os.environ.get("FS2_OPENSSL"', source)
+        self.assertNotIn('Path("/usr/bin/openssl")', source)
+        self.assertIn(
+            'Path("/opt/fs2/bin/fs2-custody-verifier")', source
+        )
         self.assertIn("expected_sha256=signature_verifier_sha256", source)
         self.assertIn("_stable_root_file_bytes(", source)
         self.assertIn("_sealed_memfd(", source)
         self.assertIn("_require_static_elf(exporter_bytes", source)
+        self.assertIn(
+            '_require_static_elf(executable, label="pinned static custody verifier")',
+            source,
+        )
         self.assertIn("start_new_session=True", source)
         self.assertIn("os.killpg(process_group_id, signal.SIGSTOP)", source)
         self.assertIn("os.killpg(process_group_id, signal.SIGKILL)", source)
+        self.assertNotIn("os.killpg(process_group_id, signal.SIGCONT)", source)
+        self.assertNotIn("os.killpg(process_group_id, signal.SIGTERM)", source)
+        self.assertIn("reconcile-indeterminate", source)
+        self.assertIn("provider operation-settlement exporter", source)
+        self.assertIn("target_postconditions_satisfied", source)
         apply_source = source[source.index("def apply_stack(") : source.index("def plan_stack(")]
         self.assertLess(
             apply_source.index("preflight_attestation = provider_custody_preflight"),
@@ -1827,6 +1840,34 @@ class InferenceStackTests(unittest.TestCase):
         self.assertLess(
             apply_source.index("model_network_boundary_credential("),
             apply_source.index("plan_stage("),
+        )
+
+    def test_provider_credential_epoch_digest_is_reusable_outside_verifier_scope(
+        self,
+    ) -> None:
+        credentials = {
+            name: {"credential_epoch": character * 64}
+            for name, character in zip(
+                (
+                    "authorizer",
+                    "transition",
+                    "maintenance",
+                    "auditor",
+                    "custodian",
+                    "recovery",
+                ),
+                "123456",
+                strict=True,
+            )
+        }
+        expected = STACK._json_sha256(
+            {"credential_epochs": sorted(value["credential_epoch"] for value in credentials.values())}
+        )
+        self.assertEqual(
+            STACK._provider_credential_epochs_sha256(
+                {"credentials": credentials}
+            ),
+            expected,
         )
 
     def test_apply_converges_stages_then_records_root_configuration(self) -> None:

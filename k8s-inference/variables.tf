@@ -831,7 +831,7 @@ variable "deployment" {
       var.deployment.models.network_policy.signature_verifier_sha256 == "" ||
       can(regex("^[a-f0-9]{64}$", var.deployment.models.network_policy.signature_verifier_sha256))
     )
-    error_message = "deployment.models.network_policy.signature_verifier_sha256 must be empty for offline source checks or the exact SHA-256 of /usr/bin/openssl."
+    error_message = "deployment.models.network_policy.signature_verifier_sha256 must be empty for offline source checks or the exact SHA-256 of the root-custodied static /opt/fs2/bin/fs2-custody-verifier artifact."
   }
 
   validation {

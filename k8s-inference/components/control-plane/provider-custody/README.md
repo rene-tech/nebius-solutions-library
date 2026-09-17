@@ -90,10 +90,14 @@ inherited PATH, loader, Python, proxy, or credential environment, and supplies
 only single-read, root-custodied kubeconfig bytes through sealed memfds. Signed
 attestations, signatures, trust roots, and phase credentials are verified and
 parsed from the same captured bytes; pathname reopens are not authoritative.
-The root deployment contract separately pins the exact SHA-256 of the fixed
-`/usr/bin/openssl` signature and X.509 verifier before either signed document is
-trusted; that verifier is also executed from a sealed copy in the same minimal
-environment and repeated in the signed authority receipt.
+The root deployment contract separately pins the exact SHA-256 of the static
+`/opt/fs2/bin/fs2-custody-verifier` artifact before either signed document is
+trusted. Its reviewed Go source is in `native-verifier/`. The launcher requires
+a native ELF with no `PT_INTERP`, executes a sealed copy in a new minimal
+environment, and repeats its digest in the signed authority receipt. The tool
+uses the statically linked Go crypto/X.509 implementation and has no OpenSSL
+configuration, provider-module, engine, shared-library, shell, or interpreter
+dependency.
 
 The same provider-native snapshot binds every gateway's exact instance and
 measurement resource/version, immutable release, entrypoint, systemd unit/
@@ -134,11 +138,19 @@ every member challenge. During apply it repeats the full custody verifier every
 five seconds, accepts only a later expiry for the same stable transaction and
 policy, terminates the apply before the remaining window falls below 90
 seconds, and repeats custody after a successful apply. Terraform runs in a new
-process group; on custody failure the complete group is stopped, terminated,
-waited, and followed by a live custody reconciliation before the wrapper
-returns. A two-hour assertion is
-therefore only a maximum renewal envelope, not permission for an unbounded
-unwatched apply.
+process group. On custody failure the whole credential-bearing group is
+`SIGSTOP` fenced and then `SIGKILL`ed while still stopped; it is never resumed
+for graceful termination. The wrapper writes an append-only indeterminate
+marker and refuses every later mutation. The separate
+`reconcile-indeterminate` command requires a fresh signed recovery credential
+and custody transaction, asks the static provider exporter for the complete
+operation set correlated by the prior apply ID, credential epoch and Terraform
+user-agent, waits for two stable terminal observations, applies only a
+refresh-only state plan, and compares refreshed state with the exact original
+saved-plan postconditions. Only then does it add an immutable resolution
+receipt; it never removes or rewrites the failure marker. A two-hour assertion
+is therefore only a maximum renewal envelope, not permission for an unbounded
+unwatched apply or ambiguous continuation.
 
 Provider rollout requirements, intentionally not executed by this source-only
 task:

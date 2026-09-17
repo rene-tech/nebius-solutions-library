@@ -517,8 +517,8 @@ Lease renewal, custody verification after earlier mutations, and Terraform
 children surviving a watchdog abort. This successor addresses those defects by
 single-reading root-custodied documents and tools with descriptor-relative
 `O_NOFOLLOW`; verifying signatures and X.509 data from sealed bytes using a
-fixed `/usr/bin/openssl` whose exact SHA-256 is pinned by the root deployment
-contract, copied to sealed executable bytes, and run in a fresh environment; requiring a
+root-custodied static native verifier whose exact SHA-256 is pinned by the root
+deployment contract, copied to sealed executable bytes, and run in a fresh environment; requiring a
 provenance-bound static-ELF provider exporter with no `PT_INTERP`; binding the
 exact kubectl/Nebius hashes, profile, home and context into provider custody v7;
 guarding authority-control as well as identity-mint roles; binding every phase
@@ -528,6 +528,24 @@ provider custody before the first infrastructure, registry, foundation, or
 workloads mutation; and running Terraform in a separately fenced/reaped process
 group with a post-abort live reconciliation. These are unexecuted source
 corrections, not acceptance evidence or a GO claim.
+
+Exact successor `0a9b5a725e070a49fdddbf9211a12a407ba3993c` / tree
+`1394f10dca48080d927101f1dd39571af1104d16` received independent
+**SOURCE/INTEGRATION/LIVE NO-GO**. It left the credential-epoch digest scoped
+outside its receipt verifier, still depended on the ambient dynamic loader and
+OpenSSL library/provider graph, and resumed stopped Terraform/provider children
+for graceful termination without settling provider-accepted remote operations.
+The additive successor computes the epoch digest through one reusable validated
+helper; replaces OpenSSL with the reviewed `native-verifier/` source and a
+root-custodied `static-elf-no-interpreter` artifact; and changes abort handling
+to stop-then-kill without resume. An append-only indeterminate marker blocks
+all later mutation. Recovery requires a new signed custody epoch and distinct
+recovery identity, two stable provider-authoritative terminal-operation
+observations, a refresh-only Terraform state reconciliation, and exact equality
+between refreshed state and the aborted saved plan before an append-only
+resolution receipt is accepted. No source test, build, Terraform, Helm, provider,
+cluster, database, registry, or live action was run for this correction, and it
+does not claim GO or satisfy the separate SAI-07/KEDA integration dependency.
 
 Run from `k8s-inference` unless a command changes directory:
 
