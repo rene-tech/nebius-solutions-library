@@ -335,7 +335,7 @@ def load_capsule_contract() -> None:
         or authentication["caller_real_gid"] != os.getgid()
         or authentication["caller_effective_gid"] != os.getegid()
         or authentication["peer_observed_caller_uid"] != os.getuid()
-        or authentication["peer_observed_caller_gid"] != os.getegid()
+        or authentication["peer_observed_caller_gid"] != os.getgid()
         or not isinstance(authentication["operator_identity"], str)
         or re.fullmatch(r"[a-z][a-z0-9._-]{2,127}", authentication["operator_identity"])
         is None
@@ -638,7 +638,7 @@ def refresh_brokered_auth() -> None:
             or payload["caller_real_gid"] != os.getgid()
             or payload["caller_effective_gid"] != os.getegid()
             or payload["peer_observed_caller_uid"] != os.getuid()
-            or payload["peer_observed_caller_gid"] != os.getegid()
+            or payload["peer_observed_caller_gid"] != os.getgid()
             or payload["operator_identity"] != CAPSULE_NEBIUS_AUTH["operator_identity"]
             or payload["subject_id"] != CAPSULE_NEBIUS_AUTH["subject_id"]
             or payload["project_id"] != CAPSULE_NEBIUS_AUTH["project_id"]
@@ -4404,7 +4404,8 @@ def _brokered_debug_kubeconfig(
         broker["socket_path"] != str(DEBUG_CREDENTIAL_BROKER_SOCKET)
         or broker["executable_path"] != str(DEBUG_CREDENTIAL_BROKER_EXECUTABLE)
         or broker["config_path"] != str(DEBUG_CREDENTIAL_BROKER_CONFIG)
-        or broker["peer_credential_mode"] != "SO_PEERCRED+capsule-effective-gid"
+        or broker["peer_credential_mode"]
+        != "SO_PEERCRED-real-gid+signed-setgid-effective-gid/v2"
         or broker["modes"] != ["debug", "ordinary"]
         or broker["listener_modes"] != ["debug-read-only", "ordinary-authenticated"]
         or broker["isolation_mode"]
@@ -4442,10 +4443,11 @@ def _brokered_debug_kubeconfig(
     nonce = os.getrandom(32).hex()
     request = {
         "activation": activation_envelope,
-        "caller_gid": os.getegid(),
+        "caller_effective_gid": os.getegid(),
+        "caller_real_gid": os.getgid(),
         "caller_uid": os.getuid(),
         "nonce": nonce,
-        "schema": "fs2-serve.nebius.ai/debug-kubeconfig-request/v1",
+        "schema": "fs2-serve.nebius.ai/debug-kubeconfig-request/v2",
     }
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     descriptor = -1
@@ -4494,7 +4496,8 @@ def _brokered_debug_kubeconfig(
         "broker_executable_sha256",
         "broker_id",
         "broker_runtime_review_sha256",
-        "caller_gid",
+        "caller_effective_gid",
+        "caller_real_gid",
         "caller_uid",
         "cluster_id",
         "cluster_name",
@@ -4502,6 +4505,8 @@ def _brokered_debug_kubeconfig(
         "key_id",
         "kubeconfig_sha256",
         "nonce",
+        "peer_observed_caller_gid",
+        "peer_observed_caller_uid",
         "schema",
         "socket_path",
     }
@@ -4511,13 +4516,16 @@ def _brokered_debug_kubeconfig(
         or response["payload_sha256"]
         != hashlib.sha256(_canonical_bytes(payload)).hexdigest()
         or payload["schema"]
-        != "fs2-serve.nebius.ai/debug-kubeconfig-broker-response/v1"
+        != "fs2-serve.nebius.ai/debug-kubeconfig-broker-response/v2"
         or payload["activation_payload_sha256"]
         != hashlib.sha256(_canonical_bytes(activation)).hexdigest()
         or payload["broker_id"] != broker["id"]
         or payload["key_id"] != broker["key_id"]
         or payload["caller_uid"] != os.getuid()
-        or payload["caller_gid"] != os.getegid()
+        or payload["caller_real_gid"] != os.getgid()
+        or payload["caller_effective_gid"] != os.getegid()
+        or payload["peer_observed_caller_uid"] != os.getuid()
+        or payload["peer_observed_caller_gid"] != os.getgid()
         or payload["cluster_id"] != activation["cluster_id"]
         or payload["cluster_name"] != activation["cluster_name"]
         or payload["expires_at"] != activation["expires_at"]
@@ -4638,7 +4646,8 @@ def _brokered_ordinary_kubeconfig(
         broker["socket_path"] != str(DEBUG_CREDENTIAL_BROKER_SOCKET)
         or broker["executable_path"] != str(DEBUG_CREDENTIAL_BROKER_EXECUTABLE)
         or broker["config_path"] != str(DEBUG_CREDENTIAL_BROKER_CONFIG)
-        or broker["peer_credential_mode"] != "SO_PEERCRED+capsule-effective-gid"
+        or broker["peer_credential_mode"]
+        != "SO_PEERCRED-real-gid+signed-setgid-effective-gid/v2"
         or broker["peer_uid"] != 0
         or not isinstance(broker["peer_gid"], int)
         or any(
@@ -4655,14 +4664,15 @@ def _brokered_ordinary_kubeconfig(
         raise DeploymentError("ordinary proxy broker enrollment is malformed")
     nonce = os.getrandom(32).hex()
     request = {
-        "caller_gid": os.getegid(),
+        "caller_effective_gid": os.getegid(),
+        "caller_real_gid": os.getgid(),
         "caller_uid": os.getuid(),
         "cluster_id": cluster_id,
         "cluster_name": cluster_name,
         "deployment_contract_sha256": deployment_contract_sha256,
         "mode": "ordinary",
         "nonce": nonce,
-        "schema": "fs2-serve.nebius.ai/proxy-kubeconfig-request/v1",
+        "schema": "fs2-serve.nebius.ai/proxy-kubeconfig-request/v2",
     }
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     descriptor = -1
@@ -4710,7 +4720,8 @@ def _brokered_ordinary_kubeconfig(
         "broker_executable_sha256",
         "broker_id",
         "broker_runtime_review_sha256",
-        "caller_gid",
+        "caller_effective_gid",
+        "caller_real_gid",
         "caller_uid",
         "cluster_id",
         "cluster_name",
@@ -4721,6 +4732,8 @@ def _brokered_ordinary_kubeconfig(
         "kubeconfig_sha256",
         "mode",
         "nonce",
+        "peer_observed_caller_gid",
+        "peer_observed_caller_uid",
         "schema",
         "socket_path",
     }
@@ -4730,11 +4743,14 @@ def _brokered_ordinary_kubeconfig(
         or response["payload_sha256"]
         != hashlib.sha256(_canonical_bytes(payload)).hexdigest()
         or payload["schema"]
-        != "fs2-serve.nebius.ai/proxy-kubeconfig-broker-response/v1"
+        != "fs2-serve.nebius.ai/proxy-kubeconfig-broker-response/v2"
         or payload["broker_id"] != broker["id"]
         or payload["key_id"] != broker["key_id"]
         or payload["caller_uid"] != os.getuid()
-        or payload["caller_gid"] != os.getegid()
+        or payload["caller_real_gid"] != os.getgid()
+        or payload["caller_effective_gid"] != os.getegid()
+        or payload["peer_observed_caller_uid"] != os.getuid()
+        or payload["peer_observed_caller_gid"] != os.getgid()
         or payload["cluster_id"] != cluster_id
         or payload["cluster_name"] != cluster_name
         or payload["deployment_contract_sha256"] != deployment_contract_sha256
@@ -5134,7 +5150,7 @@ def _accepted_internal_debug_broker(
         and record.get("network_namespace_owner_uid") == 0
         and record.get("peer_uid") == 0
         and record.get("peer_credential_mode")
-        == "SO_PEERCRED+capsule-effective-gid"
+        == "SO_PEERCRED-real-gid+signed-setgid-effective-gid/v2"
         and record.get("socket_path") == str(DEBUG_CREDENTIAL_BROKER_SOCKET)
         and record.get("executable_path")
         == str(DEBUG_CREDENTIAL_BROKER_EXECUTABLE)
@@ -5220,7 +5236,8 @@ def _require_debug_disable_receipts(
             "app_id",
             "backend_ack",
             "broker_id",
-            "caller_gid",
+            "caller_effective_gid",
+            "caller_real_gid",
             "caller_uid",
             "cluster_id",
             "cluster_name",
@@ -5228,6 +5245,8 @@ def _require_debug_disable_receipts(
             "key_id",
             "model_id",
             "nonce",
+            "peer_observed_caller_gid",
+            "peer_observed_caller_uid",
             "revocation_payload_sha256",
             "revoked_at",
             "schema",
@@ -5239,11 +5258,14 @@ def _require_debug_disable_receipts(
             or entry.name != f"{payload_sha256}.json"
             or envelope["payload_sha256"] != payload_sha256
             or payload.get("schema")
-            != "fs2-serve.nebius.ai/internal-debug-disable-response/v1"
+            != "fs2-serve.nebius.ai/internal-debug-disable-response/v2"
             or payload.get("broker_id") != broker["id"]
             or payload.get("key_id") != broker["key_id"]
             or payload.get("caller_uid") != os.getuid()
-            or payload.get("caller_gid") != os.getegid()
+            or payload.get("caller_real_gid") != os.getgid()
+            or payload.get("caller_effective_gid") != os.getegid()
+            or payload.get("peer_observed_caller_uid") != os.getuid()
+            or payload.get("peer_observed_caller_gid") != os.getgid()
             or payload.get("cluster_id") != activation["cluster_id"]
             or payload.get("cluster_name") != activation["cluster_name"]
             or payload.get("tenant_id") != activation["tenant_id"]
@@ -5354,13 +5376,14 @@ def disable_debug_activation(
     request = {
         "activation": activation_envelope,
         "activation_revocation": revocation_envelope,
-        "caller_gid": os.getegid(),
+        "caller_effective_gid": os.getegid(),
+        "caller_real_gid": os.getgid(),
         "caller_uid": os.getuid(),
         "cluster_id": cluster_id,
         "cluster_name": cluster_name,
         "deployment_contract_sha256": deployment_sha256,
         "nonce": nonce,
-        "schema": "fs2-serve.nebius.ai/internal-debug-disable-request/v1",
+        "schema": "fs2-serve.nebius.ai/internal-debug-disable-request/v2",
     }
     try:
         revocation_fresh_until = datetime.fromisoformat(
@@ -5418,7 +5441,8 @@ def disable_debug_activation(
         "app_id",
         "backend_ack",
         "broker_id",
-        "caller_gid",
+        "caller_effective_gid",
+        "caller_real_gid",
         "caller_uid",
         "cluster_id",
         "cluster_name",
@@ -5426,6 +5450,8 @@ def disable_debug_activation(
         "key_id",
         "model_id",
         "nonce",
+        "peer_observed_caller_gid",
+        "peer_observed_caller_uid",
         "revocation_payload_sha256",
         "revoked_at",
         "schema",
@@ -5440,14 +5466,17 @@ def disable_debug_activation(
         or response["payload_sha256"]
         != hashlib.sha256(_canonical_bytes(payload)).hexdigest()
         or payload["schema"]
-        != "fs2-serve.nebius.ai/internal-debug-disable-response/v1"
+        != "fs2-serve.nebius.ai/internal-debug-disable-response/v2"
         or payload["activation_payload_sha256"] != activation_sha256
         or payload["revocation_payload_sha256"]
         != hashlib.sha256(_canonical_bytes(revocation)).hexdigest()
         or payload["broker_id"] != broker["id"]
         or payload["key_id"] != broker["key_id"]
         or payload["caller_uid"] != os.getuid()
-        or payload["caller_gid"] != os.getegid()
+        or payload["caller_real_gid"] != os.getgid()
+        or payload["caller_effective_gid"] != os.getegid()
+        or payload["peer_observed_caller_uid"] != os.getuid()
+        or payload["peer_observed_caller_gid"] != os.getgid()
         or payload["cluster_id"] != cluster_id
         or payload["cluster_name"] != cluster_name
         or payload["deployment_contract_sha256"] != deployment_sha256
@@ -5938,7 +5967,7 @@ def _request_mutation_ledger_event(
         or payload["ledger_peer_uid"] != ledger["peer_uid"]
         or payload["ledger_peer_gid"] != ledger["peer_gid"]
         or payload["peer_observed_caller_uid"] != request["caller_uid"]
-        or payload["peer_observed_caller_gid"] != request["caller_effective_gid"]
+        or payload["peer_observed_caller_gid"] != request["caller_real_gid"]
         or peer_uid != ledger["peer_uid"]
         or peer_gid != ledger["peer_gid"]
         or peer_pid <= 0
@@ -7921,7 +7950,8 @@ def brokered_proxy_session(
         broker["socket_path"] != str(DEBUG_CREDENTIAL_BROKER_SOCKET)
         or broker["executable_path"] != str(DEBUG_CREDENTIAL_BROKER_EXECUTABLE)
         or broker["config_path"] != str(DEBUG_CREDENTIAL_BROKER_CONFIG)
-        or broker["peer_credential_mode"] != "SO_PEERCRED+capsule-effective-gid"
+        or broker["peer_credential_mode"]
+        != "SO_PEERCRED-real-gid+signed-setgid-effective-gid/v2"
         or broker["peer_uid"] != 0
         or not isinstance(broker["peer_gid"], int)
         or any(
@@ -7943,7 +7973,8 @@ def brokered_proxy_session(
     mode = "debug-read-only" if debug_scope else "ordinary-authenticated"
     request = {
         "activation": activation_envelope,
-        "caller_gid": os.getegid(),
+        "caller_effective_gid": os.getegid(),
+        "caller_real_gid": os.getgid(),
         "caller_uid": os.getuid(),
         "cluster_id": cluster_id,
         "cluster_name": cluster_name,
@@ -7961,7 +7992,7 @@ def brokered_proxy_session(
         "mode": mode,
         "nonce": nonce,
         "operator_proxy_port": operator_port,
-        "schema": "fs2-serve.nebius.ai/internal-proxy-session-request/v1",
+        "schema": "fs2-serve.nebius.ai/internal-proxy-session-request/v2",
     }
     handshake_budget = 30.0
     if activation is not None:
@@ -8015,7 +8046,8 @@ def brokered_proxy_session(
             "broker_executable_sha256",
             "broker_id",
             "broker_runtime_review_sha256",
-            "caller_gid",
+            "caller_effective_gid",
+            "caller_real_gid",
             "caller_uid",
             "client_interface",
             "client_operation",
@@ -8029,6 +8061,8 @@ def brokered_proxy_session(
             "mode",
             "namespace_policy_sha256",
             "nonce",
+            "peer_observed_caller_gid",
+            "peer_observed_caller_uid",
             "raw_transport",
             "schema",
             "scope",
@@ -8076,12 +8110,15 @@ def brokered_proxy_session(
             or response["payload_sha256"]
             != hashlib.sha256(_canonical_bytes(payload)).hexdigest()
             or payload["schema"]
-            != "fs2-serve.nebius.ai/internal-proxy-session-response/v1"
+            != "fs2-serve.nebius.ai/internal-proxy-session-response/v2"
             or payload["activation_payload_sha256"] != activation_sha256
             or payload["broker_id"] != broker["id"]
             or payload["key_id"] != broker["key_id"]
             or payload["caller_uid"] != os.getuid()
-            or payload["caller_gid"] != os.getegid()
+            or payload["caller_real_gid"] != os.getgid()
+            or payload["caller_effective_gid"] != os.getegid()
+            or payload["peer_observed_caller_uid"] != os.getuid()
+            or payload["peer_observed_caller_gid"] != os.getgid()
             or payload["client_interface"] != request["client_interface"]
             or payload["client_operation"] != cli_operation
             or payload["cluster_id"] != cluster_id

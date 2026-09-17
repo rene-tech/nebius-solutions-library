@@ -53,7 +53,9 @@ def _enable_debug_trust(runtime) -> None:
                     "modes": ["debug", "ordinary"],
                     "namespace_policy_sha256": "3" * 64,
                     "network_namespace_owner_uid": 0,
-                    "peer_credential_mode": "SO_PEERCRED+capsule-effective-gid",
+                    "peer_credential_mode": (
+                        "SO_PEERCRED-real-gid+signed-setgid-effective-gid/v2"
+                    ),
                     "peer_gid": 1234,
                     "peer_uid": 0,
                     "public_key": _urlsafe(DEBUG_PUBLIC_KEY),

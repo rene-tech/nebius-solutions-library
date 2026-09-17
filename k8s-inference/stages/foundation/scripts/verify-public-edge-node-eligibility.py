@@ -2262,7 +2262,7 @@ def require_verified_source(expected: object) -> str:
         or authentication.get("caller_real_gid") != os.getgid()
         or authentication.get("caller_effective_gid") != os.getegid()
         or authentication.get("peer_observed_caller_uid") != os.getuid()
-        or authentication.get("peer_observed_caller_gid") != os.getegid()
+        or authentication.get("peer_observed_caller_gid") != os.getgid()
         or not isinstance(authentication.get("operator_identity"), str)
         or re.fullmatch(
             r"[a-z][a-z0-9._-]{2,127}", authentication["operator_identity"]

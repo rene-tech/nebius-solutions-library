@@ -84,6 +84,15 @@ def test_operator_auth_and_secrets_are_brokered_not_ambient() -> None:
     assert '"caller_real_gid"' in bootstrap
     assert '"caller_effective_gid"' in bootstrap
     assert '"peer_observed_caller_gid"' in bootstrap
+    assert 'payload["peer_observed_caller_gid"] != os.getgid()' in bootstrap
+    assert 'payload["peer_observed_caller_gid"] != os.getegid()' not in bootstrap
+    assert 'payload["peer_observed_caller_gid"] != request["caller_real_gid"]' in stack
+    assert 'payload["peer_observed_caller_gid"] != request["caller_effective_gid"]' not in stack
+    assert '"caller_gid"' not in stack
+    assert '"caller_real_gid"' in stack
+    assert '"caller_effective_gid"' in stack
+    assert '"peer_observed_caller_gid"' in stack
+    assert "SO_PEERCRED-real-gid+signed-setgid-effective-gid/v2" in stack
     assert '"operator_identity"' in bootstrap
     assert 'profile_record["operators"]' in bootstrap
     assert 'profile_record["subject_id"]' in bootstrap

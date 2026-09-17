@@ -302,6 +302,17 @@ custom store therefore cannot bypass a later taxonomy improvement. The
 separate accepted SAI-02 integration continues to own the exact 90-day record
 retention and purge.
 
+Every local root-broker protocol binds two different group identities instead
+of conflating them: Linux `SO_PEERCRED` must report the caller's real GID, while
+the accepted setgid capsule's effective GID is carried as a separate signed
+field. Auth refresh, mutation-ledger, debug activation/disable, kubeconfig, and
+proxy-session responses echo both facts and the kernel-observed UID/real GID.
+An envelope that claims the effective setgid group as the observed peer group
+is rejected. The v2 proxy/broker schemas and their enrolled
+`SO_PEERCRED-real-gid+signed-setgid-effective-gid/v2` mode are an explicit
+integration boundary; the empty production broker registry remains fail
+closed until an independently reviewed broker implements the same contract.
+
 For cloud-authorized commands, the brokered token descriptor is not part of
 the global child FD set. Only a child whose environment carries the exact
 current signed delegated-auth envelope receives that one descriptor; local

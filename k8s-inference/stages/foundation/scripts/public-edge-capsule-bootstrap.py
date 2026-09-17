@@ -817,7 +817,10 @@ def validate_brokered_auth(
         or payload["caller_real_gid"] != os.getgid()
         or payload["caller_effective_gid"] != os.getegid()
         or payload["peer_observed_caller_uid"] != os.getuid()
-        or payload["peer_observed_caller_gid"] != os.getegid()
+        # Linux SO_PEERCRED reports the peer's real credentials.  The accepted
+        # setgid capsule identity is a separate, signed effective-GID fact and
+        # must never be relabelled as the kernel-observed peer GID.
+        or payload["peer_observed_caller_gid"] != os.getgid()
         or not isinstance(payload["operator_identity"], str)
         or re.fullmatch(r"[a-z][a-z0-9._-]{2,127}", payload["operator_identity"])
         is None

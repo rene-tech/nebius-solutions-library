@@ -1005,6 +1005,8 @@ class RequestDebugAuthorization:
                 != "private-network-namespace+broker-owned-proxy"
                 or raw.get("network_namespace_owner_uid") != 0
                 or raw.get("peer_uid") != 0
+                or raw.get("peer_credential_mode")
+                != "SO_PEERCRED-real-gid+signed-setgid-effective-gid/v2"
                 or not isinstance(raw.get("cluster_ids"), list)
                 or raw["cluster_ids"] != sorted(set(raw["cluster_ids"]))
                 or any(
