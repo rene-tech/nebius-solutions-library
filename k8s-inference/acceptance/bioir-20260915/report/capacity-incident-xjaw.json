@@ -1,0 +1,814 @@
+{
+  "schema": "fs2-bioir-capacity-incident/v1",
+  "generated_at": "2026-09-15 23:04:40 UTC",
+  "observation_window_utc": "2026-09-15 23:02:40–23:04 UTC",
+  "scope": "Read-only bounded incident and existing-capacity check; no tests, new node use, node mutations or forensic expansion.",
+  "parent_requested_final_recheck": {"observed_at":"2026-09-15 23:05:12 UTC","node":{"name":"computeinstance-e00y0jttwekyghrznp","conditions":[{"lastHeartbeatTime":"2026-09-15T23:03:02Z","lastTransitionTime":"2026-09-09T18:27:07Z","message":"kubelet is posting ready status","reason":"KubeletReady","status":"True","type":"Ready"}],"gpu":"1"},"pod_query":{"gpu_pods":[],"pod_count":11},"gpu_stdout":"NVIDIA H100 80GB HBM3, GPU-9885f9c6-110a-10b5-2c26-c256e895d575, 580.173.02, 0 MiB, 0 %\n","processes_stdout":"","all_exit_codes":[0,0,0,0]},
+  "classification": {
+    "provider_initial_state": "RUNNING",
+    "provider_latest_state": "STOPPED",
+    "instance_deleted": false,
+    "initiating_cause": "unresolved",
+    "preemption_proven": false,
+    "cuda_criu_driver_runtime_fault_proven": false
+  },
+  "provider": {
+    "initial_get": {
+      "observation": "2026-09-15 23:02:40 UTC command group",
+      "resource_version": "16",
+      "state": "RUNNING",
+      "preemptible": {
+        "on_preemption": "STOP",
+        "priority": 5
+      }
+    },
+    "latest_get": {
+      "observation": "2026-09-15 23:03:53 UTC command group",
+      "response": {
+        "metadata": {
+          "id": "computeinstance-e00xjaw5jqexvvnpat",
+          "parent_id": "project-e00rene",
+          "name": "mk8snodegroup-e00n67290jzpdmffbv-2klx8-8h92r",
+          "resource_version": "17",
+          "created_at": "2026-09-15T20:40:11.299760Z"
+        },
+        "spec": {
+          "resources": {
+            "platform": "gpu-h100-sxm",
+            "preset": "1gpu-16vcpu-200gb"
+          },
+          "stopped": true,
+          "preemptible": {
+            "on_preemption": "STOP",
+            "priority": 5
+          },
+          "recovery_policy": "FAIL"
+        },
+        "status": {
+          "state": "STOPPED"
+        }
+      }
+    },
+    "operations": [
+      {
+        "id": "computeoperation-e00zxzfvgs9t1x2p7f",
+        "description": "Stop Instance",
+        "created_at": "2026-09-15T23:03:14.383016Z",
+        "resource_id": "computeinstance-e00xjaw5jqexvvnpat",
+        "progress_tracker": {
+          "description": "Stop Instance",
+          "started_at": "2026-09-15T23:03:14.383016Z"
+        }
+      },
+      {
+        "id": "computeoperation-e00wevdz3vrgyh11jf",
+        "description": "Update Instance",
+        "created_at": "2026-09-15T22:58:28.980519Z",
+        "finished_at": "2026-09-15T22:58:48.319298Z",
+        "resource_id": "computeinstance-e00xjaw5jqexvvnpat",
+        "status": {},
+        "progress_tracker": {
+          "description": "Updating attached disks",
+          "started_at": "2026-09-15T22:58:28.980519Z",
+          "finished_at": "2026-09-15T22:58:48.319298Z"
+        }
+      },
+      {
+        "id": "computeoperation-e00j1296wtrxzpyhg4",
+        "description": "Update Instance",
+        "created_at": "2026-09-15T22:58:09.708986Z",
+        "finished_at": "2026-09-15T22:58:27.018676Z",
+        "resource_id": "computeinstance-e00xjaw5jqexvvnpat",
+        "status": {},
+        "progress_tracker": {
+          "description": "Updating attached disks",
+          "started_at": "2026-09-15T22:58:09.708986Z",
+          "finished_at": "2026-09-15T22:58:27.018676Z"
+        }
+      }
+    ],
+    "stop_operation_finished_at": null,
+    "stop_start_after_node_unknown_seconds": 160.383016,
+    "operation_note": "Stop operation was in progress when listed; later resource get confirmed STOPPED. No actor or preemption reason returned. Only relevant operations from latest100 entries retained.",
+    "commands": [
+      "/usr/local/bin/nebius --profile sandbox --no-browser --timeout 20s --retries 1 compute instance get --id computeinstance-e00xjaw5jqexvvnpat --format json",
+      "/usr/local/bin/nebius --profile sandbox --no-browser --timeout 20s --retries 1 compute instance list-operations-by-parent --parent-id project-e00rene --page-size 100 --format json"
+    ]
+  },
+  "kubernetes": {
+    "node_observed": 1789513296.4755673,
+    "node": {
+      "metadata": {
+        "name": "computeinstance-e00xjaw5jqexvvnpat",
+        "uid": "54fff439-0b80-434e-a60f-7edee7051c44"
+      },
+      "conditions": [
+        {
+          "lastHeartbeatTime": "2026-09-15T22:57:32Z",
+          "lastTransitionTime": "2026-09-15T21:07:17Z",
+          "message": "No disk I/O error detected for vda disk",
+          "reason": "NoBootDiskIOError",
+          "status": "False",
+          "type": "NebiusBootDiskIOError"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:57:32Z",
+          "lastTransitionTime": "2026-09-15T21:07:17Z",
+          "message": "kernel has no deadlock",
+          "reason": "KernelHasNoDeadlock",
+          "status": "False",
+          "type": "KernelDeadlock"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:57:32Z",
+          "lastTransitionTime": "2026-09-15T21:07:17Z",
+          "message": "XFS has not shutdown",
+          "reason": "XfsHasNotShutDown",
+          "status": "False",
+          "type": "XfsShutdown"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:57:32Z",
+          "lastTransitionTime": "2026-09-15T21:07:17Z",
+          "message": "UEFI CPER has no fatal error",
+          "reason": "CperHardwareHasNoFatalError",
+          "status": "False",
+          "type": "CperHardwareErrorFatal"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:57:32Z",
+          "lastTransitionTime": "2026-09-15T21:07:17Z",
+          "message": "All checks have passed",
+          "reason": "NoGPUErrorMK8S",
+          "status": "False",
+          "type": "NebiusGPUError"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T20:41:54Z",
+          "lastTransitionTime": "2026-09-15T20:41:54Z",
+          "message": "Cilium is running on this node",
+          "reason": "CiliumIsUp",
+          "status": "False",
+          "type": "NetworkUnavailable"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:59:19Z",
+          "lastTransitionTime": "2026-09-15T21:06:49Z",
+          "message": "No monitored processes in D-state",
+          "reason": "ContainerRuntimeHealthy",
+          "status": "False",
+          "type": "NebiusContainerRuntimeError"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:58:29Z",
+          "lastTransitionTime": "2026-09-15T23:00:34Z",
+          "message": "Kubelet stopped posting node status.",
+          "reason": "NodeStatusUnknown",
+          "status": "Unknown",
+          "type": "MemoryPressure"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:58:29Z",
+          "lastTransitionTime": "2026-09-15T23:00:34Z",
+          "message": "Kubelet stopped posting node status.",
+          "reason": "NodeStatusUnknown",
+          "status": "Unknown",
+          "type": "DiskPressure"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:58:29Z",
+          "lastTransitionTime": "2026-09-15T23:00:34Z",
+          "message": "Kubelet stopped posting node status.",
+          "reason": "NodeStatusUnknown",
+          "status": "Unknown",
+          "type": "PIDPressure"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:58:29Z",
+          "lastTransitionTime": "2026-09-15T23:00:34Z",
+          "message": "Kubelet stopped posting node status.",
+          "reason": "NodeStatusUnknown",
+          "status": "Unknown",
+          "type": "Ready"
+        }
+      ],
+      "taints": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "value": "fs2-inference"
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "node.kubernetes.io/unreachable",
+          "timeAdded": "2026-09-15T23:00:34Z"
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "timeAdded": "2026-09-15T23:00:34Z"
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "node.cilium.io/agent-not-ready"
+        }
+      ]
+    },
+    "events": [
+      {
+        "reason": "NodeNotReady",
+        "message": "Node computeinstance-e00xjaw5jqexvvnpat status is now: NodeNotReady",
+        "firstTimestamp": "2026-09-15T20:50:21Z",
+        "lastTimestamp": "2026-09-15T23:00:34Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "kind": "Node",
+          "name": "computeinstance-e00xjaw5jqexvvnpat",
+          "uid": "54fff439-0b80-434e-a60f-7edee7051c44"
+        }
+      }
+    ],
+    "pod": {
+      "metadata": {
+        "name": "bir-protenix-xjaw-normal-3",
+        "namespace": "fs2-bioir-protenix",
+        "uid": "38637181-255f-4cee-8553-0bb4508af8e5"
+      },
+      "node": "computeinstance-e00xjaw5jqexvvnpat",
+      "phase": "Running",
+      "container_states": [
+        {
+          "name": "scientific-stage",
+          "ready": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T22:58:51Z"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "timeline": [
+    {
+      "at": "2026-09-15T22:58:09.708986Z",
+      "event": "Updating attached disks starts",
+      "finished_at": "2026-09-15T22:58:27.018676Z",
+      "operation_id": "computeoperation-e00j1296wtrxzpyhg4"
+    },
+    {
+      "at": "2026-09-15T22:58:28.980519Z",
+      "event": "Updating attached disks starts",
+      "finished_at": "2026-09-15T22:58:48.319298Z",
+      "operation_id": "computeoperation-e00wevdz3vrgyh11jf"
+    },
+    {
+      "at": "2026-09-15T22:58:29Z",
+      "event": "Last Ready-condition kubelet heartbeat"
+    },
+    {
+      "at": "2026-09-15T22:58:51Z",
+      "event": "Last recorded normal-load-control3 container start"
+    },
+    {
+      "at": "2026-09-15T22:59:19Z",
+      "event": "Last runtime monitor heartbeat reports ContainerRuntimeHealthy"
+    },
+    {
+      "at": "2026-09-15T23:00:34Z",
+      "event": "NodeStatusUnknown and unreachable taints; latest NodeNotReady event"
+    },
+    {
+      "at": "2026-09-15T23:03:14.383016Z",
+      "event": "Provider Stop Instance operation begins",
+      "operation_id": "computeoperation-e00zxzfvgs9t1x2p7f"
+    }
+  ],
+  "existing_isolated_alternative": {
+    "found": true,
+    "authorized_to_allocate": false,
+    "provider": {
+      "metadata": {
+        "id": "computeinstance-e00y0jttwekyghrznp",
+        "parent_id": "project-e00rene",
+        "name": "mk8snodegroup-e00pcb1vvq65bgvxfk-x4bxc-gkwlj",
+        "resource_version": "21"
+      },
+      "spec": {
+        "resources": {
+          "platform": "gpu-h100-sxm",
+          "preset": "1gpu-16vcpu-200gb"
+        },
+        "stopped": null,
+        "preemptible": null
+      },
+      "status": {
+        "state": "RUNNING"
+      }
+    },
+    "preemptible": false,
+    "preemptible_evidence": "spec.preemptible absent in full provider list/get, rendered null in sanitized projection; unlike explicit STOP/priority5 on four other single-H100 instances.",
+    "kubernetes_node": {
+      "metadata": {
+        "name": "computeinstance-e00y0jttwekyghrznp",
+        "uid": "e6709632-02a4-4c2c-88e5-d41677935ee8"
+      },
+      "spec": {
+        "taints": [
+          {
+            "effect": "NoSchedule",
+            "key": "dedicated",
+            "value": "fs2-inference"
+          }
+        ]
+      },
+      "status": {
+        "allocatable": {
+          "cpu": "15900m",
+          "ephemeral-storage": "297467776530",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "194634728Ki",
+          "nvidia.com/gpu": "1",
+          "pods": "110"
+        },
+        "conditions": [
+          {
+            "lastHeartbeatTime": "2026-09-15T23:03:02Z",
+            "lastTransitionTime": "2026-09-09T19:41:39Z",
+            "message": "UEFI CPER has no fatal error",
+            "reason": "CperHardwareHasNoFatalError",
+            "status": "False",
+            "type": "CperHardwareErrorFatal"
+          },
+          {
+            "lastHeartbeatTime": "2026-09-15T23:03:02Z",
+            "lastTransitionTime": "2026-09-09T19:41:39Z",
+            "message": "All checks have passed",
+            "reason": "NoGPUErrorMK8S",
+            "status": "False",
+            "type": "NebiusGPUError"
+          },
+          {
+            "lastHeartbeatTime": "2026-09-15T23:03:02Z",
+            "lastTransitionTime": "2026-09-09T19:41:39Z",
+            "message": "No disk I/O error detected for vda disk",
+            "reason": "NoBootDiskIOError",
+            "status": "False",
+            "type": "NebiusBootDiskIOError"
+          },
+          {
+            "lastHeartbeatTime": "2026-09-15T23:03:02Z",
+            "lastTransitionTime": "2026-09-09T19:41:39Z",
+            "message": "kernel has no deadlock",
+            "reason": "KernelHasNoDeadlock",
+            "status": "False",
+            "type": "KernelDeadlock"
+          },
+          {
+            "lastHeartbeatTime": "2026-09-15T23:03:02Z",
+            "lastTransitionTime": "2026-09-09T19:41:39Z",
+            "message": "XFS has not shutdown",
+            "reason": "XfsHasNotShutDown",
+            "status": "False",
+            "type": "XfsShutdown"
+          },
+          {
+            "lastHeartbeatTime": "2026-09-09T18:27:13Z",
+            "lastTransitionTime": "2026-09-09T18:27:13Z",
+            "message": "Cilium is running on this node",
+            "reason": "CiliumIsUp",
+            "status": "False",
+            "type": "NetworkUnavailable"
+          },
+          {
+            "lastHeartbeatTime": "2026-09-15T23:03:00Z",
+            "lastTransitionTime": "2026-09-15T21:59:01Z",
+            "message": "No monitored processes in D-state",
+            "reason": "ContainerRuntimeHealthy",
+            "status": "False",
+            "type": "NebiusContainerRuntimeError"
+          },
+          {
+            "lastHeartbeatTime": "2026-09-15T23:03:02Z",
+            "lastTransitionTime": "2026-09-09T18:26:49Z",
+            "message": "kubelet has sufficient memory available",
+            "reason": "KubeletHasSufficientMemory",
+            "status": "False",
+            "type": "MemoryPressure"
+          },
+          {
+            "lastHeartbeatTime": "2026-09-15T23:03:02Z",
+            "lastTransitionTime": "2026-09-09T18:26:49Z",
+            "message": "kubelet has no disk pressure",
+            "reason": "KubeletHasNoDiskPressure",
+            "status": "False",
+            "type": "DiskPressure"
+          },
+          {
+            "lastHeartbeatTime": "2026-09-15T23:03:02Z",
+            "lastTransitionTime": "2026-09-09T18:26:49Z",
+            "message": "kubelet has sufficient PID available",
+            "reason": "KubeletHasSufficientPID",
+            "status": "False",
+            "type": "PIDPressure"
+          },
+          {
+            "lastHeartbeatTime": "2026-09-15T23:03:02Z",
+            "lastTransitionTime": "2026-09-09T18:27:07Z",
+            "message": "kubelet is posting ready status",
+            "reason": "KubeletReady",
+            "status": "True",
+            "type": "Ready"
+          }
+        ]
+      }
+    },
+    "pods": [
+      {
+        "metadata": {
+          "name": "fs2-dcgm-exporter-nnscv",
+          "namespace": "fs2-observability",
+          "uid": "5e5c8e16-249f-4d84-8b5f-20ae4e71a118"
+        },
+        "spec": {
+          "nodeName": "computeinstance-e00y0jttwekyghrznp",
+          "containers": [
+            {
+              "name": "exporter",
+              "resources": {
+                "limits": {
+                  "cpu": "500m",
+                  "memory": "512Mi"
+                },
+                "requests": {
+                  "cpu": "100m",
+                  "memory": "128Mi"
+                }
+              }
+            }
+          ]
+        },
+        "status": {
+          "phase": "Running"
+        }
+      },
+      {
+        "metadata": {
+          "name": "fs2-otel-node-agent-tpxvk",
+          "namespace": "fs2-observability",
+          "uid": "ce9cfd88-43ca-4871-b48f-b9c456de3d44"
+        },
+        "spec": {
+          "nodeName": "computeinstance-e00y0jttwekyghrznp",
+          "containers": [
+            {
+              "name": "opentelemetry-collector",
+              "resources": {
+                "limits": {
+                  "cpu": "500m",
+                  "memory": "512Mi"
+                },
+                "requests": {
+                  "cpu": "50m",
+                  "memory": "128Mi"
+                }
+              }
+            }
+          ]
+        },
+        "status": {
+          "phase": "Running"
+        }
+      },
+      {
+        "metadata": {
+          "name": "fs2-r927c465c6d-monitoring-prometheus-node-exporter-pgxvh",
+          "namespace": "fs2-observability",
+          "uid": "44d52745-56d7-4a27-a1f6-c5b64232ae7d"
+        },
+        "spec": {
+          "nodeName": "computeinstance-e00y0jttwekyghrznp",
+          "containers": [
+            {
+              "name": "node-exporter",
+              "resources": {}
+            }
+          ]
+        },
+        "status": {
+          "phase": "Running"
+        }
+      },
+      {
+        "metadata": {
+          "name": "fs2-serve-control-plane-gpu-observer-nd8t7",
+          "namespace": "fs2-system",
+          "uid": "9a0651fb-a810-4e78-ae8c-dbd79e9a7832"
+        },
+        "spec": {
+          "nodeName": "computeinstance-e00y0jttwekyghrznp",
+          "containers": [
+            {
+              "name": "observer",
+              "resources": {
+                "limits": {
+                  "cpu": "100m",
+                  "memory": "128Mi"
+                },
+                "requests": {
+                  "cpu": "10m",
+                  "memory": "32Mi"
+                }
+              }
+            }
+          ]
+        },
+        "status": {
+          "phase": "Running"
+        }
+      },
+      {
+        "metadata": {
+          "name": "cilium-6km7z",
+          "namespace": "kube-system",
+          "uid": "24504067-f4a1-4834-9178-d111708c66f7"
+        },
+        "spec": {
+          "nodeName": "computeinstance-e00y0jttwekyghrznp",
+          "containers": [
+            {
+              "name": "cilium-agent",
+              "resources": {
+                "requests": {
+                  "cpu": "100m",
+                  "memory": "128Mi"
+                }
+              }
+            }
+          ]
+        },
+        "status": {
+          "phase": "Running"
+        }
+      },
+      {
+        "metadata": {
+          "name": "cilium-envoy-dr8xg",
+          "namespace": "kube-system",
+          "uid": "ab8f2a64-d5a1-4277-90b5-64499abdb165"
+        },
+        "spec": {
+          "nodeName": "computeinstance-e00y0jttwekyghrznp",
+          "containers": [
+            {
+              "name": "cilium-envoy",
+              "resources": {}
+            }
+          ]
+        },
+        "status": {
+          "phase": "Running"
+        }
+      },
+      {
+        "metadata": {
+          "name": "compute-csi-node-xxblp",
+          "namespace": "kube-system",
+          "uid": "88abe615-9fd6-446c-83c3-1aa32696fcc9"
+        },
+        "spec": {
+          "nodeName": "computeinstance-e00y0jttwekyghrznp",
+          "containers": [
+            {
+              "name": "compute-plugin",
+              "resources": {
+                "limits": {
+                  "memory": "256Mi"
+                },
+                "requests": {
+                  "cpu": "10m",
+                  "memory": "40Mi"
+                }
+              }
+            },
+            {
+              "name": "node-driver-registrar",
+              "resources": {
+                "limits": {
+                  "memory": "256Mi"
+                },
+                "requests": {
+                  "cpu": "10m",
+                  "memory": "40Mi"
+                }
+              }
+            }
+          ]
+        },
+        "status": {
+          "phase": "Running"
+        }
+      },
+      {
+        "metadata": {
+          "name": "container-runtime-monitor-installer-2gnqx",
+          "namespace": "kube-system",
+          "uid": "391e08c5-da76-464b-ab1e-d8b801ff2495"
+        },
+        "spec": {
+          "nodeName": "computeinstance-e00y0jttwekyghrznp",
+          "containers": [
+            {
+              "name": "keepalive",
+              "resources": {}
+            }
+          ]
+        },
+        "status": {
+          "phase": "Running"
+        }
+      },
+      {
+        "metadata": {
+          "name": "csi-mounted-fs-path-plugin-xnnd5",
+          "namespace": "kube-system",
+          "uid": "32d11926-bd7c-4ddc-9d09-ffbf094ecc2c"
+        },
+        "spec": {
+          "nodeName": "computeinstance-e00y0jttwekyghrznp",
+          "containers": [
+            {
+              "name": "mounted-fs-path-provisioner",
+              "resources": {}
+            },
+            {
+              "name": "csi-external-health-monitor-controller",
+              "resources": {}
+            },
+            {
+              "name": "node-driver-registrar",
+              "resources": {}
+            },
+            {
+              "name": "liveness-probe",
+              "resources": {}
+            },
+            {
+              "name": "csi-provisioner",
+              "resources": {}
+            }
+          ]
+        },
+        "status": {
+          "phase": "Running"
+        }
+      },
+      {
+        "metadata": {
+          "name": "nebius-node-problem-detector-gpu-j5968",
+          "namespace": "kube-system",
+          "uid": "c2a3a5ff-fdd6-4e1c-8ba8-15a78779b591"
+        },
+        "spec": {
+          "nodeName": "computeinstance-e00y0jttwekyghrznp",
+          "containers": [
+            {
+              "name": "nebius-node-problem-detector",
+              "resources": {
+                "limits": {
+                  "cpu": "200m",
+                  "memory": "400Mi"
+                },
+                "requests": {
+                  "cpu": "100m",
+                  "memory": "200Mi"
+                }
+              }
+            }
+          ]
+        },
+        "status": {
+          "phase": "Running"
+        }
+      },
+      {
+        "metadata": {
+          "name": "nvidia-device-plugin-computeinstance-e00y0jttwekyghrznp",
+          "namespace": "kube-system",
+          "uid": "fe33153c-0b4c-459f-8393-dde261f546f6"
+        },
+        "spec": {
+          "nodeName": "computeinstance-e00y0jttwekyghrznp",
+          "containers": [
+            {
+              "name": "nvidia-device-plugin-ctr",
+              "resources": {}
+            }
+          ]
+        },
+        "status": {
+          "phase": "Running"
+        }
+      }
+    ],
+    "non_system_workloads": [],
+    "gpu_requesting_pods": [],
+    "gpu_query": "NVIDIA H100 80GB HBM3, GPU-9885f9c6-110a-10b5-2c26-c256e895d575, 580.173.02, 0 MiB, 0 %\n",
+    "gpu_query_exit_code": 0,
+    "compute_process_query": "",
+    "compute_process_query_exit_code": 0,
+    "single_h100_instances_in_scoped_project": [
+      {
+        "id": "computeinstance-e00xjaw5jqexvvnpat",
+        "resources": {
+          "platform": "gpu-h100-sxm",
+          "preset": "1gpu-16vcpu-200gb"
+        },
+        "preemptible": {
+          "on_preemption": "STOP",
+          "priority": 5
+        },
+        "state": "RUNNING"
+      },
+      {
+        "id": "computeinstance-e00j20a9hkb508cn4a",
+        "resources": {
+          "platform": "gpu-h100-sxm",
+          "preset": "1gpu-16vcpu-200gb"
+        },
+        "preemptible": {
+          "on_preemption": "STOP",
+          "priority": 5
+        },
+        "state": "RUNNING"
+      },
+      {
+        "id": "computeinstance-e00y0jttwekyghrznp",
+        "resources": {
+          "platform": "gpu-h100-sxm",
+          "preset": "1gpu-16vcpu-200gb"
+        },
+        "preemptible": null,
+        "state": "RUNNING"
+      },
+      {
+        "id": "computeinstance-e00fkt1bsa4ec657sn",
+        "resources": {
+          "platform": "gpu-h100-sxm",
+          "preset": "1gpu-16vcpu-200gb"
+        },
+        "preemptible": {
+          "on_preemption": "STOP",
+          "priority": 5
+        },
+        "state": "RUNNING"
+      },
+      {
+        "id": "computeinstance-e00r9tdjfszjs3angk",
+        "resources": {
+          "platform": "gpu-h100-sxm",
+          "preset": "1gpu-16vcpu-200gb"
+        },
+        "preemptible": {
+          "on_preemption": "STOP",
+          "priority": 5
+        },
+        "state": "RUNNING"
+      }
+    ],
+    "check_commands": [
+      "/usr/local/bin/nebius --profile sandbox --no-browser --timeout 20s --retries 1 compute instance list --parent-id project-e00rene --page-size 100 --format json",
+      "/usr/local/bin/nebius --profile sandbox --no-browser --timeout 20s --retries 1 compute instance get --id computeinstance-e00y0jttwekyghrznp --format json",
+      "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s get node computeinstance-e00y0jttwekyghrznp computeinstance-e00xjaw5jqexvvnpat -o json",
+      "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s get pods -A --field-selector spec.nodeName=computeinstance-e00y0jttwekyghrznp -o json",
+      "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s -n kube-system exec nebius-node-problem-detector-gpu-j5968 -- /usr/bin/nvidia-smi --query-gpu=name,uuid,driver_version,memory.used,utilization.gpu --format=csv,noheader",
+      "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s -n kube-system exec nebius-node-problem-detector-gpu-j5968 -- /usr/bin/nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory --format=csv,noheader"
+    ],
+    "note": "Existing Ready node observed idle, not a reservation or permission to run. Driver580.173.02 differs from xjaw580.159.04; no cross-driver/UUID bundle reuse qualified."
+  },
+  "benchmark_effect": {
+    "context_from_parent": "Interruption during ordinary-load control3 after3valid restored trials and2normal controls. This incident check does not re-audit scientific outputs.",
+    "qualification": "Third ordinary-load control incomplete; do not count stale podRunning as success. Additional tests/nodes are not authorized."
+  },
+  "limitations": [
+    "Preemptible setting is eligibility, not proof of preemption. Stop operation began160.38s after NodeStatusUnknown; it does not explain the earlier heartbeat loss.",
+    "Attached-disk operation overlap is correlation, not a proven cause. Healthy GPU/runtime conditions are stale and do not exclude a later fault.",
+    "Existing capacity observation does not resolve qualification or authorize another cohort. Shared customer hosts were excluded.",
+    "No reset, stop/start, allocation, provisioning, force deletion, scale/quota change, additional I/O/GPU test or peer evidence edits."
+  ],
+  "evidence_files_sha256": [
+    {
+      "path": "snapshot/protenix/xjaw/incident/node.json",
+      "sha256": "9a6f9df928f0c5036c560b084b1cbf47e664f1785982abbb45585fe6c3c6edbd"
+    },
+    {
+      "path": "snapshot/protenix/xjaw/incident/node-events.json",
+      "sha256": "84cc5813e098a8e5908cf63b1180ec74e18b5c83b85bc299e67a57318291aba0"
+    },
+    {
+      "path": "snapshot/protenix/xjaw/incident/pod.json",
+      "sha256": "b8d43f3dced5b98e6e8cab8807eb3eb9ae16c1c2e9db871e568293561100b073"
+    }
+  ]
+}

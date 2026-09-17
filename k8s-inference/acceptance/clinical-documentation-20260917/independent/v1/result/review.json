@@ -1,0 +1,332 @@
+{
+  "rejected": [
+    {
+      "id": "F0001",
+      "candidate": {
+        "section": "history",
+        "statement": "Patientin berichtet von Schwindelgefühlen beim Aufstehen aus dem Bett oder vom Stuhl, bei denen ihr schwarz vor Augen wird, aber nicht dreht sich.",
+        "quotes": [
+          "Seit ungefähr zehn Tagen wird mir beim Aufstehen aus dem Bett oder vom Stuhl schwindelig. Es dreht sich nicht, eher wird mir schwarz vor Augen."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0002",
+      "candidate": {
+        "section": "history",
+        "statement": "Patientin beschreibt, dass die Schwindelgefühle nach etwa einer halben Minute im Sitzen vorübergehen.",
+        "quotes": [
+          "Nach vielleicht einer halben Minute im Sitzen ist es vorbei."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0003",
+      "candidate": {
+        "section": "history",
+        "statement": "Tochter berichtet, dass die Patientin kurz weg war beim Frühstück, was als möglicherweise zwei oder drei Sekunden dauerte.",
+        "quotes": [
+          "Gestern beim Frühstück war sie kurz weg, so kam es mir vor. Vielleicht zwei oder drei Sekunden."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0004",
+      "candidate": {
+        "section": "history",
+        "statement": "Patientin bestreitet, bewusstlos gewesen zu sein, und betont, dass sie alles gehört hat, sich nur festhalten musste, aber nicht gestürzt ist.",
+        "quotes": [
+          "Ich glaube nicht, dass ich bewusstlos war. Ich habe alles gehört, musste mich nur festhalten. Gestürzt bin ich nicht."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0005",
+      "candidate": {
+        "section": "history",
+        "statement": "Ärztin stellt fest, dass die unterschiedlichen Beschreibungen der Patientin und ihrer Tochter die Sicherheit einer Bewusstlosigkeit nicht klären können.",
+        "quotes": [
+          "Ob tatsächlich eine Bewusstlosigkeit vorlag, können wir aus Ihren unterschiedlichen Beschreibungen jetzt nicht sicher klären."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0006",
+      "candidate": {
+        "section": "history",
+        "statement": "Patientin bestreitet Brustschmerzen oder Luftnot während der Schwindelgefühle.",
+        "quotes": [
+          "Nein, beides nicht."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0007",
+      "candidate": {
+        "section": "history",
+        "statement": "Ärztin fragt nach neuen Kopfschmerzen, die Patientin bestreitet.",
+        "quotes": [
+          "Gab es auch neue Kopfschmerzen?"
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0008",
+      "candidate": {
+        "section": "history",
+        "statement": "Tochter berichtet, dass die Patientin seit zwei Wochen eine neue Blutdrucktablette nimmt.",
+        "quotes": [
+          "Entschuldigung, bevor ich es vergesse: Seit zwei Wochen hat sie eine neue Blutdrucktablette."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0009",
+      "candidate": {
+        "section": "history",
+        "statement": "Patientin berichtet über die Einnahme von Ramipril, fünf Milligramm morgens, und einer neuen Blutdrucktablette, die sie als „Amlodip“ bezeichnet, möglicherweise fünf Milligramm abends.",
+        "quotes": [
+          "Seit Jahren Ramipril, fünf Milligramm morgens. Die neue heißt, glaube ich, „Amlodip“, vielleicht fünf Milligramm, einmal abends."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0010",
+      "candidate": {
+        "section": "history",
+        "statement": "Patientin berichtet über die Einnahme einer halben Schilddrüsentablette morgens, ohne den Namen und die Stärke zu kennen.",
+        "quotes": [
+          "Und morgens nehme ich eine halbe Schilddrüsentablette, den Namen und die Stärke weiß ich nicht."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0011",
+      "candidate": {
+        "section": "history",
+        "statement": "Tochter berichtet, dass die halbe Schilddrüsentablette auf einem alten Zettel steht, aber nicht, seit wann die Patientin sie nimmt.",
+        "quotes": [
+          "Die halbe Schilddrüsentablette steht auch so auf unserem alten Zettel. Seit wann sie die bekommt, weiß ich aber nicht."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0012",
+      "candidate": {
+        "section": "history",
+        "statement": "Ärztin übernimmt die neue Blutdrucktablette und die Schilddrüsentablette vorerst als unklare Angaben und bittet um die Packungen und den aktuellen Medikamentenplan.",
+        "quotes": [
+          "Ich übernehme die neue Tablette und die Schilddrüsentablette vorerst als unklare Angaben. Bitte bringen Sie die Packungen und den aktuellen Medikamentenplan mit."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0013",
+      "candidate": {
+        "section": "history",
+        "statement": "Patientin berichtet, dass sie wegen Bluthochdruck schon lange in Behandlung ist, aber eine Zuckerkrankheit nie festgestellt wurde.",
+        "quotes": [
+          "Wegen Bluthochdruck bin ich schon lange in Behandlung. Eine Zuckerkrankheit wurde bei mir nie festgestellt."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0014",
+      "candidate": {
+        "section": "history",
+        "statement": "Patientin berichtet, dass sie vor vielen Jahren nach einem Antibiotikum rote Flecken hatte, aber den Namen und ob es eine Allergie war, nicht weiß.",
+        "quotes": [
+          "Vor vielen Jahren hatte ich nach einem Antibiotikum rote Flecken, aber ich weiß weder den Namen noch, ob es wirklich eine Allergie war."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0015",
+      "candidate": {
+        "section": "history",
+        "statement": "Ärztin fragt nach dem Trinkverhalten der Patientin, die einen Liter am Tag trinkt, ohne Erbrechen oder Durchfall in den letzten Tagen.",
+        "quotes": [
+          "Wie viel trinken Sie ungefähr? Vielleicht einen Liter am Tag. Kein Erbrechen und keinen Durchfall in den letzten Tagen."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0016",
+      "candidate": {
+        "section": "findings",
+        "statement": "Der heute im Sitzen gemessene Blutdruck beträgt 118 zu 72 Millimeter Quecksilbersäule, der Puls 78 pro Minute und regelmäßig.",
+        "quotes": [
+          "Der heute hier im Sitzen gemessene Blutdruck beträgt 118 zu 72 Millimeter Quecksilbersäule, der Puls 78 pro Minute und regelmäßig."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0017",
+      "candidate": {
+        "section": "findings",
+        "statement": "Eine Blutdruckmessung im Stehen wurde heute noch nicht durchgeführt, und eine körperliche Untersuchung ist bisher nicht erfolgt.",
+        "quotes": [
+          "Eine Messung im Stehen haben wir heute noch nicht gemacht. Eine körperliche Untersuchung ist bisher ebenfalls noch nicht erfolgt."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0018",
+      "candidate": {
+        "section": "assessment",
+        "statement": "Ärztin vermutet einen Zusammenhang mit Blutdruckschwankungen und erwähnt, dass die neue Medikation dazu beitragen könnte, aber eine gesicherte Ursache ist nicht bekannt.",
+        "quotes": [
+          "Das ist nicht gesichert. Ich vermute einen Zusammenhang mit Blutdruckschwankungen; die neue Medikation könnte dazu beitragen. Eine gesicherte Ursache haben wir bisher nicht."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0019",
+      "candidate": {
+        "section": "plan",
+        "statement": "Ärztin plant eine Blutdruckmessung im Liegen und im Stehen sowie ein EKG, mit Ergebnissen, die noch nicht vorliegen.",
+        "quotes": [
+          "Wir planen heute noch eine Blutdruckmessung im Liegen und im Stehen und ein EKG. Ergebnisse liegen dazu noch nicht vor."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0020",
+      "candidate": {
+        "section": "plan",
+        "statement": "Ärztin vereinbart eine Blutabnahme morgen mit Blutbild, Elektrolyten und Nierenwerten sowie eine Befundbesprechung am Donnerstagvormittag telefonisch.",
+        "quotes": [
+          "Morgen soll die Blutabnahme erfolgen; besprochen sind Blutbild, Elektrolyte und Nierenwerte. Die Befundbesprechung vereinbaren wir für übermorgen, am Donnerstagvormittag, telefonisch."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0021",
+      "candidate": {
+        "section": "plan",
+        "statement": "Tochter verspricht, die Packungen heute Nachmittag vorbeizubringen.",
+        "quotes": [
+          "Die Packungen kann ich heute Nachmittag vorbeibringen."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0022",
+      "candidate": {
+        "section": "plan",
+        "statement": "Ärztin gibt Sicherheitsanweisungen: Falls die Patientin erneut das Bewusstsein verliert, Brustschmerzen oder starke Atemnot bekommt, soll der Rettungsdienst gerufen werden.",
+        "quotes": [
+          "Falls Sie erneut das Bewusstsein verlieren, Brustschmerzen oder starke Atemnot bekommen, rufen Sie den Rettungsdienst."
+        ]
+      },
+      "reason": "invalid fact fields"
+    },
+    {
+      "id": "F0023",
+      "candidate": {
+        "section": "plan",
+        "statement": "Patientin bestätigt, den Telefontermin am Donnerstagvormittag notiert zu haben.",
+        "quotes": [
+          "Den Telefontermin am Donnerstagvormittag habe ich notiert."
+        ]
+      },
+      "reason": "invalid fact fields"
+    }
+  ],
+  "kinds": [
+    "consultation"
+  ],
+  "uncertainties": [
+    {
+      "description": "Unklare Angaben zu den Medikamenten, insbesondere zur neuen Blutdrucktablette und der Schilddrüsentablette.",
+      "evidence": [
+        {
+          "quote": "Ich übernehme die neue Tablette und die Schilddrüsentablette vorerst als unklare Angaben.",
+          "spans": [
+            {
+              "start": 1446,
+              "end": 1535
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Unklare Bezeichnung der neuen Blutdrucktablette als „Amlodip“.",
+      "evidence": [
+        {
+          "quote": "Die neue heißt, glaube ich, „Amlodip“, vielleicht fünf Milligramm, einmal abends.",
+          "spans": [
+            {
+              "start": 1098,
+              "end": 1179
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Unklare Dauer der Einnahme der Schilddrüsentablette.",
+      "evidence": [
+        {
+          "quote": "Seit wann sie die bekommt, weiß ich aber nicht.",
+          "spans": [
+            {
+              "start": 1390,
+              "end": 1437
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Unklare Bezeichnung der Schilddrüsentablette.",
+      "evidence": [
+        {
+          "quote": "Und morgens nehme ich eine halbe Schilddrüsentablette, den Namen und die Stärke weiß ich nicht.",
+          "spans": [
+            {
+              "start": 1214,
+              "end": 1309
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Unklare Bezeichnung der Schilddrüsentablette auf dem alten Zettel.",
+      "evidence": [
+        {
+          "quote": "Die halbe Schilddrüsentablette steht auch so auf unserem alten Zettel.",
+          "spans": [
+            {
+              "start": 1319,
+              "end": 1389
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

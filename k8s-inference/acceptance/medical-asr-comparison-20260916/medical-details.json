@@ -1,0 +1,5579 @@
+{
+  "hesitation_tokens_removed_from_both_sides": [
+    "ah",
+    "er",
+    "erm",
+    "hm",
+    "hmm",
+    "mhm",
+    "mm",
+    "uh",
+    "uhh",
+    "um"
+  ],
+  "selection": "All first-attempt English consultations; no dose, negation or medical term correction",
+  "rows": [
+    {
+      "model": "nemotron-speech-en-0-6b",
+      "case": "en-01",
+      "primary_wer": 0.17829457364341086,
+      "hesitation_normalized_wer": 0.16679302501895377,
+      "hesitation_normalized_reference_words": 1319,
+      "hesitation_normalized_errors": 220,
+      "review_items": [
+        {
+          "reference_index": 32,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "hey um i've just had some diarrhea for the last three days um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 36,
+          "category": "number",
+          "reference": "three",
+          "context": "had some diarrhea for the last three days um and it's been affecting",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 73,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "um and and when you say diarrhea what'd you mean by diarrhea do",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 78,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "say diarrhea what'd you mean by diarrhea do you mean you're going to",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 140,
+          "category": "number",
+          "reference": "six",
+          "context": "couple of days um probably like six or seven times a day yeah",
+          "alignment": {
+            "type": "correct",
+            "recognized": "six"
+          }
+        },
+        {
+          "reference_index": 142,
+          "category": "number",
+          "reference": "seven",
+          "context": "days um probably like six or seven times a day yeah six seven",
+          "alignment": {
+            "type": "correct",
+            "recognized": "seven"
+          }
+        },
+        {
+          "reference_index": 147,
+          "category": "number",
+          "reference": "six",
+          "context": "or seven times a day yeah six seven times a day and you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "six"
+          }
+        },
+        {
+          "reference_index": 148,
+          "category": "number",
+          "reference": "seven",
+          "context": "seven times a day yeah six seven times a day and you mention",
+          "alignment": {
+            "type": "correct",
+            "recognized": "seven"
+          }
+        },
+        {
+          "reference_index": 165,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "you noticed any other things like blood in your stools no no blood",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 169,
+          "category": "negation",
+          "reference": "no",
+          "context": "things like blood in your stools no no blood yeah just watery and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 170,
+          "category": "negation",
+          "reference": "no",
+          "context": "like blood in your stools no no blood yeah just watery and loose",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 171,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "blood in your stools no no blood yeah just watery and loose stool",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 209,
+          "category": "number",
+          "reference": "one",
+          "context": "uh like um yeah just to one side one side and what side",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 211,
+          "category": "number",
+          "reference": "one",
+          "context": "um yeah just to one side one side and what side is that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 295,
+          "category": "negation",
+          "reference": "no",
+          "context": "for example towards your back uh no just maybe my stomach okay fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 331,
+          "category": "medical-term",
+          "reference": "feverish",
+          "context": "having uh have you been feeling feverish for example yeah um yeah it",
+          "alignment": {
+            "type": "correct",
+            "recognized": "feverish"
+          }
+        },
+        {
+          "reference_index": 338,
+          "category": "negation",
+          "reference": "doesn't",
+          "context": "for example yeah um yeah it doesn't feel like yeah it just makes",
+          "alignment": {
+            "type": "correct",
+            "recognized": "doesn't"
+          }
+        },
+        {
+          "reference_index": 349,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "just makes me feel weak i haven't had a fever um at the",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 352,
+          "category": "medical-term",
+          "reference": "fever",
+          "context": "feel weak i haven't had a fever um at the moment but i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "fever"
+          }
+        },
+        {
+          "reference_index": 373,
+          "category": "number",
+          "reference": "three",
+          "context": "started so um yeah around about three or four days ago you measure",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 375,
+          "category": "number",
+          "reference": "four",
+          "context": "um yeah around about three or four days ago you measure your temperature",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 387,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "temperature then yeah i uh i didn't mention my temperature no but i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 391,
+          "category": "negation",
+          "reference": "no",
+          "context": "uh i didn't mention my temperature no but i felt um just a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 413,
+          "category": "negation",
+          "reference": "no",
+          "context": "like sweating or um night sweats no and uh any vomiting at all",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 417,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "night sweats no and uh any vomiting at all uh no yeah so",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 421,
+          "category": "negation",
+          "reference": "no",
+          "context": "uh any vomiting at all uh no yeah so um i vomited at",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 421,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 438,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "symptoms but now um i've stopped vomiting you stopped vomiting okay and was",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 441,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "um i've stopped vomiting you stopped vomiting okay and was your vomit i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 450,
+          "category": "negation",
+          "reference": "not",
+          "context": "was your vomit i know it's not a nice thing to talk about",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 468,
+          "category": "negation",
+          "reference": "no",
+          "context": "food colour yeah and there was no blood in your vomit is that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 469,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "colour yeah and there was no blood in your vomit is that right",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 482,
+          "category": "negation",
+          "reference": "no",
+          "context": "yeah yeah just normal vomit yeah no no blood no yeah no okay",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 482,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 483,
+          "category": "negation",
+          "reference": "no",
+          "context": "yeah just normal vomit yeah no no blood no yeah no okay um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 484,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "just normal vomit yeah no no blood no yeah no okay um and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 485,
+          "category": "negation",
+          "reference": "no",
+          "context": "normal vomit yeah no no blood no yeah no okay um and um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 487,
+          "category": "negation",
+          "reference": "no",
+          "context": "yeah no no blood no yeah no okay um and um any any",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 505,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "you mentioned tummy pain you mentioned diarrhea you mentioned your vomiting uh anything",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 509,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "you mentioned diarrhea you mentioned your vomiting uh anything else that comes to",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 528,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "loss of appetite um so i haven't been eating as much but i've",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 582,
+          "category": "number",
+          "reference": "three",
+          "context": "fine um and sir these started three days ago the symptoms are you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 627,
+          "category": "number",
+          "reference": "four",
+          "context": "yeah so i had takeaway about four days ago um uh but other",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 672,
+          "category": "negation",
+          "reference": "no",
+          "context": "unwell with similar symptoms um so no one else in the family so",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 673,
+          "category": "number",
+          "reference": "one",
+          "context": "with similar symptoms um so no one else in the family so a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 682,
+          "category": "number",
+          "reference": "two",
+          "context": "the family so a wife and two kids and one um child was",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 685,
+          "category": "number",
+          "reference": "one",
+          "context": "a wife and two kids and one um child was vomiting but they",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 689,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "kids and one um child was vomiting but they haven't got diarrhea there's",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 692,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "um child was vomiting but they haven't got diarrhea there's no one with",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 694,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "was vomiting but they haven't got diarrhea there's no one with the same",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 696,
+          "category": "negation",
+          "reference": "no",
+          "context": "but they haven't got diarrhea there's no one with the same symptoms okay",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 697,
+          "category": "number",
+          "reference": "one",
+          "context": "they haven't got diarrhea there's no one with the same symptoms okay okay",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 736,
+          "category": "medical-term",
+          "reference": "inhaler",
+          "context": "um athsma um i use an inhaler everything uh else is fine okay",
+          "alignment": {
+            "type": "correct",
+            "recognized": "inhaler"
+          }
+        },
+        {
+          "reference_index": 746,
+          "category": "medical-term",
+          "reference": "asthma",
+          "context": "is fine okay and is your asthma well controlled uh yeah that's fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "asthma"
+          }
+        },
+        {
+          "reference_index": 758,
+          "category": "medical-term",
+          "reference": "inhaler",
+          "context": "fine i just yeah use an inhaler and uh that's under control fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "inhaler"
+          }
+        },
+        {
+          "reference_index": 767,
+          "category": "negation",
+          "reference": "don't",
+          "context": "that's under control fine and you don't have any other tummy problem bowel",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 780,
+          "category": "negation",
+          "reference": "no",
+          "context": "problems i should be aware of no no okay um and apart from",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 781,
+          "category": "negation",
+          "reference": "no",
+          "context": "i should be aware of no no okay um and apart from the",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 788,
+          "category": "medical-term",
+          "reference": "inhalers",
+          "context": "okay um and apart from the inhalers do you take any other medications",
+          "alignment": {
+            "type": "correct",
+            "recognized": "inhalers"
+          }
+        },
+        {
+          "reference_index": 796,
+          "category": "negation",
+          "reference": "no",
+          "context": "you take any other medications uh no no other medications okay fine and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 797,
+          "category": "negation",
+          "reference": "no",
+          "context": "take any other medications uh no no other medications okay fine and in",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 849,
+          "category": "number",
+          "reference": "three",
+          "context": "quite frequently during the these past three days um yeah other than that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 897,
+          "category": "number",
+          "reference": "three",
+          "context": "been going into work the last three days or have you been at",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 938,
+          "category": "number",
+          "reference": "two",
+          "context": "you live with your wife and two children is that right yes yeah",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 966,
+          "category": "negation",
+          "reference": "no",
+          "context": "do you smoke at all uh no i don't smoke and do you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 968,
+          "category": "negation",
+          "reference": "don't",
+          "context": "smoke at all uh no i don't smoke and do you drink much",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 981,
+          "category": "negation",
+          "reference": "no",
+          "context": "in the way of alcohol uh no i i don't drink alcohol no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 984,
+          "category": "negation",
+          "reference": "don't",
+          "context": "of alcohol uh no i i don't drink alcohol no okay so um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 987,
+          "category": "negation",
+          "reference": "no",
+          "context": "no i i don't drink alcohol no okay so um er normally at",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1026,
+          "category": "number",
+          "reference": "three",
+          "context": "just to recap for the last three days you've been having loose stool",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1033,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "days you've been having loose stool diarrhea a bit of tummy pain uh",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 1048,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "the left hand side um and vomiting and fever and you're quite weak",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 1050,
+          "category": "medical-term",
+          "reference": "fever",
+          "context": "hand side um and vomiting and fever and you're quite weak and lethargic",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1050,
+            "reference": "fever"
+          }
+        },
+        {
+          "reference_index": 1068,
+          "category": "number",
+          "reference": "three",
+          "context": "this chinese takeaway as little as three days ago and i wondered whether",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1095,
+          "category": "medical-term",
+          "reference": "gastroenteritis",
+          "context": "you may have something uh called gastroenteritis which essentially just a tummy bug",
+          "alignment": {
+            "type": "correct",
+            "recognized": "gastroenteritis"
+          }
+        },
+        {
+          "reference_index": 1148,
+          "category": "negation",
+          "reference": "don't",
+          "context": "say conservative management so um i don't think you need anything like antibiotics",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 1174,
+          "category": "medical-term",
+          "reference": "dioralyte",
+          "context": "hmm um there are things like dioralyte you can get from the pharmacy",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1174,
+            "reference": "dioralyte",
+            "recognized": "light"
+          }
+        },
+        {
+          "reference_index": 1200,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "um and if you are having vomiting diarrhea i would say recommend that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 1201,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "and if you are having vomiting diarrhea i would say recommend that in",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 1221,
+          "category": "medical-term",
+          "reference": "feverish",
+          "context": "days yep if you are feeling feverish and weak eh taking some paracetamol",
+          "alignment": {
+            "type": "correct",
+            "recognized": "feverish"
+          }
+        },
+        {
+          "reference_index": 1227,
+          "category": "medical-term",
+          "reference": "paracetamol",
+          "context": "feverish and weak eh taking some paracetamol uh two tablets up to four",
+          "alignment": {
+            "type": "correct",
+            "recognized": "paracetamol"
+          }
+        },
+        {
+          "reference_index": 1229,
+          "category": "number",
+          "reference": "two",
+          "context": "weak eh taking some paracetamol uh two tablets up to four times a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 1230,
+          "category": "medical-term",
+          "reference": "tablets",
+          "context": "eh taking some paracetamol uh two tablets up to four times a day",
+          "alignment": {
+            "type": "correct",
+            "recognized": "tablets"
+          }
+        },
+        {
+          "reference_index": 1233,
+          "category": "number",
+          "reference": "four",
+          "context": "paracetamol uh two tablets up to four times a day for the first",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 1271,
+          "category": "number",
+          "reference": "two",
+          "context": "but i would say the next two two to three days as the",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 1272,
+          "category": "number",
+          "reference": "two",
+          "context": "i would say the next two two to three days as the infection",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 1274,
+          "category": "number",
+          "reference": "three",
+          "context": "say the next two two to three days as the infection clears from",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1298,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "um i'll admit if your symptoms haven't got better you know in in",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 1305,
+          "category": "number",
+          "reference": "three",
+          "context": "got better you know in in three to four days i'd like to",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1307,
+          "category": "number",
+          "reference": "four",
+          "context": "you know in in three to four days i'd like to come and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 1380,
+          "category": "negation",
+          "reference": "no",
+          "context": "have any questions for me um no no further questions no okay and",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1380,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 1381,
+          "category": "negation",
+          "reference": "no",
+          "context": "any questions for me um no no further questions no okay and is",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1384,
+          "category": "negation",
+          "reference": "no",
+          "context": "me um no no further questions no okay and is uh is the",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1384,
+            "reference": "no"
+          }
+        }
+      ],
+      "limitation": "Alignment flags require context/listening review; a missing conversational no is not automatically a reversed clinical fact."
+    },
+    {
+      "model": "nemotron-speech-en-0-6b",
+      "case": "en-02",
+      "primary_wer": 0.16457211250748055,
+      "hesitation_normalized_wer": 0.15486725663716813,
+      "hesitation_normalized_reference_words": 1582,
+      "hesitation_normalized_errors": 245,
+      "review_items": [
+        {
+          "reference_index": 23,
+          "category": "negation",
+          "reference": "not",
+          "context": "a bit it's a bit it's not very clear but let's continue anyway",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 82,
+          "category": "negation",
+          "reference": "no",
+          "context": "something quick to solve it ok no no problem i'm happy to help",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 82,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 83,
+          "category": "negation",
+          "reference": "no",
+          "context": "quick to solve it ok no no problem i'm happy to help um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 195,
+          "category": "negation",
+          "reference": "no",
+          "context": "uh disturbed by this disease yeah no no ok i'm certain this is",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 196,
+          "category": "negation",
+          "reference": "no",
+          "context": "disturbed by this disease yeah no no ok i'm certain this is obviously",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 242,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "i was like prescribed for my eczema ok and they gave me like",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 300,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "again i tried those and it didn't work i've tried a few things",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 312,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "things like i bought a a steroid cream at the pharmacy last night",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroid"
+          }
+        },
+        {
+          "reference_index": 322,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "pharmacy last night but it apparently didn't help because it's still itching a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 346,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "of the cream you bought a steroid cream ok steroid ok um would",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 346,
+            "reference": "steroid",
+            "recognized": "stirrid"
+          }
+        },
+        {
+          "reference_index": 349,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "you bought a steroid cream ok steroid ok um would you say these",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroid"
+          }
+        },
+        {
+          "reference_index": 362,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "symptoms are very similar to your eczema symptoms or different um it's much",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 374,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "much more like itchy and my eczema was more like only in the",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 464,
+          "category": "negation",
+          "reference": "no",
+          "context": "which is very very annoying yes no well ok that's so you mentioned",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 497,
+          "category": "negation",
+          "reference": "no",
+          "context": "or discharge from your skins ok no um so my skin is a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 524,
+          "category": "negation",
+          "reference": "not",
+          "context": "mean but uh yeah ok you've not haven't uh seen any other uh",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 525,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "but uh yeah ok you've not haven't uh seen any other uh pus",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 525,
+            "reference": "haven't"
+          }
+        },
+        {
+          "reference_index": 533,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "seen any other uh pus or blood coming out of your skin no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 539,
+          "category": "negation",
+          "reference": "no",
+          "context": "blood coming out of your skin no no and you mentioned it all",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 540,
+          "category": "negation",
+          "reference": "no",
+          "context": "coming out of your skin no no and you mentioned it all started",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 547,
+          "category": "number",
+          "reference": "three",
+          "context": "and you mentioned it all started three days ago are you four days",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 552,
+          "category": "number",
+          "reference": "four",
+          "context": "started three days ago are you four days ago are you aware of",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 576,
+          "category": "number",
+          "reference": "four",
+          "context": "have caused your symptoms to start four days ago so for example have",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 576,
+            "reference": "four"
+          }
+        },
+        {
+          "reference_index": 597,
+          "category": "negation",
+          "reference": "no",
+          "context": "have you been around anyone else no i it's actually like it's really",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 617,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "should change something because i i haven't and i don't understand i cannot",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 620,
+          "category": "negation",
+          "reference": "don't",
+          "context": "because i i haven't and i don't understand i cannot um afraid of",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 638,
+          "category": "negation",
+          "reference": "don't",
+          "context": "it's cannot you know um i don't feel really comfortable asking about these",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 658,
+          "category": "negation",
+          "reference": "no",
+          "context": "i your help now mm mm no no ok that's ok um fine",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 658,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 659,
+          "category": "negation",
+          "reference": "no",
+          "context": "your help now mm mm no no ok that's ok um fine so",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 672,
+          "category": "number",
+          "reference": "four",
+          "context": "just to resummarize for the last four days you've had very itchy skin",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 702,
+          "category": "negation",
+          "reference": "no",
+          "context": "and legs as well yeah uh no just the chest hands and like",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 702,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 730,
+          "category": "negation",
+          "reference": "no",
+          "context": "on your face on my face no no ok and apart from this",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 731,
+          "category": "negation",
+          "reference": "no",
+          "context": "your face on my face no no ok and apart from this any",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 752,
+          "category": "negation",
+          "reference": "no",
+          "context": "you noticed any temperature or fevers no just very itchy nothing else itchy",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 771,
+          "category": "negation",
+          "reference": "no",
+          "context": "working ok your chest is ok no cough no breathing difficulties no you're",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 773,
+          "category": "negation",
+          "reference": "no",
+          "context": "your chest is ok no cough no breathing difficulties no you're passing urine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 776,
+          "category": "negation",
+          "reference": "no",
+          "context": "ok no cough no breathing difficulties no you're passing urine ok i i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 825,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "your symptoms um so i had eczema before so maybe it's disease but",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 840,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "like more uh like uh my eczema was only on the arms so",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 849,
+          "category": "negation",
+          "reference": "not",
+          "context": "on the arms so i'm i'm not sure i i really have no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 855,
+          "category": "negation",
+          "reference": "no",
+          "context": "not sure i i really have no idea ok that's ok so um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 924,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "yeah uh your your background of eczema um so sorry to say there's",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 950,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "my apologies um apart from the eczema do you have any other medical",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 964,
+          "category": "negation",
+          "reference": "no",
+          "context": "i should be aware of uh no i just had asthma in the",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 968,
+          "category": "medical-term",
+          "reference": "asthma",
+          "context": "of uh no i just had asthma in the past but not anymore",
+          "alignment": {
+            "type": "correct",
+            "recognized": "asthma"
+          }
+        },
+        {
+          "reference_index": 973,
+          "category": "negation",
+          "reference": "not",
+          "context": "had asthma in the past but not anymore ok not anymore ok and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 976,
+          "category": "negation",
+          "reference": "not",
+          "context": "the past but not anymore ok not anymore ok and do you take",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 990,
+          "category": "negation",
+          "reference": "no",
+          "context": "regular medications at the moment uh no no ok do you have any",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 990,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 991,
+          "category": "negation",
+          "reference": "no",
+          "context": "medications at the moment uh no no ok do you have any allergies",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 997,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "no ok do you have any allergies to anything i like some sorry",
+          "alignment": {
+            "type": "correct",
+            "recognized": "allergies"
+          }
+        },
+        {
+          "reference_index": 1012,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "i said do you have any allergies to anything hello hello yes can",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1012,
+            "reference": "allergies"
+          }
+        },
+        {
+          "reference_index": 1032,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "it uh do you have any allergies at all ohh allergies uh no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "allergies"
+          }
+        },
+        {
+          "reference_index": 1036,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "have any allergies at all ohh allergies uh no no ok um and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "allergies"
+          }
+        },
+        {
+          "reference_index": 1038,
+          "category": "negation",
+          "reference": "no",
+          "context": "allergies at all ohh allergies uh no no ok um and tell me",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1039,
+          "category": "negation",
+          "reference": "no",
+          "context": "at all ohh allergies uh no no ok um and tell me about",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1073,
+          "category": "number",
+          "reference": "one",
+          "context": "a so you know i'm thirty one uh i yeah i'm i have",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 1152,
+          "category": "negation",
+          "reference": "no",
+          "context": "know more about it ok uh no no no that's that's absolutely fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1153,
+          "category": "negation",
+          "reference": "no",
+          "context": "more about it ok uh no no no that's that's absolutely fine um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1154,
+          "category": "negation",
+          "reference": "no",
+          "context": "about it ok uh no no no that's that's absolutely fine um just",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1182,
+          "category": "negation",
+          "reference": "no",
+          "context": "is do you smoke at all no no and do you drink much",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1182,
+            "reference": "no",
+            "recognized": "allno"
+          }
+        },
+        {
+          "reference_index": 1183,
+          "category": "negation",
+          "reference": "no",
+          "context": "do you smoke at all no no and do you drink much in",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1197,
+          "category": "number",
+          "reference": "once",
+          "context": "way of alcohol uh you know once in a while i can i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "once"
+          }
+        },
+        {
+          "reference_index": 1209,
+          "category": "number",
+          "reference": "once",
+          "context": "i like hanging out with people once in a while so yeah i'd",
+          "alignment": {
+            "type": "correct",
+            "recognized": "once"
+          }
+        },
+        {
+          "reference_index": 1266,
+          "category": "negation",
+          "reference": "not",
+          "context": "to say this sound quality is not uh great but i will continue",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 1298,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "is a flare up of your eczema um the reason being that you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 1340,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "quite familiar um you mentioned using steroid creams yesterday um from the pharmacy",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroid"
+          }
+        },
+        {
+          "reference_index": 1359,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "stronger prescription of a of a steroid may be beneficial uh which i'm",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroid"
+          }
+        },
+        {
+          "reference_index": 1382,
+          "category": "medical-term",
+          "reference": "emollients",
+          "context": "going to give you something some emollients which helps to moisturize the skin",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1382,
+            "reference": "emollients",
+            "recognized": "ammoience"
+          }
+        },
+        {
+          "reference_index": 1409,
+          "category": "number",
+          "reference": "seven",
+          "context": "um using that for the first seven to ten days ok uh before",
+          "alignment": {
+            "type": "correct",
+            "recognized": "seven"
+          }
+        },
+        {
+          "reference_index": 1411,
+          "category": "number",
+          "reference": "ten",
+          "context": "that for the first seven to ten days ok uh before we make",
+          "alignment": {
+            "type": "correct",
+            "recognized": "ten"
+          }
+        },
+        {
+          "reference_index": 1425,
+          "category": "negation",
+          "reference": "not",
+          "context": "decision on whether it's working or not ok um it's also worth um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 1433,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "um it's also worth um using antihistamines which you can sometimes buy over",
+          "alignment": {
+            "type": "correct",
+            "recognized": "antihistamines"
+          }
+        },
+        {
+          "reference_index": 1443,
+          "category": "medical-term",
+          "reference": "loratadine",
+          "context": "sometimes buy over counter things like loratadine or piriton which can help the",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1443,
+            "reference": "loratadine",
+            "recognized": "latidine"
+          }
+        },
+        {
+          "reference_index": 1445,
+          "category": "medical-term",
+          "reference": "piriton",
+          "context": "over counter things like loratadine or piriton which can help the itchiness of",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1445,
+            "reference": "piriton",
+            "recognized": "puritan"
+          }
+        },
+        {
+          "reference_index": 1501,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "to have a discussion about an eczema cu ok yes i have tried",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1501,
+            "reference": "eczema",
+            "recognized": "you"
+          }
+        },
+        {
+          "reference_index": 1508,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "cu ok yes i have tried antihistamines uh lately but it didn't really",
+          "alignment": {
+            "type": "correct",
+            "recognized": "antihistamines"
+          }
+        },
+        {
+          "reference_index": 1513,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "tried antihistamines uh lately but it didn't really help ohh could you say",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 1527,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "again sorry i have tried uh antihistamines but uh but it didn't really",
+          "alignment": {
+            "type": "correct",
+            "recognized": "antihistamines"
+          }
+        },
+        {
+          "reference_index": 1532,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "uh antihistamines but uh but it didn't really help ok ok so it's",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 1551,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "you can get different types of antihistamines i can give you something a",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1551,
+            "reference": "antihistamines",
+            "recognized": "antistamines"
+          }
+        },
+        {
+          "reference_index": 1567,
+          "category": "medical-term",
+          "reference": "fexofenadine",
+          "context": "today as well um something like fexofenadine which i can give to you",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1567,
+            "reference": "fexofenadine",
+            "recognized": "fetcophenidine"
+          }
+        },
+        {
+          "reference_index": 1581,
+          "category": "negation",
+          "reference": "not",
+          "context": "it's definitely worth trying and it's not going to do you any harm",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 1595,
+          "category": "medical-term",
+          "reference": "steroids",
+          "context": "um but i think using the steroids and the emollients um on a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroids"
+          }
+        },
+        {
+          "reference_index": 1598,
+          "category": "medical-term",
+          "reference": "emollients",
+          "context": "think using the steroids and the emollients um on a regular basis uh",
+          "alignment": {
+            "type": "correct",
+            "recognized": "emollients"
+          }
+        },
+        {
+          "reference_index": 1610,
+          "category": "number",
+          "reference": "ten",
+          "context": "uh over the next week to ten days should hopefully control your symptoms",
+          "alignment": {
+            "type": "correct",
+            "recognized": "ten"
+          }
+        },
+        {
+          "reference_index": 1628,
+          "category": "negation",
+          "reference": "don't",
+          "context": "see me next week if things don't get better that sounds good ok",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 1644,
+          "category": "negation",
+          "reference": "no",
+          "context": "have any questions for me uh no that's it thank you very much",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        }
+      ],
+      "limitation": "Alignment flags require context/listening review; a missing conversational no is not automatically a reversed clinical fact."
+    },
+    {
+      "model": "nemotron-speech-multilingual-0-6b",
+      "case": "en-01",
+      "primary_wer": 0.21634954193093728,
+      "hesitation_normalized_wer": 0.20090978013646701,
+      "hesitation_normalized_reference_words": 1319,
+      "hesitation_normalized_errors": 265,
+      "review_items": [
+        {
+          "reference_index": 32,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "hey um i've just had some diarrhea for the last three days um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 36,
+          "category": "number",
+          "reference": "three",
+          "context": "had some diarrhea for the last three days um and it's been affecting",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 73,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "um and and when you say diarrhea what'd you mean by diarrhea do",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 78,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "say diarrhea what'd you mean by diarrhea do you mean you're going to",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 140,
+          "category": "number",
+          "reference": "six",
+          "context": "couple of days um probably like six or seven times a day yeah",
+          "alignment": {
+            "type": "correct",
+            "recognized": "six"
+          }
+        },
+        {
+          "reference_index": 142,
+          "category": "number",
+          "reference": "seven",
+          "context": "days um probably like six or seven times a day yeah six seven",
+          "alignment": {
+            "type": "correct",
+            "recognized": "seven"
+          }
+        },
+        {
+          "reference_index": 147,
+          "category": "number",
+          "reference": "six",
+          "context": "or seven times a day yeah six seven times a day and you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "six"
+          }
+        },
+        {
+          "reference_index": 148,
+          "category": "number",
+          "reference": "seven",
+          "context": "seven times a day yeah six seven times a day and you mention",
+          "alignment": {
+            "type": "correct",
+            "recognized": "seven"
+          }
+        },
+        {
+          "reference_index": 165,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "you noticed any other things like blood in your stools no no blood",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 169,
+          "category": "negation",
+          "reference": "no",
+          "context": "things like blood in your stools no no blood yeah just watery and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 170,
+          "category": "negation",
+          "reference": "no",
+          "context": "like blood in your stools no no blood yeah just watery and loose",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 171,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "blood in your stools no no blood yeah just watery and loose stool",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 209,
+          "category": "number",
+          "reference": "one",
+          "context": "uh like um yeah just to one side one side and what side",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 211,
+          "category": "number",
+          "reference": "one",
+          "context": "um yeah just to one side one side and what side is that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 295,
+          "category": "negation",
+          "reference": "no",
+          "context": "for example towards your back uh no just maybe my stomach okay fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 331,
+          "category": "medical-term",
+          "reference": "feverish",
+          "context": "having uh have you been feeling feverish for example yeah um yeah it",
+          "alignment": {
+            "type": "correct",
+            "recognized": "feverish"
+          }
+        },
+        {
+          "reference_index": 338,
+          "category": "negation",
+          "reference": "doesn't",
+          "context": "for example yeah um yeah it doesn't feel like yeah it just makes",
+          "alignment": {
+            "type": "correct",
+            "recognized": "doesn't"
+          }
+        },
+        {
+          "reference_index": 349,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "just makes me feel weak i haven't had a fever um at the",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 352,
+          "category": "medical-term",
+          "reference": "fever",
+          "context": "feel weak i haven't had a fever um at the moment but i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "fever"
+          }
+        },
+        {
+          "reference_index": 373,
+          "category": "number",
+          "reference": "three",
+          "context": "started so um yeah around about three or four days ago you measure",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 375,
+          "category": "number",
+          "reference": "four",
+          "context": "um yeah around about three or four days ago you measure your temperature",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 387,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "temperature then yeah i uh i didn't mention my temperature no but i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 391,
+          "category": "negation",
+          "reference": "no",
+          "context": "uh i didn't mention my temperature no but i felt um just a",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 391,
+            "reference": "no",
+            "recognized": "node"
+          }
+        },
+        {
+          "reference_index": 413,
+          "category": "negation",
+          "reference": "no",
+          "context": "like sweating or um night sweats no and uh any vomiting at all",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 417,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "night sweats no and uh any vomiting at all uh no yeah so",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 421,
+          "category": "negation",
+          "reference": "no",
+          "context": "uh any vomiting at all uh no yeah so um i vomited at",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 421,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 438,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "symptoms but now um i've stopped vomiting you stopped vomiting okay and was",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 441,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "um i've stopped vomiting you stopped vomiting okay and was your vomit i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 450,
+          "category": "negation",
+          "reference": "not",
+          "context": "was your vomit i know it's not a nice thing to talk about",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 468,
+          "category": "negation",
+          "reference": "no",
+          "context": "food colour yeah and there was no blood in your vomit is that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 469,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "colour yeah and there was no blood in your vomit is that right",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 482,
+          "category": "negation",
+          "reference": "no",
+          "context": "yeah yeah just normal vomit yeah no no blood no yeah no okay",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 482,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 483,
+          "category": "negation",
+          "reference": "no",
+          "context": "yeah just normal vomit yeah no no blood no yeah no okay um",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 483,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 484,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "just normal vomit yeah no no blood no yeah no okay um and",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 484,
+            "reference": "blood"
+          }
+        },
+        {
+          "reference_index": 485,
+          "category": "negation",
+          "reference": "no",
+          "context": "normal vomit yeah no no blood no yeah no okay um and um",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 485,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 487,
+          "category": "negation",
+          "reference": "no",
+          "context": "yeah no no blood no yeah no okay um and um any any",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 505,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "you mentioned tummy pain you mentioned diarrhea you mentioned your vomiting uh anything",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 509,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "you mentioned diarrhea you mentioned your vomiting uh anything else that comes to",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 528,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "loss of appetite um so i haven't been eating as much but i've",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 582,
+          "category": "number",
+          "reference": "three",
+          "context": "fine um and sir these started three days ago the symptoms are you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 627,
+          "category": "number",
+          "reference": "four",
+          "context": "yeah so i had takeaway about four days ago um uh but other",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 672,
+          "category": "negation",
+          "reference": "no",
+          "context": "unwell with similar symptoms um so no one else in the family so",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 673,
+          "category": "number",
+          "reference": "one",
+          "context": "with similar symptoms um so no one else in the family so a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 682,
+          "category": "number",
+          "reference": "two",
+          "context": "the family so a wife and two kids and one um child was",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 685,
+          "category": "number",
+          "reference": "one",
+          "context": "a wife and two kids and one um child was vomiting but they",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 689,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "kids and one um child was vomiting but they haven't got diarrhea there's",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 692,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "um child was vomiting but they haven't got diarrhea there's no one with",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 694,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "was vomiting but they haven't got diarrhea there's no one with the same",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 696,
+          "category": "negation",
+          "reference": "no",
+          "context": "but they haven't got diarrhea there's no one with the same symptoms okay",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 697,
+          "category": "number",
+          "reference": "one",
+          "context": "they haven't got diarrhea there's no one with the same symptoms okay okay",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 736,
+          "category": "medical-term",
+          "reference": "inhaler",
+          "context": "um athsma um i use an inhaler everything uh else is fine okay",
+          "alignment": {
+            "type": "correct",
+            "recognized": "inhaler"
+          }
+        },
+        {
+          "reference_index": 746,
+          "category": "medical-term",
+          "reference": "asthma",
+          "context": "is fine okay and is your asthma well controlled uh yeah that's fine",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 746,
+            "reference": "asthma",
+            "recognized": "a"
+          }
+        },
+        {
+          "reference_index": 758,
+          "category": "medical-term",
+          "reference": "inhaler",
+          "context": "fine i just yeah use an inhaler and uh that's under control fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "inhaler"
+          }
+        },
+        {
+          "reference_index": 767,
+          "category": "negation",
+          "reference": "don't",
+          "context": "that's under control fine and you don't have any other tummy problem bowel",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 780,
+          "category": "negation",
+          "reference": "no",
+          "context": "problems i should be aware of no no okay um and apart from",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 781,
+          "category": "negation",
+          "reference": "no",
+          "context": "i should be aware of no no okay um and apart from the",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 788,
+          "category": "medical-term",
+          "reference": "inhalers",
+          "context": "okay um and apart from the inhalers do you take any other medications",
+          "alignment": {
+            "type": "correct",
+            "recognized": "inhalers"
+          }
+        },
+        {
+          "reference_index": 796,
+          "category": "negation",
+          "reference": "no",
+          "context": "you take any other medications uh no no other medications okay fine and",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 796,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 797,
+          "category": "negation",
+          "reference": "no",
+          "context": "take any other medications uh no no other medications okay fine and in",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 849,
+          "category": "number",
+          "reference": "three",
+          "context": "quite frequently during the these past three days um yeah other than that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 897,
+          "category": "number",
+          "reference": "three",
+          "context": "been going into work the last three days or have you been at",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 938,
+          "category": "number",
+          "reference": "two",
+          "context": "you live with your wife and two children is that right yes yeah",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 966,
+          "category": "negation",
+          "reference": "no",
+          "context": "do you smoke at all uh no i don't smoke and do you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 968,
+          "category": "negation",
+          "reference": "don't",
+          "context": "smoke at all uh no i don't smoke and do you drink much",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 981,
+          "category": "negation",
+          "reference": "no",
+          "context": "in the way of alcohol uh no i i don't drink alcohol no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 984,
+          "category": "negation",
+          "reference": "don't",
+          "context": "of alcohol uh no i i don't drink alcohol no okay so um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 987,
+          "category": "negation",
+          "reference": "no",
+          "context": "no i i don't drink alcohol no okay so um er normally at",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 987,
+            "reference": "no",
+            "recognized": "though"
+          }
+        },
+        {
+          "reference_index": 1026,
+          "category": "number",
+          "reference": "three",
+          "context": "just to recap for the last three days you've been having loose stool",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1033,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "days you've been having loose stool diarrhea a bit of tummy pain uh",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 1048,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "the left hand side um and vomiting and fever and you're quite weak",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 1050,
+          "category": "medical-term",
+          "reference": "fever",
+          "context": "hand side um and vomiting and fever and you're quite weak and lethargic",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1050,
+            "reference": "fever"
+          }
+        },
+        {
+          "reference_index": 1068,
+          "category": "number",
+          "reference": "three",
+          "context": "this chinese takeaway as little as three days ago and i wondered whether",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1095,
+          "category": "medical-term",
+          "reference": "gastroenteritis",
+          "context": "you may have something uh called gastroenteritis which essentially just a tummy bug",
+          "alignment": {
+            "type": "correct",
+            "recognized": "gastroenteritis"
+          }
+        },
+        {
+          "reference_index": 1148,
+          "category": "negation",
+          "reference": "don't",
+          "context": "say conservative management so um i don't think you need anything like antibiotics",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 1174,
+          "category": "medical-term",
+          "reference": "dioralyte",
+          "context": "hmm um there are things like dioralyte you can get from the pharmacy",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1174,
+            "reference": "dioralyte",
+            "recognized": "dirolite"
+          }
+        },
+        {
+          "reference_index": 1200,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "um and if you are having vomiting diarrhea i would say recommend that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 1201,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "and if you are having vomiting diarrhea i would say recommend that in",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1201,
+            "reference": "diarrhea",
+            "recognized": "diary"
+          }
+        },
+        {
+          "reference_index": 1221,
+          "category": "medical-term",
+          "reference": "feverish",
+          "context": "days yep if you are feeling feverish and weak eh taking some paracetamol",
+          "alignment": {
+            "type": "correct",
+            "recognized": "feverish"
+          }
+        },
+        {
+          "reference_index": 1227,
+          "category": "medical-term",
+          "reference": "paracetamol",
+          "context": "feverish and weak eh taking some paracetamol uh two tablets up to four",
+          "alignment": {
+            "type": "correct",
+            "recognized": "paracetamol"
+          }
+        },
+        {
+          "reference_index": 1229,
+          "category": "number",
+          "reference": "two",
+          "context": "weak eh taking some paracetamol uh two tablets up to four times a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 1230,
+          "category": "medical-term",
+          "reference": "tablets",
+          "context": "eh taking some paracetamol uh two tablets up to four times a day",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1230,
+            "reference": "tablets",
+            "recognized": "tables"
+          }
+        },
+        {
+          "reference_index": 1233,
+          "category": "number",
+          "reference": "four",
+          "context": "paracetamol uh two tablets up to four times a day for the first",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 1271,
+          "category": "number",
+          "reference": "two",
+          "context": "but i would say the next two two to three days as the",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1271,
+            "reference": "two"
+          }
+        },
+        {
+          "reference_index": 1272,
+          "category": "number",
+          "reference": "two",
+          "context": "i would say the next two two to three days as the infection",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 1274,
+          "category": "number",
+          "reference": "three",
+          "context": "say the next two two to three days as the infection clears from",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1298,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "um i'll admit if your symptoms haven't got better you know in in",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 1305,
+          "category": "number",
+          "reference": "three",
+          "context": "got better you know in in three to four days i'd like to",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1307,
+          "category": "number",
+          "reference": "four",
+          "context": "you know in in three to four days i'd like to come and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 1380,
+          "category": "negation",
+          "reference": "no",
+          "context": "have any questions for me um no no further questions no okay and",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1380,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 1381,
+          "category": "negation",
+          "reference": "no",
+          "context": "any questions for me um no no further questions no okay and is",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1384,
+          "category": "negation",
+          "reference": "no",
+          "context": "me um no no further questions no okay and is uh is the",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1384,
+            "reference": "no"
+          }
+        }
+      ],
+      "limitation": "Alignment flags require context/listening review; a missing conversational no is not automatically a reversed clinical fact."
+    },
+    {
+      "model": "nemotron-speech-multilingual-0-6b",
+      "case": "en-02",
+      "primary_wer": 0.19030520646319568,
+      "hesitation_normalized_wer": 0.1845764854614412,
+      "hesitation_normalized_reference_words": 1582,
+      "hesitation_normalized_errors": 292,
+      "review_items": [
+        {
+          "reference_index": 23,
+          "category": "negation",
+          "reference": "not",
+          "context": "a bit it's a bit it's not very clear but let's continue anyway",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 82,
+          "category": "negation",
+          "reference": "no",
+          "context": "something quick to solve it ok no no problem i'm happy to help",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 82,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 83,
+          "category": "negation",
+          "reference": "no",
+          "context": "quick to solve it ok no no problem i'm happy to help um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 195,
+          "category": "negation",
+          "reference": "no",
+          "context": "uh disturbed by this disease yeah no no ok i'm certain this is",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 195,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 196,
+          "category": "negation",
+          "reference": "no",
+          "context": "disturbed by this disease yeah no no ok i'm certain this is obviously",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 196,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 242,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "i was like prescribed for my eczema ok and they gave me like",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 300,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "again i tried those and it didn't work i've tried a few things",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 312,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "things like i bought a a steroid cream at the pharmacy last night",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 312,
+            "reference": "steroid",
+            "recognized": "sterile"
+          }
+        },
+        {
+          "reference_index": 322,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "pharmacy last night but it apparently didn't help because it's still itching a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 346,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "of the cream you bought a steroid cream ok steroid ok um would",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroid"
+          }
+        },
+        {
+          "reference_index": 349,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "you bought a steroid cream ok steroid ok um would you say these",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 349,
+            "reference": "steroid",
+            "recognized": "it's"
+          }
+        },
+        {
+          "reference_index": 362,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "symptoms are very similar to your eczema symptoms or different um it's much",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 374,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "much more like itchy and my eczema was more like only in the",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 374,
+            "reference": "eczema",
+            "recognized": "magzema"
+          }
+        },
+        {
+          "reference_index": 464,
+          "category": "negation",
+          "reference": "no",
+          "context": "which is very very annoying yes no well ok that's so you mentioned",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 497,
+          "category": "negation",
+          "reference": "no",
+          "context": "or discharge from your skins ok no um so my skin is a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 524,
+          "category": "negation",
+          "reference": "not",
+          "context": "mean but uh yeah ok you've not haven't uh seen any other uh",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 524,
+            "reference": "not",
+            "recognized": "i'm"
+          }
+        },
+        {
+          "reference_index": 525,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "but uh yeah ok you've not haven't uh seen any other uh pus",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 525,
+            "reference": "haven't",
+            "recognized": "looking"
+          }
+        },
+        {
+          "reference_index": 533,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "seen any other uh pus or blood coming out of your skin no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 539,
+          "category": "negation",
+          "reference": "no",
+          "context": "blood coming out of your skin no no and you mentioned it all",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 539,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 540,
+          "category": "negation",
+          "reference": "no",
+          "context": "coming out of your skin no no and you mentioned it all started",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 540,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 547,
+          "category": "number",
+          "reference": "three",
+          "context": "and you mentioned it all started three days ago are you four days",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 552,
+          "category": "number",
+          "reference": "four",
+          "context": "started three days ago are you four days ago are you aware of",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 552,
+            "reference": "four"
+          }
+        },
+        {
+          "reference_index": 576,
+          "category": "number",
+          "reference": "four",
+          "context": "have caused your symptoms to start four days ago so for example have",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 576,
+            "reference": "four"
+          }
+        },
+        {
+          "reference_index": 597,
+          "category": "negation",
+          "reference": "no",
+          "context": "have you been around anyone else no i it's actually like it's really",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 597,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 617,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "should change something because i i haven't and i don't understand i cannot",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 620,
+          "category": "negation",
+          "reference": "don't",
+          "context": "because i i haven't and i don't understand i cannot um afraid of",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 638,
+          "category": "negation",
+          "reference": "don't",
+          "context": "it's cannot you know um i don't feel really comfortable asking about these",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 658,
+          "category": "negation",
+          "reference": "no",
+          "context": "i your help now mm mm no no ok that's ok um fine",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 658,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 659,
+          "category": "negation",
+          "reference": "no",
+          "context": "your help now mm mm no no ok that's ok um fine so",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 659,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 672,
+          "category": "number",
+          "reference": "four",
+          "context": "just to resummarize for the last four days you've had very itchy skin",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 702,
+          "category": "negation",
+          "reference": "no",
+          "context": "and legs as well yeah uh no just the chest hands and like",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 730,
+          "category": "negation",
+          "reference": "no",
+          "context": "on your face on my face no no ok and apart from this",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 730,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 731,
+          "category": "negation",
+          "reference": "no",
+          "context": "your face on my face no no ok and apart from this any",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 752,
+          "category": "negation",
+          "reference": "no",
+          "context": "you noticed any temperature or fevers no just very itchy nothing else itchy",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 752,
+            "reference": "no",
+            "recognized": "feversnos"
+          }
+        },
+        {
+          "reference_index": 771,
+          "category": "negation",
+          "reference": "no",
+          "context": "working ok your chest is ok no cough no breathing difficulties no you're",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 773,
+          "category": "negation",
+          "reference": "no",
+          "context": "your chest is ok no cough no breathing difficulties no you're passing urine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 776,
+          "category": "negation",
+          "reference": "no",
+          "context": "ok no cough no breathing difficulties no you're passing urine ok i i",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 776,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 825,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "your symptoms um so i had eczema before so maybe it's disease but",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 840,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "like more uh like uh my eczema was only on the arms so",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 849,
+          "category": "negation",
+          "reference": "not",
+          "context": "on the arms so i'm i'm not sure i i really have no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 855,
+          "category": "negation",
+          "reference": "no",
+          "context": "not sure i i really have no idea ok that's ok so um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 924,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "yeah uh your your background of eczema um so sorry to say there's",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 950,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "my apologies um apart from the eczema do you have any other medical",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 964,
+          "category": "negation",
+          "reference": "no",
+          "context": "i should be aware of uh no i just had asthma in the",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 968,
+          "category": "medical-term",
+          "reference": "asthma",
+          "context": "of uh no i just had asthma in the past but not anymore",
+          "alignment": {
+            "type": "correct",
+            "recognized": "asthma"
+          }
+        },
+        {
+          "reference_index": 973,
+          "category": "negation",
+          "reference": "not",
+          "context": "had asthma in the past but not anymore ok not anymore ok and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 976,
+          "category": "negation",
+          "reference": "not",
+          "context": "the past but not anymore ok not anymore ok and do you take",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 990,
+          "category": "negation",
+          "reference": "no",
+          "context": "regular medications at the moment uh no no ok do you have any",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 990,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 991,
+          "category": "negation",
+          "reference": "no",
+          "context": "medications at the moment uh no no ok do you have any allergies",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 997,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "no ok do you have any allergies to anything i like some sorry",
+          "alignment": {
+            "type": "correct",
+            "recognized": "allergies"
+          }
+        },
+        {
+          "reference_index": 1012,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "i said do you have any allergies to anything hello hello yes can",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1012,
+            "reference": "allergies"
+          }
+        },
+        {
+          "reference_index": 1032,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "it uh do you have any allergies at all ohh allergies uh no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "allergies"
+          }
+        },
+        {
+          "reference_index": 1036,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "have any allergies at all ohh allergies uh no no ok um and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "allergies"
+          }
+        },
+        {
+          "reference_index": 1038,
+          "category": "negation",
+          "reference": "no",
+          "context": "allergies at all ohh allergies uh no no ok um and tell me",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1039,
+          "category": "negation",
+          "reference": "no",
+          "context": "at all ohh allergies uh no no ok um and tell me about",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1073,
+          "category": "number",
+          "reference": "one",
+          "context": "a so you know i'm thirty one uh i yeah i'm i have",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 1152,
+          "category": "negation",
+          "reference": "no",
+          "context": "know more about it ok uh no no no that's that's absolutely fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1153,
+          "category": "negation",
+          "reference": "no",
+          "context": "more about it ok uh no no no that's that's absolutely fine um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1154,
+          "category": "negation",
+          "reference": "no",
+          "context": "about it ok uh no no no that's that's absolutely fine um just",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1154,
+            "reference": "no",
+            "recognized": "that's"
+          }
+        },
+        {
+          "reference_index": 1182,
+          "category": "negation",
+          "reference": "no",
+          "context": "is do you smoke at all no no and do you drink much",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1182,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 1183,
+          "category": "negation",
+          "reference": "no",
+          "context": "do you smoke at all no no and do you drink much in",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1197,
+          "category": "number",
+          "reference": "once",
+          "context": "way of alcohol uh you know once in a while i can i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "once"
+          }
+        },
+        {
+          "reference_index": 1209,
+          "category": "number",
+          "reference": "once",
+          "context": "i like hanging out with people once in a while so yeah i'd",
+          "alignment": {
+            "type": "correct",
+            "recognized": "once"
+          }
+        },
+        {
+          "reference_index": 1266,
+          "category": "negation",
+          "reference": "not",
+          "context": "to say this sound quality is not uh great but i will continue",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 1298,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "is a flare up of your eczema um the reason being that you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 1340,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "quite familiar um you mentioned using steroid creams yesterday um from the pharmacy",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1340,
+            "reference": "steroid",
+            "recognized": "sterile"
+          }
+        },
+        {
+          "reference_index": 1359,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "stronger prescription of a of a steroid may be beneficial uh which i'm",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroid"
+          }
+        },
+        {
+          "reference_index": 1382,
+          "category": "medical-term",
+          "reference": "emollients",
+          "context": "going to give you something some emollients which helps to moisturize the skin",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1382,
+            "reference": "emollients",
+            "recognized": "ammolians"
+          }
+        },
+        {
+          "reference_index": 1409,
+          "category": "number",
+          "reference": "seven",
+          "context": "um using that for the first seven to ten days ok uh before",
+          "alignment": {
+            "type": "correct",
+            "recognized": "seven"
+          }
+        },
+        {
+          "reference_index": 1411,
+          "category": "number",
+          "reference": "ten",
+          "context": "that for the first seven to ten days ok uh before we make",
+          "alignment": {
+            "type": "correct",
+            "recognized": "ten"
+          }
+        },
+        {
+          "reference_index": 1425,
+          "category": "negation",
+          "reference": "not",
+          "context": "decision on whether it's working or not ok um it's also worth um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 1433,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "um it's also worth um using antihistamines which you can sometimes buy over",
+          "alignment": {
+            "type": "correct",
+            "recognized": "antihistamines"
+          }
+        },
+        {
+          "reference_index": 1443,
+          "category": "medical-term",
+          "reference": "loratadine",
+          "context": "sometimes buy over counter things like loratadine or piriton which can help the",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1443,
+            "reference": "loratadine",
+            "recognized": "loratidine"
+          }
+        },
+        {
+          "reference_index": 1445,
+          "category": "medical-term",
+          "reference": "piriton",
+          "context": "over counter things like loratadine or piriton which can help the itchiness of",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1445,
+            "reference": "piriton",
+            "recognized": "piritin"
+          }
+        },
+        {
+          "reference_index": 1501,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "to have a discussion about an eczema cu ok yes i have tried",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1501,
+            "reference": "eczema",
+            "recognized": "see"
+          }
+        },
+        {
+          "reference_index": 1508,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "cu ok yes i have tried antihistamines uh lately but it didn't really",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1508,
+            "reference": "antihistamines",
+            "recognized": "entimines"
+          }
+        },
+        {
+          "reference_index": 1513,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "tried antihistamines uh lately but it didn't really help ohh could you say",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 1527,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "again sorry i have tried uh antihistamines but uh but it didn't really",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1527,
+            "reference": "antihistamines",
+            "recognized": "histamines"
+          }
+        },
+        {
+          "reference_index": 1532,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "uh antihistamines but uh but it didn't really help ok ok so it's",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 1551,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "you can get different types of antihistamines i can give you something a",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1551,
+            "reference": "antihistamines",
+            "recognized": "ancestamines"
+          }
+        },
+        {
+          "reference_index": 1567,
+          "category": "medical-term",
+          "reference": "fexofenadine",
+          "context": "today as well um something like fexofenadine which i can give to you",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1567,
+            "reference": "fexofenadine",
+            "recognized": "fexapenide"
+          }
+        },
+        {
+          "reference_index": 1581,
+          "category": "negation",
+          "reference": "not",
+          "context": "it's definitely worth trying and it's not going to do you any harm",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 1595,
+          "category": "medical-term",
+          "reference": "steroids",
+          "context": "um but i think using the steroids and the emollients um on a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroids"
+          }
+        },
+        {
+          "reference_index": 1598,
+          "category": "medical-term",
+          "reference": "emollients",
+          "context": "think using the steroids and the emollients um on a regular basis uh",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1598,
+            "reference": "emollients",
+            "recognized": "ammolions"
+          }
+        },
+        {
+          "reference_index": 1610,
+          "category": "number",
+          "reference": "ten",
+          "context": "uh over the next week to ten days should hopefully control your symptoms",
+          "alignment": {
+            "type": "correct",
+            "recognized": "ten"
+          }
+        },
+        {
+          "reference_index": 1628,
+          "category": "negation",
+          "reference": "don't",
+          "context": "see me next week if things don't get better that sounds good ok",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 1644,
+          "category": "negation",
+          "reference": "no",
+          "context": "have any questions for me uh no that's it thank you very much",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        }
+      ],
+      "limitation": "Alignment flags require context/listening review; a missing conversational no is not automatically a reversed clinical fact."
+    },
+    {
+      "model": "parakeet-realtime-eou-120m-v1",
+      "case": "en-01",
+      "primary_wer": 0.23890063424947147,
+      "hesitation_normalized_wer": 0.18877937831690675,
+      "hesitation_normalized_reference_words": 1319,
+      "hesitation_normalized_errors": 249,
+      "review_items": [
+        {
+          "reference_index": 32,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "hey um i've just had some diarrhea for the last three days um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 36,
+          "category": "number",
+          "reference": "three",
+          "context": "had some diarrhea for the last three days um and it's been affecting",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 73,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "um and and when you say diarrhea what'd you mean by diarrhea do",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 78,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "say diarrhea what'd you mean by diarrhea do you mean you're going to",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 140,
+          "category": "number",
+          "reference": "six",
+          "context": "couple of days um probably like six or seven times a day yeah",
+          "alignment": {
+            "type": "correct",
+            "recognized": "six"
+          }
+        },
+        {
+          "reference_index": 142,
+          "category": "number",
+          "reference": "seven",
+          "context": "days um probably like six or seven times a day yeah six seven",
+          "alignment": {
+            "type": "correct",
+            "recognized": "seven"
+          }
+        },
+        {
+          "reference_index": 147,
+          "category": "number",
+          "reference": "six",
+          "context": "or seven times a day yeah six seven times a day and you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "six"
+          }
+        },
+        {
+          "reference_index": 148,
+          "category": "number",
+          "reference": "seven",
+          "context": "seven times a day yeah six seven times a day and you mention",
+          "alignment": {
+            "type": "correct",
+            "recognized": "seven"
+          }
+        },
+        {
+          "reference_index": 165,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "you noticed any other things like blood in your stools no no blood",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 169,
+          "category": "negation",
+          "reference": "no",
+          "context": "things like blood in your stools no no blood yeah just watery and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 170,
+          "category": "negation",
+          "reference": "no",
+          "context": "like blood in your stools no no blood yeah just watery and loose",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 171,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "blood in your stools no no blood yeah just watery and loose stool",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 209,
+          "category": "number",
+          "reference": "one",
+          "context": "uh like um yeah just to one side one side and what side",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 211,
+          "category": "number",
+          "reference": "one",
+          "context": "um yeah just to one side one side and what side is that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 295,
+          "category": "negation",
+          "reference": "no",
+          "context": "for example towards your back uh no just maybe my stomach okay fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 331,
+          "category": "medical-term",
+          "reference": "feverish",
+          "context": "having uh have you been feeling feverish for example yeah um yeah it",
+          "alignment": {
+            "type": "correct",
+            "recognized": "feverish"
+          }
+        },
+        {
+          "reference_index": 338,
+          "category": "negation",
+          "reference": "doesn't",
+          "context": "for example yeah um yeah it doesn't feel like yeah it just makes",
+          "alignment": {
+            "type": "correct",
+            "recognized": "doesn't"
+          }
+        },
+        {
+          "reference_index": 349,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "just makes me feel weak i haven't had a fever um at the",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 352,
+          "category": "medical-term",
+          "reference": "fever",
+          "context": "feel weak i haven't had a fever um at the moment but i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "fever"
+          }
+        },
+        {
+          "reference_index": 373,
+          "category": "number",
+          "reference": "three",
+          "context": "started so um yeah around about three or four days ago you measure",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 375,
+          "category": "number",
+          "reference": "four",
+          "context": "um yeah around about three or four days ago you measure your temperature",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 387,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "temperature then yeah i uh i didn't mention my temperature no but i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 391,
+          "category": "negation",
+          "reference": "no",
+          "context": "uh i didn't mention my temperature no but i felt um just a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 413,
+          "category": "negation",
+          "reference": "no",
+          "context": "like sweating or um night sweats no and uh any vomiting at all",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 417,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "night sweats no and uh any vomiting at all uh no yeah so",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 421,
+          "category": "negation",
+          "reference": "no",
+          "context": "uh any vomiting at all uh no yeah so um i vomited at",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 421,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 438,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "symptoms but now um i've stopped vomiting you stopped vomiting okay and was",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 438,
+            "reference": "vomiting"
+          }
+        },
+        {
+          "reference_index": 441,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "um i've stopped vomiting you stopped vomiting okay and was your vomit i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 450,
+          "category": "negation",
+          "reference": "not",
+          "context": "was your vomit i know it's not a nice thing to talk about",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 468,
+          "category": "negation",
+          "reference": "no",
+          "context": "food colour yeah and there was no blood in your vomit is that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 469,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "colour yeah and there was no blood in your vomit is that right",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 482,
+          "category": "negation",
+          "reference": "no",
+          "context": "yeah yeah just normal vomit yeah no no blood no yeah no okay",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 482,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 483,
+          "category": "negation",
+          "reference": "no",
+          "context": "yeah just normal vomit yeah no no blood no yeah no okay um",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 483,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 484,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "just normal vomit yeah no no blood no yeah no okay um and",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 484,
+            "reference": "blood"
+          }
+        },
+        {
+          "reference_index": 485,
+          "category": "negation",
+          "reference": "no",
+          "context": "normal vomit yeah no no blood no yeah no okay um and um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 487,
+          "category": "negation",
+          "reference": "no",
+          "context": "yeah no no blood no yeah no okay um and um any any",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 505,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "you mentioned tummy pain you mentioned diarrhea you mentioned your vomiting uh anything",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 509,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "you mentioned diarrhea you mentioned your vomiting uh anything else that comes to",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 528,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "loss of appetite um so i haven't been eating as much but i've",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 582,
+          "category": "number",
+          "reference": "three",
+          "context": "fine um and sir these started three days ago the symptoms are you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 627,
+          "category": "number",
+          "reference": "four",
+          "context": "yeah so i had takeaway about four days ago um uh but other",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 672,
+          "category": "negation",
+          "reference": "no",
+          "context": "unwell with similar symptoms um so no one else in the family so",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 673,
+          "category": "number",
+          "reference": "one",
+          "context": "with similar symptoms um so no one else in the family so a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 682,
+          "category": "number",
+          "reference": "two",
+          "context": "the family so a wife and two kids and one um child was",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 685,
+          "category": "number",
+          "reference": "one",
+          "context": "a wife and two kids and one um child was vomiting but they",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 689,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "kids and one um child was vomiting but they haven't got diarrhea there's",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 692,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "um child was vomiting but they haven't got diarrhea there's no one with",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 694,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "was vomiting but they haven't got diarrhea there's no one with the same",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 696,
+          "category": "negation",
+          "reference": "no",
+          "context": "but they haven't got diarrhea there's no one with the same symptoms okay",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 697,
+          "category": "number",
+          "reference": "one",
+          "context": "they haven't got diarrhea there's no one with the same symptoms okay okay",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 736,
+          "category": "medical-term",
+          "reference": "inhaler",
+          "context": "um athsma um i use an inhaler everything uh else is fine okay",
+          "alignment": {
+            "type": "correct",
+            "recognized": "inhaler"
+          }
+        },
+        {
+          "reference_index": 746,
+          "category": "medical-term",
+          "reference": "asthma",
+          "context": "is fine okay and is your asthma well controlled uh yeah that's fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "asthma"
+          }
+        },
+        {
+          "reference_index": 758,
+          "category": "medical-term",
+          "reference": "inhaler",
+          "context": "fine i just yeah use an inhaler and uh that's under control fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "inhaler"
+          }
+        },
+        {
+          "reference_index": 767,
+          "category": "negation",
+          "reference": "don't",
+          "context": "that's under control fine and you don't have any other tummy problem bowel",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 780,
+          "category": "negation",
+          "reference": "no",
+          "context": "problems i should be aware of no no okay um and apart from",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 781,
+          "category": "negation",
+          "reference": "no",
+          "context": "i should be aware of no no okay um and apart from the",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 788,
+          "category": "medical-term",
+          "reference": "inhalers",
+          "context": "okay um and apart from the inhalers do you take any other medications",
+          "alignment": {
+            "type": "correct",
+            "recognized": "inhalers"
+          }
+        },
+        {
+          "reference_index": 796,
+          "category": "negation",
+          "reference": "no",
+          "context": "you take any other medications uh no no other medications okay fine and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 797,
+          "category": "negation",
+          "reference": "no",
+          "context": "take any other medications uh no no other medications okay fine and in",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 849,
+          "category": "number",
+          "reference": "three",
+          "context": "quite frequently during the these past three days um yeah other than that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 897,
+          "category": "number",
+          "reference": "three",
+          "context": "been going into work the last three days or have you been at",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 938,
+          "category": "number",
+          "reference": "two",
+          "context": "you live with your wife and two children is that right yes yeah",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 966,
+          "category": "negation",
+          "reference": "no",
+          "context": "do you smoke at all uh no i don't smoke and do you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 968,
+          "category": "negation",
+          "reference": "don't",
+          "context": "smoke at all uh no i don't smoke and do you drink much",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 981,
+          "category": "negation",
+          "reference": "no",
+          "context": "in the way of alcohol uh no i i don't drink alcohol no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 984,
+          "category": "negation",
+          "reference": "don't",
+          "context": "of alcohol uh no i i don't drink alcohol no okay so um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 987,
+          "category": "negation",
+          "reference": "no",
+          "context": "no i i don't drink alcohol no okay so um er normally at",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 987,
+            "reference": "no",
+            "recognized": "though"
+          }
+        },
+        {
+          "reference_index": 1026,
+          "category": "number",
+          "reference": "three",
+          "context": "just to recap for the last three days you've been having loose stool",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1033,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "days you've been having loose stool diarrhea a bit of tummy pain uh",
+          "alignment": {
+            "type": "correct",
+            "recognized": "diarrhea"
+          }
+        },
+        {
+          "reference_index": 1048,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "the left hand side um and vomiting and fever and you're quite weak",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 1050,
+          "category": "medical-term",
+          "reference": "fever",
+          "context": "hand side um and vomiting and fever and you're quite weak and lethargic",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1050,
+            "reference": "fever",
+            "recognized": "themes"
+          }
+        },
+        {
+          "reference_index": 1068,
+          "category": "number",
+          "reference": "three",
+          "context": "this chinese takeaway as little as three days ago and i wondered whether",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1095,
+          "category": "medical-term",
+          "reference": "gastroenteritis",
+          "context": "you may have something uh called gastroenteritis which essentially just a tummy bug",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1095,
+            "reference": "gastroenteritis",
+            "recognized": "gastropentaritis"
+          }
+        },
+        {
+          "reference_index": 1148,
+          "category": "negation",
+          "reference": "don't",
+          "context": "say conservative management so um i don't think you need anything like antibiotics",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 1174,
+          "category": "medical-term",
+          "reference": "dioralyte",
+          "context": "hmm um there are things like dioralyte you can get from the pharmacy",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1174,
+            "reference": "dioralyte",
+            "recognized": "dirolite"
+          }
+        },
+        {
+          "reference_index": 1200,
+          "category": "medical-term",
+          "reference": "vomiting",
+          "context": "um and if you are having vomiting diarrhea i would say recommend that",
+          "alignment": {
+            "type": "correct",
+            "recognized": "vomiting"
+          }
+        },
+        {
+          "reference_index": 1201,
+          "category": "medical-term",
+          "reference": "diarrhea",
+          "context": "and if you are having vomiting diarrhea i would say recommend that in",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1201,
+            "reference": "diarrhea",
+            "recognized": "diary"
+          }
+        },
+        {
+          "reference_index": 1221,
+          "category": "medical-term",
+          "reference": "feverish",
+          "context": "days yep if you are feeling feverish and weak eh taking some paracetamol",
+          "alignment": {
+            "type": "correct",
+            "recognized": "feverish"
+          }
+        },
+        {
+          "reference_index": 1227,
+          "category": "medical-term",
+          "reference": "paracetamol",
+          "context": "feverish and weak eh taking some paracetamol uh two tablets up to four",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1227,
+            "reference": "paracetamol"
+          }
+        },
+        {
+          "reference_index": 1229,
+          "category": "number",
+          "reference": "two",
+          "context": "weak eh taking some paracetamol uh two tablets up to four times a",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1229,
+            "reference": "two",
+            "recognized": "tube"
+          }
+        },
+        {
+          "reference_index": 1230,
+          "category": "medical-term",
+          "reference": "tablets",
+          "context": "eh taking some paracetamol uh two tablets up to four times a day",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1230,
+            "reference": "tablets",
+            "recognized": "it's"
+          }
+        },
+        {
+          "reference_index": 1233,
+          "category": "number",
+          "reference": "four",
+          "context": "paracetamol uh two tablets up to four times a day for the first",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 1271,
+          "category": "number",
+          "reference": "two",
+          "context": "but i would say the next two two to three days as the",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1271,
+            "reference": "two"
+          }
+        },
+        {
+          "reference_index": 1272,
+          "category": "number",
+          "reference": "two",
+          "context": "i would say the next two two to three days as the infection",
+          "alignment": {
+            "type": "correct",
+            "recognized": "two"
+          }
+        },
+        {
+          "reference_index": 1274,
+          "category": "number",
+          "reference": "three",
+          "context": "say the next two two to three days as the infection clears from",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1298,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "um i'll admit if your symptoms haven't got better you know in in",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 1305,
+          "category": "number",
+          "reference": "three",
+          "context": "got better you know in in three to four days i'd like to",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 1307,
+          "category": "number",
+          "reference": "four",
+          "context": "you know in in three to four days i'd like to come and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 1380,
+          "category": "negation",
+          "reference": "no",
+          "context": "have any questions for me um no no further questions no okay and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1381,
+          "category": "negation",
+          "reference": "no",
+          "context": "any questions for me um no no further questions no okay and is",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1384,
+          "category": "negation",
+          "reference": "no",
+          "context": "me um no no further questions no okay and is uh is the",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1384,
+            "reference": "no"
+          }
+        }
+      ],
+      "limitation": "Alignment flags require context/listening review; a missing conversational no is not automatically a reversed clinical fact."
+    },
+    {
+      "model": "parakeet-realtime-eou-120m-v1",
+      "case": "en-02",
+      "primary_wer": 0.21903052064631956,
+      "hesitation_normalized_wer": 0.18394437420986093,
+      "hesitation_normalized_reference_words": 1582,
+      "hesitation_normalized_errors": 291,
+      "review_items": [
+        {
+          "reference_index": 23,
+          "category": "negation",
+          "reference": "not",
+          "context": "a bit it's a bit it's not very clear but let's continue anyway",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 82,
+          "category": "negation",
+          "reference": "no",
+          "context": "something quick to solve it ok no no problem i'm happy to help",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 83,
+          "category": "negation",
+          "reference": "no",
+          "context": "quick to solve it ok no no problem i'm happy to help um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 195,
+          "category": "negation",
+          "reference": "no",
+          "context": "uh disturbed by this disease yeah no no ok i'm certain this is",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 196,
+          "category": "negation",
+          "reference": "no",
+          "context": "disturbed by this disease yeah no no ok i'm certain this is obviously",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 242,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "i was like prescribed for my eczema ok and they gave me like",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 242,
+            "reference": "eczema"
+          }
+        },
+        {
+          "reference_index": 300,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "again i tried those and it didn't work i've tried a few things",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 312,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "things like i bought a a steroid cream at the pharmacy last night",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 312,
+            "reference": "steroid",
+            "recognized": "spirit"
+          }
+        },
+        {
+          "reference_index": 322,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "pharmacy last night but it apparently didn't help because it's still itching a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 346,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "of the cream you bought a steroid cream ok steroid ok um would",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 346,
+            "reference": "steroid"
+          }
+        },
+        {
+          "reference_index": 349,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "you bought a steroid cream ok steroid ok um would you say these",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroid"
+          }
+        },
+        {
+          "reference_index": 362,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "symptoms are very similar to your eczema symptoms or different um it's much",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 374,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "much more like itchy and my eczema was more like only in the",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 374,
+            "reference": "eczema",
+            "recognized": "exam"
+          }
+        },
+        {
+          "reference_index": 464,
+          "category": "negation",
+          "reference": "no",
+          "context": "which is very very annoying yes no well ok that's so you mentioned",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 497,
+          "category": "negation",
+          "reference": "no",
+          "context": "or discharge from your skins ok no um so my skin is a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 524,
+          "category": "negation",
+          "reference": "not",
+          "context": "mean but uh yeah ok you've not haven't uh seen any other uh",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 524,
+            "reference": "not",
+            "recognized": "i"
+          }
+        },
+        {
+          "reference_index": 525,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "but uh yeah ok you've not haven't uh seen any other uh pus",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 525,
+            "reference": "haven't",
+            "recognized": "have"
+          }
+        },
+        {
+          "reference_index": 533,
+          "category": "medical-term",
+          "reference": "blood",
+          "context": "seen any other uh pus or blood coming out of your skin no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "blood"
+          }
+        },
+        {
+          "reference_index": 539,
+          "category": "negation",
+          "reference": "no",
+          "context": "blood coming out of your skin no no and you mentioned it all",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 539,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 540,
+          "category": "negation",
+          "reference": "no",
+          "context": "coming out of your skin no no and you mentioned it all started",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 547,
+          "category": "number",
+          "reference": "three",
+          "context": "and you mentioned it all started three days ago are you four days",
+          "alignment": {
+            "type": "correct",
+            "recognized": "three"
+          }
+        },
+        {
+          "reference_index": 552,
+          "category": "number",
+          "reference": "four",
+          "context": "started three days ago are you four days ago are you aware of",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 576,
+          "category": "number",
+          "reference": "four",
+          "context": "have caused your symptoms to start four days ago so for example have",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 576,
+            "reference": "four"
+          }
+        },
+        {
+          "reference_index": 597,
+          "category": "negation",
+          "reference": "no",
+          "context": "have you been around anyone else no i it's actually like it's really",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 617,
+          "category": "negation",
+          "reference": "haven't",
+          "context": "should change something because i i haven't and i don't understand i cannot",
+          "alignment": {
+            "type": "correct",
+            "recognized": "haven't"
+          }
+        },
+        {
+          "reference_index": 620,
+          "category": "negation",
+          "reference": "don't",
+          "context": "because i i haven't and i don't understand i cannot um afraid of",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 638,
+          "category": "negation",
+          "reference": "don't",
+          "context": "it's cannot you know um i don't feel really comfortable asking about these",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 658,
+          "category": "negation",
+          "reference": "no",
+          "context": "i your help now mm mm no no ok that's ok um fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 659,
+          "category": "negation",
+          "reference": "no",
+          "context": "your help now mm mm no no ok that's ok um fine so",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 672,
+          "category": "number",
+          "reference": "four",
+          "context": "just to resummarize for the last four days you've had very itchy skin",
+          "alignment": {
+            "type": "correct",
+            "recognized": "four"
+          }
+        },
+        {
+          "reference_index": 702,
+          "category": "negation",
+          "reference": "no",
+          "context": "and legs as well yeah uh no just the chest hands and like",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 730,
+          "category": "negation",
+          "reference": "no",
+          "context": "on your face on my face no no ok and apart from this",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 731,
+          "category": "negation",
+          "reference": "no",
+          "context": "your face on my face no no ok and apart from this any",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 752,
+          "category": "negation",
+          "reference": "no",
+          "context": "you noticed any temperature or fevers no just very itchy nothing else itchy",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 771,
+          "category": "negation",
+          "reference": "no",
+          "context": "working ok your chest is ok no cough no breathing difficulties no you're",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 773,
+          "category": "negation",
+          "reference": "no",
+          "context": "your chest is ok no cough no breathing difficulties no you're passing urine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 776,
+          "category": "negation",
+          "reference": "no",
+          "context": "ok no cough no breathing difficulties no you're passing urine ok i i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 825,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "your symptoms um so i had eczema before so maybe it's disease but",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 840,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "like more uh like uh my eczema was only on the arms so",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 840,
+            "reference": "eczema",
+            "recognized": "exam"
+          }
+        },
+        {
+          "reference_index": 849,
+          "category": "negation",
+          "reference": "not",
+          "context": "on the arms so i'm i'm not sure i i really have no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 855,
+          "category": "negation",
+          "reference": "no",
+          "context": "not sure i i really have no idea ok that's ok so um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 924,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "yeah uh your your background of eczema um so sorry to say there's",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 950,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "my apologies um apart from the eczema do you have any other medical",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 964,
+          "category": "negation",
+          "reference": "no",
+          "context": "i should be aware of uh no i just had asthma in the",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 968,
+          "category": "medical-term",
+          "reference": "asthma",
+          "context": "of uh no i just had asthma in the past but not anymore",
+          "alignment": {
+            "type": "correct",
+            "recognized": "asthma"
+          }
+        },
+        {
+          "reference_index": 973,
+          "category": "negation",
+          "reference": "not",
+          "context": "had asthma in the past but not anymore ok not anymore ok and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 976,
+          "category": "negation",
+          "reference": "not",
+          "context": "the past but not anymore ok not anymore ok and do you take",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 990,
+          "category": "negation",
+          "reference": "no",
+          "context": "regular medications at the moment uh no no ok do you have any",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 991,
+          "category": "negation",
+          "reference": "no",
+          "context": "medications at the moment uh no no ok do you have any allergies",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 991,
+            "reference": "no",
+            "recognized": "nope"
+          }
+        },
+        {
+          "reference_index": 997,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "no ok do you have any allergies to anything i like some sorry",
+          "alignment": {
+            "type": "correct",
+            "recognized": "allergies"
+          }
+        },
+        {
+          "reference_index": 1012,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "i said do you have any allergies to anything hello hello yes can",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1012,
+            "reference": "allergies",
+            "recognized": "of"
+          }
+        },
+        {
+          "reference_index": 1032,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "it uh do you have any allergies at all ohh allergies uh no",
+          "alignment": {
+            "type": "correct",
+            "recognized": "allergies"
+          }
+        },
+        {
+          "reference_index": 1036,
+          "category": "medical-term",
+          "reference": "allergies",
+          "context": "have any allergies at all ohh allergies uh no no ok um and",
+          "alignment": {
+            "type": "correct",
+            "recognized": "allergies"
+          }
+        },
+        {
+          "reference_index": 1038,
+          "category": "negation",
+          "reference": "no",
+          "context": "allergies at all ohh allergies uh no no ok um and tell me",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1038,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 1039,
+          "category": "negation",
+          "reference": "no",
+          "context": "at all ohh allergies uh no no ok um and tell me about",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1073,
+          "category": "number",
+          "reference": "one",
+          "context": "a so you know i'm thirty one uh i yeah i'm i have",
+          "alignment": {
+            "type": "correct",
+            "recognized": "one"
+          }
+        },
+        {
+          "reference_index": 1152,
+          "category": "negation",
+          "reference": "no",
+          "context": "know more about it ok uh no no no that's that's absolutely fine",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1153,
+          "category": "negation",
+          "reference": "no",
+          "context": "more about it ok uh no no no that's that's absolutely fine um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1154,
+          "category": "negation",
+          "reference": "no",
+          "context": "about it ok uh no no no that's that's absolutely fine um just",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1182,
+          "category": "negation",
+          "reference": "no",
+          "context": "is do you smoke at all no no and do you drink much",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1182,
+            "reference": "no"
+          }
+        },
+        {
+          "reference_index": 1183,
+          "category": "negation",
+          "reference": "no",
+          "context": "do you smoke at all no no and do you drink much in",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        },
+        {
+          "reference_index": 1197,
+          "category": "number",
+          "reference": "once",
+          "context": "way of alcohol uh you know once in a while i can i",
+          "alignment": {
+            "type": "correct",
+            "recognized": "once"
+          }
+        },
+        {
+          "reference_index": 1209,
+          "category": "number",
+          "reference": "once",
+          "context": "i like hanging out with people once in a while so yeah i'd",
+          "alignment": {
+            "type": "correct",
+            "recognized": "once"
+          }
+        },
+        {
+          "reference_index": 1266,
+          "category": "negation",
+          "reference": "not",
+          "context": "to say this sound quality is not uh great but i will continue",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 1298,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "is a flare up of your eczema um the reason being that you",
+          "alignment": {
+            "type": "correct",
+            "recognized": "eczema"
+          }
+        },
+        {
+          "reference_index": 1340,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "quite familiar um you mentioned using steroid creams yesterday um from the pharmacy",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroid"
+          }
+        },
+        {
+          "reference_index": 1359,
+          "category": "medical-term",
+          "reference": "steroid",
+          "context": "stronger prescription of a of a steroid may be beneficial uh which i'm",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroid"
+          }
+        },
+        {
+          "reference_index": 1382,
+          "category": "medical-term",
+          "reference": "emollients",
+          "context": "going to give you something some emollients which helps to moisturize the skin",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1382,
+            "reference": "emollients",
+            "recognized": "amoleins"
+          }
+        },
+        {
+          "reference_index": 1409,
+          "category": "number",
+          "reference": "seven",
+          "context": "um using that for the first seven to ten days ok uh before",
+          "alignment": {
+            "type": "correct",
+            "recognized": "seven"
+          }
+        },
+        {
+          "reference_index": 1411,
+          "category": "number",
+          "reference": "ten",
+          "context": "that for the first seven to ten days ok uh before we make",
+          "alignment": {
+            "type": "correct",
+            "recognized": "ten"
+          }
+        },
+        {
+          "reference_index": 1425,
+          "category": "negation",
+          "reference": "not",
+          "context": "decision on whether it's working or not ok um it's also worth um",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 1433,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "um it's also worth um using antihistamines which you can sometimes buy over",
+          "alignment": {
+            "type": "correct",
+            "recognized": "antihistamines"
+          }
+        },
+        {
+          "reference_index": 1443,
+          "category": "medical-term",
+          "reference": "loratadine",
+          "context": "sometimes buy over counter things like loratadine or piriton which can help the",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1443,
+            "reference": "loratadine",
+            "recognized": "ratadine"
+          }
+        },
+        {
+          "reference_index": 1445,
+          "category": "medical-term",
+          "reference": "piriton",
+          "context": "over counter things like loratadine or piriton which can help the itchiness of",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1445,
+            "reference": "piriton",
+            "recognized": "piritin"
+          }
+        },
+        {
+          "reference_index": 1501,
+          "category": "medical-term",
+          "reference": "eczema",
+          "context": "to have a discussion about an eczema cu ok yes i have tried",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1501,
+            "reference": "eczema",
+            "recognized": "you"
+          }
+        },
+        {
+          "reference_index": 1508,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "cu ok yes i have tried antihistamines uh lately but it didn't really",
+          "alignment": {
+            "type": "correct",
+            "recognized": "antihistamines"
+          }
+        },
+        {
+          "reference_index": 1513,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "tried antihistamines uh lately but it didn't really help ohh could you say",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 1527,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "again sorry i have tried uh antihistamines but uh but it didn't really",
+          "alignment": {
+            "type": "correct",
+            "recognized": "antihistamines"
+          }
+        },
+        {
+          "reference_index": 1532,
+          "category": "negation",
+          "reference": "didn't",
+          "context": "uh antihistamines but uh but it didn't really help ok ok so it's",
+          "alignment": {
+            "type": "correct",
+            "recognized": "didn't"
+          }
+        },
+        {
+          "reference_index": 1551,
+          "category": "medical-term",
+          "reference": "antihistamines",
+          "context": "you can get different types of antihistamines i can give you something a",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1551,
+            "reference": "antihistamines",
+            "recognized": "ancestors"
+          }
+        },
+        {
+          "reference_index": 1567,
+          "category": "medical-term",
+          "reference": "fexofenadine",
+          "context": "today as well um something like fexofenadine which i can give to you",
+          "alignment": {
+            "type": "substitution",
+            "reference_index": 1567,
+            "reference": "fexofenadine",
+            "recognized": "ephenidine"
+          }
+        },
+        {
+          "reference_index": 1581,
+          "category": "negation",
+          "reference": "not",
+          "context": "it's definitely worth trying and it's not going to do you any harm",
+          "alignment": {
+            "type": "correct",
+            "recognized": "not"
+          }
+        },
+        {
+          "reference_index": 1595,
+          "category": "medical-term",
+          "reference": "steroids",
+          "context": "um but i think using the steroids and the emollients um on a",
+          "alignment": {
+            "type": "correct",
+            "recognized": "steroids"
+          }
+        },
+        {
+          "reference_index": 1598,
+          "category": "medical-term",
+          "reference": "emollients",
+          "context": "think using the steroids and the emollients um on a regular basis uh",
+          "alignment": {
+            "type": "deletion",
+            "reference_index": 1598,
+            "reference": "emollients"
+          }
+        },
+        {
+          "reference_index": 1610,
+          "category": "number",
+          "reference": "ten",
+          "context": "uh over the next week to ten days should hopefully control your symptoms",
+          "alignment": {
+            "type": "correct",
+            "recognized": "ten"
+          }
+        },
+        {
+          "reference_index": 1628,
+          "category": "negation",
+          "reference": "don't",
+          "context": "see me next week if things don't get better that sounds good ok",
+          "alignment": {
+            "type": "correct",
+            "recognized": "don't"
+          }
+        },
+        {
+          "reference_index": 1644,
+          "category": "negation",
+          "reference": "no",
+          "context": "have any questions for me uh no that's it thank you very much",
+          "alignment": {
+            "type": "correct",
+            "recognized": "no"
+          }
+        }
+      ],
+      "limitation": "Alignment flags require context/listening review; a missing conversational no is not automatically a reversed clinical fact."
+    }
+  ]
+}

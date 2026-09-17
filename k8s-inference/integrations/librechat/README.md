@@ -6,6 +6,8 @@ solution from LibreChat:
 - `librechat.example.yaml`: per-user MCP authentication and agent capabilities;
 - `AGENT_INSTRUCTIONS.md`: instructions to install on the saved workbench agent;
 - `skills/scientific-gateway/`: the replacement shared deployment skill;
+- `skills/clinical-documentation/`: executable consultation-audio to German
+  Arztbrief/English report workflow, citations and separate follow-up questions;
 - `HANDOVER.md`: deployment, identity, file-bridge and acceptance requirements.
 
 Set the non-secret deployment variable:

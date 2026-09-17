@@ -1,0 +1,112 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "fs2-bioir-coverage-rfdiffusion",
+    "namespace": "fs2-bioir-coverage",
+    "labels": {
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "coverage",
+      "benchmark-model": "rfdiffusion"
+    }
+  },
+  "spec": {
+    "restartPolicy": "Never",
+    "activeDeadlineSeconds": 14400,
+    "automountServiceAccountToken": false,
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00krzha55t0sg3t56"
+    },
+    "tolerations": [
+      {
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference",
+        "effect": "NoSchedule"
+      }
+    ],
+    "securityContext": {
+      "runAsUser": 10001,
+      "runAsGroup": 10001,
+      "fsGroup": 10001,
+      "supplementalGroups": [
+        1000
+      ],
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "containers": [
+      {
+        "name": "runtime",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+        "imagePullPolicy": "IfNotPresent",
+        "command": [
+          "python",
+          "-c",
+          "import time; time.sleep(14400)"
+        ],
+        "resources": {
+          "limits": {
+            "cpu": "16000m",
+            "ephemeral-storage": "32Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "requests": {
+            "cpu": "8000m",
+            "ephemeral-storage": "16Gi",
+            "memory": "48Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "work",
+            "mountPath": "/work"
+          },
+          {
+            "name": "eval",
+            "mountPath": "/eval",
+            "readOnly": true
+          },
+          {
+            "name": "rfdiffusion-checkpoint",
+            "mountPath": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+            "subPath": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+            "readOnly": true
+          }
+        ],
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        }
+      }
+    ],
+    "volumes": [
+      {
+        "name": "work",
+        "emptyDir": {
+          "sizeLimit": "32Gi"
+        }
+      },
+      {
+        "name": "eval",
+        "configMap": {
+          "name": "fs2-bioir-coverage-batch"
+        }
+      },
+      {
+        "name": "rfdiffusion-checkpoint",
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        }
+      }
+    ]
+  }
+}

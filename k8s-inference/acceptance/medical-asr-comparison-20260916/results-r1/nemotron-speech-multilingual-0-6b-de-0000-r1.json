@@ -1,0 +1,121 @@
+{
+  "case": "de-0000",
+  "language": "de",
+  "audio_seconds": 12.52,
+  "source_sha256": "733c8fc54418d4750bd802e4f5beba27b07a7d51718595adecdfddde24e0ae50",
+  "reference": "nicht nur HIV sein, Maßnahmen ergreift, um den Ausbruch einer Erkrankung zu verhindern oder, ich sage es etwas zurückhaltender, ihren Verlauf abzumildern! Das machen Sie",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 0
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:45:24.162024+00:00",
+  "submit_status": 202,
+  "operation_id": "06ab8e8d-bce5-4413-a652-0afd90ac2d16",
+  "operation": {
+    "id": "06ab8e8d-bce5-4413-a652-0afd90ac2d16",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-85708335f47e4bd2b44fb0f9f57d4293",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:45:24.708676Z",
+    "available_at": "2026-09-16T21:45:24.708676Z",
+    "deadline_at": "2026-09-16T23:45:24.703011Z",
+    "activation_started_at": "2026-09-16T21:45:24.726564Z",
+    "ready_at": "2026-09-16T21:45:25.002059Z",
+    "started_at": "2026-09-16T21:45:25.005780Z",
+    "completed_at": "2026-09-16T21:45:26.520354Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:45:24.708676Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.293383,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 12.52
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 3.189836088567972,
+  "text": "nur HV sein, Maßnahmen ergreift, um den Ausbruch einer Erkrankung zu verhindern oder ich sage es etwas zurückhaltende, ihren Verlauf abzumildern. Das machen Sie",
+  "result_audio_seconds": 12.52,
+  "processing_seconds": 0.7118313510436565,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "790394f43b0da628a321bf43299c26ac7099835104f3a0d9585f9c31a756b27a",
+  "quality": {
+    "reference_words": 25,
+    "hypothesis_words": 24,
+    "wer": 0.12,
+    "substitutions": 2,
+    "deletions": 1,
+    "insertions": 0,
+    "correct": 22,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 0,
+        "reference": "nicht"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 2,
+        "reference": "hiv",
+        "recognized": "hv"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 18,
+        "reference": "zurückhaltender",
+        "recognized": "zurückhaltende"
+      }
+    ],
+    "reference_characters": 140,
+    "character_errors": 7,
+    "cer": 0.05
+  },
+  "finished_at": "2026-09-16T21:45:27.352790+00:00"
+}

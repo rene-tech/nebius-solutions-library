@@ -1,0 +1,116 @@
+{
+  "case": "de-0187",
+  "language": "de",
+  "audio_seconds": 11.16,
+  "source_sha256": "57dcfb6c92d66254bb24d6f098f7534e9d465d5a172a966b05033a2b2fe840fa",
+  "reference": "der oben kurz angesprochenen Grundbedingungen erfüllen, werden Sie als potentieller Partner des Unternehmen-Weltladen ausgewählt und bekommen Zugang zu unserem umfangreichen Informationspool.",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 187
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:45:42.487524+00:00",
+  "submit_status": 202,
+  "operation_id": "062a7ef5-5720-4554-bba8-1663b4c003d5",
+  "operation": {
+    "id": "062a7ef5-5720-4554-bba8-1663b4c003d5",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-d44c2d324f0f468ca574315edd8fd568",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:45:43.036718Z",
+    "available_at": "2026-09-16T21:45:43.036718Z",
+    "deadline_at": "2026-09-16T23:45:43.025972Z",
+    "activation_started_at": "2026-09-16T21:45:43.077522Z",
+    "ready_at": "2026-09-16T21:45:43.338060Z",
+    "started_at": "2026-09-16T21:45:43.347277Z",
+    "completed_at": "2026-09-16T21:45:44.278489Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:45:43.036718Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.301342,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 11.16
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.479694504290819,
+  "text": "der oben kurz angesprochenen Grundbedingungen erfüllen. Werden Sie als potenzieller Partner des Unternehmen Weltladen ausgewählt und bekommen Zugang zu unserem umfangreichen Informationspunkt?",
+  "result_audio_seconds": 11.16,
+  "processing_seconds": 0.6549901070538908,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "333175c3a3cb9f67b591d66b5b249b1ce4f125c3bb425dba28d18311bf6baab7",
+  "quality": {
+    "reference_words": 22,
+    "hypothesis_words": 22,
+    "wer": 0.09090909090909091,
+    "substitutions": 2,
+    "deletions": 0,
+    "insertions": 0,
+    "correct": 20,
+    "errors": [
+      {
+        "type": "substitution",
+        "reference_index": 9,
+        "reference": "potentieller",
+        "recognized": "potenzieller"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 21,
+        "reference": "informationspool",
+        "recognized": "informationspunkt"
+      }
+    ],
+    "reference_characters": 168,
+    "character_errors": 5,
+    "cer": 0.02976190476190476
+  },
+  "finished_at": "2026-09-16T21:45:44.968115+00:00"
+}

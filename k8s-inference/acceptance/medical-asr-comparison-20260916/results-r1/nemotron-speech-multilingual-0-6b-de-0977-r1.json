@@ -1,0 +1,130 @@
+{
+  "case": "de-0977",
+  "language": "de",
+  "audio_seconds": 11.07,
+  "source_sha256": "0839e7ae62187b9b9ee7183d21dd974dbe83593dcf22264edfff7c93582eed1b",
+  "reference": "Ich meine ja auch meine Igel, die ich kenne. Du schaffst das niemals! Doch! Das will ich sehen, ob du das schaffst! So, guck hier! Super, da kann ich",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 977
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:58.737491+00:00",
+  "submit_status": 202,
+  "operation_id": "86410f36-f4cf-4beb-bfee-0f2fd5a4cbab",
+  "operation": {
+    "id": "86410f36-f4cf-4beb-bfee-0f2fd5a4cbab",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-f24b477e22fc412caa0a84baa9cd2671",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:59.301472Z",
+    "available_at": "2026-09-16T21:46:59.301472Z",
+    "deadline_at": "2026-09-16T23:46:59.294327Z",
+    "activation_started_at": "2026-09-16T21:46:59.325263Z",
+    "ready_at": "2026-09-16T21:46:59.473679Z",
+    "started_at": "2026-09-16T21:46:59.476437Z",
+    "completed_at": "2026-09-16T21:47:00.377717Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:59.301473Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.172207,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 11.07
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.5039503686130047,
+  "text": "Ich meine ja auch meine Igel, die ich kenne. Du schaffst es niemals doch das will ich sehen, ob du da schaffst. So Kukia super, da kann ich ja",
+  "result_audio_seconds": 11.07,
+  "processing_seconds": 0.6413311750000048,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "1c5db27871a0e0910ab6ae04eb4eac983a812f839e7f13d93cd256a01108ac77",
+  "quality": {
+    "reference_words": 29,
+    "hypothesis_words": 29,
+    "wer": 0.1724137931034483,
+    "substitutions": 3,
+    "deletions": 1,
+    "insertions": 1,
+    "correct": 25,
+    "errors": [
+      {
+        "type": "substitution",
+        "reference_index": 11,
+        "reference": "das",
+        "recognized": "es"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 20,
+        "reference": "das",
+        "recognized": "da"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 23,
+        "reference": "guck"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 24,
+        "reference": "hier",
+        "recognized": "kukia"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 29,
+        "recognized": "ja"
+      }
+    ],
+    "reference_characters": 112,
+    "character_errors": 10,
+    "cer": 0.08928571428571429
+  },
+  "finished_at": "2026-09-16T21:47:01.242426+00:00"
+}
