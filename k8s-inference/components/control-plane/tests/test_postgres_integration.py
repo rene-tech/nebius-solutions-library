@@ -88,6 +88,7 @@ from fs2_serve.models import (
     TokenCreate,
     UsageDirection,
 )
+from fs2_serve.operation_metrics import customer_operation_metrics
 from fs2_serve.postgres import PostgresMaintenanceStore, PostgresStore, _decode_audit_detail
 from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS
 from fs2_serve.runtime import ActivationError, StubRuntimeClient
@@ -2141,6 +2142,9 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
         assert len(key_usage) == 1
         assert key_usage[0].token_id == principal.token_id
         assert key_usage[0].terminal_operations == 1
+        customer_metrics = await customer_operation_metrics(runtime_pool)
+        assert sum(row.operations for row in customer_metrics) == 1
+        assert {row.outcome for row in customer_metrics} == {"failed"}
 
         async with runtime_pool.acquire() as runtime_connection:
             for statement in (
@@ -2978,6 +2982,7 @@ async def test_last_allowed_attempt_shutdown_release_terminalizes_and_cannot_be_
 @pytest.mark.asyncio
 async def test_terminal_usage_facts_are_exactly_once_survive_operation_retention_and_back_safe_views(
     postgres_store: PostgresStore,
+    scientific_runtime_pool: asyncpg.Pool,
 ) -> None:
     principal = await add_token(postgres_store, max_concurrency=2)
     first = await append(postgres_store, principal, "terminal-fact-first-0001")
@@ -2991,6 +2996,11 @@ async def test_terminal_usage_facts_are_exactly_once_survive_operation_retention
     cancelled = next(row for row in accounting if row.outcome == "token_revoked")
     assert cancelled.operations == 2
     assert cancelled.estimated_gpu_seconds == 5
+    # Production metrics must work through the actual runtime role, not only
+    # through a database-owner fixture with implicit access to all columns.
+    projected = await customer_operation_metrics(scientific_runtime_pool)
+    assert sum(row.operations for row in projected) == 2
+    assert {row.outcome for row in projected} == {"cancelled"}
 
     async with postgres_store.pool.acquire() as connection:
         assert await connection.fetchval("SELECT count(*) FROM fs2_usage_facts") == 2
@@ -3039,12 +3049,17 @@ async def test_terminal_usage_facts_are_exactly_once_survive_operation_retention
             "input_tokens",
             "output_tokens",
             "modality_usage",
+            "tenant_id",
+            "model_id",
+            "protocol",
+            "status",
+            "occurred_at",
         ):
             assert await connection.fetchval(
                 "SELECT has_column_privilege('fs2_serve_runtime','fs2_usage_facts',$1,'SELECT')",
                 column,
             )
-        for column in ("tenant_id", "principal_id", "model_id", "outcome"):
+        for column in ("principal_id", "outcome"):
             assert not await connection.fetchval(
                 "SELECT has_column_privilege('fs2_serve_runtime','fs2_usage_facts',$1,'SELECT')",
                 column,
@@ -3078,6 +3093,27 @@ async def test_terminal_usage_facts_are_exactly_once_survive_operation_retention
         assert await connection.fetchval("SELECT count(*) FROM fs2_operations") == 0
         assert await connection.fetchval("SELECT count(*) FROM fs2_usage_facts") == 2
         assert await connection.fetchval("SELECT sum(operations) FROM fs2_reporting_model_usage") == 2
+    retained = await customer_operation_metrics(scientific_runtime_pool)
+    assert sum(row.operations for row in retained) == 2
+    assert {row.outcome for row in retained} == {"cancelled"}
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+@pytest.mark.parametrize("column", ["tenant_id", "model_id", "protocol", "status", "occurred_at"])
+async def test_runtime_schema_gate_requires_customer_metrics_columns(
+    postgres_store: PostgresStore, column: str
+) -> None:
+    database_url = os.environ["FS2_TEST_DATABASE_URL"]
+    async with postgres_store.pool.acquire() as connection:
+        # Column identifiers come only from the fixed pytest parameter list.
+        await connection.execute(f"REVOKE SELECT ({column}) ON fs2_usage_facts FROM fs2_serve_runtime")  # noqa: S608
+    try:
+        with pytest.raises(RuntimeError, match="database schema runtime privileges are incomplete"):
+            await PostgresStore.wait_for_schema(database_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
+    finally:
+        await PostgresStore.migrate_database(database_url, CONTROL_ROOT / "migrations")
+    await PostgresStore.wait_for_schema(database_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
 
 
 @pytest.mark.postgres

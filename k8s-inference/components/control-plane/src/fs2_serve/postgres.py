@@ -578,11 +578,13 @@ class PostgresStore:
                 f"GRANT SELECT ON fs2_schema_migrations,fs2_reporting_terminal_totals TO {quoted_runtime}"
             )
             # API-key inventory joins runtime-owned token identities to a
-            # narrow, payload-free usage projection. Column grants keep the
-            # runtime role unable to inspect tenant/principal/model facts or
-            # mutate the append-only accounting ledger.
+            # narrow, payload-free usage projection. Customer outcome metrics
+            # additionally need bounded tenant/model/protocol/status/time
+            # dimensions, including after operation detail retention. Principal
+            # and free-form outcome remain private; ledger writes stay denied.
             await connection.execute(
-                f"GRANT SELECT (operation_id,token_id,estimated_gpu_seconds,input_tokens,output_tokens,modality_usage) "
+                f"GRANT SELECT (operation_id,token_id,estimated_gpu_seconds,input_tokens,output_tokens,modality_usage,"
+                f"tenant_id,model_id,protocol,status,occurred_at) "
                 f"ON fs2_usage_facts TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT ON fs2_activation_intents TO {quoted_runtime}")
@@ -755,6 +757,12 @@ class PostgresStore:
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
                             " AND has_function_privilege(current_user,"
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
+                            " AND NOT EXISTS (SELECT 1 FROM unnest(ARRAY["
+                            "'tenant_id','model_id','protocol','status','occurred_at']) AS required(column_name)"
+                            " WHERE NOT has_column_privilege('fs2_serve_runtime',"
+                            "'public.fs2_usage_facts',required.column_name,'SELECT')"
+                            " OR NOT has_column_privilege(current_user,"
+                            "'public.fs2_usage_facts',required.column_name,'SELECT'))"
                         )
                     if not runtime_privileges_ready:
                         raise RuntimeError("database schema runtime privileges are incomplete")
