@@ -25,7 +25,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .crypto import Ciphertext, PayloadCipher
 from .models import Principal, StrictModel
-from .request_telemetry import ensure_request_id
+from .request_telemetry import AdmissionStage, SemanticOutcome, classify_public_outcome, ensure_request_id
 
 LOGGER = logging.getLogger(__name__)
 REDACTED = "[REDACTED]"
@@ -100,6 +100,10 @@ class DebugMetadata(StrictModel):
     http_status: int | None = Field(default=None, ge=100, le=599)
     error_type: str | None = None
     disconnected: bool = False
+    semantic_outcome: SemanticOutcome | None = None
+    jsonrpc_error_code: int | None = Field(default=None, ge=-(2**31), le=2**31 - 1)
+    semantic_error_type: str | None = None
+    admission_stage: AdmissionStage | None = None
 
 
 class DebugExchange(DebugMetadata):
@@ -629,23 +633,38 @@ class DebugCaptureMiddleware:
                 response_type = next(
                     (_text(value) for key, value in response_headers if key.lower() == b"content-type"), None
                 )
+                operation_id = _uuid(state.get("operation_id")) or response_operation
+                semantic = classify_public_outcome(
+                    path=path,
+                    http_status=status,
+                    response_body=bytes(response_parts),
+                    response_complete=response_complete,
+                    disconnected=disconnected,
+                    process_error_type=error_type,
+                    state=state,
+                    operation_id=operation_id,
+                )
                 exchange = DebugExchange(
                     id=uuid4(),
                     source="public",
                     request_id=request_id,
-                    operation_id=_uuid(state.get("operation_id")) or response_operation,
+                    operation_id=semantic["operation_id"],
                     started_at=started_at,
                     completed_at=finished_at or datetime.now(UTC),
                     tenant_id=principal.tenant_id if principal else None,
                     principal_id=principal.principal_id if principal else None,
                     token_id=principal.token_id if principal else None,
-                    model_id=model_id,
+                    model_id=semantic["model_id"] or model_id,
                     mcp_tool=tool,
                     endpoint=path,
                     method=str(scope.get("method", "")),
                     http_status=status,
                     error_type=error_type,
                     disconnected=disconnected,
+                    semantic_outcome=semantic["semantic_outcome"],
+                    jsonrpc_error_code=semantic["jsonrpc_error_code"],
+                    semantic_error_type=semantic["semantic_error_type"],
+                    admission_stage=semantic["admission_stage"],
                     query_string=redact_query(query, known),
                     request_headers=redact_headers(request_headers, known),
                     response_headers=redact_headers(response_headers, known),

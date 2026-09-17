@@ -108,6 +108,26 @@ function renderPage(isDetail = false, viewer = false) {
 }
 
 describe("Inference Users", () => {
+  it("keeps startup and unknown time separate from classified idle", async () => {
+    const measured = { value: 10, unit: "gpu-seconds", state: "available" as const, source: "lifecycle", reason: null };
+    const projected: UserDetail = structuredClone(detail);
+    projected.user.usage.lifecycle_accounting = {
+      subjects: 2, covered_operations: 1, expected_operations: 1,
+      occupied_complete: true, phases_complete: false, quality: "measured",
+      data_gaps: ["phase_classification_incomplete"],
+      startup: { ...measured, value: 30 }, other: { ...measured, value: 0 }, unknown: measured,
+      queue: { ...missing, unit: "seconds", reason: "Queue interval attribution unavailable" },
+    };
+    vi.spyOn(userApi, "detail").mockResolvedValue(testEnvelope(projected));
+    renderPage(true);
+    expect(await screen.findByText("GPU classified idle")).toBeInTheDocument();
+    expect(screen.getByText("GPU startup/load")).toBeInTheDocument();
+    expect(screen.getByText("GPU unknown phase")).toBeInTheDocument();
+    expect(screen.getByText("Queue wall time")).toBeInTheDocument();
+    expect(screen.getByText(/phase classification incomplete; quality measured/)).toBeInTheDocument();
+    expect(screen.queryByText("GPU occupied idle")).not.toBeInTheDocument();
+  });
+
   it("lists inference owners and windowed history, not key issuers or console accounts", async () => {
     const list = vi
       .spyOn(userApi, "list")

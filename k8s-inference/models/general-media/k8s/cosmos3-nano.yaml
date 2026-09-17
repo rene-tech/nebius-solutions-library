@@ -748,18 +748,23 @@ data:
     import base64
     import binascii
     import hashlib
+    import ipaddress
     import json
+    import math
+    import mimetypes
     import os
     import struct
     import time
     import uuid
     from contextlib import asynccontextmanager
-    from typing import Annotated, Literal, Union
+    from pathlib import Path
+    from typing import Annotated, Any, Literal, Union
+    from urllib.parse import urlsplit
 
     import httpx
     import uvicorn
     from fastapi import FastAPI, Request
-    from fastapi.responses import JSONResponse, PlainTextResponse
+    from fastapi.responses import JSONResponse, PlainTextResponse, Response
     from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -767,9 +772,36 @@ data:
     MODEL_REVISION = "7a312c868bcce8e40b3eb40861300a9d0ba3fde1"
     RESOLVED_MODEL = f"{MODEL_REPOSITORY}@{MODEL_REVISION}"
     UPSTREAM_BASE_URL = "http://127.0.0.1:8000"
-    MAX_RAW_BYTES = 64 * 1024 * 1024
+    MAX_RAW_BYTES = 512 * 1024 * 1024
     MAX_ENCODED_BYTES = 90 * 1024 * 1024
     MAX_IMAGE_RESPONSE_BYTES = MAX_ENCODED_BYTES + (1024 * 1024)
+    MAX_REFERENCE_BYTES = 512 * 1024 * 1024
+    MAX_CONTROL_BYTES = 128 * 1024 * 1024
+    MAX_TOTAL_CONTROL_BYTES = 256 * 1024 * 1024
+    # Dedicated shared emptyDir. Do not borrow the runtime's /tmp because the
+    # snapshot renderer may replace that mount for CUDA/CRIU checkpoint files.
+    UPSTREAM_TMP = Path("/cosmos-control-tmp")
+    UPSTREAM_VISIBLE_TMP = Path("/cosmos-control-tmp")
+    IMAGE_MEDIA_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
+    VIDEO_MEDIA_TYPES = frozenset({"video/mp4", "application/mp4"})
+    ACTION_DOMAINS = frozenset(
+        {
+            "agibotworld",
+            "av",
+            "bridge_orig_lerobot",
+            "camera_pose",
+            "droid_lerobot",
+            "fractal",
+            "galbot",
+            "hand_pose",
+            "libero",
+            "pusht",
+            "robomind-franka",
+            "robomind-franka-dual",
+            "robomind-ur",
+            "umi",
+        }
+    )
     BACKEND_ID = os.getenv("POD_NAME", "unknown")
 
     RESULTS = {
@@ -789,6 +821,27 @@ data:
     OUTPUT_BYTES = 0
     OUTPUT_FRAMES = 0
     READY = 0
+
+
+    def validate_reference_syntax(value: str) -> None:
+        if value.startswith("data:"):
+            if ";base64," not in value[:128]:
+                raise ValueError("data references must use base64 encoding")
+            return
+        if len(value) > 4096:
+            raise ValueError("HTTPS reference is too long")
+        parsed = urlsplit(value)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError("reference must be a base64 data URL or an HTTPS URL without credentials or fragment")
+        hostname = parsed.hostname.rstrip(".").lower()
+        if hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal")):
+            raise ValueError("reference hostname is not publicly routable")
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError:
+            return
+        if not address.is_global:
+            raise ValueError("reference IP address is not publicly routable")
 
 
     class CommonRequest(BaseModel):
@@ -832,16 +885,186 @@ data:
         size: str = Field(default="448x256", min_length=7, max_length=9)
         num_frames: int = Field(default=25, ge=5, le=400)
         fps: int = Field(default=24, ge=1, le=30)
+        generate_sound: bool = False
+        sound_duration: float | None = Field(default=None, gt=0.0, le=30.0)
         output_format: Literal["mp4"] = "mp4"
+        output_delivery: Literal["inline-base64", "artifact"] = "inline-base64"
 
         @model_validator(mode="after")
         def dimensions_are_bounded(self) -> "TextToVideoRequest":
             self.validate_size(self.size)
+            if self.sound_duration is not None and not self.generate_sound:
+                raise ValueError("sound_duration requires generate_sound=true")
             return self
 
 
+    class ReferencedVideoRequest(CommonRequest):
+        input_reference: str | None = None
+        vision_path: str | None = None
+        size: str = Field(default="448x256", min_length=7, max_length=9)
+        num_frames: int = Field(default=25, ge=5, le=400)
+        fps: int = Field(default=24, ge=1, le=30)
+        output_format: Literal["mp4"] = "mp4"
+        output_delivery: Literal["artifact"] = "artifact"
+
+        @model_validator(mode="after")
+        def reference_and_dimensions_are_bounded(self) -> "ReferencedVideoRequest":
+            self.validate_size(self.size)
+            if self.input_reference is not None and self.vision_path is not None:
+                raise ValueError("provide input_reference or vision_path, not both")
+            if self.input_reference is None:
+                self.input_reference = self.vision_path
+            if self.input_reference is None:
+                raise ValueError("input_reference is required; vision_path is its deprecated HTTPS alias")
+            validate_reference_syntax(self.input_reference)
+            return self
+
+
+    class ImageToVideoRequest(ReferencedVideoRequest):
+        mode: Literal["image-to-video"]
+        generate_sound: bool = False
+        sound_duration: float | None = Field(default=None, gt=0.0, le=30.0)
+
+        @model_validator(mode="after")
+        def sound_is_consistent(self) -> "ImageToVideoRequest":
+            if self.sound_duration is not None and not self.generate_sound:
+                raise ValueError("sound_duration requires generate_sound=true")
+            return self
+
+
+    class VideoToVideoRequest(ReferencedVideoRequest):
+        mode: Literal["video-to-video"]
+        condition_frame_indexes_vision: list[int] = Field(default_factory=lambda: [0, 1], min_length=1, max_length=16)
+        condition_video_keep: Literal["first", "last"] = "first"
+
+        @model_validator(mode="after")
+        def condition_indexes_are_valid(self) -> "VideoToVideoRequest":
+            if any(value < 0 or value > 100 for value in self.condition_frame_indexes_vision):
+                raise ValueError("condition_frame_indexes_vision values must be in [0,100]")
+            if len(set(self.condition_frame_indexes_vision)) != len(self.condition_frame_indexes_vision):
+                raise ValueError("condition_frame_indexes_vision values must be unique")
+            return self
+
+
+    class TransferControl(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+
+        control_type: Literal["edge", "blur", "depth", "seg", "wsm"]
+        reference: str | None = None
+        control_weight: float = Field(default=1.0, ge=0.0, le=100.0)
+        edge_threshold: Literal["none", "very_low", "low", "medium", "high", "very_high"] | None = None
+        blur_strength: Literal["none", "very_low", "low", "medium", "high", "very_high"] | None = None
+
+        @model_validator(mode="after")
+        def reference_matches_control(self) -> "TransferControl":
+            if self.reference is not None:
+                validate_reference_syntax(self.reference)
+            if self.control_type in {"depth", "seg", "wsm"} and self.reference is None:
+                raise ValueError(f"{self.control_type} requires a control reference")
+            if self.edge_threshold is not None and self.control_type != "edge":
+                raise ValueError("edge_threshold is valid only for edge control")
+            if self.blur_strength is not None and self.control_type != "blur":
+                raise ValueError("blur_strength is valid only for blur control")
+            return self
+
+
+    class TransferVideoRequest(CommonRequest):
+        mode: Literal["transfer-video"]
+        input_reference: str | None = None
+        vision_path: str | None = None
+        controls: list[TransferControl] = Field(min_length=1, max_length=5)
+        size: str = Field(default="448x256", min_length=7, max_length=9)
+        num_frames: int = Field(default=25, ge=5, le=400)
+        fps: int = Field(default=24, ge=1, le=30)
+        resolution: Literal[256, 480, 704, 720] = 480
+        control_guidance: float = Field(default=1.5, ge=0.0, le=20.0)
+        control_guidance_interval: tuple[float, float] | None = None
+        num_video_frames_per_chunk: int = Field(default=93, ge=5, le=400)
+        num_conditional_frames: int = Field(default=1, ge=1, le=16)
+        num_first_chunk_conditional_frames: int = Field(default=0, ge=0, le=16)
+        share_vision_temporal_positions: bool = True
+        emphasize_control_in_prompt: bool = True
+        output_format: Literal["mp4"] = "mp4"
+        output_delivery: Literal["artifact"] = "artifact"
+
+        @model_validator(mode="after")
+        def transfer_is_consistent(self) -> "TransferVideoRequest":
+            self.validate_size(self.size)
+            if self.input_reference is not None and self.vision_path is not None:
+                raise ValueError("provide input_reference or vision_path, not both")
+            if self.input_reference is None:
+                self.input_reference = self.vision_path
+            if self.input_reference is not None:
+                validate_reference_syntax(self.input_reference)
+            kinds = [item.control_type for item in self.controls]
+            if len(set(kinds)) != len(kinds):
+                raise ValueError("each transfer control_type may be selected only once")
+            if not any(item.control_weight > 0 for item in self.controls):
+                raise ValueError("at least one transfer control must have positive weight")
+            if any(item.reference is None for item in self.controls) and self.input_reference is None:
+                raise ValueError("derived edge/blur controls require input_reference")
+            if self.control_guidance_interval is not None:
+                lo, hi = self.control_guidance_interval
+                if not 0.0 <= lo <= hi <= 1.0:
+                    raise ValueError("control_guidance_interval must be ordered within [0,1]")
+            return self
+
+
+    class ActionRequest(CommonRequest):
+        input_reference: str
+        domain_name: str = Field(min_length=1, max_length=64)
+        raw_action_dim: int = Field(ge=1, le=128)
+        action_chunk_size: int = Field(ge=1, le=400)
+        size: str = Field(default="640x480", min_length=7, max_length=9)
+        num_frames: int = Field(default=17, ge=5, le=400)
+        fps: int = Field(default=10, ge=1, le=30)
+        num_inference_steps: int = Field(default=30, ge=1, le=50)
+        guidance_scale: float = Field(default=1.0, ge=0.0, le=20.0)
+
+        @model_validator(mode="after")
+        def action_contract_is_consistent(self) -> "ActionRequest":
+            self.validate_size(self.size)
+            validate_reference_syntax(self.input_reference)
+            if self.domain_name not in ACTION_DOMAINS:
+                raise ValueError("domain_name is not supported by the pinned Cosmos runtime")
+            if self.action_chunk_size not in {self.num_frames, self.num_frames - 1}:
+                raise ValueError("action_chunk_size must equal num_frames or num_frames-1")
+            return self
+
+
+    class ForwardDynamicsRequest(ActionRequest):
+        mode: Literal["forward-dynamics"]
+        action: list[list[float]] = Field(min_length=1, max_length=400)
+        output_format: Literal["mp4"] = "mp4"
+        output_delivery: Literal["artifact"] = "artifact"
+
+        @model_validator(mode="after")
+        def action_shape_is_valid(self) -> "ForwardDynamicsRequest":
+            if len(self.action) != self.action_chunk_size:
+                raise ValueError("action must contain action_chunk_size rows")
+            if any(len(row) != self.raw_action_dim for row in self.action):
+                raise ValueError("each action row must contain raw_action_dim finite values")
+            if any(not math.isfinite(value) for row in self.action for value in row):
+                raise ValueError("action values must be finite")
+            return self
+
+
+    class InverseDynamicsRequest(ActionRequest):
+        mode: Literal["inverse-dynamics"]
+        output_format: Literal["json"] = "json"
+        output_delivery: Literal["inline-json"] = "inline-json"
+
+
     GenerateRequest = Annotated[
-        Union[TextToImageRequest, TextToVideoRequest],
+        Union[
+            TextToImageRequest,
+            TextToVideoRequest,
+            ImageToVideoRequest,
+            VideoToVideoRequest,
+            TransferVideoRequest,
+            ForwardDynamicsRequest,
+            InverseDynamicsRequest,
+        ],
         Field(discriminator="mode"),
     ]
 
@@ -916,7 +1139,7 @@ data:
 
 
     app = FastAPI(
-        title="Cosmos3-Nano bounded media adapter",
+        title="Cosmos3-Nano artifact media adapter",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -953,7 +1176,14 @@ data:
         )
 
 
-    async def read_limited(response: httpx.Response, limit: int) -> bytes:
+    async def read_limited(
+        response: httpx.Response,
+        limit: int,
+        *,
+        oversize_status: int = 502,
+        oversize_code: str = "upstream_output_too_large",
+        oversize_message: str = "model runtime output exceeds the inline response limit",
+    ) -> bytes:
         if response.status_code >= 400:
             raise AdapterError(
                 502,
@@ -966,9 +1196,9 @@ data:
             try:
                 if int(content_length) > limit:
                     raise AdapterError(
-                        502,
-                        "upstream_output_too_large",
-                        "model runtime output exceeds the inline response limit",
+                        oversize_status,
+                        oversize_code,
+                        oversize_message,
                         False,
                     )
             except ValueError:
@@ -983,9 +1213,9 @@ data:
             result.extend(chunk)
             if len(result) > limit:
                 raise AdapterError(
-                    502,
-                    "upstream_output_too_large",
-                    "model runtime output exceeds the inline response limit",
+                    oversize_status,
+                    oversize_code,
+                    oversize_message,
                     False,
                 )
         return bytes(result)
@@ -1069,10 +1299,88 @@ data:
         return raw, "image/png"
 
 
-    async def generate_video(
+    def _media_type(value: str) -> str:
+        return value.split(";", 1)[0].strip().lower()
+
+
+    def _validate_reference_media(raw: bytes, media_type: str, *, expected: str) -> str:
+        media_type = _media_type(media_type)
+        if expected == "image":
+            magic_ok = (
+                raw.startswith(b"\x89PNG\r\n\x1a\n")
+                or raw.startswith(b"\xff\xd8\xff")
+                or (len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP")
+            )
+            if media_type not in IMAGE_MEDIA_TYPES or not magic_ok:
+                raise AdapterError(422, "invalid_input_media", "input reference is not a supported RGB image", False)
+        elif expected == "video":
+            if media_type not in VIDEO_MEDIA_TYPES or len(raw) < 16 or b"ftyp" not in raw[:32]:
+                raise AdapterError(422, "invalid_input_media", "input reference is not an MP4 video", False)
+            media_type = "video/mp4"
+        elif expected == "image-or-video":
+            try:
+                return _validate_reference_media(raw, media_type, expected="image")
+            except AdapterError:
+                return _validate_reference_media(raw, media_type, expected="video")
+        else:
+            raise AssertionError("unknown media expectation")
+        return media_type
+
+
+    async def load_reference(
         client: httpx.AsyncClient,
-        body: TextToVideoRequest,
+        value: str,
+        *,
+        expected: Literal["image", "video", "image-or-video"],
+        limit: int,
     ) -> tuple[bytes, str]:
+        if value.startswith("data:"):
+            try:
+                metadata, encoded = value.split(",", 1)
+                media_type = metadata[5:].split(";", 1)[0].lower()
+                if not metadata.lower().endswith(";base64"):
+                    raise ValueError
+                if len(encoded) > 4 * (limit // 3 + 1) + 4:
+                    raise AdapterError(413, "input_too_large", "input reference exceeds its byte limit", False)
+                raw = base64.b64decode(encoded, validate=True)
+            except AdapterError:
+                raise
+            except (ValueError, UnicodeEncodeError, binascii.Error):
+                raise AdapterError(422, "invalid_input_reference", "input data URL is invalid", False) from None
+        else:
+            try:
+                validate_reference_syntax(value)
+            except ValueError as error:
+                raise AdapterError(422, "invalid_input_reference", str(error), False) from error
+            async with client.stream("GET", value, follow_redirects=False) as response:
+                if 300 <= response.status_code < 400:
+                    raise AdapterError(
+                        422,
+                        "input_redirect_rejected",
+                        "input reference redirects are not accepted; use the final immutable HTTPS URL",
+                        False,
+                    )
+                if response.status_code >= 400:
+                    raise AdapterError(422, "input_fetch_failed", "input reference could not be fetched", True)
+                media_type = _media_type(response.headers.get("content-type", ""))
+                raw = await read_limited(
+                    response,
+                    limit,
+                    oversize_status=413,
+                    oversize_code="input_too_large",
+                    oversize_message="input reference exceeds its byte limit",
+                )
+        if len(raw) > limit:
+            raise AdapterError(413, "input_too_large", "input reference exceeds its byte limit", False)
+        return raw, _validate_reference_media(raw, media_type, expected=expected)
+
+
+    def _reference_filename(media_type: str) -> str:
+        extension = mimetypes.guess_extension(media_type, strict=False) or (".mp4" if media_type.startswith("video/") else ".bin")
+        return f"reference{extension}"
+
+
+    def _base_video_fields(body: Any, extra_params: dict[str, Any]) -> dict[str, str]:
         fields = {
             "model": MODEL_REPOSITORY,
             "prompt": body.prompt,
@@ -1085,39 +1393,232 @@ data:
             "guidance_scale": str(body.guidance_scale),
             "max_sequence_length": "4096",
             "flow_shift": "10.0",
-            "extra_params": json.dumps(
-                {
-                    "use_resolution_template": False,
-                    "use_duration_template": False,
-                    "guardrails": False,
-                },
-                separators=(",", ":"),
-            ),
+            "extra_params": json.dumps(extra_params, separators=(",", ":")),
         }
-        multipart = {name: (None, value) for name, value in fields.items()}
-        async with client.stream(
-            "POST",
-            f"{UPSTREAM_BASE_URL}/v1/videos/sync",
-            files=multipart,
-            headers={"Accept": "video/mp4"},
-        ) as response:
-            content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-            if response.status_code < 400 and content_type not in {"video/mp4", "application/mp4"}:
+        if getattr(body, "generate_sound", False):
+            fields["generate_sound"] = "true"
+            duration = body.sound_duration or (body.num_frames / body.fps)
+            fields["sound_duration"] = str(duration)
+        return fields
+
+
+    def _write_control_file(raw: bytes, media_type: str) -> tuple[Path, str]:
+        extension = mimetypes.guess_extension(media_type, strict=False) or ".bin"
+        filename = f"fs2-cosmos-control-{uuid.uuid4().hex}{extension}"
+        adapter_path = UPSTREAM_TMP / filename
+        upstream_path = str(UPSTREAM_VISIBLE_TMP / filename)
+        descriptor = os.open(adapter_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(raw)
+        except BaseException:
+            adapter_path.unlink(missing_ok=True)
+            raise
+        return adapter_path, upstream_path
+
+
+    def _validate_action_output(action: Any, body: InverseDynamicsRequest) -> dict[str, Any]:
+        if not isinstance(action, dict) or not isinstance(action.get("data"), list):
+            raise AdapterError(502, "invalid_upstream_action", "model runtime did not return an action trajectory", False)
+        shape = action.get("shape")
+        if not isinstance(shape, list) or not shape or not all(isinstance(value, int) and value >= 0 for value in shape):
+            raise AdapterError(502, "invalid_upstream_action", "model runtime returned invalid action shape metadata", False)
+        if action.get("raw_action_dim") != body.raw_action_dim or action.get("action_mode") != "inverse_dynamics":
+            raise AdapterError(502, "invalid_upstream_action", "model runtime returned action metadata for another contract", False)
+
+        def finite(value: Any) -> bool:
+            if isinstance(value, bool):
+                return False
+            if isinstance(value, int | float):
+                return math.isfinite(value)
+            return isinstance(value, list) and all(finite(item) for item in value)
+
+        if not finite(action["data"]):
+            raise AdapterError(502, "invalid_upstream_action", "model runtime returned non-finite action values", False)
+        return action
+
+
+    async def generate_action(
+        client: httpx.AsyncClient,
+        body: InverseDynamicsRequest,
+        multipart: dict[str, tuple[Any, ...]],
+    ) -> tuple[bytes, str]:
+        video_id: str | None = None
+        try:
+            response = await client.post(
+                f"{UPSTREAM_BASE_URL}/v1/videos",
+                files=multipart,
+                headers={"Accept": "application/json"},
+            )
+            encoded = await read_limited(response, 1024 * 1024)
+            try:
+                initial = json.loads(encoded)
+                video_id = initial["id"]
+            except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+                raise AdapterError(502, "invalid_upstream_response", "model runtime returned an invalid action job", False) from None
+            if not isinstance(video_id, str) or not video_id.startswith("video_gen_") or len(video_id) > 96:
+                raise AdapterError(502, "invalid_upstream_response", "model runtime returned an invalid action job ID", False)
+            deadline = time.monotonic() + 1740.0
+            while time.monotonic() < deadline:
+                await asyncio.sleep(1.0)
+                status_response = await client.get(f"{UPSTREAM_BASE_URL}/v1/videos/{video_id}")
+                status_encoded = await read_limited(status_response, 16 * 1024 * 1024)
+                try:
+                    status = json.loads(status_encoded)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    raise AdapterError(502, "invalid_upstream_response", "model runtime returned invalid action status", False) from None
+                if status.get("status") == "completed":
+                    action = _validate_action_output(status.get("action"), body)
+                    result = {
+                        "model": MODEL_REPOSITORY,
+                        "revision": MODEL_REVISION,
+                        "mode": body.mode,
+                        "action": action,
+                    }
+                    return json.dumps(result, sort_keys=True, separators=(",", ":")).encode(), "application/json"
+                if status.get("status") == "failed":
+                    raise AdapterError(502, "upstream_action_failed", "model runtime failed the action request", False)
+            raise AdapterError(504, "upstream_timeout", "model runtime did not finish the action request in time", True)
+        except asyncio.CancelledError:
+            if video_id is not None:
+                try:
+                    await client.delete(f"{UPSTREAM_BASE_URL}/v1/videos/{video_id}")
+                except httpx.HTTPError:
+                    pass
+            raise
+
+
+    async def generate_video(
+        client: httpx.AsyncClient,
+        body: TextToVideoRequest | ImageToVideoRequest | VideoToVideoRequest | TransferVideoRequest | ForwardDynamicsRequest | InverseDynamicsRequest,
+    ) -> tuple[bytes, str]:
+        extra_params: dict[str, Any] = {
+            "use_resolution_template": False,
+            "use_duration_template": False,
+            "guardrails": False,
+        }
+        multipart_files: dict[str, tuple[Any, ...]] = {}
+        cleanup_paths: list[Path] = []
+        reference = getattr(body, "input_reference", None)
+        try:
+            if reference is not None:
+                if isinstance(body, ImageToVideoRequest):
+                    expected = "image"
+                elif isinstance(body, ForwardDynamicsRequest):
+                    expected = "image-or-video"
+                else:
+                    expected = "video"
+                raw_reference, media_type = await load_reference(
+                    client, reference, expected=expected, limit=MAX_REFERENCE_BYTES
+                )
+                multipart_files["input_reference"] = (
+                    _reference_filename(media_type),
+                    raw_reference,
+                    media_type,
+                )
+
+            if isinstance(body, VideoToVideoRequest):
+                extra_params.update(
+                    {
+                        "condition_frame_indexes_vision": body.condition_frame_indexes_vision,
+                        "condition_video_keep": body.condition_video_keep,
+                    }
+                )
+            elif isinstance(body, TransferVideoRequest):
+                total_control_bytes = 0
+                for control in body.controls:
+                    value: Any = True
+                    if control.reference is not None:
+                        raw, media_type = await load_reference(
+                            client,
+                            control.reference,
+                            expected="image-or-video",
+                            limit=MAX_CONTROL_BYTES,
+                        )
+                        total_control_bytes += len(raw)
+                        if total_control_bytes > MAX_TOTAL_CONTROL_BYTES:
+                            raise AdapterError(
+                                413,
+                                "input_too_large",
+                                "combined transfer controls exceed the request byte limit",
+                                False,
+                            )
+                        local_path, upstream_path = _write_control_file(raw, media_type)
+                        cleanup_paths.append(local_path)
+                        value = {"control_path": upstream_path, "control_weight": control.control_weight}
+                    elif control.control_weight != 1.0:
+                        value = {"control_weight": control.control_weight}
+                    if isinstance(value, dict) and control.edge_threshold is not None:
+                        value["preset_edge_threshold"] = control.edge_threshold
+                    if isinstance(value, dict) and control.blur_strength is not None:
+                        value["preset_blur_strength"] = control.blur_strength
+                    extra_params[control.control_type] = value
+                extra_params.update(
+                    {
+                        "resolution": body.resolution,
+                        "control_guidance": body.control_guidance,
+                        "control_guidance_interval": body.control_guidance_interval,
+                        "num_video_frames_per_chunk": body.num_video_frames_per_chunk,
+                        "num_conditional_frames": body.num_conditional_frames,
+                        "num_first_chunk_conditional_frames": body.num_first_chunk_conditional_frames,
+                        "max_frames": body.num_frames,
+                        "share_vision_temporal_positions": body.share_vision_temporal_positions,
+                        "emphasize_control_in_prompt": body.emphasize_control_in_prompt,
+                    }
+                )
+            elif isinstance(body, ForwardDynamicsRequest):
+                extra_params.update(
+                    {
+                        "action_mode": "forward_dynamics",
+                        "action": body.action,
+                        "domain_name": body.domain_name,
+                        "raw_action_dim": body.raw_action_dim,
+                        "action_chunk_size": body.action_chunk_size,
+                    }
+                )
+            elif isinstance(body, InverseDynamicsRequest):
+                extra_params.update(
+                    {
+                        "action_mode": "inverse_dynamics",
+                        "domain_name": body.domain_name,
+                        "raw_action_dim": body.raw_action_dim,
+                        "action_chunk_size": body.action_chunk_size,
+                    }
+                )
+
+            fields = _base_video_fields(body, extra_params)
+            multipart: dict[str, tuple[Any, ...]] = {
+                **{name: (None, value) for name, value in fields.items()},
+                **multipart_files,
+            }
+            if isinstance(body, InverseDynamicsRequest):
+                return await generate_action(client, body, multipart)
+            async with client.stream(
+                "POST",
+                f"{UPSTREAM_BASE_URL}/v1/videos/sync",
+                files=multipart,
+                headers={"Accept": "video/mp4"},
+            ) as response:
+                content_type = _media_type(response.headers.get("content-type", ""))
+                if response.status_code < 400 and content_type not in VIDEO_MEDIA_TYPES:
+                    raise AdapterError(
+                        502,
+                        "invalid_upstream_media",
+                        "model runtime returned an unexpected video content type",
+                        False,
+                    )
+                raw = await read_limited(response, MAX_RAW_BYTES)
+            if len(raw) < 16 or b"ftyp" not in raw[:32]:
                 raise AdapterError(
                     502,
                     "invalid_upstream_media",
-                    "model runtime returned an unexpected video content type",
+                    "model runtime did not return a valid MP4 container",
                     False,
                 )
-            raw = await read_limited(response, MAX_RAW_BYTES)
-        if len(raw) < 16 or b"ftyp" not in raw[:32]:
-            raise AdapterError(
-                502,
-                "invalid_upstream_media",
-                "model runtime did not return a valid MP4 container",
-                False,
-            )
-        return raw, "video/mp4"
+            return raw, "video/mp4"
+        finally:
+            for path in cleanup_paths:
+                path.unlink(missing_ok=True)
 
 
     @app.get("/healthz")
@@ -1188,7 +1689,7 @@ data:
 
 
     @app.post("/generate")
-    async def generate(body: GenerateRequest, request: Request) -> JSONResponse:
+    async def generate(body: GenerateRequest, request: Request) -> Response:
         global OUTPUT_BYTES, OUTPUT_FRAMES
         request_id = str(uuid.uuid4())
         total_started = time.monotonic()
@@ -1226,6 +1727,56 @@ data:
                 frames = body.num_frames
                 fps = body.fps
             upstream_seconds = time.monotonic() - upstream_started
+            total_seconds = time.monotonic() - total_started
+            if mime_type == "application/json":
+                try:
+                    content = json.loads(raw)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    raise AdapterError(
+                        502,
+                        "invalid_upstream_action",
+                        "model runtime returned invalid action JSON",
+                        False,
+                    ) from None
+                content["timings_ms"] = {
+                    "queue": queue_seconds * 1000.0,
+                    "upstream": upstream_seconds * 1000.0,
+                    "total": total_seconds * 1000.0,
+                }
+                encoded_raw = json.dumps(content, sort_keys=True, separators=(",", ":")).encode()
+                DURATIONS["upstream"]["count"] += 1
+                DURATIONS["upstream"]["sum"] += upstream_seconds
+                DURATIONS["total"]["count"] += 1
+                DURATIONS["total"]["sum"] += total_seconds
+                RESULTS["completed"] += 1
+                OUTPUT_BYTES += len(encoded_raw)
+                return Response(
+                    status_code=200,
+                    headers={"X-Backend-Id": BACKEND_ID, "X-Request-Id": request_id},
+                    content=encoded_raw,
+                    media_type="application/json",
+                )
+            if getattr(body, "output_delivery", "inline-base64") == "artifact":
+                DURATIONS["upstream"]["count"] += 1
+                DURATIONS["upstream"]["sum"] += upstream_seconds
+                DURATIONS["total"]["count"] += 1
+                DURATIONS["total"]["sum"] += total_seconds
+                RESULTS["completed"] += 1
+                OUTPUT_BYTES += len(raw)
+                OUTPUT_FRAMES += frames
+                return Response(
+                    status_code=200,
+                    headers={
+                        "X-Backend-Id": BACKEND_ID,
+                        "X-Request-Id": request_id,
+                        "X-FS2-Output-SHA256": hashlib.sha256(raw).hexdigest(),
+                        "X-FS2-Output-Bytes": str(len(raw)),
+                        "X-FS2-Output-Frames": str(frames),
+                        "X-FS2-Output-FPS": str(fps),
+                    },
+                    content=raw,
+                    media_type=mime_type,
+                )
             encoding_started = time.monotonic()
             encoded = base64.b64encode(raw).decode("ascii")
             encoding_seconds = time.monotonic() - encoding_started
@@ -1236,7 +1787,6 @@ data:
                     "encoded media exceeds the inline response limit",
                     False,
                 )
-            total_seconds = time.monotonic() - total_started
             DURATIONS["upstream"]["count"] += 1
             DURATIONS["upstream"]["sum"] += upstream_seconds
             DURATIONS["encoding"]["count"] += 1
@@ -1504,6 +2054,8 @@ spec:
               name: runtime-cache
             - mountPath: /tmp
               name: tmp
+            - mountPath: /cosmos-control-tmp
+              name: cosmos-control-tmp
         - name: bounded-json-adapter
           image: docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
           imagePullPolicy: IfNotPresent
@@ -1565,6 +2117,8 @@ spec:
               readOnly: true
             - mountPath: /tmp
               name: adapter-tmp
+            - mountPath: /cosmos-control-tmp
+              name: cosmos-control-tmp
       volumes:
         - configMap:
             defaultMode: 292
@@ -1582,6 +2136,9 @@ spec:
         - emptyDir:
             sizeLimit: 32Gi
           name: tmp
+        - emptyDir:
+            sizeLimit: 512Mi
+          name: cosmos-control-tmp
 ---
 apiVersion: v1
 kind: Service

@@ -1,0 +1,12 @@
+{
+  "schema": "fs2-serve.nebius.ai/librechat-mcp-acceptance/v1",
+  "client_build_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "public_endpoint": "https://replace.example/mcp",
+  "operations": [
+    {
+      "scenario_id": "v2v-url",
+      "operation_id": "00000000-0000-4000-8000-000000000001",
+      "outcome": "passed"
+    }
+  ]
+}

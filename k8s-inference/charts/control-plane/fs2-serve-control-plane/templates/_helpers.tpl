@@ -226,6 +226,10 @@ app.kubernetes.io/component: model-controller
 {{- end }}
 - name: FS2_EVIDENCE_ROOT
   value: /etc/fs2-serve/evidence
+{{- if .Values.catalog.customerReadinessConfigMapName }}
+- name: FS2_CUSTOMER_READINESS_VERDICTS_FILE
+  value: /etc/fs2-serve/customer-readiness/verdict-index.json
+{{- end }}
 - name: FS2_FEDERATION_ROUTES_FILE
   value: /var/run/secrets/fs2-serve/federation/{{ .Values.federation.routesKey }}
 - name: FS2_FEDERATION_SECRET_DIR
@@ -487,6 +491,11 @@ app.kubernetes.io/component: model-controller
 - name: evidence
   mountPath: /etc/fs2-serve/evidence
   readOnly: true
+{{- if .Values.catalog.customerReadinessConfigMapName }}
+- name: customer-readiness
+  mountPath: /etc/fs2-serve/customer-readiness
+  readOnly: true
+{{- end }}
 - name: token-pepper
   mountPath: /var/run/secrets/fs2-serve/token-pepper
   subPath: token-pepper.json
@@ -608,6 +617,14 @@ app.kubernetes.io/component: model-controller
   persistentVolumeClaim:
     claimName: {{ required "catalog.evidencePersistentVolumeClaimName is required" .Values.catalog.evidencePersistentVolumeClaimName }}
     readOnly: true
+{{- end }}
+{{- if .Values.catalog.customerReadinessConfigMapName }}
+- name: customer-readiness
+  configMap:
+    name: {{ .Values.catalog.customerReadinessConfigMapName }}
+    items:
+      - key: {{ .Values.catalog.customerReadinessKey }}
+        path: verdict-index.json
 {{- end }}
 - name: token-pepper
   secret:

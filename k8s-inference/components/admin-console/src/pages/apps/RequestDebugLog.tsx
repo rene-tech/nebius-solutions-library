@@ -127,7 +127,19 @@ export function RequestDebugLog({
                             ? `HTTP ${item.http_status}`
                             : "HTTP not observed"}
                           <span className="secondary-line">
-                            {item.error_type}
+                            {item.semantic_outcome ?? "Semantic outcome unavailable"}
+                            {item.admission_stage
+                              ? ` · ${item.admission_stage.replace("_", " ")}`
+                              : ""}
+                          </span>
+                          <span className="secondary-line">
+                            {item.semantic_error_type}
+                            {item.jsonrpc_error_code !== null
+                              ? ` · JSON-RPC ${item.jsonrpc_error_code}`
+                              : ""}
+                          </span>
+                          <span className="secondary-line">
+                            {item.error_type ? `Transport: ${item.error_type}` : ""}
                           </span>
                           {item.disconnected ? (
                             <span className="secondary-line">Disconnected</span>

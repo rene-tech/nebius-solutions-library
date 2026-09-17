@@ -1657,6 +1657,13 @@ class FileScientificManifestRenderer:
         if self.tools_image is None or self.internal_api_url is None or self.capability_authority is None:
             raise ScientificExecutionMapError("scientific artifact companion runtime is not configured")
         capability = self.capability_authority.issue(resource)
+        if (resource.model_id, invocation.stage_id, invocation.collector_id) == (
+            "cosmos3-lerobot-augmentation", "augment-dataset", "cosmos3-lerobot-v3-0-6-1",
+        ):
+            env.extend([
+                {"name": "FS2_SCIENTIFIC_INTERNAL_API_URL", "value": self.internal_api_url},
+                {"name": "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "value": capability},
+            ])
         workspace_mount = next(mount for mount in volume_mounts if mount["mountPath"] == "/mnt/fs2-scientific")
         companion_env = [
             {"name": "FS2_SCIENTIFIC_INTERNAL_API_URL", "value": self.internal_api_url},

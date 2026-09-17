@@ -182,8 +182,10 @@ def test_gateway_has_writable_bounded_multipart_scratch(extra, limit):
     pod = gateway_deployment(render(*extra))["spec"]["template"]["spec"]
     runtime = next(container for container in pod["containers"] if container["name"] == "control-plane")
     assert runtime["securityContext"]["readOnlyRootFilesystem"] is True
-    assert {"name": "upload-tmp", "mountPath": "/tmp"} in runtime["volumeMounts"]
-    assert next(volume for volume in pod["volumes"] if volume["name"] == "upload-tmp")["emptyDir"] == {"sizeLimit": limit}
+    assert {"name": "upload-tmp", "mountPath": "/tmp"} in runtime["volumeMounts"]  # noqa: S108 - manifest assertion
+    assert next(volume for volume in pod["volumes"] if volume["name"] == "upload-tmp")["emptyDir"] == {
+        "sizeLimit": limit
+    }
 
 
 def application_route(documents: list[dict]) -> dict:
@@ -781,6 +783,7 @@ def test_workloads_are_nonroot_bounded_and_use_digest_pins_and_secret_references
     assert "secretKeyRef" in database["valueFrom"]
     evidence_env = next(item for item in pod["containers"][0]["env"] if item["name"] == "FS2_EVIDENCE_ROOT")
     assert evidence_env["value"] == "/etc/fs2-serve/evidence"
+    assert "FS2_CUSTOMER_READINESS_VERDICTS_FILE" not in {item["name"] for item in pod["containers"][0]["env"]}
     assert "FS2_MIGRATIONS_DIR" not in {item["name"] for item in pod["containers"][0]["env"]}
     evidence_volume = next(item for item in pod["volumes"] if item["name"] == "evidence")
     assert evidence_volume["persistentVolumeClaim"]["readOnly"] is True
@@ -848,6 +851,26 @@ def test_workloads_are_nonroot_bounded_and_use_digest_pins_and_secret_references
     assert all(document["kind"] != "Secret" for document in documents)
     assert "private-key" not in rendered.lower() and "private_key" not in rendered.lower()
     assert "Kueue" not in rendered and "kueue" not in rendered
+
+
+def test_customer_readiness_verdict_index_is_an_explicit_read_only_evidence_input() -> None:
+    documents = render("--set", "catalog.customerReadinessConfigMapName=fs2-customer-readiness")
+    pod = gateway_deployment(documents)["spec"]["template"]["spec"]
+    env = {item["name"]: item for item in pod["containers"][0]["env"]}
+    assert env["FS2_CUSTOMER_READINESS_VERDICTS_FILE"]["value"] == (
+        "/etc/fs2-serve/customer-readiness/verdict-index.json"
+    )
+    readiness = next(item for item in pod["containers"][0]["volumeMounts"] if item["name"] == "customer-readiness")
+    assert readiness == {
+        "name": "customer-readiness",
+        "mountPath": "/etc/fs2-serve/customer-readiness",
+        "readOnly": True,
+    }
+    volume = next(item for item in pod["volumes"] if item["name"] == "customer-readiness")
+    assert volume["configMap"] == {
+        "name": "fs2-customer-readiness",
+        "items": [{"key": "verdict-index.json", "path": "verdict-index.json"}],
+    }
 
 
 def test_activation_controller_is_owned_by_the_separate_child_and_absent_from_the_gateway_chart() -> None:
@@ -1934,6 +1957,8 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
         "Fs2ServeQueueDepthHigh",
         "Fs2ServeSyncWaitSaturation",
         "Fs2ServeAuthenticationFailureSpike",
+        "Fs2ServePublicSemanticFailureSpike",
+        "Fs2ServeCustomerOperationFailureRate",
         "Fs2ServeLifecycleReconciliationFailed",
         "Fs2ServeLifecycleOccupancyUnclassified",
         "Fs2ServePublicCertificateNotReady",
@@ -1946,6 +1971,7 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
     assert 'fs2_serve_operations{state=\\"queued\\"}' in rendered
     assert "fs2_serve_sync_wait_saturated_total" in rendered
     assert "fs2_serve_authentication_failures_total" in rendered
+    assert "fs2_serve_public_exchanges_total" in rendered
     assert "fs2_serve_lifecycle_workloads_total" in rendered
     assert "fs2_serve_lifecycle_unclassified_gpu_seconds_total" in rendered
     assert "kube_deployment_status_replicas_available" in rendered
@@ -1953,8 +1979,66 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
     assert "certmanager_certificate_renewal_timestamp_seconds" in rendered
     assert "certmanager_certificate_expiration_timestamp_seconds" in rendered
     assert rendered.count("absent(certmanager_certificate_") == 3
-    for forbidden in ("principal", "tenant", "token", "prompt", "response", "bearer"):
+    # Tenant/model are intentional bounded customer-outcome labels. Individual
+    # principals, key IDs and request bodies must never become alert dimensions.
+    assert "sum by (tenant,model)" in rules["Fs2ServeCustomerOperationFailureRate"]["expr"]
+    for forbidden in ("principal", "token", "prompt", "response", "bearer"):
         assert forbidden not in rendered.lower()
+
+
+def test_customer_outcome_alert_promql_counts_failed_operations_not_http_acceptance(tmp_path) -> None:
+    promtool = shutil.which("promtool")
+    if promtool is None:
+        pytest.skip("requires promtool for actual Prometheus evaluation")
+    documents = render()
+    group = next(document for document in documents if document["kind"] == "PrometheusRule")["spec"]["groups"][0]
+    rule = next(row for row in group["rules"] if row["alert"] == "Fs2ServeCustomerOperationFailureRate")
+    rules_file = tmp_path / "rules.yaml"
+    rules_file.write_text(yaml.safe_dump({"groups": [group]}))
+    # Two gateways project the same durable facts. Four failures must not turn
+    # into eight operations and cross the five-operation minimum.
+    scenarios = []
+    for failures, successes, should_fire in ((4, 0, False), (5, 5, True), (0, 10, False)):
+        series = []
+        for pod in ("gateway-a", "gateway-b"):
+            for outcome, count, error in (("failed", failures, "upstream"), ("succeeded", successes, "none")):
+                series.append(
+                    {
+                        "series": 'fs2_serve_customer_operations_last_10m{tenant="stockholm",model="openfold2",'
+                        f'protocol="native",outcome="{outcome}",workload_class="serving",error_class="{error}",pod="{pod}"}}',
+                        "values": f"{count}+0x5",
+                    }
+                )
+        # Edge HTTP successes must not mask the failed durable operations.
+        series.append({"series": 'http_requests_total{status="200"}', "values": "100+100x5"})
+        scenarios.append(
+            {
+                "interval": "1m",
+                "input_series": series,
+                "alert_rule_test": [
+                    {
+                        "eval_time": "3m",
+                        "alertname": rule["alert"],
+                        "exp_alerts": [
+                            {
+                                "exp_labels": {"tenant": "stockholm", "model": "openfold2", "severity": "warning"},
+                                "exp_annotations": rule["annotations"],
+                            }
+                        ]
+                        if should_fire
+                        else [],
+                    }
+                ],
+            }
+        )
+    test_file = tmp_path / "tests.yaml"
+    test_file.write_text(
+        yaml.safe_dump({"rule_files": [str(rules_file)], "evaluation_interval": "1m", "tests": scenarios})
+    )
+    result = subprocess.run(  # noqa: S603 - resolved promtool binary and test-owned YAML
+        [promtool, "test", "rules", str(test_file)], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_grafana_dashboard_is_discoverable_in_the_foundation_watch_namespace() -> None:
@@ -3028,6 +3112,8 @@ def test_grafana_dashboard_is_valid_and_separates_estimate_dcgm_and_principal_le
     assert "fs2_serve_lifecycle_gpu_seconds_total" in rendered
     assert "fs2_serve_lifecycle_clock_gpu_seconds_total" in rendered
     assert "fs2_serve_lifecycle_reconciliation_delta_seconds_total" in rendered
+    assert "fs2_serve_public_exchanges_total" in rendered
+    assert "independent of HTTP status" in rendered
     assert "fs2_reporting_lifecycle_workloads" in rendered
     assert "occupied idle" in rendered.lower()
     assert '"uid": "fs2-serve-reporting"' in rendered

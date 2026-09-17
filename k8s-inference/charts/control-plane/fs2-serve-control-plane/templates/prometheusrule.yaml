@@ -60,6 +60,29 @@ spec:
           annotations:
             summary: fs2-serve authentication failures exceed the release threshold
             description: Bounded authentication failure classes increased above the configured threshold.
+        - alert: Fs2ServePublicSemanticFailureSpike
+          expr: sum(clamp_min(delta((max by (model,transport,tool,outcome,admission_stage) (fs2_serve_public_exchanges_total{outcome=~"failed|timed_out"}))[5m:]),0)) > {{ .Values.prometheusRule.maxSemanticFailures }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: customer-visible inference failures exceed the release threshold
+            description: Public MCP or HTTP exchanges produced failed or timed-out semantic outcomes; inspect tool, model, admission-stage and request-debug evidence rather than HTTP status alone.
+        - alert: Fs2ServeCustomerOperationFailureRate
+          expr: |
+            (
+              sum by (tenant,model) (max by (tenant,model,protocol,outcome,workload_class,error_class) (fs2_serve_customer_operations_last_10m{outcome=~"failed|expired|preempted"}))
+              /
+              clamp_min(sum by (tenant,model) (max by (tenant,model,protocol,outcome,workload_class,error_class) (fs2_serve_customer_operations_last_10m{outcome!="cancelled"})),1)
+            ) > 0.1
+            and on (tenant,model)
+            sum by (tenant,model) (max by (tenant,model,protocol,outcome,workload_class,error_class) (fs2_serve_customer_operations_last_10m{outcome!="cancelled"})) >= 5
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: terminal customer operations are failing despite possible HTTP success
+            description: More than ten percent of at least five terminal operations failed in ten minutes. Open Admin Apps Runs, filter tenant/model, and correlate the operation with attempts and request logs. Shared PostgreSQL projections are deduplicated across gateway replicas.
         - alert: Fs2ServeLifecycleReconciliationFailed
           expr: sum(fs2_serve_lifecycle_workloads_total{reconciled="false"}) > 0
           for: 15m

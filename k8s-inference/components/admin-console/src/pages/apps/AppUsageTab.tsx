@@ -147,7 +147,7 @@ export function AppUsageTab({ appId }: { appId: string }) {
           </div>
           <div className="metric-grid">
             <UsageCard
-              label="Estimated GPU allocation"
+              label="Conservative attempted allocation (not measured)"
               value={data.estimated_gpu_seconds}
               unit="GPU-s"
             />
@@ -156,7 +156,10 @@ export function AppUsageTab({ appId }: { appId: string }) {
           </div>
           {data.scientific_gpu ? (
             <section>
-              <h3>Measured scientific occupancy</h3>
+              <h3>Lifecycle scientific occupancy</h3>
+              <p>Quality: {data.scientific_gpu.quality ?? "unavailable"}.
+                {" "}Phase classification: {data.scientific_gpu.phases_complete ? "complete" : "incomplete"}.
+                {" "}Exclusive attempts only; shared serving unallocated. Not a bill.</p>
               <div className="metric-grid">
                 <UsageCard
                   label="GPU occupied"
@@ -169,10 +172,13 @@ export function AppUsageTab({ appId }: { appId: string }) {
                   unit="GPU-s"
                 />
                 <UsageCard
-                  label="GPU allocated idle"
+                  label="GPU classified idle"
                   value={data.scientific_gpu.occupied_idle_seconds}
                   unit="GPU-s"
                 />
+                <UsageCard label="GPU startup/load" value={data.scientific_gpu.startup_seconds ?? null} unit="GPU-s" />
+                <UsageCard label="GPU checkpoint/teardown" value={data.scientific_gpu.other_seconds ?? null} unit="GPU-s" />
+                <UsageCard label="GPU unknown phase" value={data.scientific_gpu.unknown_seconds ?? null} unit="GPU-s" />
               </div>
             </section>
           ) : (

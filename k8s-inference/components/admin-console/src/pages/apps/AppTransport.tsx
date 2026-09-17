@@ -33,7 +33,7 @@ export function AppRunTransport({
                 <th>Started</th>
                 <th>Method / endpoint</th>
                 <th>Transport / tool</th>
-                <th>HTTP / tool outcome</th>
+                <th>Transport / semantic outcome</th>
                 <th>Response duration</th>
                 <th>Request / response bytes</th>
               </tr>
@@ -55,17 +55,24 @@ export function AppRunTransport({
                     </span>
                   </td>
                   <td>
-                    {row.http_status ?? "Not observed"}
+                    HTTP {row.http_status ?? "not observed"}
                     <span className="secondary-line">
-                      {row.mcp_is_error === true
-                        ? "MCP tool error"
-                        : row.mcp_is_error === false
-                          ? "MCP tool completed"
-                          : ""}
+                      {row.semantic_outcome ?? "Semantic outcome unavailable"}
+                      {row.admission_stage
+                        ? ` · ${row.admission_stage.replace("_", " ")}`
+                        : ""}
                     </span>
+                    {row.semantic_error_type || row.jsonrpc_error_code !== null ? (
+                      <span className="secondary-line">
+                        {row.semantic_error_type ?? "Protocol error"}
+                        {row.jsonrpc_error_code !== null
+                          ? ` · JSON-RPC ${row.jsonrpc_error_code}`
+                          : ""}
+                      </span>
+                    ) : null}
                     {row.error_type || row.disconnected ? (
                       <span className="secondary-line">
-                        {row.error_type ?? "Client disconnected"}
+                        Transport: {row.error_type ?? "Client disconnected"}
                       </span>
                     ) : null}
                   </td>
@@ -131,7 +138,7 @@ export function AppTransportUsage({
             state="available"
             reason={null}
             source="observed public HTTP exchanges"
-            aggregation={`Observed requests per ${usage.time_bucket_seconds}s bucket, grouped by actual HTTP status. Unobserved buckets remain gaps; MCP tool errors are counted separately.`}
+            aggregation={`Observed requests per ${usage.time_bucket_seconds}s bucket, grouped by actual HTTP status. Unobserved buckets remain gaps; semantic outcomes are counted separately.`}
             series={["2xx", "3xx", "4xx", "5xx", "unknown"].map((status) => ({
               id: status,
               label: status,
@@ -179,6 +186,25 @@ export function AppTransportUsage({
             <div>
               <dt>MCP tool errors</dt>
               <dd>{usage.mcp_tool_error_count}</dd>
+            </div>
+            <div>
+              <dt>Semantic succeeded / accepted</dt>
+              <dd>
+                {usage.semantic_success_count} / {usage.semantic_accepted_count}
+              </dd>
+            </div>
+            <div>
+              <dt>Semantic failures</dt>
+              <dd>
+                {usage.semantic_failed_count + usage.semantic_cancelled_count + usage.semantic_timed_out_count}
+                <span className="secondary-line">
+                  {usage.pre_admission_failure_count} rejected before durable admission
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Unknown semantic outcome</dt>
+              <dd>{usage.semantic_unknown_count}</dd>
             </div>
             <div>
               <dt>Incomplete responses</dt>

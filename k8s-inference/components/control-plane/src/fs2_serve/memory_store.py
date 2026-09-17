@@ -1383,6 +1383,8 @@ class MemoryStore:
         dynamic_fence: DynamicAdmissionFence | None = None,
         scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None = None,
     ) -> OperationView:
+        if admission.parent_operation_id is not None:
+            raise ValueError("scientific child delegation requires durable PostgreSQL attempt fencing")
         async with self._activation_mutation_lock(admission.model_id):
             return await self._append_operation(
                 principal=principal,

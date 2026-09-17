@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from prometheus_client.parser import text_string_to_metric_families
 
+from fs2_serve.request_telemetry import RequestSemanticMetric
 from fs2_serve.telemetry import Metrics
 
 
@@ -42,3 +43,54 @@ def test_static_model_metadata_keeps_its_exact_class(registry) -> None:
     assert len(samples) == 1
     assert samples[0].labels["gpu_class"] == model.gateway.gpu_class
     assert samples[0].labels["qualification_gpu_class"] == model.gateway.gpu_class
+
+
+def test_semantic_exchange_projection_keeps_http200_failure_distinct_and_clears_stale_series() -> None:
+    metrics = Metrics([])
+    row = RequestSemanticMetric(
+        model_id="cosmos3-nano",
+        transport="mcp",
+        mcp_tool="cosmos3_nano_generate_media_native",
+        semantic_outcome="failed",
+        admission_stage="pre_admission",
+        exchanges=1,
+    )
+    metrics.set_request_semantics([row])
+    samples = {
+        (
+            sample.labels["model"],
+            sample.labels["transport"],
+            sample.labels["tool"],
+            sample.labels["outcome"],
+            sample.labels["admission_stage"],
+        ): sample.value
+        for family in text_string_to_metric_families(metrics.render().decode())
+        if family.name == "fs2_serve_public_exchanges_total"
+        for sample in family.samples
+    }
+    assert (
+        samples[
+            (
+                "cosmos3-nano",
+                "mcp",
+                "cosmos3_nano_generate_media_native",
+                "failed",
+                "pre_admission",
+            )
+        ]
+        == 1
+    )
+    metrics.set_request_semantics([])
+    cleared = {
+        (
+            sample.labels["model"],
+            sample.labels["transport"],
+            sample.labels["tool"],
+            sample.labels["outcome"],
+            sample.labels["admission_stage"],
+        ): sample.value
+        for family in text_string_to_metric_families(metrics.render().decode())
+        if family.name == "fs2_serve_public_exchanges_total"
+        for sample in family.samples
+    }
+    assert all(value == 0 for value in cleared.values())

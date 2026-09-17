@@ -219,6 +219,79 @@ async def test_large_native_examples_publish_small_server_fixture_references(reg
 
 
 @pytest.mark.asyncio
+async def test_cosmos_video_to_video_tool_admits_customer_url_as_artifact_work(registry, cipher, hasher):
+    native = bound_model_registry(registry, "cosmos3-nano")
+    model = native.get("cosmos3-nano")
+    native = Registry(
+        native.catalog,
+        {
+            "cosmos3-nano": replace(
+                model,
+                gateway=replace(model.gateway, mcp_discoverable=True, mcp_invocable=True),
+            )
+        },
+    )
+    runtime = build_runtime(native, cipher, hasher)
+    app = _app(runtime)
+    key = await _key(runtime, models=("cosmos3-nano",))
+    expected = {
+        "cosmos3_nano_text_to_image",
+        "cosmos3_nano_text_to_video",
+        "cosmos3_nano_image_to_video",
+        "cosmos3_nano_video_to_video",
+        "cosmos3_nano_transfer_video",
+    }
+    customer_request = {
+        "prompt": "Preserve the robot motion while changing the lighting.",
+        "vision_path": "https://media.example.test/robot_pouring.mp4",
+        "condition_frame_indexes_vision": [0, 1],
+        "condition_video_keep": "first",
+        "idempotency_key": "timothy-robot-pouring-v2v-0001",
+    }
+    async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
+        tools = {item.name: item for item in (await client.list_tools()).tools}
+        assert expected <= tools.keys()
+        assert "cosmos3_nano_forward_dynamics" not in tools
+        assert "cosmos3_nano_inverse_dynamics" not in tools
+        v2v = tools["cosmos3_nano_video_to_video"]
+        assert "vision_path" in v2v.input_schema["properties"]
+        assert "mode" not in v2v.input_schema["properties"]
+        assert "payload" not in v2v.input_schema["properties"]
+        discovered = _data(await client.call_tool("get_model_schema", {"model_id": "cosmos3-nano"}))
+        assert expected <= {contract["tool_name"] for contract in discovered["contracts"]}
+
+        admitted = _data(await client.call_tool("cosmos3_nano_video_to_video", customer_request))
+        assert admitted["status"] == "queued"
+        claimed = await runtime.store.claim_operation("cosmos-contract-test", lease_seconds=30)
+        assert claimed is not None and str(claimed.id) == admitted["id"]
+        payload = json.loads(
+            await runtime.store.read_request_payload(
+                claimed.id,
+                worker_id="cosmos-contract-test",
+                fencing_token=claimed.fencing_token,
+            )
+        )
+        assert payload == {
+            **{key: value for key, value in customer_request.items() if key != "idempotency_key"},
+            "mode": "video-to-video",
+            "output_delivery": "artifact",
+            "output_format": "mp4",
+        }
+
+        with pytest.raises(MCPError) as missing_reference:
+            await client.call_tool(
+                "cosmos3_nano_video_to_video",
+                {
+                    "prompt": "This must fail before GPU admission.",
+                    "idempotency_key": "timothy-robot-pouring-invalid-0001",
+                },
+            )
+        assert missing_reference.value.code == -32602
+        assert missing_reference.value.data["type"] == "model_input_validation"
+        assert len(runtime.store.operations) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "model_id,tool_name,invalid,field",
     [
@@ -299,6 +372,20 @@ async def test_http_native_validation_has_field_issues_no_run_and_debug_owner(
     detail = await debug.get(calls[0].id, "tenant-a")
     assert detail.request_body.complete and "ACDEFGHIKLMNPQRSTVWY" in detail.request_body.data
     assert key.token not in detail.model_dump_json()
+    semantic = [
+        row
+        for row in app.state.request_telemetry.observations
+        if row.model_id == model_id and row.mcp_tool == tool_name and row.jsonrpc_error_code == -32602
+    ]
+    assert len(semantic) == 1
+    # The current SDK maps validation to HTTP 400; historical/live SDK builds
+    # have transported the same JSON-RPC -32602 in HTTP 200. Semantic truth is
+    # deliberately independent of that transport choice.
+    assert semantic[0].http_status == 400 and semantic[0].semantic_outcome == "failed"
+    assert semantic[0].semantic_error_type == "model_input_validation"
+    assert semantic[0].admission_stage == "pre_admission" and semantic[0].operation_id is None
+    assert detail.semantic_outcome == "failed" and detail.jsonrpc_error_code == -32602
+    assert detail.semantic_error_type == "model_input_validation" and detail.admission_stage == "pre_admission"
 
 
 @pytest.mark.asyncio

@@ -134,6 +134,8 @@ class ScientificInputUploadService:
         principal: Principal,
         request: ScientificInputUploadRequest,
         idempotency_key: str,
+        parent_operation_id: UUID | None = None,
+        parent_attempt_id: UUID | None = None,
     ) -> ScientificInputUpload:
         principal.require(Scope.INFERENCE_INVOKE, model_id=request.model_id)
         # An input may be staged for a scientific profile whose runtime is not
@@ -154,6 +156,8 @@ class ScientificInputUploadService:
                 idempotency_key=idempotency_key,
                 request_body=request.canonical_bytes(),
                 request_content_type="application/json",
+                parent_operation_id=parent_operation_id,
+                parent_attempt_id=parent_attempt_id,
             ),
             model_revision=UPLOAD_MODEL_REVISION,
             reserved_gpu_seconds=0,

@@ -79,6 +79,7 @@ from .capacity_summary import CapacitySummaryService
 from .capacity_summary_routes import capacity_summary_router
 from .configuration import ConfigurationService
 from .configuration_routes import configuration_router
+from .customer_readiness import CustomerReadinessFile
 from .lifecycle import (
     LifecycleAdminList,
     LifecycleRepository,
@@ -105,6 +106,7 @@ from .models import (
     TokenIssued,
     TokenView,
 )
+from .operation_metrics import customer_operation_metrics
 from .registry import OperationalModel, Registry, RegistryError
 from .request_debug import DebugCaptureMiddleware, DebugStore, InMemoryDebugStore, PostgresDebugStore
 from .request_debug_routes import request_debug_router
@@ -132,6 +134,7 @@ from .scientific_artifacts import (
 )
 from .scientific_batch.artifact_bridge import SignedArtifactContentReader
 from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
+from .scientific_batch.child_routes import scientific_child_router
 from .scientific_batch.kubernetes import HttpScientificBatchCluster
 from .scientific_batch.postgres_repository import ScientificBatchNotFoundError
 from .scientific_batch.profile_catalog import ScientificProfileError, ScientificRequestError
@@ -566,6 +569,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     admin_read = runtime.admin_read or AdminReadService(registry=runtime.registry, store=runtime.store)
     admin_access = AdminAccessService(runtime.store, runtime.tokens)
     pool = getattr(runtime.store, "pool", None)
+    readiness = CustomerReadinessFile(runtime.settings.customer_readiness_verdicts_file)
     apps_service = AppsService(
         repository=PostgresAppsRepository(pool) if pool is not None else MemoryAppsRepository(),
         registry=runtime.registry,
@@ -580,6 +584,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             "workload_namespace",
             None,
         ),
+        customer_readiness=readiness.read,
     )
 
     async def user_app_catalog() -> list[UserAppChoice]:
@@ -604,8 +609,11 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             (settings.user_storage_project_id, settings.user_storage_region, settings.user_storage_credentials_file)
         ):
             raise ValueError("customer storage requires PostgreSQL, project, region and provisioner credentials")
+        storage_cipher = getattr(runtime.store, "cipher", None)
+        if storage_cipher is None:
+            raise ValueError("customer storage requires the existing payload cipher")
         users_service.storage = UserStorageService(
-            PostgresUserStorageRepository(pool, runtime.store.cipher),
+            PostgresUserStorageRepository(pool, storage_cipher),
             NebiusUserStorage(
                 SDK(credentials_file_name=settings.user_storage_credentials_file),
                 project_id=settings.user_storage_project_id,
@@ -956,7 +964,17 @@ def create_app(runtime: AppRuntime) -> FastAPI:
 
     @app.get("/readyz", include_in_schema=False)
     async def readyz() -> Response:
-        if not await runtime.store.ping():
+        # Three asynchronous dependencies are checked in order. The default
+        # total budget (2.25s) is below the chart's three-second readiness probe.
+        timeout = runtime.settings.readiness_dependency_timeout_seconds
+        try:
+            async with asyncio.timeout(timeout):
+                database_ready = await runtime.store.ping()
+        except TimeoutError:
+            return _error(503, "database_unavailable", "database readiness check timed out")
+        except Exception:
+            return _error(503, "database_unavailable", "database readiness check failed")
+        if not database_ready:
             return _error(503, "database_unavailable", "database ping failed")
         route_health = (
             runtime.route_revalidator.health()
@@ -969,9 +987,15 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         routable_models = len(enabled_models)
         local_activation = activation_set(enabled_models)
         activation_required = local_activation.required
-        activation_ready = (
-            await runtime.store.activation_controller_ready(local_activation.digest) if activation_required else None
-        )
+        activation_ready = None
+        if activation_required:
+            try:
+                async with asyncio.timeout(timeout):
+                    activation_ready = await runtime.store.activation_controller_ready(local_activation.digest)
+            except TimeoutError:
+                return _error(503, "activation_controller_unavailable", "activation readiness check timed out")
+            except Exception:
+                return _error(503, "activation_controller_unavailable", "activation readiness check failed")
         if activation_ready is False:
             return _error(
                 503,
@@ -988,11 +1012,15 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         )
         if scientific_health is not None and not scientific_health["ready"]:
             return _error(503, "scientific_batch_worker_unavailable", "scientific batch worker is unavailable")
-        federation_health = (
-            await runtime.admission.runtime.federation_health()
-            if routable_models
-            else {"ready": True, "routes": 0, "circuits": {}}
-        )
+        federation_health = {"ready": True, "routes": 0, "circuits": {}}
+        if routable_models:
+            try:
+                async with asyncio.timeout(timeout):
+                    federation_health = await runtime.admission.runtime.federation_health()
+            except TimeoutError:
+                return _error(503, "federation_unavailable", "federation readiness check timed out")
+            except Exception:
+                return _error(503, "federation_unavailable", "federation readiness check failed")
         if not federation_health["ready"]:
             return _error(503, "federation_unavailable", "a federated upstream circuit is open")
         dynamic_model_health = (
@@ -1019,6 +1047,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         runtime.metrics.set_terminal_accounting(await runtime.store.terminal_accounting())
         runtime.metrics.set_queue(await runtime.store.queue_counts())
         runtime.metrics.set_queue_age(await runtime.store.oldest_queue_age())
+        runtime.metrics.set_request_semantics(await transport_store.semantic_metric_rows())
+        if pool is not None:
+            runtime.metrics.set_customer_operations(await customer_operation_metrics(pool))
         runtime.metrics.set_lifecycle_accounting(await runtime.lifecycle.metric_rows())
         runtime.metrics.set_lifecycle_rollups(await runtime.lifecycle.rollup_metric_rows())
         return Response(runtime.metrics.render(), media_type="text/plain; version=0.0.4; charset=utf-8")
@@ -2224,26 +2255,50 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             },
         )
 
-    app.include_router(speech_stream_router(
-        verifier=runtime.tokens.verify, registry=runtime.registry, admission=runtime.admission, store=runtime.store,
-    ))
-    app.include_router(voice_router(
-        principal=principal, registry=runtime.registry, admission=runtime.admission, store=runtime.store,
-    ))
-    app.include_router(voice_stream_router(
-        verifier=runtime.tokens.verify, registry=runtime.registry, admission=runtime.admission, store=runtime.store,
-    ))
-    app.include_router(mindguard_router(
-        principal=principal,
-        endpoints={"mindguard-4b": runtime.settings.mindguard_4b_endpoint,
-                   "mindguard-8b": runtime.settings.mindguard_8b_endpoint},
-    ))
-    app.include_router(speech_router(
-        principal=principal, registry=runtime.registry, admission=runtime.admission,
-        store=runtime.store, uploads=runtime.scientific_input_uploads,
-        wait_seconds=runtime.settings.max_sync_wait_seconds,
-        operation_response=lambda current: _operation_response(runtime, current),
-    ))
+    app.include_router(
+        speech_stream_router(
+            verifier=runtime.tokens.verify,
+            registry=runtime.registry,
+            admission=runtime.admission,
+            store=runtime.store,
+        )
+    )
+    app.include_router(
+        voice_router(
+            principal=principal,
+            registry=runtime.registry,
+            admission=runtime.admission,
+            store=runtime.store,
+        )
+    )
+    app.include_router(
+        voice_stream_router(
+            verifier=runtime.tokens.verify,
+            registry=runtime.registry,
+            admission=runtime.admission,
+            store=runtime.store,
+        )
+    )
+    app.include_router(
+        mindguard_router(
+            principal=principal,
+            endpoints={
+                "mindguard-4b": runtime.settings.mindguard_4b_endpoint,
+                "mindguard-8b": runtime.settings.mindguard_8b_endpoint,
+            },
+        )
+    )
+    app.include_router(
+        speech_router(
+            principal=principal,
+            registry=runtime.registry,
+            admission=runtime.admission,
+            store=runtime.store,
+            uploads=runtime.scientific_input_uploads,
+            wait_seconds=runtime.settings.max_sync_wait_seconds,
+            operation_response=lambda current: _operation_response(runtime, current),
+        )
+    )
 
     if runtime.configuration is not None:
         app.include_router(
@@ -2390,6 +2445,18 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 batches=runtime.scientific_workload_batches,
             )
         )
+        if runtime.scientific_input_uploads is not None:
+            app.include_router(
+                scientific_child_router(
+                    authority=runtime.scientific_workload_capabilities,
+                    batches=runtime.scientific_workload_batches,
+                    store=runtime.store,
+                    admission=runtime.admission,
+                    uploads=runtime.scientific_input_uploads,
+                    artifacts=runtime.artifact_service,
+                    principal_policy=runtime.tokens.principal_policy,
+                )
+            )
 
     FastAPIInstrumentor.instrument_app(app, excluded_urls="livez,readyz,metrics")
     return app

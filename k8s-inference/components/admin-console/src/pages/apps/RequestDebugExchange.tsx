@@ -259,7 +259,24 @@ export function RequestDebugExchange({
             </div>
             <div>
               <dt>Error type</dt>
-              <dd>{data.error_type ?? "No error recorded"}</dd>
+              <dd>{data.error_type ?? "No transport error recorded"}</dd>
+            </div>
+            <div>
+              <dt>Semantic outcome</dt>
+              <dd>{data.semantic_outcome ?? "Unavailable"}</dd>
+            </div>
+            <div>
+              <dt>Admission stage</dt>
+              <dd>{data.admission_stage ?? "Unavailable"}</dd>
+            </div>
+            <div>
+              <dt>Protocol / tool error</dt>
+              <dd>
+                {data.semantic_error_type ?? "No semantic error recorded"}
+                {data.jsonrpc_error_code !== null
+                  ? ` · JSON-RPC ${data.jsonrpc_error_code}`
+                  : ""}
+              </dd>
             </div>
             <div>
               <dt>Disconnected</dt>

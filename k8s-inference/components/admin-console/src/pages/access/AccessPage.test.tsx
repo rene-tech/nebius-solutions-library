@@ -91,6 +91,10 @@ describe("Access page", () => {
     renderPage("viewer");
     expect(await screen.findByText("Agent A key")).toBeInTheDocument();
     expect(screen.getByText("4 operations")).toBeInTheDocument();
+    expect(screen.getByText("Attempted allocation")).toBeInTheDocument();
+    expect(screen.getByText(/Conservative admission estimate; not measured occupancy or a bill/)).toBeInTheDocument();
+    expect(screen.getByText(/5 consumed \+ 1 held \/ 500 admission GPU-s/)).toBeInTheDocument();
+    expect(screen.queryByText("GPU usage")).not.toBeInTheDocument();
     expect(screen.getByText(/Viewer access is read-only/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create API key" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add principal" })).not.toBeInTheDocument();
@@ -109,7 +113,7 @@ describe("Access page", () => {
 
   it("does not report zero GPU usage when any visible key lacks accounting", async () => {
     const unavailableKey = structuredClone(testKey);
-    unavailableKey.usage.estimated_gpu_seconds = {
+    unavailableKey.usage.conservative_attempted_gpu_seconds = {
       value: null,
       unit: "gpu-seconds",
       state: "unavailable",
@@ -120,9 +124,9 @@ describe("Access page", () => {
     renderPage();
 
     await screen.findByText("Agent A key");
-    const gpuCard = screen.getByText("GPU usage").closest("div");
+    const gpuCard = screen.getByText("Attempted allocation").closest("div");
     expect(gpuCard).toHaveTextContent("—");
-    expect(gpuCard).toHaveTextContent("GPU accounting is unavailable");
+    expect(gpuCard).toHaveTextContent("Admission accounting is unavailable");
     expect(screen.getByTitle("admission accounting is unavailable")).toHaveTextContent("—");
   });
 });

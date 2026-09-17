@@ -612,12 +612,23 @@ class PostgresStore:
             )
             await connection.execute(
                 f"GRANT SELECT (id,token_id,status,reserved_gpu_seconds,payload_expires_at,"
-                f"payload_purged_at,completed_at,outcome,error_code,fencing_token),"
+                f"payload_purged_at,completed_at,outcome,error_code,fencing_token,parent_operation_id),"
                 f"UPDATE (request_key_id,request_nonce,request_ciphertext,response_key_id,response_nonce,"
                 f"response_ciphertext,payload_purged_at,status,completed_at,outcome,error_code,error_detail,"
                 f"worker_id,heartbeat_at,lease_expires_at,fencing_token,reserved_gpu_seconds),"
                 f"DELETE ON fs2_operations TO {quoted_maintenance}"
             )
+            for table in (
+                "fs2_scientific_stage_attempts",
+                "fs2_scientific_stage_commits",
+                "fs2_scientific_run_results",
+                "fs2_scientific_artifact_events",
+                "fs2_scientific_batches",
+                "fs2_scientific_admission_outbox",
+            ):
+                # Retention needs reference identities, never scientific input,
+                # result documents, or authority to remove scientific history.
+                await connection.execute(f"GRANT SELECT (operation_id) ON {table} TO {quoted_maintenance}")
             await connection.execute(
                 f"GRANT SELECT (id,occurred_at),DELETE ON fs2_audit_events TO {quoted_maintenance}"
             )
@@ -874,6 +885,8 @@ class PostgresStore:
         result_available = row["response_ciphertext"] is not None and expires > datetime.now(UTC)
         return OperationView(
             id=row["id"],
+            parent_operation_id=row["parent_operation_id"],
+            parent_attempt_id=row["parent_attempt_id"],
             tenant_id=row["tenant_id"],
             principal_id=row["principal_id"],
             token_id=row["token_id"],
@@ -2491,6 +2504,8 @@ class PostgresStore:
                     existing["operation"],
                     existing["request_content_type"],
                     existing["request_hmac"],
+                    existing["parent_operation_id"],
+                    existing["parent_attempt_id"],
                 )
                 incoming = (
                     admission.model_id,
@@ -2499,6 +2514,8 @@ class PostgresStore:
                     admission.operation,
                     admission.request_content_type,
                     request_hmac,
+                    admission.parent_operation_id,
+                    admission.parent_attempt_id,
                 )
                 if comparable != incoming:
                     raise ConflictError("idempotency key is already bound to a different request")
@@ -2563,10 +2580,37 @@ class PostgresStore:
             ):
                 raise BudgetExceededError("GPU-seconds reservation exceeds token budget")
             active = await connection.fetchval(
-                "SELECT count(*) FROM fs2_operations WHERE token_id=$1 AND status IN ('queued','activating','running')",
+                "SELECT count(DISTINCT COALESCE(parent_operation_id,id)) FROM fs2_operations "
+                "WHERE token_id=$1 AND status IN ('queued','activating','running')",
                 principal.token_id,
             )
-            if int(active) >= token["max_concurrency"]:
+            if admission.parent_operation_id is not None:
+                if int(active) > token["max_concurrency"]:
+                    raise ConcurrencyExceededError("token concurrency limit reached")
+                if (
+                    admission.model_id != "cosmos3-nano"
+                    or (admission.protocol, admission.operation) not in {
+                        ("native", "generate-media"), ("scientific-artifact-upload-v1", "upload")
+                    }
+                    or not await self._delegation_active(
+                        connection, parent_operation_id=admission.parent_operation_id,
+                        parent_attempt_id=admission.parent_attempt_id, tenant_id=principal.tenant_id,
+                        principal_id=principal.principal_id, token_id=principal.token_id,
+                    )
+                ):
+                    raise PermissionError("scientific parent delegation is no longer active")
+                if token["tenant_id"] != principal.tenant_id or token["principal_id"] != principal.principal_id:
+                    raise PermissionError("scientific child identity differs from parent policy")
+                if "inference.invoke" not in token["scopes"] or not (
+                    "*" in token["models"] or admission.model_id in token["models"]
+                ):
+                    raise PermissionError("scientific child is outside current token policy")
+                if await connection.fetchval(
+                    "SELECT true FROM fs2_operations WHERE parent_operation_id=$1 "
+                    "AND status IN ('queued','activating','running') LIMIT 1", admission.parent_operation_id,
+                ):
+                    raise ConcurrencyExceededError("scientific parent already has an active child")
+            elif int(active) >= token["max_concurrency"]:
                 raise ConcurrencyExceededError("token concurrency limit reached")
             operation_id = uuid4()
             encrypted = self.cipher.encrypt(
@@ -2580,9 +2624,9 @@ class PostgresStore:
                         (id,tenant_id,principal_id,token_id,model_id,model_revision,protocol,operation,
                          idempotency_key,request_hmac_key_id,request_hmac,request_key_id,request_nonce,
                          request_ciphertext,request_content_type,traceparent,deadline_at,payload_expires_at,
-                         max_attempts,reserved_gpu_seconds,dispatch_snapshot)
+                         max_attempts,reserved_gpu_seconds,dispatch_snapshot,parent_operation_id,parent_attempt_id)
                     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-                           clock_timestamp()+make_interval(secs=>$18::double precision),$19,$20,$21::jsonb)
+                           clock_timestamp()+make_interval(secs=>$18::double precision),$19,$20,$21::jsonb,$22,$23)
                     RETURNING *
                     """,
                     operation_id,
@@ -2606,6 +2650,8 @@ class PostgresStore:
                     max_attempts,
                     reserved_gpu_seconds,
                     dispatch_snapshot,
+                    admission.parent_operation_id,
+                    admission.parent_attempt_id,
                 )
             except asyncpg.UniqueViolationError as exc:
                 raise ConflictError("idempotency key raced with another request") from exc
@@ -2644,6 +2690,60 @@ class PostgresStore:
                 detail={"model_id": admission.model_id, "protocol": admission.protocol},
             )
             return operation
+
+    @staticmethod
+    async def _delegation_active(
+        connection: asyncpg.Connection[Any], *, parent_operation_id: UUID,
+        parent_attempt_id: UUID | None, tenant_id: str, principal_id: str, token_id: UUID,
+    ) -> bool:
+        # The only delegated workflow has one stage and one serial shard. Read
+        # its latest persisted attempt, never a caller-supplied fencing claim.
+        return bool(await connection.fetchval(
+            """
+            SELECT true FROM fs2_operations parent
+            JOIN fs2_scientific_batches batch ON batch.operation_id=parent.id
+            JOIN fs2_tokens token ON token.id=parent.token_id
+            WHERE parent.id=$1 AND parent.tenant_id=$3 AND parent.principal_id=$4 AND parent.token_id=$5
+              AND parent.model_id='cosmos3-lerobot-augmentation' AND parent.protocol='scientific-batch-v1'
+              AND parent.parent_operation_id IS NULL AND parent.status IN ('queued','activating','running')
+              AND (parent.deadline_at IS NULL OR parent.deadline_at>clock_timestamp())
+              AND parent.payload_expires_at>clock_timestamp()
+              AND token.revoked_at IS NULL AND (token.expires_at IS NULL OR token.expires_at>clock_timestamp())
+              AND 'inference.invoke'=ANY(token.scopes)
+              AND ('*'=ANY(token.models) OR 'cosmos3-nano'=ANY(token.models))
+              AND batch.status IN ('queued','running') AND NOT batch.cancel_requested
+              AND batch.state#>>'{stages,0,stage_id}'='augment-dataset'
+              AND batch.state#>>'{stages,0,attempts,-1,attempt_id}'=$2::text
+              AND batch.state#>>'{stages,0,attempts,-1,shard_id}'='main'
+              AND batch.state#>>'{stages,0,attempts,-1,outcome}'='active'
+              AND batch.state#>>'{stages,0,attempts,-1,resource_released}'='false'
+              AND batch.state#>>'{stages,0,attempts,-1,deletion_requested}'='false'
+            """, parent_operation_id, str(parent_attempt_id), tenant_id, principal_id, token_id,
+        ))
+
+    async def _cancel_stale_children(self) -> int:
+        async with self.pool.acquire() as connection:
+            candidates = await connection.fetch(
+                """
+                SELECT child.* FROM fs2_operations child
+                LEFT JOIN fs2_operations parent ON parent.id=child.parent_operation_id
+                LEFT JOIN fs2_scientific_batches batch ON batch.operation_id=parent.id
+                WHERE child.parent_operation_id IS NOT NULL AND child.status IN ('queued','activating','running')
+                  AND (parent.id IS NULL OR parent.status NOT IN ('queued','activating','running')
+                       OR batch.operation_id IS NULL OR batch.status NOT IN ('queued','running')
+                       OR batch.cancel_requested
+                       OR parent.deadline_at<=clock_timestamp() OR parent.payload_expires_at<=clock_timestamp()
+                       OR batch.state#>>'{stages,0,attempts,-1,attempt_id}'
+                            IS DISTINCT FROM child.parent_attempt_id::text
+                       OR batch.state#>>'{stages,0,attempts,-1,outcome}' IS DISTINCT FROM 'active'
+                       OR batch.state#>>'{stages,0,attempts,-1,resource_released}' IS DISTINCT FROM 'false'
+                       OR batch.state#>>'{stages,0,attempts,-1,deletion_requested}' IS DISTINCT FROM 'false')
+                ORDER BY child.accepted_at,child.id LIMIT 100
+                """
+            )
+        for row in candidates:
+            await self.cancel_operation(row["id"], tenant_id=row["tenant_id"], actor="scientific-parent-fence")
+        return len(candidates)
 
     @staticmethod
     async def _stage_scientific_admission(
@@ -3000,6 +3100,7 @@ class PostgresStore:
         # Cleanup is deliberately bounded, while the active-token join below
         # prevents any remaining inactive rows from becoming a queue head.
         await self._expire_inactive_queued_batch()
+        await self._cancel_stale_children()
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
                 """
@@ -3047,6 +3148,13 @@ class PostgresStore:
                     )
                     if inactive is not None:
                         await self._expire_locked_inactive_operation(connection, inactive)
+                    continue
+                child = await connection.fetchrow("SELECT * FROM fs2_operations WHERE id=$1", candidate["id"])
+                if child is not None and child["parent_operation_id"] is not None and not await self._delegation_active(
+                    connection, parent_operation_id=child["parent_operation_id"],
+                    parent_attempt_id=child["parent_attempt_id"], tenant_id=child["tenant_id"],
+                    principal_id=child["principal_id"], token_id=child["token_id"],
+                ):
                     continue
                 row = await connection.fetchrow(
                     """
@@ -3192,6 +3300,19 @@ class PostgresStore:
 
     @retry_serialization
     async def heartbeat(self, operation_id: UUID, *, worker_id: str, fencing_token: int, lease_seconds: float) -> None:
+        async with self.pool.acquire() as connection:
+            child = await connection.fetchrow("SELECT * FROM fs2_operations WHERE id=$1", operation_id)
+            stale_parent = (
+                child is not None and child["parent_operation_id"] is not None and not await self._delegation_active(
+                    connection, parent_operation_id=child["parent_operation_id"],
+                    parent_attempt_id=child["parent_attempt_id"], tenant_id=child["tenant_id"],
+                    principal_id=child["principal_id"], token_id=child["token_id"],
+                )
+            )
+        if stale_parent:
+            assert child is not None
+            await self.cancel_operation(operation_id, tenant_id=child["tenant_id"], actor="scientific-parent-fence")
+            raise StaleLeaseError("scientific parent delegation is no longer active")
         async with self.pool.acquire() as connection, connection.transaction():
             result = await connection.execute(
                 """
@@ -3304,6 +3425,12 @@ class PostgresStore:
                 )
                 if existing is None:
                     raise StaleLeaseError("operation lease is stale")
+                if existing["parent_operation_id"] is not None and not await self._delegation_active(
+                    connection, parent_operation_id=existing["parent_operation_id"],
+                    parent_attempt_id=existing["parent_attempt_id"], tenant_id=existing["tenant_id"],
+                    principal_id=existing["principal_id"], token_id=existing["token_id"],
+                ):
+                    raise StaleLeaseError("scientific parent delegation is no longer active")
                 encrypted = None
                 response_hmac_key_id = None
                 response_hmac = None
@@ -3620,6 +3747,7 @@ class PostgresStore:
     async def expire_deadline_operations(self) -> int:
         """Boundedly terminalize queued deadlines using token-before-operation locking."""
 
+        await self._cancel_stale_children()
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
                 """
@@ -3749,14 +3877,28 @@ class PostgresStore:
         # Keep operation deletion and token deletion in separate transactions.
         # No transaction may lock an operation and then a token: all state
         # transitions that need both use token -> operation ordering.
-        async with self.pool.acquire() as connection, connection.transaction():
+        # Scientific history has a separate retention lifecycle. Preserve its
+        # owning operation instead of cascading or deleting provenance records.
+        # Serializable isolation plus retry_serialization also covers a new
+        # reference committed concurrently with candidate selection.
+        async with self.pool.acquire() as connection, connection.transaction(isolation="serializable"):
             operations = await connection.fetch(
                 """
                 WITH candidates AS (
-                    SELECT id FROM fs2_operations
-                    WHERE status IN ('succeeded','failed','cancelled','preempted','expired')
-                      AND completed_at < clock_timestamp()-make_interval(secs=>$1::double precision)
-                    ORDER BY completed_at,id FOR UPDATE SKIP LOCKED LIMIT 100
+                    SELECT o.id FROM fs2_operations o
+                    WHERE o.status IN ('succeeded','failed','cancelled','preempted','expired')
+                      AND o.completed_at < clock_timestamp()-make_interval(secs=>$1::double precision)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_stage_attempts s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_stage_commits s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_run_results s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_artifact_events s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_batches s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_admission_outbox s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_operations child WHERE child.parent_operation_id=o.id
+                            AND child.status IN ('queued','activating','running')
+                      )
+                    ORDER BY o.completed_at,o.id FOR UPDATE OF o SKIP LOCKED LIMIT 100
                 )
                 DELETE FROM fs2_operations o USING candidates c WHERE o.id=c.id RETURNING o.id
                 """,

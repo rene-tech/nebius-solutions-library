@@ -99,6 +99,7 @@ EXPECTED_MIGRATIONS: Final = (
     ("0029_request_debug.sql", "a02fe7eb59ea664c4cb4972158a59d52b5df22aa937eb83cd9a287939a90438a"),
     ("0030_mcp_semantic_outcomes.sql", "25228cd592492009f0d8b6c43be64c5075e2c454f6407d078f8b4add7c98f3f3"),
     ("0031_user_storage.sql", "c3c97b15e58ddc165a4c03c262a878189e2245293cf571e96eb4eaa516f23030"),
+    ("0032_scientific_child_delegation.sql", "dc22191ef0162488ad06fb1f9971c530d8380a64e2ad26e76cb39cbb60cac215"),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

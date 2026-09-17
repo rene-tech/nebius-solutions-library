@@ -18,6 +18,7 @@ from . import (
     StageCollector,
     bindcraft,
     boltzgen,
+    cosmos_lerobot,
     esmfold2,
     esmfold2_fast,
     mosaic,
@@ -51,6 +52,10 @@ def _primary_collectors() -> Mapping[str, tuple[AdapterCompiler, str, Mapping[st
     """
 
     return {
+        cosmos_lerobot.MODEL_ID: (
+            _COMPILERS[cosmos_lerobot.MODEL_ID], cosmos_lerobot.VARIANT_ID,
+            {cosmos_lerobot.COLLECTOR_ID: cosmos_lerobot.collect_companion_output},
+        ),
         proteina_complexa.MODEL_ID: (
             _COMPILERS[proteina_complexa.MODEL_ID],
             proteina_complexa.VARIANT_ID,

@@ -1,0 +1,38 @@
+{
+  "recorded_at": "2026-09-17T12:47:13Z",
+  "scope": "local-cpu-build-and-offline-dataset-mechanics",
+  "customer_ready": false,
+  "registry_published": false,
+  "registry_manifest_digest": null,
+  "local_image_tag": "fs2-lerobot-augmentation:delegated-clean-20260917",
+  "local_image_id": "sha256:e8af3b9c347104418d726042a18af3e25e972b57338ea11d1fb3853cadbbae4d",
+  "image_id_semantics": "Local Docker configuration digest; not a registry manifest digest and not valid for catalog promotion.",
+  "image_size_bytes": 2120309095,
+  "architecture": "amd64",
+  "container_user": "10001:10001",
+  "source_sha256": {
+    "runtime/Containerfile": "0fd3ecf358d21b05947e08f9d4bdfc387a196d41bdc1045858c60960b8216b52",
+    "runtime/uv.lock": "d03d784fe11f492349b81ebd6d49364c03f6a5e024985fe2b124879cb2402a3a",
+    "runtime/src/fs2_lerobot_augmentation/cosmos.py": "b0add76945a425488516d2d4298ff4012852812907a24f0d507ec8018d0b0397",
+    "runtime/src/fs2_lerobot_augmentation/cli.py": "924377b0a9b51ca4cbb0fcc6c7829aef948f8e8a1c63ca22259122367657b0f6"
+  },
+  "offline_validation": {
+    "network": "none",
+    "root_filesystem": "read-only",
+    "temporary_storage": "512 MiB tmpfs",
+    "fixture": "fixtures/build_tiny_v3.py",
+    "steps": ["create-v3", "open-and-validate", "encode-reference", "normalize-transfer", "decode"],
+    "frame_count": 16,
+    "decoded_shape": [16, 3, 256, 256],
+    "source_bytecode_excluded": true,
+    "gpu_used": false,
+    "warning": "Upstream fixture SVT-AV1 encoder maps preset M12 to M10; fixture encoding and full decode completed."
+  },
+  "remaining_acceptance": [
+    "Restore authorized cloud access and publish the worker to the intended registry by immutable manifest digest.",
+    "Deploy migration 0032 and the matched control-plane/runtime identities; integrate the qualification-gated catalog and execution map.",
+    "Run two distinct real GPU augmentation dimensions including lighting through public customer admission; retain operations and artifacts.",
+    "Reopen and fully decode both output datasets with lerobot==0.6.1; verify progress, cancellation and existing Apps admin attribution.",
+    "Complete the customer release policy's two unchanged release cohorts before promotion."
+  ]
+}

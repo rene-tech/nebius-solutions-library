@@ -156,6 +156,38 @@ async def test_materializes_pinned_fixture_without_artifact_or_llm_bytes(registr
 
 
 @pytest.mark.asyncio
+async def test_materializes_nested_cosmos_transfer_control_as_data_url(registry):
+    content = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 32
+    reference = _reference(content, media_type="video/mp4")
+    artifacts = _Artifacts(content, reference)
+    materializer = ArtifactInputMaterializer(artifacts)  # type: ignore[arg-type]
+    model = bound_model_registry(registry, "cosmos3-nano").get("cosmos3-nano")
+
+    body = await materializer.materialize(
+        model,
+        "native",
+        tenant_id="tenant-a",
+        request_body=json.dumps(
+            {
+                "mode": "transfer-video",
+                "prompt": "Preserve the scene and follow the depth control.",
+                "controls": [
+                    {
+                        "control_type": "depth",
+                        "reference": reference.model_dump(mode="json"),
+                    }
+                ],
+                "output_delivery": "artifact",
+            }
+        ).encode(),
+    )
+
+    payload = json.loads(body)
+    assert payload["controls"][0]["reference"].startswith("data:video/mp4;base64,")
+    assert artifacts.calls == [(UUID(reference.artifact_id), "tenant-a")]
+
+
+@pytest.mark.asyncio
 async def test_rejects_reference_metadata_that_does_not_match_stored_artifact(registry):
     content = b"HEADER\nATOM\n"
     actual = _reference(content)

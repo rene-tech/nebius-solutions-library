@@ -59,12 +59,14 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"  # noqa: S104
     port: int = Field(default=8080, ge=1, le=65535)
     database_url: str = "postgresql://fs2_serve@postgres/fs2_serve"
+    readiness_dependency_timeout_seconds: float = Field(default=0.75, ge=0.01, le=10)
     catalog_dir: Path = Path("/etc/fs2-serve/catalog")
     bindings_file: Path = Path("/etc/fs2-serve/serving-bindings.json")
     variant_promotions_file: Path = Path("/etc/fs2-serve/bindings/model-variant-promotions.json")
     lean_routes_file: Path | None = None
     deployment_runtime_records_file: Path | None = None
     evidence_root: Path = Path("/etc/fs2-serve/evidence")
+    customer_readiness_verdicts_file: Path | None = None
     federation_routes_file: Path = Path("/var/run/secrets/fs2-serve/federation/routes.json")
     federation_secret_dir: Path = Path("/var/run/secrets/fs2-serve/federation")
     repo_root: Path | None = None

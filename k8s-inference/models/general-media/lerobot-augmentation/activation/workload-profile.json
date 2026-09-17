@@ -1,0 +1,120 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+  "profile": {
+    "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+    "model_id": "cosmos3-lerobot-augmentation",
+    "display_name": "Cosmos3-Nano LeRobot augmentation",
+    "execution_mode": "hybrid",
+    "state": "candidate-unqualified",
+    "route_exposed": false,
+    "source": {
+      "kind": "huggingface",
+      "repository": "nvidia/Cosmos3-Nano",
+      "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "review_url": "https://huggingface.co/nvidia/Cosmos3-Nano/tree/7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "classification": "candidate-input"
+    },
+    "execution_identity": {
+      "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "runtime_image_digest": null,
+      "runtime_recipe_sha256": "0fd3ecf358d21b05947e08f9d4bdfc387a196d41bdc1045858c60960b8216b52",
+      "workload_recipe_sha256": "78f86fb4657c674d90c2384e52d5e0b95779813800157bbdccc79a40f5be0603",
+      "artifact_manifest_digest": null,
+      "execution_identity_sha256": null
+    },
+    "interface": {
+      "protocol": "scientific-batch-v1",
+      "submit_endpoint": "/v1/models/cosmos3-lerobot-augmentation:submit",
+      "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+      "parameter_schema": "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-request/v1",
+      "operations": [
+        "augment-lerobot-dataset"
+      ],
+      "service_classes": [
+        "customer-batch",
+        "bulk-backfill"
+      ],
+      "mcp": {
+        "discoverable": true,
+        "invocable": false,
+        "tool_name": "submit_cosmos3_lerobot_augmentation",
+        "description": "Submit queued Cosmos augmentation of a LeRobot v3 dataset; returns validated complete dataset artifacts."
+      }
+    },
+    "access": {
+      "profile": "standard",
+      "state": "not-required",
+      "receipt_digest": null,
+      "credentials_embedded": false
+    },
+    "resources": {
+      "gpu_count": 1,
+      "gpu_topology": "single-gpu",
+      "host_architectures": [
+        "amd64"
+      ],
+      "compatible_pool_ids": [
+        "h100-reserved-8x",
+        "h100-1x"
+      ],
+      "required_node_labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+      }
+    },
+    "workload": {
+      "stages": [
+        {
+          "id": "augment-dataset",
+          "needs": [],
+          "resource_class": "cpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 1,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable",
+          "placement": {
+            "class": "general-cpu"
+          },
+          "resources": {
+            "cpu_millis": 4000,
+            "memory_bytes": 17179869184,
+            "ephemeral_storage_bytes": 1073741824,
+            "limits": {
+              "cpu_millis": 8000,
+              "memory_bytes": 34359738368,
+              "ephemeral_storage_bytes": 4294967296
+            }
+          }
+        }
+      ],
+      "retry": {
+        "max_attempts": 2,
+        "retryable_exit_codes": [
+          75,
+          137,
+          143
+        ]
+      },
+      "cancellation": {
+        "mode": "terminate-attempt",
+        "grace_seconds": 60
+      }
+    },
+    "semantic_validation": {
+      "validator_id": "cosmos3-lerobot-v3-0-6-1",
+      "state": "candidate-unqualified"
+    },
+    "policy": {
+      "commercial_use": "allowed",
+      "non_clinical": false,
+      "limitations": [
+        "Candidate is deliberately unrouted until tenant-delegated child Cosmos admission, a published worker digest, public GPU semantic output, and two distinct LeRobot reload receipts are retained.",
+        "Only LeRobot v3 inputs with integer FPS up to 30, 16 to 400 frames per selected episode, and RGB 256..1280 by 256..720 video dimensions divisible by 16 are admitted.",
+        "Forward- and inverse-dynamics are excluded: the pinned H100 runtime exited with SIGBUS under normal load and restored CUDA state returned cudaErrorNotSupported for forward dynamics; source action trajectories are preserved exactly.",
+        "Policy-model rollout generation and chunk/stitch of episodes longer than 400 frames are not exposed by this version."
+      ]
+    }
+  }
+}

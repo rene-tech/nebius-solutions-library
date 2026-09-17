@@ -1056,6 +1056,14 @@
           "type": "string",
           "minLength": 1
         },
+        "customerReadinessConfigMapName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "customerReadinessKey": {
+          "const": "verdict-index.json"
+        },
         "rolloutDigest": {
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$",
@@ -1590,11 +1598,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "e9015d27122a06380342dc2cfbfd15f660efea1cb20450c7f6367a349fef5d9f"},
-            "migrationSetSha256": {"const": "22a3198c91b099dc7beabded9411b2111ce49f2d4d6cd7bfe2f9cded311832c3"},
-            "migrationCount": {"const": 31},
+            "contractPayloadSha256": {"const": "29b4cd55483524c944fe8de89d3957a3e127502e6ebed87334c41f7918232fa2"},
+            "migrationSetSha256": {"const": "604c565280e1d75aaf17dea6208972718975f0afe87b2fe1e6fe3b33e5ee1abf"},
+            "migrationCount": {"const": 32},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0031_user_storage.sql"},
+            "lastMigrationVersion": {"const": "0032_scientific_child_delegation.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false
@@ -1944,7 +1952,8 @@
         "maxQueueAgeSeconds",
         "maxQueueDepth",
         "maxSyncWaitSaturations",
-        "maxAuthenticationFailures"
+        "maxAuthenticationFailures",
+        "maxSemanticFailures"
       ],
       "properties": {
         "enabled": {
@@ -1966,6 +1975,11 @@
           "maximum": 1000000
         },
         "maxAuthenticationFailures": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "maxSemanticFailures": {
           "type": "integer",
           "minimum": 0,
           "maximum": 1000000

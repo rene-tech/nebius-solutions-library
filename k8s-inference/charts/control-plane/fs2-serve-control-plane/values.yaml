@@ -276,6 +276,10 @@ catalog:
   bindingsKey: serving-bindings.json
   variantPromotionsKey: model-variant-promotions.json
   evidencePersistentVolumeClaimName: fs2-serve-model-evidence
+  # Optional live-projected capability-gate verdict index. Updating the named
+  # ConfigMap refreshes admin state without changing model execution settings.
+  customerReadinessConfigMapName: ""
+  customerReadinessKey: verdict-index.json
   rolloutDigest: ""
   leanRoutes:
     enabled: false
@@ -378,11 +382,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: e9015d27122a06380342dc2cfbfd15f660efea1cb20450c7f6367a349fef5d9f
-    migrationSetSha256: 22a3198c91b099dc7beabded9411b2111ce49f2d4d6cd7bfe2f9cded311832c3
-    migrationCount: 31
+    contractPayloadSha256: 29b4cd55483524c944fe8de89d3957a3e127502e6ebed87334c41f7918232fa2
+    migrationSetSha256: 604c565280e1d75aaf17dea6208972718975f0afe87b2fe1e6fe3b33e5ee1abf
+    migrationCount: 32
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0031_user_storage.sql
+    lastMigrationVersion: 0032_scientific_child_delegation.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:
@@ -594,6 +598,7 @@ prometheusRule:
   maxQueueDepth: 100
   maxSyncWaitSaturations: 10
   maxAuthenticationFailures: 50
+  maxSemanticFailures: 10
 
 maintenance:
   enabled: true

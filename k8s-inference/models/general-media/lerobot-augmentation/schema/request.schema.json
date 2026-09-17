@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/cosmos3-lerobot-augmentation-request/v1",
+  "title": "Cosmos3-Nano LeRobot v3 augmentation request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "source", "selection", "variants", "augmentation", "actions", "failure_policy"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-request/v1"},
+    "source": {"oneOf": [
+      {"$ref": "#/$defs/huggingface_source"},
+      {"$ref": "#/$defs/object_store_source"},
+      {"$ref": "#/$defs/uploaded_bundle_source"}
+    ]},
+    "selection": {"$ref": "#/$defs/selection"},
+    "variants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "seeds"],
+      "properties": {
+        "count": {"type": "integer", "minimum": 1, "maximum": 8},
+        "seeds": {"type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 4294967295}}
+      }
+    },
+    "augmentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "prompt_template", "dimensions", "conditioning"],
+      "properties": {
+        "mode": {"enum": ["video-to-video", "transfer"]},
+        "prompt_template": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "negative_prompt": {"type": "string", "maxLength": 4096, "default": ""},
+        "dimensions": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/dimension"}},
+        "conditioning": {"$ref": "#/$defs/conditioning"},
+        "num_inference_steps": {"type": "integer", "minimum": 1, "maximum": 50, "default": 35},
+        "guidance_scale": {"type": "number", "minimum": 0, "maximum": 20, "default": 6}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"mode": {"const": "transfer"}}, "required": ["mode"]},
+          "then": {"properties": {"conditioning": {"properties": {"controls": {"minItems": 1}}}}},
+          "else": {"properties": {"conditioning": {"properties": {"controls": {"maxItems": 0}}}}}
+        }
+      ]
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"const": "preserve"}
+      }
+    },
+    "failure_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "max_attempts"],
+      "properties": {
+        "mode": {"enum": ["fail-fast", "continue"]},
+        "max_attempts": {"type": "integer", "minimum": 1, "maximum": 3}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "huggingface_source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "repo_id", "revision"],
+      "properties": {
+        "kind": {"const": "huggingface"},
+        "repo_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "credential_binding": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$"}
+      }
+    },
+    "object_store_source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "storage_binding", "object_prefix", "manifest_sha256"],
+      "properties": {
+        "kind": {"const": "object-store"},
+        "storage_binding": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$"},
+        "object_prefix": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]{1,512}$"},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "uploaded_bundle_source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "artifact_id", "sha256", "size_bytes", "media_type", "compression"],
+      "properties": {
+        "kind": {"const": "uploaded-bundle"},
+        "artifact_id": {"$ref": "#/$defs/artifact_id"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "size_bytes": {"type": "integer", "minimum": 1, "maximum": 137438953472},
+        "media_type": {"const": "application/x-tar"},
+        "compression": {"const": "zstd"}
+      }
+    },
+    "selection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["episodes", "cameras"],
+      "properties": {
+        "episodes": {
+          "oneOf": [
+            {"const": "all"},
+            {"type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true, "items": {"type": "integer", "minimum": 0}}
+          ]
+        },
+        "cameras": {"oneOf": [{"const": "all"}, {"type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": {"type": "string", "pattern": "^observation\\.images\\.[A-Za-z0-9._-]+$"}}]}
+      }
+    },
+    "dimension": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "instruction"],
+      "properties": {
+        "name": {"enum": ["lighting", "weather", "background", "viewpoint", "object-appearance", "custom"]},
+        "instruction": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "strength": {"type": "number", "minimum": 0, "maximum": 1, "default": 1}
+      }
+    },
+    "conditioning": {
+      "type": "object", "additionalProperties": false,
+      "required": ["keep", "frame_indexes", "controls"],
+      "properties": {
+        "keep": {"enum": ["first", "last"]},
+        "frame_indexes": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 100}},
+        "controls": {"type": "array", "maxItems": 2, "uniqueItems": true, "items": {"enum": ["edge", "blur"]}}
+      }
+    }
+  }
+}

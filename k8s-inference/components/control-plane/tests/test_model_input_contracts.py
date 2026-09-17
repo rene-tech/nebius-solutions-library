@@ -18,6 +18,7 @@ from fs2_serve.model_input_contracts import (
     InputContractUnavailable,
     _resource,
     contract_for,
+    cosmos_specialized_contracts,
     packaged_input_fixture,
     scientific_contract_for,
 )
@@ -358,3 +359,97 @@ def test_sdxl_binary_or_json_response_and_cosmos_mode_fields(registry):
     validator.validate({"mode": "text-to-image", "prompt": "A cube", "output_format": "png"})
     assert not validator.is_valid({"mode": "text-to-image", "prompt": "A cube", "num_frames": 25})
     assert not validator.is_valid({"mode": "text-to-video", "prompt": "A cube", "output_format": "png"})
+
+
+def test_cosmos_media_contracts_are_mode_specific_and_unqualified_actions_are_rejected(registry):
+    model = selected(registry, "cosmos3-nano")
+    generic = contract_for(model, "native")
+    generic_validator = Draft202012Validator(generic.input_schema)
+    artifact = {
+        "artifact_id": "00000000-0000-4000-8000-000000000021",
+        "sha256": "a" * 64,
+        "size_bytes": 4096,
+        "media_type": "video/mp4",
+        "compression": "none",
+    }
+    generic_validator.validate(
+        {
+            "mode": "video-to-video",
+            "prompt": "Preserve the robot and change the lighting.",
+            "vision_path": "https://media.example.test/input.mp4",
+            "condition_frame_indexes_vision": [0, 1],
+            "output_format": "mp4",
+            "output_delivery": "artifact",
+        }
+    )
+    invalid = (
+        {"mode": "video-to-video", "prompt": "missing reference"},
+        {
+            "mode": "video-to-video",
+            "prompt": "local path",
+            "vision_path": "/tmp/customer.mp4",  # noqa: S108 - deliberate rejected customer input
+        },
+        {
+            "mode": "video-to-video",
+            "prompt": "two references",
+            "vision_path": "https://media.example.test/input.mp4",
+            "input_reference": artifact,
+        },
+        {
+            "mode": "video-to-video",
+            "prompt": "wrong-mode sound",
+            "input_reference": artifact,
+            "generate_sound": True,
+        },
+        {
+            "mode": "text-to-video",
+            "prompt": "sound duration without sound",
+            "generate_sound": False,
+            "sound_duration": 2,
+        },
+        {
+            "mode": "transfer-video",
+            "prompt": "depth requires a reference",
+            "controls": [{"control_type": "depth"}],
+        },
+        {
+            "mode": "transfer-video",
+            "prompt": "transfer uses a pinned resolution bucket, not free-form size",
+            "controls": [{"control_type": "edge"}],
+            "size": "640x480",
+        },
+        {
+            "mode": "forward-dynamics",
+            "prompt": "unqualified action runtime",
+            "input_reference": artifact,
+            "domain_name": "av",
+            "raw_action_dim": 9,
+            "action_chunk_size": 16,
+        },
+        {
+            "mode": "inverse-dynamics",
+            "prompt": "unqualified action runtime",
+            "input_reference": artifact,
+            "domain_name": "av",
+            "raw_action_dim": 9,
+            "action_chunk_size": 16,
+            "num_frames": 17,
+        },
+    )
+    assert all(not generic_validator.is_valid(value) for value in invalid)
+
+    contracts = cosmos_specialized_contracts(model)
+    assert {item[0] for item in contracts} == {
+        "cosmos3_nano_text_to_image",
+        "cosmos3_nano_text_to_video",
+        "cosmos3_nano_image_to_video",
+        "cosmos3_nano_video_to_video",
+        "cosmos3_nano_transfer_video",
+    }
+    for _, contract, defaults, _, _ in contracts:
+        Draft202012Validator.check_schema(contract.input_schema)
+        assert "mode" not in contract.input_schema["properties"]
+        assert "output_delivery" not in contract.input_schema["properties"]
+        for example in contract.examples:
+            Draft202012Validator(contract.input_schema).validate(example)
+        generic_validator.validate(contract.examples[0] | defaults)

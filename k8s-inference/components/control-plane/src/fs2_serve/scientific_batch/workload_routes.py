@@ -53,6 +53,52 @@ def _bearer(value: str | None) -> str:
     return value.removeprefix("Bearer ")
 
 
+async def authorize_workload_capability(
+    authority: ScientificWorkloadCapabilityAuthority,
+    batches: WorkloadBatchRepository,
+    authorization: str | None,
+) -> tuple[ScientificWorkloadCapability, ScientificBatchState, ScientificAttemptState]:
+    try:
+        capability = authority.verify(_bearer(authorization))
+        state = await batches.get(capability.operation_id, tenant_id=capability.tenant_id)
+        stage = state.stage(capability.stage_id)
+        attempt = stage.latest_attempt(None if capability.shard_id == "gang" else capability.shard_id)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="workload capability rejected",
+        ) from None
+    if (
+        state.cancel_requested
+        or state.status.value not in {"queued", "running"}
+        or state.batch_id != capability.batch_id
+        or state.workload_id != capability.workload_id
+        or state.model_id != capability.model_id
+        or state.variant_id != capability.variant_id
+        or attempt is None
+        or attempt.attempt_id != capability.attempt_id
+        or attempt.attempt_number != capability.attempt_number
+        or attempt.outcome is not AttemptOutcome.ACTIVE
+        or attempt.resource_released
+        or attempt.deletion_requested
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workload capability is stale")
+    if state.execution_plan is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workload execution is unavailable")
+    invocation = state.execution_plan.invocation(capability.stage_id, attempt.shard_id)
+    if (
+        invocation.collector_id != capability.collector_id
+        or invocation.validator_id != capability.validator_id
+        or invocation.produces != capability.logical_output_id
+        or state.access_context.profile != capability.access_profile
+        or state.access_context.receipt_digest != capability.access_receipt_digest
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workload capability binding changed")
+    return capability, state, attempt
+
+
 def scientific_workload_artifact_router(
     *,
     authority: ScientificWorkloadCapabilityAuthority,
@@ -64,42 +110,7 @@ def scientific_workload_artifact_router(
     async def authorized(
         authorization: str | None,
     ) -> tuple[ScientificWorkloadCapability, ScientificBatchState, ScientificAttemptState]:
-        try:
-            capability = authority.verify(_bearer(authorization))
-            state = await batches.get(capability.operation_id, tenant_id=capability.tenant_id)
-            stage = state.stage(capability.stage_id)
-            attempt = stage.latest_attempt(None if capability.shard_id == "gang" else capability.shard_id)
-        except HTTPException:
-            raise
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="workload capability rejected",
-            ) from None
-        if (
-            state.batch_id != capability.batch_id
-            or state.workload_id != capability.workload_id
-            or state.model_id != capability.model_id
-            or state.variant_id != capability.variant_id
-            or attempt is None
-            or attempt.attempt_id != capability.attempt_id
-            or attempt.attempt_number != capability.attempt_number
-            or attempt.outcome is not AttemptOutcome.ACTIVE
-            or attempt.resource_released
-        ):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workload capability is stale")
-        if state.execution_plan is None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workload execution is unavailable")
-        invocation = state.execution_plan.invocation(capability.stage_id, attempt.shard_id)
-        if (
-            invocation.collector_id != capability.collector_id
-            or invocation.validator_id != capability.validator_id
-            or invocation.produces != capability.logical_output_id
-            or state.access_context.profile != capability.access_profile
-            or state.access_context.receipt_digest != capability.access_receipt_digest
-        ):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workload capability binding changed")
-        return capability, state, attempt
+        return await authorize_workload_capability(authority, batches, authorization)
 
     @router.get("/artifacts/{artifact_id}:download", response_model=WorkloadDownloadResponse)
     async def download(

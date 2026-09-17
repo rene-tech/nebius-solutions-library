@@ -223,6 +223,7 @@ def collect_stage_output(invocation: StageInvocation, workspace: Path) -> Collec
 
 
 for _module_name in (
+    "cosmos_lerobot",
     "proteina_complexa",
     "boltzgen",
     "bindcraft",

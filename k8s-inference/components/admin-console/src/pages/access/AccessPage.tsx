@@ -77,16 +77,11 @@ function ScopeList({ values, label }: { values: string[]; label: string }) {
 function UsageCell({ apiKey }: { apiKey: AdminApiKey }) {
   const inputDescription = measurementDescription(apiKey.usage.input_tokens);
   const outputDescription = measurementDescription(apiKey.usage.output_tokens);
-  const gpuQualifier = apiKey.usage.estimated_gpu_seconds.state === "estimated"
-    ? " estimated"
-    : apiKey.usage.estimated_gpu_seconds.state === "unavailable"
-      ? ""
-      : " accounted";
   return (
     <div className="dense-stack">
       <strong>{apiKey.usage.terminal_operations.toLocaleString()} operations</strong>
-      <span title={measurementDescription(apiKey.usage.estimated_gpu_seconds)}>
-        {formatAccessMeasurement(apiKey.usage.estimated_gpu_seconds)}{gpuQualifier}
+      <span title={measurementDescription(apiKey.usage.conservative_attempted_gpu_seconds)}>
+        {formatAccessMeasurement(apiKey.usage.conservative_attempted_gpu_seconds)} conservative attempted allocation (not measured)
       </span>
       <span title={inputDescription}>In {formatAccessMeasurement(apiKey.usage.input_tokens)}</span>
       <span title={outputDescription}>Out {formatAccessMeasurement(apiKey.usage.output_tokens)}</span>
@@ -106,8 +101,8 @@ function LimitsCell({ apiKey }: { apiKey: AdminApiKey }) {
     ? "unlimited"
     : `${apiKey.requests_used.toLocaleString()} / ${apiKey.request_budget.toLocaleString()} requests`;
   const gpuLimit = apiKey.gpu_seconds_budget === null
-    ? "unlimited GPU"
-    : `${apiKey.gpu_seconds_used.toLocaleString()} used + ${apiKey.gpu_seconds_reserved.toLocaleString()} reserved / ${apiKey.gpu_seconds_budget.toLocaleString()} GPU-s`;
+    ? "Admission GPU budget unlimited"
+    : `${apiKey.admission_budget_consumed_gpu_seconds.toLocaleString()} consumed + ${apiKey.admission_budget_reserved_gpu_seconds.toLocaleString()} held / ${apiKey.gpu_seconds_budget.toLocaleString()} admission GPU-s`;
   const rate = apiKey.rate_limit_requests === null || apiKey.rate_window_seconds === null
     ? "rate limit off"
     : `${apiKey.rate_window_requests.toLocaleString()} / ${apiKey.rate_limit_requests.toLocaleString()} per ${apiKey.rate_window_seconds}s`;
@@ -301,9 +296,9 @@ export function AccessPage() {
   const enabledPrincipalCount = principalQuery.data?.data.items.filter((principal) => principal.enabled).length ?? 0;
   const activeKeys = allKeys.filter((apiKey) => apiKey.state === "active").length;
   const operations = allKeys.reduce((sum, apiKey) => sum + apiKey.usage.terminal_operations, 0);
-  const gpuUsageAvailable = keyDataAvailable && allKeys.every((apiKey) => apiKey.usage.estimated_gpu_seconds.value !== null);
+  const gpuUsageAvailable = keyDataAvailable && allKeys.every((apiKey) => apiKey.usage.conservative_attempted_gpu_seconds.value !== null);
   const gpuSeconds = gpuUsageAvailable
-    ? allKeys.reduce((sum, apiKey) => sum + (apiKey.usage.estimated_gpu_seconds.value as number), 0)
+    ? allKeys.reduce((sum, apiKey) => sum + (apiKey.usage.conservative_attempted_gpu_seconds.value as number), 0)
     : null;
   const accessNavigation = sharedContextParams(searchParams);
   if (selectedTenant) accessNavigation.set("tenant", selectedTenant);
@@ -424,7 +419,7 @@ export function AccessPage() {
         <AccessMetric detail="Visible in the selected tenant scope" label="Principals" value={principalDataAvailable ? principals.length.toLocaleString() : "—"} />
         <AccessMetric detail={keyDataAvailable ? `${allKeys.length.toLocaleString()} total keys` : "Key projection unavailable"} label="Active keys" value={keyDataAvailable ? activeKeys.toLocaleString() : "—"} />
         <AccessMetric detail="Terminal ledger facts" label="Operations" value={keyDataAvailable ? operations.toLocaleString() : "—"} />
-        <AccessMetric detail={gpuUsageAvailable ? "Admission accounting estimate" : "GPU accounting is unavailable for one or more visible keys"} label="GPU usage" value={gpuSeconds === null ? "—" : `${gpuSeconds.toLocaleString()} GPU-s`} />
+        <AccessMetric detail={gpuUsageAvailable ? "Conservative admission estimate; not measured occupancy or a bill" : "Admission accounting is unavailable for one or more visible keys"} label="Attempted allocation" value={gpuSeconds === null ? "—" : `${gpuSeconds.toLocaleString()} GPU-s`} />
       </section>
 
       <div className="toolbar toolbar--wrap">

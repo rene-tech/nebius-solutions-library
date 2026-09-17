@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from .admin_models import AdminContext, AdminMeasurement, AdminValueState
 from .models import OperationStatus, TokenView
 from .store import ConflictError
+from .usage_accounting import lifecycle_usage_from_counts
 from .user_models import InferenceUser, UserUsage, UserUsagePoint, owner_id
 
 
@@ -26,24 +27,7 @@ def usage_from_counts(row: dict[str, Any]) -> UserUsage:
     count = int(row.get("requests") or 0)
     terminal = int(row.get("terminal") or 0)
     coverage = int(row.get("token_coverage") or 0)
-    # Online requests share workers. Their overlapping wall intervals are not
-    # additive owner GPU bills. Only reconciled, exclusive scientific attempts
-    # can currently be summed without silently charging shared overhead twice.
-    compute_reason = "Exclusive scientific-attempt lifecycle accounting only; shared serving overhead is unallocated."
-    has_compute = bool(row.get("lifecycle_subjects")) and bool(row.get("lifecycle_complete"))
-
-    def compute(name: str) -> AdminMeasurement:
-        if not has_compute:
-            return measurement(
-                None, "gpu-seconds", reason="No complete exclusive scientific lifecycle accounting in this window."
-            )
-        return AdminMeasurement(
-            value=float(row.get(name) or 0),
-            unit="gpu-seconds",
-            state=AdminValueState.ESTIMATED,
-            source="postgres",
-            reason=compute_reason,
-        )
+    accounting = lifecycle_usage_from_counts(row)
 
     def tokens(name: str) -> AdminMeasurement:
         if terminal == 0 or coverage != terminal:
@@ -58,10 +42,19 @@ def usage_from_counts(row: dict[str, Any]) -> UserUsage:
         pending=int(row.get("pending") or 0),
         running=int(row.get("running") or 0),
         scientific_requests=int(row.get("scientific_requests") or 0),
+        public_exchanges=int(row.get("public_exchanges") or 0),
+        semantic_succeeded=int(row.get("semantic_succeeded") or 0),
+        semantic_accepted=int(row.get("semantic_accepted") or 0),
+        semantic_failed=int(row.get("semantic_failed") or 0),
+        semantic_cancelled=int(row.get("semantic_cancelled") or 0),
+        semantic_timed_out=int(row.get("semantic_timed_out") or 0),
+        semantic_unknown=int(row.get("semantic_unknown") or 0),
+        pre_admission_failed=int(row.get("pre_admission_failed") or 0),
         last_request_at=row.get("last_request_at"),
-        scheduler_occupied_gpu_seconds=compute("occupied"),
-        active_gpu_seconds=compute("active"),
-        occupied_idle_gpu_seconds=compute("idle"),
+        scheduler_occupied_gpu_seconds=accounting.occupied,
+        active_gpu_seconds=accounting.active,
+        occupied_idle_gpu_seconds=accounting.classified_idle,
+        lifecycle_accounting=accounting,
         input_tokens=tokens("input_tokens"),
         output_tokens=tokens("output_tokens"),
     )
@@ -185,6 +178,9 @@ class PostgresUserRepository:
                 JOIN operations o ON o.id=s.operation_id
                 LEFT JOIN fs2_reporting_lifecycle_latest r USING(subject_id)
                 WHERE s.workload_kind='scientific_batch'
+            ), public_exchanges AS (
+                SELECT * FROM fs2_request_telemetry WHERE tenant_id=$1 AND principal_id=$2
+                    AND started_at >= $3 AND started_at < $4
             )
             SELECT count(*) AS requests,
                 count(*) FILTER (WHERE status='succeeded') AS succeeded,
@@ -194,18 +190,52 @@ class PostgresUserRepository:
                 count(*) FILTER (WHERE status='running') AS running,
                 count(*) FILTER (WHERE completed_at IS NOT NULL) AS terminal,
                 count(*) FILTER (WHERE protocol='scientific-batch-v1') AS scientific_requests,
+                (SELECT count(*) FROM public_exchanges) AS public_exchanges,
+                (SELECT count(*) FROM public_exchanges WHERE semantic_outcome='succeeded') AS semantic_succeeded,
+                (SELECT count(*) FROM public_exchanges WHERE semantic_outcome='accepted') AS semantic_accepted,
+                (SELECT count(*) FROM public_exchanges WHERE semantic_outcome='failed') AS semantic_failed,
+                (SELECT count(*) FROM public_exchanges WHERE semantic_outcome='cancelled') AS semantic_cancelled,
+                (SELECT count(*) FROM public_exchanges WHERE semantic_outcome='timed_out') AS semantic_timed_out,
+                (SELECT count(*) FROM public_exchanges
+                    WHERE semantic_outcome IS NULL OR semantic_outcome='unknown') AS semantic_unknown,
+                (SELECT count(*) FROM public_exchanges WHERE admission_stage='pre_admission'
+                    AND semantic_outcome IN ('failed','cancelled','timed_out')) AS pre_admission_failed,
                 max(accepted_at) AS last_request_at,
                 count(*) FILTER (WHERE completed_at IS NOT NULL AND input_tokens IS NOT NULL
                     AND output_tokens IS NOT NULL) AS token_coverage,
                 sum(input_tokens) AS input_tokens,sum(output_tokens) AS output_tokens,
                 (SELECT count(*) FROM attempts) AS lifecycle_subjects,
-                (SELECT bool_and(coalesce(terminal AND reconciled AND cardinality(data_gaps)=0,false))
+                (SELECT count(DISTINCT operation_id) FROM attempts) AS lifecycle_operations,
+                (SELECT bool_and(coalesce(terminal AND reconciled AND quality<>'unavailable'
+                    AND NOT ('scheduler_occupancy_clock_missing'=ANY(data_gaps)),false))
                     FROM attempts)
                     AND (SELECT count(DISTINCT operation_id) FROM attempts)
                         = count(*) FILTER (WHERE protocol='scientific-batch-v1') AS lifecycle_complete,
                 (SELECT sum(scheduler_occupied_gpu_seconds) FROM attempts) AS occupied,
-                (SELECT sum(active_gpu_seconds) FROM attempts) AS active,
-                (SELECT sum(occupied_idle_gpu_seconds) FROM attempts) AS idle
+                (SELECT bool_and(cardinality(data_gaps)=0) FROM attempts) AS phases_complete,
+                (SELECT CASE
+                    WHEN count(*) FILTER (WHERE quality IS NULL OR quality='unavailable')>0 THEN 'unavailable'
+                    WHEN count(*) FILTER (WHERE quality='estimated')>0 THEN 'estimated'
+                    WHEN count(*) FILTER (WHERE quality='application_observed')>0 THEN 'application_observed'
+                    ELSE 'measured' END FROM attempts) AS lifecycle_quality,
+                (SELECT sum(coalesce((phase_gpu_seconds->>'active_compute')::double precision,0))
+                    FROM attempts) AS active,
+                (SELECT sum(coalesce((phase_gpu_seconds->>'resident_idle')::double precision,0)
+                    +coalesce((phase_gpu_seconds->>'workflow_wait')::double precision,0)
+                    +coalesce((phase_gpu_seconds->>'cooldown_grace')::double precision,0)) FROM attempts)
+                    AS classified_idle,
+                (SELECT sum(coalesce((phase_gpu_seconds->>'image_pull')::double precision,0)
+                    +coalesce((phase_gpu_seconds->>'artifact_load')::double precision,0)
+                    +coalesce((phase_gpu_seconds->>'restore')::double precision,0)
+                    +coalesce((phase_gpu_seconds->>'compile')::double precision,0)
+                    +coalesce((phase_gpu_seconds->>'warmup')::double precision,0)) FROM attempts) AS startup,
+                (SELECT sum(coalesce((phase_gpu_seconds->>'checkpoint_drain')::double precision,0)
+                    +coalesce((phase_gpu_seconds->>'teardown')::double precision,0)) FROM attempts) AS other,
+                (SELECT sum(greatest(0,scheduler_occupied_gpu_seconds-coalesce((
+                    SELECT sum(value::double precision) FROM jsonb_each_text(phase_gpu_seconds)
+                    WHERE key IN ('active_compute','resident_idle','workflow_wait','cooldown_grace',
+                        'image_pull','artifact_load','restore','compile','warmup','checkpoint_drain','teardown')
+                    ),0))) FROM attempts) AS unknown
             FROM operations
             """,
                 tenant_id,

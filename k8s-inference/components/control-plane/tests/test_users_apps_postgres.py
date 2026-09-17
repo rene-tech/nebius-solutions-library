@@ -23,6 +23,7 @@ from fs2_serve.auth import PepperRing, TokenService
 from fs2_serve.lifecycle import LifecycleCorrelation, LifecycleSignal, LifecycleSubject, PostgresLifecycleRepository
 from fs2_serve.models import Scope, TokenCreate
 from fs2_serve.postgres import PostgresStore
+from fs2_serve.usage_reconciliation import export_snapshot
 from fs2_serve.user_models import InferenceUser, owner_id
 from fs2_serve.user_repository import PostgresUserRepository
 
@@ -226,15 +227,103 @@ async def test_actual_scientific_attempt_join_reports_missing_rollup_not_zero(da
     )
     usage = await PostgresUserRepository(database.pool).usage(key.tenant_id, key.principal_id, CONTEXT)
     assert usage.scheduler_occupied_gpu_seconds.value == 10
+    # Empty historical phase map must not relabel the old nonactive residual
+    # (3 seconds) as measured idle or the old active counter as classified time.
+    assert usage.active_gpu_seconds.value == 0
+    assert usage.occupied_idle_gpu_seconds.value == 0
+    assert usage.lifecycle_accounting.unknown.value == 10
+    assert not usage.lifecycle_accounting.phases_complete
     assert (await PostgresAppsRepository(database.pool).usage("qwen3-8b", CONTEXT, None))["scientific_gpu"] == {
         "occupied_seconds": 10,
-        "active_compute_seconds": 7,
-        "occupied_idle_seconds": 3,
+        "active_compute_seconds": 0,
+        "occupied_idle_seconds": 0,
+        "startup_seconds": 0,
+        "other_seconds": 0,
+        "unknown_seconds": 10,
+        "phases_complete": False,
+        "quality": "estimated",
     }
     await operation(database, key, protocol="scientific-batch-v1")
     usage = await PostgresUserRepository(database.pool).usage(key.tenant_id, key.principal_id, CONTEXT)
     assert usage.scientific_requests == 2 and usage.scheduler_occupied_gpu_seconds.value is None
     assert (await PostgresAppsRepository(database.pool).usage("qwen3-8b", CONTEXT, None))["scientific_gpu"] is None
+
+
+async def test_readonly_reconciliation_preserves_historical_retry_rows_and_phase_quality(database):
+    key = await token(database)
+    op = await operation(database, key, protocol="scientific-batch-v1")
+    await database.pool.execute("UPDATE fs2_tokens SET gpu_seconds_used=79200 WHERE id=$1", key.id)
+    repository = PostgresLifecycleRepository(database.pool)
+    for outcome in ("failed", "succeeded"):
+        subject = LifecycleSubject(
+            subject_id=uuid4(),
+            workload_kind="scientific_batch",
+            operation_id=op,
+            request_id=op,
+            batch_id=uuid4(),
+            workload_id=uuid4(),
+            attempt_id=uuid4(),
+            tenant_id=key.tenant_id,
+            principal_id=key.principal_id,
+            model_id="qwen3-8b",
+            model_revision="test",
+            protocol="scientific-batch-v1",
+            trace_id="1" * 32,
+            accepted_at=NOW,
+        )
+        await repository.register_subject(subject)
+        await database.pool.execute(
+            """INSERT INTO fs2_lifecycle_rollups
+            (rollup_id,subject_id,generated_at,event_watermark,events_sha256,terminal,outcome,
+             quota_reserved_gpu_seconds,scheduler_occupied_gpu_seconds,device_allocated_gpu_seconds,
+             active_gpu_seconds,occupied_idle_gpu_seconds,phase_gpu_seconds,reconciliation_delta_seconds,
+             device_scheduler_delta_seconds,tolerance_seconds,reconciled,quality,data_gaps,output_shape)
+            VALUES($1,$2,$3,1,$4,true,$5,79200,100,100,40,60,$6::jsonb,0,0,1,true,'measured',
+                ARRAY['phase_classification_incomplete'],'{}')""",
+            uuid4(),
+            subject.subject_id,
+            NOW,
+            "e" * 64,
+            outcome,
+            json.dumps({"active_compute": 40, "artifact_load": 30, "resident_idle": 20, "unclassified": 10}),
+        )
+    before = await database.pool.fetch(
+        "SELECT to_jsonb(r)::text AS row FROM fs2_lifecycle_rollups r ORDER BY rollup_id"
+    )
+    async with database.pool.acquire() as connection:
+        report = await export_snapshot(
+            connection, tenant_id=key.tenant_id, from_at=CONTEXT.from_at, to_at=CONTEXT.to_at
+        )
+    assert len(report["attempts"]) == 2
+    assert {value["outcome"] for value in report["attempts"]} == {"failed", "succeeded"}
+    assert report["exclusive_scientific_usage"]["occupied"]["value"] == 200
+    assert report["exclusive_scientific_usage"]["classified_idle"]["value"] == 40
+    assert report["exclusive_scientific_usage"]["startup"]["value"] == 60
+    assert report["exclusive_scientific_usage"]["unknown"]["value"] == 20
+    assert report["exclusive_scientific_usage"]["occupied_complete"]
+    assert not report["exclusive_scientific_usage"]["phases_complete"]
+    assert report["admission_snapshots"][0]["admission_budget_consumed_gpu_seconds"] == 79200
+    assert await database.pool.fetchval("SELECT gpu_seconds_used FROM fs2_tokens WHERE id=$1", key.id) == 79200
+    assert before == await database.pool.fetch(
+        "SELECT to_jsonb(r)::text AS row FROM fs2_lifecycle_rollups r ORDER BY rollup_id"
+    )
+    owner = await PostgresUserRepository(database.pool).usage(key.tenant_id, key.principal_id, CONTEXT)
+    assert owner.lifecycle_accounting.model_dump(mode="json") == report["exclusive_scientific_usage"]
+    app_usage = (await PostgresAppsRepository(database.pool).usage("qwen3-8b", CONTEXT, key.tenant_id))[
+        "scientific_gpu"
+    ]
+    assert app_usage["occupied_seconds"] == 200
+    assert app_usage["occupied_idle_seconds"] == 40
+    assert app_usage["startup_seconds"] == 60
+    assert app_usage["unknown_seconds"] == 20
+    assert app_usage["quality"] == "measured" and not app_usage["phases_complete"]
+    missing = await operation(database, key, protocol="scientific-batch-v1")
+    async with database.pool.acquire() as connection:
+        incomplete = await export_snapshot(
+            connection, tenant_id=key.tenant_id, from_at=CONTEXT.from_at, to_at=CONTEXT.to_at
+        )
+    assert incomplete["operations_without_lifecycle"] == [str(missing)]
+    assert incomplete["exclusive_scientific_usage"]["occupied"]["value"] is None
 
 
 async def test_actual_custom_runtime_role_can_manage_users_apps_and_read_owner_history(database):

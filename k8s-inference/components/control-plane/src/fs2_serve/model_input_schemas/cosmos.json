@@ -1,153 +1,45 @@
 {
+  "schema": "fs2-serve.nebius.ai/cosmos3-runtime-contract/v2",
   "source": "k8s-inference/models/general-media/k8s/cosmos3-nano.yaml#data.adapter.py",
-  "image": {
-    "additionalProperties": false,
-    "properties": {
-      "model": {
-        "const": "nvidia/Cosmos3-Nano@7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
-        "default": "nvidia/Cosmos3-Nano@7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
-        "title": "Model",
-        "type": "string"
-      },
-      "prompt": {
-        "maxLength": 4096,
-        "minLength": 1,
-        "title": "Prompt",
-        "type": "string"
-      },
-      "negative_prompt": {
-        "default": "",
-        "maxLength": 4096,
-        "title": "Negative Prompt",
-        "type": "string"
-      },
-      "seed": {
-        "default": 0,
-        "maximum": 4294967295,
-        "minimum": 0,
-        "title": "Seed",
-        "type": "integer"
-      },
-      "num_inference_steps": {
-        "default": 30,
-        "maximum": 50,
-        "minimum": 1,
-        "title": "Num Inference Steps",
-        "type": "integer"
-      },
-      "guidance_scale": {
-        "default": 7,
-        "maximum": 20,
-        "minimum": 0,
-        "title": "Guidance Scale",
-        "type": "number"
-      },
-      "mode": {
-        "const": "text-to-image",
-        "title": "Mode",
-        "type": "string"
-      },
-      "size": {
-        "default": "512x512",
-        "maxLength": 9,
-        "minLength": 7,
-        "title": "Size",
-        "type": "string"
-      },
-      "output_format": {
-        "const": "png",
-        "default": "png",
-        "title": "Output Format",
-        "type": "string"
-      }
-    },
-    "required": [
-      "prompt",
-      "mode"
-    ],
-    "title": "TextToImageRequest",
-    "type": "object"
+  "model": "nvidia/Cosmos3-Nano@7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+  "runtime": {
+    "project": "vllm-project/vllm-omni",
+    "revision": "eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c",
+    "pipeline": "Cosmos3OmniDiffusersPipeline"
   },
-  "video": {
-    "additionalProperties": false,
-    "properties": {
-      "model": {
-        "const": "nvidia/Cosmos3-Nano@7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
-        "default": "nvidia/Cosmos3-Nano@7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
-        "title": "Model",
-        "type": "string"
-      },
-      "prompt": {
-        "maxLength": 4096,
-        "minLength": 1,
-        "title": "Prompt",
-        "type": "string"
-      },
-      "negative_prompt": {
-        "default": "",
-        "maxLength": 4096,
-        "title": "Negative Prompt",
-        "type": "string"
-      },
-      "seed": {
-        "default": 0,
-        "maximum": 4294967295,
-        "minimum": 0,
-        "title": "Seed",
-        "type": "integer"
-      },
-      "num_inference_steps": {
-        "default": 30,
-        "maximum": 50,
-        "minimum": 1,
-        "title": "Num Inference Steps",
-        "type": "integer"
-      },
-      "guidance_scale": {
-        "default": 7,
-        "maximum": 20,
-        "minimum": 0,
-        "title": "Guidance Scale",
-        "type": "number"
-      },
-      "mode": {
-        "const": "text-to-video",
-        "title": "Mode",
-        "type": "string"
-      },
-      "size": {
-        "default": "448x256",
-        "maxLength": 9,
-        "minLength": 7,
-        "title": "Size",
-        "type": "string"
-      },
-      "num_frames": {
-        "default": 25,
-        "maximum": 400,
-        "minimum": 5,
-        "title": "Num Frames",
-        "type": "integer"
-      },
-      "fps": {
-        "default": 24,
-        "maximum": 30,
-        "minimum": 1,
-        "title": "Fps",
-        "type": "integer"
-      },
-      "output_format": {
-        "const": "mp4",
-        "default": "mp4",
-        "title": "Output Format",
-        "type": "string"
-      }
-    },
-    "required": [
-      "prompt",
-      "mode"
-    ],
-    "title": "TextToVideoRequest",
-    "type": "object"
-  }
+  "modes": [
+    "text-to-image",
+    "text-to-video",
+    "image-to-video",
+    "video-to-video",
+    "transfer-video"
+  ],
+  "transfer_controls": ["edge", "blur", "depth", "seg", "wsm"],
+  "transfer_resolution_buckets": [256, 480, 704, 720],
+  "reference_transport": {
+    "customer_local_paths": false,
+    "https": true,
+    "tenant_artifacts": true,
+    "runtime_materialization": "data-url-to-upstream-multipart",
+    "maximum_reference_bytes": 536870912,
+    "maximum_control_bytes": 134217728,
+    "maximum_combined_control_bytes": 268435456
+  },
+  "output_transport": {
+    "text-to-image": "legacy-inline-base64",
+    "text-to-video": "artifact",
+    "image-to-video": "artifact",
+    "video-to-video": "artifact",
+    "transfer-video": "artifact"
+  },
+  "deliberately_unpublished": {
+    "forward-dynamics": "Unpublished after the exact pinned vLLM-Omni runtime crashed its diffusion worker with SIGBUS after decode on an H100 real-GPU fixture on 2026-09-15; CUDA/CRIU restore also returned cudaErrorNotSupported.",
+    "inverse-dynamics": "Unpublished after the exact pinned vLLM-Omni runtime crashed its diffusion worker with SIGBUS after decode on the official AV H100 real-GPU fixture on 2026-09-15.",
+    "policy": "The pinned runtime implements policy mode, but this deployment has no retained successful real-GPU policy fixture result.",
+    "openpi": "Requires the separately pinned Cosmos3-Nano-Policy-DROID deployment and a websocket contract."
+  },
+  "provenance": [
+    "https://huggingface.co/nvidia/Cosmos3-Nano/blob/7a312c868bcce8e40b3eb40861300a9d0ba3fde1/README.md",
+    "https://github.com/vllm-project/vllm-omni/blob/eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c/recipes/cosmos3/Cosmos3-Nano.md"
+  ]
 }

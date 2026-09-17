@@ -58,11 +58,89 @@ for an identical intended submission. Serving tools also accept bounded
 `wait_seconds`; zero returns after durable acceptance without waiting for model
 execution. An accepted operation is **not** the final prediction.
 
+### Cosmos media workflows
+
+Cosmos publishes separate tools for text-to-image, text-to-video,
+image-to-video, video-to-video, and controlled transfer video. The tool name
+fixes the mode and output transport; do not
+send `mode`, `output_format`, or `output_delivery` yourself. For example, a V2V
+submission using a finalized input artifact is:
+
+```json
+{
+  "prompt":"Preserve the robot motion while changing the lighting.",
+  "input_reference":{
+    "artifact_id":"<finalized artifact UUID>",
+    "sha256":"<64 lowercase hex characters>",
+    "size_bytes":123456,
+    "media_type":"video/mp4",
+    "compression":"none"
+  },
+  "condition_frame_indexes_vision":[0,1],
+  "condition_video_keep":"first",
+  "idempotency_key":"robot-pouring-v2v-0001",
+  "wait_seconds":0
+}
+```
+
+Call `cosmos3_nano_video_to_video` with those fields. `vision_path` remains a
+deprecated compatibility alias only for a final immutable HTTPS URL. A local
+path such as `/tmp/robot_pouring.mp4` cannot refer to a remote customer's file:
+upload it with the model-artifact tools and pass the finalized descriptor.
+After submission, poll `get_operation`, retrieve the completed envelope with
+`get_operation_result`, and pass its `artifact.artifact_id` to
+`download_model_artifact`. The short-lived download handle is used outside the
+agent context; verify its `sha256` and `size_bytes`. MP4 bytes are never returned
+as a tool argument or base64 tool result.
+
+`cosmos3_nano_transfer_video` accepts typed `controls` and a pinned `resolution`
+bucket of 256, 480, 704, or 720; depth, segmentation and WSM controls require
+their own image/video reference, while edge and blur may be derived from the
+main reference. Sound is limited to the text/image-to-video tools. Cosmos action
+forward dynamics, inverse dynamics, policy, and OpenPI are intentionally not
+published: the exact pinned H100 runtime did not pass real-GPU action fixtures.
+Do not route LeRobot dataset augmentation through an unqualified action path;
+use the separate LeRobot App, whose currently published child operations are
+V2V and transfer only.
+
 For compatibility, named serving tools still accept the old `payload` wrapper,
 and named scientific tools accept the old `request` wrapper. Controls remain
 outside these wrappers. Wrapped input is checked against the same concrete
 contract; unsupported fields do not gain a bypass. The generic `invoke_model`
 and `submit_scientific_run` envelopes remain available for existing clients.
+
+For generic `invoke_model`, place controls beside `payload`:
+
+```json
+{
+  "model_id":"openfold2",
+  "protocol":"native",
+  "payload":{
+    "input_id":"example-contract-only",
+    "sequence":"ACDEFGHIKLMNPQRSTVWY",
+    "selected_models":[1],
+    "relax_prediction":false
+  },
+  "idempotency_key":"example-openfold2-request-0001",
+  "wait_seconds":0
+}
+```
+
+The Stockholm envelope remediation also accepts legacy controls at the immediate
+top level of `invoke_model.payload`: it lifts them out before persistence and
+dispatch. Identical inner/outer duplicates are accepted. Conflicting duplicates
+return JSON-RPC `-32602` with `data.type: gateway_control_validation`,
+`durable_admission: false`, and an `issues` JSON-pointer location; no operation
+is created. Explicit outer `wait_seconds: 0` and `idempotency_key: null` count as
+supplied values and can conflict. Controls have the same bounds in both places:
+an 8–200 character key (or null) and a finite numeric wait within the deployment's
+limit. Numeric strings and booleans are rejected. Fields deeper inside model
+objects are preserved. This compatibility rule applies to generic serving calls;
+keep named tools flat and scientific `request` wrappers unchanged.
+
+This describes the remediation source contract, not a deployment receipt. The
+Stockholm release still needs exact-image and actual LibreChat/BioNeMo acceptance;
+see [the remediation handoff](stockholm-mcp-envelope-remediation-20260917.md).
 
 ## Core tools and workflow
 

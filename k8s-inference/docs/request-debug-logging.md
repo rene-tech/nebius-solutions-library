@@ -48,7 +48,10 @@ traffic.
 
 Expanded details show source, request/operation IDs, operation and upstream attempt
 numbers, precise timestamps, tenant/principal/key ID, model/tool, method/endpoint,
-actual HTTP status, disconnect/error details, query string, headers and bodies.
+actual HTTP status, customer-visible semantic outcome, JSON-RPC error code,
+normalized semantic error type, admission stage, disconnect/error details, query
+string, headers and bodies. HTTP status remains transport evidence; it is never
+used as a substitute for the MCP/tool outcome.
 Duplicate header entries are preserved. An API key **ID** is attribution, not its
 secret value. Operation attempts and upstream HTTP retries are different counters.
 
@@ -82,9 +85,10 @@ continue within the same window; it is pagination, not a request count. The UI
 resets cursor paging when its selected request window changes.
 
 List `data` is `{items: DebugExchangeSummary[], next_cursor: string | null}`.
-Summaries include identities, endpoint/method/status/error type, source, attempt
-numbers, observed byte counts and completeness/redaction flags. They intentionally
-omit bodies, headers, query strings and error-detail text.
+Summaries include identities, endpoint/method/HTTP status, semantic outcome,
+JSON-RPC code, normalized error type, admission stage, source, attempt numbers,
+observed byte counts and completeness/redaction flags. They intentionally omit
+bodies, headers, query strings and error-detail text.
 
 Detail `data` is one `DebugExchange`, adding `query_string`, header-pair lists,
 `error_detail`, `request_body` and `response_body`. Each body contains:

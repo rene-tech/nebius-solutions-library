@@ -217,8 +217,17 @@ class TokenView(StrictModel):
     request_budget: int | None
     requests_used: int
     gpu_seconds_budget: float | None
-    gpu_seconds_used: float
-    gpu_seconds_reserved: float
+    # Persistence/enforcement names stay compatible with the historical ledger.
+    # Public responses must not mistake these worst-case admission charges for
+    # observed GPU occupancy (FastAPI serializes response models by alias).
+    gpu_seconds_used: float = Field(
+        serialization_alias="admission_budget_consumed_gpu_seconds",
+        description="Lifetime conservative admission budget charged; not measured or billable GPU usage.",
+    )
+    gpu_seconds_reserved: float = Field(
+        serialization_alias="admission_budget_reserved_gpu_seconds",
+        description="Admission budget currently held for unfinished work; not observed GPU occupancy.",
+    )
     max_concurrency: int
     created_at: AwareDatetime
     created_by: str
@@ -247,6 +256,15 @@ class AdmissionRequest(StrictModel):
     request_content_type: str = "application/json"
     traceparent: str | None = Field(default=None, max_length=128)
     deadline_at: AwareDatetime | None = None
+    # Internal workload routes derive these from a verified attempt capability.
+    parent_operation_id: UUID | None = None
+    parent_attempt_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_parent(self) -> AdmissionRequest:
+        if (self.parent_operation_id is None) != (self.parent_attempt_id is None):
+            raise ValueError("delegated admission requires both parent and attempt")
+        return self
 
 
 class PendingScientificAdmission(StrictModel):
@@ -339,6 +357,8 @@ class RuntimeLifecycleObservation(StrictModel):
 
 class OperationView(StrictModel):
     id: UUID
+    parent_operation_id: UUID | None = None
+    parent_attempt_id: UUID | None = None
     tenant_id: str
     principal_id: str
     token_id: UUID

@@ -33,6 +33,7 @@ from .apps_models import (
 )
 from .apps_repository import AppConflictError, AppsRepository
 from .apps_scientific import ScientificAppsInventory
+from .customer_readiness import CustomerReadinessSummary
 from .model_deployment import (
     MODEL_DEPLOYMENT_LABEL,
     MODEL_ID_LABEL,
@@ -77,6 +78,7 @@ class AppsService:
         scientific_apps: ScientificAppsInventory | None = None,
         scientific_profiles: Any | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        customer_readiness: Callable[[], dict[str, CustomerReadinessSummary]] | None = None,
     ) -> None:
         self.repository = repository
         self.registry = registry
@@ -88,6 +90,7 @@ class AppsService:
         self.scientific_apps = scientific_apps
         self.scientific_profiles = scientific_profiles
         self.clock = clock
+        self.customer_readiness = customer_readiness or (lambda: {})
         pool = getattr(repository, "pool", None)
         self.request_telemetry = PostgresRequestTelemetryStore(pool) if pool is not None else None
 
@@ -158,7 +161,10 @@ class AppsService:
         return await self._attach_default_deployment(record)
 
     async def _attach_default_deployment(
-        self, record: AppRecord, *, revision: ModelDeploymentRevision | None = None,
+        self,
+        record: AppRecord,
+        *,
+        revision: ModelDeploymentRevision | None = None,
     ) -> AppRecord:
         """Resolve catalog-before-bootstrap ordering on normal App reads.
 
@@ -166,8 +172,10 @@ class AppsService:
         deployments, independent clones and scientific identities never move.
         """
         if (
-            self.deployments is None or record.deployment_name is not None
-            or record.execution_mode != "serving" or record.app_id != default_app_id(record.public_model_id)
+            self.deployments is None
+            or record.deployment_name is not None
+            or record.execution_mode != "serving"
+            or record.app_id != default_app_id(record.public_model_id)
             or record.model_ref != record.public_model_id
         ):
             return record
@@ -176,7 +184,10 @@ class AppsService:
             after = None
             while True:
                 page = await self.deployments.repository.list_current(
-                    namespace=record.namespace, tenant_id=None, after_name=after, limit=200,
+                    namespace=record.namespace,
+                    tenant_id=None,
+                    after_name=after,
+                    limit=200,
                 )
                 candidates.extend(item for item in page if item.spec.public_model_id == record.public_model_id)
                 if len(page) < 200:
@@ -186,13 +197,15 @@ class AppsService:
                 return record
             revision = candidates[0]
         if (
-            revision.namespace != record.namespace or revision.spec.model_ref != record.model_ref
+            revision.namespace != record.namespace
+            or revision.spec.model_ref != record.model_ref
             or revision.spec.public_model_id != record.public_model_id
             or (revision.spec.app is not None and revision.spec.app.app_id != record.app_id)
         ):
             return record
         return await self.repository.attach_deployment(
-            record.model_copy(update={"updated_at": self.clock()}), name=revision.name,
+            record.model_copy(update={"updated_at": self.clock()}),
+            name=revision.name,
         )
 
     async def choices(self) -> list[AppChoice]:
@@ -277,6 +290,7 @@ class AppsService:
         usage = await self.usage(record.app_id, context, tenant_id)
         lifetime_reader = getattr(self.repository, "last_used", None)
         last_used = await lifetime_reader(record.public_model_id, tenant_id) if lifetime_reader else usage.last_used_at
+        readiness = self.customer_readiness()
         return AppSummary(
             **record.model_dump(),
             enabled=enabled,
@@ -285,6 +299,7 @@ class AppsService:
             capabilities=settings.capabilities,
             logical_run_count=usage.logical_runs,
             last_used_at=last_used,
+            customer_readiness=readiness.get(str(record.app_id)) or readiness.get(record.public_model_id),
         )
 
     async def list(self, context: AdminContext, tenant_id: str | None = None) -> AppList:

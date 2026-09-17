@@ -137,6 +137,20 @@ class PostgresAppsRepository:
                     SELECT s.operation_id,r.* FROM fs2_telemetry_subjects s JOIN operations o ON o.id=s.operation_id
                     LEFT JOIN fs2_reporting_lifecycle_latest r USING(subject_id)
                     WHERE s.workload_kind='scientific_batch'
+                ), phase_usage AS (
+                    SELECT *,
+                        coalesce((phase_gpu_seconds->>'active_compute')::double precision,0) AS active,
+                        coalesce((phase_gpu_seconds->>'resident_idle')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'workflow_wait')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'cooldown_grace')::double precision,0) AS idle,
+                        coalesce((phase_gpu_seconds->>'image_pull')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'artifact_load')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'restore')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'compile')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'warmup')::double precision,0) AS startup,
+                        coalesce((phase_gpu_seconds->>'checkpoint_drain')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'teardown')::double precision,0) AS other
+                    FROM attempts
                 ), users AS (
                     SELECT tenant_id,principal_id,count(*) AS logical_runs FROM operations
                     GROUP BY tenant_id,principal_id
@@ -164,11 +178,19 @@ class PostgresAppsRepository:
                     (SELECT coalesce(jsonb_object_agg(class,total),'{}') FROM classes) AS status_classes,
                     (SELECT CASE WHEN count(*) > 0 AND count(DISTINCT operation_id)=(
                             SELECT count(*) FROM operations WHERE protocol='scientific-batch-v1')
-                        AND bool_and(coalesce(terminal AND reconciled
-                            AND cardinality(data_gaps)=0,false)) THEN jsonb_build_object(
+                        AND bool_and(coalesce(terminal AND reconciled AND quality<>'unavailable'
+                            AND NOT ('scheduler_occupancy_clock_missing'=ANY(data_gaps)),false))
+                        THEN jsonb_build_object(
                         'occupied_seconds',sum(scheduler_occupied_gpu_seconds),
-                        'active_compute_seconds',sum(active_gpu_seconds),
-                        'occupied_idle_seconds',sum(occupied_idle_gpu_seconds)) END FROM attempts) AS scientific_gpu
+                        'active_compute_seconds',sum(active),
+                        'occupied_idle_seconds',sum(idle),
+                        'startup_seconds',sum(startup),'other_seconds',sum(other),
+                        'unknown_seconds',sum(greatest(0,scheduler_occupied_gpu_seconds-active-idle-startup-other)),
+                        'phases_complete',bool_and(cardinality(data_gaps)=0)
+                            AND sum(greatest(0,scheduler_occupied_gpu_seconds-active-idle-startup-other))<=0.001,
+                        'quality',CASE WHEN bool_or(quality='estimated') THEN 'estimated'
+                            WHEN bool_or(quality='application_observed') THEN 'application_observed' ELSE 'measured' END
+                        ) END FROM phase_usage) AS scientific_gpu
                 FROM operations""",
                 model_id,
                 context.from_at,

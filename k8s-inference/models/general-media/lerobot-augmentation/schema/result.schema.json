@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/cosmos3-lerobot-augmentation-result/v1",
+  "title": "Cosmos3-Nano LeRobot augmentation result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "operation_id", "status", "progress", "variants", "failures"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-result/v1"},
+    "operation_id": {"type": "string", "format": "uuid"},
+    "status": {"enum": ["succeeded", "partially-succeeded", "failed", "cancelled"]},
+    "progress": {
+      "type": "object", "additionalProperties": false,
+      "required": ["completed_units", "total_units"],
+      "properties": {
+        "completed_units": {"type": "integer", "minimum": 0},
+        "total_units": {"type": "integer", "minimum": 0}
+      }
+    },
+    "variants": {
+      "type": "array", "maxItems": 8,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["variant_index", "seed", "artifact", "validation", "provenance_sha256"],
+        "properties": {
+          "variant_index": {"type": "integer", "minimum": 0, "maximum": 7},
+          "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "artifact": {"$ref": "#/$defs/artifact"},
+          "validation": {
+            "type": "object", "additionalProperties": false,
+            "required": ["reader", "episodes", "frames", "decoded_video_frames", "status"],
+            "properties": {
+              "reader": {"const": "lerobot==0.6.1"},
+              "episodes": {"type": "integer", "minimum": 1},
+              "frames": {"type": "integer", "minimum": 1},
+              "decoded_video_frames": {"type": "integer", "minimum": 1},
+              "status": {"const": "passed"}
+            }
+          },
+          "provenance_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "failures": {
+      "type": "array", "maxItems": 2048,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["variant_index", "episode_index", "camera", "code", "message", "retryable"],
+        "properties": {
+          "variant_index": {"type": "integer", "minimum": 0, "maximum": 7},
+          "episode_index": {"type": "integer", "minimum": 0},
+          "camera": {"type": "string", "minLength": 1, "maxLength": 256},
+          "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$"},
+          "message": {"type": "string", "minLength": 1, "maxLength": 2048},
+          "retryable": {"type": "boolean"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_id", "sha256", "size_bytes", "media_type", "compression"],
+      "properties": {
+        "artifact_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 1},
+        "media_type": {"const": "application/x-tar"},
+        "compression": {"const": "zstd"}
+      }
+    }
+  }
+}
+

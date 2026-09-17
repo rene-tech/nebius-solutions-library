@@ -29,6 +29,19 @@ export interface UserUsage {
   scheduler_occupied_gpu_seconds: AdminMeasurement;
   active_gpu_seconds: AdminMeasurement;
   occupied_idle_gpu_seconds: AdminMeasurement;
+  lifecycle_accounting?: {
+    subjects: number;
+    covered_operations: number;
+    expected_operations: number;
+    occupied_complete: boolean;
+    phases_complete: boolean;
+    quality: "measured" | "application_observed" | "estimated" | "unavailable";
+    data_gaps: string[];
+    startup: AdminMeasurement;
+    other: AdminMeasurement;
+    unknown: AdminMeasurement;
+    queue: AdminMeasurement;
+  } | null;
   input_tokens: AdminMeasurement;
   output_tokens: AdminMeasurement;
   attribution: string;

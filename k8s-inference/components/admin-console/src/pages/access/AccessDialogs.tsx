@@ -151,7 +151,7 @@ function KeyPolicyFields(props: KeyPolicyFieldsProps) {
       <label>Expires at<input min={datetimeLocal(new Date(Date.now() + 60_000).toISOString())} onChange={(event) => props.setExpiry(event.target.value)} type="datetime-local" value={props.expiry} /></label>
       <label>Max concurrency<input max="100" min="1" onChange={(event) => props.setMaxConcurrency(event.target.value)} required step="1" type="number" value={props.maxConcurrency} /></label>
       <label>Request budget<input min="1" onChange={(event) => props.setRequestBudget(event.target.value)} placeholder="Unlimited" step="1" type="number" value={props.requestBudget} /></label>
-      <label>GPU-seconds budget<input min="0.01" onChange={(event) => props.setGpuBudget(event.target.value)} placeholder="Unlimited" step="0.01" type="number" value={props.gpuBudget} /></label>
+      <label>Admission GPU-seconds budget<input min="0.01" onChange={(event) => props.setGpuBudget(event.target.value)} placeholder="Unlimited" step="0.01" type="number" value={props.gpuBudget} /></label>
       <label>Rate-limit requests<input min="1" onChange={(event) => props.setRateRequests(event.target.value)} placeholder="Disabled" step="1" type="number" value={props.rateRequests} /></label>
       <label>Rate window seconds<input max="86400" min="1" onChange={(event) => props.setRateWindow(event.target.value)} placeholder="Disabled" step="1" type="number" value={props.rateWindow} /></label>
     </>

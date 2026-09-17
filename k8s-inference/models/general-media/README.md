@@ -21,12 +21,25 @@ JSON envelope containing the output NIfTI plus non-clinical identity metadata.
 Cosmos3-Nano runs the exact vLLM-Omni image and Hugging Face revision recorded
 in the runtime catalog. The upstream server remains available cluster-internal
 on port 8000. A companion adapter on port 8080 exposes `POST /generate`, health,
-readiness, and metrics. Initial public/MCP acceptance uses one bounded 448x256,
-25-frame text-to-video request and returns a digest-bound base64 MP4 JSON
-envelope below the control-plane response ceiling. This synchronous envelope is
-for small acceptance artifacts; production media delivery should use an
-object-backed asynchronous result instead of carrying large 720p videos through
-MCP. Its exact 68-file artifact and Qwen3-8B's exact 15-file artifact are now
+readiness, and metrics. The adapter has strict mode-specific requests for text
+to image/video, image to video, video to video, and controlled transfer video.
+A reference is either a finalized
+tenant artifact (materialized by the control plane) or an immutable HTTPS URL;
+customer-local paths are never interpreted on the server. The legacy text media
+calls retain their bounded inline base64 response, while all new MP4 workflows
+return raw video to the control plane for asynchronous object-backed artifact
+publication. Transfer controls are limited to the pinned runtime's `edge`,
+`blur`, `depth`, `seg`, and `wsm` inputs. Forward dynamics and inverse dynamics
+remain dormant adapter code and are not in the public schema: on 2026-09-15 the
+exact pinned H100 runtime crashed its diffusion worker with SIGBUS after decode
+(and the CUDA/CRIU-restored forward path returned `cudaErrorNotSupported`).
+Policy/OpenPI and LeRobot dataset-to-dataset conversion are likewise not
+advertised by this App until their own pinned fixtures pass on the deployed GPU
+path.
+The exact 2026-09-15 media and action-mode results are recorded in
+[evidence/cosmos3-nano-media-qualification-20260915.md](evidence/cosmos3-nano-media-qualification-20260915.md).
+
+The exact 68-file Cosmos artifact and Qwen3-8B's exact 15-file artifact are
 localized once into immutable content addresses. Concurrent replicas share an
 atomic receipt and skip both download and full-payload hashing on a warm cache.
 See [SHARED_CACHE_FAST_START.md](SHARED_CACHE_FAST_START.md) for the writer,

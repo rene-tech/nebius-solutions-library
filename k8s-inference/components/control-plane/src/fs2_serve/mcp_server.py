@@ -22,6 +22,7 @@ from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.lowlevel.server import NotificationOptions
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
+from mcp.server.mcpserver.utilities.func_metadata import FuncMetadata
 from mcp.server.subscriptions import ToolsListChanged
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.exceptions import MCPError
@@ -43,9 +44,11 @@ from .api import AppRuntime, _model_view, _pool_accelerator_classes
 from .auth import AuthenticationError, require_operation_access
 from .mcp_input_contracts import apply_tool_input_contract, describe_tool_parameters, tool_input_schema
 from .model_input_contracts import (
+    COSMOS_SPECIALIZED_TOOL_NAMES,
     InputContractUnavailable,
     ModelInputContract,
     contract_for,
+    cosmos_specialized_contracts,
     scientific_contract_for,
 )
 from .models import (
@@ -59,6 +62,7 @@ from .models import (
 from .registry import ModelRouteUnavailableError, OperationalModel
 from .request_telemetry import (
     current_request_id,
+    observe_mcp_protocol_error,
     observe_mcp_result,
     observe_request_metadata,
     request_telemetry_context,
@@ -119,6 +123,7 @@ MCP_HTTP_PATH = "/mcp"
 MCP_CHILD_MOUNT_PATH = "/"
 MCP_STREAMABLE_HTTP_PATH = MCP_HTTP_PATH
 LOGGER = logging.getLogger(__name__)
+GATEWAY_SUBMISSION_CONTROLS = frozenset({"idempotency_key", "wait_seconds"})
 CORE_PARAMETER_DESCRIPTIONS = {
     "model_id": "Authorized model/App route from list_models or list_scientific_models; not a download URL.",
     "protocol": "Model protocol (e.g. native or openai-chat); omit in get_model_schema to list all its contracts.",
@@ -144,6 +149,68 @@ def _tool_result(payload: dict[str, Any]) -> CallToolResult:
         content=[TextContent(type="text", text=json.dumps(payload, separators=(",", ":")))],
         structured_content=payload,
     )
+
+
+def _gateway_control_error(field: str, rule: str, message: str) -> MCPError:
+    return MCPError(
+        code=INVALID_PARAMS,
+        message=message,
+        data={
+            "type": "gateway_control_validation",
+            "durable_admission": False,
+            "issues": [{"field": field, "rule": rule}],
+        },
+    )
+
+
+def _normalize_invoke_arguments(arguments: dict[str, Any], *, max_wait_seconds: float) -> dict[str, Any]:
+    """Lift legacy controls before SDK defaults erase explicit field presence.
+
+    Only the immediate payload envelope contains submission controls. Nested
+    model objects (for example JSON tool schemas) retain their original fields.
+    Never mutate the caller's arguments or reflect rejected values in errors.
+    """
+
+    incoming = dict(arguments)
+    payload = incoming.get("payload")
+    if isinstance(payload, dict):
+        payload = dict(payload)
+        incoming["payload"] = payload
+    for name in sorted(GATEWAY_SUBMISSION_CONTROLS):
+        for location, values in (("", incoming), ("/payload", payload)):
+            if not isinstance(values, dict) or name not in values:
+                continue
+            value = values[name]
+            field = f"{location}/{name}"
+            if name == "idempotency_key":
+                if value is not None and not isinstance(value, str):
+                    raise _gateway_control_error(field, "type", "idempotency_key must be a string or null")
+                if value is not None and not MIN_IDEMPOTENCY_KEY_LENGTH <= len(value) <= MAX_IDEMPOTENCY_KEY_LENGTH:
+                    raise _gateway_control_error(field, "length", "idempotency_key length is invalid")
+            else:
+                if isinstance(value, bool) or not isinstance(value, int | float):
+                    raise _gateway_control_error(field, "type", "wait_seconds must be a number")
+                if not 0 <= value <= max_wait_seconds or not math.isfinite(value):
+                    raise _gateway_control_error(field, "bound", "wait_seconds is outside the configured bound")
+        if isinstance(payload, dict) and name in payload:
+            nested = payload.pop(name)
+            if name in incoming and incoming[name] != nested:
+                raise _gateway_control_error(
+                    f"/payload/{name}", "conflict", f"Conflicting {name} values inside and outside payload"
+                )
+            incoming[name] = nested
+    return incoming
+
+
+class GenericInvokeFuncMetadata(FuncMetadata):
+    """Normalize generic envelopes before the SDK supplies optional defaults."""
+
+    max_wait_seconds: float
+
+    def validate_arguments(self, arguments_to_validate: dict[str, Any]) -> dict[str, Any]:
+        return super().validate_arguments(
+            _normalize_invoke_arguments(arguments_to_validate, max_wait_seconds=self.max_wait_seconds)
+        )
 
 
 def _exception_chain(error: BaseException) -> tuple[BaseException, ...]:
@@ -280,7 +347,8 @@ class FS2MCPServer(MCPServer[Any]):
         context = Context(request_context=ctx, mcp_server=self, input_params=params, subscriptions=self._subscriptions)
         try:
             return await self.call_tool(params.name, params.arguments or {}, context)
-        except MCPError:
+        except MCPError as error:
+            observe_mcp_protocol_error(error)
             raise
         except Exception as error:
             return _tool_failure(params, error)
@@ -475,7 +543,10 @@ def _principal() -> Principal:
 def _protocol_tool_names(model: OperationalModel) -> set[str]:
     if not model.enabled or not model.gateway.mcp_invocable or not model.binding.mcp_enabled:
         return set()
-    return {f"{model.binding.mcp_tool_name}_{protocol.replace('-', '_')}" for protocol in model.gateway.protocols}
+    names = {f"{model.binding.mcp_tool_name}_{protocol.replace('-', '_')}" for protocol in model.gateway.protocols}
+    if model.id == "cosmos3-nano" and "native" in model.gateway.protocols:
+        names.update(COSMOS_SPECIALIZED_TOOL_NAMES)
+    return names
 
 
 def _model_tool_names(runtime: AppRuntime, principal: Principal) -> set[str]:
@@ -522,8 +593,6 @@ class MCPAuthorizationMiddleware:
         try:
             principal = _principal() if ctx.method not in {"initialize", "notifications/initialized"} else None
             observe_request_metadata(principal=principal)
-            if ctx.method == "tools/call":
-                observe_request_metadata(mcp_tool=str((ctx.params or {}).get("name", "")))
             if principal is not None and self.runtime.scientific_apps is not None:
                 await self.runtime.scientific_apps.refresh()
             if ctx.method in {"tools/list", "tools/call"}:
@@ -536,6 +605,9 @@ class MCPAuthorizationMiddleware:
                 name = str((ctx.params or {}).get("name", ""))
                 if name not in CORE_TOOLS and name not in _model_tool_names(self.runtime, principal):
                     raise MCPError(code=INVALID_PARAMS, message="tool is outside token policy")
+                # Bind only an authorized catalog name. Persisting an arbitrary
+                # rejected name would let callers create unbounded metric labels.
+                observe_request_metadata(mcp_tool=name)
                 # Typed validation runs before the admission handler. Attribute
                 # rejected inputs too, without relying on a caller's model_id.
                 for model in self.runtime.registry.allowed_for_principal(principal, surface="mcp"):
@@ -558,13 +630,19 @@ class MCPAuthorizationMiddleware:
                 allowed = CORE_TOOLS | _model_tool_names(self.runtime, principal)
                 return listing.model_copy(update={"tools": [tool for tool in listing.tools if tool.name in allowed]})
             return result
-        except MCPError:
+        except MCPError as error:
             if ctx.method == "tools/call":
-                observe_request_metadata(mcp_is_error=True)
+                observe_mcp_protocol_error(error)
             raise
         except Exception:
             if ctx.method == "tools/call":
-                observe_request_metadata(mcp_is_error=True)
+                observe_request_metadata(
+                    mcp_is_error=True,
+                    semantic_outcome="failed",
+                    jsonrpc_error_code=INVALID_PARAMS,
+                    semantic_error_type="request_validation_failed",
+                    admission_stage="pre_admission",
+                )
             # SDK validation/dispatch exceptions may embed the rejected payload.
             # Collapse every non-protocol failure before it can reach logs/traces.
             raise MCPError(code=INVALID_PARAMS, message="request validation failed") from None
@@ -593,6 +671,12 @@ async def _admit(
 ) -> dict[str, Any]:
     principal = _principal()
     observe_request_metadata(principal=principal, model_id=model_id)
+    # All serving protocols share this final boundary before persistence. The
+    # generic adapter lifts controls; named tools extract their flat controls.
+    for field in sorted(GATEWAY_SUBMISSION_CONTROLS.intersection(payload)):
+        raise _gateway_control_error(
+            f"/payload/{field}", "reserved", "Submission controls belong outside model inputs"
+        )
     if not math.isfinite(wait_seconds) or wait_seconds < 0 or wait_seconds > runtime.settings.max_sync_wait_seconds:
         raise MCPError(code=INVALID_PARAMS, message="wait_seconds is outside the configured bound")
     if idempotency_key is not None and not (
@@ -751,6 +835,11 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                     )
                     for item in protocols
                 ]
+                if "native" in protocols and model.id == "cosmos3-nano":
+                    contracts.extend(
+                        contract_view(contract, name, scientific=False)
+                        for name, contract, _defaults, _title, _description in cosmos_specialized_contracts(model)
+                    )
             except InputContractUnavailable:
                 raise MCPError(
                     code=INVALID_PARAMS,
@@ -786,6 +875,9 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         Prefer the named model tools with explicit input schemas. This generic
         envelope remains available for existing clients. Both routes resolve
         the live registry and preserve the same durable operation lifecycle.
+        Put idempotency_key and wait_seconds outside payload. Legacy controls
+        inside payload are lifted; identical duplicates are accepted, while
+        conflicting duplicates are rejected before creating an operation.
         """
 
         principal = _principal()
@@ -1271,6 +1363,17 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                 ),
             }
         describe_tool_parameters(server, function.__name__, descriptions)
+        if function is invoke_model:
+            tool = server._tool_manager.get_tool(function.__name__)
+            assert tool is not None
+            previous = tool.fn_metadata
+            tool.fn_metadata = GenericInvokeFuncMetadata(
+                arg_model=previous.arg_model,
+                output_schema=previous.output_schema,
+                output_model=previous.output_model,
+                wrap_output=previous.wrap_output,
+                max_wait_seconds=runtime.settings.max_sync_wait_seconds,
+            )
 
     def named_handler(tool_name: str) -> Callable[..., Awaitable[CallToolResult]]:
         async def invoke_named_model(
@@ -1306,6 +1409,40 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             )
 
         return invoke_named_model
+
+    def cosmos_handler(tool_name: str, defaults: dict[str, Any]) -> Callable[..., Awaitable[CallToolResult]]:
+        async def invoke_cosmos_workflow(
+            payload: dict[str, Any], ctx: Context, idempotency_key: str | None = None, wait_seconds: float = 0
+        ) -> Annotated[CallToolResult, dict[str, Any]]:
+            principal = _principal()
+            await runtime.revalidate_routes()
+            matches = [
+                model
+                for model in runtime.registry.allowed_for_principal(principal, surface="mcp")
+                if model.id == "cosmos3-nano"
+                and tool_name in _protocol_tool_names(model)
+                and "native" in model.gateway.protocols
+            ]
+            if len(matches) != 1:
+                raise MCPError(code=INVALID_PARAMS, message="Cosmos workflow tool is unavailable or ambiguous")
+            model = matches[0]
+            operation = runtime.registry.operation_for_protocol(model, "native")
+            try:
+                traceparent = (ctx.headers or {}).get("traceparent")
+            except ValueError:
+                traceparent = None
+            return await _admit_tool(
+                runtime,
+                model_id=model.id,
+                protocol="native",
+                operation=operation,
+                payload={**payload, **defaults},
+                idempotency_key=idempotency_key,
+                wait_seconds=wait_seconds,
+                traceparent=traceparent,
+            )
+
+        return invoke_cosmos_workflow
 
     registered_names = set(CORE_TOOLS)
     registered_contracts: dict[str, str] = {}
@@ -1394,21 +1531,47 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         changed = True
                     continue
                 model_view = _model_view(model)
-                changed = register_contract(
-                    name,
-                    contract,
-                    handler=named_handler(name),
-                    title=f"{model.gateway.display_name} ({protocol})",
-                    description=model.binding.mcp_description,
-                    meta={
-                        "fs2_model_id": model.id,
-                        "fs2_protocol": protocol,
-                        "fs2_model_revision": model.model_revision,
-                        "fs2_active_runtime": model_view["active_runtime"],
-                        "fs2_qualification": model_view["qualification"],
-                    },
-                    scientific=False,
-                ) or changed
+                changed = (
+                    register_contract(
+                        name,
+                        contract,
+                        handler=named_handler(name),
+                        title=f"{model.gateway.display_name} ({protocol})",
+                        description=model.binding.mcp_description,
+                        meta={
+                            "fs2_model_id": model.id,
+                            "fs2_protocol": protocol,
+                            "fs2_model_revision": model.model_revision,
+                            "fs2_active_runtime": model_view["active_runtime"],
+                            "fs2_qualification": model_view["qualification"],
+                        },
+                        scientific=False,
+                    )
+                    or changed
+                )
+            if model.id == "cosmos3-nano" and "native" in model.gateway.protocols:
+                for name, contract, defaults, title, description in cosmos_specialized_contracts(model):
+                    if len(registered_names) >= 4096:
+                        return changed
+                    changed = (
+                        register_contract(
+                            name,
+                            contract,
+                            handler=cosmos_handler(name, defaults),
+                            title=title,
+                            description=description,
+                            meta={
+                                "fs2_model_id": model.id,
+                                "fs2_protocol": "native",
+                                "fs2_model_revision": model.model_revision,
+                                "fs2_active_runtime": _model_view(model)["active_runtime"],
+                                "fs2_qualification": _model_view(model)["qualification"],
+                                "fs2_cosmos_mode": defaults["mode"],
+                            },
+                            scientific=False,
+                        )
+                        or changed
+                    )
         if runtime.scientific_batches is not None:
             for profile in runtime.scientific_batches.profiles.list():
                 if len(registered_names) >= 4096:
@@ -1425,20 +1588,23 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         registered_contracts.pop(name)
                         changed = True
                     continue
-                changed = register_contract(
-                    name,
-                    contract,
-                    handler=scientific_handler(name),
-                    title=profile.display_name,
-                    description=profile.mcp_description,
-                    meta={
-                        "fs2_model_id": profile.model_id,
-                        "fs2_protocol": "scientific-batch-v1",
-                        "fs2_model_revision": profile.model_revision,
-                        "fs2_runtime_image_digest": profile.runtime_image_digest,
-                    },
-                    scientific=True,
-                ) or changed
+                changed = (
+                    register_contract(
+                        name,
+                        contract,
+                        handler=scientific_handler(name),
+                        title=profile.display_name,
+                        description=profile.mcp_description,
+                        meta={
+                            "fs2_model_id": profile.model_id,
+                            "fs2_protocol": "scientific-batch-v1",
+                            "fs2_model_revision": profile.model_revision,
+                            "fs2_runtime_image_digest": profile.runtime_image_digest,
+                        },
+                        scientific=True,
+                    )
+                    or changed
+                )
         return changed
 
     async def notify_tools_changed() -> None:

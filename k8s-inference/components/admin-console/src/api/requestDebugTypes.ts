@@ -27,6 +27,22 @@ export interface DebugExchangeSummary {
   http_status: number | null;
   error_type: string | null;
   disconnected: boolean;
+  semantic_outcome:
+    | "succeeded"
+    | "accepted"
+    | "failed"
+    | "cancelled"
+    | "timed_out"
+    | "unknown"
+    | null;
+  jsonrpc_error_code: number | null;
+  semantic_error_type: string | null;
+  admission_stage:
+    | "pre_admission"
+    | "admitted"
+    | "not_applicable"
+    | "unknown"
+    | null;
   request_observed_bytes: number;
   response_observed_bytes: number;
   request_complete: boolean;

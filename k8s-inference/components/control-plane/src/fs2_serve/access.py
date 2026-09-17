@@ -188,7 +188,7 @@ class AdminAccessService:
             value=value,
             unit=unit,
             state=AccessValueState.ESTIMATED,
-            reason="admission reservation accounting",
+            reason="Conservative attempted admission allocation; not measured GPU occupancy or a bill.",
         )
 
     @staticmethod
@@ -247,6 +247,8 @@ class AdminAccessService:
                     request_budget=token.request_budget,
                     requests_used=token.requests_used,
                     gpu_seconds_budget=token.gpu_seconds_budget,
+                    # Legacy internal names only; response aliases explicitly
+                    # distinguish admission budget charges from lifecycle use.
                     gpu_seconds_used=token.gpu_seconds_used,
                     gpu_seconds_reserved=token.gpu_seconds_reserved,
                     max_concurrency=token.max_concurrency,
