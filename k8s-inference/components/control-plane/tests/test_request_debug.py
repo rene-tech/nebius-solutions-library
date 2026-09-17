@@ -1934,25 +1934,96 @@ async def test_bounded_legacy_row_rescrubbed_on_read_agrees_between_detail_and_l
     assert summary.request_redacted is True  # list agrees with detail (both decrypt + normalize the row)
 
 
-async def test_in_memory_list_runs_filter_sort_and_derivation_off_the_event_loop(monkeypatch):
-    """SAI-01 regression (O(N) off the loop): the in-memory list() must run its filter/sort/paginate AND
-    per-row derivation OFF the event loop (asyncio.to_thread), so a large set can't block the loop. Proven
-    by asserting to_thread is used while results stay correct and paginated. Authored; not executed."""
+async def test_in_memory_list_snapshots_and_selects_entirely_off_the_event_loop(monkeypatch):
+    """SAI-01 regression (blocker 2): NO O(N) step may run on the event loop — the snapshot, filter, and
+    bounded top-k selection all happen INSIDE the to_thread. Proven deterministically: a row inserted at
+    to_thread-call time is INCLUDED in the result, which is only possible if the snapshot is taken inside
+    _derive (in the thread), not on the loop before the offload. Also checks bounded top-k pagination and
+    newest-first ordering. Authored; not executed here."""
     store = InMemoryDebugStore(max_body_bytes=64 * 1024)
     for index in range(5):
         await store.record(row(started_at=NOW + timedelta(seconds=index)))
-    used = {"thread": False}
     real_to_thread = asyncio.to_thread
+    used = {"thread": False}
 
     async def _spy(func, /, *args, **kwargs):
         used["thread"] = True
+        # Mutate the store at to_thread-call time. If the snapshot were taken on the loop BEFORE the
+        # offload, this row would be missed; it appears only because the snapshot is inside _derive.
+        await store.record(row(started_at=NOW + timedelta(seconds=99)))
         return await real_to_thread(func, *args, **kwargs)
 
     monkeypatch.setattr(asyncio, "to_thread", _spy)
-    page = await store.list(limit=2)
-    assert used["thread"] is True  # the O(N) work was offloaded
-    assert len(page.items) == 2 and page.next_cursor is not None
-    assert page.items[0].started_at >= page.items[1].started_at  # newest-first ordering preserved
+    page = await store.list(limit=3)
+    assert used["thread"] is True
+    assert len(page.items) == 3 and page.next_cursor is not None  # bounded top-k page with more remaining
+    assert page.items[0].started_at >= page.items[1].started_at >= page.items[2].started_at  # newest-first
+    # The row inserted at to_thread-call time (started_at +99s) is the newest => it was snapshotted OFF
+    # the loop inside _derive, proving no O(N) snapshot ran on the loop first.
+    assert page.items[0].started_at == NOW + timedelta(seconds=99)
+
+
+def test_normalize_clamps_to_hard_ceiling_even_with_cap_none():
+    """SAI-01 regression (blocker 1): normalize_exchange_for_read enforces the hard per-row ceiling
+    UNCONDITIONALLY. Even called directly with cap=None, a wire-complete request whose observed size
+    exceeds _MAX_SANITIZE_BODY is WITHHELD (input clamp), so the sanitizer can never admit or serve a body
+    past the ceiling regardless of the configured cap. A within-ceiling request is still served. (The
+    output clamp — redaction expansion past the ceiling — is covered by
+    test_body_capture_cap_holds_even_when_redaction_expands_the_body via the same effective cap.) Authored;
+    not executed here."""
+    from fs2_serve.request_debug import _MAX_SANITIZE_BODY, normalize_exchange_for_read
+
+    over = row(
+        request_body=DebugBody(
+            encoding="utf-8",
+            data='{"input":"x"}',  # tiny stored bytes; the CLEAR observed size marks it over the ceiling
+            content_type="application/json",
+            observed_bytes=_MAX_SANITIZE_BODY + 1,
+            complete=True,
+            redacted=False,
+            truncated=False,
+        ),
+    )
+    got = normalize_exchange_for_read(over, None)  # cap=None must NOT disable the hard ceiling
+    assert got.request_body.data == "[REDACTED]" and got.request_body.redacted is True
+    assert got.request_body.observed_bytes == _MAX_SANITIZE_BODY + 1  # true size preserved
+    within = row(request_body=body_capture(b'{"input":"clean"}', "application/json", True))
+    served = normalize_exchange_for_read(within, None)
+    assert served.request_body.data != "[REDACTED]"  # a within-ceiling request is still served under None
+
+
+async def test_commit_notification_failure_does_not_hang_drain(monkeypatch):
+    """SAI-01 regression (blocker 3): if a commit's wake signal fails while the worker is asleep, the
+    committed item must NOT be stranded — drain() re-signals _wake and completes deterministically.
+    Reproduces the exact hang: run the worker to sleep, make _wake.set raise on the next commit (so the
+    sleeping worker misses the wakeup), then drain must recover. Authored; not executed here."""
+    from fs2_serve.request_debug import DebugPersistQueue
+
+    store = InMemoryDebugStore()
+    queue = DebugPersistQueue(store, maxsize=8, max_inflight=8)
+    # 1) Normal commit: the worker starts, processes, and goes to sleep on _wake (idle latch set).
+    r1 = queue.reserve()
+    assert r1 is not None
+    with r1:
+        assert r1.submit(lambda: row(id=uuid4())) is True
+    await queue.drain()
+    assert queue._worker is not None and not queue._worker.done()  # worker alive, asleep on _wake
+
+    def _boom() -> None:
+        raise RuntimeError("simulated wake-signal failure")
+
+    # 2) Next commit's wake signal fails: the sleeping worker is not woken, the item would be stranded.
+    monkeypatch.setattr(queue._wake, "set", _boom)
+    r2 = queue.reserve()
+    assert r2 is not None
+    with r2:
+        assert r2.submit(lambda: row(id=uuid4())) is True  # committed + queued despite the failed signal
+    assert len(queue._pending) == 1 and queue._inflight() == 1
+    # 3) Restore signaling; drain must re-signal _wake and complete (not hang), processing the item.
+    monkeypatch.undo()
+    await queue.drain()
+    assert queue._inflight() == 0 and len(store.exchanges) == 2 and len(queue._pending) == 0
+    await queue.aclose()
 
 
 async def test_in_memory_detail_applies_hard_ceiling_even_with_default_cap_none():

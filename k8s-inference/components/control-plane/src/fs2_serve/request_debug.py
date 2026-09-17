@@ -37,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import heapq
 import json
 import logging
 import re
@@ -532,14 +533,20 @@ def normalize_exchange_for_read(exchange: DebugExchange, max_body_bytes: int | N
     earlier, narrower contract. Serving those verbatim would disclose what the current contract
     withholds/redacts, so every legacy disclosure field is failed closed on the way OUT:
       - response body: ALWAYS withheld;
-      - request body: withheld when wire-incomplete, a legacy stored prefix (``truncated``), or over
-        the CURRENT cap; otherwise re-scrubbed with the current credential/format rules (a legacy row
-        scrubbed under older, narrower rules is re-scrubbed, and one over today's cap is withheld);
+      - request body: withheld when wire-incomplete, a legacy stored prefix (``truncated``), or over the
+        EFFECTIVE per-row ceiling (min of the current cap and the hard ``_MAX_SANITIZE_BODY``, never
+        None/unbounded); otherwise re-scrubbed with the current rules and withheld if the re-scrub
+        expands past that same ceiling — so a served body can never exceed the hard ceiling;
       - error_detail: replaced with a fixed generic marker (never the stored free-text);
       - response headers: reduced to structural-only (canonical name, typed/redacted value);
       - request headers + query string: re-scrubbed with the current name/format rules.
     Idempotent on an already-normalized exchange. The stored ciphertext is never rewritten or deleted
     (a separately owned purge handles TTL)."""
+    # HARD CEILING on EVERY sanitize path: clamp the incoming cap to the fixed per-row ceiling FIRST, so
+    # the sanitizer's input check AND output cap are always bounded — never None/unbounded, whatever the
+    # caller passed (a default cap=None, a mis/over-configured cap, or a direct call). This guarantees a
+    # served body can neither be admitted nor materialize (via redaction expansion) beyond the ceiling.
+    effective = _effective_cap(max_body_bytes)
     request = exchange.request_body
     # Best-effort decode of the stored request body, used both to feed cross-field credential learning
     # and (in the clean case) to re-scrub. An undecodable body contributes nothing and is withheld.
@@ -560,19 +567,19 @@ def normalize_exchange_for_read(exchange: DebugExchange, max_body_bytes: int | N
         complete=request.complete,
         truncated=request.truncated,
         observed_bytes=request.observed_bytes,
-        max_body_bytes=max_body_bytes,
+        max_body_bytes=effective,
     )
     if withheld or request_bytes is None:
         request_body = suppressed_body(request.content_type, request.observed_bytes, request.complete)
     else:
         # Re-scrub with current rules + cross-field known values; bounded_body_capture also withholds
-        # if redaction expands the stored copy past the cap.
+        # if redaction expands the stored copy past the (already ceiling-clamped) cap.
         rescrubbed = bounded_body_capture(
             request_bytes,
             request.content_type,
             True,
             known,
-            max_bytes=max_body_bytes,
+            max_bytes=effective,
             observed_bytes=request.observed_bytes,
         )
         # MONOTONIC flags: a re-scrub must never reset a stored redacted/truncated True back to False.
@@ -945,30 +952,37 @@ class InMemoryDebugStore:
     ) -> DebugExchangeList:
         after = _pagination(limit, cursor)
         cap = self._max_body_bytes
-        # A point-in-time snapshot of the values, taken on the loop (cheap ref copy); record() only ever
-        # INSERTS (never mutates an existing row), so the snapshot is a stable, race-free view. ALL O(N)
-        # work — filter, sort, paginate AND per-row summary derivation — then runs OFF the event loop in
-        # one worker thread, so a large in-memory set can never block the loop (mirrors the Postgres
-        # store's bounded, off-loop behaviour via the SAME shared derivation).
-        snapshot = list(self.exchanges.values())
+        exchanges = self.exchanges  # O(1) reference; NO O(N) step runs on the loop — see _derive
 
         def _derive() -> tuple[list[DebugExchangeSummary], bool]:
-            rows = sorted(
-                (
-                    row
-                    for row in snapshot
-                    if (model_id is None or row.model_id == model_id)
+            # EVERYTHING O(N) runs OFF the event loop here. The snapshot is taken INSIDE the thread as a
+            # single list(dict.values()) — a GIL-atomic C copy with no Python checkpoints, so a concurrent
+            # insert on the loop can't corrupt it; record() only ever INSERTS (never mutates a row), so the
+            # snapshot is a stable view. Selection uses a BOUNDED top-k min-heap (size <= limit) instead of
+            # a full sort: O(N log limit) time and O(limit) selection memory, never an O(N)-sorted list.
+            heap: list[tuple[datetime, UUID, DebugExchange]] = []
+            matched = 0
+            for row in list(exchanges.values()):
+                if not (
+                    (model_id is None or row.model_id == model_id)
                     and (operation_id is None or row.operation_id == operation_id)
                     and (tenant_id is None or row.tenant_id == tenant_id)
                     and (from_at is None or row.started_at >= from_at)
                     and (to_at is None or row.started_at < to_at)
                     and (after is None or (row.started_at, row.id) < after)
-                ),
-                key=lambda row: (row.started_at, row.id),
-                reverse=True,
-            )
-            out = [_summary(_read_view(_summary(row), _const_exchange(row), cap)) for row in rows[:limit]]
-            return out, len(rows) > limit
+                ):
+                    continue
+                matched += 1
+                # (started_at, id) is a total order (id is a unique UUID), so the DebugExchange third
+                # element is never reached in a heap comparison.
+                entry = (row.started_at, row.id, row)
+                if len(heap) < limit:
+                    heapq.heappush(heap, entry)
+                elif entry > heap[0]:
+                    heapq.heapreplace(heap, entry)
+            page = [row for _, _, row in sorted(heap, reverse=True)]  # newest first
+            out = [_summary(_read_view(_summary(row), _const_exchange(row), cap)) for row in page]
+            return out, matched > limit
 
         items, has_more = await asyncio.to_thread(_derive)
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if has_more else None)
@@ -1091,8 +1105,19 @@ class PostgresDebugStore:
                 )
 
             def _derive() -> dict[UUID, DebugExchangeSummary]:
-                # Decrypt + sanitize + summarize the bounded rows in a worker thread (off the loop).
-                return {cr["id"]: _summary(normalize_exchange_for_read(self._decode(cr), cap)) for cr in cipher_rows}
+                # Summarize the bounded rows via the SAME shared _read_view derivation the detail path
+                # uses (decrypt + egress-sanitize with the hard ceiling enforced inside normalize), in a
+                # worker thread (off the loop). Using _read_view here — not a direct normalize call —
+                # keeps the list and detail on ONE derivation, so they cannot diverge. These rows are all
+                # bounded, so _read_view always decrypts; decoding eagerly and passing it via
+                # _const_exchange is equivalent and keeps the closure simply typed.
+                out: dict[UUID, DebugExchangeSummary] = {}
+                for cr in cipher_rows:
+                    meta = DebugExchangeSummary.model_validate(
+                        {field: cr[field] for field in DebugExchangeSummary.model_fields}
+                    )
+                    out[cr["id"]] = _summary(_read_view(meta, _const_exchange(self._decode(cr)), cap))
+                return out
 
             truthful = await asyncio.to_thread(_derive)
         items = [
@@ -1382,12 +1407,17 @@ class DebugPersistQueue:
         self._slots[token] = True  # commit AFTER a successful append: non-allocating, cannot raise
         # Notify the worker — GUARDED so a notification failure can neither propagate into the caller
         # (a capture must never replace a customer outcome) nor strand the item: the item is already
-        # queued and committed (count == deque contents), and a later commit and drain()/aclose() both
-        # re-notify and (re)start the worker, so at worst the capture persists slightly later.
+        # queued and committed (count == deque contents). The wake SIGNAL is what a sleeping worker
+        # blocks on, so it runs in a `finally` — an exception in _idle.clear()/_ensure_worker() can never
+        # skip it and leave a committed item unwoken. As a further backstop, drain()/aclose() re-signal
+        # _wake every iteration and the next commit re-notifies, so the item cannot be permanently
+        # stranded even if the signal itself fails here.
         try:
-            self._idle.clear()
-            self._wake.set()
-            self._ensure_worker()
+            try:
+                self._idle.clear()
+                self._ensure_worker()
+            finally:
+                self._wake.set()
         except Exception:
             LOGGER.warning("request debug enqueue notification failed; capture remains queued")
         return True
@@ -1487,9 +1517,16 @@ class DebugPersistQueue:
         wait returns exactly once the committed backlog is processed. It does NOT wait on
         reserved-but-unsubmitted captures (a request still building one): those are best-effort and,
         once ``_closed`` is set, their submit is fenced to a no-op, so waiting on them could only hang
-        shutdown for a capture that will never be enqueued."""
+        shutdown for a capture that will never be enqueued.
+
+        FAULT RECOVERY: each iteration also RE-SIGNALS ``_wake`` after (re)starting the worker, so a
+        worker already asleep on ``_wake.wait()`` that missed a failed ``_commit`` notification is
+        deterministically woken — drain cannot hang on a stranded item just because its enqueue-time
+        signal raised. The worker clears ``_wake`` and self-corrects ``_idle`` when it picks up work, so
+        the re-signal converges (no busy-spin) and drain returns once the backlog is truly processed."""
         while self._pending or self._processing:
             self._start_worker()
+            self._wake.set()  # wake a possibly-sleeping worker that missed a failed enqueue notification
             await self._idle.wait()
 
     async def aclose(self) -> None:
