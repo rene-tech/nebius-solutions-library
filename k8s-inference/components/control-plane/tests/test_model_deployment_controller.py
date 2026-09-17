@@ -69,8 +69,10 @@ from fs2_serve.model_deployment_controller import (
     PostgresActiveOperations,
     PrometheusActiveOperations,
     ResourceSnapshot,
+    ScaleAuthorizationReceipt,
     ScaleGateReleaseAuthorization,
     ScaleGateReleaseAuthorizationV2,
+    ScaleGateAuthorization,
     ScaleGateScalerCheckpoint,
     ScaleGateScalerCheckpointV2,
     ScaleGateTargetIdentity,
@@ -81,6 +83,7 @@ from fs2_serve.model_deployment_controller import (
     _autoscaler_handoff_complete,
     _autoscaler_pairs,
     _controller_fixed_scale_updates,
+    _controller_owned_scale_authorization_receipt,
     _controller_owned_scale_initialization_receipt,
     _encoded_scale_gate_tombstone_value,
     _encoded_scale_gate_value,
@@ -92,6 +95,7 @@ from fs2_serve.model_deployment_controller import (
     _scale_gate_allowance_value,
     _scale_gate_authorization,
     _scale_gate_companion_keys,
+    _scale_gate_evidence_reference,
     _scale_gate_mutation_token,
     _scale_gate_predecessor_evidence,
     _scale_gate_predecessor_evidence_config_map,
@@ -102,9 +106,11 @@ from fs2_serve.model_deployment_controller import (
     _scale_gate_predecessor_evidence_snapshot_from_config_map,
     _scale_gate_predecessor_evidence_update,
     _scale_gate_predecessor_lineage,
+    _scale_gate_receipt_matches,
     _scale_gate_scaler_checkpoint,
     _scale_gate_target,
     _scale_gate_target_key,
+    _scale_gate_tombstone,
     _snapshot,
     _without_deployment_replicas,
     _validated_desired_resources,
@@ -7603,19 +7609,30 @@ async def test_fixed_generation_closes_crashed_older_autoscaler_allowance_withou
         current["metadata"]["annotations"][SCALE_HANDOFF_RECEIPT_ANNOTATION]
     )
     with pytest.raises(KubernetesConflictError, match="evidence shard changed"):
-        await client._assert_scale_gate(desired, handoff_receipt)
+        await client._assert_scale_gate(
+            desired,
+            handoff_receipt,
+            model_fence=model_fence,
+            fence=fence(),
+        )
     with pytest.raises(KubernetesConflictError, match="evidence shard changed"):
         await client._assert_superseded_handoff_closure(
             desired,
             receipt=handoff_receipt,
             model_fence=model_fence,
+            fence=fence(),
         )
     _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name] = exact_shard
     recreated_shard = copy.deepcopy(exact_shard)
     recreated_shard["metadata"].update({"uid": "recreated-evidence", "resourceVersion": "1"})
     _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name] = recreated_shard
     with pytest.raises(KubernetesConflictError, match="malformed or foreign"):
-        await client._assert_scale_gate(desired, handoff_receipt)
+        await client._assert_scale_gate(
+            desired,
+            handoff_receipt,
+            model_fence=model_fence,
+            fence=fence(),
+        )
     _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name] = exact_shard
     assert not any(
         request.method in {"PATCH", "POST", "DELETE"}
@@ -8770,3 +8787,326 @@ async def test_full_controller_consumes_older_handoff_only_after_fixed_guard(sca
     assert ScaleHandoffReceipt.model_validate_json(
         final.raw["metadata"]["annotations"][SCALE_HANDOFF_RECEIPT_ANNOTATION]
     ) == receipt
+
+
+def _missing_rv_predecessor_fixture(
+    target: ScaleGateTargetIdentity,
+) -> tuple[ScaleGateReleaseAuthorizationV2, str, str]:
+    predecessor = ScaleGateReleaseAuthorizationV2(
+        version=2,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        modelResourceVersion="19",
+        modelGeneration=1,
+        modelSpecDigest=f"sha256:{'1' * 64}",
+        scalerAPIVersion="keda.sh/v1alpha1",
+        scalerKind="ScaledObject",
+        scalerNamespace=target.namespace,
+        scalerName="qwen-live-autoscaler",
+        desiredScalerDigest=f"sha256:{'2' * 64}",
+        phase="closed",
+    )
+    digest = _scale_gate_predecessor_evidence_digest(predecessor)
+    evidence_name = _store_test_scale_gate_evidence_shard(target, predecessor)
+    evidence_uid = _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name]["metadata"]["uid"]
+    return predecessor, digest, evidence_uid
+
+
+def test_missing_rv_predecessor_shape_is_the_only_partial_reference_accepted_for_migration() -> None:
+    desired, current, _ = _fixed_scale_http_fixture()
+    target = _scale_gate_target(desired)
+    _, digest, evidence_uid = _missing_rv_predecessor_fixture(target)
+    receipt = ScaleHandoffReceipt.model_validate_json(
+        current["metadata"]["annotations"][SCALE_HANDOFF_RECEIPT_ANNOTATION]
+    ).model_copy(
+        update={
+            "predecessor_evidence_digest": digest,
+            "predecessor_evidence_uid": evidence_uid,
+        }
+    )
+
+    assert _scale_gate_evidence_reference(
+        receipt,
+        allow_missing_resource_version=True,
+    ) == (digest, evidence_uid, None)
+    assert not _scale_gate_receipt_matches(receipt, receipt)
+    for malformed in (
+        receipt.model_copy(update={"predecessor_evidence_uid": None}),
+        receipt.model_copy(
+            update={
+                "predecessor_evidence_uid": None,
+                "predecessor_evidence_resource_version": "1",
+            }
+        ),
+        receipt.model_copy(update={"predecessor_evidence_digest": None}),
+    ):
+        with pytest.raises(KubernetesConflictError, match="reference is incomplete"):
+            _scale_gate_evidence_reference(
+                malformed,
+                allow_missing_resource_version=True,
+            )
+
+
+@pytest.mark.parametrize("record_kind", ["handoff", "initialization", "closure", "tombstone"])
+@pytest.mark.asyncio
+async def test_missing_rv_gate_record_is_cas_migrated_before_use(
+    tmp_path: Path,
+    record_kind: str,
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, current, _ = _fixed_scale_http_fixture()
+    target = _scale_gate_target(desired)
+    _, digest, evidence_uid = _missing_rv_predecessor_fixture(target)
+    model = _handoff_model()
+    deleting_model = record_kind == "tombstone"
+    if deleting_model:
+        model["metadata"]["deletionTimestamp"] = "2026-09-17T00:00:00Z"
+        model_fence = _model_deletion_fence(
+            model,
+            ModelKey(namespace=desired.namespace, name="qwen-live"),
+        )
+    else:
+        model_fence = _model_write_fence(
+            model,
+            ModelKey(namespace=desired.namespace, name="qwen-live"),
+        )
+    handoff = ScaleHandoffReceipt.model_validate_json(
+        current["metadata"]["annotations"][SCALE_HANDOFF_RECEIPT_ANNOTATION]
+    )
+    if record_kind == "handoff":
+        record: ScaleGateAuthorization | ScaleGateTombstone = handoff.model_copy(
+            update={
+                "predecessor_evidence_digest": digest,
+                "predecessor_evidence_uid": evidence_uid,
+            }
+        )
+    elif record_kind == "initialization":
+        record = ScaleInitializationReceipt(
+            version=1,
+            deploymentUID="deployment-uid",
+            modelUID="cr-uid-1",
+            modelGeneration=model_fence.generation,
+            modelSpecDigest=model_fence.spec_digest,
+            desiredReplicas=0,
+            targetMode="autoscaled",
+            predecessorEvidenceDigest=digest,
+            predecessorEvidenceUID=evidence_uid,
+        )
+    elif record_kind == "closure":
+        record = ScaleGateReleaseAuthorization(
+            version=3,
+            deploymentUID="deployment-uid",
+            modelUID="cr-uid-1",
+            modelResourceVersion=model_fence.resource_version,
+            modelGeneration=model_fence.generation,
+            modelSpecDigest=model_fence.spec_digest,
+            scalerAPIVersion="keda.sh/v1alpha1",
+            scalerKind="ScaledObject",
+            scalerNamespace=desired.namespace,
+            scalerName="qwen-live-autoscaler",
+            desiredScalerDigest=f"sha256:{'2' * 64}",
+            predecessorEvidenceDigest=digest,
+            predecessorEvidenceUID=evidence_uid,
+            phase="closed",
+        )
+    else:
+        record = ScaleGateTombstone(
+            version=1,
+            deploymentUID="deployment-uid",
+            modelUID="cr-uid-1",
+            predecessorEvidenceDigest=digest,
+            predecessorEvidenceUID=evidence_uid,
+        )
+    _TEST_SCALE_GATES[_scale_gate_target_key(target)] = (
+        _test_tombstone_value(desired, record)
+        if isinstance(record, ScaleGateTombstone)
+        else _test_gate_value(desired, record)
+    )
+    patches: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            return httpx.Response(200, json=model)
+        if request.method == "PATCH" and request.url.path.endswith(
+            f"/configmaps/{SCALE_GATE_CONFIG_MAP}"
+        ):
+            patches.append(request)
+        if (response := _scale_gate_response(request)) is not None:
+            return response
+        return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    gate = await client._scale_gate_config_map(desired.namespace)
+    _, migrated, evidence = await client._verified_and_migrated_scale_gate_authorization(
+        gate,
+        target,
+        model_fence=model_fence,
+        fence=fence(),
+        deleting_model=deleting_model,
+    )
+
+    assert migrated is not None and evidence is not None
+    assert _scale_gate_evidence_reference(migrated) == (digest, evidence_uid, "1")
+    assert len(patches) == 1
+    submitted = json.loads(patches[0].content)
+    assert submitted["metadata"]["resourceVersion"] == "91"
+    strict_gate = await client._scale_gate_config_map(desired.namespace)
+    strict_record, strict_evidence = await client._verified_scale_gate_authorization(
+        strict_gate,
+        target,
+    )
+    assert strict_record == migrated and strict_evidence == evidence
+    await http.aclose()
+
+
+@pytest.mark.parametrize("receipt_kind", ["handoff", "initialization"])
+@pytest.mark.asyncio
+async def test_missing_rv_deployment_receipt_is_upgraded_after_gate_cas(
+    tmp_path: Path,
+    receipt_kind: str,
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, deployment, _ = _fixed_scale_http_fixture()
+    target = _scale_gate_target(desired)
+    _, digest, evidence_uid = _missing_rv_predecessor_fixture(target)
+    if receipt_kind == "handoff":
+        base_receipt: ScaleAuthorizationReceipt = ScaleHandoffReceipt.model_validate_json(
+            deployment["metadata"]["annotations"][SCALE_HANDOFF_RECEIPT_ANNOTATION]
+        )
+        annotation = SCALE_HANDOFF_RECEIPT_ANNOTATION
+    else:
+        base_receipt = ScaleInitializationReceipt(
+            version=1,
+            deploymentUID="deployment-uid",
+            modelUID="cr-uid-1",
+            modelGeneration=2,
+            modelSpecDigest=_handoff_model_fence().spec_digest,
+            desiredReplicas=0,
+            targetMode="fixed",
+        )
+        deployment = _initialized_scale_body(desired, base_receipt, resource_version="11")
+        annotation = SCALE_INITIALIZATION_RECEIPT_ANNOTATION
+    legacy = base_receipt.model_copy(
+        update={
+            "predecessor_evidence_digest": digest,
+            "predecessor_evidence_uid": evidence_uid,
+        }
+    )
+    expected = legacy.model_copy(update={"predecessor_evidence_resource_version": "1"})
+    deployment["metadata"]["annotations"][annotation] = legacy.annotation_value()
+    _TEST_SCALE_GATES[_scale_gate_target_key(target)] = _test_gate_value(desired, expected)
+    model = _handoff_model()
+    model_fence = _model_write_fence(
+        model,
+        ModelKey(namespace=desired.namespace, name="qwen-live"),
+    )
+    receipt_patches: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            return httpx.Response(200, json=model)
+        if (response := _scale_gate_response(request)) is not None:
+            return response
+        if request.url.path.endswith(f"/deployments/{desired.name}"):
+            if request.method == "PATCH":
+                receipt_patches.append(request)
+                patch = json.loads(request.content)
+                assert patch["metadata"]["resourceVersion"] == deployment["metadata"]["resourceVersion"]
+                deployment["metadata"]["annotations"].update(patch["metadata"]["annotations"])
+                deployment["metadata"]["resourceVersion"] = "12"
+            return httpx.Response(200, json=copy.deepcopy(deployment))
+        return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    migrated = await client._migrate_deployment_scale_receipt(
+        desired,
+        current=_snapshot(deployment, desired),
+        expected=expected,
+        owner_uid="cr-uid-1",
+        model_fence=model_fence,
+        fence=fence(),
+    )
+
+    assert _controller_owned_scale_authorization_receipt(migrated.raw) == expected
+    assert len(receipt_patches) == 1
+    assert receipt_patches[0].url.params["force"] == "false"
+    assert not receipt_patches[0].url.path.endswith("/scale")
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_missing_rv_tombstone_migrates_after_deployment_is_absent(tmp_path: Path) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, _, _ = _fixed_scale_http_fixture()
+    target = _scale_gate_target(desired)
+    _, digest, evidence_uid = _missing_rv_predecessor_fixture(target)
+    tombstone = ScaleGateTombstone(
+        version=1,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        predecessorEvidenceDigest=digest,
+        predecessorEvidenceUID=evidence_uid,
+    )
+    _TEST_SCALE_GATES[_scale_gate_target_key(target)] = _test_tombstone_value(desired, tombstone)
+    deleting_model = _handoff_model()
+    deleting_model["metadata"]["deletionTimestamp"] = "2026-09-17T00:00:00Z"
+    deletion_fence = _model_deletion_fence(
+        deleting_model,
+        ModelKey(namespace=desired.namespace, name="qwen-live"),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            return httpx.Response(200, json=deleting_model)
+        if (response := _scale_gate_response(request)) is not None:
+            return response
+        if request.method == "GET" and request.url.path.endswith(
+            ("/horizontalpodautoscalers", "/scaledobjects")
+        ):
+            return httpx.Response(200, json={"metadata": {}, "items": []})
+        if request.url.path.endswith(f"/deployments/{desired.name}"):
+            return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+        return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    await client.confirm_scale_gate_tombstone(
+        desired,
+        owner_uid="cr-uid-1",
+        model_fence=deletion_fence,
+        fence=fence(),
+    )
+
+    retained = _scale_gate_tombstone(_TEST_SCALE_GATES[_scale_gate_target_key(target)], target)
+    assert retained is not None
+    assert _scale_gate_evidence_reference(retained) == (digest, evidence_uid, "1")
+    await http.aclose()
