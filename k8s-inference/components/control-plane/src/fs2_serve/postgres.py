@@ -414,27 +414,21 @@ class PostgresStore:
         return steps
 
     @classmethod
-    async def _assert_contract_schema_preapplied(
+    async def _assert_schema_fully_applied(
         cls,
         connection: asyncpg.Connection[Any],
         manifest: list[tuple[Path, str]],
-        *,
-        rollout_bridge_image_ref: str,
-        rollout_predecessor_image_ref: str,
     ) -> None:
-        """Fail before DDL unless expand and bridge readiness are already durable."""
+        """Fail before DDL unless every exact migration step is already durable."""
 
         ledgers_ready = await connection.fetchval(
             "SELECT "
             "to_regclass('public.fs2_schema_migrations') IS NOT NULL AND "
-            "to_regclass('public.fs2_schema_migration_steps') IS NOT NULL AND "
-            "to_regclass('public.fs2_schema_rollout_state') IS NOT NULL AND "
-            "to_regclass('public.fs2_schema_bridge_rollout_attempts') IS NOT NULL AND "
-            "to_regclass('public.fs2_schema_bridge_ready_receipts') IS NOT NULL"
+            "to_regclass('public.fs2_schema_migration_steps') IS NOT NULL"
         )
         if not ledgers_ready:
             raise RuntimeError(
-                "the PostgreSQL contract phase requires a fully applied expand schema"
+                "the PostgreSQL phase requires a fully applied schema"
             )
 
         applied_rows = await connection.fetch(
@@ -444,7 +438,7 @@ class PostgresStore:
         expected = [(path.name, digest) for path, digest in manifest]
         if applied != expected:
             raise RuntimeError(
-                "the PostgreSQL contract phase cannot apply or complete missing migrations"
+                "the PostgreSQL phase cannot apply or complete missing migrations"
             )
 
         fencing_path, _ = manifest[-1]
@@ -460,8 +454,33 @@ class PostgresStore:
         ]
         if [(int(row["step"]), str(row["sha256"])) for row in recorded_steps] != expected_steps:
             raise RuntimeError(
-                "the PostgreSQL contract phase requires every expand migration step"
+                "the PostgreSQL phase requires every expand migration step"
             )
+
+    @classmethod
+    async def _assert_contract_schema_preapplied(
+        cls,
+        connection: asyncpg.Connection[Any],
+        manifest: list[tuple[Path, str]],
+        *,
+        rollout_bridge_image_ref: str,
+        rollout_predecessor_image_ref: str,
+    ) -> None:
+        """Fail before DDL unless expand and bridge readiness are already durable."""
+
+        await cls._assert_schema_fully_applied(connection, manifest)
+        bridge_ledgers_ready = await connection.fetchval(
+            "SELECT "
+            "to_regclass('public.fs2_schema_rollout_state') IS NOT NULL AND "
+            "to_regclass('public.fs2_schema_bridge_rollout_attempts') IS NOT NULL AND "
+            "to_regclass('public.fs2_schema_bridge_ready_receipts') IS NOT NULL"
+        )
+        if not bridge_ledgers_ready:
+            raise RuntimeError(
+                "the PostgreSQL contract phase requires a fully applied expand schema"
+            )
+
+        fencing_path, _ = manifest[-1]
 
         receipt_ready = await connection.fetchval(
             "SELECT EXISTS("
@@ -490,6 +509,31 @@ class PostgresStore:
             )
 
     @classmethod
+    async def _assert_rollback_schema_preapplied(
+        cls,
+        connection: asyncpg.Connection[Any],
+        manifest: list[tuple[Path, str]],
+        *,
+        rollout_bridge_image_ref: str,
+        rollout_predecessor_image_ref: str,
+    ) -> None:
+        """Fail before privileges unless rollback targets the durable 0031 bridge."""
+
+        await cls._assert_schema_fully_applied(connection, manifest)
+        rollout_ready = await connection.fetchval(
+            "SELECT to_regclass('public.fs2_schema_rollout_state') IS NOT NULL AND "
+            "EXISTS(SELECT 1 FROM fs2_schema_rollout_state WHERE singleton "
+            "AND phase IN ('expanded','contracted') "
+            "AND bridge_image_ref=$1 AND predecessor_image_ref=$2)",
+            rollout_bridge_image_ref,
+            rollout_predecessor_image_ref,
+        )
+        if not rollout_ready:
+            raise RuntimeError(
+                "the PostgreSQL rollback phase requires the exact durable 0031 bridge identity"
+            )
+
+    @classmethod
     async def _apply_migrations(
         cls,
         pool: asyncpg.Pool[Any],
@@ -501,6 +545,7 @@ class PostgresStore:
         artifact_remover_role: str = "fs2_serve_artifact_remover",
         artifact_verifier_role: str = "fs2_serve_artifact_verifier",
         preserve_predecessor_artifact_authority: bool = False,
+        rollback_bridge: bool = False,
         require_bridge_ready_receipt: bool = False,
         rollout_bridge_image_ref: str = "",
         rollout_predecessor_image_ref: str = "",
@@ -530,10 +575,19 @@ class PostgresStore:
                 "reporting, runtime, maintenance, activation, artifact-remover, and artifact-verifier "
                 "database roles must differ"
             )
+        if preserve_predecessor_artifact_authority and rollback_bridge:
+            raise ValueError("expand and rollback database modes are mutually exclusive")
         manifest = cls._migration_manifest(migrations_dir)
         async with pool.acquire() as connection:
             if require_bridge_ready_receipt:
                 await cls._assert_contract_schema_preapplied(
+                    connection,
+                    manifest,
+                    rollout_bridge_image_ref=rollout_bridge_image_ref,
+                    rollout_predecessor_image_ref=rollout_predecessor_image_ref,
+                )
+            elif rollback_bridge:
+                await cls._assert_rollback_schema_preapplied(
                     connection,
                     manifest,
                     rollout_bridge_image_ref=rollout_bridge_image_ref,
@@ -974,12 +1028,14 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_activation_model_lock_key(text) TO {quoted_activation}"
             )
-            if preserve_predecessor_artifact_authority:
+            if preserve_predecessor_artifact_authority or rollback_bridge:
                 rollout_phase = await connection.fetchval(
                     "SELECT phase FROM fs2_schema_rollout_state WHERE singleton FOR UPDATE"
                 )
-                if rollout_phase != "expanded":
-                    raise RuntimeError("the PostgreSQL contract phase cannot return to expanded")
+                if preserve_predecessor_artifact_authority and rollout_phase != "expanded":
+                    raise RuntimeError("the PostgreSQL expand phase requires an expanded schema")
+                if rollback_bridge and rollout_phase not in {"expanded", "contracted"}:
+                    raise RuntimeError("the PostgreSQL rollback phase is not bridge-compatible")
                 if (
                     re.fullmatch(r"[^@\s]+@sha256:[a-f0-9]{64}", rollout_bridge_image_ref) is None
                     or re.fullmatch(
@@ -989,21 +1045,36 @@ class PostgresStore:
                     or rollout_release_revision < 1
                 ):
                     raise RuntimeError("the expanded bridge identity is incomplete")
-                changed = await connection.execute(
-                    "UPDATE fs2_schema_rollout_state SET "
-                    "bridge_image_ref=COALESCE(bridge_image_ref,$1),"
-                    "bridge_release_revision=COALESCE(bridge_release_revision,$2),"
-                    "predecessor_image_ref=COALESCE(predecessor_image_ref,$3),"
-                    "bridge_registered_at=COALESCE(bridge_registered_at,clock_timestamp()) "
-                    "WHERE singleton AND phase='expanded' "
-                    "AND (bridge_image_ref IS NULL OR bridge_image_ref=$1) "
-                    "AND (predecessor_image_ref IS NULL OR predecessor_image_ref=$3)",
-                    rollout_bridge_image_ref,
-                    rollout_release_revision,
-                    rollout_predecessor_image_ref,
-                )
-                if changed != "UPDATE 1":
-                    raise RuntimeError("the expanded bridge identity differs from its durable registration")
+                if preserve_predecessor_artifact_authority:
+                    changed = await connection.execute(
+                        "UPDATE fs2_schema_rollout_state SET "
+                        "bridge_image_ref=COALESCE(bridge_image_ref,$1),"
+                        "bridge_release_revision=COALESCE(bridge_release_revision,$2),"
+                        "predecessor_image_ref=COALESCE(predecessor_image_ref,$3),"
+                        "bridge_registered_at=COALESCE(bridge_registered_at,clock_timestamp()) "
+                        "WHERE singleton AND phase='expanded' "
+                        "AND (bridge_image_ref IS NULL OR bridge_image_ref=$1) "
+                        "AND (predecessor_image_ref IS NULL OR predecessor_image_ref=$3)",
+                        rollout_bridge_image_ref,
+                        rollout_release_revision,
+                        rollout_predecessor_image_ref,
+                    )
+                    if changed != "UPDATE 1":
+                        raise RuntimeError(
+                            "the expanded bridge identity differs from its durable registration"
+                        )
+                else:
+                    identity_matches = await connection.fetchval(
+                        "SELECT EXISTS(SELECT 1 FROM fs2_schema_rollout_state "
+                        "WHERE singleton AND phase IN ('expanded','contracted') "
+                        "AND bridge_image_ref=$1 AND predecessor_image_ref=$2)",
+                        rollout_bridge_image_ref,
+                        rollout_predecessor_image_ref,
+                    )
+                    if not identity_matches:
+                        raise RuntimeError(
+                            "the PostgreSQL rollback identity differs from the expanded bridge"
+                        )
                 await connection.execute(
                     "INSERT INTO fs2_schema_bridge_rollout_attempts("
                     "bridge_image_ref,predecessor_image_ref,bridge_release_revision) "
@@ -1012,21 +1083,21 @@ class PostgresStore:
                     rollout_predecessor_image_ref,
                     rollout_release_revision,
                 )
-                # The predecessor image is allowed to finish only the exact
-                # artifact transitions it already owned.  This compatibility
-                # grant is committed atomically with 0031, so running N-1 Pods
-                # never observe a half-contracted schema.  No new v2 ledger or
-                # settlement authority is broadened.
-                await connection.execute(
-                    f"GRANT INSERT ON fs2_scientific_artifacts TO {quoted_runtime}"
-                )
-                await connection.execute(
-                    f"GRANT UPDATE (artifact_id,finalized_at) ON fs2_scientific_uploads TO {quoted_runtime}"
-                )
-                await connection.execute(
-                    f"GRANT UPDATE (expires_at) ON fs2_scientific_artifact_quota_reservations "
-                    f"TO {quoted_runtime}"
-                )
+                if rollout_phase == "expanded":
+                    # The predecessor image is allowed to finish only the exact
+                    # artifact transitions it already owned. This compatibility
+                    # grant remains available for an expanded-phase recovery,
+                    # but a contracted rollback never restores it.
+                    await connection.execute(
+                        f"GRANT INSERT ON fs2_scientific_artifacts TO {quoted_runtime}"
+                    )
+                    await connection.execute(
+                        f"GRANT UPDATE (artifact_id,finalized_at) ON fs2_scientific_uploads TO {quoted_runtime}"
+                    )
+                    await connection.execute(
+                        f"GRANT UPDATE (expires_at) ON fs2_scientific_artifact_quota_reservations "
+                        f"TO {quoted_runtime}"
+                    )
             else:
                 if require_bridge_ready_receipt:
                     receipt_ready = await connection.fetchval(
@@ -1072,6 +1143,7 @@ class PostgresStore:
         artifact_remover_role: str = "fs2_serve_artifact_remover",
         artifact_verifier_role: str = "fs2_serve_artifact_verifier",
         preserve_predecessor_artifact_authority: bool = False,
+        rollback_bridge: bool = False,
         require_bridge_ready_receipt: bool = False,
         rollout_bridge_image_ref: str = "",
         rollout_predecessor_image_ref: str = "",
@@ -1096,6 +1168,7 @@ class PostgresStore:
                 artifact_remover_role,
                 artifact_verifier_role,
                 preserve_predecessor_artifact_authority,
+                rollback_bridge,
                 require_bridge_ready_receipt,
                 rollout_bridge_image_ref,
                 rollout_predecessor_image_ref,

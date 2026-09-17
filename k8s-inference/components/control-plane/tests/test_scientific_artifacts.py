@@ -1349,6 +1349,10 @@ def test_quota_fencing_migration_uses_nonblocking_fair_v2_claims() -> None:
     assert "fs2_scientific_claim_stale_upload_session_creations_v2" in sql
     assert "fs2_scientific_record_upload_session_creation_reconciled_v2" in sql
     assert "fs2_scientific_claim_expired_finalization_leases_v2" in sql
+    assert (
+        "part_count integer,provider_stability_grace_seconds integer, initiated_at timestamptz"
+        in normalized
+    )
     assert "fs2_scientific_record_finalization_failure_v2" in sql
     assert "fs2_scientific_artifact_finalization_failures" in sql
     assert "'legacy-single-put-v1:'||upload.id::text" in sql

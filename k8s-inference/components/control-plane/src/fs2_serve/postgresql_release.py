@@ -105,7 +105,7 @@ EXPECTED_MIGRATIONS: Final = (
     ),
     (
         "0031_scientific_quota_fencing.sql",
-        "f512ef0808cbe3f1bb273aef61b7c6dc531e2a7c5a8afe5fdba739ee8590578d",
+        "4efa4924043a8bb40bffca4ed3d921921d6115858cfea70ff0c5af8c28f94bd7",
     ),
 )
 

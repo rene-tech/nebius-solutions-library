@@ -943,6 +943,26 @@ async def migrate_contract(settings: Settings) -> None:
     )
 
 
+async def migrate_rollback(settings: Settings) -> None:
+    """Register an exact bridge rollback without applying or reversing schema."""
+
+    _validate_schema_rollout_prepare_receipt(settings)
+    await PostgresStore.migrate_database(
+        settings.database_url,
+        settings.migrations_dir,
+        settings.reporting_database_role,
+        settings.runtime_database_role,
+        settings.maintenance_database_role,
+        settings.activation_database_role,
+        settings.artifact_remover_database_role,
+        settings.artifact_verifier_database_role,
+        rollback_bridge=True,
+        rollout_bridge_image_ref=settings.schema_rollout_bridge_image_ref,
+        rollout_predecessor_image_ref=settings.schema_rollout_predecessor_image_ref,
+        rollout_release_revision=settings.schema_rollout_release_revision,
+    )
+
+
 async def wait_schema(settings: Settings) -> None:
     await PostgresStore.wait_for_schema(
         settings.database_url,
@@ -1037,6 +1057,7 @@ def main() -> None:
             "migrate",
             "migrate-expand",
             "migrate-contract",
+            "migrate-rollback",
             "validate-schema-rollout-image",
             "wait-schema",
             "wait-schema-expanded",
@@ -1073,6 +1094,7 @@ def main() -> None:
             "migrate": migrate,
             "migrate-expand": migrate_expand,
             "migrate-contract": migrate_contract,
+            "migrate-rollback": migrate_rollback,
             "validate-schema-rollout-image": validate_schema_rollout_image,
             "wait-schema": wait_schema,
             "wait-schema-expanded": wait_schema_expanded,

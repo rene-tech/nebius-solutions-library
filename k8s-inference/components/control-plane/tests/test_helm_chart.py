@@ -1798,6 +1798,7 @@ def test_postgresql_rollout_is_prepare_expand_contract_activate_and_never_old_im
     for phase, image_digest, command, waiter in (
         ("expand", rollback_digest, "migrate-expand", "wait-schema-expanded"),
         ("contract", candidate_digest, "migrate-contract", "wait-schema"),
+        ("rollback", rollback_digest, "migrate-rollback", "wait-schema-expanded"),
     ):
         documents = render(
             "--is-upgrade",
@@ -1851,6 +1852,15 @@ def test_postgresql_rollout_is_prepare_expand_contract_activate_and_never_old_im
         and item["metadata"]["labels"]["app.kubernetes.io/component"] == "schema-bridge-ready"
         for item in rolled_back
     )
+    rollback_migration = next(
+        item
+        for item in rolled_back
+        if item["kind"] == "Job"
+        and item["metadata"]["labels"]["app.kubernetes.io/component"] == "migration"
+    )
+    assert rollback_migration["spec"]["template"]["spec"]["containers"][0]["args"] == [
+        "migrate-rollback"
+    ]
 
     terraform = (SOLUTION_ROOT / "stages/workloads/control_plane.tf").read_text(encoding="utf-8")
     assert '"expand",\n    "rollback",' in terraform
@@ -2077,6 +2087,10 @@ def test_artifact_removal_and_absence_verification_use_disjoint_identities() -> 
     ]
     assert remover["serviceAccountName"].endswith("-artifact-remover")
     assert verifier["serviceAccountName"].endswith("-artifact-verifier")
+    assert finalizer["serviceAccountName"].endswith("-artifact-finalizer")
+    assert len(
+        {remover["serviceAccountName"], verifier["serviceAccountName"], finalizer["serviceAccountName"]}
+    ) == 3
     assert remover["containers"][0]["args"] == ["artifact-removal"]
     assert verifier["containers"][0]["args"] == ["artifact-verification"]
     assert finalizer["containers"][0]["args"] == ["artifact-finalization"]
@@ -2112,9 +2126,19 @@ def test_artifact_removal_and_absence_verification_use_disjoint_identities() -> 
     accounts = {document["metadata"]["name"] for document in documents if document["kind"] == "ServiceAccount"}
     assert "fs2-serve-control-plane-artifact-remover" in accounts
     assert "fs2-serve-control-plane-artifact-verifier" in accounts
+    assert "fs2-serve-control-plane-artifact-finalizer" in accounts
     policies = {document["metadata"]["name"] for document in documents if document["kind"] == "NetworkPolicy"}
     assert "fs2-serve-control-plane-artifact-remover" in policies
     assert "fs2-serve-control-plane-artifact-verifier" in policies
+    assert "fs2-serve-control-plane-artifact-finalizer" in policies
+    role_binding_subjects = {
+        subject["name"]
+        for document in documents
+        if document["kind"] == "RoleBinding"
+        for subject in document.get("subjects", [])
+        if subject.get("kind") == "ServiceAccount"
+    }
+    assert "fs2-serve-control-plane-artifact-finalizer" not in role_binding_subjects
 
 
 def test_artifact_verification_deadline_covers_the_configured_object_ceiling() -> None:
@@ -3259,6 +3283,11 @@ def test_chart_rejects_postgresql_namespace_secret_role_or_receipt_drift(
         (
             "serviceAccounts.artifact-remover.name=shared-artifact",
             "serviceAccounts.artifact-verifier.name=shared-artifact",
+            "distinct service accounts",
+        ),
+        (
+            "serviceAccounts.artifact-finalizer.name=shared-artifact",
+            "serviceAccounts.runtime.name=shared-artifact",
             "distinct service accounts",
         ),
         (

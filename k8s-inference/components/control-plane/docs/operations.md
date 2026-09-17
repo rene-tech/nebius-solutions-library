@@ -360,13 +360,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`1bc495f57002004a6032b8a9b209c4563b2e9e788698f21c60550cded947a7bd`,
+`64afcd319b2d5ca5c84c58b00018e66afb22c5097852c70511b16deb8c3736d8`,
 count `31`, first version `0001_initial.sql`, last version
 `0031_scientific_quota_fencing.sql`,
 and namespace/role ownership SHA-256
 `cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580`.
 The whole logical contract payload is SHA-256
-`b28f0f1e6e6e749e2e1c5d1c205e393a2f11f019a2d65219636e11872492bbb3`.
+`c4706d7953709940fc6bea3b78340e917719c4df656565429cca09dcf6e7f64f`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not
@@ -381,7 +381,13 @@ automatic Helm rollback because the previous image cannot parse a 31-entry
 ledger. Contract removes the temporary predecessor artifact grants and rolls
 to the feature image. From that point Helm rollback and the explicit
 `rollback` phase target the already prepared 0031-aware bridge, never the
-pre-0031 image. Expand and rollback also run the verifier-owned bridge-readiness
+pre-0031 image. Rollback uses the distinct `migrate-rollback` entry point: it
+requires the exact 0031 migration and step ledgers plus the durable
+bridge/predecessor identity before any privilege transaction, appends only the
+new release attempt, and neither applies schema nor changes a contracted phase
+back to expanded. Temporary predecessor publication grants remain available
+only when recovering an actually expanded phase; a contracted rollback never
+restores them. Expand and rollback also run the verifier-owned bridge-readiness
 Job after the Deployment is Ready. The Job binds Kubernetes API server time,
 audit identity, Deployment UID/generation and the exact Ready Pod-set digest to
 an append-only database receipt, after zero unresolved legacy artifact pins and
@@ -413,7 +419,7 @@ owns Cluster/database-owner/Secret writes. Only
 NOLOGIN groups `fs2_serve_runtime`, `fs2_serve_maintenance`,
 `fs2_serve_artifact_remover`, `fs2_serve_artifact_verifier`,
 `fs2_serve_activation`, and `fs2_serve_reporting`. Application, maintenance,
-artifact-remover, artifact-verifier, controller, and Grafana workloads only
+artifact-remover, artifact-verifier, artifact-finalizer, controller, and Grafana workloads only
 consume their named Secret and group membership.
 
 The PAT and principal that admitted an operation have an implicit capability

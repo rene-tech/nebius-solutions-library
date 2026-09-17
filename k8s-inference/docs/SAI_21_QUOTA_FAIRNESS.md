@@ -197,7 +197,13 @@ The executable sequence is `prepare -> expand -> contract -> activate`:
 4. `activate` alone enables new multipart begin/part/inline writes. A
    `rollback` release selects the prepared bridge and keeps those writes off;
    VersionId-pinned reads, leased finalization, verifier backfill, cleanup,
-   inference, accounting, debugging, and 90-day retention continue.
+   inference, accounting, debugging, and 90-day retention continue. Its
+   distinct `migrate-rollback` command first requires the complete exact 0031
+   migration and step ledgers and the registered bridge/predecessor identity.
+   It appends the retry revision without applying schema or changing a
+   contracted database back to expanded. It retains predecessor publication
+   compatibility only while the durable phase is still expanded; it never
+   restores those grants after contraction.
 
 Expand and rollback require the artifact verifier and maintenance controllers;
 the chart rejects either phase without them. Prepare, expand, contract, and
@@ -213,6 +219,13 @@ Fresh installs are separately identifiable by the absence of a predecessor
 registration; after their direct contracted migration, cleanup relies on each
 reservation's own capability/completion/stability fences and does not wait for
 an inapplicable predecessor-drain receipt.
+
+The finalization recovery CronJob uses its own tokenless
+`artifact-finalizer` ServiceAccount, distinct from runtime, maintenance,
+remover, verifier, and migration identities. It has no RoleBinding; its network
+policy denies ingress and permits only DNS, PostgreSQL, and configured artifact
+store egress. The verifier retains the separately scoped Kubernetes read role
+needed for bridge readiness.
 
 The target and rollback image digests must differ, and neither may equal the
 predecessor. A build/release lane must publish and independently accept the

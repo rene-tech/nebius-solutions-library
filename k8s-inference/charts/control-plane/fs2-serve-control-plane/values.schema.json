@@ -915,6 +915,7 @@
         "maintenance",
         "artifact-remover",
         "artifact-verifier",
+        "artifact-finalizer",
         "migration",
         "bootstrap",
         "controller",
@@ -931,6 +932,9 @@
           "$ref": "#/$defs/serviceAccount"
         },
         "artifact-verifier": {
+          "$ref": "#/$defs/serviceAccount"
+        },
+        "artifact-finalizer": {
           "$ref": "#/$defs/serviceAccount"
         },
         "migration": {
@@ -1688,8 +1692,8 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "b28f0f1e6e6e749e2e1c5d1c205e393a2f11f019a2d65219636e11872492bbb3"},
-            "migrationSetSha256": {"const": "1bc495f57002004a6032b8a9b209c4563b2e9e788698f21c60550cded947a7bd"},
+            "contractPayloadSha256": {"const": "c4706d7953709940fc6bea3b78340e917719c4df656565429cca09dcf6e7f64f"},
+            "migrationSetSha256": {"const": "64afcd319b2d5ca5c84c58b00018e66afb22c5097852c70511b16deb8c3736d8"},
             "migrationCount": {"const": 31},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
             "lastMigrationVersion": {"const": "0031_scientific_quota_fencing.sql"},

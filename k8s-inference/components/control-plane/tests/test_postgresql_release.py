@@ -42,7 +42,7 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
         "first_migration_version": "0001_initial.sql",
         "last_migration_version": "0031_scientific_quota_fencing.sql",
         "migration_count": 31,
-        "migration_set_sha256": "1bc495f57002004a6032b8a9b209c4563b2e9e788698f21c60550cded947a7bd",
+        "migration_set_sha256": "64afcd319b2d5ca5c84c58b00018e66afb22c5097852c70511b16deb8c3736d8",
         "namespace_role_ownership_sha256": "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -67,18 +67,28 @@ def test_schema_rollout_receipt_binds_the_prepared_image_and_one_way_contract_ph
         validate_schema_rollout_prepare_receipt(changed, MIGRATIONS, image)
 
     migration_source = inspect.getsource(PostgresStore._apply_migrations)
+    fully_applied_source = inspect.getsource(PostgresStore._assert_schema_fully_applied)
     contract_preflight_source = inspect.getsource(PostgresStore._assert_contract_schema_preapplied)
+    rollback_preflight_source = inspect.getsource(PostgresStore._assert_rollback_schema_preapplied)
     assert "preserve_predecessor_artifact_authority" in migration_source
-    assert "the PostgreSQL contract phase cannot return to expanded" in migration_source
+    assert "the PostgreSQL expand phase requires an expanded schema" in migration_source
+    assert "rollback_bridge" in migration_source
     assert "GRANT UPDATE (artifact_id,finalized_at)" in migration_source
     assert "SET phase='contracted'" in migration_source
     assert migration_source.index("await cls._assert_contract_schema_preapplied") < migration_source.index(
         "CREATE TABLE IF NOT EXISTS fs2_schema_migrations"
     )
-    assert "applied != expected" in contract_preflight_source
-    assert "recorded_steps" in contract_preflight_source
-    assert "every expand migration step" in contract_preflight_source
+    assert migration_source.index("await cls._assert_rollback_schema_preapplied") < migration_source.index(
+        "CREATE TABLE IF NOT EXISTS fs2_schema_migrations"
+    )
+    assert "applied != expected" in fully_applied_source
+    assert "recorded_steps" in fully_applied_source
+    assert "every expand migration step" in fully_applied_source
     assert "missing_unfinished_upload_sessions=0" in contract_preflight_source
+    assert "phase IN ('expanded','contracted')" in rollback_preflight_source
+    assert "the exact durable 0031 bridge identity" in rollback_preflight_source
+    assert "if rollout_phase == \"expanded\"" in migration_source
+    assert "a contracted rollback never restores it" in migration_source
 
 
 def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -> None:

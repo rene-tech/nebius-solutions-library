@@ -90,7 +90,7 @@ spec:
             {{- include "fs2-serve.artifactFinalizerSelectorLabels" . | nindent 12 }}
         spec:
           restartPolicy: Never
-          serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "control-plane") }}
+          serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "artifact-finalizer") }}
           automountServiceAccountToken: false
           enableServiceLinks: false
           securityContext:

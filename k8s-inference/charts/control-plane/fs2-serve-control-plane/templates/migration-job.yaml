@@ -51,8 +51,10 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- if .Release.IsInstall }}
           args: ["migrate"]
-          {{- else if has .Values.migration.rolloutPhase (list "expand" "rollback") }}
+          {{- else if eq .Values.migration.rolloutPhase "expand" }}
           args: ["migrate-expand"]
+          {{- else if eq .Values.migration.rolloutPhase "rollback" }}
+          args: ["migrate-rollback"]
           {{- else }}
           args: ["migrate-contract"]
           {{- end }}

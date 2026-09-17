@@ -1224,7 +1224,8 @@ CREATE FUNCTION fs2_scientific_claim_expired_finalization_leases_v2(p_limit inte
 RETURNS TABLE(
     upload_id uuid,operation_id uuid,tenant_id text,storage_key text,
     provider_upload_id text,session_generation integer,part_size_bytes bigint,
-    part_count integer,initiated_at timestamptz,session_state text,
+    part_count integer,provider_stability_grace_seconds integer,
+    initiated_at timestamptz,session_state text,
     session_provider_version_id text,lease_id uuid,lease_generation integer,
     acquired_at timestamptz,expires_at timestamptz
 )
@@ -1245,7 +1246,8 @@ BEGIN
                session.part_count,session.initiated_at,session.state AS session_state,
                session.provider_version_id AS session_provider_version_id,
                lease.lease_id,lease.lease_generation,
-               reservation.upload_completion_grace_seconds
+               reservation.upload_completion_grace_seconds,
+               reservation.provider_stability_grace_seconds
         FROM public.fs2_scientific_artifact_finalization_leases lease
         JOIN public.fs2_scientific_uploads upload ON upload.id=lease.upload_id
         JOIN public.fs2_scientific_artifact_upload_sessions session ON session.upload_id=lease.upload_id
@@ -1274,6 +1276,7 @@ BEGIN
         session_generation := candidate.session_generation;
         part_size_bytes := candidate.part_size_bytes;
         part_count := candidate.part_count;
+        provider_stability_grace_seconds := candidate.provider_stability_grace_seconds;
         initiated_at := candidate.initiated_at;
         session_state := candidate.session_state;
         session_provider_version_id := candidate.session_provider_version_id;
@@ -1938,7 +1941,7 @@ BEGIN
     FROM public.fs2_schema_rollout_state
     WHERE singleton
     FOR UPDATE;
-    IF rollout.phase<>'expanded'
+    IF rollout.phase NOT IN ('expanded','contracted')
        OR rollout.bridge_image_ref<>p_bridge_image_ref
        OR rollout.predecessor_image_ref<>p_predecessor_image_ref
        OR p_kubernetes_observed_at+interval '1 second'<rollout.bridge_registered_at THEN
