@@ -56,6 +56,8 @@ variable "loki_migration_acknowledgements" {
       uid               = string
       resource_version = string
       inventory_sha256 = string
+      permit_sha256    = string
+      data_sha256      = string
       image_count      = number
     })
     owner_projection = object({
@@ -97,7 +99,7 @@ variable "loki_migration_acknowledgements" {
       length(setsubtract(toset(keys(var.loki_migration_acknowledgements)), toset(["pretransition", "posttransition"]))) == 0 &&
       alltrue([
         for stage, acknowledgement in var.loki_migration_acknowledgements : try(
-          acknowledgement.schema == "fs2-serve.nebius.ai/loki-migration-acknowledgement/v3" &&
+          acknowledgement.schema == "fs2-serve.nebius.ai/loki-migration-acknowledgement/v4" &&
           acknowledgement.stage == stage &&
           acknowledgement.binding.namespace == "fs2-observability" &&
           can(regex("^fs2-loki-(?:pretransition|posttransition)-ack-[0-9a-f]{12}$", acknowledgement.binding.config_map_name)) &&
@@ -138,6 +140,8 @@ variable "loki_migration_acknowledgements" {
           can(regex("^[0-9a-fA-F-]{20,}$", acknowledgement.payload_safety_inventory.uid)) &&
           length(trimspace(acknowledgement.payload_safety_inventory.resource_version)) >= 1 &&
           can(regex("^[0-9a-f]{64}$", acknowledgement.payload_safety_inventory.inventory_sha256)) &&
+          can(regex("^[0-9a-f]{64}$", acknowledgement.payload_safety_inventory.permit_sha256)) &&
+          can(regex("^[0-9a-f]{64}$", acknowledgement.payload_safety_inventory.data_sha256)) &&
           floor(acknowledgement.payload_safety_inventory.image_count) == acknowledgement.payload_safety_inventory.image_count &&
           acknowledgement.payload_safety_inventory.image_count >= 1 &&
           acknowledgement.owner_projection.namespace == "fs2-observability" &&
@@ -165,6 +169,6 @@ variable "loki_migration_acknowledgements" {
         )
       ])
     )
-    error_message = "loki_migration_acknowledgements accepts only strict v3 pretransition/posttransition envelopes bound to exact target, source, revisions, deployments, datasource, payload-safety inventory, release-owner projection, public trust-root custody, and a validity window no longer than five minutes."
+    error_message = "loki_migration_acknowledgements accepts only strict v4 pretransition/posttransition envelopes bound to exact target, source, revisions, deployments, datasource, complete payload-safety permit data, release-owner projection, public trust-root custody, and a validity window no longer than five minutes."
   }
 }

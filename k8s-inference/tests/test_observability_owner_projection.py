@@ -41,6 +41,15 @@ def digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def resource_data(seed: str) -> dict[str, str]:
+    return {"config.yaml": f"fixture:{seed}"}
+
+
+def data_digest(data: dict[str, str]) -> str:
+    encoded = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def namespaced_resource(
     kind: str, namespace: str, name: str, seed: str
 ) -> dict[str, object]:
@@ -51,7 +60,7 @@ def namespaced_resource(
         "name": name,
         "uid": f"00000000-0000-4000-8000-{digest(seed)[:12]}",
         "resource_version": str(int(digest(seed)[:8], 16)),
-        "content_sha256": digest(f"content:{seed}"),
+        "content_sha256": data_digest(resource_data(seed)),
     }
 
 
@@ -93,19 +102,46 @@ def workload(
     }
 
 
+def payload_fixture() -> tuple[dict[str, object], dict[str, str]]:
+    references = [
+        "registry.example/runtime-a@sha256:" + "1" * 64,
+        "registry.example/runtime-b@sha256:" + "2" * 64,
+    ]
+    images = {
+        digest(reference): {"image_reference": reference}
+        for reference in references
+    }
+    record = {"images": images}
+    inventory_json = json.dumps(record, sort_keys=True, separators=(",", ":"))
+    permits = {
+        f"image-{key}": evidence["image_reference"]
+        for key, evidence in images.items()
+    }
+    data = {"inventory.json": inventory_json, **permits}
+    return (
+        {
+            "inventory_sha256": digest(inventory_json),
+            "permit_sha256": data_digest(permits),
+            "data_sha256": data_digest(data),
+            "image_count": len(images),
+        },
+        data,
+    )
+
+
 def projection() -> dict[str, object]:
     namespaces = ["fs2-models", "fs2-system"]
-    inventory_sha256 = digest("inventory")
+    payload_summary, _payload_data = payload_fixture()
     inventory_resource = namespaced_resource(
         "ConfigMap", "fs2-system", "fs2-runtime-log-safety-aaaaaaaaaaaa", "inventory"
     )
-    inventory_resource["content_sha256"] = inventory_sha256
+    inventory_resource["content_sha256"] = payload_summary["data_sha256"]
     datasource_resource = namespaced_resource(
         "Secret", "fs2-observability", "fs2-serve-postgres-grafana-datasource", "datasource"
     )
     return {
         "schema": (
-            "fs2-serve.nebius.ai/observability-release-owner-projection/v1"
+            "fs2-serve.nebius.ai/observability-release-owner-projection/v2"
         ),
         "stage": "posttransition",
         "target": {
@@ -141,9 +177,17 @@ def projection() -> dict[str, object]:
         "live_configuration": {
             "loki": {
                 "resource": namespaced_resource(
-                    "Secret", "fs2-observability", "fs2-loki", "loki-config"
+                    "ConfigMap", "fs2-observability", "fs2-loki", "loki-config"
                 ),
-                "runtime_config_sha256": digest("loki-runtime-config"),
+                "runtime_resource": namespaced_resource(
+                    "ConfigMap",
+                    "fs2-observability",
+                    "fs2-loki-runtime",
+                    "loki-runtime-config",
+                ),
+                "runtime_config_sha256": data_digest(
+                    resource_data("loki-runtime-config")
+                ),
                 "auth_enabled": True,
                 "multi_tenant_queries_enabled": True,
                 "read_tenants": ["fake", "fs2-platform"],
@@ -171,7 +215,7 @@ def projection() -> dict[str, object]:
                     "fs2-serve-admin-configuration",
                     "control-config",
                 ),
-                "content_sha256": digest("content:control-config"),
+                "content_sha256": data_digest(resource_data("control-config")),
                 "tenant_header_name": "X-Scope-OrgID",
                 "read_tenants": ["fake", "fs2-platform"],
             },
@@ -193,8 +237,7 @@ def projection() -> dict[str, object]:
         "payload_safety": {
             "inventory": {
                 "resource": inventory_resource,
-                "inventory_sha256": inventory_sha256,
-                "image_count": 2,
+                **payload_summary,
             },
             "coverage": {
                 "complete": True,
@@ -250,6 +293,133 @@ def projection() -> dict[str, object]:
     }
 
 
+def current_resource(
+    reference: dict[str, object],
+    data: dict[str, str],
+    *,
+    labels: dict[str, str] | None = None,
+) -> dict[str, object]:
+    return {
+        "apiVersion": reference["api_version"],
+        "kind": reference["kind"],
+        "metadata": {
+            "namespace": reference["namespace"],
+            "name": reference["name"],
+            "uid": reference["uid"],
+            "resourceVersion": reference["resource_version"],
+            "labels": labels or {},
+        },
+        "data": data,
+    }
+
+
+def current_workload(
+    reference: dict[str, object],
+    mounted: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    volumes: list[dict[str, object]] = []
+    mounts: list[dict[str, str]] = []
+    for index, resource in enumerate(mounted or []):
+        volume_name = f"config-{index}"
+        source = (
+            {"configMap": {"name": resource["name"]}}
+            if resource["kind"] == "ConfigMap"
+            else {"secret": {"secretName": resource["name"]}}
+        )
+        volumes.append({"name": volume_name, **source})
+        mounts.append({"name": volume_name, "mountPath": f"/fixture/{index}"})
+    return {
+        "apiVersion": reference["api_version"],
+        "kind": reference["kind"],
+        "metadata": {
+            "namespace": reference["namespace"],
+            "name": reference["name"],
+            "uid": reference["uid"],
+            "resourceVersion": reference["resource_version"],
+            "generation": reference["generation"],
+        },
+        "spec": {
+            "template": {
+                "spec": {
+                    "volumes": volumes,
+                    "containers": [{"name": "fixture", "volumeMounts": mounts}],
+                }
+            }
+        },
+    }
+
+
+def live_objects(value: dict[str, object]) -> dict[tuple[str, str | None, str], dict[str, object]]:
+    configuration = value["live_configuration"]  # type: ignore[index]
+    payload = value["payload_safety"]["inventory"]  # type: ignore[index]
+    workloads = value["workloads"]  # type: ignore[index]
+    _payload_summary, payload_data = payload_fixture()
+    resources = {
+        "loki": current_resource(
+            configuration["loki"]["resource"], resource_data("loki-config")  # type: ignore[index]
+        ),
+        "loki_runtime": current_resource(
+            configuration["loki"]["runtime_resource"],  # type: ignore[index]
+            resource_data("loki-runtime-config"),
+        ),
+        "otel_gateway": current_resource(
+            configuration["otel_gateway"]["resource"], resource_data("otel-config")  # type: ignore[index]
+        ),
+        "grafana_datasource": current_resource(
+            configuration["grafana_datasource"]["resource"],  # type: ignore[index]
+            resource_data("datasource"),
+            labels={"grafana_datasource": "1"},
+        ),
+        "control_plane": current_resource(
+            configuration["control_plane"]["resource"],  # type: ignore[index]
+            resource_data("control-config"),
+        ),
+        "payload": current_resource(payload["resource"], payload_data),  # type: ignore[index]
+    }
+    objects: dict[tuple[str, str | None, str], dict[str, object]] = {
+        ("Namespace", None, "kube-system"): {
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "metadata": {"name": "kube-system", "uid": value["target"]["kube_system_uid"]},  # type: ignore[index]
+        }
+    }
+    for resource in resources.values():
+        metadata = resource["metadata"]  # type: ignore[index]
+        objects[(resource["kind"], metadata["namespace"], metadata["name"])] = resource  # type: ignore[index]
+    workload_objects = {
+        "loki": current_workload(
+            workloads["loki"],  # type: ignore[index]
+            [
+                configuration["loki"]["resource"],  # type: ignore[index]
+                configuration["loki"]["runtime_resource"],  # type: ignore[index]
+            ],
+        ),
+        "otel_gateway": current_workload(
+            workloads["otel_gateway"],  # type: ignore[index]
+            [configuration["otel_gateway"]["resource"]],  # type: ignore[index]
+        ),
+        "grafana": current_workload(workloads["grafana"]),  # type: ignore[index]
+        "control_plane": current_workload(workloads["control_plane"]),  # type: ignore[index]
+    }
+    for workload_value in workload_objects.values():
+        metadata = workload_value["metadata"]  # type: ignore[index]
+        objects[
+            (
+                workload_value["kind"],  # type: ignore[index]
+                metadata["namespace"],  # type: ignore[index]
+                metadata["name"],  # type: ignore[index]
+            )
+        ] = workload_value
+    return objects
+
+
+def fixture_reader(objects: dict[tuple[str, str | None, str], dict[str, object]]):
+    def read(kind: str, namespace: str | None, name: str) -> dict[str, object]:
+        return copy.deepcopy(objects[(kind, namespace, name)])
+
+    return read
+
+
 def signed_query(
     value: dict[str, object],
 ) -> tuple[dict[str, str], Ed25519PrivateKey]:
@@ -264,7 +434,7 @@ def signed_query(
         expires_at=str(value["valid_until"]),
         kind="observability-release-owner-projection",
         subject_schema=(
-            "fs2-serve.nebius.ai/observability-release-owner-projection/v1"
+            "fs2-serve.nebius.ai/observability-release-owner-projection/v2"
         ),
         subject_digest=projection_sha256,
         model_id="observability-access",
@@ -286,6 +456,8 @@ def signed_query(
             {public_key_id(public_key): public_key_value(public_key)}
         ),
         "validation_time": "2026-09-17T12:00:00Z",
+        "kubeconfig_path": "/run/fs2-test/kubeconfig",
+        "kube_context": "fs2-test",
         "expected_stage": "posttransition",
         "expected_run_id": "fs2abc",
         "expected_cluster_id": "mk8scluster-example",
@@ -296,8 +468,9 @@ def signed_query(
 
 
 def test_valid_owner_projection_binds_current_state() -> None:
-    query, _ = signed_query(projection())
-    result = VERIFIER.verify(query)
+    value = projection()
+    query, _ = signed_query(value)
+    result = VERIFIER.verify(query, read_object=fixture_reader(live_objects(value)))
     assert result["verified"] == "true"
     assert result["projection_sha256"] == hashlib.sha256(
         canonical_bytes(json.loads(query["projection_json"]))
@@ -313,21 +486,50 @@ def test_unsigned_datasource_content_change_is_rejected() -> None:
     ] = digest("changed")
     query["projection_json"] = json.dumps(changed, sort_keys=True, separators=(",", ":"))
     with pytest.raises(CatalogError, match="content digest|signature"):
-        VERIFIER.verify(query)
+        VERIFIER.verify(query, read_object=fixture_reader(live_objects(value)))
 
 
 def test_caller_selected_key_cannot_replace_owner() -> None:
-    query, _ = signed_query(projection())
+    value = projection()
+    query, _ = signed_query(value)
     attacker = Ed25519PrivateKey.generate().public_key()
     query["trusted_attestors_json"] = json.dumps(
         {public_key_id(attacker): public_key_value(attacker)}
     )
     with pytest.raises(CatalogError, match="untrusted key"):
-        VERIFIER.verify(query)
+        VERIFIER.verify(query, read_object=fixture_reader(live_objects(value)))
 
 
 def test_expired_owner_projection_is_rejected() -> None:
-    query, _ = signed_query(projection())
+    value = projection()
+    query, _ = signed_query(value)
     query["validation_time"] = "2026-09-17T12:04:00Z"
     with pytest.raises(CatalogError, match="not current|not fresh"):
-        VERIFIER.verify(query)
+        VERIFIER.verify(query, read_object=fixture_reader(live_objects(value)))
+
+
+def test_apply_time_config_only_drift_is_rejected() -> None:
+    value = projection()
+    query, _ = signed_query(value)
+    objects = live_objects(value)
+    datasource = value["live_configuration"]["grafana_datasource"]["resource"]  # type: ignore[index]
+    current = objects[(datasource["kind"], datasource["namespace"], datasource["name"])]  # type: ignore[index]
+    current["data"] = {"datasource.yaml": "changed-after-plan"}
+    with pytest.raises(CatalogError, match="current identity or content differs"):
+        VERIFIER.verify(query, read_object=fixture_reader(objects))
+
+
+def test_apply_time_payload_permit_drift_is_rejected() -> None:
+    value = projection()
+    objects = live_objects(value)
+    parameter = value["payload_safety"]["inventory"]["resource"]  # type: ignore[index]
+    current = objects[(parameter["kind"], parameter["namespace"], parameter["name"])]  # type: ignore[index]
+    current["data"]["image-" + "f" * 64] = (  # type: ignore[index]
+        "registry.example/attacker@sha256:" + "f" * 64
+    )
+    drifted_data_sha256 = data_digest(current["data"])  # type: ignore[arg-type]
+    parameter["content_sha256"] = drifted_data_sha256  # type: ignore[index]
+    value["payload_safety"]["inventory"]["data_sha256"] = drifted_data_sha256  # type: ignore[index]
+    query, _ = signed_query(value)
+    with pytest.raises(CatalogError, match="exactly inventory"):
+        VERIFIER.verify(query, read_object=fixture_reader(objects))

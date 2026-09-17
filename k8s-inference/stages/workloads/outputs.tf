@@ -513,7 +513,7 @@ output "loki_deployed_client_acknowledgement_requirements" {
 output "loki_migration_acknowledgement_requirements" {
   description = "Non-secret staged evidence contract. This desired-state output is not evidence and cannot authorize auth; a release owner must reread live state and sign a short-lived projection."
   value = {
-    schema = "fs2-serve.nebius.ai/loki-migration-acknowledgement/v3"
+    schema = "fs2-serve.nebius.ai/loki-migration-acknowledgement/v4"
     target = {
       run_id          = var.run_id
       cluster_id      = var.cluster_id
@@ -559,7 +559,8 @@ output "loki_migration_acknowledgement_requirements" {
       "Ed25519-signed owner projection valid for no more than five minutes",
       "reread Helm storage Secret UID/resourceVersion/payload for Loki, OTel, Grafana, and control plane",
       "reread effective Loki runtime config and Grafana datasource Secret content digests",
-      "reread exact admission policy, binding, and payload-permit ConfigMap",
+      "reread exact admission policy, binding, and complete payload-permit ConfigMap data map",
+      "derive every image-<sha256> permit from the signed inventory images without missing or extra keys",
       "unexpired owner projection and migration valid_until",
     ]
     runtime_payload_safety = {
@@ -567,13 +568,17 @@ output "loki_migration_acknowledgement_requirements" {
       expected_image_count      = try(length(var.runtime_log_payload_safety_evidence.images), 0)
       expected_inventory_sha256 = local.expected_runtime_log_image_inventory_sha256
       accepted_inventory_sha256 = local.accepted_runtime_log_payload_safety_inventory_sha256
+      permit_sha256             = local.runtime_log_payload_safety_permit_sha256
+      data_sha256               = local.runtime_log_payload_safety_data_sha256
       required_enumerations     = ["live-pod", "live-controller", "terraform-address", "static-manifest", "catalog-binding"]
       admission_policy          = "fs2-runtime-log-payload-safety"
       admission_binding         = "fs2-runtime-log-payload-safety"
       future_unpermitted_images = "denied"
+      admission_scope           = "image-references-only"
+      external_custody_required = ["command", "args", "env", "envFrom", "volumeMounts", "volumes"]
     }
     owner_projection = {
-      schema                    = "fs2-serve.nebius.ai/observability-release-owner-projection/v1"
+      schema                    = "fs2-serve.nebius.ai/observability-release-owner-projection/v2"
       signer                    = "external release owner"
       private_key_in_terraform  = false
       trust_root_secret         = "fs2-system/fs2-observability-release-attestors"

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Verify the short-lived release-owner projection used by the Loki auth gate.
 
-The Terraform external-data contract passes only public keys and non-secret
-digests.  The release owner, not Terraform, reads the current Helm storage,
-effective Loki configuration, Grafana datasource Secret, workload objects and
-runtime-image inventory before signing the projection.
+The Terraform external-data contract passes public keys, signed evidence and
+the exact run-owned kubeconfig path/context.  At apply time this process rereads
+effective Loki/OTel configuration, the Grafana datasource Secret, workload
+objects and the runtime-image permit. Secret/configuration bytes never appear
+in its result; only bounded metadata and canonical SHA-256 digests do.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -29,7 +31,7 @@ from fs2_serve_catalog.attestations import (  # noqa: E402
 from fs2_serve_catalog.loader import CatalogError  # noqa: E402
 
 
-PROJECTION_SCHEMA = "fs2-serve.nebius.ai/observability-release-owner-projection/v1"
+PROJECTION_SCHEMA = "fs2-serve.nebius.ai/observability-release-owner-projection/v2"
 PROJECTION_KIND = "observability-release-owner-projection"
 PROJECTION_MODEL_ID = "observability-access"
 MAX_PROJECTION_LIFETIME = timedelta(minutes=5)
@@ -41,6 +43,7 @@ DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
 KUBERNETES_NAME = re.compile(
     r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9](?:[-a-z0-9]*[a-z0-9])?)*$"
 )
+MAX_LIVE_OBJECT_BYTES = 8 * 1024 * 1024
 
 
 def _fail(message: str) -> None:
@@ -135,6 +138,277 @@ def _resource(value: Any, label: str, *, kinds: set[str]) -> dict[str, Any]:
     _string(item["resource_version"], f"{label}.resource_version")
     _string(item["content_sha256"], f"{label}.content_sha256", SHA256)
     return item
+
+
+def _content_sha256(data: Any, label: str) -> str:
+    if not isinstance(data, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in data.items()
+    ):
+        _fail(f"{label} must be a string-to-string data map")
+    try:
+        # Match Terraform sha256(jsonencode(map)) exactly: sorted compact JSON
+        # without the newline used by repository artifact attestations.
+        encoded = json.dumps(
+            data,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode()
+    except (TypeError, ValueError) as exc:
+        raise CatalogError(f"{label} is not canonically encodable") from exc
+    if len(encoded) > MAX_LIVE_OBJECT_BYTES:
+        _fail(f"{label} exceeds the bounded live-content limit")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _kubectl_reader(kubeconfig_path: str, kube_context: str):
+    kubeconfig = Path(kubeconfig_path)
+    if not kubeconfig.is_absolute() or not kubeconfig.is_file():
+        _fail("kubeconfig_path must name the existing run-owned kubeconfig")
+    if not kube_context or any(character in kube_context for character in "\r\n\0"):
+        _fail("kube_context has an invalid format")
+
+    def read(kind: str, namespace: str | None, name: str) -> dict[str, Any]:
+        command = [
+            "kubectl",
+            "--kubeconfig",
+            str(kubeconfig),
+            "--context",
+            kube_context,
+            "get",
+            kind,
+            name,
+        ]
+        if namespace is not None:
+            command.extend(["--namespace", namespace])
+        command.extend(["--output=json", "--request-timeout=15s"])
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                timeout=20,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            raise CatalogError(
+                f"current Kubernetes read failed for {kind}/{name}"
+            ) from exc
+        if completed.returncode != 0:
+            _fail(f"current Kubernetes read failed for {kind}/{name}")
+        raw = completed.stdout
+        if not raw or len(raw) > MAX_LIVE_OBJECT_BYTES:
+            _fail(f"current Kubernetes object {kind}/{name} is empty or oversized")
+        try:
+            value = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise CatalogError(
+                f"current Kubernetes object {kind}/{name} is not JSON"
+            ) from exc
+        if not isinstance(value, dict):
+            _fail(f"current Kubernetes object {kind}/{name} is not an object")
+        return value
+
+    return read
+
+
+def _current_resource(
+    reference: dict[str, Any],
+    label: str,
+    read_object,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    current = read_object(
+        reference["kind"], reference["namespace"], reference["name"]
+    )
+    metadata = current.get("metadata")
+    if not isinstance(metadata, dict):
+        _fail(f"{label} current metadata is missing")
+    actual = {
+        "api_version": current.get("apiVersion"),
+        "kind": current.get("kind"),
+        "namespace": metadata.get("namespace"),
+        "name": metadata.get("name"),
+        "uid": metadata.get("uid"),
+        "resource_version": metadata.get("resourceVersion"),
+        "content_sha256": _content_sha256(current.get("data"), f"{label}.data"),
+    }
+    if current.get("binaryData") not in (None, {}):
+        _fail(f"{label} binaryData is not permitted in the authorization digest")
+    if actual != reference:
+        _fail(f"{label} current identity or content differs from the signed projection")
+    return actual, current
+
+
+def _current_workload(reference: dict[str, Any], label: str, read_object) -> dict[str, Any]:
+    current = read_object(
+        reference["kind"], reference["namespace"], reference["name"]
+    )
+    metadata = current.get("metadata")
+    if not isinstance(metadata, dict):
+        _fail(f"{label} current metadata is missing")
+    for field, current_field in (
+        ("uid", "uid"),
+        ("resource_version", "resourceVersion"),
+        ("generation", "generation"),
+    ):
+        if reference[field] != metadata.get(current_field):
+            _fail(f"{label} current identity differs from the signed projection")
+    return current
+
+
+def _assert_mounted_resource(
+    workload: dict[str, Any], resource: dict[str, Any], label: str
+) -> None:
+    try:
+        pod_spec = workload["spec"]["template"]["spec"]
+        volumes = pod_spec.get("volumes", [])
+        containers = pod_spec.get("containers", [])
+    except (KeyError, TypeError) as exc:
+        raise CatalogError(f"{label} workload Pod template is malformed") from exc
+    source_key = "configMap" if resource["kind"] == "ConfigMap" else "secret"
+    name_key = "name" if source_key == "configMap" else "secretName"
+    matched_volumes = {
+        volume.get("name")
+        for volume in volumes
+        if isinstance(volume, dict)
+        and isinstance(volume.get(source_key), dict)
+        and volume[source_key].get(name_key) == resource["name"]
+    }
+    mounted_volumes = {
+        mount.get("name")
+        for container in containers
+        if isinstance(container, dict)
+        for mount in container.get("volumeMounts", [])
+        if isinstance(mount, dict)
+    }
+    if not matched_volumes or not matched_volumes.issubset(mounted_volumes):
+        _fail(f"{label} signed configuration is not mounted by the current workload")
+
+
+def _validate_payload_permits(
+    inventory: dict[str, Any], current: dict[str, Any]
+) -> dict[str, Any]:
+    data = current.get("data")
+    if not isinstance(data, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in data.items()
+    ):
+        _fail("current payload-safety ConfigMap data is malformed")
+    if set(data) == {"inventory.json"} or "inventory.json" not in data:
+        _fail("current payload-safety ConfigMap has no image permits")
+    record = _json(
+        data["inventory.json"],
+        "current payload-safety inventory.json",
+        maximum_bytes=2 * 1024 * 1024,
+    )
+    if not isinstance(record, dict) or not isinstance(record.get("images"), dict):
+        _fail("current payload-safety inventory has no images map")
+    permits: dict[str, str] = {}
+    for key, evidence in record["images"].items():
+        _string(key, "payload inventory image key", SHA256)
+        if not isinstance(evidence, dict):
+            _fail("payload inventory image evidence is malformed")
+        image_reference = _string(
+            evidence.get("image_reference"), "payload inventory image reference"
+        )
+        if hashlib.sha256(image_reference.encode()).hexdigest() != key:
+            _fail("payload inventory key does not bind its image reference")
+        permits[f"image-{key}"] = image_reference
+    expected_data = {"inventory.json": data["inventory.json"], **permits}
+    if data != expected_data:
+        _fail(
+            "current payload-safety data must contain exactly inventory.json "
+            "and its derived image-<sha256> permits"
+        )
+    summary = {
+        "inventory_sha256": hashlib.sha256(
+            data["inventory.json"].encode()
+        ).hexdigest(),
+        "permit_sha256": _content_sha256(permits, "payload permits"),
+        "data_sha256": _content_sha256(data, "payload-safety ConfigMap data"),
+        "image_count": len(permits),
+    }
+    for field in ("inventory_sha256", "permit_sha256", "data_sha256", "image_count"):
+        if summary[field] != inventory[field]:
+            _fail(f"current payload-safety {field} differs from the signed projection")
+    if summary["data_sha256"] != inventory["resource"]["content_sha256"]:
+        _fail("payload-safety resource digest does not bind the complete data map")
+    return summary
+
+
+def _validate_live_state(
+    projection: dict[str, Any], validation_time: datetime, read_object
+) -> dict[str, Any]:
+    kube_system = read_object("Namespace", None, "kube-system")
+    if kube_system.get("metadata", {}).get("uid") != projection["target"][
+        "kube_system_uid"
+    ]:
+        _fail("apply-time Kubernetes reader selected the wrong cluster")
+
+    workloads = {
+        name: _current_workload(reference, f"workload.{name}", read_object)
+        for name, reference in projection["workloads"].items()
+    }
+    configuration = projection["live_configuration"]
+    loki_resource, _ = _current_resource(
+        configuration["loki"]["resource"], "live Loki configuration", read_object
+    )
+    loki_runtime_resource, _ = _current_resource(
+        configuration["loki"]["runtime_resource"],
+        "live Loki runtime configuration",
+        read_object,
+    )
+    otel_resource, _ = _current_resource(
+        configuration["otel_gateway"]["resource"],
+        "live OTel gateway configuration",
+        read_object,
+    )
+    grafana_resource, grafana_current = _current_resource(
+        configuration["grafana_datasource"]["resource"],
+        "live Grafana datasource",
+        read_object,
+    )
+    control_resource, _ = _current_resource(
+        configuration["control_plane"]["resource"],
+        "live control-plane reader configuration",
+        read_object,
+    )
+    _assert_mounted_resource(workloads["loki"], loki_resource, "Loki")
+    _assert_mounted_resource(
+        workloads["loki"], loki_runtime_resource, "Loki runtime"
+    )
+    _assert_mounted_resource(workloads["otel_gateway"], otel_resource, "OTel")
+    if grafana_current.get("metadata", {}).get("labels", {}).get(
+        "grafana_datasource"
+    ) != "1":
+        _fail("current Grafana datasource Secret lacks the exact sidecar label")
+
+    inventory_resource, inventory_current = _current_resource(
+        projection["payload_safety"]["inventory"]["resource"],
+        "live payload-safety parameter",
+        read_object,
+    )
+    payload = _validate_payload_permits(
+        projection["payload_safety"]["inventory"], inventory_current
+    )
+    live_state = {
+        "schema": "fs2-serve.nebius.ai/observability-apply-time-live-state/v1",
+        "validated_at": validation_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "target": projection["target"],
+        "configuration": {
+            "loki": loki_resource,
+            "loki_runtime": loki_runtime_resource,
+            "otel_gateway": otel_resource,
+            "grafana_datasource": grafana_resource,
+            "control_plane": control_resource,
+        },
+        "payload_safety": {
+            "resource": inventory_resource,
+            **payload,
+        },
+    }
+    return live_state
 
 
 def _workload(value: Any, label: str) -> dict[str, Any]:
@@ -365,6 +639,7 @@ def _validate_projection(
         configuration["loki"],
         {
             "resource",
+            "runtime_resource",
             "runtime_config_sha256",
             "auth_enabled",
             "multi_tenant_queries_enabled",
@@ -377,11 +652,30 @@ def _validate_projection(
         "projection.live_configuration.loki.resource",
         kinds={"ConfigMap", "Secret"},
     )
+    _resource(
+        loki["runtime_resource"],
+        "projection.live_configuration.loki.runtime_resource",
+        kinds={"ConfigMap", "Secret"},
+    )
+    if (
+        loki["resource"]["kind"],
+        loki["resource"]["namespace"],
+        loki["resource"]["name"],
+    ) != ("ConfigMap", "fs2-observability", "fs2-loki"):
+        _fail("effective Loki config must bind the chart-mounted fs2-loki ConfigMap")
+    if (
+        loki["runtime_resource"]["kind"],
+        loki["runtime_resource"]["namespace"],
+        loki["runtime_resource"]["name"],
+    ) != ("ConfigMap", "fs2-observability", "fs2-loki-runtime"):
+        _fail("Loki runtime config must bind the chart-mounted runtime ConfigMap")
     _string(
         loki["runtime_config_sha256"],
         "projection.live_configuration.loki.runtime_config_sha256",
         SHA256,
     )
+    if loki["runtime_config_sha256"] != loki["runtime_resource"]["content_sha256"]:
+        _fail("Loki runtime digest must bind the reread runtime resource")
     _boolean(loki["auth_enabled"], "projection.live_configuration.loki.auth_enabled")
     if not _boolean(
         loki["multi_tenant_queries_enabled"],
@@ -404,6 +698,12 @@ def _validate_projection(
         "projection.live_configuration.otel_gateway.resource",
         kinds={"ConfigMap", "Secret"},
     )
+    if (
+        otel["resource"]["kind"],
+        otel["resource"]["namespace"],
+        otel["resource"]["name"],
+    ) != ("ConfigMap", "fs2-observability", "fs2-otel-gateway"):
+        _fail("effective OTel config must bind the gateway chart ConfigMap")
     if otel["tenant_header_name"] != "X-Scope-OrgID":
         _fail("the current OTel writer must use X-Scope-OrgID")
     _string(
@@ -438,6 +738,17 @@ def _validate_projection(
             "read_tenants"
         ] != ["fake", "fs2-platform"]:
             _fail(f"{reader_name} must prove the exact bounded dual-read header")
+    grafana_resource = configuration["grafana_datasource"]["resource"]
+    if (
+        grafana_resource["kind"],
+        grafana_resource["namespace"],
+        grafana_resource["name"],
+    ) != (
+        "Secret",
+        "fs2-observability",
+        "fs2-serve-postgres-grafana-datasource",
+    ):
+        _fail("Grafana live content must bind the exact workloads-owned datasource Secret")
 
     markers = _object(
         projection["cached_markers"],
@@ -454,7 +765,13 @@ def _validate_projection(
     )
     inventory = _object(
         payload_safety["inventory"],
-        {"resource", "inventory_sha256", "image_count"},
+        {
+            "resource",
+            "inventory_sha256",
+            "permit_sha256",
+            "data_sha256",
+            "image_count",
+        },
         "projection.payload_safety.inventory",
     )
     _resource(
@@ -467,13 +784,23 @@ def _validate_projection(
         "projection.payload_safety.inventory.inventory_sha256",
         SHA256,
     )
+    _string(
+        inventory["permit_sha256"],
+        "projection.payload_safety.inventory.permit_sha256",
+        SHA256,
+    )
+    _string(
+        inventory["data_sha256"],
+        "projection.payload_safety.inventory.data_sha256",
+        SHA256,
+    )
     _integer(
         inventory["image_count"],
         "projection.payload_safety.inventory.image_count",
         minimum=1,
     )
-    if inventory["inventory_sha256"] != inventory["resource"]["content_sha256"]:
-        _fail("payload inventory digest must bind the reread immutable ConfigMap content")
+    if inventory["data_sha256"] != inventory["resource"]["content_sha256"]:
+        _fail("payload data digest must bind the complete reread ConfigMap data map")
     _coverage(payload_safety["coverage"])
     admission = _object(
         payload_safety["admission"],
@@ -559,12 +886,14 @@ def _validate_projection(
     return projection
 
 
-def verify(query: dict[str, Any]) -> dict[str, str]:
+def verify(query: dict[str, Any], *, read_object=None) -> dict[str, str]:
     required = {
         "projection_json",
         "attestation_json",
         "trusted_attestors_json",
         "validation_time",
+        "kubeconfig_path",
+        "kube_context",
         "expected_stage",
         "expected_run_id",
         "expected_cluster_id",
@@ -647,10 +976,19 @@ def verify(query: dict[str, Any]) -> dict[str, str]:
         "expires_at"
     ] != projection["valid_until"]:
         _fail("signed attestation and owner projection freshness windows differ")
+    if read_object is None:
+        read_object = _kubectl_reader(
+            query["kubeconfig_path"], query["kube_context"]
+        )
+    live_state = _validate_live_state(projection, validation_time, read_object)
+    live_state_bytes = canonical_bytes(live_state)
     return {
         "verified": "true",
         "projection_json": projection_bytes.decode("ascii").rstrip("\n"),
         "projection_sha256": projection_sha256,
+        "live_state_json": live_state_bytes.decode("ascii").rstrip("\n"),
+        "live_state_sha256": hashlib.sha256(live_state_bytes).hexdigest(),
+        "validated_at": live_state["validated_at"],
         "key_id": verified["key_id"],
         "expires_at": verified["expires_at"],
     }

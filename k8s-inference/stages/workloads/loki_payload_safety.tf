@@ -205,6 +205,26 @@ locals {
     local.runtime_log_payload_safety_record_json == null ? null :
     sha256(local.runtime_log_payload_safety_record_json)
   )
+  runtime_log_payload_safety_permit_data = (
+    local.runtime_log_payload_safety_record_json == null ? {} : {
+      for key, evidence in var.runtime_log_payload_safety_evidence.images :
+      "image-${key}" => evidence.image_reference
+    }
+  )
+  runtime_log_payload_safety_permit_sha256 = (
+    local.runtime_log_payload_safety_record_json == null ? null :
+    sha256(jsonencode(local.runtime_log_payload_safety_permit_data))
+  )
+  runtime_log_payload_safety_config_map_data = (
+    local.runtime_log_payload_safety_record_json == null ? {} : merge(
+      { "inventory.json" = local.runtime_log_payload_safety_record_json },
+      local.runtime_log_payload_safety_permit_data,
+    )
+  )
+  runtime_log_payload_safety_data_sha256 = (
+    local.runtime_log_payload_safety_record_json == null ? null :
+    sha256(jsonencode(local.runtime_log_payload_safety_config_map_data))
+  )
   runtime_log_payload_safety_ready = (
     local.accepted_runtime_log_payload_safety_inventory_sha256 != null &&
     local.runtime_log_images_are_immutable &&
@@ -243,15 +263,10 @@ resource "kubernetes_config_map_v1" "runtime_log_payload_safety" {
   }
 
   immutable = true
-  # The admission policy reads only the digest-keyed exact image values;
-  # inventory.json remains the signed/custodied audit record.
-  data = merge(
-    { "inventory.json" = local.runtime_log_payload_safety_record_json },
-    {
-      for key, evidence in var.runtime_log_payload_safety_evidence.images :
-      "image-${key}" => evidence.image_reference
-    },
-  )
+  # The full map, the inventory record and the admission-authoritative permit
+  # subset have distinct digests. The foundation gate rereads all three and
+  # proves that no image-* value can drift independently of inventory.json.
+  data = local.runtime_log_payload_safety_config_map_data
 }
 
 # A signed owner projection must enumerate existing Pods/controllers because
@@ -356,6 +371,8 @@ resource "kubernetes_config_map_v1" "loki_client_freshness" {
         uid              = kubernetes_config_map_v1.runtime_log_payload_safety[0].metadata[0].uid
         resource_version = kubernetes_config_map_v1.runtime_log_payload_safety[0].metadata[0].resource_version
         inventory_sha256 = local.runtime_log_payload_safety_inventory_sha256
+        permit_sha256    = local.runtime_log_payload_safety_permit_sha256
+        data_sha256      = local.runtime_log_payload_safety_data_sha256
         image_count      = length(var.runtime_log_payload_safety_evidence.images)
       } : null
     })
@@ -373,12 +390,16 @@ resource "kubernetes_config_map_v1" "loki_client_freshness" {
 output "runtime_log_payload_safety_contract" {
   description = "Machine-enforced exact runtime-image inventory and immutable evidence custody required before Loki auth migration."
   value = {
-    schema                    = "fs2-serve.nebius.ai/runtime-log-payload-safety-contract/v1"
+    schema                    = "fs2-serve.nebius.ai/runtime-log-payload-safety-contract/v2"
     ready                     = local.runtime_log_payload_safety_ready
     expected_image_count      = try(length(var.runtime_log_payload_safety_evidence.images), 0)
     expected_inventory_sha256 = local.expected_runtime_log_image_inventory_sha256
     accepted_inventory_sha256 = local.accepted_runtime_log_payload_safety_inventory_sha256
+    permit_sha256             = local.runtime_log_payload_safety_permit_sha256
+    data_sha256               = local.runtime_log_payload_safety_data_sha256
     owner_signature_required_for_auth = true
+    admission_scope           = "image-references-only"
+    command_args_env_mounts_require_external_custody = true
     protected_namespaces = local.runtime_log_payload_safety_ready ? sort(tolist(var.runtime_log_payload_safety_evidence.coverage.namespaces)) : []
     admission = local.runtime_log_payload_safety_ready ? {
       policy   = kubernetes_manifest.runtime_log_payload_safety_policy[0].object.metadata.name
@@ -391,6 +412,8 @@ output "runtime_log_payload_safety_contract" {
       uid              = kubernetes_config_map_v1.runtime_log_payload_safety[0].metadata[0].uid
       resource_version = kubernetes_config_map_v1.runtime_log_payload_safety[0].metadata[0].resource_version
       inventory_sha256 = local.runtime_log_payload_safety_inventory_sha256
+      permit_sha256    = local.runtime_log_payload_safety_permit_sha256
+      data_sha256      = local.runtime_log_payload_safety_data_sha256
     } : null
   }
 }

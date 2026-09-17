@@ -35,8 +35,8 @@ grafana_admin_secret_ref = {
 loki_access_phase   = "network-bound"
 loki_rollback_floor = "network-bound"
 # loki_migration_acknowledgements = {
-#   pretransition  = { ...v3 record plus immutable owner_projection reference... }
-#   posttransition = { ...v3 record plus immutable owner_projection reference... }
+#   pretransition  = { ...v4 record plus immutable v2 owner_projection reference... }
+#   posttransition = { ...v4 record plus immutable v2 owner_projection reference... }
 # }
 # loki_identity_custody_receipt         = "<exact source-pinned SAI-03 receipt>"
 # loki_prometheus_health_exception_receipt = "<exact source-pinned exception receipt>"

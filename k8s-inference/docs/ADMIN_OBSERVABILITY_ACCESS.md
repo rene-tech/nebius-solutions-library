@@ -7,6 +7,15 @@ component's bounded Prometheus target, health, and data probes pass.
 
 ## SAI-22 access boundaries
 
+Independent review rejected exact commit
+`e72ac70a403a481567ff1fbc46c8993b3742b83b` / tree
+`9a3682460eae420cf776494979abf6958e3e9e00` as SOURCE NO-GO. Its five-minute
+check used plan-time `plantimestamp()`, its effective configuration digests
+were not compared with apply-time live content, and its payload check covered
+only `inventory.json` while admission consumed separate `image-*` keys. This
+successor preserves that negative evidence and version-bumps the incompatible
+authorization envelopes; the rejected contracts must never be accepted.
+
 The control plane treats application metrics and logs as different privilege
 classes. Global `VIEWER` principals may retain the bounded metrics and
 container-status views. Reading `/admin/api/v1/apps/{id}/logs` requires a
@@ -45,7 +54,7 @@ The transition order is executable in Terraform and must not be collapsed:
    and the control plane. A later source successor pins that separate envelope
    before phase and floor advance to `"enforced-dual-read"`.
 
-Each v3 stage envelope binds the exact cluster/run, deployed source
+Each v4 stage envelope binds the exact cluster/run, deployed source
 commit/tree, Loki/OTel/control-plane/Grafana Helm revisions, current
 Pod-template and image fingerprints, Grafana datasource UID/resourceVersion,
 and sealed marker-only proof. It is stored in a digest-named immutable
@@ -55,16 +64,25 @@ release-owner projection whose Ed25519 signature validates against the exact
 public trust-root digest pinned in source. The signing private key is never a
 Terraform input or Kubernetes workload secret.
 
-The release owner must reread current Helm storage Secret identity and payload
+The v2 release-owner projection must bind current Helm storage Secret identity and payload
 digests for Loki, OTel, Grafana, and the control plane; current Pod templates
 and images; the effective Loki configuration; the OTel writer configuration;
 the Grafana datasource Secret; control-plane reader configuration; the two
 cached marker objects; the payload inventory; and its admission policy and
 binding. Only non-secret identities and SHA-256 digests enter the projection.
-Its validity window is at most five minutes, it binds the exact
+Terraform creates an in-place authorization epoch with `timestamp()`, which is
+unknown during planning, and makes the projection, trust root, acknowledgement,
+workloads, markers, policy, binding, and inventory reads depend on that epoch.
+The external verifier therefore runs during apply even for a saved plan. It
+uses the exact run-owned kubeconfig and context to reread the signed Loki main
+and runtime ConfigMaps, OTel ConfigMap, Grafana datasource Secret, control-plane
+reader ConfigMap, and payload permit. Secret/configuration bytes remain in the
+verifier process; Terraform receives only current metadata and canonical
+content digests. Its validity window is at most five minutes, it binds the exact
 source-accepted authorization-intent digest, and Terraform compares it to
 current deployment objects, current OTel/Grafana `helm_release` revisions,
-cached-marker contents, and current admission objects. A configuration-only
+cached-marker contents, current admission objects, and the fresh apply-time
+content projection. A configuration-only
 change therefore changes the reread Loki runtime-config or datasource-content
 digest even when no Pod template changes. A replay, signer swap, cached-marker
 drift, Secret replacement, expired projection, or caller-selected trust root
@@ -120,11 +138,20 @@ runtime namespace and denies Pod create/update (including init and ephemeral
 containers) when an image is absent from that immutable permit. Admission does
 not retroactively validate existing Pods, so the independently signed owner
 projection must also bind the exhaustive current Pod/controller enumerations,
-the immutable permit, and the exact live policy and binding. Terraform-input
+the immutable permit, and the exact live policy and binding. Three distinct
+digests bind the raw `inventory.json`, the derived `image-<sha256>` key/value
+map, and the complete ConfigMap data map. Apply-time verification derives every
+permit from `inventory.json`, requires the exact key set with no additions or
+omissions, and compares all three digests to both the signed v2 projection and
+the source-pinned v4 acknowledgement. Terraform-input
 booleans and hashes are preparation data only: they cannot authorize Loki auth
 without the external signer, source-pinned public trust root, fresh live-state
 projection, and exact artifact custody. Evidence records marker absence only
-and must never contain customer payloads or raw runtime logs.
+and must never contain customer payloads or raw runtime logs. The admission
+policy constrains image references only. Command, args, environment, `envFrom`,
+volume, and mount behavior remain outside that admission expression and require
+the independently accepted external SAI-03 custody boundary, which is still
+source-pinned to `null` here.
 
 ## Terraform configuration
 
@@ -158,8 +185,8 @@ deployment = {
 loki_access_phase    = "network-bound"
 loki_rollback_floor  = "network-bound"
 # loki_migration_acknowledgements = {
-#   pretransition  = { ...v3 record and signed owner projection reference... }
-#   posttransition = { ...v3 record and signed owner projection reference... }
+#   pretransition  = { ...v4 record and signed v2 owner projection reference... }
+#   posttransition = { ...v4 record and signed v2 owner projection reference... }
 # }
 # loki_identity_custody_receipt            = "<source-pinned SAI-03 receipt>"
 # loki_prometheus_health_exception_receipt = "<source-pinned exception receipt>"
