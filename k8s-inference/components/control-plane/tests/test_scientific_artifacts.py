@@ -116,7 +116,15 @@ class FakeObjectStore:
     ) -> None:
         self.objects[storage_key] = (value, media_type, compression)
 
-    def _handle(self, method: str, storage_key: str, ttl: timedelta, headers: dict[str, str]) -> EphemeralHandle:
+    def _handle(
+        self,
+        method: str,
+        storage_key: str,
+        ttl: timedelta,
+        headers: dict[str, str],
+        *,
+        object_version_id: str | None = None,
+    ) -> EphemeralHandle:
         signed_headers = ";".join(sorted({"host", *headers}))
         query = (
             "X-Amz-Algorithm=AWS4-HMAC-SHA256"
@@ -126,6 +134,8 @@ class FakeObjectStore:
             f"&X-Amz-SignedHeaders={signed_headers}"
             f"&X-Amz-Signature={'a' * 64}"
         )
+        if object_version_id is not None:
+            query += f"&versionId={object_version_id}"
         handle = EphemeralHandle(
             method=method,  # type: ignore[arg-type]
             url=f"https://store.invalid/bucket/{storage_key}?{query}",
@@ -139,22 +149,35 @@ class FakeObjectStore:
     async def presign_upload(
         self,
         *,
+        tenant_id: str,
         storage_key: str,
         media_type: str,
         compression: ArtifactCompression | None,
         ttl: timedelta,
     ) -> EphemeralHandle:
-        headers = {"content-type": media_type, "if-none-match": "*"}
+        headers = {
+            "content-type": media_type,
+            "if-none-match": "*",
+            "x-amz-checksum-sha256": "test-checksum",
+        }
         if compression is not None:
             headers["content-encoding"] = compression.value
         return self._handle("PUT", storage_key, ttl, headers)
 
-    async def presign_download(self, *, storage_key: str, ttl: timedelta) -> EphemeralHandle:
-        return self._handle("GET", storage_key, ttl, {})
+    async def presign_download(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        ttl: timedelta,
+    ) -> EphemeralHandle:
+        return self._handle("GET", storage_key, ttl, {}, object_version_id=object_version_id)
 
     async def put_object(
         self,
         *,
+        tenant_id: str,
         storage_key: str,
         payload: bytes,
         media_type: str,
@@ -164,9 +187,21 @@ class FakeObjectStore:
         if self.rewrite is not None:
             payload = self.rewrite
         self.objects[storage_key] = (payload, media_type, compression)
-        return await self.inspect(storage_key, max_bytes=len(payload))
+        return await self.inspect(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id="test-version",
+            max_bytes=len(payload),
+        )
 
-    async def stream_object(self, storage_key: str, *, max_bytes: int | None = None):
+    async def stream_object(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        max_bytes: int | None = None,
+    ):
         if storage_key not in self.objects:
             raise ArtifactNotFoundError("stored object is absent")
         value = self.objects[storage_key][0]
@@ -175,7 +210,14 @@ class FakeObjectStore:
             if chunk:
                 yield chunk
 
-    async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject:
+    async def inspect(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str | None = None,
+        max_bytes: int | None = None,
+    ) -> VerifiedStoredObject:
         if self.override is not None:
             return self.override
         if storage_key not in self.objects:
@@ -187,9 +229,10 @@ class FakeObjectStore:
             size_bytes=len(value),
             media_type=media_type,
             compression=compression,
+            object_version_id=object_version_id or "test-version",
         )
 
-    async def delete(self, storage_key: str) -> None:
+    async def delete(self, *, tenant_id: str, storage_key: str, object_version_id: str) -> None:
         self.deleted.append(storage_key)
         self.objects.pop(storage_key, None)
 
@@ -983,6 +1026,7 @@ async def test_handles_are_short_lived_write_once_and_never_persisted() -> None:
     )
     assert begun.handle.write_once is True
     assert begun.handle.headers["if-none-match"] == "*"
+    assert begun.handle.headers["x-amz-checksum-sha256"]
     assert begun.handle.expires_at == NOW + DEFAULT_UPLOAD_HANDLE_TTL
     assert begun.handle.expires_at <= NOW + MAX_HANDLE_TTL + HANDLE_CLOCK_SKEW
     assert "X-Amz-Signature" not in repr(begun.handle)
@@ -1065,11 +1109,13 @@ def test_settings_reject_an_insecure_artifact_store() -> None:
             scientific_artifacts_enabled=True,
             artifact_store_endpoint="http://storage.invalid",
             artifact_store_verify_tls=True,
+            artifact_store_allow_static_tenant_credentials=True,
         )
     relaxed = Settings(
         scientific_artifacts_enabled=True,
         artifact_store_endpoint="http://127.0.0.1:9000",
         artifact_store_verify_tls=False,
+        artifact_store_allow_static_tenant_credentials=True,
         allow_non_cluster_urls=True,
     )
     assert "chemical/x-pdb" in relaxed.artifact_media_types_set()

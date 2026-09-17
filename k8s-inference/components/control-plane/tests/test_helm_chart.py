@@ -69,6 +69,10 @@ def helm_values() -> list[str]:
         "--set",
         f"config.authorizationServerUrl={TEST_AUTHORIZATION_URL}",
         "--set",
+        "scientificArtifacts.credentialBroker.url=https://artifact-broker.fs2-system.svc/v1/credentials:exchange",
+        "--set",
+        "scientificArtifacts.credentialBroker.caSecretName=fs2-artifact-credential-broker-ca",
+        "--set",
         "config.publicAuthorityMode=ip",
         "--set",
         "httpRoute.authorityMode=ip",
@@ -1050,8 +1054,8 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     assert environment["FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE"]["value"].endswith("/execution-map.json")
     assert environment["FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE"]["value"] == container["image"]
     assert environment["FS2_SCIENTIFIC_ARTIFACTS_ENABLED"]["value"] == "true"
-    assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"]["value"] == (
-        "/var/run/secrets/fs2-serve/artifact-store/credentials.json"
+    assert environment["FS2_ARTIFACT_CREDENTIAL_BROKER_URL"]["value"] == (
+        "https://artifact-broker.fs2-system.svc/v1/credentials:exchange"
     )
     assert "FS2_ARTIFACT_STORE_ACCESS_KEY" not in environment
     assert "FS2_ARTIFACT_STORE_SECRET_KEY" not in environment
@@ -3402,9 +3406,11 @@ def test_scientific_artifact_routes_are_absent_until_object_storage_is_configure
     mounts = {item["name"] for item in container["volumeMounts"]}
     assert "artifact-store" not in mounts
     assert "artifact-store-tenants" not in mounts
+    assert "artifact-credential-broker" not in mounts
     volumes = {item["name"] for item in deployment["spec"]["template"]["spec"]["volumes"]}
     assert "artifact-store" not in volumes
     assert "artifact-store-tenants" not in volumes
+    assert "artifact-credential-broker" not in volumes
 
 
 def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> None:
@@ -3427,19 +3433,31 @@ def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> N
     assert environment["FS2_ARTIFACT_DOWNLOAD_HANDLE_TTL_SECONDS"] == "120"
     assert "e+" not in "".join(value or "" for value in environment.values())
 
-    # Credentials arrive as a read-only projected file, never as an env value.
+    # The default pod carries only a bounded workload identity and broker CA;
+    # tenant storage credentials are returned per operation and never mounted.
     assert "FS2_ARTIFACT_STORE_ACCESS_KEY" not in environment
     assert "FS2_ARTIFACT_STORE_SECRET_KEY" not in environment
     assert environment["FS2_ARTIFACT_STORE_ALLOW_LEGACY_SHARED_CREDENTIALS"] == "false"
+    assert environment["FS2_ARTIFACT_STORE_ALLOW_STATIC_TENANT_CREDENTIALS"] == "false"
     assert "FS2_ARTIFACT_STORE_CREDENTIALS_FILE" not in environment
-    assert environment["FS2_ARTIFACT_STORE_TENANT_CREDENTIALS_DIR"] == (
-        "/var/run/secrets/fs2-serve/artifact-store-tenants"
+    assert "FS2_ARTIFACT_STORE_TENANT_CREDENTIALS_DIR" not in environment
+    assert environment["FS2_ARTIFACT_CREDENTIAL_BROKER_URL"] == (
+        "https://artifact-broker.fs2-system.svc/v1/credentials:exchange"
     )
-    volume = next(item for item in pod["volumes"] if item["name"] == "artifact-store-tenants")
-    assert volume["secret"]["defaultMode"] == 0o400
-    mount = next(item for item in container["volumeMounts"] if item["name"] == "artifact-store-tenants")
+    volume = next(item for item in pod["volumes"] if item["name"] == "artifact-credential-broker")
+    sources = volume["projected"]["sources"]
+    assert sources[0]["serviceAccountToken"] == {
+        "audience": "fs2-artifact-credential-broker",
+        "expirationSeconds": 600,
+        "path": "token",
+    }
+    assert sources[1]["secret"] == {
+        "name": "fs2-artifact-credential-broker-ca",
+        "items": [{"key": "ca.crt", "path": "ca.crt"}],
+    }
+    mount = next(item for item in container["volumeMounts"] if item["name"] == "artifact-credential-broker")
     assert mount["readOnly"] is True
-    assert mount["mountPath"] == "/var/run/secrets/fs2-serve/artifact-store-tenants"
+    assert mount["mountPath"] == "/var/run/secrets/fs2-serve/artifact-credential-broker"
 
     # The rendered environment must construct the real Settings object.
     from fs2_serve.settings import Settings
@@ -3480,6 +3498,28 @@ def test_legacy_shared_artifact_key_requires_an_explicit_break_glass_value() -> 
     )
     assert "artifact-store" in {item["name"] for item in pod["volumes"]}
     assert "artifact-store-tenants" not in {item["name"] for item in pod["volumes"]}
+    assert "artifact-credential-broker" not in {item["name"] for item in pod["volumes"]}
+
+
+def test_static_tenant_artifact_keys_require_an_explicit_break_glass_value() -> None:
+    deployment = _deployment(
+        render(
+            "--set",
+            "scientificArtifacts.enabled=true",
+            "--set",
+            "scientificArtifacts.allowStaticTenantCredentials=true",
+        )
+    )
+    pod = deployment["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    environment = {item["name"]: item.get("value") for item in container["env"]}
+
+    assert environment["FS2_ARTIFACT_STORE_ALLOW_STATIC_TENANT_CREDENTIALS"] == "true"
+    assert environment["FS2_ARTIFACT_STORE_TENANT_CREDENTIALS_DIR"] == (
+        "/var/run/secrets/fs2-serve/artifact-store-tenants"
+    )
+    assert "artifact-store-tenants" in {item["name"] for item in pod["volumes"]}
+    assert "artifact-credential-broker" not in {item["name"] for item in pod["volumes"]}
 
 
 def test_object_storage_egress_is_opt_in_and_scoped_to_tls() -> None:

@@ -1591,11 +1591,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e"},
-            "migrationSetSha256": {"const": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2"},
-            "migrationCount": {"const": 29},
+            "contractPayloadSha256": {"const": "0d9214768c396bcf4dbbf7ea342e00699ed20ac92181b1e7573ba9bb54b103a4"},
+            "migrationSetSha256": {"const": "2e8d7a9116a9577da5e6f5ab12961b193d418da7ba12aca1f875432a44abb84f"},
+            "migrationCount": {"const": 30},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0029_request_debug.sql"},
+            "lastMigrationVersion": {"const": "0030_scientific_artifact_object_versions.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false
@@ -2455,6 +2455,8 @@
         "addressingStyle",
         "verifyTls",
         "allowLegacySharedCredentials",
+        "allowStaticTenantCredentials",
+        "credentialBroker",
         "handleTtlSeconds",
         "uploadHandleTtlSeconds",
         "downloadHandleTtlSeconds",
@@ -2493,6 +2495,63 @@
         },
         "allowLegacySharedCredentials": {
           "type": "boolean"
+        },
+        "allowStaticTenantCredentials": {
+          "type": "boolean"
+        },
+        "credentialBroker": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "url",
+            "audience",
+            "tokenExpirationSeconds",
+            "caSecretName",
+            "caKey",
+            "timeoutSeconds",
+            "operationCredentialTtlSeconds",
+            "maxCredentialTtlSeconds"
+          ],
+          "properties": {
+            "url": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^$|^https://[^/?#]+/.+$"
+            },
+            "audience": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            },
+            "tokenExpirationSeconds": {
+              "type": "integer",
+              "minimum": 600,
+              "maximum": 3600
+            },
+            "caSecretName": {
+              "type": "string",
+              "maxLength": 253
+            },
+            "caKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            },
+            "timeoutSeconds": {
+              "type": "string",
+              "pattern": "^(0\\.[1-9][0-9]*|[1-9](\\.[0-9]+)?|[12][0-9](\\.[0-9]+)?|30(\\.0+)?)$"
+            },
+            "operationCredentialTtlSeconds": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 900
+            },
+            "maxCredentialTtlSeconds": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 900
+            }
+          }
         },
         "handleTtlSeconds": {
           "type": "integer",
@@ -2542,7 +2601,38 @@
             "type": "string"
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "not": {
+            "properties": {
+              "allowLegacySharedCredentials": {"const": true},
+              "allowStaticTenantCredentials": {"const": true}
+            },
+            "required": ["allowLegacySharedCredentials", "allowStaticTenantCredentials"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "enabled": {"const": true},
+              "allowLegacySharedCredentials": {"const": false},
+              "allowStaticTenantCredentials": {"const": false}
+            },
+            "required": ["enabled", "allowLegacySharedCredentials", "allowStaticTenantCredentials"]
+          },
+          "then": {
+            "properties": {
+              "credentialBroker": {
+                "properties": {
+                  "url": {"minLength": 1},
+                  "caSecretName": {"minLength": 1}
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   },
   "allOf": [

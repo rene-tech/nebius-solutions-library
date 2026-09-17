@@ -18,8 +18,9 @@ the path for a caller that can reach the object store directly, and remains
 the only path for an object above the inline ceiling. The inline path carries
 bytes through the gateway itself so an external customer needs nothing but the
 public API: an inline write is measured and matched against the immutable
-upload intent *before* any object is created, and an inline read is streamed
-in bounded chunks so a large result is never buffered.
+upload intent *before* any object is created, and a bounded inline read is
+fully verified before the first byte is released. Larger reads use a handle
+bound to the immutable provider object version.
 """
 
 from __future__ import annotations
@@ -83,6 +84,7 @@ STAGE_PATTERN = r"^[a-z][a-z0-9-]*$"
 SHARD_PATTERN = r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
 MEDIA_TYPE_PATTERN = r"^[a-z0-9][a-z0-9.+-]*/[A-Za-z0-9][A-Za-z0-9.+_-]*$"
 UID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+OBJECT_VERSION_PATTERN = r"^[A-Za-z0-9._~+=/-]+$"
 
 TenantId = Annotated[str, StringConstraints(min_length=1, max_length=120, pattern=TENANT_PATTERN)]
 StageId = Annotated[str, StringConstraints(min_length=1, max_length=63, pattern=STAGE_PATTERN)]
@@ -90,6 +92,10 @@ ShardId = Annotated[str, StringConstraints(min_length=1, max_length=253, pattern
 Sha256Digest = Annotated[str, StringConstraints(pattern=SHA256_PATTERN)]
 MediaType = Annotated[str, StringConstraints(min_length=3, max_length=128, pattern=MEDIA_TYPE_PATTERN)]
 Uid = Annotated[str, StringConstraints(min_length=1, max_length=128, pattern=UID_PATTERN)]
+ObjectVersionId = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=1024, pattern=OBJECT_VERSION_PATTERN),
+]
 
 
 class ScientificArtifactModel(StrictModel):
@@ -354,6 +360,7 @@ class VerifiedStoredObject(ScientificArtifactModel):
     size_bytes: int = Field(ge=0, le=MAX_ARTIFACT_BYTES)
     media_type: MediaType
     compression: ArtifactCompression | None = None
+    object_version_id: ObjectVersionId
 
 
 class ArtifactRecord(ScientificArtifactModel):
@@ -372,6 +379,10 @@ class ArtifactRecord(ScientificArtifactModel):
     media_type: MediaType
     compression: ArtifactCompression | None = None
     storage_key: str = Field(min_length=1, max_length=1024)
+    # Null is accepted only while reading historical rows. Every operation
+    # that can release bytes rejects such a row; new finalization requires and
+    # persists a concrete provider version.
+    object_version_id: ObjectVersionId | None = None
     access: ArtifactAccess
     retention_expires_at: AwareDatetime
     created_at: AwareDatetime
@@ -669,6 +680,30 @@ def artifact_storage_key(
     )
 
 
+def tenant_from_storage_key(storage_key: str) -> str:
+    """Return the tenant segment only for a canonical scientific object key."""
+
+    prefix = "scientific/v1/tenants/"
+    if not storage_key.startswith(prefix):
+        raise ArtifactNotFoundError("artifact storage scope is unavailable")
+    tenant_id, separator, remainder = storage_key.removeprefix(prefix).partition("/")
+    if (
+        not separator
+        or re.fullmatch(TENANT_PATTERN, tenant_id) is None
+        or len(tenant_id) > 120
+        or not remainder.startswith("operations/")
+    ):
+        raise ArtifactNotFoundError("artifact storage scope is unavailable")
+    return tenant_id
+
+
+def assert_tenant_storage_key(tenant_id: str, storage_key: str) -> None:
+    """Bind an independently authorized tenant to the key before credentials."""
+
+    if tenant_from_storage_key(storage_key) != tenant_id:
+        raise ArtifactNotFoundError("artifact storage scope is unavailable")
+
+
 def build_stage_manifest(
     *, operation_id: UUID, stage_id: str, entries: Sequence[tuple[ManifestEntryDraft, ArtifactRecord]]
 ) -> ScientificArtifactManifest:
@@ -740,7 +775,11 @@ def _validate_handle(
         or query_ttl != int(ttl.total_seconds())
         or re.fullmatch(r"[a-fA-F0-9]{64}", query["X-Amz-Signature"]) is None
         or "host" not in signed_headers
-        or (method == "PUT" and not {"content-type", "if-none-match"}.issubset(signed_headers))
+        or (
+            method == "PUT"
+            and not {"content-type", "if-none-match", "x-amz-checksum-sha256"}.issubset(signed_headers)
+        )
+        or (method == "GET" and not query.get("versionId"))
         or not frozenset(handle.headers).issubset(signed_headers)
         or any(
             not isinstance(key, str) or not key or not isinstance(value, str) for key, value in handle.headers.items()
@@ -765,7 +804,12 @@ def _same_upload_request(intent: UploadIntent, request: BeginArtifactUpload, sto
     )
 
 
-def _verify_object(intent: UploadIntent, verified: VerifiedStoredObject) -> None:
+def _verify_object(
+    intent: UploadIntent,
+    verified: VerifiedStoredObject,
+    *,
+    require_immutable_version: bool = True,
+) -> None:
     """Reject any stored object that differs from the declared expectation."""
 
     if verified.storage_key != intent.storage_key:
@@ -778,6 +822,8 @@ def _verify_object(intent: UploadIntent, verified: VerifiedStoredObject) -> None
         raise ArtifactVerificationError("stored object media type differs from the upload intent")
     if verified.compression != intent.compression:
         raise ArtifactVerificationError("stored object compression differs from the upload intent")
+    if require_immutable_version and verified.object_version_id in {"null", "unpersisted"}:
+        raise ArtifactVerificationError("stored object is not bound to an immutable provider version")
 
 
 def _verify_artifact_record(record: ArtifactRecord, verified: VerifiedStoredObject) -> None:
@@ -793,6 +839,29 @@ def _verify_artifact_record(record: ArtifactRecord, verified: VerifiedStoredObje
         raise ArtifactVerificationError("stored object media type differs from finalized metadata")
     if verified.compression != record.compression:
         raise ArtifactVerificationError("stored object compression differs from finalized metadata")
+    if record.object_version_id is None or verified.object_version_id != record.object_version_id:
+        raise ArtifactVerificationError("stored object version differs from finalized metadata")
+
+
+def _assert_record_scope(record: ArtifactRecord, authorized_tenant_id: str) -> None:
+    """Reject a repository/key substitution before choosing storage authority."""
+
+    if record.tenant_id != authorized_tenant_id:
+        raise ArtifactNotFoundError("artifact not found")
+    expected = artifact_storage_key(
+        tenant_id=authorized_tenant_id,
+        operation_id=record.operation_id,
+        stage_id=record.stage_id,
+        shard_id=record.shard_id,
+        attempt_id=record.attempt_id,
+        direction=record.direction,
+        digest=record.digest,
+    )
+    if record.storage_key != expected:
+        raise ArtifactVerificationError("artifact storage key differs from its authorized tenant scope")
+    assert_tenant_storage_key(authorized_tenant_id, record.storage_key)
+    if record.object_version_id is None:
+        raise ArtifactVerificationError("artifact has no immutable provider object version")
 
 
 class ArtifactObjectStorePort(Protocol):
@@ -801,28 +870,51 @@ class ArtifactObjectStorePort(Protocol):
     async def presign_upload(
         self,
         *,
+        tenant_id: str,
         storage_key: str,
         media_type: str,
         compression: ArtifactCompression | None,
         ttl: timedelta,
     ) -> EphemeralHandle: ...
 
-    async def presign_download(self, *, storage_key: str, ttl: timedelta) -> EphemeralHandle: ...
+    async def presign_download(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        ttl: timedelta,
+    ) -> EphemeralHandle: ...
 
     async def put_object(
         self,
         *,
+        tenant_id: str,
         storage_key: str,
         payload: bytes,
         media_type: str,
         compression: ArtifactCompression | None,
     ) -> VerifiedStoredObject: ...
 
-    def stream_object(self, storage_key: str, *, max_bytes: int | None = None) -> AsyncIterator[bytes]: ...
+    def stream_object(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        max_bytes: int | None = None,
+    ) -> AsyncIterator[bytes]: ...
 
-    async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject: ...
+    async def inspect(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str | None = None,
+        max_bytes: int | None = None,
+    ) -> VerifiedStoredObject: ...
 
-    async def delete(self, storage_key: str) -> None: ...
+    async def delete(self, *, tenant_id: str, storage_key: str, object_version_id: str) -> None: ...
 
 
 class DigestVerifyingArtifactObjectStore:
@@ -850,55 +942,111 @@ class DigestVerifyingArtifactObjectStore:
     async def presign_upload(
         self,
         *,
+        tenant_id: str,
         storage_key: str,
         media_type: str,
         compression: ArtifactCompression | None,
         ttl: timedelta,
     ) -> EphemeralHandle:
         return await self._store.presign_upload(
+            tenant_id=tenant_id,
             storage_key=storage_key,
             media_type=media_type,
             compression=compression,
             ttl=ttl,
         )
 
-    async def presign_download(self, *, storage_key: str, ttl: timedelta) -> EphemeralHandle:
-        return await self._store.presign_download(storage_key=storage_key, ttl=ttl)
+    async def presign_download(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        ttl: timedelta,
+    ) -> EphemeralHandle:
+        return await self._store.presign_download(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=object_version_id,
+            ttl=ttl,
+        )
 
     async def put_object(
         self,
         *,
+        tenant_id: str,
         storage_key: str,
         payload: bytes,
         media_type: str,
         compression: ArtifactCompression | None,
     ) -> VerifiedStoredObject:
         return await self._store.put_object(
+            tenant_id=tenant_id,
             storage_key=storage_key,
             payload=payload,
             media_type=media_type,
             compression=compression,
         )
 
-    def stream_object(self, storage_key: str, *, max_bytes: int | None = None) -> AsyncIterator[bytes]:
+    def stream_object(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        max_bytes: int | None = None,
+    ) -> AsyncIterator[bytes]:
         expected_digest = self._expected_digest(storage_key)
-        source = self._store.stream_object(storage_key, max_bytes=max_bytes)
+        source = self._store.stream_object(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=object_version_id,
+            max_bytes=max_bytes,
+        )
 
         async def verified_chunks() -> AsyncIterator[bytes]:
             measured = hashlib.sha256()
+            held: list[bytes] = []
+            total = 0
             async for chunk in source:
+                total += len(chunk)
+                if max_bytes is not None and total > max_bytes:
+                    raise ArtifactVerificationError("stored object exceeds finalized metadata")
                 measured.update(chunk)
-                yield chunk
+                held.append(chunk)
+            if max_bytes is not None and total != max_bytes:
+                raise ArtifactVerificationError("stored object size differs from finalized metadata")
             if measured.hexdigest() != expected_digest:
                 raise ArtifactVerificationError("stored object digest differs from its content address")
+            # No unverified byte crosses the service boundary. ``open_content``
+            # limits this path to the configured inline ceiling; large objects
+            # use an exact-version presigned handle instead.
+            for chunk in held:
+                yield chunk
 
         return verified_chunks()
 
-    async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject:
-        return await self._store.inspect(storage_key, max_bytes=max_bytes)
+    async def inspect(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str | None = None,
+        max_bytes: int | None = None,
+    ) -> VerifiedStoredObject:
+        return await self._store.inspect(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=object_version_id,
+            max_bytes=max_bytes,
+        )
 
-    async def delete(self, storage_key: str) -> None:
-        await self._store.delete(storage_key)
+    async def delete(self, *, tenant_id: str, storage_key: str, object_version_id: str) -> None:
+        await self._store.delete(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=object_version_id,
+        )
 
 
 class ArtifactRepository(Protocol):
@@ -951,7 +1099,7 @@ class ArtifactRepository(Protocol):
 
     async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge: ...
 
-    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[str]: ...
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[tuple[str, str]]: ...
 
 
 class ScientificArtifactControllerPort(Protocol):
@@ -1172,6 +1320,7 @@ class ScientificArtifactService:
         if not _same_upload_request(intent, request, storage_key):
             raise ArtifactConflictError("upload identity is already bound to different content")
         handle = await self._store.presign_upload(
+            tenant_id=request.tenant_id,
             storage_key=storage_key,
             media_type=request.media_type,
             compression=request.compression,
@@ -1252,10 +1401,12 @@ class ScientificArtifactService:
             size_bytes=len(content),
             media_type=intent.media_type,
             compression=intent.compression,
+            object_version_id="unpersisted",
         )
-        _verify_object(intent, measured)
+        _verify_object(intent, measured, require_immutable_version=False)
         self._check_policy(intent.media_type, measured.size_bytes)
         stored = await self._store.put_object(
+            tenant_id=intent.tenant_id,
             storage_key=intent.storage_key,
             payload=content,
             media_type=intent.media_type,
@@ -1268,19 +1419,27 @@ class ScientificArtifactService:
         return InlineUploadReceipt(upload=intent, stored=stored)
 
     async def open_content(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactContentStream:
-        """Stream one authorized artifact's exact bytes to its own tenant.
+        """Release one authorized small artifact only after exact verification.
 
-        The repository enforces the tenant boundary before any object is read,
-        and the returned chunks are the addressed bytes themselves, so the
-        caller's own SHA-256 of the stream must equal the artifact digest.
+        Tenant identity arrives separately from the storage key and is checked
+        again here before the broker can mint storage authority. The selected
+        provider object version is read once, buffered only up to the inline
+        ceiling, hashed, and released only after its complete digest matches.
         """
 
         record = await self._repository.get_artifact(artifact_id, tenant_id=tenant_id)
-        verified = await self._store.inspect(record.storage_key, max_bytes=record.size_bytes)
-        _verify_artifact_record(record, verified)
+        _assert_record_scope(record, tenant_id)
+        if record.size_bytes > self._max_inline_content_bytes:
+            raise ArtifactContentTooLargeError("artifact exceeds the inline content ceiling")
+        assert record.object_version_id is not None
         return ArtifactContentStream(
             artifact=record,
-            chunks=self._store.stream_object(record.storage_key, max_bytes=record.size_bytes),
+            chunks=self._store.stream_object(
+                tenant_id=tenant_id,
+                storage_key=record.storage_key,
+                object_version_id=record.object_version_id,
+                max_bytes=record.size_bytes,
+            ),
         )
 
     async def finalize_upload(self, request: FinalizeArtifactUpload) -> ArtifactRecord:
@@ -1290,7 +1449,9 @@ class ScientificArtifactService:
         if intent.artifact_id is not None:
             return await self._repository.get_artifact(intent.artifact_id, tenant_id=intent.tenant_id)
         verified = await self._store.inspect(
-            intent.storage_key, max_bytes=min(self._max_artifact_bytes, intent.expected_size_bytes)
+            tenant_id=intent.tenant_id,
+            storage_key=intent.storage_key,
+            max_bytes=min(self._max_artifact_bytes, intent.expected_size_bytes),
         )
         _verify_object(intent, verified)
         self._check_policy(verified.media_type, verified.size_bytes)
@@ -1300,10 +1461,15 @@ class ScientificArtifactService:
         self, artifact_id: UUID, *, tenant_id: str, handle_ttl: timedelta | None = None
     ) -> ArtifactDownload:
         record = await self._repository.get_artifact(artifact_id, tenant_id=tenant_id)
-        verified = await self._store.inspect(record.storage_key, max_bytes=record.size_bytes)
-        _verify_artifact_record(record, verified)
+        _assert_record_scope(record, tenant_id)
         lifetime = self._download_ttl(handle_ttl)
-        handle = await self._store.presign_download(storage_key=record.storage_key, ttl=lifetime)
+        assert record.object_version_id is not None
+        handle = await self._store.presign_download(
+            tenant_id=tenant_id,
+            storage_key=record.storage_key,
+            object_version_id=record.object_version_id,
+            ttl=lifetime,
+        )
         _validate_handle(handle, method="GET", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
         return ArtifactDownload(artifact=record, handle=handle)
 
@@ -1435,8 +1601,14 @@ class ScientificArtifactService:
         now = self._clock()
         purges: list[RetentionPurge] = []
         for operation_id, tenant_id, _ in await self._repository.claim_expired(now=now, limit=limit):
-            for storage_key in await self._repository.purge_keys(operation_id, tenant_id=tenant_id):
-                await self._store.delete(storage_key)
+            for storage_key, object_version_id in await self._repository.purge_keys(
+                operation_id, tenant_id=tenant_id
+            ):
+                await self._store.delete(
+                    tenant_id=tenant_id,
+                    storage_key=storage_key,
+                    object_version_id=object_version_id,
+                )
             try:
                 purges.append(await self._repository.purge_operation(operation_id, tenant_id=tenant_id, now=now))
             except ArtifactConflictError:
@@ -1710,6 +1882,7 @@ class MemoryArtifactRepository:
                 media_type=verified.media_type,
                 compression=verified.compression,
                 storage_key=verified.storage_key,
+                object_version_id=verified.object_version_id,
                 access=intent.access,
                 retention_expires_at=now + (attempt.retention_expires_at - attempt.started_at),
                 created_at=now,
@@ -1879,12 +2052,14 @@ class MemoryArtifactRepository:
                 if record.retention_expires_at <= now and record.operation_id not in self._purged
             ][: max(1, limit)]
 
-    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[str]:
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[tuple[str, str]]:
         async with self._lock:
             return [
-                record.storage_key
+                (record.storage_key, record.object_version_id)
                 for record in self._artifacts.values()
-                if record.operation_id == operation_id and record.tenant_id == tenant_id
+                if record.operation_id == operation_id
+                and record.tenant_id == tenant_id
+                and record.object_version_id is not None
             ]
 
     async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge:
@@ -2000,6 +2175,7 @@ def _artifact_from_row(row: Mapping[str, Any]) -> ArtifactRecord:
         media_type=row["media_type"],
         compression=ArtifactCompression(row["compression"]) if row["compression"] else None,
         storage_key=row["storage_key"],
+        object_version_id=row["object_version_id"],
         access=_access_from_row(row),
         retention_expires_at=row["retention_expires_at"],
         created_at=row["created_at"],
@@ -2050,7 +2226,8 @@ _ATTEMPT_COLUMNS = """attempt_id,operation_id,tenant_id,stage_id,shard_id,attemp
     kueue_workload_uid,k8s_job_uid,pod_uids,node_uids,gpu_uuids,started_at,completed_at,
     retention_expires_at"""
 _ARTIFACT_COLUMNS = """id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
-    media_type,compression,storage_key,access_profile,access_receipt_digest,retention_expires_at,created_at"""
+    media_type,compression,storage_key,object_version_id,access_profile,access_receipt_digest,
+    retention_expires_at,created_at"""
 _UPLOAD_COLUMNS = """id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,expected_digest,
     expected_size_bytes,media_type,compression,storage_key,access_profile,access_receipt_digest,
     artifact_id,begun_at,finalized_at"""
@@ -2342,10 +2519,10 @@ class PostgresArtifactRepository:
                     f"""
                     INSERT INTO fs2_scientific_artifacts
                         (id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
-                         media_type,compression,storage_key,access_profile,access_receipt_digest,
-                         retention_expires_at,created_at)
-                    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,clock_timestamp()+$15,
-                           clock_timestamp())
+                         media_type,compression,storage_key,object_version_id,access_profile,
+                         access_receipt_digest,retention_expires_at,created_at)
+                    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+                           clock_timestamp()+$16,clock_timestamp())
                     RETURNING {_ARTIFACT_COLUMNS}
                     """,
                     artifact_id,
@@ -2360,6 +2537,7 @@ class PostgresArtifactRepository:
                     verified.media_type,
                     verified.compression.value if verified.compression else None,
                     verified.storage_key,
+                    verified.object_version_id,
                     intent.access.profile.value,
                     intent.access.receipt_digest,
                     window,
@@ -2651,13 +2829,14 @@ class PostgresArtifactRepository:
         )
         return [(row["operation_id"], row["tenant_id"], row["retention_expires_at"]) for row in rows]
 
-    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[str]:
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[tuple[str, str]]:
         rows = await self.pool.fetch(
-            "SELECT storage_key FROM fs2_scientific_artifacts WHERE operation_id=$1 AND tenant_id=$2",
+            "SELECT storage_key,object_version_id FROM fs2_scientific_artifacts "
+            "WHERE operation_id=$1 AND tenant_id=$2 AND object_version_id IS NOT NULL",
             operation_id,
             tenant_id,
         )
-        return [str(row["storage_key"]) for row in rows]
+        return [(str(row["storage_key"]), str(row["object_version_id"])) for row in rows]
 
     async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge:
         """Delete retired rows under the one session flag the triggers accept."""

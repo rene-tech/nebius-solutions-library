@@ -4313,7 +4313,7 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
         def __init__(self) -> None:
             self.objects: dict[str, tuple[bytes, str]] = {}
 
-        async def presign_upload(self, *, storage_key, media_type, compression, ttl):
+        async def presign_upload(self, *, tenant_id, storage_key, media_type, compression, ttl):
             del compression
             return EphemeralHandle(
                 method="PUT",
@@ -4322,15 +4322,19 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
                     "&X-Amz-Credential=test%2F20260902%2Ftest-1%2Fs3%2Faws4_request"
                     "&X-Amz-Date=20260902T200000Z"
                     f"&X-Amz-Expires={int(ttl.total_seconds())}"
-                    "&X-Amz-SignedHeaders=content-type%3Bhost%3Bif-none-match"
+                    "&X-Amz-SignedHeaders=content-type%3Bhost%3Bif-none-match%3Bx-amz-checksum-sha256"
                     f"&X-Amz-Signature={'a' * 64}"
                 ),
                 expires_at=now + ttl,
                 write_once=True,
-                headers={"content-type": media_type, "if-none-match": "*"},
+                headers={
+                    "content-type": media_type,
+                    "if-none-match": "*",
+                    "x-amz-checksum-sha256": "test-checksum",
+                },
             )
 
-        async def presign_download(self, *, storage_key, ttl):
+        async def presign_download(self, *, tenant_id, storage_key, object_version_id, ttl):
             return EphemeralHandle(
                 method="GET",
                 url=(
@@ -4340,11 +4344,19 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
                     f"&X-Amz-Expires={int(ttl.total_seconds())}"
                     "&X-Amz-SignedHeaders=host"
                     f"&X-Amz-Signature={'b' * 64}"
+                    f"&versionId={object_version_id}"
                 ),
                 expires_at=now + ttl,
             )
 
-        async def inspect(self, storage_key, *, max_bytes=None):
+        async def inspect(
+            self,
+            *,
+            tenant_id,
+            storage_key,
+            object_version_id=None,
+            max_bytes=None,
+        ):
             value, media_type = self.objects[storage_key]
             assert max_bytes is None or len(value) <= max_bytes
             return VerifiedStoredObject(
@@ -4352,9 +4364,10 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
                 digest="sha256:" + hashlib.sha256(value).hexdigest(),
                 size_bytes=len(value),
                 media_type=media_type,
+                object_version_id=object_version_id or "test-version",
             )
 
-        async def delete(self, storage_key):
+        async def delete(self, *, tenant_id, storage_key, object_version_id):
             self.objects.pop(storage_key, None)
 
     class ContentReader:

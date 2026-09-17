@@ -308,13 +308,13 @@ secrets:
   admin:
     name: fs2-serve-admin
     key: token
-  # JSON object with access_key_id and secret_access_key. Only consumed when
-  # scientificArtifacts.enabled is true.
+  # Break-glass shared JSON credential. Only consumed when the artifact plane
+  # and allowLegacySharedCredentials are both explicitly enabled.
   artifactStore:
     name: fs2-serve-artifact-store
     key: credentials.json
-  # One JSON document per tenant, keyed as <tenant-id>.json. Each document must
-  # carry a distinct S3 identity and may select a tenant-specific bucket.
+  # Break-glass static documents, keyed as <tenant-id>.json. Mounting all of
+  # them into one process does not satisfy SAI-19 production acceptance.
   artifactStoreTenants:
     name: fs2-serve-artifact-store-tenants
 
@@ -368,11 +368,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e
-    migrationSetSha256: 9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2
-    migrationCount: 29
+    contractPayloadSha256: 0d9214768c396bcf4dbbf7ea342e00699ed20ac92181b1e7573ba9bb54b103a4
+    migrationSetSha256: 2e8d7a9116a9577da5e6f5ab12961b193d418da7ba12aca1f875432a44abb84f
+    migrationCount: 30
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0029_request_debug.sql
+    lastMigrationVersion: 0030_scientific_artifact_object_versions.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:
@@ -717,9 +717,23 @@ scientificArtifacts:
   region: eu-north1
   addressingStyle: path
   verifyTls: true
-  # Break-glass rollback only. Production uses artifactStoreTenants and refuses
-  # to start if the tenant credential set is absent or reuses an access key.
+  # Break-glass rollback only. Production uses the independent credential
+  # broker below and refuses mutually enabled static modes.
   allowLegacySharedCredentials: false
+  # Transitional break-glass only. This still places every tenant credential
+  # in one process and therefore cannot satisfy SAI-19 acceptance.
+  allowStaticTenantCredentials: false
+  # Default production path. The pod carries only a projected workload token;
+  # the independent broker returns one short-lived tenant/action credential.
+  credentialBroker:
+    url: ""
+    audience: fs2-artifact-credential-broker
+    tokenExpirationSeconds: 600
+    caSecretName: ""
+    caKey: ca.crt
+    timeoutSeconds: "5"
+    operationCredentialTtlSeconds: 120
+    maxCredentialTtlSeconds: 900
   handleTtlSeconds: 600
   uploadHandleTtlSeconds: 120
   downloadHandleTtlSeconds: 120

@@ -3501,8 +3501,8 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
             """
             INSERT INTO fs2_scientific_artifacts(
                 id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
-                media_type,storage_key,access_profile,retention_expires_at
-            ) VALUES($1,$2,$3,$4,'input','-','input',$5,1,'application/json',$6,'public',
+                media_type,storage_key,object_version_id,access_profile,retention_expires_at
+            ) VALUES($1,$2,$3,$4,'input','-','input',$5,1,'application/json',$6,'test-version','public',
                 clock_timestamp()+interval '1 day')
             """,
             input_artifact_id,
@@ -3608,8 +3608,8 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
             """
             INSERT INTO fs2_scientific_artifacts(
                 id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
-                media_type,storage_key,access_profile,retention_expires_at
-            ) VALUES($1,$2,$3,$4,'input','-','input',$5,1,'application/json',$6,'public',
+                media_type,storage_key,object_version_id,access_profile,retention_expires_at
+            ) VALUES($1,$2,$3,$4,'input','-','input',$5,1,'application/json',$6,'test-version','public',
                 clock_timestamp()+interval '1 day')
             """,
             input_artifact_id,

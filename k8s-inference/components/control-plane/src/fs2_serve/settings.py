@@ -269,6 +269,22 @@ class Settings(BaseSettings):
     artifact_store_credentials_file: Path = Path("/var/run/secrets/fs2-serve/artifact-store/credentials.json")
     artifact_store_tenant_credentials_dir: Path = Path("/var/run/secrets/fs2-serve/artifact-store-tenants")
     artifact_store_allow_legacy_shared_credentials: bool = False
+    artifact_store_allow_static_tenant_credentials: bool = False
+    artifact_credential_broker_url: str = Field(default="", max_length=2048)
+    artifact_credential_broker_audience: str = Field(
+        default="fs2-artifact-credential-broker",
+        min_length=1,
+        max_length=253,
+    )
+    artifact_credential_broker_token_file: Path = Path(
+        "/var/run/secrets/fs2-serve/artifact-credential-broker/token"
+    )
+    artifact_credential_broker_ca_file: Path = Path(
+        "/var/run/secrets/fs2-serve/artifact-credential-broker/ca.crt"
+    )
+    artifact_credential_broker_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
+    artifact_credential_broker_operation_ttl_seconds: int = Field(default=120, ge=30, le=900)
+    artifact_credential_broker_max_ttl_seconds: int = Field(default=900, ge=30, le=900)
     artifact_handle_ttl_seconds: int = Field(default=600, ge=30, le=900)
     artifact_upload_handle_ttl_seconds: int = Field(default=120, ge=30, le=300)
     artifact_download_handle_ttl_seconds: int = Field(default=120, ge=30, le=300)
@@ -385,6 +401,35 @@ class Settings(BaseSettings):
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed max_request_bytes")
             if self.artifact_inline_content_max_bytes > self.artifact_max_bytes:
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed artifact_max_bytes")
+            static_modes = (
+                self.artifact_store_allow_legacy_shared_credentials,
+                self.artifact_store_allow_static_tenant_credentials,
+            )
+            if sum(static_modes) > 1:
+                raise ValueError("artifact store static credential modes are mutually exclusive")
+            if not any(static_modes):
+                try:
+                    broker = urlsplit(self.artifact_credential_broker_url)
+                    broker_port = broker.port
+                except ValueError as error:
+                    raise ValueError("artifact credential broker URL is invalid") from error
+                if (
+                    broker.scheme != "https"
+                    or broker.hostname is None
+                    or broker.username is not None
+                    or broker.password is not None
+                    or broker.path in {"", "/"}
+                    or broker.query
+                    or broker.fragment
+                ):
+                    raise ValueError("artifact credential broker must be an exact HTTPS endpoint")
+                if broker_port is not None and not 1 <= broker_port <= 65535:
+                    raise ValueError("artifact credential broker port is invalid")
+                if (
+                    self.artifact_credential_broker_operation_ttl_seconds
+                    > self.artifact_credential_broker_max_ttl_seconds
+                ):
+                    raise ValueError("artifact broker operation lifetime cannot exceed its maximum")
         database_roles = {
             self.reporting_database_role,
             self.runtime_database_role,

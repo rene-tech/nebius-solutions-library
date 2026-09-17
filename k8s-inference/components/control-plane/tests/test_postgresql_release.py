@@ -37,9 +37,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0029_request_debug.sql",
-        "migration_count": 29,
-        "migration_set_sha256": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2",
+        "last_migration_version": "0030_scientific_artifact_object_versions.sql",
+        "migration_count": 30,
+        "migration_set_sha256": "2e8d7a9116a9577da5e6f5ab12961b193d418da7ba12aca1f875432a44abb84f",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -47,6 +47,17 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     assert migrations[0]["version"] == receipt["first_migration_version"]
     assert migrations[-1]["version"] == receipt["last_migration_version"]
     assert [migration["ordinal"] for migration in migrations] == list(range(1, receipt["migration_count"] + 1))
+
+
+def test_artifact_object_version_migration_is_additive_and_fail_closed_for_new_rows() -> None:
+    migration = (MIGRATIONS / "0030_scientific_artifact_object_versions.sql").read_text(encoding="utf-8")
+    normalized = " ".join(migration.split())
+
+    assert "ADD COLUMN object_version_id text" in normalized
+    assert "object_version_id IS NOT NULL" in normalized
+    assert "NOT VALID" in normalized
+    assert "DROP " not in normalized
+    assert "DELETE " not in normalized
 
 
 def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -> None:

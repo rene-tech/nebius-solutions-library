@@ -682,8 +682,8 @@ async def test_real_postgres_admin_projection_reads_durable_controller_and_key_a
             """
             INSERT INTO fs2_scientific_artifacts(
                 id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,
-                size_bytes,media_type,storage_key,access_profile,retention_expires_at
-            ) VALUES($1,$2,$3,$4,'input','-','input',$5,128,'application/json',$6,'public',
+                size_bytes,media_type,storage_key,object_version_id,access_profile,retention_expires_at
+            ) VALUES($1,$2,$3,$4,'input','-','input',$5,128,'application/json',$6,'test-version','public',
                 $7::timestamptz + interval '1 day')
             """,
             input_artifact_id,

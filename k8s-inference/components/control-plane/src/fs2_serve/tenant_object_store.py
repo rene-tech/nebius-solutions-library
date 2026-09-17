@@ -1,10 +1,10 @@
-"""Tenant-isolated S3 artifact storage.
+"""Break-glass static tenant S3 identities.
 
-Each configured tenant receives a distinct S3 identity.  The dispatcher derives
-the tenant only from the service-owned canonical storage key and refuses unknown
-or malformed prefixes before an SDK client is selected.  Credential documents
-are mounted files rather than environment values and are never included in
-errors or representations.
+Production uses the per-request workload-identity broker.  This rollback-only
+adapter accepts an independently authorized tenant alongside the canonical key,
+requires those scopes to agree before selecting a client, and refuses unknown
+or malformed tenants.  Credential documents are mounted files rather than
+environment values and are never included in errors or representations.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from .scientific_artifacts import (
     ArtifactNotFoundError,
     EphemeralHandle,
     VerifiedStoredObject,
+    assert_tenant_storage_key,
 )
 from .scientific_object_store import ObjectStoreConfig, S3ArtifactObjectStore
 
@@ -68,8 +69,8 @@ class TenantScopedS3ArtifactObjectStore:
             raise ValueError("tenant artifact-store identity is not canonical")
         self._stores = MappingProxyType(dict(stores))
 
-    def _store(self, storage_key: str) -> S3ArtifactObjectStore:
-        tenant_id = tenant_from_storage_key(storage_key)
+    def _store(self, tenant_id: str, storage_key: str) -> S3ArtifactObjectStore:
+        assert_tenant_storage_key(tenant_id, storage_key)
         try:
             return self._stores[tenant_id]
         except KeyError:
@@ -78,44 +79,88 @@ class TenantScopedS3ArtifactObjectStore:
     async def presign_upload(
         self,
         *,
+        tenant_id: str,
         storage_key: str,
         media_type: str,
         compression: ArtifactCompression | None,
         ttl: timedelta,
     ) -> EphemeralHandle:
-        return await self._store(storage_key).presign_upload(
+        return await self._store(tenant_id, storage_key).presign_upload(
+            tenant_id=tenant_id,
             storage_key=storage_key,
             media_type=media_type,
             compression=compression,
             ttl=ttl,
         )
 
-    async def presign_download(self, *, storage_key: str, ttl: timedelta) -> EphemeralHandle:
-        return await self._store(storage_key).presign_download(storage_key=storage_key, ttl=ttl)
+    async def presign_download(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        ttl: timedelta,
+    ) -> EphemeralHandle:
+        return await self._store(tenant_id, storage_key).presign_download(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=object_version_id,
+            ttl=ttl,
+        )
 
     async def put_object(
         self,
         *,
+        tenant_id: str,
         storage_key: str,
         payload: bytes,
         media_type: str,
         compression: ArtifactCompression | None,
     ) -> VerifiedStoredObject:
-        return await self._store(storage_key).put_object(
+        return await self._store(tenant_id, storage_key).put_object(
+            tenant_id=tenant_id,
             storage_key=storage_key,
             payload=payload,
             media_type=media_type,
             compression=compression,
         )
 
-    def stream_object(self, storage_key: str, *, max_bytes: int | None = None) -> AsyncIterator[bytes]:
-        return self._store(storage_key).stream_object(storage_key, max_bytes=max_bytes)
+    def stream_object(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        max_bytes: int | None = None,
+    ) -> AsyncIterator[bytes]:
+        return self._store(tenant_id, storage_key).stream_object(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=object_version_id,
+            max_bytes=max_bytes,
+        )
 
-    async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject:
-        return await self._store(storage_key).inspect(storage_key, max_bytes=max_bytes)
+    async def inspect(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str | None = None,
+        max_bytes: int | None = None,
+    ) -> VerifiedStoredObject:
+        return await self._store(tenant_id, storage_key).inspect(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=object_version_id,
+            max_bytes=max_bytes,
+        )
 
-    async def delete(self, storage_key: str) -> None:
-        await self._store(storage_key).delete(storage_key)
+    async def delete(self, *, tenant_id: str, storage_key: str, object_version_id: str) -> None:
+        await self._store(tenant_id, storage_key).delete(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=object_version_id,
+        )
 
     async def close(self) -> None:
         for store in self._stores.values():

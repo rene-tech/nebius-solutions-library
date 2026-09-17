@@ -47,6 +47,11 @@ from .apps_scientific import (
     AppScientificScheduling,
     ScientificAppsInventory,
 )
+from .artifact_credential_broker import (
+    ArtifactCredentialBroker,
+    ArtifactCredentialBrokerConfig,
+    BrokeredS3ArtifactObjectStore,
+)
 from .artifact_inputs import ArtifactInputMaterializer
 from .artifact_outputs import ServingOutputArtifactizer
 from .auth import OperatorSessionService, PepperRing, TokenService
@@ -280,7 +285,7 @@ def _artifact_service(
                 max_stream_bytes=settings.artifact_max_bytes,
             )
         )
-    else:
+    elif settings.artifact_store_allow_static_tenant_credentials:
         object_store = load_tenant_object_store(
             settings.artifact_store_tenant_credentials_dir,
             default_endpoint_url=settings.artifact_store_endpoint,
@@ -288,6 +293,25 @@ def _artifact_service(
             default_region=settings.artifact_store_region,
             default_addressing_style=settings.artifact_store_addressing_style,
             default_verify_tls=settings.artifact_store_verify_tls,
+            max_stream_bytes=settings.artifact_max_bytes,
+        )
+    else:
+        object_store = BrokeredS3ArtifactObjectStore(
+            ArtifactCredentialBroker(
+                ArtifactCredentialBrokerConfig(
+                    url=settings.artifact_credential_broker_url,
+                    audience=settings.artifact_credential_broker_audience,
+                    token_file=settings.artifact_credential_broker_token_file,
+                    ca_file=settings.artifact_credential_broker_ca_file,
+                    timeout_seconds=settings.artifact_credential_broker_timeout_seconds,
+                    operation_credential_ttl_seconds=(
+                        settings.artifact_credential_broker_operation_ttl_seconds
+                    ),
+                    max_credential_ttl_seconds=settings.artifact_credential_broker_max_ttl_seconds,
+                    max_stream_bytes=settings.artifact_max_bytes,
+                )
+            ),
+            operation_credential_ttl_seconds=settings.artifact_credential_broker_operation_ttl_seconds,
             max_stream_bytes=settings.artifact_max_bytes,
         )
     return ScientificArtifactService(

@@ -7,9 +7,11 @@ expensive to rebuild, this one holds tenant result bytes with a different
 retention window and a different blast radius. Neither store's bucket, policy
 or key is ever widened to serve the other.
 
-The store is independently deployable. Enabling it creates a bucket, an
-identity and a key and configures the control plane; it does not require, and
-does not enable, staged batch execution or academic execution.
+The historical store module is independently deployable. Enabling it creates a
+bucket, one shared identity and one key and configures the control plane; it
+does not require, and does not enable, staged batch execution or academic
+execution. That identity model is preserved as prior evidence but is not an
+accepted SAI-19 production configuration.
 
 ## What Terraform creates
 
@@ -71,15 +73,22 @@ access-key ID; `credential_generation` lets an operator force a rewrite without
 touching the key. Write-only Secret data needs Terraform 1.11 or newer, which
 the workloads stage now requires.
 
-Workers never mount that Secret. The control plane is its only consumer and
-hands workers short-lived signed handles bounded by `handle_ttl_seconds`.
+Workers never mount that Secret. Historically the control plane was its only
+consumer and handed workers short-lived signed handles. That still exposed all
+tenants if the control-plane process was compromised.
 
-The SAI-19 source successor adds a fail-closed tenant-identity directory and
-separate two-minute upload/download handle defaults in the control plane. The
-current Terraform contract in this directory remains the historical shared-key
-producer and is therefore not promotion evidence for that successor. See
+The SAI-19 source successor instead defaults to an external broker: the control
+plane mounts only projected workload identity and obtains one uncached,
+tenant/action-scoped session credential per storage operation. It also records
+the immutable provider version at finalization, pins downloads and reads to that
+version, and separates bounded verify-before-release inline reads from large
+exact-version downloads. The current Terraform contract in this directory
+remains the historical shared-key producer and supplies neither the broker nor
+authoritative tenant/action IAM. It is therefore an explicit integration
+blocker, not promotion evidence. See
 `../components/control-plane/docs/artifact-store-credential-rotation.md` for the
-mandatory tenant-policy, rotation, object-lock, integration, and rollback gate.
+mandatory broker policy, rotation, version-backfill, object-lock, integration
+and rollback gates.
 
 `egress_cidrs` accepts only exact host addresses, `/32` or `/128`. The control
 plane needs to reach the object-storage endpoint itself, not a subnet, and a

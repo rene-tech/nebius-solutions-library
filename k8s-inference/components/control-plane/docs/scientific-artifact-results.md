@@ -49,9 +49,10 @@ are what the canonical result reports per attempt.
    short-lived write-once handle. Reusing the same `upload_id` returns the same
    reservation, so a client that timed out can retry safely.
 3. **Finalize.** The service streams the stored object back from the gateway,
-   recomputes its digest, and refuses to publish unless digest, size, media type
-   and compression all match the declared intent. Finalize is idempotent:
-   concurrent callers get one artifact and one durable event.
+   recomputes its digest, captures the provider's immutable object version, and
+   refuses to publish unless digest, size, media type and compression all match
+   the declared intent. Finalize is idempotent: concurrent callers get one
+   artifact and one durable event.
 4. **Close the attempt** with its terminal outcome and observed GPU lifecycle.
 5. **Commit the stage.** Exactly one `scientific-artifact-manifest/v1` per
    `(operation, stage)`. The commit must name precisely the stage's succeeded
@@ -81,10 +82,10 @@ the trigger is even reached.
 
 Handles are presigned by the AWS SDK, so they carry a real SigV4 signature that
 an unmodified S3-compatible gateway accepts. The upload signature binds the
-object key **and** the declared content type, so a client that uploads different
-bytes under a different media type is rejected by the gateway rather than only
-by finalize. It also binds `If-None-Match: *`, so a replay cannot replace an
-object that already occupies the content address.
+object key, declared content type, content-address SHA-256 checksum and
+`If-None-Match: *`; a replay cannot replace an object that already occupies the
+content address. Download signatures bind the exact immutable version recorded
+at finalization, never the mutable latest object at the key.
 
 New upload and download handles default to two minutes, are capped at five
 minutes, and are never persisted. The former ten-minute setting remains only as
@@ -111,9 +112,11 @@ object it actually persisted, so a store that rewrote or re-typed the body is
 caught at write time rather than surfacing later as a puzzling finalize
 failure. A finalized content address is write-once and answers `409`.
 
-`GET /v1/artifacts/{artifact_id}/content` streams one artifact's exact bytes to
-the tenant that owns it, in bounded chunks, so a large result is never
-buffered. The response carries `x-fs2-artifact-sha256`, `x-fs2-artifact-id` and
+`GET /v1/artifacts/{artifact_id}/content` reads one small artifact's exact
+finalized version for the tenant that owns it. It buffers only within the
+configured inline ceiling, verifies the complete digest and size before
+releasing the first byte, then emits bounded chunks. The response carries
+`x-fs2-artifact-sha256`, `x-fs2-artifact-id` and
 `x-fs2-artifact-size-bytes`, and the body is the addressed object itself: the
 SHA-256 the client computes over what it received must equal that header.
 `content-encoding` is deliberately **not** set for a compressed artifact,
@@ -164,15 +167,21 @@ absent credentials.
 | `scientificArtifacts.inlineContentMaxBytes` | `FS2_ARTIFACT_INLINE_CONTENT_MAX_BYTES` | Gateway byte ceiling; at most `max_request_bytes` |
 | `scientificArtifacts.retentionSeconds` | `FS2_ARTIFACT_RETENTION_SECONDS` | |
 | `scientificArtifacts.mediaTypes` | `FS2_ARTIFACT_MEDIA_TYPES` | Exact allowlist |
-| `secrets.artifactStoreTenants` | `FS2_ARTIFACT_STORE_TENANT_CREDENTIALS_DIR` | One mounted `0400` JSON file per tenant |
+| `scientificArtifacts.credentialBroker.url` | `FS2_ARTIFACT_CREDENTIAL_BROKER_URL` | Exact external HTTPS exchange endpoint |
+| `scientificArtifacts.credentialBroker.audience` | `FS2_ARTIFACT_CREDENTIAL_BROKER_AUDIENCE` | Projected workload-token audience |
+| `scientificArtifacts.credentialBroker.caSecretName` | mounted CA file | Private trust anchor for the broker |
+| `scientificArtifacts.allowStaticTenantCredentials` | `FS2_ARTIFACT_STORE_ALLOW_STATIC_TENANT_CREDENTIALS` | Break-glass only; mounts all tenant credentials |
+| `secrets.artifactStoreTenants` | `FS2_ARTIFACT_STORE_TENANT_CREDENTIALS_DIR` | Static rollback documents; never the production default |
 
-Each tenant credential document contains `tenant_id`, a distinct
-`access_key_id`/`secret_access_key`, and optionally a short-lived
-`session_token` plus tenant-specific connection fields. They are projected
-read-only into the pod and never passed as environment values. See
-`artifact-store-credential-rotation.md` for the provider-policy gate, object-lock
-decision, no-downtime rotation, and rollback procedure. The legacy shared key is
-accepted only when `scientificArtifacts.allowLegacySharedCredentials=true`.
+The production control plane mounts only an audience-bound workload token and
+broker CA. For every storage action the broker independently authorizes the
+principal tenant, canonical key, action and immutable version, then returns one
+uncached session credential with a maximum 15-minute lifetime. Static tenant
+documents and the legacy shared key are accepted only behind their separate,
+mutually exclusive break-glass switches; neither is an accepted SAI-19 steady
+state. See `artifact-store-credential-rotation.md` for the broker/provider-policy
+gate, object-version migration, object-lock decision, no-downtime rotation and
+rollback procedure.
 
 `scientificArtifacts.egressCidrs` opens TCP 443 to object storage in the
 default-deny NetworkPolicy. Leave it empty and finalize cannot reach the
