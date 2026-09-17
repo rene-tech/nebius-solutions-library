@@ -1,0 +1,747 @@
+{
+  "schema": "fs2-protenix-allocation-bounds/v1",
+  "method": "Offline evidence-only whole scheduled-pod GPU reservation accounting; no GPU execution or cluster access.",
+  "clock_assumption": "Recorded cluster/client UTC clocks are comparable. Bounds do not cover unmeasured clock skew. Killing is treated as stopping initiation, not release completion.",
+  "timestamp_resolution_policy": "Primary bounds subtract one second per pod from the recorded lower duration; successor-schedule upper bounds add one second. Successful wait=true completion is already a later client-clock upper endpoint. Raw recorded-time bounds are also retained.",
+  "denominator": "Artifact-valid inference requests, not samples, generated structures, clinically useful results, CPU prepare calls or only warm successes. Includes exploratory/private-seed candidates and batch requests.",
+  "scope": "Six Protenix benchmark/prototype pod UIDs only; snapshot experiments and model image-build GPU resources are not included. Parallel reservations on the two distinct nodes are added as GPU-seconds, not merged into wall time.",
+  "totals": {
+    "pod_count": 6,
+    "attempts": 66,
+    "valid_requests": 65,
+    "failed_requests": 1,
+    "cpu_preparation_records": 3,
+    "allocation_gpu_seconds_at_recorded_timestamp_resolution": {
+      "lower": 2802.0,
+      "upper": 3318.8268427848816
+    },
+    "allocation_gpu_seconds_bounds": {
+      "lower": 2796.0,
+      "upper": 3323.8268427848816
+    },
+    "allocated_gpu_hours_bounds": {
+      "lower": 0.7766666666666666,
+      "upper": 0.9232852341069115
+    },
+    "gpu_seconds_per_valid_request_bounds": {
+      "lower": 43.01538461538462,
+      "upper": 51.13579758130587
+    },
+    "valid_requests_per_allocated_gpu_hour_bounds": {
+      "lower": 70.40077930291403,
+      "upper": 83.69098712446352
+    },
+    "recorded_inference_wall_seconds_including_failure": 1369.2959819739222,
+    "recorded_inference_interval_union_seconds": 1369.2959814071655,
+    "cpu_preparation_wall_seconds": 11.098328117000165,
+    "occupied_outside_recorded_requests_gpu_seconds_bounds": {
+      "lower": 1426.7040185928345,
+      "upper": 1954.530861377716
+    },
+    "allocated_outside_all_recorded_request_and_prepare_intervals_gpu_seconds_bounds": {
+      "lower": 1415.60569024086,
+      "upper": 1943.4325330257416
+    }
+  },
+  "pods": [
+    {
+      "pod": "protenix-current-h100",
+      "uid": "8afa93d6-663a-41f8-8bc2-4b4f4c28b547",
+      "node": "computeinstance-e00xjaw5jqexvvnpat",
+      "gpu_count": 1,
+      "source_pod_snapshot": "protenix/raw/persistent-pod.stdout",
+      "cohorts": [
+        {
+          "cohort": "current-h100",
+          "pod_uid": "8afa93d6-663a-41f8-8bc2-4b4f4c28b547",
+          "attempts": 9,
+          "valid_requests": 9,
+          "recorded_request_wall_seconds": 781.5651920080004,
+          "evidence": "protenix/raw/current-h100/attempts.jsonl"
+        },
+        {
+          "cohort": "current-persistent-h100",
+          "pod_uid": "8afa93d6-663a-41f8-8bc2-4b4f4c28b547",
+          "attempts": 12,
+          "valid_requests": 12,
+          "recorded_request_wall_seconds": 134.31163081000068,
+          "evidence": "protenix/raw/current-persistent-h100/attempts.jsonl"
+        }
+      ],
+      "attempts": 21,
+      "valid_requests": 21,
+      "failed_requests": 0,
+      "cpu_preparation_records_excluded_from_inference_count": 3,
+      "cpu_preparation_wall_seconds": 11.098328117000165,
+      "pod_scheduled_at": "2026-09-15T21:24:00+00:00",
+      "release_lower_observation_at": "2026-09-15T21:46:55+00:00",
+      "release_upper_observation_at": "2026-09-15T21:47:25+00:00",
+      "release_lower_evidence": {
+        "reason": "Killing",
+        "message": "Stopping container scientific-stage",
+        "uid": "8afa93d6-663a-41f8-8bc2-4b4f4c28b547",
+        "source": "protenix/raw/root-protenix-lifecycle-events.stdout"
+      },
+      "release_upper_basis": "next_single_GPU_pod_scheduled_same_single_GPU_node",
+      "successor": {
+        "name": "protenix-bir-h100",
+        "uid": "05a448fd-3514-4146-a82a-beb6abc4131c"
+      },
+      "cleanup_command_receipt": null,
+      "cleanup_command_receipts": [],
+      "cleanup_retry_receipt": null,
+      "cleanup_command_is_confirmed_release": false,
+      "allocation_gpu_seconds_at_recorded_timestamp_resolution": {
+        "lower": 1375.0,
+        "upper": 1405.0
+      },
+      "allocation_gpu_seconds_bounds": {
+        "lower": 1374.0,
+        "upper": 1406.0
+      },
+      "recorded_request_wall_seconds": 915.8768228180011,
+      "recorded_request_interval_union_seconds": 915.8768224716187,
+      "sum_minus_union_seconds": 3.463824214122724e-07,
+      "occupied_outside_recorded_requests_gpu_seconds_bounds": {
+        "lower": 458.12317752838135,
+        "upper": 490.12317752838135
+      },
+      "gpu_seconds_per_valid_request_bounds": {
+        "lower": 65.42857142857143,
+        "upper": 66.95238095238095
+      },
+      "valid_requests_per_allocated_gpu_hour_bounds": {
+        "lower": 53.76955903271693,
+        "upper": 55.02183406113537
+      },
+      "limitations": [
+        "Allocation outside recorded requests is not measured GPU idle time.",
+        "No per-cohort division of shared pod loading/operator gaps is inferred."
+      ]
+    },
+    {
+      "pod": "protenix-bir-prototype",
+      "uid": "e41cf28d-3c6d-43b1-a0bd-19bd692a6819",
+      "node": "computeinstance-e00y0jttwekyghrznp",
+      "gpu_count": 1,
+      "source_pod_snapshot": "protenix/raw/prototype-pod.stdout",
+      "cohorts": [
+        {
+          "cohort": "prototype-eager",
+          "pod_uid": "e41cf28d-3c6d-43b1-a0bd-19bd692a6819",
+          "attempts": 1,
+          "valid_requests": 1,
+          "recorded_request_wall_seconds": 17.85927203297615,
+          "evidence": "protenix/raw/prototype-eager/attempts.jsonl"
+        },
+        {
+          "cohort": "prototype-complex",
+          "pod_uid": "e41cf28d-3c6d-43b1-a0bd-19bd692a6819",
+          "attempts": 1,
+          "valid_requests": 1,
+          "recorded_request_wall_seconds": 11.064290183945559,
+          "evidence": "protenix/raw/prototype-complex/attempts.jsonl"
+        }
+      ],
+      "attempts": 2,
+      "valid_requests": 2,
+      "failed_requests": 0,
+      "cpu_preparation_records_excluded_from_inference_count": 0,
+      "cpu_preparation_wall_seconds": 0,
+      "pod_scheduled_at": "2026-09-15T21:35:17+00:00",
+      "release_lower_observation_at": "2026-09-15T21:40:58+00:00",
+      "release_upper_observation_at": "2026-09-15T21:47:01+00:00",
+      "release_lower_evidence": {
+        "reason": "Killing",
+        "message": "Stopping container scientific-stage",
+        "uid": "e41cf28d-3c6d-43b1-a0bd-19bd692a6819",
+        "source": "protenix/raw/root-protenix-lifecycle-events.stdout"
+      },
+      "release_upper_basis": "next_single_GPU_pod_scheduled_same_single_GPU_node",
+      "successor": {
+        "name": "fs2-bioir-snapshot-boltz2-donor-auto",
+        "uid": "fea9aae0-804e-49f0-96a6-efad169ff3bc"
+      },
+      "cleanup_command_receipt": null,
+      "cleanup_command_receipts": [],
+      "cleanup_retry_receipt": null,
+      "cleanup_command_is_confirmed_release": false,
+      "allocation_gpu_seconds_at_recorded_timestamp_resolution": {
+        "lower": 341.0,
+        "upper": 704.0
+      },
+      "allocation_gpu_seconds_bounds": {
+        "lower": 340.0,
+        "upper": 705.0
+      },
+      "recorded_request_wall_seconds": 28.92356221692171,
+      "recorded_request_interval_union_seconds": 28.9235622882843,
+      "sum_minus_union_seconds": -7.136259227991104e-08,
+      "occupied_outside_recorded_requests_gpu_seconds_bounds": {
+        "lower": 311.0764377117157,
+        "upper": 676.0764377117157
+      },
+      "gpu_seconds_per_valid_request_bounds": {
+        "lower": 170.0,
+        "upper": 352.5
+      },
+      "valid_requests_per_allocated_gpu_hour_bounds": {
+        "lower": 10.212765957446809,
+        "upper": 21.176470588235293
+      },
+      "limitations": [
+        "Allocation outside recorded requests is not measured GPU idle time.",
+        "No per-cohort division of shared pod loading/operator gaps is inferred.",
+        "Prototype upper bound is deliberately loose: the next recorded pod is the later Boltz snapshot donor, not a release observation."
+      ]
+    },
+    {
+      "pod": "protenix-bir-h100",
+      "uid": "05a448fd-3514-4146-a82a-beb6abc4131c",
+      "node": "computeinstance-e00xjaw5jqexvvnpat",
+      "gpu_count": 1,
+      "source_pod_snapshot": "protenix/raw/candidate-graph-pod.stdout",
+      "cohorts": [
+        {
+          "cohort": "bir-graphs-h100",
+          "pod_uid": "05a448fd-3514-4146-a82a-beb6abc4131c",
+          "attempts": 12,
+          "valid_requests": 12,
+          "recorded_request_wall_seconds": 80.11730592499953,
+          "evidence": "protenix/raw/bir-graphs-h100/attempts.jsonl"
+        },
+        {
+          "cohort": "bir-premature-harness",
+          "pod_uid": "05a448fd-3514-4146-a82a-beb6abc4131c",
+          "attempts": 1,
+          "valid_requests": 0,
+          "recorded_request_wall_seconds": 1.6298888199999055,
+          "evidence": "protenix/raw/bir-premature-harness/attempts.jsonl"
+        }
+      ],
+      "attempts": 13,
+      "valid_requests": 12,
+      "failed_requests": 1,
+      "cpu_preparation_records_excluded_from_inference_count": 0,
+      "cpu_preparation_wall_seconds": 0,
+      "pod_scheduled_at": "2026-09-15T21:47:25+00:00",
+      "release_lower_observation_at": "2026-09-15T21:52:03+00:00",
+      "release_upper_observation_at": "2026-09-15T21:52:33+00:00",
+      "release_lower_evidence": {
+        "reason": "Killing",
+        "message": "Stopping container scientific-stage",
+        "uid": "05a448fd-3514-4146-a82a-beb6abc4131c",
+        "source": "protenix/raw/root-protenix-lifecycle-events.stdout"
+      },
+      "release_upper_basis": "next_single_GPU_pod_scheduled_same_single_GPU_node",
+      "successor": {
+        "name": "protenix-bir-eager-h100",
+        "uid": "bafd73c5-743c-4858-b417-0c831b3c732a"
+      },
+      "cleanup_command_receipt": {
+        "command": [
+          "kubectl",
+          "--kubeconfig",
+          "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+          "-n",
+          "fs2-bioir-protenix",
+          "delete",
+          "pod",
+          "protenix-bir-h100",
+          "configmap/protenix-bir-h100-source",
+          "--wait=false"
+        ],
+        "created_at": "2026-09-15T21:51:48.485145+00:00",
+        "elapsed_seconds": 0.16972784884274006,
+        "return_code": 1
+      },
+      "cleanup_command_receipts": [
+        {
+          "evidence": "protenix/raw/candidate-graph-cleanup.command.json",
+          "receipt": {
+            "command": [
+              "kubectl",
+              "--kubeconfig",
+              "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+              "-n",
+              "fs2-bioir-protenix",
+              "delete",
+              "pod",
+              "protenix-bir-h100",
+              "configmap/protenix-bir-h100-source",
+              "--wait=false"
+            ],
+            "created_at": "2026-09-15T21:51:48.485145+00:00",
+            "elapsed_seconds": 0.16972784884274006,
+            "return_code": 1
+          }
+        },
+        {
+          "evidence": "protenix/raw/candidate-graph-cleanup-corrected.command.json",
+          "receipt": {
+            "command": [
+              "kubectl",
+              "--kubeconfig",
+              "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+              "-n",
+              "fs2-bioir-protenix",
+              "delete",
+              "pod/protenix-bir-h100",
+              "configmap/protenix-bir-h100-source",
+              "--wait=false"
+            ],
+            "created_at": "2026-09-15T21:52:02.354552+00:00",
+            "elapsed_seconds": 1.051927100867033,
+            "return_code": 0
+          }
+        }
+      ],
+      "cleanup_retry_receipt": {
+        "command": [
+          "kubectl",
+          "--kubeconfig",
+          "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+          "-n",
+          "fs2-bioir-protenix",
+          "delete",
+          "pod/protenix-bir-h100",
+          "configmap/protenix-bir-h100-source",
+          "--wait=false"
+        ],
+        "created_at": "2026-09-15T21:52:02.354552+00:00",
+        "elapsed_seconds": 1.051927100867033,
+        "return_code": 0
+      },
+      "cleanup_command_is_confirmed_release": false,
+      "allocation_gpu_seconds_at_recorded_timestamp_resolution": {
+        "lower": 278.0,
+        "upper": 308.0
+      },
+      "allocation_gpu_seconds_bounds": {
+        "lower": 277.0,
+        "upper": 309.0
+      },
+      "recorded_request_wall_seconds": 81.74719474499943,
+      "recorded_request_interval_union_seconds": 81.74719476699829,
+      "sum_minus_union_seconds": -2.1998857846483588e-08,
+      "occupied_outside_recorded_requests_gpu_seconds_bounds": {
+        "lower": 195.2528052330017,
+        "upper": 227.2528052330017
+      },
+      "gpu_seconds_per_valid_request_bounds": {
+        "lower": 23.083333333333332,
+        "upper": 25.75
+      },
+      "valid_requests_per_allocated_gpu_hour_bounds": {
+        "lower": 139.80582524271844,
+        "upper": 155.956678700361
+      },
+      "limitations": [
+        "Allocation outside recorded requests is not measured GPU idle time.",
+        "No per-cohort division of shared pod loading/operator gaps is inferred.",
+        "Asynchronous cleanup receipt does not establish GPU release; the next same-node schedule supplies the upper bound.",
+        "Initial cleanup command failed due to resource syntax. The retained corrected retry returned code0 with wait=false, confirming deletion acceptance but not release. Later Killing/successor evidence establishes the unchanged bounds."
+      ]
+    },
+    {
+      "pod": "protenix-bir-eager-h100",
+      "uid": "bafd73c5-743c-4858-b417-0c831b3c732a",
+      "node": "computeinstance-e00xjaw5jqexvvnpat",
+      "gpu_count": 1,
+      "source_pod_snapshot": "protenix/raw/candidate-eager-pod.stdout",
+      "cohorts": [
+        {
+          "cohort": "bir-eager-h100",
+          "pod_uid": "bafd73c5-743c-4858-b417-0c831b3c732a",
+          "attempts": 12,
+          "valid_requests": 12,
+          "recorded_request_wall_seconds": 129.52092251600016,
+          "evidence": "protenix/raw/bir-eager-h100/attempts.jsonl"
+        }
+      ],
+      "attempts": 12,
+      "valid_requests": 12,
+      "failed_requests": 0,
+      "cpu_preparation_records_excluded_from_inference_count": 0,
+      "cpu_preparation_wall_seconds": 0,
+      "pod_scheduled_at": "2026-09-15T21:52:33+00:00",
+      "release_lower_observation_at": "2026-09-15T21:56:43+00:00",
+      "release_upper_observation_at": "2026-09-15T21:57:14+00:00",
+      "release_lower_evidence": {
+        "reason": "Killing",
+        "message": "Stopping container scientific-stage",
+        "uid": "bafd73c5-743c-4858-b417-0c831b3c732a",
+        "source": "protenix/raw/root-protenix-lifecycle-events.stdout"
+      },
+      "release_upper_basis": "next_single_GPU_pod_scheduled_same_single_GPU_node",
+      "successor": {
+        "name": "protenix-bir-primary-h100",
+        "uid": "2a8fdf02-0be2-4660-b1ec-ee61ec756864"
+      },
+      "cleanup_command_receipt": {
+        "command": [
+          "kubectl",
+          "--kubeconfig",
+          "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+          "-n",
+          "fs2-bioir-protenix",
+          "delete",
+          "pod/protenix-bir-eager-h100",
+          "configmap/protenix-bir-eager-h100-source",
+          "--wait=false"
+        ],
+        "created_at": "2026-09-15T21:56:43.029305+00:00",
+        "elapsed_seconds": 1.0296040708199143,
+        "return_code": 0
+      },
+      "cleanup_command_receipts": [
+        {
+          "evidence": "protenix/raw/candidate-eager-cleanup.command.json",
+          "receipt": {
+            "command": [
+              "kubectl",
+              "--kubeconfig",
+              "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+              "-n",
+              "fs2-bioir-protenix",
+              "delete",
+              "pod/protenix-bir-eager-h100",
+              "configmap/protenix-bir-eager-h100-source",
+              "--wait=false"
+            ],
+            "created_at": "2026-09-15T21:56:43.029305+00:00",
+            "elapsed_seconds": 1.0296040708199143,
+            "return_code": 0
+          }
+        }
+      ],
+      "cleanup_retry_receipt": null,
+      "cleanup_command_is_confirmed_release": false,
+      "allocation_gpu_seconds_at_recorded_timestamp_resolution": {
+        "lower": 250.0,
+        "upper": 281.0
+      },
+      "allocation_gpu_seconds_bounds": {
+        "lower": 249.0,
+        "upper": 282.0
+      },
+      "recorded_request_wall_seconds": 129.52092251600016,
+      "recorded_request_interval_union_seconds": 129.52092242240906,
+      "sum_minus_union_seconds": 9.35910975385923e-08,
+      "occupied_outside_recorded_requests_gpu_seconds_bounds": {
+        "lower": 119.47907757759094,
+        "upper": 152.47907757759094
+      },
+      "gpu_seconds_per_valid_request_bounds": {
+        "lower": 20.75,
+        "upper": 23.5
+      },
+      "valid_requests_per_allocated_gpu_hour_bounds": {
+        "lower": 153.19148936170214,
+        "upper": 173.49397590361446
+      },
+      "limitations": [
+        "Allocation outside recorded requests is not measured GPU idle time.",
+        "No per-cohort division of shared pod loading/operator gaps is inferred.",
+        "Asynchronous cleanup receipt does not establish GPU release; the next same-node schedule supplies the upper bound."
+      ]
+    },
+    {
+      "pod": "protenix-bir-primary-h100",
+      "uid": "2a8fdf02-0be2-4660-b1ec-ee61ec756864",
+      "node": "computeinstance-e00xjaw5jqexvvnpat",
+      "gpu_count": 1,
+      "source_pod_snapshot": "protenix/raw/candidate-primary-pod.stdout",
+      "cohorts": [
+        {
+          "cohort": "bir-primary-h100",
+          "pod_uid": "2a8fdf02-0be2-4660-b1ec-ee61ec756864",
+          "attempts": 12,
+          "valid_requests": 12,
+          "recorded_request_wall_seconds": 80.55387995299998,
+          "evidence": "protenix/raw/bir-primary-h100/attempts.jsonl"
+        },
+        {
+          "cohort": "bir-features-h100",
+          "pod_uid": "2a8fdf02-0be2-4660-b1ec-ee61ec756864",
+          "attempts": 3,
+          "valid_requests": 3,
+          "recorded_request_wall_seconds": 40.05313540199995,
+          "evidence": "protenix/raw/bir-features-h100/attempts.jsonl"
+        }
+      ],
+      "attempts": 15,
+      "valid_requests": 15,
+      "failed_requests": 0,
+      "cpu_preparation_records_excluded_from_inference_count": 0,
+      "cpu_preparation_wall_seconds": 0,
+      "pod_scheduled_at": "2026-09-15T21:57:14+00:00",
+      "release_lower_observation_at": "2026-09-15T22:02:20+00:00",
+      "release_upper_observation_at": "2026-09-15T22:02:51+00:00",
+      "release_lower_evidence": {
+        "reason": "Killing",
+        "message": "Stopping container scientific-stage",
+        "uid": "2a8fdf02-0be2-4660-b1ec-ee61ec756864",
+        "source": "protenix/raw/root-protenix-lifecycle-events.stdout"
+      },
+      "release_upper_basis": "next_single_GPU_pod_scheduled_same_single_GPU_node",
+      "successor": {
+        "name": "protenix-native-features-h100",
+        "uid": "24c87a40-f75a-4c28-b71e-69ce2e3b0965"
+      },
+      "cleanup_command_receipt": {
+        "command": [
+          "kubectl",
+          "--kubeconfig",
+          "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+          "-n",
+          "fs2-bioir-protenix",
+          "delete",
+          "pod/protenix-bir-primary-h100",
+          "configmap/protenix-bir-primary-h100-source",
+          "--wait=false"
+        ],
+        "created_at": "2026-09-15T22:02:20.122841+00:00",
+        "elapsed_seconds": 1.0387071138247848,
+        "return_code": 0
+      },
+      "cleanup_command_receipts": [
+        {
+          "evidence": "protenix/raw/candidate-primary-cleanup.command.json",
+          "receipt": {
+            "command": [
+              "kubectl",
+              "--kubeconfig",
+              "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+              "-n",
+              "fs2-bioir-protenix",
+              "delete",
+              "pod/protenix-bir-primary-h100",
+              "configmap/protenix-bir-primary-h100-source",
+              "--wait=false"
+            ],
+            "created_at": "2026-09-15T22:02:20.122841+00:00",
+            "elapsed_seconds": 1.0387071138247848,
+            "return_code": 0
+          }
+        }
+      ],
+      "cleanup_retry_receipt": null,
+      "cleanup_command_is_confirmed_release": false,
+      "allocation_gpu_seconds_at_recorded_timestamp_resolution": {
+        "lower": 306.0,
+        "upper": 337.0
+      },
+      "allocation_gpu_seconds_bounds": {
+        "lower": 305.0,
+        "upper": 338.0
+      },
+      "recorded_request_wall_seconds": 120.60701535499993,
+      "recorded_request_interval_union_seconds": 120.60701513290405,
+      "sum_minus_union_seconds": 2.2209587768884376e-07,
+      "occupied_outside_recorded_requests_gpu_seconds_bounds": {
+        "lower": 184.39298486709595,
+        "upper": 217.39298486709595
+      },
+      "gpu_seconds_per_valid_request_bounds": {
+        "lower": 20.333333333333332,
+        "upper": 22.533333333333335
+      },
+      "valid_requests_per_allocated_gpu_hour_bounds": {
+        "lower": 159.76331360946745,
+        "upper": 177.04918032786884
+      },
+      "limitations": [
+        "Allocation outside recorded requests is not measured GPU idle time.",
+        "No per-cohort division of shared pod loading/operator gaps is inferred.",
+        "Asynchronous cleanup receipt does not establish GPU release; the next same-node schedule supplies the upper bound."
+      ]
+    },
+    {
+      "pod": "protenix-native-features-h100",
+      "uid": "24c87a40-f75a-4c28-b71e-69ce2e3b0965",
+      "node": "computeinstance-e00xjaw5jqexvvnpat",
+      "gpu_count": 1,
+      "source_pod_snapshot": "protenix/raw/native-features-pod.stdout",
+      "cohorts": [
+        {
+          "cohort": "native-features-h100",
+          "pod_uid": "24c87a40-f75a-4c28-b71e-69ce2e3b0965",
+          "attempts": 3,
+          "valid_requests": 3,
+          "recorded_request_wall_seconds": 92.62046432299985,
+          "evidence": "protenix/raw/native-features-h100/attempts.jsonl"
+        }
+      ],
+      "attempts": 3,
+      "valid_requests": 3,
+      "failed_requests": 0,
+      "cpu_preparation_records_excluded_from_inference_count": 0,
+      "cpu_preparation_wall_seconds": 0,
+      "pod_scheduled_at": "2026-09-15T22:02:51+00:00",
+      "release_lower_observation_at": "2026-09-15T22:07:03+00:00",
+      "release_upper_observation_at": "2026-09-15T22:07:34.826843+00:00",
+      "release_lower_evidence": {
+        "reason": "Killing",
+        "message": "Stopping container scientific-stage",
+        "uid": "24c87a40-f75a-4c28-b71e-69ce2e3b0965",
+        "source": "protenix/raw/root-protenix-lifecycle-events.stdout"
+      },
+      "release_upper_basis": "successful_wait_true_delete_command_completion",
+      "successor": null,
+      "cleanup_command_receipt": {
+        "command": [
+          "kubectl",
+          "--kubeconfig",
+          "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+          "-n",
+          "fs2-bioir-protenix",
+          "delete",
+          "pod/protenix-native-features-h100",
+          "configmap/protenix-native-features-h100-source",
+          "--wait=true",
+          "--timeout=60s"
+        ],
+        "created_at": "2026-09-15T22:07:02.837776+00:00",
+        "elapsed_seconds": 31.989066899754107,
+        "return_code": 0
+      },
+      "cleanup_command_receipts": [
+        {
+          "evidence": "protenix/raw/native-features-cleanup.command.json",
+          "receipt": {
+            "command": [
+              "kubectl",
+              "--kubeconfig",
+              "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+              "-n",
+              "fs2-bioir-protenix",
+              "delete",
+              "pod/protenix-native-features-h100",
+              "configmap/protenix-native-features-h100-source",
+              "--wait=true",
+              "--timeout=60s"
+            ],
+            "created_at": "2026-09-15T22:07:02.837776+00:00",
+            "elapsed_seconds": 31.989066899754107,
+            "return_code": 0
+          }
+        }
+      ],
+      "cleanup_retry_receipt": null,
+      "cleanup_command_is_confirmed_release": true,
+      "allocation_gpu_seconds_at_recorded_timestamp_resolution": {
+        "lower": 252.0,
+        "upper": 283.8268427848816
+      },
+      "allocation_gpu_seconds_bounds": {
+        "lower": 251.0,
+        "upper": 283.8268427848816
+      },
+      "recorded_request_wall_seconds": 92.62046432299985,
+      "recorded_request_interval_union_seconds": 92.62046432495117,
+      "sum_minus_union_seconds": -1.9513208826538175e-09,
+      "occupied_outside_recorded_requests_gpu_seconds_bounds": {
+        "lower": 158.37953567504883,
+        "upper": 191.20637845993042
+      },
+      "gpu_seconds_per_valid_request_bounds": {
+        "lower": 83.66666666666667,
+        "upper": 94.60894759496053
+      },
+      "valid_requests_per_allocated_gpu_hour_bounds": {
+        "lower": 38.0513692575073,
+        "upper": 43.02788844621514
+      },
+      "limitations": [
+        "Allocation outside recorded requests is not measured GPU idle time.",
+        "No per-cohort division of shared pod loading/operator gaps is inferred."
+      ]
+    }
+  ],
+  "final_absence": {
+    "observed_no_pods": true,
+    "command_completion_upper": "2026-09-15T22:09:45.639843+00:00",
+    "evidence": "protenix/raw/root-protenix-final-pods.stdout",
+    "receipt": "protenix/raw/root-protenix-final-pods.command.json"
+  },
+  "limitations": [
+    "These are resource-reservation bounds, not profiler-measured GPU occupied/busy seconds or GPU utilization.",
+    "Request wall time includes CPU work, wrapper, validation and I/O; subtracting it does not isolate GPU idle time.",
+    "Unrecorded allocation includes initialization, build/compile work inside each pod, operator gaps, request preparation, collection and teardown. No idle-time attribution is inferred.",
+    "Successor scheduling proves an upper bound only under the frozen single-GPU node and exclusive one-GPU pod allocation assumptions.",
+    "Whole-pod accounting includes the retained failed request and all intervals between scheduling and release bounds. Mixed cohorts sharing one UID cannot receive independently measured full-allocation costs.",
+    "Prototype's broad upper interval includes time that may already have been released; it is not asserted to be truly allocated until its successor.",
+    "No production serving price, monetary rate or steady-state cost forecast is implied by this small evaluation's full allocation cost."
+  ],
+  "evidence_sha256": {
+    "protenix/analysis.json": {
+      "sha256": "833bbdf84ee7e5e2ea8e1e34efd87b4ce4c8519185957aebb942fb748f517cb9",
+      "bytes": 248843
+    },
+    "protenix/raw/root-protenix-lifecycle-events.stdout": {
+      "sha256": "e11bbbeeaeb6e1f493af18ed5692493a513bff15fe1dcbe8fb26f0395f0d38ee",
+      "bytes": 66955
+    },
+    "protenix/raw/root-protenix-final-pods.stdout": {
+      "sha256": "7a779468a2dde976a9b896541df1e4ef805e813093bd5edb40ef1a6eea588edf",
+      "bytes": 119
+    },
+    "protenix/raw/root-protenix-final-pods.command.json": {
+      "sha256": "aff8818308b9196dd583cb66516452d543365c51841b9872bf3ee37bacc8494b",
+      "bytes": 330
+    },
+    "coverage/inventory/nodes.json": {
+      "sha256": "a14baa3549139716a12ba48e5847c1fea54b0425afdd22c6dbb92bcc844eb654",
+      "bytes": 351884
+    },
+    "protenix/raw/persistent-pod.stdout": {
+      "sha256": "d01cf60f7ec1f1cca02813af81f0065054a6cb34a4ee0f1c5aa077226e8e36e6",
+      "bytes": 10691
+    },
+    "protenix/raw/prototype-pod.stdout": {
+      "sha256": "095bbb18364abb2ae1e92b5609ca55c0104fa7108e86cf43b38ad8b3e261a6c6",
+      "bytes": 13555
+    },
+    "protenix/raw/candidate-graph-pod.stdout": {
+      "sha256": "368b847625034b03ece2e5e031b50bb730bc96baa76ca082cb089befe2a4944c",
+      "bytes": 13741
+    },
+    "protenix/raw/candidate-eager-pod.stdout": {
+      "sha256": "d75d81a833300a75b6d76a56dd6e70f365bb50e6e70d884dbeccff18346803a2",
+      "bytes": 13763
+    },
+    "protenix/raw/candidate-primary-pod.stdout": {
+      "sha256": "579e0a0476b2ddb7f444761c3f57ab5067dc60f4512ac0608b78ce262b717cf4",
+      "bytes": 13773
+    },
+    "protenix/raw/native-features-pod.stdout": {
+      "sha256": "d8db3335316f8b5381b167a42f6fca377f940e70ee5a6d08ce7b40d06168fc37",
+      "bytes": 14263
+    },
+    "snapshot/lifecycle/fs2-bioir-snapshot-boltz2-donor-auto-before-delete.json": {
+      "sha256": "6f435e995d49a27492b8bc16f9b15b57dad99ccd64cdff656b928ff7d64e0b30",
+      "bytes": 21258
+    },
+    "protenix/raw/candidate-graph-cleanup.command.json": {
+      "sha256": "7596d025a36fa83fbe2f866325b93119c47a3af8b6cbae3f41f15849f77e64eb",
+      "bytes": 399
+    },
+    "protenix/raw/candidate-graph-cleanup-corrected.command.json": {
+      "sha256": "0170fc3db567aeb4571fea71bd54d9a45febe7163cc32dec4eda70b4be651813",
+      "bytes": 390
+    },
+    "protenix/raw/candidate-eager-cleanup.command.json": {
+      "sha256": "29cd1f0f2866365babe975e37090df810fb24f7ce53ff641f79bb4a946aad0ac",
+      "bytes": 403
+    },
+    "protenix/raw/candidate-primary-cleanup.command.json": {
+      "sha256": "2e586c20166743020fbf2a2f84497005802adcbe71b6813da07b5e4ac939682a",
+      "bytes": 407
+    },
+    "protenix/raw/native-features-cleanup.command.json": {
+      "sha256": "5f716d3e680c70dbabeec16dcac705d3b3d966ffa64f6918dcb1957a926f4768",
+      "bytes": 435
+    }
+  }
+}

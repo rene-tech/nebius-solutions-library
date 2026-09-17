@@ -1,0 +1,112 @@
+{
+  "case": "de-0714",
+  "language": "de",
+  "audio_seconds": 11.88,
+  "source_sha256": "0b500dc0826a913a75c5428c9d0790f226d9a0b19f76fd9d0c58c7ae876e0d98",
+  "reference": "zuführen, die er von selbst nicht oder nicht in genügend von selbst produziert. Das heißt, dass man seinen Körper künstlich manipuliert und das hat in den allermeisten Fällen eine negative",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 714
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:35.113155+00:00",
+  "submit_status": 202,
+  "operation_id": "11178e0b-b323-42b5-a53d-c601d4c39767",
+  "operation": {
+    "id": "11178e0b-b323-42b5-a53d-c601d4c39767",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-24092670da4e4f8fa10d59d2065f0e76",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:35.452835Z",
+    "available_at": "2026-09-16T21:46:35.452835Z",
+    "deadline_at": "2026-09-16T23:46:35.448997Z",
+    "activation_started_at": "2026-09-16T21:46:35.597458Z",
+    "ready_at": "2026-09-16T21:46:35.988991Z",
+    "started_at": "2026-09-16T21:46:35.992414Z",
+    "completed_at": "2026-09-16T21:46:37.070684Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:35.452836Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.536156,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 11.88
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.431712230667472,
+  "text": "die er von selbst nicht oder nicht genügend von selbst produziert. Das heißt, dass man seinen Körper künstlich manipuliert und das hat in den allermeisten Fällen eine negative",
+  "result_audio_seconds": 11.88,
+  "processing_seconds": 0.688185356091708,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "fdad8266d8638cb612bbd451e7cec4a367e8475d00be880a6b86b81fb769a409",
+  "quality": {
+    "reference_words": 30,
+    "hypothesis_words": 28,
+    "wer": 0.06666666666666667,
+    "substitutions": 0,
+    "deletions": 2,
+    "insertions": 0,
+    "correct": 28,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 0,
+        "reference": "zuführen"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 8,
+        "reference": "in"
+      }
+    ],
+    "reference_characters": 156,
+    "character_errors": 10,
+    "cer": 0.0641025641025641
+  },
+  "finished_at": "2026-09-16T21:46:37.545826+00:00"
+}

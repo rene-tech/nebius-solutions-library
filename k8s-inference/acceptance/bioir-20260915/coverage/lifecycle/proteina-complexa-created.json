@@ -1,0 +1,7 @@
+{
+  "unix": 1789507910.0343764,
+  "pod": "fs2-bioir-coverage-proteina-complexa",
+  "namespace": "fs2-bioir-coverage",
+  "current_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+  "runtime_entrypoint": "executed per request by batch_client.py; idle parent owns allocation between requests"
+}

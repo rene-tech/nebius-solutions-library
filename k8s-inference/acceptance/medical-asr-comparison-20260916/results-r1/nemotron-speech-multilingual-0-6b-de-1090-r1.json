@@ -1,0 +1,130 @@
+{
+  "case": "de-1090",
+  "language": "de",
+  "audio_seconds": 10.9,
+  "source_sha256": "1ae7d2fe1e5f8efcb7a25996d7b18b5bbf9ea7dd362812184648a9b7246900df",
+  "reference": "130 zu 90. Ihr Blutdruck ist leicht erhöht. Wir überprüfen noch Ihre Blutwerte.",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 1090
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:47:08.766740+00:00",
+  "submit_status": 202,
+  "operation_id": "b6db7e14-3402-4014-936f-82d99cdbc9a8",
+  "operation": {
+    "id": "b6db7e14-3402-4014-936f-82d99cdbc9a8",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-3debc843bfa44d668ee92f3e9ab6dadd",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:47:09.437284Z",
+    "available_at": "2026-09-16T21:47:09.437284Z",
+    "deadline_at": "2026-09-16T23:47:09.428701Z",
+    "activation_started_at": "2026-09-16T21:47:09.451197Z",
+    "ready_at": "2026-09-16T21:47:09.933433Z",
+    "started_at": "2026-09-16T21:47:09.936172Z",
+    "completed_at": "2026-09-16T21:47:10.985250Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:47:09.437284Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.496149,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 10.9
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.6906802020967007,
+  "text": "hundertdreißig zu neunzig. Hm Ihr Blutdruck ist leicht erhöhtWir überprüfen noch ihre Blutwerte",
+  "result_audio_seconds": 10.9,
+  "processing_seconds": 0.622448329000008,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "0aaf2f36564e60f4e11a1aa8f00a79788e854e749acc29cae216e57cedb2d25b",
+  "quality": {
+    "reference_words": 13,
+    "hypothesis_words": 13,
+    "wer": 0.38461538461538464,
+    "substitutions": 3,
+    "deletions": 1,
+    "insertions": 1,
+    "correct": 9,
+    "errors": [
+      {
+        "type": "substitution",
+        "reference_index": 0,
+        "reference": "130",
+        "recognized": "hundertdreißig"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 2,
+        "recognized": "neunzig"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 2,
+        "reference": "90",
+        "recognized": "hm"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 7,
+        "reference": "erhöht"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 8,
+        "reference": "wir",
+        "recognized": "erhöhtwir"
+      }
+    ],
+    "reference_characters": 64,
+    "character_errors": 23,
+    "cer": 0.359375
+  },
+  "finished_at": "2026-09-16T21:47:11.458222+00:00"
+}

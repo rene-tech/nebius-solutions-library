@@ -1,0 +1,26 @@
+[
+  {
+    "container": "model",
+    "env": "CUDA_CACHE_PATH",
+    "old": "/model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.159.04-sm90/cuda",
+    "new": "/tmp/fs2-bioir/cuda_cache_path"
+  },
+  {
+    "container": "model",
+    "env": "TORCH_EXTENSIONS_DIR",
+    "old": "/model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.159.04-sm90/torch-extensions",
+    "new": "/tmp/fs2-bioir/torch_extensions_dir"
+  },
+  {
+    "container": "model",
+    "env": "TORCHINDUCTOR_CACHE_DIR",
+    "old": "/model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.159.04-sm90/torchinductor",
+    "new": "/tmp/fs2-bioir/torchinductor_cache_dir"
+  },
+  {
+    "container": "model",
+    "env": "TRITON_CACHE_DIR",
+    "old": "/model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.159.04-sm90/triton",
+    "new": "/tmp/fs2-bioir/triton_cache_dir"
+  }
+]

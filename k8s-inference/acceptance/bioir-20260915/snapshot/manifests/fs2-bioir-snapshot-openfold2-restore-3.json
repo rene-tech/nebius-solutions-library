@@ -1,0 +1,350 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "fs2-bioir-snapshot-openfold2-restore-3",
+    "namespace": "fs2-bioir-snapshot",
+    "labels": {
+      "benchmark-model": "openfold2-bir",
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "snapshot",
+      "topology.kubernetes.io/region": "eu-north1"
+    }
+  },
+  "spec": {
+    "activeDeadlineSeconds": 14400,
+    "automountServiceAccountToken": false,
+    "containers": [
+      {
+        "command": [
+          "python",
+          "/snapshot-source/serving_supervisor.py",
+          "--directory",
+          "/checkpoints/openfold2-01",
+          "--request-mode",
+          "server",
+          "--fallback",
+          "fail",
+          "--source-directory",
+          "/snapshot-bundle",
+          "restore",
+          "--",
+          "python",
+          "/snapshot-app/bir_openfold2_server.py"
+        ],
+        "env": [
+          {
+            "name": "PYTHONPATH",
+            "value": "/deps:/payload/server:/payload/openfold"
+          },
+          {
+            "name": "FS2_OPENFOLD2_CHECKPOINT",
+            "value": "/payload/weights/finetuning_no_templ_ptm_1.pt"
+          },
+          {
+            "name": "BIOIR_EVAL_PRECISION",
+            "value": "mixed"
+          },
+          {
+            "name": "PYTHONUNBUFFERED",
+            "value": "1"
+          },
+          {
+            "name": "BIOIR_CACHE",
+            "value": "/tmp/bioir-cache"
+          },
+          {
+            "name": "XDG_CACHE_HOME",
+            "value": "/tmp/xdg-cache"
+          },
+          {
+            "name": "TRITON_CACHE_DIR",
+            "value": "/tmp/triton-cache"
+          },
+          {
+            "name": "TORCH_EXTENSIONS_DIR",
+            "value": "/tmp/torch-extensions"
+          },
+          {
+            "name": "OPENFOLD_CACHE",
+            "value": "/tmp/openfold-cache"
+          },
+          {
+            "name": "TORCHINDUCTOR_CACHE_DIR",
+            "value": "/tmp/torchinductor-cache"
+          },
+          {
+            "name": "USER",
+            "value": "bioir-evaluation"
+          },
+          {
+            "name": "FS2_SNAPSHOT_RUNTIME_IMAGE",
+            "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+          },
+          {
+            "name": "FS2_SNAPSHOT_TOOLS_IMAGE",
+            "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+          },
+          {
+            "name": "FS2_MODEL_REVISION",
+            "value": "finetuning_no_templ_ptm_1"
+          },
+          {
+            "name": "FS2_RUNTIME_ID",
+            "value": "openfold2-bir-public-0.1.0-mixed"
+          }
+        ],
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "boltz2",
+        "resources": {
+          "limits": {
+            "cpu": "16",
+            "ephemeral-storage": "60Gi",
+            "memory": "48Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "requests": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "securityContext": {
+          "appArmorProfile": {
+            "type": "Unconfined"
+          },
+          "capabilities": {
+            "add": [
+              "SYS_ADMIN",
+              "SYS_PTRACE",
+              "CHECKPOINT_RESTORE",
+              "NET_ADMIN",
+              "SYS_TIME",
+              "SYS_RESOURCE"
+            ]
+          },
+          "runAsGroup": 0,
+          "runAsNonRoot": false,
+          "runAsUser": 0,
+          "seccompProfile": {
+            "type": "Unconfined"
+          }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+        "volumeMounts": [
+          {
+            "mountPath": "/payload",
+            "name": "payload"
+          },
+          {
+            "mountPath": "/deps",
+            "name": "deps"
+          },
+          {
+            "mountPath": "/dev/shm",
+            "name": "shm"
+          },
+          {
+            "mountPath": "/snapshot-app",
+            "name": "source",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/tools",
+            "name": "snapshot-tools"
+          },
+          {
+            "mountPath": "/snapshot-source",
+            "name": "snapshot-source",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/checkpoints",
+            "name": "snapshot-checkpoints"
+          },
+          {
+            "mountPath": "/tmp",
+            "name": "snapshot-checkpoints",
+            "subPath": "openfold2-01/tmp"
+          },
+          {
+            "name": "snapshot-bundle",
+            "mountPath": "/snapshot-bundle",
+            "subPath": "openfold2-01",
+            "readOnly": true
+          },
+          {
+            "name": "snapshot-bundle",
+            "mountPath": "/checkpoints/openfold2-01/images",
+            "subPath": "openfold2-01/images",
+            "readOnly": true
+          }
+        ]
+      }
+    ],
+    "dnsPolicy": "ClusterFirst",
+    "enableServiceLinks": true,
+    "initContainers": [
+      {
+        "command": [
+          "/bin/sh",
+          "-c",
+          "cp -a /snapshot-binaries/. /tools/ && cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ && mkdir -p \"$1/runtime-cache\" \"$1/tmp\" && if [ -n \"$2\" ]; then chown \"$2:$2\" \"$1/runtime-cache\" \"$1/tmp\"; fi && for part in runtime-cache tmp; do cp -a /snapshot-bundle/$part/. \"$1/$part/\"; done",
+          "snapshot-tools",
+          "/checkpoints/openfold2-01",
+          ""
+        ],
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "snapshot-tools",
+        "resources": {},
+        "securityContext": {
+          "runAsGroup": 0,
+          "runAsNonRoot": false,
+          "runAsUser": 0
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+        "volumeMounts": [
+          {
+            "mountPath": "/tools",
+            "name": "snapshot-tools"
+          },
+          {
+            "mountPath": "/checkpoints",
+            "name": "snapshot-checkpoints"
+          },
+          {
+            "name": "snapshot-bundle",
+            "mountPath": "/snapshot-bundle",
+            "subPath": "openfold2-01",
+            "readOnly": true
+          }
+        ]
+      },
+      {
+        "command": [
+          "python",
+          "-c",
+          "import shutil; from pathlib import Path; p=Path(\"/payload\"); shutil.copytree(\"/opt/openfold\", p/\"openfold\"); shutil.copytree(\"/opt/fs2/openfold2\", p/\"server\"); shutil.copytree(\"/opt/fs2/openfold2-artifacts\", p/\"weights\")"
+        ],
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "exact-current-artifacts",
+        "resources": {
+          "limits": {
+            "cpu": "2",
+            "memory": "4Gi"
+          },
+          "requests": {
+            "cpu": "1",
+            "memory": "2Gi"
+          }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+        "volumeMounts": [
+          {
+            "mountPath": "/payload",
+            "name": "payload"
+          }
+        ]
+      }
+    ],
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00sa78kng1kwhej6q"
+    },
+    "preemptionPolicy": "PreemptLowerPriority",
+    "priority": 0,
+    "restartPolicy": "Never",
+    "schedulerName": "default-scheduler",
+    "securityContext": {
+      "runAsGroup": 10001,
+      "runAsUser": 10001,
+      "supplementalGroups": [
+        10001
+      ]
+    },
+    "serviceAccount": "default",
+    "serviceAccountName": "default",
+    "terminationGracePeriodSeconds": 30,
+    "tolerations": [
+      {
+        "effect": "NoSchedule",
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference"
+      },
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/not-ready",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      },
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/unreachable",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      },
+      {
+        "effect": "NoSchedule",
+        "key": "nvidia.com/gpu",
+        "operator": "Exists"
+      }
+    ],
+    "volumes": [
+      {
+        "emptyDir": {
+          "sizeLimit": "5Gi"
+        },
+        "name": "payload"
+      },
+      {
+        "configMap": {
+          "defaultMode": 420,
+          "name": "fs2-bioir-snapshot-openfold2-app"
+        },
+        "name": "source"
+      },
+      {
+        "emptyDir": {
+          "sizeLimit": "2Gi"
+        },
+        "name": "deps"
+      },
+      {
+        "emptyDir": {
+          "medium": "Memory",
+          "sizeLimit": "8Gi"
+        },
+        "name": "shm"
+      },
+      {
+        "emptyDir": {},
+        "name": "snapshot-tools"
+      },
+      {
+        "configMap": {
+          "defaultMode": 292,
+          "name": "fs2-bioir-snapshot-source"
+        },
+        "name": "snapshot-source"
+      },
+      {
+        "name": "snapshot-checkpoints",
+        "emptyDir": {}
+      },
+      {
+        "name": "snapshot-bundle",
+        "persistentVolumeClaim": {
+          "claimName": "fs2-bioir-snapshot-openfold2-checkpoints",
+          "readOnly": true
+        }
+      }
+    ]
+  }
+}

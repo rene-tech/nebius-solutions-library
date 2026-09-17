@@ -1,0 +1,107 @@
+{
+  "case": "de-0864",
+  "language": "de",
+  "audio_seconds": 16.02,
+  "source_sha256": "7bd03c1e0aeb7c1aac88e1d8e174d7dff0ace434e0b927c111cb144ac84213ff",
+  "reference": "sondern diesen teil vorher auch trainieren ja jetzt spreche ich über angemessene kleidung für das vorstellungsgespräch denn auch die kleiderwahl ist davon abhängig wo man sich bewirbt angemessen",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 864
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:48.691358+00:00",
+  "submit_status": 202,
+  "operation_id": "2888e38e-9765-4a74-91fa-ddb76c07e8c1",
+  "operation": {
+    "id": "2888e38e-9765-4a74-91fa-ddb76c07e8c1",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-8ae3f2fb77584e77896c3696921754b7",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:49.201672Z",
+    "available_at": "2026-09-16T21:46:49.201672Z",
+    "deadline_at": "2026-09-16T23:46:49.188502Z",
+    "activation_started_at": "2026-09-16T21:46:49.258150Z",
+    "ready_at": "2026-09-16T21:46:49.420291Z",
+    "started_at": "2026-09-16T21:46:49.424791Z",
+    "completed_at": "2026-09-16T21:46:50.579356Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:49.201672Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.218619,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 16.02
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.7734544901177287,
+  "text": "Sondern diesen Teil vorher auch trainieren. Ja jetzt spreche ich über angemessene Kleidung für das Vorstellungsgespräch, denn auch die Kleiderwahl ist davon abhängig, wo man sich bewirbt.",
+  "result_audio_seconds": 16.02,
+  "processing_seconds": 0.9092145641334355,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "83faae37c62ca0c22eb3b6849f5c24d8b59ca8f06518bf90552ccb3071145bd8",
+  "quality": {
+    "reference_words": 28,
+    "hypothesis_words": 27,
+    "wer": 0.03571428571428571,
+    "substitutions": 0,
+    "deletions": 1,
+    "insertions": 0,
+    "correct": 27,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 27,
+        "reference": "angemessen"
+      }
+    ],
+    "reference_characters": 167,
+    "character_errors": 10,
+    "cer": 0.059880239520958084
+  },
+  "finished_at": "2026-09-16T21:46:51.466836+00:00"
+}

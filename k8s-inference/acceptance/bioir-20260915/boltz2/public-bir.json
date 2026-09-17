@@ -1,0 +1,15 @@
+{
+  "release": "bionemo-ir==0.1.0",
+  "wheel": "bionemo_ir-0.1.0-cp312-cp312-manylinux_2_34_x86_64.whl",
+  "wheel_sha256": "ebbfe2808a9a56ad9838a81f887000b89a7554d674bb7a9eac130c7cf2c4e8ae",
+  "source_commit": "401c6fcc4a43925bcf1342b6c0979b060130b396",
+  "source_note": "Public source reference; wheel build provenance is not asserted to equal this commit.",
+  "source_repository": "https://github.com/NVIDIA-BioNeMo/BioNeMo-Inference-Runtime",
+  "base_image": "python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea",
+  "private_ea_used": false,
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+  "recipe": ["Dockerfile.bioir", "Dockerfile.bioir-tools"],
+  "runtime_requirements": ["Writable BIOIR_CACHE", "Host C compiler for Triton CUDA binding", "Explicit CUDA 13 compatible driver"],
+  "resolved_torch": "2.12.0+cu130",
+  "resolved_at": "2026-09-15T21:26:00Z"
+}

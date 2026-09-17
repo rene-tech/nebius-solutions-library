@@ -1,0 +1,205 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:25:51Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-diffdock",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240944",
+        "uid": "6c51eec3-d92f-484d-830b-66d628401e7b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:25:51Z",
+      "message": "Successfully assigned fs2-bioir-coverage/fs2-bioir-coverage-diffdock to computeinstance-e00r9tdjfszjs3angk",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:25:51Z",
+        "name": "fs2-bioir-coverage-diffdock.18d59ba2f40ee9c3",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240946",
+        "uid": "6bf30ff7-e44a-4005-8e96-c5d7a34aeef7"
+      },
+      "reason": "Scheduled",
+      "reportingComponent": "default-scheduler",
+      "reportingInstance": "",
+      "source": {
+        "component": "default-scheduler"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:25:51Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-diffdock",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240945",
+        "uid": "6c51eec3-d92f-484d-830b-66d628401e7b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:25:51Z",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7\"",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:25:51Z",
+        "name": "fs2-bioir-coverage-diffdock.18d59ba3147a30f8",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240975",
+        "uid": "76ef68ac-d60d-4c02-911f-70a5edd4653e"
+      },
+      "reason": "Pulling",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:27:24Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-diffdock",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240945",
+        "uid": "6c51eec3-d92f-484d-830b-66d628401e7b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:27:24Z",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7\" in 1m32.383s (1m32.383s including waiting). Image size: 7777236429 bytes.",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:27:24Z",
+        "name": "fs2-bioir-coverage-diffdock.18d59bb896f4f992",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42244853",
+        "uid": "5ed5112f-94ce-433c-ac63-d48bc68b6c34"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:27:28Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-diffdock",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240945",
+        "uid": "6c51eec3-d92f-484d-830b-66d628401e7b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:27:28Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:27:28Z",
+        "name": "fs2-bioir-coverage-diffdock.18d59bb9b530d1eb",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42245056",
+        "uid": "5b599302-3e43-479d-8287-182a4635f78c"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:27:34Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-diffdock",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240945",
+        "uid": "6c51eec3-d92f-484d-830b-66d628401e7b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:27:34Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:27:34Z",
+        "name": "fs2-bioir-coverage-diffdock.18d59bbaffe80a9c",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42245294",
+        "uid": "82c29a24-e3f9-4f64-989e-35f3084508a4"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 4,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:27:36Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-diffdock",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42240945",
+        "uid": "6c51eec3-d92f-484d-830b-66d628401e7b"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:27:51Z",
+      "message": "Startup probe failed: HTTP probe failed with statuscode: 503",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:27:36Z",
+        "name": "fs2-bioir-coverage-diffdock.18d59bbb799dfbb2",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42245997",
+        "uid": "4483b4ed-ce27-44a6-a249-cc739736eb7c"
+      },
+      "reason": "Unhealthy",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Warning"
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

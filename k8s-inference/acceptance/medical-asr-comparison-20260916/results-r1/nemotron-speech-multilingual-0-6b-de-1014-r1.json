@@ -1,0 +1,124 @@
+{
+  "case": "de-1014",
+  "language": "de",
+  "audio_seconds": 16.4,
+  "source_sha256": "9cd0b487090df57e5f65314ccaeb726aca854f15c8cb04fe14132122ce083fac",
+  "reference": "hilfe von kollegen die noch nicht da sind oder schon weg sind da bin ich mir nicht so sicher es kann auch sein dass ich allein im büro mehr stress habe das ist doch toll dann kannst du arbeiten und",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 1014
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:47:02.202363+00:00",
+  "submit_status": 202,
+  "operation_id": "87ee40fc-c580-4f86-9d5f-b39d1dbf8180",
+  "operation": {
+    "id": "87ee40fc-c580-4f86-9d5f-b39d1dbf8180",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-9d48d706c4bc4e8ba7970f2f57728205",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:47:02.615310Z",
+    "available_at": "2026-09-16T21:47:02.615310Z",
+    "deadline_at": "2026-09-16T23:47:02.610071Z",
+    "activation_started_at": "2026-09-16T21:47:02.636172Z",
+    "ready_at": "2026-09-16T21:47:02.875099Z",
+    "started_at": "2026-09-16T21:47:02.969598Z",
+    "completed_at": "2026-09-16T21:47:04.062862Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:47:02.615310Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.259789,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 16.4
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.4524252247065306,
+  "text": "Hilfe von Kollegen, die noch nicht da sind oder schon weg sindDa bin ich mir nicht so sicher, es kann auch sein, dass ich allein im Büro mehr Stress habeDas ist doch toll, dann kannst du arbeiten und",
+  "result_audio_seconds": 16.4,
+  "processing_seconds": 0.9030756849999761,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "2177da6bdf665ee48aef3db2ea94fce97dc0a27815417856b531812ca3cb439c",
+  "quality": {
+    "reference_words": 40,
+    "hypothesis_words": 38,
+    "wer": 0.1,
+    "substitutions": 2,
+    "deletions": 2,
+    "insertions": 0,
+    "correct": 36,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 11,
+        "reference": "sind"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 12,
+        "reference": "da",
+        "recognized": "sindda"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 30,
+        "reference": "habe"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 31,
+        "reference": "das",
+        "recognized": "habedas"
+      }
+    ],
+    "reference_characters": 158,
+    "character_errors": 0,
+    "cer": 0.0
+  },
+  "finished_at": "2026-09-16T21:47:04.655918+00:00"
+}

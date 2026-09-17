@@ -1,0 +1,7 @@
+FROM python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+LABEL evaluation="fs2-bioir-20260915" org.opencontainers.image.source="https://github.com/NVIDIA-BioNeMo/BioNeMo-Inference-Runtime" org.opencontainers.image.revision="401c6fcc4a43925bcf1342b6c0979b060130b396"
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 libxrender1 libxext6 libgl1 ca-certificates git && apt-get clean
+RUN python -m pip install --no-cache-dir 'https://files.pythonhosted.org/packages/0d/8b/177e2891d590ec71dc45033083a42186c969bb60050b1132fe852b2a418a/bionemo_ir-0.1.0-cp312-cp312-manylinux_2_34_x86_64.whl#sha256=ebbfe2808a9a56ad9838a81f887000b89a7554d674bb7a9eac130c7cf2c4e8ae' fastapi==0.141.1 uvicorn==0.52.4 pyyaml
+RUN python -m pip freeze > /opt/bioir-pip-freeze.txt
+ENV PYTHONUNBUFFERED=1 HF_HUB_DISABLE_TELEMETRY=1 NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility
+WORKDIR /work
