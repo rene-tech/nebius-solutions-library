@@ -36,6 +36,111 @@ SELECTOR = {
     "nebius.com/node-group-id": GROUP_ID,
 }
 KUBECONFIG_SHA256 = "d" * 64
+TEST_ED25519_SEED = bytes.fromhex(
+    "9d61b19deffd5a60ba844af492ec2cc4"
+    "4449c5697b326919703bac031cae7f60"
+)
+TEST_ED25519_PUBLIC_KEY = bytes.fromhex(
+    "d75a980182b10ab7d54bfed3c964073a"
+    "0ee172f3daa62325af021a68f707511a"
+)
+
+
+def sign_ed25519(message: bytes) -> bytes:
+    private_der = bytes.fromhex("302e020100300506032b657004220420") + TEST_ED25519_SEED
+    encoded = base64.b64encode(private_der).decode("ascii")
+    private_pem = (
+        "-----BEGIN PRIVATE KEY-----\n"
+        + "\n".join(
+            encoded[index : index + 64] for index in range(0, len(encoded), 64)
+        )
+        + "\n-----END PRIVATE KEY-----\n"
+    ).encode("ascii")
+    key_fd = GATE.sealed_memfd("test-ed25519-key", private_pem)
+    message_fd = GATE.sealed_memfd("test-ed25519-message", message)
+    try:
+        result = subprocess.run(
+            [
+                GATE.openssl_binary(),
+                "pkeyutl",
+                "-sign",
+                "-inkey",
+                f"/proc/self/fd/{key_fd}",
+                "-rawin",
+                "-in",
+                f"/proc/self/fd/{message_fd}",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            pass_fds=(key_fd, message_fd),
+            timeout=15,
+        )
+    finally:
+        os.close(key_fd)
+        os.close(message_fd)
+    assert result.returncode == 0
+    assert len(result.stdout) == 64
+    return result.stdout
+
+
+def der_value(tag: int, content: bytes) -> bytes:
+    if len(content) < 128:
+        encoded_length = bytes([len(content)])
+    else:
+        width = (len(content).bit_length() + 7) // 8
+        encoded_length = bytes([0x80 | width]) + len(content).to_bytes(width, "big")
+    return bytes([tag]) + encoded_length + content
+
+
+def deterministic_test_ca_der() -> bytes:
+    ed25519_algorithm = bytes.fromhex("300506032b6570")
+    common_name = der_value(
+        0x30,
+        bytes.fromhex("0603550403") + der_value(0x0C, b"FS2 deterministic test CA"),
+    )
+    distinguished_name = der_value(0x30, der_value(0x31, common_name))
+    validity = der_value(
+        0x30,
+        der_value(0x17, b"260101000000Z")
+        + der_value(0x17, b"351231235959Z"),
+    )
+    subject_public_key = der_value(
+        0x30,
+        ed25519_algorithm + der_value(0x03, b"\x00" + TEST_ED25519_PUBLIC_KEY),
+    )
+    basic_constraints = der_value(
+        0x30,
+        bytes.fromhex("0603551d13")
+        + bytes.fromhex("0101ff")
+        + der_value(0x04, bytes.fromhex("30030101ff")),
+    )
+    key_usage = der_value(
+        0x30,
+        bytes.fromhex("0603551d0f")
+        + bytes.fromhex("0101ff")
+        + der_value(0x04, bytes.fromhex("03020106")),
+    )
+    extensions = der_value(0xA3, der_value(0x30, basic_constraints + key_usage))
+    tbs_certificate = der_value(
+        0x30,
+        bytes.fromhex("a003020102")
+        + bytes.fromhex("020101")
+        + ed25519_algorithm
+        + distinguished_name
+        + validity
+        + distinguished_name
+        + subject_public_key
+        + extensions,
+    )
+    signature = sign_ed25519(tbs_certificate)
+    return der_value(
+        0x30,
+        tbs_certificate
+        + ed25519_algorithm
+        + der_value(0x03, b"\x00" + signature),
+    )
 
 
 def node_group(resource_version: str = "11") -> dict[str, object]:
@@ -534,33 +639,383 @@ def test_preventive_boundary_reopens_and_semantically_checks_raw_authority_expor
         "public-edge-preventive-provider-iam-export.json",
         "public-edge-preventive-apiserver-enforcement-export.json",
         "public-edge-preventive-identity-path-review.json",
+        "public-edge-preventive-certificate-authority-history.json",
     ):
         assert filename in verifier
     assert "provider-IAM raw policy does not enforce exact-controller default deny" in verifier
     assert "API-server raw export does not enforce the protected exact-controller boundary" in verifier
     assert "raw RBAC/impersonation evidence does not deny every non-controller identity path" in verifier
-    assert 'provider["default_decision"] != "deny"' in verifier
-    assert 'apiserver["failure_policy"] != "Fail"' in verifier
-    assert "impersonation_rules != []" in verifier
-    assert '"provider_iam_allowed": False' in verifier
-    assert '"apiserver_allowed": False' in verifier
-    assert '"rbac_allowed": False' in verifier
-    assert '"impersonation_allowed": False' in verifier
+    assert 'policy_spec["default_effect"] != "DENY"' in verifier
+    assert 'admission["failure_policy"] != "Fail"' in verifier
+    assert "unauthorized_credential_paths" in verifier
+    assert "any(unauthorized_credential_paths.values())" in verifier
+    assert "active_certificate_identities" in verifier
+    assert "openssl_verify_certificate_chain(" in verifier
     assert "summaries do not bind the reopened raw exports" in verifier
     assert "review digests do not derive from reopened exports" in verifier
 
 
-def preventive_raw_exports() -> dict[str, object]:
-    protected_names = [
-        "fs2-public-edge-cas-bootstrap",
-        "fs2-public-edge-cas-bootstrap-binding",
-        "fs2-public-edge-node-authority",
-        "fs2-public-edge-node-authority-binding",
-        "fs2-public-edge-node-authority-cas",
-        "fs2-public-edge-node-authority-cas-binding",
+def preventive_native_export_fixture(
+    *, role: str, endpoint: str, payload: dict[str, object]
+) -> tuple[bytes, list[dict[str, object]]]:
+    public_key = TEST_ED25519_PUBLIC_KEY
+    key_id = "sha256:" + hashlib.sha256(public_key).hexdigest()
+    authority = {
+        "id": role.removesuffix("-attestor") + "-test",
+        "key_id": key_id,
+        "role": role,
+    }
+    envelope: dict[str, object] = {
+        "schema": "fs2-serve.nebius.ai/native-authority-export/v1",
+        "authority": authority,
+        "payload": payload,
+        "payload_sha256": GATE.canonical_sha256(payload),
+    }
+    envelope["signature"] = base64.urlsafe_b64encode(
+        sign_ed25519(GATE.canonical_bytes(envelope))
+    ).rstrip(b"=").decode("ascii")
+    authorities = [
+        {
+            **authority,
+            "endpoint": endpoint,
+            "public_key": base64.urlsafe_b64encode(public_key)
+            .rstrip(b"=")
+            .decode("ascii"),
+            "collector_executable_sha256": "1" * 64,
+            "collector_config_sha256": "2" * 64,
+            "runtime_review_sha256": "3" * 64,
+        }
     ]
-    actions = ["create", "delete", "patch", "update"]
-    paths = [
+    return GATE.canonical_bytes(envelope) + b"\n", authorities
+
+
+def native_list_fixture(
+    *,
+    api_group: str,
+    resource: str,
+    items: list[dict[str, object]],
+    resource_version: str,
+    partial_metadata: bool = False,
+) -> dict[str, object]:
+    request: dict[str, object] = {
+        "api_group": api_group,
+        "resource": resource,
+        "scope": "all",
+        "limit": 500,
+        "continue": "",
+    }
+    if partial_metadata:
+        request["accept"] = (
+            "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"
+        )
+    return {
+        "api_group": api_group,
+        "resource": resource,
+        "scope": "all",
+        "item_count": len(items),
+        "page_count": 1,
+        "pages": [
+            {
+                "request": request,
+                "request_id": f"request-{resource}-0001",
+                "response": {
+                    "apiVersion": (
+                        "meta.k8s.io/v1"
+                        if partial_metadata
+                        else ("v1" if not api_group else f"{api_group}/v1")
+                    ),
+                    "kind": (
+                        "PartialObjectMetadataList"
+                        if partial_metadata
+                        else f"{resource.title()}List"
+                    ),
+                    "metadata": {
+                        "continue": "",
+                        "remainingItemCount": 0,
+                        "resourceVersion": resource_version,
+                    },
+                    "items": items,
+                },
+            }
+        ],
+    }
+
+
+def native_history_fixture(
+    *, cluster_id: str, history_start: str, observed_through: str
+) -> dict[str, object]:
+    return {
+        "history_start": history_start,
+        "observed_through": observed_through,
+        "page_count": 1,
+        "record_count": 0,
+        "pages": [
+            {
+                "request": {
+                    "cluster_id": cluster_id,
+                    "cursor": "",
+                    "history_start": history_start,
+                    "limit": 500,
+                    "observed_through": observed_through,
+                },
+                "request_id": "request-ca-history-0001",
+                "response": {
+                    "next_cursor": "",
+                    "records": [],
+                    "remaining_count": 0,
+                },
+                "response_attestation_sha256": "9" * 64,
+            }
+        ],
+    }
+
+
+def minimal_protected_resource_contract() -> list[dict[str, object]]:
+    namespace = "security"
+    fixed: list[dict[str, object]] = [
+        {
+            "actions": ["create", "delete", "deletecollection", "patch", "update"],
+            "api_group": "admissionregistration.k8s.io",
+            "api_version": "v1",
+            "resources": ["validatingadmissionpolicies"],
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "exact-name-immutable",
+            "names": [
+                "fs2-public-edge-cas-bootstrap",
+                "fs2-public-edge-node-authority",
+                "fs2-public-edge-node-authority-cas",
+            ],
+        },
+        {
+            "actions": ["create", "delete", "deletecollection", "patch", "update"],
+            "api_group": "admissionregistration.k8s.io",
+            "api_version": "v1",
+            "resources": ["validatingadmissionpolicybindings"],
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "exact-name-immutable",
+            "names": [
+                "fs2-public-edge-cas-bootstrap-binding",
+                "fs2-public-edge-node-authority-binding",
+                "fs2-public-edge-node-authority-cas-binding",
+            ],
+        },
+        {
+            "actions": ["create", "delete", "deletecollection", "patch", "update"],
+            "api_group": "apiextensions.k8s.io",
+            "api_version": "v1",
+            "resources": ["customresourcedefinitions"],
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "exact-name-immutable",
+            "names": ["publicedgenodeauthorityapprovals.security.fs2.nebius.ai"],
+        },
+        {
+            "actions": ["create", "delete", "deletecollection", "patch", "update"],
+            "api_group": "security.fs2.nebius.ai",
+            "api_version": "v1",
+            "resources": ["publicedgenodeauthorityapprovals"],
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "exact-name-immutable",
+            "names": ["fs2-public-edge-node-authority-approval"],
+        },
+        {
+            "actions": ["bind", "create", "delete", "deletecollection", "escalate", "patch", "update"],
+            "api_group": "rbac.authorization.k8s.io",
+            "api_version": "v1",
+            "resources": ["clusterrolebindings", "clusterroles", "rolebindings", "roles"],
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [namespace],
+            "semantic_guard": "deny-non-enrolled-authority-path",
+            "names": ["*"],
+        },
+        {
+            "actions": ["approve", "create", "delete", "deletecollection", "get", "list", "patch", "sign", "update", "watch"],
+            "api_group": "certificates.k8s.io",
+            "api_version": "v1",
+            "resources": ["certificatesigningrequests", "certificatesigningrequests/approval"],
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "deny-non-enrolled-certificate-path",
+            "names": ["*"],
+        },
+        {
+            "actions": ["create", "delete", "deletecollection", "patch", "update"],
+            "api_group": "admissionregistration.k8s.io",
+            "api_version": "v1",
+            "resources": ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"],
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "deny-authority-intersecting-webhook-change",
+            "names": ["*"],
+        },
+        {
+            "actions": ["connect", "get", "list", "patch", "update", "watch"],
+            "api_group": "",
+            "api_version": "v1",
+            "resources": ["nodes", "nodes/proxy"],
+            "operations": ["CONNECT", "CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "deny-controller-credential-path",
+            "names": ["*"],
+        },
+    ]
+    scoped = [
+        {
+            "actions": ["delete", "deletecollection", "get", "list", "patch", "update", "watch"],
+            "api_group": "",
+            "api_version": "v1",
+            "resources": ["serviceaccounts"],
+            "operations": ["DELETE", "UPDATE"],
+            "namespaces": [namespace],
+            "semantic_guard": "deny-controller-service-account-path",
+            "names": ["public-edge-authority"],
+        },
+        {
+            "actions": ["create", "get"],
+            "api_group": "",
+            "api_version": "v1",
+            "resources": ["serviceaccounts/token"],
+            "operations": ["CREATE"],
+            "namespaces": [namespace],
+            "semantic_guard": "deny-controller-tokenrequest-path",
+            "names": ["public-edge-authority"],
+        },
+        {
+            "actions": ["create", "patch", "update"],
+            "api_group": "",
+            "api_version": "v1",
+            "resources": ["pods", "replicationcontrollers", "serviceaccounts"],
+            "operations": ["CREATE", "UPDATE"],
+            "namespaces": [namespace],
+            "semantic_guard": "inspect-new-controller-credential-reachability",
+            "names": ["*"],
+        },
+        {
+            "actions": ["create", "patch", "update"],
+            "api_group": "",
+            "api_version": "v1",
+            "resources": ["secrets"],
+            "operations": ["CREATE", "UPDATE"],
+            "namespaces": [namespace],
+            "semantic_guard": "classify-secret-content-before-admission",
+            "names": ["*"],
+        },
+        {
+            "actions": ["create", "patch", "update"],
+            "api_group": "apps",
+            "api_version": "v1",
+            "resources": ["daemonsets", "deployments", "replicasets", "statefulsets"],
+            "operations": ["CREATE", "UPDATE"],
+            "namespaces": [namespace],
+            "semantic_guard": "inspect-new-controller-credential-reachability",
+            "names": ["*"],
+        },
+        {
+            "actions": ["create", "patch", "update"],
+            "api_group": "batch",
+            "api_version": "v1",
+            "resources": ["cronjobs", "jobs"],
+            "operations": ["CREATE", "UPDATE"],
+            "namespaces": [namespace],
+            "semantic_guard": "inspect-new-controller-credential-reachability",
+            "names": ["*"],
+        },
+        {
+            "actions": ["delete", "deletecollection", "patch", "update"],
+            "api_group": "apps",
+            "api_version": "v1",
+            "resources": ["deployments"],
+            "operations": ["DELETE", "UPDATE"],
+            "namespaces": [namespace],
+            "semantic_guard": "deny-controller-credential-workload-path",
+            "names": ["public-edge-authority"],
+        },
+    ]
+    return [*fixed, *scoped]
+
+
+def preventive_semantic_fixture(
+    *, include_unenrolled_rbac_subject: bool = False
+) -> dict[str, object]:
+    collected_at = "2026-09-17T12:00:00Z"
+    history_start = "2026-09-17T10:00:00Z"
+    cluster_created_at = "2026-09-17T09:00:00Z"
+    snapshot_id = "a" * 64
+    image_digest = f"sha256:{'b' * 64}"
+    provider_principal = "serviceaccount-controller123"
+    controller_subject = {
+        "kind": "ServiceAccount",
+        "name": "public-edge-authority",
+        "namespace": "security",
+    }
+    controller_username = "system:serviceaccount:security:public-edge-authority"
+    controller_groups = [
+        "system:authenticated",
+        "system:serviceaccounts",
+        "system:serviceaccounts:security",
+    ]
+    pod_template = {
+        "serviceAccountName": "public-edge-authority",
+        "initContainers": [],
+        "containers": [
+            {
+                "name": "authority",
+                "image": f"registry.invalid/public-edge-authority@{image_digest}",
+            }
+        ],
+        "ephemeralContainers": [],
+        "volumes": [],
+    }
+    deployment_uid = "00000000-0000-4000-8000-000000000301"
+    controller_workload = {
+        "api_version": "apps/v1",
+        "images": [f"registry.invalid/public-edge-authority@{image_digest}"],
+        "kind": "Deployment",
+        "name": "public-edge-authority",
+        "namespace": "security",
+        "pod_template_sha256": GATE.canonical_sha256(pod_template),
+        "service_account_name": "public-edge-authority",
+        "uid": deployment_uid,
+    }
+    credential_workload = {
+        "api_version": "apps/v1",
+        "authority_secret_names": [],
+        "kind": "Deployment",
+        "name": "public-edge-authority",
+        "namespace": "security",
+        "pod_template_sha256": GATE.canonical_sha256(pod_template),
+        "service_account_name": "public-edge-authority",
+        "uid": deployment_uid,
+    }
+    ca_der = deterministic_test_ca_der()
+    ca_pem = GATE.pem_encode_der(ca_der, "CERTIFICATE")
+    ca_key_id = "sha256:" + GATE.openssl_public_key_sha256(
+        ca_der, command="x509", input_format="DER"
+    )
+    ca_authority = {
+        "ca_key_id": ca_key_id,
+        "issuance_log_id": "issuance-log-test-001",
+        "response_attestation_sha256": "8" * 64,
+        "revocation_mode": "certificate-revocation-list",
+        "signer_name": "fs2.test/client",
+        "trust_anchor_key_ids": [ca_key_id],
+        "trust_bundle_pem_base64": base64.b64encode(ca_pem).decode("ascii"),
+        "trust_bundle_sha256": hashlib.sha256(ca_pem).hexdigest(),
+    }
+    enrollment = {
+        "authority_id": "public-edge-controller-test",
+        "capabilities": [
+            "admission-authority-mutation",
+            "protected-policy-mutation",
+        ],
+        "expires_at": "2026-09-17T13:00:00Z",
+        "provider_principal_id": provider_principal,
+        "subject": controller_subject,
+    }
+    identity_paths = [
         "anonymous",
         "authentication-webhook",
         "bootstrap-token",
@@ -580,169 +1035,634 @@ def preventive_raw_exports() -> dict[str, object]:
         "service-account-token",
         "static-token",
     ]
-    controller = {
-        "username": "system:serviceaccount:security:public-edge-authority",
-        "uid": "00000000-0000-4000-8000-000000000099",
-        "groups": ["system:serviceaccounts", "system:serviceaccounts:security"],
-        "image_digest": f"sha256:{'a' * 64}",
-    }
-
-    def provenance(endpoint: str, suffix: str) -> dict[str, object]:
-        return {
-            "collector_id": f"platform-security-{suffix}",
-            "collector_executable_sha256": "1" * 64,
-            "collector_config_sha256": "2" * 64,
-            "api_endpoint": endpoint,
-            "request_ids": [f"request-{suffix}-0001"],
-            "response_attestation_sha256": "3" * 64,
-        }
-
     boundary = {
-        "provider_iam_policy_id": "provider-policy-001",
-        "apiserver_enforcement_id": "apiserver-enforcement-001",
-        "controller_username": controller["username"],
-        "controller_uid": controller["uid"],
-        "controller_groups": controller["groups"],
-        "controller_image_digest": controller["image_digest"],
+        "kind": "provider-iam+apiserver-admission",
+        "provider_iam_policy_id": "provider-policy-test-001",
+        "apiserver_enforcement_id": "apiserver-enforcement-test-001",
+        "authority_snapshot_id": snapshot_id,
+        "controller_username": controller_username,
+        "controller_uid": "00000000-0000-4000-8000-000000000099",
+        "controller_groups": controller_groups,
+        "controller_allowed_image_digests": [image_digest],
+        "controller_image_digest": image_digest,
+        "controller_provider_principal_id": provider_principal,
+        "certificate_history_start": history_start,
+        "cluster_created_at": cluster_created_at,
+        "credential_namespaces": ["security"],
+        "enrolled_certificate_authorities": [ca_authority],
+        "enrolled_certificate_identities": [],
+        "enrolled_admission_webhooks": [],
+        "enrolled_controller_workloads": [controller_workload],
+        "enrolled_credential_secrets": [],
+        "enrolled_credential_workloads": [credential_workload],
+        "enrolled_identities": [enrollment],
+        "identity_paths": identity_paths,
         "configuration_sha256": "4" * 64,
-        "identity_paths": paths,
+        "provenance_attestation_sha256": "5" * 64,
+        "receipt_sha256": "6" * 64,
+        "source_repository": "https://example.invalid/fs2",
+        "source_commit": "7" * 40,
+        "source_tree": "8" * 40,
     }
-    provider = {
-        "schema": "fs2-serve.nebius.ai/public-edge-provider-iam-export/v1",
-        "collected_at": "2026-09-17T12:00:00Z",
+    protected_contract = minimal_protected_resource_contract()
+    protected_names = sorted(
+        {
+            str(name)
+            for contract in protected_contract
+            for name in contract["names"]
+        }
+    )
+    protected_actions = sorted(
+        {
+            str(action)
+            for contract in protected_contract
+            for action in contract["actions"]
+        }
+    )
+    expected_controller = {
+        "username": controller_username,
+        "uid": boundary["controller_uid"],
+        "groups": controller_groups,
+        "image_digest": image_digest,
+        "provider_principal_id": provider_principal,
+    }
+    provider_binding = {
+        "apiVersion": "iam.nebius.ai/v1",
+        "kind": "AccessBinding",
+        "metadata": {
+            "name": "public-edge-controller",
+            "uid": "00000000-0000-4000-8000-000000000101",
+            "resourceVersion": "provider-binding-rv-1",
+        },
+        "spec": {
+            "effect": "ALLOW",
+            "subject": {"type": "serviceAccount", "id": provider_principal},
+            "actions": protected_actions,
+            "resourceNames": protected_names,
+            "protectedResources": protected_contract,
+            "condition": {
+                "project_id": "project-test123",
+                "cluster_id": CLUSTER_ID,
+                "configuration_sha256": boundary["configuration_sha256"],
+                "authority_snapshot_id": snapshot_id,
+            },
+        },
+    }
+    provider_binding_list = native_list_fixture(
+        api_group="iam.nebius.ai",
+        resource="accessbindings",
+        items=[provider_binding],
+        resource_version="provider-bindings-rv-1",
+    )
+    provider_payload = {
+        "schema": "fs2-serve.nebius.ai/public-edge-provider-iam-native-export/v3",
+        "authority_snapshot_id": snapshot_id,
+        "collected_at": collected_at,
         "provider_api": "nebius-iam/v1",
-        "api_endpoint": "api.nebius.cloud",
         "project_id": "project-test123",
         "cluster_id": CLUSTER_ID,
         "policy_id": boundary["provider_iam_policy_id"],
-        "resource_version": "provider-rv-11",
-        "default_decision": "deny",
-        "protected_resource_names": protected_names,
-        "protected_actions": actions,
-        "bindings": [
-            {
-                "effect": "allow",
-                "principal": controller,
-                "resource_names": protected_names,
-                "actions": actions,
-                "condition": {
-                    "project_id": "project-test123",
-                    "cluster_id": CLUSTER_ID,
-                    "configuration_sha256": boundary["configuration_sha256"],
+        "policy_get": {
+            "request": {
+                "operation": "get",
+                "policy_id": boundary["provider_iam_policy_id"],
+                "project_id": "project-test123",
+            },
+            "response": {
+                "metadata": {
+                    "id": boundary["provider_iam_policy_id"],
+                    "parent_id": "project-test123",
+                    "resource_version": "provider-policy-rv-1",
                 },
-            }
-        ],
-        "provenance": provenance("api.nebius.cloud", "provider-iam"),
+                "spec": {
+                    "default_effect": "DENY",
+                    "protected_actions": protected_actions,
+                    "protected_resource_names": protected_names,
+                    "protected_resources": protected_contract,
+                },
+            },
+            "request_id": "request-provider-policy-0001",
+        },
+        "access_binding_list": provider_binding_list,
     }
-    apiserver = {
-        "schema": "fs2-serve.nebius.ai/public-edge-apiserver-enforcement-export/v1",
-        "collected_at": "2026-09-17T12:00:00Z",
+    ca_payload = {
+        "schema": "fs2-serve.nebius.ai/public-edge-certificate-authority-history/v1",
+        "authority_snapshot_id": snapshot_id,
+        "cluster_id": CLUSTER_ID,
+        "cluster_created_at": cluster_created_at,
+        "collected_at": collected_at,
+        "issuer_authorities": [ca_authority],
+        "issuance_history": native_history_fixture(
+            cluster_id=CLUSTER_ID,
+            history_start=history_start,
+            observed_through=collected_at,
+        ),
+        "revocation_history": native_history_fixture(
+            cluster_id=CLUSTER_ID,
+            history_start=history_start,
+            observed_through=collected_at,
+        ),
+    }
+    authentication = {
+        "anonymous": False,
+        "authentication_webhooks": [],
+        "bootstrap_tokens": [],
+        "client_certificate": {
+            "configuration_sha256": "a" * 64,
+            "enabled": True,
+            "issuer_inventory_sha256": GATE.canonical_sha256([ca_authority]),
+            "maximum_status_age_seconds": 300,
+            "revocation_fail_closed": True,
+            "revocation_inventory_sha256": GATE.canonical_sha256([]),
+            "revocation_mode": "certificate-revocation-list",
+        },
+        "oidc_issuers": [],
+        "provider_control_plane": {
+            "enabled": True,
+            "configuration_sha256": "b" * 64,
+        },
+        "requestheader": {
+            "enabled": True,
+            "configuration_sha256": "c" * 64,
+        },
+        "service_accounts": {
+            "enabled": True,
+            "configuration_sha256": "d" * 64,
+        },
+        "static_tokens": [],
+    }
+    authorization = {"modes": ["Node", "RBAC"], "webhooks": []}
+    apiserver_payload = {
+        "schema": "fs2-serve.nebius.ai/public-edge-apiserver-native-export/v4",
+        "authority_snapshot_id": snapshot_id,
+        "collected_at": collected_at,
         "cluster_id": CLUSTER_ID,
         "enforcement_id": boundary["apiserver_enforcement_id"],
-        "resource_version": "apiserver-rv-12",
+        "resource_version": "apiserver-rv-1",
         "configuration_sha256": boundary["configuration_sha256"],
-        "failure_policy": "Fail",
-        "match_policy": "Equivalent",
-        "api_groups": ["admissionregistration.k8s.io"],
-        "api_versions": ["v1"],
-        "resources": ["validatingadmissionpolicies", "validatingadmissionpolicybindings"],
-        "operations": ["CREATE", "DELETE", "UPDATE"],
-        "protected_names": protected_names,
-        "default_decision": "Deny",
-        "allowed_controller": controller,
-        "provenance": provenance(
-            f"kubernetes://{CLUSTER_ID}/admission", "apiserver"
+        "authentication_configuration": authentication,
+        "authorization_configuration": authorization,
+        "admission_configuration": {
+            "failure_policy": "Fail",
+            "match_policy": "Equivalent",
+            "protected_resources": protected_contract,
+            "default_decision": "Deny",
+            "allowed_controller": expected_controller,
+            "plugin": "ExternalPreventiveBoundary",
+            "snapshot_fence": {
+                "failure_policy": "Fail",
+                "maximum_age_seconds": 300,
+                "protected_resources_sha256": GATE.canonical_sha256(
+                    protected_contract
+                ),
+                "snapshot_id": snapshot_id,
+            },
+        },
+    }
+    protected_policy_names = [
+        "fs2-public-edge-cas-bootstrap",
+        "fs2-public-edge-node-authority",
+        "fs2-public-edge-node-authority-cas",
+        "fs2-public-edge-cas-bootstrap-binding",
+        "fs2-public-edge-node-authority-binding",
+        "fs2-public-edge-node-authority-cas-binding",
+    ]
+    cluster_role = {
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "kind": "ClusterRole",
+        "metadata": {
+            "name": "public-edge-authority",
+            "uid": "00000000-0000-4000-8000-000000000201",
+            "resourceVersion": "clusterrole-rv-1",
+        },
+        "rules": [
+            {
+                "apiGroups": ["admissionregistration.k8s.io"],
+                "resources": [
+                    "validatingadmissionpolicies",
+                    "validatingadmissionpolicybindings",
+                ],
+                "resourceNames": protected_policy_names,
+                "verbs": ["create", "delete", "deletecollection", "patch", "update"],
+            }
+        ],
+    }
+    subjects: list[dict[str, object]] = [controller_subject]
+    if include_unenrolled_rbac_subject:
+        subjects.append(
+            {
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "User",
+                "name": "unenrolled-platform-admin",
+            }
+        )
+    cluster_binding = {
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "kind": "ClusterRoleBinding",
+        "metadata": {
+            "name": "public-edge-authority",
+            "uid": "00000000-0000-4000-8000-000000000202",
+            "resourceVersion": "clusterrolebinding-rv-1",
+        },
+        "roleRef": {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "ClusterRole",
+            "name": "public-edge-authority",
+        },
+        "subjects": subjects,
+    }
+    service_account = {
+        "apiVersion": "v1",
+        "kind": "ServiceAccount",
+        "metadata": {
+            "name": "public-edge-authority",
+            "namespace": "security",
+            "uid": "00000000-0000-4000-8000-000000000203",
+            "resourceVersion": "serviceaccount-rv-1",
+        },
+    }
+    deployment = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "name": "public-edge-authority",
+            "namespace": "security",
+            "uid": deployment_uid,
+            "resourceVersion": "deployment-rv-1",
+        },
+        "spec": {"template": {"spec": pod_template}},
+    }
+    approval_crd = {
+        "apiVersion": "apiextensions.k8s.io/v1",
+        "kind": "CustomResourceDefinition",
+        "metadata": {
+            "name": "publicedgenodeauthorityapprovals.security.fs2.nebius.ai",
+            "uid": "00000000-0000-4000-8000-000000000204",
+            "resourceVersion": "approval-crd-rv-1",
+        },
+        "spec": {
+            "group": "security.fs2.nebius.ai",
+            "scope": "Cluster",
+            "names": {
+                "kind": "PublicEdgeNodeAuthorityApproval",
+                "plural": "publicedgenodeauthorityapprovals",
+            },
+            "versions": [{"name": "v1", "served": True, "storage": True}],
+            "conversion": {"strategy": "None"},
+        },
+    }
+    approval_object = {
+        "apiVersion": "security.fs2.nebius.ai/v1",
+        "kind": "PublicEdgeNodeAuthorityApproval",
+        "metadata": {
+            "name": "fs2-public-edge-node-authority-approval",
+            "uid": "00000000-0000-4000-8000-000000000205",
+            "resourceVersion": "approval-rv-1",
+        },
+        "spec": {"preventiveBoundary": boundary},
+        "status": {"accepted": True},
+    }
+    approval_projection = {
+        "apiVersion": approval_object["apiVersion"],
+        "kind": approval_object["kind"],
+        "metadata": {
+            "name": approval_object["metadata"]["name"],
+            "resourceVersion": approval_object["metadata"]["resourceVersion"],
+            "uid": approval_object["metadata"]["uid"],
+        },
+        "spec": approval_object["spec"],
+        "status": approval_object["status"],
+    }
+
+    list_specs = {
+        "cluster_roles": (
+            "rbac.authorization.k8s.io",
+            "clusterroles",
+            [cluster_role],
+            False,
+        ),
+        "cluster_role_bindings": (
+            "rbac.authorization.k8s.io",
+            "clusterrolebindings",
+            [cluster_binding],
+            False,
+        ),
+        "roles": ("rbac.authorization.k8s.io", "roles", [], False),
+        "role_bindings": (
+            "rbac.authorization.k8s.io",
+            "rolebindings",
+            [],
+            False,
+        ),
+        "certificate_signing_requests": (
+            "certificates.k8s.io",
+            "certificatesigningrequests",
+            [],
+            False,
+        ),
+        "service_accounts": ("", "serviceaccounts", [service_account], False),
+        "secret_metadata": ("", "secrets", [], True),
+        "pods": ("", "pods", [], False),
+        "replica_sets": ("apps", "replicasets", [], False),
+        "replication_controllers": ("", "replicationcontrollers", [], False),
+        "deployments": ("apps", "deployments", [deployment], False),
+        "stateful_sets": ("apps", "statefulsets", [], False),
+        "daemon_sets": ("apps", "daemonsets", [], False),
+        "jobs": ("batch", "jobs", [], False),
+        "cron_jobs": ("batch", "cronjobs", [], False),
+        "validating_webhook_configurations": (
+            "admissionregistration.k8s.io",
+            "validatingwebhookconfigurations",
+            [],
+            False,
+        ),
+        "mutating_webhook_configurations": (
+            "admissionregistration.k8s.io",
+            "mutatingwebhookconfigurations",
+            [],
+            False,
+        ),
+        "custom_resource_definitions": (
+            "apiextensions.k8s.io",
+            "customresourcedefinitions",
+            [approval_crd],
+            False,
+        ),
+        "public_edge_node_authority_approvals": (
+            "security.fs2.nebius.ai",
+            "publicedgenodeauthorityapprovals",
+            [approval_object],
+            False,
         ),
     }
-    rbac_rules = [
-        {
-            "subjects": [controller],
-            "api_groups": ["admissionregistration.k8s.io"],
-            "resources": ["validatingadmissionpolicies", "validatingadmissionpolicybindings"],
-            "resource_names": protected_names,
-            "verbs": actions,
-        }
-    ]
-    checks = [
-        {
-            "path": path,
-            "provider_iam_allowed": False,
-            "apiserver_allowed": False,
-            "rbac_allowed": False,
-            "impersonation_allowed": False,
-        }
-        for path in paths
-    ]
-    identity = {
-        "schema": "fs2-serve.nebius.ai/public-edge-identity-path-export/v1",
-        "collected_at": "2026-09-17T12:00:00Z",
+    native_lists = {
+        name: native_list_fixture(
+            api_group=api_group,
+            resource=resource,
+            items=items,
+            resource_version=f"{resource}-list-rv-1",
+            partial_metadata=partial,
+        )
+        for name, (api_group, resource, items, partial) in list_specs.items()
+    }
+    identity_payload = {
+        "schema": "fs2-serve.nebius.ai/public-edge-kubernetes-authority-native-export/v4",
+        "authority_snapshot_id": snapshot_id,
+        "collected_at": collected_at,
         "project_id": "project-test123",
         "cluster_id": CLUSTER_ID,
-        "protected_names": protected_names,
-        "protected_actions": actions,
-        "controller": controller,
-        "rbac_rules": rbac_rules,
-        "impersonation_rules": [],
-        "checks": checks,
-        "provenance": provenance(
-            f"kubernetes://{CLUSTER_ID}/admission", "identity"
-        ),
+        **native_lists,
+        "secret_authority_classifications": [],
     }
+    normalized_subjects = [controller_subject]
+    if include_unenrolled_rbac_subject:
+        normalized_subjects.append(
+            {
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "User",
+                "name": "unenrolled-platform-admin",
+            }
+        )
+    credential_path_subjects = {
+        "admission-authority-mutation": normalized_subjects,
+        "controller-secret-read": [],
+        "controller-serviceaccount-mutation": [],
+        "controller-workload-mutation": [],
+        "csr-authority": [],
+        "impersonation": [],
+        "node-or-kubelet-proxy": [],
+        "pod-subresource-access": [],
+        "rbac-delegation": [],
+        "serviceaccount-token-mint": [],
+    }
+    resource_versions = {
+        "cluster_roles": "clusterroles-list-rv-1",
+        "cluster_role_bindings": "clusterrolebindings-list-rv-1",
+        "approval_objects": "publicedgenodeauthorityapprovals-list-rv-1",
+        "cron_jobs": "cronjobs-list-rv-1",
+        "custom_resource_definitions": "customresourcedefinitions-list-rv-1",
+        "daemon_sets": "daemonsets-list-rv-1",
+        "deployments": "deployments-list-rv-1",
+        "jobs": "jobs-list-rv-1",
+        "mutating_webhook_configurations": "mutatingwebhookconfigurations-list-rv-1",
+        "pods": "pods-list-rv-1",
+        "replica_sets": "replicasets-list-rv-1",
+        "replication_controllers": "replicationcontrollers-list-rv-1",
+        "roles": "roles-list-rv-1",
+        "role_bindings": "rolebindings-list-rv-1",
+        "secret_metadata": "secrets-list-rv-1",
+        "service_accounts": "serviceaccounts-list-rv-1",
+        "stateful_sets": "statefulsets-list-rv-1",
+        "validating_webhook_configurations": "validatingwebhookconfigurations-list-rv-1",
+    }
+    rbac_projection = {
+        "approval_objects": [approval_object],
+        "authority_reachable_workloads": [credential_workload],
+        "authority_secret_records": [],
+        "cluster_roles": [cluster_role],
+        "cluster_role_bindings": [cluster_binding],
+        "credential_path_subjects": credential_path_subjects,
+        "controller_workloads": [controller_workload],
+        "controller_secret_metadata": [],
+        "custom_resource_definitions": [approval_crd],
+        "dangerous_mutating_webhooks": [],
+        "dangerous_validating_webhooks": [],
+        "daemon_sets": [],
+        "deployments": [deployment],
+        "enrolled_identities": [enrollment],
+        "jobs": [],
+        "cron_jobs": [],
+        "mutating_webhook_configurations": [],
+        "pods": [],
+        "replica_sets": [],
+        "replication_controllers": [],
+        "roles": [],
+        "role_bindings": [],
+        "secret_metadata": [],
+        "secret_authority_classifications": [],
+        "service_accounts": [service_account],
+        "stateful_sets": [],
+        "validating_webhook_configurations": [],
+        "resource_versions": resource_versions,
+    }
+    impersonation_projection = {
+        "impersonating_subjects": [],
+        "csr_authorities": [],
+        "certificate_signing_requests": [],
+        "csr_resource_version": "certificatesigningrequests-list-rv-1",
+        "authentication_configuration": authentication,
+        "authorization_configuration": authorization,
+    }
+
+    provider_raw, provider_authorities = preventive_native_export_fixture(
+        role="provider-iam-native-response-attestor",
+        endpoint="api.nebius.cloud",
+        payload=provider_payload,
+    )
+    apiserver_raw, apiserver_authorities = preventive_native_export_fixture(
+        role="kubernetes-apiserver-native-response-attestor",
+        endpoint=f"kubernetes://{CLUSTER_ID}/configuration",
+        payload=apiserver_payload,
+    )
+    identity_raw, identity_authorities = preventive_native_export_fixture(
+        role="kubernetes-rbac-native-response-attestor",
+        endpoint=f"kubernetes://{CLUSTER_ID}/rbac-csr",
+        payload=identity_payload,
+    )
+    ca_history_raw, ca_authorities = preventive_native_export_fixture(
+        role="kubernetes-ca-native-response-attestor",
+        endpoint=f"kubernetes://{CLUSTER_ID}/certificate-authority-history",
+        payload=ca_payload,
+    )
     return {
-        "provider": provider,
-        "apiserver": apiserver,
-        "identity": identity,
+        "provider_raw": provider_raw,
+        "apiserver_raw": apiserver_raw,
+        "identity_raw": identity_raw,
+        "ca_history_raw": ca_history_raw,
         "provider_summary": {
-            "provider_api": provider["provider_api"],
-            "resource_version": provider["resource_version"],
+            "provider_api": "nebius-iam/v1",
+            "resource_version": "provider-policy-rv-1",
+            "binding_resource_version": "provider-bindings-rv-1",
         },
-        "apiserver_summary": {
-            "resource_version": apiserver["resource_version"],
-        },
+        "apiserver_summary": {"resource_version": "apiserver-rv-1"},
         "identity_summary": {
-            "rbac_review_sha256": GATE.canonical_sha256(
-                {"rbac_rules": rbac_rules}
-            ),
+            "rbac_review_sha256": GATE.canonical_sha256(rbac_projection),
             "impersonation_review_sha256": GATE.canonical_sha256(
-                {"impersonation_rules": [], "checks": checks}
+                impersonation_projection
             ),
+        },
+        "ca_history_summary": {
+            "cluster_id": CLUSTER_ID,
+            "authority_snapshot_id": snapshot_id,
+            "cluster_created_at": cluster_created_at,
+            "collected_at": collected_at,
+            "history_start": history_start,
+            "issuance_count": 0,
+            "revocation_count": 0,
+            "raw_export_sha256": hashlib.sha256(ca_history_raw).hexdigest(),
         },
         "boundary": boundary,
+        "approval_projection": approval_projection,
+        "collected_at": datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc),
+        "response_authorities": [
+            *provider_authorities,
+            *apiserver_authorities,
+            *identity_authorities,
+            *ca_authorities,
+        ],
     }
+
+
+def test_preventive_boundary_authenticates_all_four_native_exports() -> None:
+    fixtures = (
+        (
+            GATE.PREVENTIVE_PROVIDER_IAM_EXPORT_FILENAME,
+            "provider-iam-native-response-attestor",
+            "api.nebius.cloud",
+        ),
+        (
+            GATE.PREVENTIVE_APISERVER_EXPORT_FILENAME,
+            "kubernetes-apiserver-native-response-attestor",
+            f"kubernetes://{CLUSTER_ID}/configuration",
+        ),
+        (
+            GATE.PREVENTIVE_IDENTITY_REVIEW_FILENAME,
+            "kubernetes-rbac-native-response-attestor",
+            f"kubernetes://{CLUSTER_ID}/rbac-csr",
+        ),
+        (
+            GATE.PREVENTIVE_CA_HISTORY_FILENAME,
+            "kubernetes-ca-native-response-attestor",
+            f"kubernetes://{CLUSTER_ID}/certificate-authority-history",
+        ),
+    )
+    for index, (filename, role, endpoint) in enumerate(fixtures):
+        payload = {
+            "authority_snapshot_id": "a" * 64,
+            "fixture_index": index,
+            "schema": f"fs2-serve.nebius.ai/test-native-payload/v{index + 1}",
+        }
+        raw, authorities = preventive_native_export_fixture(
+            role=role, endpoint=endpoint, payload=payload
+        )
+        assert GATE.verify_native_authority_export(
+            raw,
+            filename,
+            response_authorities=authorities,
+            role=role,
+            endpoint=endpoint,
+        ) == payload
+
+    verifier = SCRIPT.read_text(encoding="utf-8")
+    for required_argument in (
+        "ca_history_raw: bytes",
+        "ca_history_summary: Mapping[str, Any]",
+        "approval_projection: Mapping[str, Any]",
+        "response_authorities: Sequence[object]",
+    ):
+        assert required_argument in verifier
+
+
+def test_preventive_boundary_rejects_tampered_native_identity_export(
+) -> None:
+    role = "kubernetes-rbac-native-response-attestor"
+    endpoint = f"kubernetes://{CLUSTER_ID}/rbac-csr"
+    raw, authorities = preventive_native_export_fixture(
+        role=role,
+        endpoint=endpoint,
+        payload={"schema": "fs2-serve.nebius.ai/test-identity/v1", "checks": []},
+    )
+    envelope = json.loads(raw)
+    envelope["payload"]["checks"] = [{"path": "forged-rbac-path"}]
+    tampered = GATE.canonical_bytes(envelope) + b"\n"
+    with pytest.raises(GATE.GateError, match="payload digest differs"):
+        GATE.verify_native_authority_export(
+            tampered,
+            GATE.PREVENTIVE_IDENTITY_REVIEW_FILENAME,
+            response_authorities=authorities,
+            role=role,
+            endpoint=endpoint,
+        )
 
 
 def test_preventive_boundary_raw_exports_close_every_identity_path() -> None:
-    fixture = preventive_raw_exports()
+    fixture = preventive_semantic_fixture()
     GATE.validate_preventive_raw_exports(
-        provider_raw=GATE.canonical_bytes(fixture["provider"]) + b"\n",
-        apiserver_raw=GATE.canonical_bytes(fixture["apiserver"]) + b"\n",
-        identity_raw=GATE.canonical_bytes(fixture["identity"]) + b"\n",
+        provider_raw=fixture["provider_raw"],
+        apiserver_raw=fixture["apiserver_raw"],
+        identity_raw=fixture["identity_raw"],
+        ca_history_raw=fixture["ca_history_raw"],
         provider_summary=fixture["provider_summary"],
         apiserver_summary=fixture["apiserver_summary"],
         identity_summary=fixture["identity_summary"],
+        ca_history_summary=fixture["ca_history_summary"],
         boundary=fixture["boundary"],
+        approval_projection=fixture["approval_projection"],
         project_id="project-test123",
         cluster_id=CLUSTER_ID,
-        collected_at=datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc),
+        collected_at=fixture["collected_at"],
+        response_authorities=fixture["response_authorities"],
     )
 
 
 def test_preventive_boundary_rejects_one_rbac_allowed_identity_path() -> None:
-    fixture = preventive_raw_exports()
-    identity = copy.deepcopy(fixture["identity"])
-    identity["checks"][0]["rbac_allowed"] = True
+    fixture = preventive_semantic_fixture(include_unenrolled_rbac_subject=True)
     with pytest.raises(GATE.GateError, match="does not deny every"):
         GATE.validate_preventive_raw_exports(
-            provider_raw=GATE.canonical_bytes(fixture["provider"]) + b"\n",
-            apiserver_raw=GATE.canonical_bytes(fixture["apiserver"]) + b"\n",
-            identity_raw=GATE.canonical_bytes(identity) + b"\n",
+            provider_raw=fixture["provider_raw"],
+            apiserver_raw=fixture["apiserver_raw"],
+            identity_raw=fixture["identity_raw"],
+            ca_history_raw=fixture["ca_history_raw"],
             provider_summary=fixture["provider_summary"],
             apiserver_summary=fixture["apiserver_summary"],
             identity_summary=fixture["identity_summary"],
+            ca_history_summary=fixture["ca_history_summary"],
             boundary=fixture["boundary"],
+            approval_projection=fixture["approval_projection"],
             project_id="project-test123",
             cluster_id=CLUSTER_ID,
-            collected_at=datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc),
+            collected_at=fixture["collected_at"],
+            response_authorities=fixture["response_authorities"],
         )
 
 
