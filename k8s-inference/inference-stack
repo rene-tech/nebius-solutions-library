@@ -62,6 +62,7 @@ STAGE_COMPLETION_OUTPUTS = {
 }
 ACTIVE_RELEASE_IDENTITY: dict[str, Any] | None = None
 ACTIVE_OPERATOR_IDENTITY: dict[str, Any] | None = None
+ACTIVE_CREDENTIAL_DELIVERY_IDENTITY: dict[str, Any] | None = None
 FIXED_EXECUTABLES = {
     "terraform": "/snap/bin/terraform",
     "kubectl": "/snap/bin/kubectl",
@@ -328,10 +329,10 @@ def release_identity(command: str) -> dict[str, Any]:
     return identity
 
 
-def operator_proxy_identity() -> dict[str, Any]:
-    """Obtain an existing provider-expiring viewer context without minting credentials."""
+def operator_read_identity() -> dict[str, Any]:
+    """Obtain the expiring viewer used only for read-only status/validation."""
 
-    document = authority_observation("operator-proxy-context")
+    document = authority_observation("operator-read-context")
     identity = document.get("operator_identity")
     denials = document.get("denials")
     if (
@@ -345,14 +346,138 @@ def operator_proxy_identity() -> dict[str, Any]:
         or not all(value is True for value in denials.values())
         or document.get("inventory", {}).get("allowed") is not True
     ):
-        raise DeploymentError("operator proxy identity is not an exact read-only viewer")
+        raise DeploymentError("operator read identity is not an exact read-only viewer")
     expires = datetime.fromisoformat(str(identity.get("expires_at")).replace("Z", "+00:00"))
     if expires.tzinfo is None or expires.astimezone(UTC) <= datetime.now(UTC):
-        raise DeploymentError("operator proxy viewer credential has expired")
+        raise DeploymentError("operator read viewer credential has expired")
     document["kubeconfig"] = attested_file(
         document.get("kubeconfig"),
         document.get("kubeconfig_sha256"),
         label="operator viewer kubeconfig",
+        private=True,
+        reader_uid=document.get("reader_uid"),
+        reader_gid=document.get("reader_gid"),
+    )
+    document["executables"] = attested_executables(document)
+    return document
+
+
+def operator_proxy_identity() -> dict[str, Any]:
+    """Obtain a distinct short-lived identity limited to loopback port-forward."""
+
+    document = authority_observation("operator-proxy-context")
+    identity = document.get("operator_proxy_identity")
+    required_allowed = {
+        "pods:get",
+        "pods:list",
+        "pods/portforward:create",
+        "services:get",
+    }
+    required_denied = {
+        "impersonate:*",
+        "pods:create",
+        "pods:delete",
+        "pods:exec",
+        "secrets:create",
+        "secrets:delete",
+        "secrets:get",
+        "secrets:list",
+        "secrets:patch",
+        "secrets:update",
+        "serviceaccounts/token:create",
+        "workloads:create",
+        "workloads:delete",
+        "workloads:patch",
+        "workloads:update",
+    }
+    try:
+        issued = datetime.fromisoformat(
+            str(identity["issued_at"]).replace("Z", "+00:00")
+        ).astimezone(UTC)
+        expires = datetime.fromisoformat(
+            str(identity["expires_at"]).replace("Z", "+00:00")
+        ).astimezone(UTC)
+    except (KeyError, TypeError, ValueError) as error:
+        raise DeploymentError("operator proxy identity evidence is malformed") from error
+    now = datetime.now(UTC)
+    if (
+        not isinstance(identity, dict)
+        or identity.get("audience") != "operator-proxy"
+        or set(identity.get("allowed_permissions", [])) != required_allowed
+        or not required_denied <= set(identity.get("denied_permissions", []))
+        or issued > now
+        or expires <= now
+        or expires - issued > timedelta(minutes=15)
+    ):
+        raise DeploymentError(
+            "operator proxy is not an active port-forward-only projected identity"
+        )
+    document["kubeconfig"] = attested_file(
+        document.get("kubeconfig"),
+        document.get("kubeconfig_sha256"),
+        label="operator port-forward kubeconfig",
+        private=True,
+        reader_uid=document.get("reader_uid"),
+        reader_gid=document.get("reader_gid"),
+    )
+    document["executables"] = attested_executables(document)
+    return document
+
+
+def credential_delivery_identity(kind: str) -> dict[str, Any]:
+    """Obtain a projected token that can read only one current scoped PAT Secret."""
+
+    document = authority_observation(
+        "scoped-credential-context", credential_kind=kind
+    )
+    identity = document.get("credential_delivery_identity")
+    binding = document.get("secret_binding")
+    if not isinstance(identity, dict) or not isinstance(binding, dict):
+        raise DeploymentError("scoped credential delivery evidence is malformed")
+    expected_permission = (
+        f"secrets:get:{binding.get('namespace')}/{binding.get('name')}"
+    )
+    try:
+        issued = datetime.fromisoformat(
+            str(identity["issued_at"]).replace("Z", "+00:00")
+        ).astimezone(UTC)
+        expires = datetime.fromisoformat(
+            str(identity["expires_at"]).replace("Z", "+00:00")
+        ).astimezone(UTC)
+    except (KeyError, TypeError, ValueError) as error:
+        raise DeploymentError("scoped credential delivery lifetime is malformed") from error
+    required_denials = {
+        "impersonate:*",
+        "pods:create",
+        "pods/portforward:create",
+        "secrets:create",
+        "secrets:delete",
+        "secrets:get:other",
+        "secrets:list",
+        "secrets:patch",
+        "secrets:update",
+        "serviceaccounts/token:create",
+        "workloads:create",
+        "workloads:delete",
+        "workloads:patch",
+        "workloads:update",
+    }
+    now = datetime.now(UTC)
+    if (
+        document.get("credential_kind") != kind
+        or identity.get("audience") != f"scoped-credential-delivery:{kind}"
+        or identity.get("allowed_permissions") != [expected_permission]
+        or not required_denials <= set(identity.get("denied_permissions", []))
+        or document.get("secret_key") != "token"
+        or issued > now
+        or expires <= now
+        or expires - issued > timedelta(minutes=5)
+    ):
+        raise DeploymentError("scoped credential delivery is not exact and least-privilege")
+    document["kubeconfig"] = attested_file(
+        document.get("kubeconfig"),
+        document.get("kubeconfig_sha256"),
+        label=f"{kind} credential delivery kubeconfig",
         private=True,
         reader_uid=document.get("reader_uid"),
         reader_gid=document.get("reader_gid"),
@@ -472,7 +597,11 @@ def terraform_init(
     if root_name is None:
         raise DeploymentError(f"Terraform root is not registered for remote state: {root}")
     backend_config = TERRAFORM_BACKEND_CONFIG_ROOT / f"{root_name}.s3.hcl"
-    active_reader = ACTIVE_RELEASE_IDENTITY or ACTIVE_OPERATOR_IDENTITY
+    active_reader = (
+        ACTIVE_RELEASE_IDENTITY
+        or ACTIVE_OPERATOR_IDENTITY
+        or ACTIVE_CREDENTIAL_DELIVERY_IDENTITY
+    )
     chain = [backend_config.parent, *backend_config.parent.parents]
     if (
         not backend_config.is_file()
@@ -3068,12 +3197,13 @@ def workload_access_bundle(
 
 def kubernetes_secret_values(
     kubectl: str,
-    run_root: Path,
     *,
+    kubeconfig: Path,
     context: str,
     namespace: str,
     name: str,
     keys: Sequence[str],
+    expected_binding: Mapping[str, Any],
 ) -> dict[str, str]:
     """Read named UTF-8 Secret keys into memory without echoing their values."""
 
@@ -3082,11 +3212,8 @@ def kubernetes_secret_values(
         for value in (context, namespace, name, *keys)
     ):
         raise DeploymentError("the workloads credential Secret reference is malformed")
-    kubeconfig = run_root / "kubeconfig"
     if kubeconfig.is_symlink() or not kubeconfig.is_file():
-        raise DeploymentError("the run-owned kubeconfig is absent or unsafe")
-    if stat.S_IMODE(kubeconfig.stat().st_mode) & 0o077:
-        raise DeploymentError("the run-owned kubeconfig must be owner-only")
+        raise DeploymentError("the authority-attested delivery kubeconfig is absent or unsafe")
     result = run(
         [
             kubectl,
@@ -3108,10 +3235,35 @@ def kubernetes_secret_values(
     try:
         document = json.loads(result.stdout)
         encoded = document["data"]
+        metadata = document["metadata"]
         if not isinstance(encoded, dict):
             raise TypeError
+        decoded = {
+            key: base64.b64decode(value, validate=True)
+            for key, value in encoded.items()
+            if isinstance(key, str) and isinstance(value, str)
+        }
+        content_sha256 = canonical_sha256(
+            {
+                key: hashlib.sha256(value).hexdigest()
+                for key, value in decoded.items()
+            }
+        )
+        if (
+            len(decoded) != len(encoded)
+            or not isinstance(metadata, dict)
+            or metadata.get("namespace") != expected_binding.get("namespace")
+            or metadata.get("name") != expected_binding.get("name")
+            or metadata.get("uid") != expected_binding.get("uid")
+            or metadata.get("resourceVersion")
+            != expected_binding.get("resource_version")
+            or content_sha256 != expected_binding.get("content_sha256")
+        ):
+            raise DeploymentError(
+                "the scoped credential Secret changed after provider attestation"
+            )
         values = {
-            key: base64.b64decode(encoded[key], validate=True).decode("utf-8")
+            key: decoded[key].decode("utf-8")
             for key in keys
         }
     except (
@@ -3144,6 +3296,13 @@ def scoped_credential_handoff(
 
     if kind not in {"general-access", "scientific-access"}:
         raise DeploymentError("unsupported credential kind")
+    if (
+        ACTIVE_CREDENTIAL_DELIVERY_IDENTITY is None
+        or ACTIVE_CREDENTIAL_DELIVERY_IDENTITY.get("credential_kind") != kind
+    ):
+        raise DeploymentError(
+            "scoped output requires an authority-attested exact-Secret delivery identity"
+        )
     if not 300 <= expires_in_seconds <= 86400:
         raise DeploymentError("credential handoff expiry must be 300-86400 seconds")
     environment = stage_environment(
@@ -3171,13 +3330,25 @@ def scoped_credential_handoff(
     if not isinstance(reference, dict):
         raise DeploymentError(f"the requested {kind} credential is not configured")
     keys = tuple(reference.get(field) for field in key_fields)
+    delivery_binding = ACTIVE_CREDENTIAL_DELIVERY_IDENTITY.get("secret_binding")
+    if (
+        not isinstance(delivery_binding, dict)
+        or reference.get("namespace") != delivery_binding.get("namespace")
+        or reference.get("name") != delivery_binding.get("name")
+        or keys != (ACTIVE_CREDENTIAL_DELIVERY_IDENTITY.get("secret_key"),)
+        or context != ACTIVE_CREDENTIAL_DELIVERY_IDENTITY.get("context_name")
+    ):
+        raise DeploymentError(
+            "workload output differs from the provider-attested scoped Secret binding"
+        )
     values = kubernetes_secret_values(
         kubectl,
-        run_root,
+        kubeconfig=Path(ACTIVE_CREDENTIAL_DELIVERY_IDENTITY["kubeconfig"]),
         context=context,
         namespace=reference.get("namespace"),
         name=reference.get("name"),
         keys=keys,
+        expected_binding=ACTIVE_CREDENTIAL_DELIVERY_IDENTITY["secret_binding"],
     )
     issued_at = datetime.now(UTC).replace(microsecond=0)
     policy_name = "mcp_access" if kind == "general-access" else "scientific_access"
@@ -3968,13 +4139,21 @@ def internal_proxy_command(
         "public_edge_contract",
         infrastructure_environment,
     )
-    provider_identity = ACTIVE_OPERATOR_IDENTITY["operator_identity"]
+    provider_identity = ACTIVE_OPERATOR_IDENTITY["operator_proxy_identity"]
     if (
         provider_identity.get("cluster_id") != cluster_id
         or ACTIVE_OPERATOR_IDENTITY.get("context_name") != cluster_name
+        or set(provider_identity.get("allowed_permissions", []))
+        != {
+            "pods:get",
+            "pods:list",
+            "pods/portforward:create",
+            "services:get",
+        }
+        or "secrets:get" not in provider_identity.get("denied_permissions", [])
     ):
         raise DeploymentError(
-            "operator viewer identity is bound to another cluster or context"
+            "operator port-forward identity or exact RBAC scope differs from this cluster"
         )
     kubeconfig = Path(ACTIVE_OPERATOR_IDENTITY["kubeconfig"])
 
@@ -4092,6 +4271,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    global ACTIVE_CREDENTIAL_DELIVERY_IDENTITY
     global ACTIVE_OPERATOR_IDENTITY, ACTIVE_RELEASE_IDENTITY
     os.umask(0o077)
     args = parse_args(argv)
@@ -4119,7 +4299,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.crane = ACTIVE_OPERATOR_IDENTITY["executables"]["crane"]
         args.nebius_profile = None
         args.nebius_config = None
+    elif args.command == "output":
+        if args.credential_kind is None:
+            raise DeploymentError("output requires one explicit --credential-kind")
+        ACTIVE_CREDENTIAL_DELIVERY_IDENTITY = credential_delivery_identity(
+            args.credential_kind
+        )
+        args.terraform = ACTIVE_CREDENTIAL_DELIVERY_IDENTITY["executables"]["terraform"]
+        args.kubectl = ACTIVE_CREDENTIAL_DELIVERY_IDENTITY["executables"]["kubectl"]
+        args.nebius = ACTIVE_CREDENTIAL_DELIVERY_IDENTITY["executables"]["nebius"]
+        args.crane = ACTIVE_CREDENTIAL_DELIVERY_IDENTITY["executables"]["crane"]
+        args.nebius_profile = None
+        args.nebius_config = None
     else:
+        ACTIVE_OPERATOR_IDENTITY = operator_read_identity()
+        args.terraform = ACTIVE_OPERATOR_IDENTITY["executables"]["terraform"]
+        args.kubectl = ACTIVE_OPERATOR_IDENTITY["executables"]["kubectl"]
+        args.nebius = ACTIVE_OPERATOR_IDENTITY["executables"]["nebius"]
+        args.crane = ACTIVE_OPERATOR_IDENTITY["executables"]["crane"]
         args.nebius_profile = None
         args.nebius_config = None
     os.environ["FS2_KUBECTL_EXECUTABLE"] = args.kubectl

@@ -512,6 +512,137 @@ def require_lineage(
         raise RotationError("provider credential has an invalid lifecycle status")
 
 
+def require_source_binding(response: dict[str, Any], journal: dict[str, Any]) -> None:
+    """Require the adapter result to retain the authority's exact source binding."""
+
+    source_trust = response.get("source_trust")
+    bindings = response.get("credential_bindings")
+    if (
+        not isinstance(source_trust, dict)
+        or source_trust.get("credential_class") != journal["credential_class"]
+        or source_trust.get("generation") != journal["successor_generation"]
+        or source_trust.get("retained_generations")
+        != list(range(1, journal["successor_generation"] + 1))
+        or not isinstance(bindings, dict)
+        or source_trust.get("secret_bindings_sha256") != canonical_sha256(bindings)
+        or response.get("credential_bindings_sha256")
+        != canonical_sha256(bindings)
+    ):
+        raise RotationError("class observation lacks exact all-generation source custody")
+
+
+def require_rotation_readiness(
+    journal: dict[str, Any],
+    response: dict[str, Any],
+    policy: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Accept lifecycle state only from the class's provider-native adapter."""
+
+    predecessor = exact_identity(response.get("predecessor"))
+    successor = exact_identity(response.get("successor"))
+    expected = {
+        "schema": "fs2-serve.nebius.ai/credential-rotation-readiness/v1",
+        "credential_class": journal["credential_class"],
+        "predecessor_id": journal["predecessor_id"],
+        "successor_id": journal["successor_id"],
+        "ready": True,
+        "mutation_performed": False,
+    }
+    if any(response.get(key) != value for key, value in expected.items()):
+        raise RotationError("provider did not attest the exact read-only rotation lineage")
+    require_source_binding(response, journal)
+    for identity, generation, fingerprint in (
+        (
+            predecessor,
+            journal["predecessor_generation"],
+            journal.get("predecessor_fingerprint"),
+        ),
+        (successor, journal["successor_generation"], journal["successor_fingerprint"]),
+    ):
+        require_lineage(
+            identity,
+            credential_class=journal["credential_class"],
+            owner_id=journal["owner_id"],
+            project_id=journal["project_id"],
+            purpose=journal["purpose"],
+            generation=generation,
+            fingerprint=fingerprint,
+            statuses={"active"},
+        )
+        require_inventory_policy(identity, policy)
+    if (
+        predecessor["id"] == successor["id"]
+        or predecessor["fingerprint"] == successor["fingerprint"]
+    ):
+        raise RotationError("provider reused the predecessor identity for the successor")
+    return predecessor, successor
+
+
+def require_authentication_continuity(
+    journal: dict[str, Any], response: dict[str, Any]
+) -> None:
+    expected = {
+        "schema": "fs2-serve.nebius.ai/credential-authentication-continuity/v1",
+        "credential_class": journal["credential_class"],
+        "predecessor_id": journal["predecessor"]["id"],
+        "successor_id": journal["successor"]["id"],
+        "predecessor_authenticates": True,
+        "successor_authenticates": True,
+        "predecessor_disabled": False,
+        "ready": True,
+        "mutation_performed": False,
+    }
+    if any(response.get(key) != value for key, value in expected.items()):
+        raise RotationError("authentication continuity is not proven for both generations")
+    require_source_binding(response, journal)
+
+
+def require_ciphertext_migration(
+    journal: dict[str, Any], response: dict[str, Any]
+) -> None:
+    expected = {
+        "schema": "fs2-serve.nebius.ai/credential-ciphertext-migration/v1",
+        "credential_class": journal["credential_class"],
+        "from": journal["predecessor"]["generation"],
+        "to": journal["successor_generation"],
+        "preexisting_predecessor_read_verified": True,
+        "preexisting_successor_read_verified": True,
+        "successor_write_read_verified": True,
+        "rollback_read_verified": True,
+        "tenant_principal_binding_verified": True,
+        "retirement_allowed": False,
+        "ready": True,
+        "mutation_performed": False,
+    }
+    if any(response.get(key) != value for key, value in expected.items()):
+        raise RotationError(
+            "ciphertext migration does not preserve old, new, rollback and binding semantics"
+        )
+    require_source_binding(response, journal)
+
+
+def required_semantic_observations(
+    journal: dict[str, Any], command: Sequence[str]
+) -> dict[str, str]:
+    """Run every non-consumer operation declared by this exact class contract."""
+
+    digests: dict[str, str] = {}
+    required = set(journal["consumer_contract"]["required_operations"])
+    if "authentication-continuity" in required:
+        response = class_operation_observation(
+            journal, command, "authentication-continuity"
+        )
+        require_authentication_continuity(journal, response)
+        digests["authentication-continuity"] = canonical_sha256(response)
+    if "ciphertext-migration" in required:
+        response = class_operation_observation(journal, command, "ciphertext-migration")
+        require_ciphertext_migration(journal, response)
+        digests["ciphertext-migration"] = canonical_sha256(response)
+    if required != {"consumer-readiness", "rotation-readiness", *digests}:
+        raise RotationError("credential workflow did not execute every required operation")
+    return dict(sorted(digests.items()))
+
+
 def load_journal(path: Path) -> dict[str, Any]:
     try:
         journal = latest_state(path, stream="credential-rotation")
@@ -527,39 +658,56 @@ def operation_request(
 ) -> dict[str, Any]:
     if operation == "credential-inventory":
         return {"operation": operation}
-    if operation == "consumer-readiness":
-        return {
+    if operation in CONSUMER_OPERATIONS:
+        request = {
             "operation": operation,
             "credential_class": journal["credential_class"],
-            "generation": journal["successor_generation"],
-            "phase": extra["phase"],
             "source_trust": extra["source_trust"],
             "bindings_sha256": canonical_sha256(extra["credential_bindings"]),
             "credential_bindings": extra["credential_bindings"],
         }
+        if operation == "consumer-readiness":
+            request.update(
+                {
+                    "generation": journal["successor_generation"],
+                    "phase": extra["phase"],
+                }
+            )
+        elif operation == "rotation-readiness":
+            request.update(
+                {
+                    "predecessor_id": extra["predecessor_id"],
+                    "successor_id": extra["successor_id"],
+                }
+            )
+        elif operation == "ciphertext-migration":
+            request.update(
+                {
+                    "from": journal["predecessor"]["generation"],
+                    "to": journal["successor_generation"],
+                }
+            )
+        else:
+            request.update(
+                {
+                    "predecessor_id": journal["predecessor"]["id"],
+                    "successor_id": journal["successor"]["id"],
+                }
+            )
+        return request
     raise RotationError("rotation requested an unreviewed authority operation")
 
 
-def consumer_readiness_observation(
-    journal: dict[str, Any], command: Sequence[str], *, phase: str
-) -> dict[str, Any]:
-    """Bind a readiness request to one externally verified class generation."""
+def class_source_material(
+    journal: dict[str, Any], command: Sequence[str]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return exact all-generation source custody for one credential class."""
 
     inventory = provider_call(command, {"operation": "credential-inventory"})
     items = inventory.get("items")
     classes = inventory.get("classes")
     if not isinstance(items, list) or not isinstance(classes, dict):
         raise RotationError("credential inventory omitted source bindings")
-    matches = [
-        item
-        for item in items
-        if isinstance(item, dict)
-        and item.get("credential_class") == journal["credential_class"]
-        and item.get("generation") == journal["successor_generation"]
-        and item.get("id") == journal["successor"]["id"]
-    ]
-    if len(matches) != 1:
-        raise RotationError("successor source binding is absent or ambiguous")
     class_source = classes.get(journal["credential_class"])
     if (
         not isinstance(class_source, dict)
@@ -573,15 +721,52 @@ def consumer_readiness_observation(
         credential_bindings, dict
     ):
         raise RotationError("successor source binding is incomplete")
+    source_ids = {
+        item.get("id")
+        for item in items
+        if isinstance(item, dict)
+        and item.get("credential_class") == journal["credential_class"]
+    }
+    expected_ids = {journal["predecessor_id"]}
+    successor = journal.get("successor")
+    if isinstance(successor, dict):
+        expected_ids.add(successor["id"])
+    elif isinstance(journal.get("successor_id"), str):
+        expected_ids.add(journal["successor_id"])
+    if not expected_ids <= source_ids:
+        raise RotationError("rotation lineage is absent from exact source custody")
+    return source_trust, credential_bindings
+
+
+def class_operation_observation(
+    journal: dict[str, Any], command: Sequence[str], operation: str, **extra: Any
+) -> dict[str, Any]:
+    """Invoke one contract-declared read-only operation with exact source custody."""
+
+    if operation not in journal["consumer_contract"]["required_operations"]:
+        raise RotationError(
+            f"credential contract does not declare required operation {operation}"
+        )
+    source_trust, credential_bindings = class_source_material(journal, command)
     return provider_call(
         command,
         operation_request(
             journal,
-            "consumer-readiness",
-            phase=phase,
+            operation,
             source_trust=source_trust,
             credential_bindings=credential_bindings,
+            **extra,
         ),
+    )
+
+
+def consumer_readiness_observation(
+    journal: dict[str, Any], command: Sequence[str], *, phase: str
+) -> dict[str, Any]:
+    """Bind a readiness request to one externally verified class generation."""
+
+    return class_operation_observation(
+        journal, command, "consumer-readiness", phase=phase
     )
 
 
@@ -604,7 +789,7 @@ def reconcile_created(
                 purpose=journal["purpose"],
                 generation=journal["successor_generation"],
                 fingerprint=journal["successor_fingerprint"],
-                statuses={"active", "disabled"},
+                statuses={"source-observed"},
             )
         except RotationError:
             continue
@@ -613,7 +798,25 @@ def reconcile_created(
         raise RotationError(
             "provider reconciliation found duplicate successor credentials"
         )
-    return matches[0] if matches else None
+    if not matches:
+        return None
+    journal["successor_id"] = matches[0]["id"]
+    readiness = class_operation_observation(
+        journal,
+        command,
+        "rotation-readiness",
+        predecessor_id=journal["predecessor_id"],
+        successor_id=journal["successor_id"],
+    )
+    policy = {
+        "readers": journal["readers"],
+        "expiry": journal["expiry_policy"],
+    }
+    predecessor, successor = require_rotation_readiness(journal, readiness, policy)
+    if predecessor != journal["predecessor"]:
+        raise RotationError("provider predecessor differs from the durable journal")
+    journal["rotation_readiness_evidence_sha256"] = canonical_sha256(readiness)
+    return successor
 
 
 def record_phase(
@@ -637,6 +840,11 @@ def reconcile_pending_transition(
     successor = journal.get("successor")
     if not isinstance(successor, dict):
         raise RotationError("pending transition has no provider-reconciled successor")
+    observed_successor = reconcile_created(journal, command)
+    if observed_successor != successor:
+        raise RotationError(
+            "pending transition lineage is no longer active in provider readiness"
+        )
     phase = journal.get("phase")
     if phase == "dual-read-pending":
         response = consumer_readiness_observation(
@@ -648,6 +856,10 @@ def reconcile_pending_transition(
             response,
             expected_write_id=journal["predecessor"]["id"],
         )
+        journal["dual_read_semantic_evidence"] = required_semantic_observations(
+            journal, command
+        )
+        journal["dual_read_evidence_sha256"] = canonical_sha256(response)
         return "dual-read"
     if phase == "switch-write-pending":
         response = consumer_readiness_observation(
@@ -656,6 +868,10 @@ def reconcile_pending_transition(
         require_consumer_readiness(
             journal, successor, response, expected_write_id=successor["id"]
         )
+        journal["current_write_semantic_evidence"] = required_semantic_observations(
+            journal, command
+        )
+        journal["current_write_evidence_sha256"] = canonical_sha256(response)
         return "current-write"
     return None
 
@@ -676,43 +892,61 @@ def adopt_successor(args: argparse.Namespace) -> dict[str, Any]:
         inventory = provider_call(
             args.provider_command, {"operation": "credential-inventory"}
         )
-        predecessor_matches = [
+        source_items = [
             exact_identity(item)
             for item in inventory.get("items", [])
-            if isinstance(item, dict) and item.get("id") == args.predecessor_id
+            if isinstance(item, dict)
+        ]
+        predecessor_matches = [
+            item for item in source_items if item.get("id") == args.predecessor_id
         ]
         if len(predecessor_matches) != 1:
             raise RotationError(
                 "authoritative inventory did not return one exact predecessor"
             )
-        predecessor = predecessor_matches[0]
+        predecessor_source = predecessor_matches[0]
         require_lineage(
-            predecessor,
+            predecessor_source,
             credential_class=args.credential_class,
-            owner_id=predecessor["owner_id"],
-            project_id=predecessor["project_id"],
+            owner_id=args.owner_id,
+            project_id=args.project_id,
             purpose=policy["purpose"],
             generation=args.predecessor_generation,
-            statuses={"active"},
+            statuses={"source-observed"},
         )
-        require_inventory_policy(predecessor, policy)
         if len(args.successor_fingerprint) != 64 or any(
             character not in "0123456789abcdef"
             for character in args.successor_fingerprint
         ):
             raise RotationError("successor fingerprint must be lowercase SHA-256")
-        if args.successor_fingerprint == predecessor["fingerprint"]:
+        if args.successor_fingerprint == predecessor_source["fingerprint"]:
             raise RotationError(
                 "successor fingerprint must differ from the retained predecessor"
+            )
+        successor_sources = [
+            item
+            for item in source_items
+            if item["credential_class"] == args.credential_class
+            and item["owner_id"] == args.owner_id
+            and item["project_id"] == args.project_id
+            and item["purpose"] == policy["purpose"]
+            and item["generation"] == args.predecessor_generation + 1
+            and item["fingerprint"] == args.successor_fingerprint
+            and item["status"] == "source-observed"
+        ]
+        if len(successor_sources) != 1:
+            raise RotationError(
+                "authoritative source custody did not return one exact staged successor"
             )
         journal = {
             "schema": "fs2-serve.nebius.ai/credential-rotation/v3",
             "operation_id": str(uuid.uuid4()),
             "credential_class": args.credential_class,
-            "owner_id": predecessor["owner_id"],
-            "project_id": predecessor["project_id"],
+            "owner_id": args.owner_id,
+            "project_id": args.project_id,
             "purpose": policy["purpose"],
             "readers": policy["readers"],
+            "expiry_policy": policy["expiry"],
             "registry_sha256": canonical_sha256(registry),
             "consumer_contracts_sha256": canonical_sha256(
                 {
@@ -722,31 +956,29 @@ def adopt_successor(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "consumer_contract": contracts[args.credential_class],
             "provider_command": provider_identity,
-            "predecessor": predecessor,
-            "successor_generation": predecessor["generation"] + 1,
+            "predecessor_id": predecessor_source["id"],
+            "predecessor_generation": predecessor_source["generation"],
+            "predecessor_fingerprint": predecessor_source["fingerprint"],
+            "predecessor": None,
+            "successor_generation": predecessor_source["generation"] + 1,
             "successor_fingerprint": args.successor_fingerprint,
+            "successor_id": successor_sources[0]["id"],
             "successor": None,
             "phase": "adoption-pending",
             "created_at": utc_timestamp(),
             "events": [],
         }
-        append_journal_state(journal_path, journal)
-        created = reconcile_created(journal, args.provider_command)
-        if created is None:
-            raise RotationError(
-                "the separately staged successor is absent from authoritative provider inventory"
-            )
-        require_lineage(
-            created,
-            credential_class=args.credential_class,
-            owner_id=args.owner_id,
-            project_id=args.project_id,
-            purpose=policy["purpose"],
-            generation=journal["successor_generation"],
-            fingerprint=journal["successor_fingerprint"],
-            statuses={"active"},
+        readiness = class_operation_observation(
+            journal,
+            args.provider_command,
+            "rotation-readiness",
+            predecessor_id=journal["predecessor_id"],
+            successor_id=journal["successor_id"],
         )
-        require_inventory_policy(created, policy)
+        predecessor, created = require_rotation_readiness(journal, readiness, policy)
+        journal["predecessor"] = predecessor
+        journal["rotation_readiness_evidence_sha256"] = canonical_sha256(readiness)
+        append_journal_state(journal_path, journal)
         reconciled = reconcile_created(journal, args.provider_command)
         if reconciled != created:
             raise RotationError(
@@ -807,6 +1039,11 @@ def transition(args: argparse.Namespace) -> dict[str, Any]:
         successor = journal.get("successor")
         if not isinstance(successor, dict):
             raise RotationError("a provider-reconciled successor is required")
+        observed_successor = reconcile_created(journal, args.provider_command)
+        if observed_successor != successor:
+            raise RotationError(
+                "rotation lineage is no longer active in provider-native readiness"
+            )
         pending_for_command = {
             "prove-dual-read": "dual-read-pending",
             "prove-current-write": "switch-write-pending",
@@ -842,6 +1079,9 @@ def transition(args: argparse.Namespace) -> dict[str, Any]:
                 expected_write_id=journal["predecessor"]["id"],
             )
             journal["dual_read_evidence_sha256"] = canonical_sha256(response)
+            journal["dual_read_semantic_evidence"] = required_semantic_observations(
+                journal, args.provider_command
+            )
             record_phase(journal_path, journal, "dual-read", "prove-dual-read")
         elif args.command == "prove-current-write":
             if journal["phase"] != "dual-read":
@@ -856,6 +1096,9 @@ def transition(args: argparse.Namespace) -> dict[str, Any]:
                 journal, successor, response, expected_write_id=successor["id"]
             )
             journal["current_write_evidence_sha256"] = canonical_sha256(response)
+            journal["current_write_semantic_evidence"] = required_semantic_observations(
+                journal, args.provider_command
+            )
             record_phase(journal_path, journal, "current-write", "prove-current-write")
         else:
             raise RotationError("unsupported rotation transition")
@@ -913,13 +1156,11 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
                 or any(item["purpose"] != policy["purpose"] for item in matches)
                 or len(owners) != 1
                 or generations != list(range(1, max(generations) + 1))
-                or not any(item["status"] == "active" for item in matches)
+                or any(item["status"] != "source-observed" for item in matches)
             ):
                 raise RotationError(
                     f"provider inventory has invalid lineage for {credential_class}"
                 )
-            for item in matches:
-                require_inventory_policy(item, policy)
             classes[credential_class] = sorted(
                 matches, key=lambda item: item["generation"]
             )
@@ -973,6 +1214,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
     create_parser = subparsers.add_parser("adopt-successor")
     create_parser.add_argument("--credential-class", required=True)
+    create_parser.add_argument("--owner-id", required=True)
+    create_parser.add_argument("--project-id", required=True)
     create_parser.add_argument("--predecessor-id", required=True)
     create_parser.add_argument("--predecessor-generation", type=int, required=True)
     create_parser.add_argument("--successor-fingerprint", required=True)

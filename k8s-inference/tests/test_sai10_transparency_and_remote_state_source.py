@@ -149,7 +149,7 @@ def test_every_active_credential_class_requires_a_pinned_adapter() -> None:
     assert "requires an accepted class-specific production adapter" not in provider
 
 
-def test_proxy_uses_existing_provider_bound_viewer_and_never_get_credentials() -> None:
+def test_operator_workflows_use_three_non_interchangeable_identities() -> None:
     wrapper = (ROOT / "inference-stack").read_text()
     proxy = wrapper[
         wrapper.index("def internal_proxy_command(") : wrapper.index(
@@ -159,7 +159,13 @@ def test_proxy_uses_existing_provider_bound_viewer_and_never_get_credentials() -
     assert "ACTIVE_OPERATOR_IDENTITY" in proxy
     assert "ensure_kubeconfig(" not in proxy
     assert "get-credentials" not in proxy
+    assert 'authority_observation("operator-read-context")' in wrapper
     assert 'authority_observation("operator-proxy-context")' in wrapper
+    assert '"scoped-credential-context", credential_kind=kind' in wrapper
+    assert '"pods/portforward:create"' in wrapper
+    assert '"secrets:get" not in provider_identity.get("denied_permissions", [])' in proxy
+    assert 'ACTIVE_CREDENTIAL_DELIVERY_IDENTITY = credential_delivery_identity(' in wrapper
+    assert 'ACTIVE_OPERATOR_IDENTITY = operator_read_identity()' in wrapper
     assert "--terraform" not in wrapper[wrapper.index("def parse_args") :]
     assert "--kubectl" not in wrapper[wrapper.index("def parse_args") :]
     assert "--nebius" not in wrapper[wrapper.index("def parse_args") :]
@@ -172,6 +178,65 @@ def test_proxy_uses_existing_provider_bound_viewer_and_never_get_credentials() -
     )
     for forbidden in (" create ", " delete ", " revoke ", " issue "):
         assert forbidden not in verifier.lower()
+
+
+def test_rotation_uses_provider_lifecycle_not_terraform_source_observation() -> None:
+    rotation = (ROOT / "scripts/credential_rotation.py").read_text()
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    service = (ROOT / "scripts/credential_authority_service.py").read_text()
+    parser = rotation[rotation.index("def parse_args") :]
+    adopt = rotation[
+        rotation.index("def adopt_successor(") : rotation.index(
+            "\ndef reconcile(", rotation.index("def adopt_successor(")
+        )
+    ]
+    assert '"status": "source-observed"' in provider
+    assert 'statuses={"source-observed"}' in adopt
+    assert "require_rotation_readiness(journal, readiness, policy)" in adopt
+    assert 'statuses={"active"}' in rotation
+    assert 'create_parser.add_argument("--owner-id", required=True)' in parser
+    assert 'create_parser.add_argument("--project-id", required=True)' in parser
+    assert "owner_id=args.owner_id" in adopt
+    assert "project_id=args.project_id" in adopt
+    for operation in (
+        "rotation-readiness",
+        "ciphertext-migration",
+        "authentication-continuity",
+    ):
+        assert operation in rotation
+        fields = service[service.index("CLIENT_FIELDS") : service.index("FORBIDDEN_CLIENT_FIELDS")]
+        assert operation in fields
+    assert "required_semantic_observations" in rotation
+    assert '"source_trust": source_trust' in provider
+    assert '"credential_bindings": expected_bindings' in provider
+
+
+def test_viewer_denial_does_not_disable_the_distinct_proxy_tunnel() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    service = (ROOT / "scripts/credential_authority_service.py").read_text()
+    proxy_script = (
+        ROOT / "stages/workloads/scripts/internal_edge_proxy.py"
+    ).read_text()
+    assert 'for resource in ("pods/exec", "pods/attach", "pods/portforward")' in provider
+    assert "def operator_read_identity()" in wrapper
+    assert "def operator_proxy_identity()" in wrapper
+    assert '"operator_proxy_identity": identity' in provider
+    assert '"pods/portforward:create"' in service
+    assert "port_forward_command(" in proxy_script
+    assert "distinct, provider-attested" in proxy_script
+
+
+def test_scoped_output_is_bound_to_live_secret_uid_rv_and_content() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    assert "def credential_delivery_identity(kind: str)" in wrapper
+    assert '"scoped-credential-context", credential_kind=kind' in wrapper
+    assert 'metadata.get("uid") != expected_binding.get("uid")' in wrapper
+    assert 'metadata.get("resourceVersion")' in wrapper
+    assert 'content_sha256 != expected_binding.get("content_sha256")' in wrapper
+    assert '"secret_binding": bindings[0]' in provider
+    assert '"secrets:get:other"' in wrapper
 
 
 def test_inventory_and_backend_require_provider_exact_bindings() -> None:

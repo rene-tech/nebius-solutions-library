@@ -50,7 +50,9 @@ READ_ONLY_OPERATIONS = frozenset(
         "ciphertext-migration",
         "authentication-continuity",
         "release-identity",
+        "operator-read-context",
         "operator-proxy-context",
+        "scoped-credential-context",
         "backend-custody",
         "state-migration-readiness",
     }
@@ -71,15 +73,40 @@ CLIENT_FIELDS: dict[str, frozenset[str]] = {
     ),
     "credential-inventory": frozenset(),
     "rotation-readiness": frozenset(
-        {"credential_class", "predecessor_id", "successor_id"}
+        {
+            "credential_class",
+            "predecessor_id",
+            "successor_id",
+            "bindings_sha256",
+            "credential_bindings",
+            "source_trust",
+        }
     ),
     "viewer-handoff-inventory": frozenset({"key_id"}),
-    "ciphertext-migration": frozenset({"credential_class", "from", "to"}),
+    "ciphertext-migration": frozenset(
+        {
+            "credential_class",
+            "from",
+            "to",
+            "bindings_sha256",
+            "credential_bindings",
+            "source_trust",
+        }
+    ),
     "authentication-continuity": frozenset(
-        {"credential_class", "predecessor_id", "successor_id"}
+        {
+            "credential_class",
+            "predecessor_id",
+            "successor_id",
+            "bindings_sha256",
+            "credential_bindings",
+            "source_trust",
+        }
     ),
     "release-identity": frozenset(),
+    "operator-read-context": frozenset(),
     "operator-proxy-context": frozenset(),
+    "scoped-credential-context": frozenset({"credential_kind"}),
     "backend-custody": frozenset({"terraform_root_name"}),
     "state-migration-readiness": frozenset({"terraform_root_name"}),
 }
@@ -175,6 +202,125 @@ def root_reader_file(
     return metadata
 
 
+def _validate_scoped_kubernetes_identity(
+    identity: Any,
+    *,
+    label: str,
+    reader_uid: int,
+    reader_gid: int,
+    audience: str,
+    allowed_permissions: set[str] | None = None,
+    maximum_lifetime_seconds: int,
+    delivery: bool = False,
+) -> None:
+    """Validate one root-custodied projected-token identity contract."""
+
+    fields = {
+        "service_account_id",
+        "namespace",
+        "name",
+        "uid",
+        "credential_id",
+        "issuer",
+        "audience",
+        "maximum_lifetime_seconds",
+        "allowed_permissions",
+        "denied_permissions",
+        "kubeconfig",
+        "kubeconfig_sha256",
+        "context_name",
+        "reader_uid",
+        "reader_gid",
+    }
+    delivery_fields = {
+        "credential_class",
+        "allowed_secret_namespace",
+        "allowed_secret_name",
+        "secret_key",
+    }
+    if delivery:
+        fields |= delivery_fields
+    if (
+        not isinstance(identity, dict)
+        or set(identity) != fields
+        or identity.get("audience") != audience
+        or identity.get("maximum_lifetime_seconds") != maximum_lifetime_seconds
+        or identity.get("reader_uid") != reader_uid
+        or identity.get("reader_gid") != reader_gid
+        or not all(
+            isinstance(identity.get(field), str) and identity[field]
+            for field in fields
+            - {
+                "maximum_lifetime_seconds",
+                "allowed_permissions",
+                "denied_permissions",
+                "reader_uid",
+                "reader_gid",
+            }
+        )
+        or not isinstance(identity.get("allowed_permissions"), list)
+        or not identity["allowed_permissions"]
+        or not all(
+            isinstance(permission, str) and permission
+            for permission in identity["allowed_permissions"]
+        )
+        or len(identity["allowed_permissions"])
+        != len(set(identity["allowed_permissions"]))
+        or (
+            allowed_permissions is not None
+            and set(identity["allowed_permissions"]) != allowed_permissions
+        )
+        or not isinstance(identity.get("denied_permissions"), list)
+        or not identity["denied_permissions"]
+        or not all(
+            isinstance(permission, str) and permission
+            for permission in identity["denied_permissions"]
+        )
+        or len(identity["denied_permissions"])
+        != len(set(identity["denied_permissions"]))
+    ):
+        raise AuthorityServiceError(f"{label} identity contract is incomplete")
+    if delivery:
+        expected_permission = (
+            f"secrets:get:{identity['allowed_secret_namespace']}/"
+            f"{identity['allowed_secret_name']}"
+        )
+        if (
+            identity["allowed_permissions"] != [expected_permission]
+            or identity["credential_class"] not in {"pat-bootstrap", "pat-scientific"}
+            or identity["secret_key"] != "token"
+        ):
+            raise AuthorityServiceError(
+                f"{label} is not bound to one exact scoped credential Secret"
+            )
+    required_denials = {
+        "impersonate:*",
+        "pods:create",
+        "pods:delete",
+        "pods:exec",
+        "secrets:create",
+        "secrets:delete",
+        "secrets:list",
+        "secrets:patch",
+        "secrets:update",
+        "serviceaccounts/token:create",
+        "workloads:create",
+        "workloads:delete",
+        "workloads:patch",
+        "workloads:update",
+    }
+    if delivery:
+        required_denials |= {"pods/portforward:create", "secrets:get:other"}
+    else:
+        required_denials |= {"secrets:get", "secrets:watch"}
+    if not required_denials <= set(identity["denied_permissions"]):
+        raise AuthorityServiceError(f"{label} RBAC denials are incomplete")
+    kubeconfig = Path(identity["kubeconfig"])
+    root_reader_file(kubeconfig, label=f"{label} kubeconfig", reader_gid=reader_gid)
+    if file_sha256(kubeconfig) != identity["kubeconfig_sha256"]:
+        raise AuthorityServiceError(f"{label} kubeconfig differs")
+
+
 def _validate_adapter(adapter: Any, *, label: str) -> None:
     if (
         not isinstance(adapter, dict)
@@ -224,6 +370,8 @@ def _validate_policy(policy: Any) -> None:
         "evidence_identity",
         "release_identity",
         "operator_identity",
+        "operator_proxy_identity",
+        "credential_delivery_identities",
         "cluster_id",
         "kubeconfig",
         "kubeconfig_sha256",
@@ -241,6 +389,8 @@ def _validate_policy(policy: Any) -> None:
         "release_identity_adapter",
         "authorization_closure_adapter",
         "cluster_authorization_adapter",
+        "operator_proxy_authorization_adapter",
+        "credential_delivery_authorization_adapter",
         "controller_inventory_adapters",
         "state_migration_adapter",
     }
@@ -408,6 +558,44 @@ def _validate_policy(policy: Any) -> None:
     )
     if file_sha256(operator_kubeconfig) != operator["kubeconfig_sha256"]:
         raise AuthorityServiceError("operator viewer kubeconfig differs")
+    _validate_scoped_kubernetes_identity(
+        policy.get("operator_proxy_identity"),
+        label="operator port-forward",
+        reader_uid=policy["authorized_reader_uid"],
+        reader_gid=policy["authorized_reader_gid"],
+        audience="operator-proxy",
+        allowed_permissions={
+            "pods:get",
+            "pods:list",
+            "pods/portforward:create",
+            "services:get",
+        },
+        maximum_lifetime_seconds=900,
+    )
+    deliveries = policy.get("credential_delivery_identities")
+    if not isinstance(deliveries, dict) or set(deliveries) != {
+        "general-access",
+        "scientific-access",
+    }:
+        raise AuthorityServiceError("scoped credential delivery identities are incomplete")
+    expected_classes = {
+        "general-access": "pat-bootstrap",
+        "scientific-access": "pat-scientific",
+    }
+    for kind, identity in deliveries.items():
+        _validate_scoped_kubernetes_identity(
+            identity,
+            label=f"{kind} credential delivery",
+            reader_uid=policy["authorized_reader_uid"],
+            reader_gid=policy["authorized_reader_gid"],
+            audience=f"scoped-credential-delivery:{kind}",
+            maximum_lifetime_seconds=300,
+            delivery=True,
+        )
+        if identity["credential_class"] != expected_classes[kind]:
+            raise AuthorityServiceError(
+                f"{kind} delivery is bound to the wrong credential class"
+            )
     cluster_identity = policy.get("cluster_inventory_identity")
     cluster_identity_fields = {
         "service_account_id",
@@ -715,6 +903,14 @@ def _validate_policy(policy: Any) -> None:
         policy.get("cluster_authorization_adapter"),
         label="global Secret inventory identity and RBAC closure",
     )
+    _validate_adapter(
+        policy.get("operator_proxy_authorization_adapter"),
+        label="operator port-forward identity and RBAC closure",
+    )
+    _validate_adapter(
+        policy.get("credential_delivery_authorization_adapter"),
+        label="scoped credential delivery identity and RBAC closure",
+    )
     controller_adapters = policy.get("controller_inventory_adapters")
     if not isinstance(controller_adapters, dict) or set(controller_adapters) != {
         "helm_release_records"
@@ -897,13 +1093,34 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
         "consumer-rollout",
     }:
         raise AuthorityServiceError("credential admission phase is invalid")
+    if operation == "scoped-credential-context" and parameters["credential_kind"] not in {
+        "general-access",
+        "scientific-access",
+    }:
+        raise AuthorityServiceError("scoped credential kind is invalid")
     if operation == "consumer-readiness" and parameters["phase"] not in {
         "predecessor-ready",
         "dual-read-ready",
         "current-write-ready",
     }:
         raise AuthorityServiceError("consumer readiness phase is invalid")
-    if operation == "consumer-readiness":
+    if operation in {"rotation-readiness", "authentication-continuity"} and (
+        parameters["predecessor_id"] == parameters["successor_id"]
+    ):
+        raise AuthorityServiceError("credential generations must use distinct identities")
+    if operation == "ciphertext-migration" and (
+        not isinstance(parameters["from"], int)
+        or not isinstance(parameters["to"], int)
+        or parameters["from"] < 1
+        or parameters["to"] != parameters["from"] + 1
+    ):
+        raise AuthorityServiceError("ciphertext migration generations are not contiguous")
+    if operation in {
+        "consumer-readiness",
+        "rotation-readiness",
+        "ciphertext-migration",
+        "authentication-continuity",
+    }:
         bindings = parameters.get("credential_bindings")
         source_trust = parameters.get("source_trust")
         binding_fields = {
@@ -939,11 +1156,12 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
             or set(source_trust) != source_trust_fields
             or source_trust.get("credential_class")
             != parameters.get("credential_class")
-            or source_trust.get("generation") != parameters.get("generation")
+            or not isinstance(source_trust.get("generation"), int)
+            or source_trust["generation"] < 1
             or not isinstance(source_trust.get("retained_generations"), list)
             or not source_trust["retained_generations"]
             or source_trust["retained_generations"]
-            != list(range(1, parameters["generation"] + 1))
+            != list(range(1, source_trust["generation"] + 1))
             or any(
                 not isinstance(source_trust.get(field), str)
                 or len(source_trust[field]) != 64
@@ -963,6 +1181,13 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
         ):
             raise AuthorityServiceError(
                 "consumer readiness source trust is incomplete"
+            )
+        if (
+            operation == "consumer-readiness"
+            and source_trust["generation"] != parameters["generation"]
+        ):
+            raise AuthorityServiceError(
+                "consumer readiness generation differs from source trust"
             )
         for address, binding in bindings.items():
             if (

@@ -1,5 +1,9 @@
 # Provider-bound operator custody and release admission v4
 
+> Source contract v5 supersedes the lifecycle and purpose-scoped identity
+> details in this document. See OPERATOR_ACCESS_HYGIENE_V5.md; this v4 text is
+> retained as rejected-lineage context and is not deployment authorization.
+
 This revision supersedes the v3 source contract without treating any earlier
 candidate as accepted. It remains fail-closed and source-only: there is no
 production authority configuration, accepted external trust bundle, provider

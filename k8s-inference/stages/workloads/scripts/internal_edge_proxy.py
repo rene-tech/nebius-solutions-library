@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Keep an internal-only inference edge reachable through loopback port-forwards."""
+"""Serve the internal edge with a short-lived port-forward-only identity.
+
+The general operator handoff remains viewer-only and cannot create the
+pods/portforward subresource.  The wrapper supplies a distinct, provider-attested
+projected token whose RBAC closure is limited to service discovery and this
+single tunnel operation.
+"""
 
 from __future__ import annotations
 

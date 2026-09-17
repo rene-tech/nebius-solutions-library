@@ -136,7 +136,7 @@ Prerequisites are Terraform 1.11 or newer (but older than 2.0), `kubectl`,
 `helm` 3.9 or newer for the digest-pinned OCI charts, `jq`,
 [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane),
 Git, and the root-installed credential authority described in
-[`docs/OPERATOR_ACCESS_HYGIENE_V4.md`](docs/OPERATOR_ACCESS_HYGIENE_V4.md).
+[`docs/OPERATOR_ACCESS_HYGIENE_V5.md`](docs/OPERATOR_ACCESS_HYGIENE_V5.md).
 The optional
 local Kueue and JobSet server tests additionally need
 [`kind`](https://kind.sigs.k8s.io/). Authentication is
@@ -333,7 +333,7 @@ database, registry, and Grafana generations are
 independent. Generation 1 retains the existing persisted resource addresses;
 later keyrings use new Secret names, retain every predecessor needed for reads,
 and trigger readiness-gated consumer rollouts from non-secret generation
-metadata. See [operator access and credential migration](docs/OPERATOR_ACCESS_HYGIENE.md)
+metadata. See [operator access and credential migration](docs/OPERATOR_ACCESS_HYGIENE_V5.md)
 for the plan guard, encrypted-state retirement, scoped credential export, and
 rollback contract.
 
@@ -375,7 +375,7 @@ manifest procedure. A plaintext copy is never a rollback artifact.
 
 The Kubernetes API allowlist, viewer-only operator handoff identity, state and
 plan hygiene, rotation generations, and staged verification procedure are
-documented in [Operator access hygiene](docs/OPERATOR_ACCESS_HYGIENE.md).
+documented in [Operator access hygiene](docs/OPERATOR_ACCESS_HYGIENE_V5.md).
 
 ## Configuration
 

@@ -582,6 +582,115 @@ def cluster_inventory_identity_proof(policy: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def scoped_kubernetes_identity_proof(
+    policy: dict[str, Any],
+    *,
+    configured: dict[str, Any],
+    adapter_name: str,
+    label: str,
+) -> dict[str, Any]:
+    """Attest one short-lived Kubernetes identity and its exact RBAC closure."""
+
+    kubeconfig = Path(configured["kubeconfig"])
+    kubeconfig_sha256 = root_reader_file(
+        kubeconfig,
+        label=f"{label} kubeconfig",
+        reader_gid=policy["authorized_reader_gid"],
+        expected_sha256=configured["kubeconfig_sha256"],
+    )
+    adapter = policy[adapter_name]
+    response = command_json_input(
+        verified_adapter_command(adapter, label=label),
+        label=label,
+        payload={
+            "schema": "fs2-serve.nebius.ai/scoped-kubernetes-identity-request/v1",
+            "cluster_id": policy["cluster_id"],
+            "kubeconfig_sha256": kubeconfig_sha256,
+            "expected_identity": {
+                key: value
+                for key, value in configured.items()
+                if key
+                not in {
+                    "kubeconfig",
+                    "kubeconfig_sha256",
+                    "context_name",
+                    "reader_uid",
+                    "reader_gid",
+                    "credential_class",
+                    "secret_key",
+                    "allowed_secret_namespace",
+                    "allowed_secret_name",
+                }
+            },
+        },
+        timeout=adapter["timeout_seconds"],
+    )
+    fields = {
+        "schema",
+        "cluster_id",
+        "kubeconfig_sha256",
+        "service_account_id",
+        "namespace",
+        "name",
+        "uid",
+        "credential_id",
+        "issuer",
+        "audience",
+        "issued_at",
+        "expires_at",
+        "allowed_permissions",
+        "denied_permissions",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+    }
+    compared = {
+        "service_account_id",
+        "namespace",
+        "name",
+        "uid",
+        "credential_id",
+        "issuer",
+        "audience",
+    }
+    if (
+        not isinstance(response, dict)
+        or set(response) != fields
+        or response.get("schema")
+        != "fs2-serve.nebius.ai/scoped-kubernetes-identity/v1"
+        or response.get("cluster_id") != policy["cluster_id"]
+        or response.get("kubeconfig_sha256") != kubeconfig_sha256
+        or any(response.get(field) != configured.get(field) for field in compared)
+        or sorted(response.get("allowed_permissions", []))
+        != sorted(configured["allowed_permissions"])
+        or sorted(response.get("denied_permissions", []))
+        != sorted(configured["denied_permissions"])
+        or response.get("complete") is not True
+        or response.get("data_fields_returned") != 0
+    ):
+        raise ProviderError(f"{label} identity or RBAC closure differs from policy")
+    issued = provider_time(response["issued_at"], label=f"{label} issue time")
+    expires = provider_time(response["expires_at"], label=f"{label} expiry")
+    now = datetime.now(UTC)
+    if (
+        issued > now
+        or expires <= now
+        or expires - issued
+        > timedelta(seconds=configured["maximum_lifetime_seconds"])
+    ):
+        raise ProviderError(f"{label} credential lifetime is invalid")
+    return {
+        **{field: response[field] for field in compared},
+        "cluster_id": response["cluster_id"],
+        "issued_at": response["issued_at"],
+        "expires_at": response["expires_at"],
+        "allowed_permissions": response["allowed_permissions"],
+        "denied_permissions": response["denied_permissions"],
+        "observed_at": response["observed_at"],
+        "proof_sha256": canonical_sha256(response),
+    }
+
+
 def kubernetes_secrets(policy: dict[str, Any], *, kubeconfig: str | None = None) -> list[dict[str, Any]]:
     if kubeconfig is None:
         root_private_file(
@@ -1794,7 +1903,10 @@ def credential_inventory(
                 "purpose": policy_entry["purpose"],
                 "generation": generation,
                 "fingerprint": fingerprint,
-                "status": "observed",
+                # Terraform/provider source custody is not lifecycle authority.
+                # The class-specific rotation-readiness adapter must separately
+                # attest active/disabled state and provider-enforced expiry.
+                "status": "source-observed",
                 "provider_version": canonical_sha256(
                     [
                         [item["state_lineage"], item["state_serial"]]
@@ -2441,33 +2553,35 @@ def class_adapter_result(
         raise ProviderError(
             f"{operation} has no accepted adapter for {credential_class}"
         )
-    if operation == "consumer-readiness":
-        if not isinstance(parameters.get("generation"), int):
-            raise ProviderError("consumer readiness generation is invalid")
-        source_trust, expected_bindings, exact_source = exact_class_source_material(
-            policy=policy,
-            states=states,
-            secrets=secrets,
-            provider_inventory=provider_inventory,
-            credential_class=credential_class,
-            generation=parameters["generation"],
+    inventory = credential_inventory(policy, states, provider_inventory, secrets)
+    class_entry = inventory["classes"].get(credential_class)
+    class_items = [
+        item
+        for item in inventory["items"]
+        if item["credential_class"] == credential_class
+    ]
+    if not isinstance(class_entry, dict) or not class_items:
+        raise ProviderError(
+            f"{operation} has no exact provider-derived source for {credential_class}"
         )
-        if parameters.get("source_trust") != source_trust:
-            raise ProviderError("consumer readiness source trust differs from authority state")
-        exact_requested_secret_bindings(parameters, expected_bindings, secrets)
-        class_sources = [exact_source]
-    else:
-        class_sources = [
-            item
-            for item in credential_inventory(
-                policy, states, provider_inventory, secrets
-            )["items"]
-            if item["credential_class"] == credential_class
-        ]
-        if not class_sources:
-            raise ProviderError(
-                f"{operation} has no exact provider-derived source for {credential_class}"
-            )
+    source_trust = class_entry["source_trust"]
+    expected_bindings = class_entry["secret_bindings"]
+    if parameters.get("source_trust") != source_trust:
+        raise ProviderError(
+            f"{operation} source trust differs from authority state"
+        )
+    exact_requested_secret_bindings(parameters, expected_bindings, secrets)
+    if operation == "consumer-readiness":
+        if parameters.get("generation") != class_entry["current_generation"]:
+            raise ProviderError("consumer readiness generation is invalid")
+    class_sources = [
+        {
+            "credential_class": credential_class,
+            "current_generation": class_entry["current_generation"],
+            "retained_generations": class_entry["retained_generations"],
+            "identities": class_items,
+        }
+    ]
     adapter = configured["adapter"]
     command = verified_adapter_command(
         adapter, label=f"{credential_class} {operation}"
@@ -2515,13 +2629,12 @@ def class_adapter_result(
             f"{credential_class} adapter returned an incomplete observation"
         )
     result = response["result"]
-    if operation == "consumer-readiness":
-        result = {
-            **result,
-            "source_trust": source_trust,
-            "credential_bindings": expected_bindings,
-            "credential_bindings_sha256": canonical_sha256(expected_bindings),
-        }
+    result = {
+        **result,
+        "source_trust": source_trust,
+        "credential_bindings": expected_bindings,
+        "credential_bindings_sha256": canonical_sha256(expected_bindings),
+    }
     return {
         **result,
         "adapter_observation": {
@@ -2764,7 +2877,7 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
             "evidence_identity": evidence_identity_proof(policy, provider_inventory),
             "observed_at": observed_at(),
         }
-    if operation == "operator-proxy-context":
+    if operation == "operator-read-context":
         provider_inventory = nebius_inventory(policy)
         configured = policy["operator_identity"]
         lineage = exact_handoff_lineage(
@@ -2779,7 +2892,7 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
             - datetime.now(UTC)
             > timedelta(seconds=configured["maximum_lifetime_seconds"])
         ):
-            raise ProviderError("operator proxy identity differs from fixed viewer policy")
+            raise ProviderError("operator read identity differs from fixed viewer policy")
         kubeconfig = Path(configured["kubeconfig"])
         kubeconfig_sha256 = root_reader_file(
             kubeconfig,
@@ -2798,6 +2911,24 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
             "denials": authorization_denials(policy),
             "inventory": viewer_inventory_proof(policy),
             "allowed_cidrs": cluster_cidrs(policy),
+            "observed_at": observed_at(),
+        }
+    if operation == "operator-proxy-context":
+        configured = policy["operator_proxy_identity"]
+        identity = scoped_kubernetes_identity_proof(
+            policy,
+            configured=configured,
+            adapter_name="operator_proxy_authorization_adapter",
+            label="operator port-forward identity",
+        )
+        return {
+            "operator_proxy_identity": identity,
+            "kubeconfig": configured["kubeconfig"],
+            "kubeconfig_sha256": configured["kubeconfig_sha256"],
+            "context_name": configured["context_name"],
+            "reader_uid": configured["reader_uid"],
+            "reader_gid": configured["reader_gid"],
+            "provider_executables": policy["provider_executables"],
             "observed_at": observed_at(),
         }
     states = terraform_inventory(policy)
@@ -2830,6 +2961,43 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
         cluster_inventory_identity=cluster_inventory_identity,
         approved_namespaces=policy["namespaces"],
     )
+    if operation == "scoped-credential-context":
+        kind = str(parameters["credential_kind"])
+        configured = policy["credential_delivery_identities"][kind]
+        identity = scoped_kubernetes_identity_proof(
+            policy,
+            configured=configured,
+            adapter_name="credential_delivery_authorization_adapter",
+            label=f"{kind} credential delivery identity",
+        )
+        inventory = credential_inventory(policy, states, provider_inventory, secrets)
+        class_entry = inventory["classes"].get(configured["credential_class"])
+        if not isinstance(class_entry, dict):
+            raise ProviderError("scoped credential class is absent from source custody")
+        bindings = [
+            binding
+            for binding in class_entry["secret_bindings"].values()
+            if binding["generation"] == str(class_entry["current_generation"])
+            and binding["namespace"] == configured["allowed_secret_namespace"]
+            and binding["name"] == configured["allowed_secret_name"]
+        ]
+        if len(bindings) != 1:
+            raise ProviderError(
+                "scoped delivery identity is not bound to one exact current Secret"
+            )
+        return {
+            "credential_kind": kind,
+            "credential_delivery_identity": identity,
+            "secret_binding": bindings[0],
+            "secret_key": configured["secret_key"],
+            "kubeconfig": configured["kubeconfig"],
+            "kubeconfig_sha256": configured["kubeconfig_sha256"],
+            "context_name": configured["context_name"],
+            "reader_uid": configured["reader_uid"],
+            "reader_gid": configured["reader_gid"],
+            "provider_executables": policy["provider_executables"],
+            "observed_at": observed_at(),
+        }
     if operation == "custody-snapshot":
         return {
             "registry_sha256": registry_sha256,
