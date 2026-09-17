@@ -1959,6 +1959,12 @@
         "enabled": {
           "type": "boolean"
         },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "maxQueueAgeSeconds": {
           "type": "integer",
           "minimum": 30,

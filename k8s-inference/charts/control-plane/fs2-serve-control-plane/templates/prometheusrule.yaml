@@ -7,7 +7,7 @@ kind: PrometheusRule
 metadata:
   name: {{ include "fs2-serve.fullname" . }}
   labels:
-    {{- include "fs2-serve.labels" . | nindent 4 }}
+    {{- merge (include "fs2-serve.labels" . | fromYaml) .Values.prometheusRule.labels | toYaml | nindent 4 }}
 spec:
   groups:
     - name: fs2-serve-control-plane.rules

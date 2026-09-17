@@ -1944,6 +1944,29 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
     ]
 
 
+def test_prometheus_rule_selector_labels_preserve_defaults_and_only_change_rule_metadata() -> None:
+    baseline = render()
+    configured = render("--set", "prometheusRule.labels.release=fs2-unit-monitoring")
+    original_rule = next(document for document in baseline if document["kind"] == "PrometheusRule")
+    selected_rule = next(document for document in configured if document["kind"] == "PrometheusRule")
+    assert "release" not in original_rule["metadata"]["labels"]
+    assert selected_rule["metadata"]["labels"] == {
+        **original_rule["metadata"]["labels"],
+        "release": "fs2-unit-monitoring",
+    }
+    original_rule["metadata"]["labels"]["release"] = "fs2-unit-monitoring"
+    assert configured == baseline
+
+    # Workloads must derive the selector label from the same run-scoped
+    # monitoring release identity as foundation, never a customer literal.
+    workloads = (SOLUTION_ROOT / "stages/workloads/control_plane.tf").read_text()
+    foundation = (SOLUTION_ROOT / "stages/foundation/releases.tf").read_text()
+    assert re.search(r'prometheusRule\s*=\s*\{.*?release\s*=\s*"fs2-\$\{var.run_id\}-monitoring"', workloads, re.S)
+    assert re.search(
+        r'resource "helm_release" "monitoring"\s*\{\s*name\s*=\s*"fs2-\$\{var.run_id\}-monitoring"', foundation
+    )
+
+
 def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() -> None:
     documents = render()
     prometheus_rule = next(document for document in documents if document["kind"] == "PrometheusRule")

@@ -213,7 +213,13 @@ locals {
     serviceMonitor = merge({ enabled = true }, var.model_scaling_mode == "keda" ? {
       interval = "5s"
     } : {})
-    prometheusRule = { enabled = true }
+    prometheusRule = {
+      enabled = true
+      labels = {
+        # The foundation monitoring release's default Prometheus ruleSelector.
+        release = "fs2-${var.run_id}-monitoring"
+      }
+    }
     nodeSelector = {
       "workload.fs2.nebius/system" = "true"
       "capacity.fs2.nebius/type"   = "regular"

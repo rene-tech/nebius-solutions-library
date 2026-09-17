@@ -594,6 +594,8 @@ adminReadAdapters:
 
 prometheusRule:
   enabled: false
+  # Match the existing Prometheus ruleSelector (for example its Helm release).
+  labels: {}
   maxQueueAgeSeconds: 300
   maxQueueDepth: 100
   maxSyncWaitSaturations: 10
