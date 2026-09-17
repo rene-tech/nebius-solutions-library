@@ -1725,14 +1725,19 @@ def test_bounded_for_summary_excludes_large_and_incomplete_rows():
     rows within the current cap; large or incomplete rows (withheld on detail anyway) are summarized
     conservatively from clear columns without loading their full payload — this is what prevents the
     list from decrypting an unbounded (up to legacy-cap × limit) result set."""
-    from fs2_serve.request_debug import _bounded_for_summary
+    from fs2_serve.request_debug import _MAX_SANITIZE_BODY, _bounded_for_summary
 
     cap = 1024
     assert _bounded_for_summary(100, 100, True, cap) is True  # small + complete -> bounded decrypt
     assert _bounded_for_summary(5000, 100, True, cap) is False  # large request -> conservative, no decrypt
     assert _bounded_for_summary(100, 5000, True, cap) is False  # large response -> conservative, no decrypt
     assert _bounded_for_summary(100, 100, False, cap) is False  # incomplete -> conservative
-    assert _bounded_for_summary(10**9, 10**9, True, None) is True  # no cap configured -> bounded
+    # No cap configured must NOT treat an arbitrarily large legacy row as bounded: the HARD ceiling
+    # (_MAX_SANITIZE_BODY) applies even when max_body_bytes is None, so a huge row stays conservative
+    # (no load-everything decrypt). A row within the ceiling is bounded; one past it is not.
+    assert _bounded_for_summary(10**9, 10**9, True, None) is False  # no cap -> hard ceiling still bounds
+    assert _bounded_for_summary(_MAX_SANITIZE_BODY, _MAX_SANITIZE_BODY, True, None) is True  # within ceiling
+    assert _bounded_for_summary(_MAX_SANITIZE_BODY + 1, 100, True, None) is False  # past ceiling
 
 
 async def test_queue_reprocesses_item_after_mid_item_cancellation():
@@ -1770,6 +1775,129 @@ async def test_queue_reprocesses_item_after_mid_item_cancellation():
     await queue.drain()  # restarts the worker, reprocesses the re-queued item
     assert queue._inflight() == 0 and len(store.exchanges) == 1
     await queue.aclose()
+
+
+async def test_closed_queue_rejects_new_reservations_and_submits_and_does_not_restart_worker():
+    """SAI-01 regression: aclose() must FENCE admission. A capture still BUILDING when shutdown began
+    (reserved, not yet submitted) must not be able to enqueue after close, and no worker may be
+    resurrected past closure; new reservations are refused entirely. Authored; not executed here."""
+    from fs2_serve.request_debug import DebugPersistQueue
+
+    store = InMemoryDebugStore()
+    queue = DebugPersistQueue(store, maxsize=8, max_inflight=8)
+    # A capture reserved BEFORE close but still building (not yet submitted).
+    building = queue.reserve()
+    assert building is not None
+    await queue.aclose()  # sets _closed FIRST, drains the (empty) committed backlog, stops the worker
+    # The still-building capture cannot enqueue after close: submit is a no-op and nothing is queued.
+    assert building.submit(lambda: row(id=uuid4())) is False
+    assert len(queue._pending) == 0
+    # No worker is resurrected by that late submit (the closed fence disables the commit-path restart).
+    assert queue._worker is None
+    # New reservations are refused entirely after close.
+    assert queue.reserve() is None
+    assert len(store.exchanges) == 0
+
+
+async def test_mid_persist_cancel_reprocesses_idempotently_without_double_write():
+    """SAI-01 regression: a worker cancelled WHILE persisting (an ambiguous mid-persist cancel that may
+    have already committed the row) must re-queue the SAME built exchange, so the retry writes the SAME
+    id and record()'s insert-once semantics (in-memory skip / Postgres ON CONFLICT(id) DO NOTHING)
+    collapse it to a single row — never a duplicate under a fresh id. Deterministic; not executed."""
+    from fs2_serve.request_debug import DebugPersistQueue
+
+    committed: list = []
+    entered = asyncio.Event()
+    gate = asyncio.Event()
+
+    class _AmbiguousStore(InMemoryDebugStore):
+        async def record(self, exchange: DebugExchange) -> None:
+            if not committed:
+                # First attempt: COMMIT the row, then block so cancellation lands AFTER the write.
+                await super().record(exchange)
+                committed.append(exchange.id)
+                entered.set()
+                await gate.wait()
+            else:
+                await super().record(exchange)  # retry: same id -> insert-once dedup (no second row)
+
+    store = _AmbiguousStore()
+    queue = DebugPersistQueue(store, maxsize=8, max_inflight=8)
+    exchange_id = uuid4()
+    reservation = queue.reserve()
+    assert reservation is not None
+    with reservation:
+        assert reservation.submit(lambda: row(id=exchange_id)) is True
+    await entered.wait()  # row committed; worker now blocked mid-persist -> cancel is ambiguous
+    worker = queue._worker
+    assert worker is not None
+    worker.cancel()
+    try:
+        await worker
+    except asyncio.CancelledError:
+        pass
+    # Re-queued with the SAME built exchange (stable id), still counted (no undercount/leak).
+    assert len(queue._pending) == 1 and queue._inflight() == 1
+    requeued_builder, _token = queue._pending[0]
+    assert requeued_builder().id == exchange_id  # retry persists the SAME id, not a fresh one
+    gate.set()  # let the (already-committed) record proceed; the restarted worker retries the same id
+    await queue.drain()
+    assert list(store.exchanges) == [exchange_id] and queue._inflight() == 0  # exactly one row
+    await queue.aclose()
+
+
+async def test_list_conservative_summary_matches_detail_for_oversized_response_row():
+    """SAI-01 regression (one shared derivation): a small, CLEAN request in a row that is non-bounded
+    ONLY because its RESPONSE is oversized is SERVED on detail (re-scrubbed, not withheld). The list
+    conservative summary must AGREE — it must NOT falsely mark the request redacted just because the
+    response is oversized — while the response is withheld on both. Authored; not executed here."""
+    cap = 1024
+    store = InMemoryDebugStore(max_body_bytes=cap)
+    legacy = row(
+        request_body=body_capture(b'{"input":"clean"}', "application/json", True),  # small, clean, complete
+        response_body=suppressed_body("application/json", observed_bytes=5000, complete=True),  # over cap
+    )
+    await store.record(legacy)
+    detail = await store.get(legacy.id)
+    assert detail is not None
+    assert _stored_bytes(detail.request_body) != b"[REDACTED]"  # request SERVED on detail (not withheld)
+    assert detail.request_body.redacted is False
+    assert _stored_bytes(detail.response_body) == b"[REDACTED]"  # response withheld on detail
+    listing = await store.list()
+    summary = listing.items[0]
+    assert summary.response_redacted is True  # response withheld on read (agrees with detail)
+    assert summary.request_redacted is False  # small clean request NOT falsely redacted (agrees with detail)
+
+
+async def test_list_summarizes_oversized_row_from_metadata_without_sanitizing_its_body(monkeypatch):
+    """SAI-01 regression (metadata-only oversized nonfetch): the list must summarize a non-bounded
+    (oversized/incomplete) row from its CLEAR columns WITHOUT sanitizing/decrypting its payload — only
+    BOUNDED rows are sanitized. Proven by counting normalize_exchange_for_read calls: exactly one, for
+    the single bounded row, none for the oversized row. Authored; not executed here."""
+    import fs2_serve.request_debug as rd
+
+    cap = 1024
+    store = InMemoryDebugStore(max_body_bytes=cap)
+    bounded = row(request_body=body_capture(b'{"input":"small"}', "application/json", True))
+    oversized = row(
+        started_at=NOW - timedelta(seconds=1),  # sorts after `bounded`
+        request_body=body_capture(b'{"input":"small"}', "application/json", True),
+        response_body=suppressed_body("application/json", observed_bytes=10_000, complete=True),  # over cap
+    )
+    await store.record(bounded)
+    await store.record(oversized)
+
+    calls: list = []
+    original = rd.normalize_exchange_for_read
+
+    def _counting(exchange, max_body_bytes=None):
+        calls.append(exchange.id)
+        return original(exchange, max_body_bytes)
+
+    monkeypatch.setattr(rd, "normalize_exchange_for_read", _counting)
+    listing = await store.list()
+    assert len(listing.items) == 2
+    assert calls == [bounded.id]  # only the bounded row was sanitized; the oversized row was metadata-only
 
 
 async def test_read_and_list_withhold_legacy_complete_truncated_request_under_cap():

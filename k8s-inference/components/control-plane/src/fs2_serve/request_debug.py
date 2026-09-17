@@ -506,6 +506,19 @@ def suppressed_body(content_type: str | None, observed_bytes: int, complete: boo
 _READ_WITHHELD_DETAIL = "[detail withheld on read]"
 
 
+def _request_withheld_on_read(
+    *, complete: bool, truncated: bool, observed_bytes: int, max_body_bytes: int | None
+) -> bool:
+    """THE single predicate deciding whether a stored REQUEST body is withheld on the read/serve path.
+
+    Shared by BOTH the detail/list-bounded sanitizer (``normalize_exchange_for_read``) and the list
+    CONSERVATIVE summary (``_conservative_summary``) so one derivation governs every path: a row can
+    never be judged withheld on one and served on the other. A request is withheld when it is
+    wire-incomplete, a legacy stored prefix (``truncated``), or over the CURRENT cap.
+    """
+    return (not complete) or truncated or (max_body_bytes is not None and observed_bytes > max_body_bytes)
+
+
 def normalize_exchange_for_read(exchange: DebugExchange, max_body_bytes: int | None = None) -> DebugExchange:
     """Full current-contract EGRESS SANITIZER for a stored exchange, applied on EVERY serve path
     (detail read, the list-derived summary — computed from this sanitized exchange — UI render, copy,
@@ -539,8 +552,13 @@ def normalize_exchange_for_read(exchange: DebugExchange, max_body_bytes: int | N
         exchange.query_string,
         request_bytes,
     )
-    over_cap = max_body_bytes is not None and request.observed_bytes > max_body_bytes
-    if (not request.complete) or request.truncated or over_cap or request_bytes is None:
+    withheld = _request_withheld_on_read(
+        complete=request.complete,
+        truncated=request.truncated,
+        observed_bytes=request.observed_bytes,
+        max_body_bytes=max_body_bytes,
+    )
+    if withheld or request_bytes is None:
         request_body = suppressed_body(request.content_type, request.observed_bytes, request.complete)
     else:
         # Re-scrub with current rules + cross-field known values; bounded_body_capture also withholds
@@ -788,27 +806,53 @@ def _summary(exchange: DebugExchange) -> DebugExchangeSummary:
     )
 
 
+# Hard upper bound on the per-row payload the LIST will decrypt/sanitize, independent of the
+# configured withhold cap. It equals the settings cap ceiling; even if max_body_bytes is None or set
+# huge, the list never bound-decrypts a row whose stored bodies exceed this, so a mis/unconfigured cap
+# can never turn the read-time summary into a load-everything memory/event-loop DoS.
+_MAX_SANITIZE_BODY = 256 * 1024
+
+
 def _bounded_for_summary(
     request_observed: int, response_observed: int, request_complete: bool, max_body_bytes: int | None
 ) -> bool:
     """True when a row's read-time truncation/redaction truth can be derived by a BOUNDED read: the
-    request is wire-complete AND both bodies are within the current cap, so the stored payload is small
-    (~2*cap) and cheap to decrypt off the event loop. A row failing this is withheld on detail anyway
-    (incomplete, or a body over the cap) and is summarized CONSERVATIVELY from clear columns WITHOUT
-    loading its (possibly huge, up to the legacy cap) payload — so the list never materializes or
-    decrypts an unbounded result set (no memory / event-loop DoS)."""
+    request is wire-complete AND both bodies are within a HARD per-row limit, so the stored payload is
+    small and cheap to decrypt off the event loop. The limit is the smaller of the configured cap and
+    the hard ceiling (and the hard ceiling alone when the cap is None), so an unset/oversized cap can
+    never treat an arbitrarily large legacy row as bounded. A row failing this is withheld on detail
+    anyway (incomplete, or a body over the cap) and is summarized CONSERVATIVELY from clear columns
+    WITHOUT loading its (possibly huge, up to the legacy cap) payload — no memory / event-loop DoS."""
     if not request_complete:
         return False
-    if max_body_bytes is None:
-        return True
-    return request_observed <= max_body_bytes and response_observed <= max_body_bytes
+    limit = _MAX_SANITIZE_BODY if max_body_bytes is None else min(max_body_bytes, _MAX_SANITIZE_BODY)
+    return request_observed <= limit and response_observed <= limit
 
 
-def _conservative_summary(summary: DebugExchangeSummary) -> DebugExchangeSummary:
-    """Summary for a row deliberately NOT decrypted (withheld-on-detail or unbounded payload): the
-    response is always withheld and the request is conservatively marked redacted, so the list never
-    UNDER-reports what detail withholds. Factual fields (observed lengths, completeness) are unchanged."""
-    return summary.model_copy(update={"request_redacted": True, "response_redacted": True})
+def _conservative_summary(summary: DebugExchangeSummary, max_body_bytes: int | None) -> DebugExchangeSummary:
+    """Summary for a row NOT decrypted (a body too large to bound-decrypt cheaply). The RESPONSE is
+    always withheld. The REQUEST flag is derived from the request-side CLEAR signals ONLY — its stored
+    redacted flag, wire-incompleteness, or its OWN over-cap size — never blanket-True: a small clean
+    request in a row that is unbounded only because its RESPONSE is oversized is therefore NOT falsely
+    marked redacted (which would contradict detail, where that request is served). This is truthful,
+    not merely conservative: a non-bounded row's request is either over its cap (withheld) or small,
+    and a small request cannot be size-truncated — so its clear redacted/complete flags capture every
+    withholding case. Factual fields (observed lengths, completeness) are unchanged."""
+    return summary.model_copy(
+        update={
+            "response_redacted": True,
+            # SAME withhold predicate the detail sanitizer uses, so summary and detail agree. The
+            # summary has no truncated column, but a truncated legacy body was stored as a withheld
+            # marker (redacted True), so the `summary.request_redacted` OR already covers that case.
+            "request_redacted": summary.request_redacted
+            or _request_withheld_on_read(
+                complete=summary.request_complete,
+                truncated=False,
+                observed_bytes=summary.request_observed_bytes,
+                max_body_bytes=max_body_bytes,
+            ),
+        }
+    )
 
 
 def _cursor(summary: DebugExchangeSummary) -> str:
@@ -871,26 +915,31 @@ class InMemoryDebugStore:
             key=lambda row: (row.started_at, row.id),
             reverse=True,
         )
-        # Read-time truthful summaries, BOUNDED to match the Postgres store's memory-safe behaviour: a
-        # bounded row (complete + both bodies within cap) is sanitized for exact truncation/redaction
+        # Read-time truthful summaries, BOUNDED and OFF the event loop to match the Postgres store's
+        # memory-safe behaviour (SAME shared derivation, so the two stores and the detail path agree):
+        # a bounded row (complete + both bodies within cap) is sanitized for exact truncation/redaction
         # truth; a larger/incomplete row (withheld on detail anyway) is summarized conservatively from
-        # its stored flags without treating its full body as list-view content.
+        # its stored flags WITHOUT treating its full body as list-view content. Stored rows are only
+        # inserted (never mutated) by record() and normalize_exchange_for_read returns a copy, so the
+        # worker thread reads them without racing a concurrent writer.
         cap = self._max_body_bytes
+        page = rows[:limit]
 
-        def _row_bounded(exchange: DebugExchange) -> bool:
-            return _bounded_for_summary(
-                exchange.request_body.observed_bytes,
-                exchange.response_body.observed_bytes,
-                exchange.request_body.complete,
-                cap,
-            )
+        def _derive() -> list[DebugExchangeSummary]:
+            out: list[DebugExchangeSummary] = []
+            for row in page:
+                if _bounded_for_summary(
+                    row.request_body.observed_bytes,
+                    row.response_body.observed_bytes,
+                    row.request_body.complete,
+                    cap,
+                ):
+                    out.append(_summary(normalize_exchange_for_read(row, cap)))
+                else:
+                    out.append(_conservative_summary(_summary(row), cap))
+            return out
 
-        items: list[DebugExchangeSummary] = []
-        for row in rows[:limit]:
-            if _row_bounded(row):
-                items.append(_summary(normalize_exchange_for_read(row, cap)))
-            else:
-                items.append(_conservative_summary(_summary(row)))
+        items = await asyncio.to_thread(_derive)
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
@@ -1014,7 +1063,7 @@ class PostgresDebugStore:
         items = [
             truthful[row["id"]]
             if row["id"] in truthful
-            else _conservative_summary(DebugExchangeSummary.model_validate(dict(row)))
+            else _conservative_summary(DebugExchangeSummary.model_validate(dict(row)), cap)
             for row in page
         ]
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
@@ -1134,6 +1183,20 @@ class _CaptureReservation:
         self._queue._release(self._token)
 
 
+def _const_builder(exchange: DebugExchange) -> Callable[[], DebugExchange | None]:
+    """A build closure returning an ALREADY-built exchange verbatim (its stable id preserved).
+
+    Used to re-queue a capture whose persist was interrupted by a mid-item cancellation: the retry
+    then writes the SAME id, which record() persists insert-once (Postgres ON CONFLICT(id) DO NOTHING;
+    in-memory skips a present id), so an ambiguous mid-persist cancel cannot double-write.
+    """
+
+    def _build() -> DebugExchange | None:
+        return exchange
+
+    return _build
+
+
 class DebugPersistQueue:
     """Bounded, non-blocking background persistence for debug captures.
 
@@ -1193,6 +1256,12 @@ class DebugPersistQueue:
         # by convention or a handle flag. The count is the whole registry size.
         self._slots: dict[object, bool] = {}
         self.dropped = 0
+        # Closed-admission fence. Set FIRST by aclose(); once set, reserve() and _commit() refuse (no
+        # new capture is admitted or enqueued) and _ensure_worker() will not (re)start the worker. This
+        # prevents a capture that was still building when shutdown began from re-arming the worker after
+        # it was drained and cancelled — submit after close is a no-op, so no item can be enqueued or a
+        # worker resurrected past closure.
+        self._closed = False
 
     def _inflight(self) -> int:
         """Captures currently holding a slot: every recorded token (reserved-and-building OR
@@ -1207,6 +1276,9 @@ class DebugPersistQueue:
         normal, exception, or cancellation — or hand it to the worker via ``handle.submit``). Returns
         None (counting a drop) at the bound, so the caller bypasses capture and allocates nothing.
         asyncio is single-threaded, so this check-mint-record runs without a lock."""
+        if self._closed:
+            self.dropped += 1  # closed for admission (shutdown): admit nothing new
+            return None
         if self._inflight() >= self._max_inflight:
             self.dropped += 1
             return None
@@ -1231,7 +1303,14 @@ class DebugPersistQueue:
         entry flipped to True (committed) — a non-allocating, cannot-raise dict-value update. So there
         is never a window where a queued item's token is unrecorded (undercount) or a committed token
         has nothing queued (leak): the ownership count always matches the deque contents. On overload
-        (deque at maxsize) the capture is dropped with the token still reserved. Non-blocking."""
+        (deque at maxsize) the capture is dropped with the token still reserved. Non-blocking.
+
+        CLOSED FENCE: once aclose() has set ``_closed`` (checked here atomically — asyncio is
+        single-threaded, so this runs without interleaving), submit is a no-op that leaves the token
+        reserved (freed on context exit). A capture still building when shutdown began can therefore
+        never enqueue an item or re-arm the worker after it was drained and cancelled."""
+        if self._closed:
+            return False
         if self._slots.get(token) is not False:
             return False
         if len(self._pending) >= self._maxsize:
@@ -1274,9 +1353,17 @@ class DebugPersistQueue:
         once, identity-bound to the token the worker dequeued. Non-allocating (pop), cannot raise."""
         self._slots.pop(token, None)
 
-    def _ensure_worker(self) -> None:
+    def _start_worker(self) -> None:
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._run())
+
+    def _ensure_worker(self) -> None:
+        # COMMIT-path (re)start: never resurrect the worker once closed. Since _commit is itself fenced
+        # after close, this is belt-and-braces — a late notification path cannot re-arm the worker past
+        # closure. Shutdown-drain restarts the worker directly via _start_worker to flush the backlog.
+        if self._closed:
+            return
+        self._start_worker()
 
     async def _run(self) -> None:
         try:
@@ -1291,6 +1378,7 @@ class DebugPersistQueue:
                     continue
                 builder, token = self._pending.popleft()
                 self._processing += 1
+                built: DebugExchange | None = None
                 try:
                     built = await offload_capture(builder)
                     if built is not None:
@@ -1299,8 +1387,14 @@ class DebugPersistQueue:
                     # Cancelled MID-ITEM (worker cancelled outside the drain-then-close path): do NOT
                     # discard the accepted item or free its token — RE-QUEUE it at the front (a worker
                     # restarted by the next commit or by drain()/aclose() persists it) and keep it
-                    # committed. Balance the count, then re-raise so the task actually stops.
-                    self._pending.appendleft((builder, token))
+                    # committed. IDEMPOTENT re-queue: if the capture was already BUILT (cancel landed
+                    # during persist, which may have partially committed), re-queue a closure returning
+                    # THAT SAME exchange, so the retry persists the SAME id. record() is insert-once by
+                    # id (Postgres ON CONFLICT(id) DO NOTHING; in-memory skips a present id), so an
+                    # ambiguous mid-persist cancel can never double-write. If it was not yet built,
+                    # nothing was persisted, so re-queuing the original builder (a fresh build) is safe.
+                    retry = builder if built is None else _const_builder(built)
+                    self._pending.appendleft((retry, token))
                     self._processing -= 1
                     raise
                 except Exception as error:
@@ -1320,14 +1414,25 @@ class DebugPersistQueue:
 
     async def drain(self) -> None:
         """Wait until nothing is pending and nothing is being processed. TESTS/SHUTDOWN ONLY — never on
-        a request. Relies on ``_commit`` clearing ``_idle`` on enqueue and the worker setting it only
-        when truly idle, so the wait returns exactly once the backlog is fully processed."""
-        self._ensure_worker()
+        a request. Flushes the already-COMMITTED backlog: it (re)starts the worker directly (bypassing
+        the closed fence, so it still flushes during aclose) ONLY while there is work, and relies on
+        ``_commit`` clearing ``_idle`` on enqueue and the worker setting it only when truly idle, so the
+        wait returns exactly once the committed backlog is processed. It does NOT wait on
+        reserved-but-unsubmitted captures (a request still building one): those are best-effort and,
+        once ``_closed`` is set, their submit is fenced to a no-op, so waiting on them could only hang
+        shutdown for a capture that will never be enqueued."""
         while self._pending or self._processing:
+            self._start_worker()
             await self._idle.wait()
 
     async def aclose(self) -> None:
-        """Drain, then stop the worker. Shutdown only."""
+        """Close for admission, flush the committed backlog, then stop the worker. Shutdown only.
+
+        ``_closed`` is set FIRST, so from here reserve()/submit() are no-ops and the commit-path worker
+        restart is disabled: no NEW capture can be admitted or enqueued and the worker cannot be
+        re-armed by a late commit. drain() then flushes the items already committed before closure, and
+        only then is the worker cancelled — so nothing can enqueue after the worker stops."""
+        self._closed = True
         await self.drain()
         worker = self._worker
         self._worker = None
