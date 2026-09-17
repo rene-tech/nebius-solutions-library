@@ -41,6 +41,10 @@ EPOCH_RETIREMENT = (
     SOLUTION_ROOT / "stages" / "foundation" / "scripts" / "verify-network-policy-epoch-retirement.py"
 )
 ENFORCER_SCRIPT = CONTROL_ROOT / "scripts" / "network_policy_security_enforcer.py"
+PROVIDER_SERVICE_ACCOUNT_PROFILE_FIXTURE = (
+    CONTROL_ROOT / "tests" / "fixtures" / "nebius-iam-service-account-profile.json"
+)
+PROVIDER_PROJECT_FIXTURE = CONTROL_ROOT / "tests" / "fixtures" / "nebius-iam-project.json"
 
 
 def _load_transition_module() -> ModuleType:
@@ -77,6 +81,55 @@ def _load_provider_adapter_module() -> ModuleType:
 
 
 PROVIDER_ADAPTER_MODULE = _load_provider_adapter_module()
+
+
+def _documented_provider_identity_lineage(
+    principal_id: str,
+    project_id: str = "project-example0001",
+    tenant_id: str = "tenant-example0001",
+) -> dict[str, Any]:
+    service_account_profile = json.loads(PROVIDER_SERVICE_ACCOUNT_PROFILE_FIXTURE.read_text())
+    project = json.loads(PROVIDER_PROJECT_FIXTURE.read_text())
+    assert service_account_profile["service_account_profile"]["info"]["metadata"] == {
+        "id": principal_id,
+        "parent_id": project_id,
+        "created_at": "2026-09-17T00:00:00Z",
+        "labels": {},
+        "name": "directory-reader",
+        "resource_version": "7",
+        "updated_at": "2026-09-17T00:00:00Z",
+    }
+    assert project["metadata"] == {
+        "id": project_id,
+        "parent_id": tenant_id,
+        "created_at": "2026-09-17T00:00:00Z",
+        "labels": {},
+        "name": "security-directory",
+        "resource_version": "11",
+        "updated_at": "2026-09-17T00:00:00Z",
+    }
+    profile_sha256 = PREFLIGHT.hashlib.sha256(
+        PREFLIGHT.canonical(service_account_profile).encode()
+    ).hexdigest()
+    project_sha256 = PREFLIGHT.hashlib.sha256(PREFLIGHT.canonical(project).encode()).hexdigest()
+    lineage_material = {
+        "service_account_id": principal_id,
+        "project_id": project_id,
+        "tenant_id": tenant_id,
+        "service_account_profile_sha256": profile_sha256,
+        "project_sha256": project_sha256,
+    }
+    return {
+        "service_account_profile": service_account_profile,
+        "service_account_profile_sha256": profile_sha256,
+        "project": project,
+        "project_sha256": project_sha256,
+        **lineage_material,
+        "lineage_sha256": PREFLIGHT.hashlib.sha256(
+            PREFLIGHT.canonical(lineage_material).encode()
+        ).hexdigest(),
+    }
+
 
 PROXY_SPEC = {
     "podSelector": {"matchLabels": {"app.kubernetes.io/name": "envoy"}},
@@ -1951,6 +2004,7 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
             },
         },
         "directory_query": {
+            "project_id": "project-example0001",
             "tenant_id": "tenant-example0001",
             "page_size": 200,
             "max_pages": 20,
@@ -2014,10 +2068,7 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
         "next_token": "",
     }
     authorization_evidence = {
-        "whoami": {
-            "subject": {"type": "service-account", "id": principal_id},
-            "tenant_id": "tenant-example0001",
-        },
+        "identity_lineage": _documented_provider_identity_lineage(principal_id),
         "membership_pages": [membership_page],
         "principal_group_ids": [],
         "subject_permit_pages": [{
@@ -2300,7 +2351,11 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert '"consistency_passes") != 2' in provider_adapter
     assert "provider directory changed across the required repeat-stability fence" in provider_adapter
     assert "provider collection authority is not independently pinned" in provider_adapter
-    assert "provider whoami does not match the parsed credential principal" in provider_adapter
+    assert '"iam", "profile", "get"' in provider_adapter
+    assert '"iam", "v2", "project", "get", "--id", query["project_id"]' in provider_adapter
+    assert '"iam", "whoami"' not in provider_adapter
+    assert "provider service account profile is not the trusted active principal" in provider_adapter
+    assert "provider project does not establish the trusted tenant lineage" in provider_adapter
     assert '"iam", "access-permit", "list", "--parent-id", subject_id' in provider_adapter
     assert '"iam", "access-binding"' not in provider_adapter
     assert '"iam", "role", "get"' not in provider_adapter
@@ -2311,7 +2366,7 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert "provider principal membership closure is duplicated or incomplete" in preflight
     assert "provider effective access permits differ from the approved read-only set" in preflight
     assert "provider authorization-directory cycle is not byte-stable" in preflight
-    assert '* (4 * provider_trust["directory_query"]["max_pages"] + 2)' in preflight
+    assert '* (4 * provider_trust["directory_query"]["max_pages"] + 4)' in preflight
     assert "parsed profile-to-credential binding is not exact" in preflight
     assert "execute_authoritative_provider_adapter" in preflight
     assert "freshly executed authoritative collection" in preflight
@@ -2385,6 +2440,7 @@ def test_provider_trust_anchor_schema_pins_adapter_and_signing_custody() -> None
     }
     assert execution["api_endpoint_sha256"]["pattern"] == "^[0-9a-f]{64}$"
     assert execution["provider_issuer_sha256"]["pattern"] == "^[0-9a-f]{64}$"
+    assert "config_project_path" in execution
     reader_access = execution["directory_reader_access"]["properties"]
     assert reader_access["approved_role"] == {"const": "auditor"}
     assert reader_access["approved_role_effect"] == {
@@ -2395,6 +2451,9 @@ def test_provider_trust_anchor_schema_pins_adapter_and_signing_custody() -> None
         "const": "/etc/fs2/security/network-policy-provider-oidc-probe.jwt"
     }
     assert properties["directory_query"]["properties"]["consistency_passes"] == {"const": 2}
+    assert properties["directory_query"]["properties"]["project_id"]["pattern"] == (
+        "^project-[A-Za-z0-9-]{8,128}$"
+    )
     assert properties["directory_query"]["properties"]["snapshot_ttl_seconds"] == {
         "type": "integer",
         "minimum": 10800,
@@ -2410,6 +2469,8 @@ def test_provider_trust_anchor_schema_pins_adapter_and_signing_custody() -> None
         "const": "authorization-directory-directory-authorization"
     }
     authorization_evidence = snapshot["$defs"]["providerAuthorizationEvidence"]
+    assert "identity_lineage" in authorization_evidence["required"]
+    assert "whoami" not in authorization_evidence["required"]
     assert "membership_pages" in authorization_evidence["required"]
     assert "subject_permit_pages" in authorization_evidence["required"]
     assert "effective_permits" in authorization_evidence["required"]
@@ -2422,6 +2483,7 @@ def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(m
         "cli_path": "/usr/local/bin/nebius",
         "config_path": "/etc/fs2/security/nebius-directory-reader.yaml",
         "profile": "directory-reader",
+        "project_id": "project-example0001",
         "tenant_id": "tenant-example0001",
         "page_size": 200,
         "max_pages": 20,
@@ -2562,6 +2624,7 @@ def test_provider_adapter_collects_subject_parented_access_permits_and_cycle(
             },
         },
         "directory_query": {
+            "project_id": "project-example0001",
             "tenant_id": "tenant-example0001",
             "page_size": 200,
             "max_pages": 20,
@@ -2571,6 +2634,7 @@ def test_provider_adapter_collects_subject_parented_access_permits_and_cycle(
     }
     document_calls: list[tuple[str, ...]] = []
     page_calls: list[tuple[str, ...]] = []
+    identity_lineage = _documented_provider_identity_lineage(principal_id)
 
     def document(
         _execution: Any,
@@ -2581,11 +2645,10 @@ def test_provider_adapter_collects_subject_parented_access_permits_and_cycle(
     ) -> dict[str, Any]:
         del label
         document_calls.append(tuple(command))
-        if command == ["iam", "whoami"]:
-            return {
-                "subject": {"type": "service-account", "id": principal_id},
-                "tenant_id": "tenant-example0001",
-            }
+        if command == ["iam", "profile", "get"]:
+            return identity_lineage["service_account_profile"]
+        if command == ["iam", "v2", "project", "get", "--id", "project-example0001"]:
+            return identity_lineage["project"]
         raise AssertionError(f"unexpected provider document command: {command}")
 
     def pages(
@@ -2636,6 +2699,7 @@ def test_provider_adapter_collects_subject_parented_access_permits_and_cycle(
         "evidence"
     ]
     assert evidence["principal_group_ids"] == [group_id]
+    assert evidence["identity_lineage"] == identity_lineage
     assert {permit["parent_kind"] for permit in evidence["effective_permits"]} == {
         "service-account",
         "group",
@@ -2646,7 +2710,10 @@ def test_provider_adapter_collects_subject_parented_access_permits_and_cycle(
     ) == 1
     assert page_calls.count(("iam", "access-permit", "list", "--parent-id", principal_id)) == 1
     assert page_calls.count(("iam", "access-permit", "list", "--parent-id", group_id)) == 1
-    assert document_calls == [("iam", "whoami")]
+    assert document_calls == [
+        ("iam", "profile", "get"),
+        ("iam", "v2", "project", "get", "--id", "project-example0001"),
+    ]
     adapter_source = PROVIDER_ADAPTER.read_text()
     before = adapter_source.index("authorization_before = _capture_provider_authorization_once")
     directory = adapter_source.index("collections = [_capture_directory", before)
@@ -2658,6 +2725,84 @@ def test_provider_adapter_collects_subject_parented_access_permits_and_cycle(
             {**evidence, "effective_roles": ["auditor", "editor"]},
             "d" * 64,
         )
+
+
+def test_provider_adapter_rejects_invented_whoami_and_wrong_project_lineage(
+    monkeypatch: Any,
+) -> None:
+    principal_id = "serviceaccount-directory-reader-001"
+    trust = {
+        "directory_execution": {
+            "principal_type": "service-account",
+            "principal_id": principal_id,
+        },
+        "directory_query": {
+            "project_id": "project-example0001",
+            "tenant_id": "tenant-example0001",
+        },
+    }
+
+    def invented_whoami(
+        _execution: Any,
+        _query: Any,
+        _command: list[str],
+        *,
+        label: str,
+    ) -> dict[str, Any]:
+        del label
+        return {
+            "subject": {"type": "service-account", "id": principal_id},
+            "tenant_id": "tenant-example0001",
+        }
+
+    monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_provider_document", invented_whoami)
+    with pytest.raises(PROVIDER_ADAPTER_MODULE.AdapterError, match="service account profile"):
+        PROVIDER_ADAPTER_MODULE._capture_provider_identity_lineage(trust)
+
+    identity_lineage = _documented_provider_identity_lineage(principal_id)
+    wrong_project = {
+        **identity_lineage["project"],
+        "metadata": {
+            **identity_lineage["project"]["metadata"],
+            "parent_id": "tenant-unreviewed0001",
+        },
+    }
+
+    def wrong_project_lineage(
+        _execution: Any,
+        _query: Any,
+        command: list[str],
+        *,
+        label: str,
+    ) -> dict[str, Any]:
+        del label
+        if command == ["iam", "profile", "get"]:
+            return identity_lineage["service_account_profile"]
+        return wrong_project
+
+    monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_provider_document", wrong_project_lineage)
+    with pytest.raises(PROVIDER_ADAPTER_MODULE.AdapterError, match="trusted tenant lineage"):
+        PROVIDER_ADAPTER_MODULE._capture_provider_identity_lineage(trust)
+
+
+def test_preflight_reconstructs_documented_provider_identity_lineage() -> None:
+    principal_id = "serviceaccount-directory-reader-001"
+    trust = {
+        "directory_execution": {"principal_id": principal_id},
+        "directory_query": {
+            "project_id": "project-example0001",
+            "tenant_id": "tenant-example0001",
+        },
+    }
+    identity_lineage = _documented_provider_identity_lineage(principal_id)
+    assert PREFLIGHT.verified_provider_identity_lineage(identity_lineage, trust) == (
+        identity_lineage["lineage_sha256"]
+    )
+
+    tampered_lineage = json.loads(json.dumps(identity_lineage))
+    tampered_lineage["project"]["metadata"]["parent_id"] = "tenant-unreviewed0001"
+    with pytest.raises(PREFLIGHT.PreflightError, match="profile and project lineage"):
+        PREFLIGHT.verified_provider_identity_lineage(tampered_lineage, trust)
 
 
 def test_provider_authorization_rejects_a_resource_scoped_mutating_group_permit() -> None:
@@ -2683,6 +2828,7 @@ def test_provider_authorization_rejects_a_resource_scoped_mutating_group_permit(
             },
         },
         "directory_query": {
+            "project_id": "project-example0001",
             "tenant_id": "tenant-example0001",
             "page_size": 200,
             "max_pages": 20,
@@ -2748,10 +2894,7 @@ def test_provider_authorization_rejects_a_resource_scoped_mutating_group_permit(
         key=PREFLIGHT.canonical,
     )
     evidence = {
-        "whoami": {
-            "subject": {"type": "service-account", "id": principal_id},
-            "tenant_id": "tenant-example0001",
-        },
+        "identity_lineage": _documented_provider_identity_lineage(principal_id),
         "membership_pages": [membership_page],
         "principal_group_ids": [group_id],
         "subject_permit_pages": [

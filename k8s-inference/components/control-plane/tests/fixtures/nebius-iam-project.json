@@ -1,0 +1,17 @@
+{
+  "metadata": {
+    "id": "project-example0001",
+    "parent_id": "tenant-example0001",
+    "created_at": "2026-09-17T00:00:00Z",
+    "labels": {},
+    "name": "security-directory",
+    "resource_version": "11",
+    "updated_at": "2026-09-17T00:00:00Z"
+  },
+  "spec": {
+    "region": "eu-north1"
+  },
+  "status": {
+    "project_state": "ACTIVE"
+  }
+}

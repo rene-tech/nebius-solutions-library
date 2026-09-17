@@ -186,11 +186,12 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         "credential_sha256", "api_endpoint", "api_endpoint_sha256", "provider_issuer",
         "provider_issuer_sha256", "principal_type", "principal_id", "config_profiles_path",
         "config_endpoint_path", "config_credential_path", "config_principal_path",
-        "credential_principal_path", "directory_reader_access",
+        "config_project_path", "credential_principal_path", "directory_reader_access",
     }
     query_fields = {
-        "cli_path", "config_path", "profile", "tenant_id", "page_size", "max_pages",
-        "max_records", "timeout_seconds", "snapshot_ttl_seconds", "consistency_passes",
+        "cli_path", "config_path", "profile", "project_id", "tenant_id", "page_size",
+        "max_pages", "max_records", "timeout_seconds", "snapshot_ttl_seconds",
+        "consistency_passes",
     }
     authentication_fields = {
         "oidc_issuer", "oidc_issuer_sha256", "audiences", "audiences_sha256",
@@ -218,6 +219,7 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         or query.get("cli_path") != str(NEBIUS_CLI_PATH)
         or query.get("config_path") != str(NEBIUS_CONFIG_PATH)
         or not re.fullmatch(r"[A-Za-z0-9._-]{3,128}", str(query.get("profile", "")))
+        or not re.fullmatch(r"project-[A-Za-z0-9-]{8,128}", str(query.get("project_id", "")))
         or not re.fullmatch(r"tenant-[A-Za-z0-9-]{8,128}", str(query.get("tenant_id", "")))
         or not isinstance(query.get("page_size"), int)
         or not 1 <= query["page_size"] <= 1000
@@ -365,6 +367,9 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         configured_principal = _nested(
             profile, execution.get("config_principal_path"), label="profile principal"
         )
+        configured_project = _nested(
+            profile, execution.get("config_project_path"), label="profile project"
+        )
         credential_principal = _nested(
             credential_document,
             execution.get("credential_principal_path"),
@@ -379,6 +384,7 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         or configured_endpoint != execution["api_endpoint"]
         or configured_credential != str(NEBIUS_CREDENTIAL_PATH)
         or configured_principal != execution["principal_id"]
+        or configured_project != query["project_id"]
         or credential_principal != execution["principal_id"]
     ):
         raise AdapterError("provider executable or parsed profile-to-credential binding is not exact")
@@ -497,20 +503,84 @@ def _provider_document(
     return document
 
 
+def _capture_provider_identity_lineage(trust: dict[str, Any]) -> dict[str, Any]:
+    execution = trust["directory_execution"]
+    query = trust["directory_query"]
+    profile = _provider_document(
+        execution,
+        query,
+        ["iam", "profile", "get"],
+        label="service account profile",
+    )
+    service_account_profile = (
+        profile.get("service_account_profile", {}) if isinstance(profile, dict) else {}
+    )
+    info = (
+        service_account_profile.get("info", {})
+        if isinstance(service_account_profile, dict)
+        else {}
+    )
+    metadata = info.get("metadata", {}) if isinstance(info, dict) else {}
+    status = info.get("status", {}) if isinstance(info, dict) else {}
+    if (
+        not isinstance(profile, dict)
+        or set(profile) != {"service_account_profile"}
+        or not isinstance(service_account_profile, dict)
+        or set(service_account_profile) != {"info"}
+        or not isinstance(info, dict)
+        or not {"metadata", "status"} <= set(info) <= {"metadata", "spec", "status"}
+        or not isinstance(metadata, dict)
+        or not set(metadata) <= {
+            "created_at", "id", "labels", "name", "parent_id", "resource_version", "updated_at"
+        }
+        or metadata.get("id") != execution["principal_id"]
+        or metadata.get("parent_id") != query["project_id"]
+        or not isinstance(status, dict)
+        or not set(status) <= {"active"}
+        or status.get("active") is not True
+    ):
+        raise AdapterError("provider service account profile is not the trusted active principal")
+    project = _provider_document(
+        execution,
+        query,
+        ["iam", "v2", "project", "get", "--id", query["project_id"]],
+        label="service account parent project",
+    )
+    project_metadata = project.get("metadata", {}) if isinstance(project, dict) else {}
+    if (
+        not isinstance(project, dict)
+        or not {"metadata"} <= set(project) <= {"metadata", "spec", "status"}
+        or not isinstance(project_metadata, dict)
+        or not set(project_metadata) <= {
+            "created_at", "id", "labels", "name", "parent_id", "resource_version", "updated_at"
+        }
+        or project_metadata.get("id") != query["project_id"]
+        or project_metadata.get("parent_id") != query["tenant_id"]
+    ):
+        raise AdapterError("provider project does not establish the trusted tenant lineage")
+    profile_sha256 = hashlib.sha256(canonical(profile).encode()).hexdigest()
+    project_sha256 = hashlib.sha256(canonical(project).encode()).hexdigest()
+    lineage_material = {
+        "service_account_id": execution["principal_id"],
+        "project_id": query["project_id"],
+        "tenant_id": query["tenant_id"],
+        "service_account_profile_sha256": profile_sha256,
+        "project_sha256": project_sha256,
+    }
+    return {
+        "service_account_profile": profile,
+        "service_account_profile_sha256": profile_sha256,
+        "project": project,
+        "project_sha256": project_sha256,
+        **lineage_material,
+        "lineage_sha256": hashlib.sha256(canonical(lineage_material).encode()).hexdigest(),
+    }
+
+
 def _capture_provider_authorization_once(trust: dict[str, Any]) -> dict[str, Any]:
     execution = trust["directory_execution"]
     query = trust["directory_query"]
-    whoami = _provider_document(execution, query, ["iam", "whoami"], label="whoami")
-    subject = whoami.get("subject", {}) if isinstance(whoami, dict) else {}
-    if (
-        not isinstance(subject, dict)
-        or subject.get("type") != execution["principal_type"]
-        or subject.get("id") != execution["principal_id"]
-        or whoami.get("tenant_id") != query["tenant_id"]
-        or set(whoami) != {"subject", "tenant_id"}
-        or set(subject) != {"type", "id"}
-    ):
-        raise AdapterError("provider whoami does not match the parsed credential principal")
+    identity_lineage = _capture_provider_identity_lineage(trust)
     budgets = {"pages": query["max_pages"], "records": query["max_records"]}
     membership_operation = (
         "group-membership.list-member-of:"
@@ -616,7 +686,7 @@ def _capture_provider_authorization_once(trust: dict[str, Any]) -> dict[str, Any
     record_count = query["max_records"] - budgets["records"]
     page_count = query["max_pages"] - budgets["pages"]
     return {
-        "whoami": whoami,
+        "identity_lineage": identity_lineage,
         "membership_pages": membership_pages,
         "principal_group_ids": principal_group_ids,
         "subject_permit_pages": subject_permit_pages,

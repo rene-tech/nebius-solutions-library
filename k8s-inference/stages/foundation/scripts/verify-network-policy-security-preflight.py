@@ -341,11 +341,12 @@ def verified_provider_trust_anchor(
         "credential_sha256", "api_endpoint", "api_endpoint_sha256", "provider_issuer",
         "provider_issuer_sha256", "principal_type", "principal_id", "config_profiles_path",
         "config_endpoint_path", "config_credential_path", "config_principal_path",
-        "credential_principal_path", "directory_reader_access",
+        "config_project_path", "credential_principal_path", "directory_reader_access",
     }
     query_fields = {
-        "cli_path", "config_path", "profile", "tenant_id", "page_size", "max_pages",
-        "max_records", "timeout_seconds", "snapshot_ttl_seconds", "consistency_passes",
+        "cli_path", "config_path", "profile", "project_id", "tenant_id", "page_size",
+        "max_pages", "max_records", "timeout_seconds", "snapshot_ttl_seconds",
+        "consistency_passes",
     }
     authentication_fields = {
         "oidc_issuer", "oidc_issuer_sha256", "audiences", "audiences_sha256",
@@ -439,6 +440,9 @@ def verified_provider_trust_anchor(
         or directory_query.get("cli_path") != str(PROVIDER_CLI_PATH)
         or directory_query.get("config_path") != str(PROVIDER_CONFIG_PATH)
         or not re.fullmatch(r"[A-Za-z0-9._-]{3,128}", str(directory_query.get("profile", "")))
+        or not re.fullmatch(
+            r"project-[A-Za-z0-9-]{8,128}", str(directory_query.get("project_id", ""))
+        )
         or not re.fullmatch(r"tenant-[A-Za-z0-9-]{8,128}", str(directory_query.get("tenant_id", "")))
         or not isinstance(directory_query.get("page_size"), int)
         or not 1 <= directory_query["page_size"] <= 1000
@@ -504,6 +508,8 @@ def verified_provider_trust_anchor(
         != str(PROVIDER_CREDENTIAL_PATH)
         or nested(profile, execution["config_principal_path"], label="profile principal")
         != execution["principal_id"]
+        or nested(profile, execution["config_project_path"], label="profile project")
+        != directory_query["project_id"]
         or nested(
             credential_document,
             execution["credential_principal_path"],
@@ -564,6 +570,81 @@ def verified_provider_page_items(
     return items
 
 
+def verified_provider_identity_lineage(value: Any, trust: dict[str, Any]) -> str:
+    execution = trust["directory_execution"]
+    query = trust["directory_query"]
+    expected_fields = {
+        "service_account_profile",
+        "service_account_profile_sha256",
+        "service_account_id",
+        "project",
+        "project_sha256",
+        "project_id",
+        "tenant_id",
+        "lineage_sha256",
+    }
+    if not isinstance(value, dict) or set(value) != expected_fields:
+        raise PreflightError("provider service account lineage receipt is not exact")
+    profile = value["service_account_profile"]
+    service_account_profile = (
+        profile.get("service_account_profile", {}) if isinstance(profile, dict) else {}
+    )
+    info = (
+        service_account_profile.get("info", {})
+        if isinstance(service_account_profile, dict)
+        else {}
+    )
+    metadata = info.get("metadata", {}) if isinstance(info, dict) else {}
+    status = info.get("status", {}) if isinstance(info, dict) else {}
+    project = value["project"]
+    project_metadata = project.get("metadata", {}) if isinstance(project, dict) else {}
+    metadata_fields = {
+        "created_at", "id", "labels", "name", "parent_id", "resource_version", "updated_at"
+    }
+    if (
+        not isinstance(profile, dict)
+        or set(profile) != {"service_account_profile"}
+        or not isinstance(service_account_profile, dict)
+        or set(service_account_profile) != {"info"}
+        or not isinstance(info, dict)
+        or not {"metadata", "status"} <= set(info) <= {"metadata", "spec", "status"}
+        or not isinstance(metadata, dict)
+        or not set(metadata) <= metadata_fields
+        or metadata.get("id") != execution["principal_id"]
+        or metadata.get("parent_id") != query["project_id"]
+        or not isinstance(status, dict)
+        or not set(status) <= {"active"}
+        or status.get("active") is not True
+        or not isinstance(project, dict)
+        or not {"metadata"} <= set(project) <= {"metadata", "spec", "status"}
+        or not isinstance(project_metadata, dict)
+        or not set(project_metadata) <= metadata_fields
+        or project_metadata.get("id") != query["project_id"]
+        or project_metadata.get("parent_id") != query["tenant_id"]
+    ):
+        raise PreflightError("provider service account profile and project lineage are not exact")
+    profile_sha256 = hashlib.sha256(canonical(profile).encode()).hexdigest()
+    project_sha256 = hashlib.sha256(canonical(project).encode()).hexdigest()
+    lineage_material = {
+        "service_account_id": execution["principal_id"],
+        "project_id": query["project_id"],
+        "tenant_id": query["tenant_id"],
+        "service_account_profile_sha256": profile_sha256,
+        "project_sha256": project_sha256,
+    }
+    lineage_sha256 = hashlib.sha256(canonical(lineage_material).encode()).hexdigest()
+    if (
+        value["service_account_profile_sha256"] != profile_sha256
+        or value["project_sha256"] != project_sha256
+        or value["service_account_id"] != execution["principal_id"]
+        or value["project_id"] != query["project_id"]
+        or value["tenant_id"] != query["tenant_id"]
+        or value["lineage_sha256"] != lineage_sha256
+    ):
+        raise PreflightError("provider service account lineage digest is not exact")
+    return lineage_sha256
+
+
 def verified_provider_authorization(
     authorization: Any,
     trust: dict[str, Any],
@@ -606,7 +687,7 @@ def verified_provider_authorization(
             or collection.get("sha256") != hashlib.sha256(canonical(evidence).encode()).hexdigest()
             or set(evidence)
             != {
-                "whoami",
+                "identity_lineage",
                 "membership_pages",
                 "principal_group_ids",
                 "subject_permit_pages",
@@ -618,15 +699,7 @@ def verified_provider_authorization(
             }
         ):
             raise PreflightError("provider authorization collection receipt is not recomputable")
-        whoami = evidence["whoami"]
-        if (
-            not isinstance(whoami, dict)
-            or set(whoami) != {"subject", "tenant_id"}
-            or whoami.get("tenant_id") != query["tenant_id"]
-            or whoami.get("subject")
-            != {"type": execution["principal_type"], "id": execution["principal_id"]}
-        ):
-            raise PreflightError("provider authorization whoami is not the trusted principal")
+        verified_provider_identity_lineage(evidence["identity_lineage"], trust)
         membership_operation = (
             "group-membership.list-member-of:"
             f"{hashlib.sha256(execution['principal_id'].encode()).hexdigest()}"
@@ -2414,7 +2487,7 @@ def main() -> int:
                 timeout_seconds=min(
                     1800,
                     (provider_trust["directory_query"]["timeout_seconds"] + 5)
-                    * (4 * provider_trust["directory_query"]["max_pages"] + 2),
+                    * (4 * provider_trust["directory_query"]["max_pages"] + 4),
                 ),
             )
             provider_snapshot_bytes, provider_snapshot_metadata = descriptor_bytes(

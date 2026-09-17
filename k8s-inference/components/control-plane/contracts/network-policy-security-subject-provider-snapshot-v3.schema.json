@@ -167,12 +167,32 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "whoami", "membership_pages", "principal_group_ids", "subject_permit_pages",
+        "identity_lineage", "membership_pages", "principal_group_ids", "subject_permit_pages",
         "effective_permits", "effective_roles", "access_contract_sha256",
         "page_count", "record_count"
       ],
       "properties": {
-        "whoami": { "type": "object" },
+        "identity_lineage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "service_account_profile", "service_account_profile_sha256",
+            "service_account_id", "project", "project_sha256", "project_id",
+            "tenant_id", "lineage_sha256"
+          ],
+          "properties": {
+            "service_account_profile": { "type": "object" },
+            "service_account_profile_sha256": { "$ref": "#/$defs/sha256" },
+            "service_account_id": {
+              "type": "string", "pattern": "^serviceaccount-[A-Za-z0-9-]{8,128}$"
+            },
+            "project": { "type": "object" },
+            "project_sha256": { "$ref": "#/$defs/sha256" },
+            "project_id": { "type": "string", "pattern": "^project-[A-Za-z0-9-]{8,128}$" },
+            "tenant_id": { "type": "string", "pattern": "^tenant-[A-Za-z0-9-]{8,128}$" },
+            "lineage_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
         "membership_pages": {
           "type": "array", "minItems": 1, "maxItems": 10000,
           "items": { "$ref": "#/$defs/rawPage" }

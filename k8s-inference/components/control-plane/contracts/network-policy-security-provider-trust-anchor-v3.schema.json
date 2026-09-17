@@ -30,7 +30,7 @@
         "credential_sha256", "api_endpoint", "api_endpoint_sha256", "provider_issuer",
         "provider_issuer_sha256", "principal_type", "principal_id", "config_profiles_path",
         "config_endpoint_path", "config_credential_path", "config_principal_path",
-        "credential_principal_path", "directory_reader_access"
+        "config_project_path", "credential_principal_path", "directory_reader_access"
       ],
       "properties": {
         "cli_path": { "const": "/usr/local/bin/nebius" },
@@ -49,6 +49,7 @@
         "config_endpoint_path": { "$ref": "#/$defs/path" },
         "config_credential_path": { "$ref": "#/$defs/path" },
         "config_principal_path": { "$ref": "#/$defs/path" },
+        "config_project_path": { "$ref": "#/$defs/path" },
         "credential_principal_path": { "$ref": "#/$defs/path" },
         "directory_reader_access": {
           "type": "object",
@@ -83,13 +84,15 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "cli_path", "config_path", "profile", "tenant_id", "page_size", "max_pages",
-        "max_records", "timeout_seconds", "snapshot_ttl_seconds", "consistency_passes"
+        "cli_path", "config_path", "profile", "project_id", "tenant_id", "page_size",
+        "max_pages", "max_records", "timeout_seconds", "snapshot_ttl_seconds",
+        "consistency_passes"
       ],
       "properties": {
         "cli_path": { "const": "/usr/local/bin/nebius" },
         "config_path": { "const": "/etc/fs2/security/nebius-directory-reader.yaml" },
         "profile": { "type": "string", "pattern": "^[A-Za-z0-9._-]{3,128}$" },
+        "project_id": { "type": "string", "pattern": "^project-[A-Za-z0-9-]{8,128}$" },
         "tenant_id": { "type": "string", "pattern": "^tenant-[A-Za-z0-9-]{8,128}$" },
         "page_size": { "type": "integer", "minimum": 1, "maximum": 1000 },
         "max_pages": { "type": "integer", "minimum": 1, "maximum": 10000 },

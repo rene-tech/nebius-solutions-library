@@ -822,7 +822,8 @@ and credential from fixed paths
 to enumerate tenant users with attributes, groups and each user's memberships
 with bounded explicit pagination. Its source SHA-256, CLI/config paths,
 CLI/config/credential byte hashes, API endpoint, provider/OIDC issuer,
-non-human principal, parsed profile-to-endpoint/credential/principal paths,
+non-human principal, parsed profile-to-endpoint/credential/principal/project paths,
+exact project and tenant,
 the exact subject-parented tenant `auditor` access-permit set, Kubernetes audience and
 username/group claim mapping, tenant, query, budgets and validity are pinned
 in the root-owned, mode-0400/0444
@@ -833,9 +834,19 @@ that file: it is declared by the separately custodied, root-owned
 canonical digest is pinned by the trust anchor; the corresponding private
 signing key remains outside both documents. The signed provider snapshot
 binds the exact trust anchor, separate collection authority, adapter and
-executable/authentication hashes, provider `whoami`, the complete bounded
+executable/authentication hashes, the raw documented `iam profile get`
+service-account profile and raw `iam v2 project get --id` parent project, the complete bounded
 `list-member-of` group closure, and a bounded `iam access-permit list
 --parent-id` sweep for the service account and every discovered group. Each raw
+identity capture must resolve
+`service_account_profile.info.metadata.id` to the pinned principal, its
+`parent_id` to the pinned project, and project `metadata.parent_id` to the
+pinned tenant; both documents and the normalized lineage have independent
+digests. These paths correspond to the documented
+[`iam profile get`](https://docs.nebius.com/cli/reference/iam/profile/get) and
+[`iam v2 project get`](https://docs.nebius.com/cli/reference/iam/v2/project/get)
+responses; `iam whoami` is only an alias and is not assigned a separate response
+contract. Each raw
 permit binds its provider ID, parent, `resource_id` and role; the normalized set
 must equal the source-pinned tenant-only `auditor` permit contract exactly, so
 an additional project/resource permit or another role fails closed. Two
