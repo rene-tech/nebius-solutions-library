@@ -96,6 +96,12 @@ reproduces that acceptance from the outside and additionally proves the
 OpenAI catalog, the HTTP scientific discovery route and one real chat
 completion.
 
+That receipt is historical evidence for the then-deployed source. The current
+runner additionally requires a separately delivered, owner-only personal
+operator credential and refuses to use the access bundle's rollback-only
+bootstrap value. This source change has not been executed against a live
+deployment and does not relabel the historical receipt.
+
 ### Immutable ten-model cold-start campaign
 
 The final campaign ran three complete fleet repetitions at parallelism eight

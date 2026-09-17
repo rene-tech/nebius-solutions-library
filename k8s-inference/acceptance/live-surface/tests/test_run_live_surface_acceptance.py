@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 import os
 import stat
@@ -24,6 +25,7 @@ SPEC.loader.exec_module(MODULE)
 CONTROL_PLANE = "sha256:" + "1" * 64
 ADMIN_CONSOLE = "sha256:" + "2" * 64
 SECRET = "live-surface-bearer-value-must-never-appear"  # noqa: S105
+OPERATOR_CREDENTIAL = "fs2_operator_" + "1" * 32 + "_" + "x" * 43  # noqa: S105
 
 
 def expectations() -> dict[str, Any]:
@@ -180,6 +182,35 @@ class BundleTests(unittest.TestCase):
             self.assertEqual(document["schema"], MODULE.BUNDLE_SCHEMA)
             self.assertTrue(owner)
             self.assertIsInstance(mode, int)
+
+    def test_personal_operator_credential_requires_owner_only_regular_file(self) -> None:
+        with TemporaryDirectory() as temporary:
+            credential_file = Path(temporary) / "operator-credential"
+            credential_file.write_text(OPERATOR_CREDENTIAL + "\n", encoding="utf-8")
+            credential_file.chmod(0o600)
+            self.assertEqual(MODULE.read_operator_credential(credential_file), OPERATOR_CREDENTIAL)
+
+            credential_file.chmod(0o640)
+            with self.assertRaises(MODULE.AcceptanceInputError):
+                MODULE.read_operator_credential(credential_file)
+
+    def test_operator_credential_rejects_bootstrap_value_and_symlink(self) -> None:
+        with TemporaryDirectory() as temporary:
+            credential_file = Path(temporary) / "operator-credential"
+            credential_file.write_text("bootstrap_" + "x" * 80, encoding="utf-8")
+            credential_file.chmod(0o600)
+            with self.assertRaises(MODULE.AcceptanceInputError):
+                MODULE.read_operator_credential(credential_file)
+
+            link = Path(temporary) / "operator-link"
+            os.symlink(credential_file, link)
+            with self.assertRaises(MODULE.AcceptanceInputError):
+                MODULE.read_operator_credential(link)
+
+    def test_live_runner_never_submits_bundle_bootstrap_credential(self) -> None:
+        run_source = inspect.getsource(MODULE.run)
+        self.assertNotIn('credentials["admin_bootstrap_token"]', run_source)
+        self.assertIn('"Bearer " + operator_credential', run_source)
 
 
 class ReleaseTests(unittest.TestCase):
@@ -562,6 +593,8 @@ class ReceiptTests(unittest.TestCase):
             MODULE.main(
                 [
                     "--bundle",
+                    "/nonexistent",
+                    "--operator-credential-file",
                     "/nonexistent",
                     "--kubeconfig",
                     "/nonexistent",

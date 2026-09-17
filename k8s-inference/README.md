@@ -753,6 +753,8 @@ After a deployment, [`acceptance/live-surface`](acceptance/live-surface/README.m
 re-accepts the public surface from the outside with a value-suppressed
 receipt: TLS trust, public pages, exact release digests, Kueue, the admin
 backend, both MCP catalogs, the OpenAI and HTTP scientific catalogs, and one
-real chat completion. [`acceptance/scientific-fleet`](acceptance/scientific-fleet/README.md)
+real chat completion. Its admin exchange requires a separate mode-`0600`
+personal operator credential file; it never submits the rollback-only
+bootstrap value from the access bundle. [`acceptance/scientific-fleet`](acceptance/scientific-fleet/README.md)
 runs the ten scientific profiles end to end and the cold-start campaign that
 [Live acceptance](LIVE_ACCEPTANCE.md) records.

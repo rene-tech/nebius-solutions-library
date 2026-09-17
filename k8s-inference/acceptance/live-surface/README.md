@@ -8,17 +8,21 @@ OpenAI-compatible catalog, and one real chat completion. It then compares the
 Kubernetes release objects and the Kueue scheduling surface against the exact
 source commit and immutable image digests the operator expects.
 
-Its output is a value-suppressed receipt. Credentials are read from the
-owner-only `inference-stack output` bundle and used only in memory; the
-receipt contains identities, counts, status codes, and booleans and never a
-bearer token, cookie, presigned handle, or generated model text. The runner
-refuses to write a receipt that would contain a bundle credential value.
+Its output is a value-suppressed receipt. Customer/service credentials are
+read from the owner-only `inference-stack output` bundle. Admin authentication
+uses a separate owner-only personal operator credential delivered by the
+audited release-enrollment workflow; the bundle's deprecated bootstrap value
+is deliberately never used. Credentials exist only in memory. The receipt
+contains identities, counts, status codes, and booleans and never a bearer
+token, cookie, presigned handle, or generated model text. The runner refuses
+to write a receipt that would contain any input credential value.
 
 ## Inputs
 
 | Argument | Meaning |
 | --- | --- |
 | `--bundle` | Mode-`0600` regular file written from `./inference-stack output`. A symlink or a group-readable file is rejected before any probe. |
+| `--operator-credential-file` | Current-user-owned mode-`0600` regular file containing one personal `fs2_operator_...` credential. Bootstrap/release assertions and symlinks are rejected before any probe. |
 | `--kubeconfig`, `--context` | The deployed cluster, read only through `kubectl get ... -o json`. |
 | `--expectations` | Deployment expectations JSON (schema `fs2-serve.nebius.ai/live-surface-expectations/v1`). |
 | `--source-commit` | Exact deployed Git commit, recorded in the receipt target. |
@@ -37,7 +41,8 @@ touched.
 
 | Check | Passes when |
 | --- | --- |
-| `terraform_output_bundle` | Owner-only mode `0600`, complete cluster identity, endpoints and credentials, shared MCP/inference PAT, and a distinct scientific PAT. |
+| `terraform_output_bundle` | Owner-only mode `0600`, complete cluster identity, endpoints and service credentials, shared MCP/inference PAT, and a distinct scientific PAT. The retained bootstrap field is rollback-only. |
+| `operator_credential_input` | Admin acceptance uses a separate current-user-owned mode-`0600` personal operator credential, not the bootstrap bearer or release identity. |
 | `tls_normal_trust` | The public host completes a TLS 1.3 handshake under the default trust store with at least one subject alternative name. |
 | `public_pages` | Admin portal, `/readyz`, Grafana API health, Alertmanager and Tempo explore all return 200. |
 | `kubernetes_release` | Gateway, model controller, and admin console Deployments are fully rolled out on the exact digests; the GPU observer DaemonSet is complete on the control-plane digest. |
@@ -58,15 +63,19 @@ the model on, exactly like the admin identity already did.
 ## Run
 
 Use the control-plane environment; it provides `httpx`, `httpx2` and `mcp`.
-Print the bundle only into an owner-only file:
+Print the bundle only into an owner-only file. Obtain the personal operator
+credential through the audited, single-use release-enrollment workflow and
+store it separately with the same owner-only mode:
 
 ```bash
 umask 077
 NEBIUS_PROFILE=sandbox ./inference-stack output --var-file /private/terraform.tfvars \
   --run-root /private/run > /private/run/access-bundle.json
+chmod 0600 /private/run/access-bundle.json /private/run/operator-credential
 
 uv run --project components/control-plane python acceptance/live-surface/run_live_surface_acceptance.py \
   --bundle /private/run/access-bundle.json \
+  --operator-credential-file /private/run/operator-credential \
   --kubeconfig /private/run/kubeconfig \
   --context k8s-inference-h100 \
   --expectations acceptance/live-surface/expectations/h100-retained.json \

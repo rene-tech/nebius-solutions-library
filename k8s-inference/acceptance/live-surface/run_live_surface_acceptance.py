@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Emit a value-suppressed acceptance receipt for one deployed public surface.
 
-The probe reads the owner-only Terraform access bundle, exercises the public
-HTTPS edge, the authenticated admin backend, both MCP catalogs, the HTTP
-scientific discovery route, the OpenAI-compatible catalog, and one real chat
-completion, then compares the Kubernetes release and Kueue objects against the
-exact expected source and image identities. Every credential is used only in
-memory: the receipt carries identities, counts, status codes, and booleans and
-never a token, cookie, presigned handle, or generated model text.
+The probe reads an owner-only personal operator credential file and Terraform
+access bundle, exercises the public HTTPS edge, the authenticated admin
+backend, both MCP catalogs, the HTTP scientific discovery route, the
+OpenAI-compatible catalog, and one real chat completion, then compares the
+Kubernetes release and Kueue objects against the exact expected source and
+image identities. Every credential is used only in memory: the receipt carries
+identities, counts, status codes, and booleans and never a token, cookie,
+presigned handle, or generated model text.
 
 Run it from the control-plane environment, which provides ``httpx``,
 ``httpx2`` and ``mcp``; the offline tests need only the standard library.
@@ -139,6 +140,31 @@ def read_bundle(path: Path) -> tuple[dict[str, Any], int, bool]:
     if not isinstance(bundle, dict):
         raise AcceptanceInputError("access bundle is not an object")
     return bundle, stat.S_IMODE(info.st_mode), info.st_uid == os.geteuid()
+
+
+def read_operator_credential(path: Path) -> str:
+    """Read one personal operator credential from an owner-only regular file."""
+
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            raise AcceptanceInputError("operator credential must be a regular file, not a symlink")
+        if stat.S_IMODE(info.st_mode) != 0o600 or info.st_uid != os.geteuid():
+            raise AcceptanceInputError("operator credential file must be owned by the current user with mode 0600")
+        if not 64 <= info.st_size <= 257:
+            raise AcceptanceInputError("operator credential file has an invalid size")
+        credential = path.read_text(encoding="utf-8").strip()
+    except AcceptanceInputError:
+        raise
+    except (OSError, UnicodeError) as error:
+        raise AcceptanceInputError(f"operator credential file is unreadable: {error}") from None
+    if (
+        not credential.startswith("fs2_operator_")
+        or not 64 <= len(credential) <= 256
+        or any(character.isspace() for character in credential)
+    ):
+        raise AcceptanceInputError("operator credential file does not contain one personal operator credential")
+    return credential
 
 
 def secret_values(bundle: Mapping[str, Any]) -> tuple[str, ...]:
@@ -811,9 +837,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     expectations = load_expectations(args.expectations)
     expectations_sha256 = hashlib.sha256(args.expectations.read_bytes()).hexdigest()
     bundle, bundle_mode, bundle_owner = read_bundle(args.bundle)
-    secrets = secret_values(bundle)
+    operator_credential = read_operator_credential(args.operator_credential_file)
+    secrets = (*secret_values(bundle), operator_credential)
     started_at = utc_now()
     checks: dict[str, Check] = {}
+    checks["operator_credential_input"] = (
+        {"credential_type": "personal_operator", "mode": "0600", "owner_is_current_user": True},
+        True,
+    )
     checks["terraform_output_bundle"] = evaluate_bundle(bundle, bundle_mode, bundle_owner)
     if not checks["terraform_output_bundle"][1]:
         raise AcceptanceInputError("access bundle is incomplete or not owner-only; refusing to probe with it")
@@ -875,7 +906,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     with httpx.Client(base_url=public_origin, verify=True, timeout=30, trust_env=False) as client:
         session_response = client.post(
             "/admin/api/v1/session",
-            headers={"authorization": "Bearer " + credentials["admin_bootstrap_token"]},
+            headers={"authorization": "Bearer " + operator_credential},
         )
         cookie_round_trip = bool(client.cookies.get("__Host-fs2_admin_session"))
 
@@ -979,6 +1010,12 @@ async def _both(*awaitables: Any) -> tuple[dict[str, Any], dict[str, Any]]:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bundle", type=Path, required=True, help="owner-only inference-stack output bundle")
+    parser.add_argument(
+        "--operator-credential-file",
+        type=Path,
+        required=True,
+        help="owner-only mode-0600 file containing one personal operator credential",
+    )
     parser.add_argument("--kubeconfig", type=Path, required=True)
     parser.add_argument("--context", required=True, help="kubeconfig context of the deployed cluster")
     parser.add_argument("--expectations", type=Path, required=True, help="deployment expectations JSON")
