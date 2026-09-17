@@ -174,7 +174,7 @@ async def test_expired_token_replay_records_expiration_once(cipher, hasher) -> N
 
     stored = await store.token_for_verification(token_id)
     assert stored is not None
-    assert stored[0].expiration_recorded_at is not None
+    assert stored[2]
     assert store.expiration_record_calls == 1
 
 

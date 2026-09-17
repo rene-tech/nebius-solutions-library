@@ -439,10 +439,10 @@ class MemoryStore:
             )
             return view.model_copy(deep=True)
 
-    async def token_for_verification(self, token_id: UUID) -> tuple[TokenView, str] | None:
+    async def token_for_verification(self, token_id: UUID) -> tuple[TokenView, str, bool] | None:
         async with self._lock:
             row = self.tokens.get(token_id)
-            return (row.view.model_copy(deep=True), row.digest) if row else None
+            return (row.view.model_copy(deep=True), row.digest, row.expiration_recorded) if row else None
 
     async def get_token(self, token_id: UUID) -> TokenView:
         async with self._lock:
@@ -519,11 +519,9 @@ class MemoryStore:
             row = self.tokens.get(token_id)
             if row is None or row.view.expires_at is None:
                 return
-            if row.expiration_recorded or row.view.expiration_recorded_at is not None:
+            if row.expiration_recorded:
                 return
-            recorded_at = datetime.now(UTC)
             row.expiration_recorded = True
-            row.view = row.view.model_copy(update={"expiration_recorded_at": recorded_at})
             self._audit(
                 actor=actor,
                 tenant_id=row.view.tenant_id,

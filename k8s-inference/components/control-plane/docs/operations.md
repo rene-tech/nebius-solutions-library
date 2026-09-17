@@ -572,7 +572,7 @@ PAT verification reads current token state and rejects revoked or expired rows
 before scheduling Argon2id. Active-token verification runs outside the event
 loop behind four cancellation-safe worker slots, so a disconnected caller
 cannot release a slot while its Argon worker still consumes CPU and memory.
-The internal verification view carries the durable expiration-audit marker.
+The internal store verification result carries the durable expiration-audit marker.
 Only an expired row without that marker attempts the conditional audit write;
 ordinary expired-token replays remain a read plus a generic denial and do not
 take the token advisory lock.

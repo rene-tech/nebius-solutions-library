@@ -773,7 +773,6 @@ class PostgresStore:
             revoked_at=row["revoked_at"],
             name=row["name"],
             fingerprint=row["fingerprint"],
-            expiration_recorded_at=row["expiration_recorded_at"],
             last_used_at=row["last_used_at"],
             rotation_parent_id=row["rotation_parent_id"],
             rotated_at=row["rotated_at"],
@@ -1024,10 +1023,12 @@ class PostgresStore:
             )
             return self._token(row)
 
-    async def token_for_verification(self, token_id: UUID) -> tuple[TokenView, str] | None:
+    async def token_for_verification(self, token_id: UUID) -> tuple[TokenView, str, bool] | None:
         async with self.pool.acquire() as connection:
             row = await connection.fetchrow("SELECT * FROM fs2_tokens WHERE id=$1", token_id)
-            return (self._token(row), cast(str, row["digest"])) if row is not None else None
+            if row is None:
+                return None
+            return self._token(row), cast(str, row["digest"]), row["expiration_recorded_at"] is not None
 
     async def get_token(self, token_id: UUID) -> TokenView:
         async with self.pool.acquire() as connection:

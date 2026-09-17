@@ -409,7 +409,7 @@ class TokenService:
                 if stored is None:
                     raise
 
-        view, digest = stored
+        view, digest, _ = stored
         if not secrets.compare_digest(prefix, view.prefix):
             raise AuthenticationError("bootstrap token identity conflicts with stored token")
         if view.fingerprint is not None and not secrets.compare_digest(fingerprint, view.fingerprint):
@@ -463,14 +463,14 @@ class TokenService:
         stored = await self.store.token_for_verification(token_id)
         if stored is None:
             raise AuthenticationError("invalid bearer token")
-        view, digest = stored
+        view, digest, expiration_recorded = stored
         now = datetime.now(UTC)
         if view.revoked_at is not None:
             self._failed_verifications.pop(view.id, None)
             raise AuthenticationError("invalid bearer token")
         if view.expires_at is not None and view.expires_at <= now:
             self._failed_verifications.pop(view.id, None)
-            if view.expiration_recorded_at is None:
+            if not expiration_recorded:
                 await self.store.record_token_expired(view.id, actor="token-verifier")
             raise AuthenticationError("invalid bearer token")
         if not secrets.compare_digest(expected_prefix, view.prefix):
