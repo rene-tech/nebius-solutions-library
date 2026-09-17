@@ -1727,25 +1727,29 @@ async def test_queue_drain_recovers_after_worker_cancellation_without_hanging():
     await queue.aclose()
 
 
-def test_bounded_for_summary_gates_on_actual_stored_payload_size():
-    """SAI-01 (blocker 1): boundedness is decided by the ACTUAL STORED PAYLOAD SIZE only — the ciphertext
-    byte length for the encrypted store, the stored body byte lengths for the in-memory store — NOT the
-    wire-observed length and NOT any redacted flag. A payload within the effective ceiling is bounded
-    (decrypt + exact sanitize); one over it is non-bounded (metadata-only, never decrypted). The hard
-    ceiling applies even when the cap is None."""
-    from fs2_serve.request_debug import _MAX_SANITIZE_BODY, _bounded_for_summary
+def test_bounded_for_summary_gates_on_whole_exchange_ceiling_above_the_body_cap():
+    """SAI-01 (blocker 1): boundedness is decided by the WHOLE-EXCHANGE stored size vs a ceiling that is
+    DISTINCT FROM and ABOVE the per-body cap (per-body cap + bounded envelope/overhead + crypto framing) —
+    NOT the per-body cap itself. So a near-cap request (body + envelope > body cap) stays bounded/served
+    instead of being wrongly withheld. The ceiling scales with the per-body cap and applies even when the
+    cap is None (uses the hard per-body ceiling)."""
+    from fs2_serve.request_debug import _MAX_SANITIZE_BODY, _bounded_for_summary, _stored_payload_ceiling
 
     cap = 1024
+    ceiling = _stored_payload_ceiling(cap)
+    assert ceiling > cap  # DISTINCT budget ABOVE the per-body cap, not the body cap
     # signature: (stored_payload_size, max_body_bytes)
-    assert _bounded_for_summary(100, cap) is True  # small stored payload -> bounded
-    assert _bounded_for_summary(cap, cap) is True  # exactly at the cap -> bounded
-    assert _bounded_for_summary(cap + 1, cap) is False  # over the cap -> non-bounded
-    assert _bounded_for_summary(10**9, cap) is False  # huge stored payload -> non-bounded
-    # No cap configured must NOT disable the hard ceiling.
-    assert _bounded_for_summary(_MAX_SANITIZE_BODY, None) is True  # within the hard ceiling
-    assert _bounded_for_summary(_MAX_SANITIZE_BODY + 1, None) is False  # past the hard ceiling
-    # cap is clamped to the hard ceiling: a configured cap larger than the ceiling cannot raise it.
-    assert _bounded_for_summary(_MAX_SANITIZE_BODY + 1, 10**9) is False
+    assert _bounded_for_summary(100, cap) is True  # small whole exchange -> bounded
+    assert _bounded_for_summary(cap * 2, cap) is True  # > per-body cap but < whole-exchange ceiling -> bounded (served)
+    assert _bounded_for_summary(ceiling, cap) is True  # exactly at the whole-exchange ceiling -> bounded
+    assert _bounded_for_summary(ceiling + 1, cap) is False  # over the whole-exchange ceiling -> non-bounded
+    assert _bounded_for_summary(10**9, cap) is False  # huge whole exchange -> non-bounded
+    # No cap configured uses the hard per-body ceiling as the basis, and a configured cap larger than the
+    # hard ceiling cannot raise the body basis (clamped), so the whole-exchange ceiling is stable.
+    assert _stored_payload_ceiling(None) == _stored_payload_ceiling(_MAX_SANITIZE_BODY)
+    assert _stored_payload_ceiling(10**9) == _stored_payload_ceiling(_MAX_SANITIZE_BODY)
+    assert _bounded_for_summary(_stored_payload_ceiling(None), None) is True
+    assert _bounded_for_summary(_stored_payload_ceiling(None) + 1, None) is False
 
 
 async def test_queue_reprocesses_item_after_mid_item_cancellation():

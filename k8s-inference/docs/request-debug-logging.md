@@ -267,20 +267,26 @@ HTTP 0 or success.
 - Reads are egress-sanitized, and both the detail and the list summary come from ONE shared per-row
   derivation so they can never disagree. Because the 90-day no-delete retention preserves rows
   (including legacy rows captured under an earlier, narrower contract), a read applies the CURRENT
-  contract on the way out. A per-row hard ceiling governs BOTH paths. A BOUNDED row is decrypted and
+  contract on the way out. Boundedness is decided by the ACTUAL WHOLE-EXCHANGE STORED SIZE against a
+  whole-exchange ceiling that is DISTINCT FROM and ABOVE the per-body cap (per-body cap + a bounded
+  canonical overhead for redacted headers/query/error/metadata/JSON structure + the AES-GCM tag), measured
+  in identical byte units in both stores (the encrypted store uses `octet_length(ciphertext)`; the
+  in-memory store uses the serialized-row byte length plus the same tag constant). This whole-exchange
+  budget is used precisely so a legitimate near-cap request (its ciphertext = the within-cap body plus the
+  envelope, which always exceeds the per-body cap) is NOT wrongly withheld. A BOUNDED row is decrypted and
   re-sanitized via `normalize_exchange_for_read` — response withheld; a wire-incomplete, legacy-prefixed,
   or over-cap request body withheld; `error_detail` replaced with a generic marker; response headers
-  reduced to structural-only; request headers/query re-scrubbed. Boundedness is decided on the REQUEST
-  size plus completeness: because the response body is ALWAYS withheld and current capture never stores
-  it, a current row's large response wire-length does NOT make the row unbounded — its safe retained
-  request is still decrypted and served. Only a legacy row that stored the RESPONSE RAW (it shares one
-  ciphertext with the request) is gated on the response size, and withheld whole when that stored
-  response is over the ceiling. A NON-bounded row (wire-incomplete request, over-ceiling request, or a
-  legacy over-ceiling raw response) is NOT decrypted or normalized at all: it is rendered metadata-only
-  (every body/header/query/error field withheld) from its clear columns on both detail and list, so an
-  arbitrarily large legacy payload is never fetched, decrypted, or served — even under an unset cap. The
-  stored ciphertext is never rewritten or deleted (the separately owned purge handles TTL), so this is
-  redaction on the way out only.
+  reduced to structural-only; request headers/query re-scrubbed. A current row (request within cap +
+  always-withheld tiny response marker) is under the ceiling and its safe request is served regardless of
+  the response's wire length. A NON-bounded row — one whose whole stored payload exceeds the ceiling,
+  reachable only by a LEGACY row that stored a large raw body (or pathologically large headers) — is NOT
+  decrypted or normalized at all: it is rendered metadata-only (every body/header/query/error field
+  withheld) from its clear columns on both detail and list. On PostgreSQL both paths use ONE atomic query
+  that returns the ciphertext only when `octet_length(ciphertext)` is within the ceiling (else NULL), and
+  decode is lazy, so an over-ceiling payload is never even selected or decrypted (no check-then-fetch
+  window). So an arbitrarily large legacy payload is never fetched, decrypted, or served — even under an
+  unset cap. The stored ciphertext is never rewritten or deleted (the separately owned purge handles TTL),
+  so this is redaction on the way out only.
 - Full detail documents are encrypted in PostgreSQL using the existing payload
   cipher/keyring. Searchable summary metadata is stored separately. Preserve the
   existing keyring needed to decrypt historical records; no key material enters

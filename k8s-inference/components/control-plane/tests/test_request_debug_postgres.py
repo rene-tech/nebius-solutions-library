@@ -13,7 +13,7 @@ from test_request_debug import NOW, row
 from test_users_apps_postgres import database, operation, token  # noqa: F401
 
 from fs2_serve.postgres import PostgresStore
-from fs2_serve.request_debug import _MAX_SANITIZE_BODY, PostgresDebugStore, body_capture, suppressed_body
+from fs2_serve.request_debug import PostgresDebugStore, _stored_payload_ceiling, body_capture, suppressed_body
 
 pytestmark = pytest.mark.postgres
 
@@ -71,25 +71,28 @@ async def test_actual_encrypted_detail_pagination_unauthenticated_and_same_tenan
 
 
 async def test_oversized_stored_ciphertext_is_metadata_only_on_detail_and_list_without_decrypt(debug_database):
-    """SAI-01 regression (blocker 1): boundedness is gated on the ACTUAL STORED CIPHERTEXT LENGTH
-    (octet_length(ciphertext)), not observed_bytes and not the redacted flag. Even under a DEFAULT
-    cap=None, a row whose stored ciphertext exceeds the hard per-row ceiling is served METADATA-ONLY on
-    BOTH detail and list, WITHOUT fetching/decrypting it. Proven by overwriting the ciphertext with an
-    over-ceiling blob: octet_length marks it non-bounded so no phase-2 fetch/decrypt happens (a decrypt
-    would raise InvalidTag on the garbage). This is the ancestor-88520758f case where redacted=True does
-    NOT imply a tiny stored payload. Postgres-marked; run by CI."""
+    """SAI-01 regression (blockers 1 & 3): boundedness is gated on the ACTUAL STORED CIPHERTEXT LENGTH vs
+    the WHOLE-EXCHANGE ceiling (not observed_bytes, not the redacted flag, not the per-body cap), and the
+    ONE atomic CASE query returns the ciphertext only when octet_length <= ceiling (else NULL) so an
+    over-ceiling row's bytes are never selected or decrypted (no TOCTOU, no eager decrypt). Even under a
+    DEFAULT cap=None, an over-ceiling row is served METADATA-ONLY on BOTH detail and list. Proven by
+    overwriting the ciphertext with an over-ceiling blob: the CASE yields NULL so a decrypt (which would
+    raise InvalidTag on the garbage) never happens. This is the ancestor-88520758f case where redacted=True
+    does NOT imply a tiny stored payload. Postgres-marked; run by CI."""
     db = debug_database
-    store = PostgresDebugStore(db.pool, db.cipher)  # cap=None: the hard ceiling must still bound the read
+    store = PostgresDebugStore(db.pool, db.cipher)  # cap=None: the ceiling is derived from the hard per-body cap
     big = row(
         request_body=body_capture(b"small request body", "text/plain", True),
         error_detail="raw upstream detail with sk-OVERSIZE-LEAK",
     )
     await store.record(big)
-    # Overwrite the ciphertext with an over-ceiling garbage blob: octet_length(ciphertext) now exceeds the
-    # hard ceiling, so the read path classifies the row non-bounded and NEVER fetches/decrypts it (a decrypt
-    # of the garbage would raise InvalidTag). redacted flag is irrelevant — only the stored length matters.
+    # Overwrite the ciphertext with a blob over the WHOLE-EXCHANGE ceiling: the CASE's octet_length guard
+    # yields NULL, so the read path classifies the row non-bounded and NEVER selects/decrypts the bytes (a
+    # decrypt of the garbage would raise InvalidTag). The redacted flag is irrelevant — only stored length.
     await db.pool.execute(
-        "UPDATE fs2_request_debug SET ciphertext=$2 WHERE id=$1", big.id, b"\x00" * (_MAX_SANITIZE_BODY + 1)
+        "UPDATE fs2_request_debug SET ciphertext=$2 WHERE id=$1",
+        big.id,
+        b"\x00" * (_stored_payload_ceiling(None) + 1),
     )
     detail = await store.get(big.id, "tenant-a")
     assert detail is not None  # did NOT raise InvalidTag => never decrypted the oversized ciphertext

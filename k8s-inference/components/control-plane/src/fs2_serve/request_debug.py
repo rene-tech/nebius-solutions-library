@@ -825,11 +825,40 @@ _MAX_SANITIZE_BODY = 256 * 1024
 
 
 def _effective_cap(max_body_bytes: int | None) -> int:
-    """The hard per-row read ceiling, applied EVERYWHERE a body is fetched/decrypted/sanitized/served
-    (detail AND list): the smaller of the configured cap and the fixed ceiling, and the fixed ceiling
-    alone when no cap is configured. So a default/unset cap (max_body_bytes=None) can never let ANY read
-    path — detail included — touch an arbitrarily large legacy payload."""
+    """The hard PER-BODY read/serve ceiling for a single body (request), applied by
+    ``normalize_exchange_for_read``: the smaller of the configured cap and the fixed ceiling, and the
+    fixed ceiling alone when no cap is configured. So a default/unset cap (max_body_bytes=None) can never
+    let the read path serve an arbitrarily large legacy body."""
     return _MAX_SANITIZE_BODY if max_body_bytes is None else min(max_body_bytes, _MAX_SANITIZE_BODY)
+
+
+# AES-GCM appends a 16-byte authentication tag to the ciphertext value (the nonce is stored separately),
+# so octet_length(ciphertext) == len(serialized plaintext) + 16. The in-memory store adds the same
+# constant to its serialized-row length so BOTH stores measure the identical byte unit (ciphertext bytes).
+_GCM_TAG_BYTES = 16
+# Bounded canonical overhead for everything in the serialized exchange OTHER than the two bodies: the
+# redacted request/response headers, the redacted query string, the error_detail marker, the clear
+# metadata, and the JSON field-name/structure envelope. These are all structural/redacted and bounded
+# small; this allowance covers them with margin for a legitimate exchange. A row whose whole serialized
+# payload exceeds the ceiling below is served metadata-only — reachable only by a LEGACY row with a large
+# raw stored body (or pathologically large headers), never a current near-cap request.
+_STORED_ENVELOPE_OVERHEAD = 64 * 1024
+
+
+def _stored_payload_ceiling(max_body_bytes: int | None) -> int:
+    """The WHOLE-serialized-exchange work/decrypt ceiling — a budget DISTINCT FROM and ABOVE the per-body
+    cap. It is derived from the per-body cap PLUS bounded canonical overhead PLUS crypto framing, NOT the
+    per-body cap itself: comparing the whole ciphertext to the per-body cap would wrongly withhold a
+    legitimate near-cap request (its ciphertext = the body plus envelope always exceeds the body cap).
+
+    Sizing: both stored bodies may each be within the per-body cap and, serialized as JSON strings, expand
+    by up to ~4/3 (base64 of a binary body) — so ``3 * cap`` covers the two bodies (~8/3) with margin for
+    quotes/escaping; plus ``_STORED_ENVELOPE_OVERHEAD`` for the redacted headers/query/error/metadata/JSON
+    structure; plus the AES-GCM tag. A legitimate exchange (request within cap + response marker or a
+    within-cap response + bounded overhead) fits and is decrypted/served; a legacy row whose COMBINED
+    stored payload exceeds this (e.g. a large raw response) is conservatively metadata-only. The decrypt
+    is thereby bounded to this ceiling, never an arbitrary legacy blob."""
+    return 3 * _effective_cap(max_body_bytes) + _STORED_ENVELOPE_OVERHEAD + _GCM_TAG_BYTES
 
 
 def _bounded_for_summary(stored_payload_size: int, max_body_bytes: int | None) -> bool:
@@ -837,16 +866,16 @@ def _bounded_for_summary(stored_payload_size: int, max_body_bytes: int | None) -
     egress-sanitized (exact truth on BOTH detail and list). A row failing this is NON-bounded and rendered
     METADATA-ONLY on both paths WITHOUT fetching/decrypting its payload.
 
-    The discriminator is the ACTUAL STORED PAYLOAD SIZE (the ciphertext byte length for the encrypted
-    store; the stored body byte lengths for the in-memory store) — NOT the wire-observed length of the
-    original bodies and NOT the redacted flag. This is essential and backwards-compatible: a legacy
+    The discriminator is the ACTUAL WHOLE-EXCHANGE STORED SIZE (in identical byte units across stores: the
+    ciphertext byte length for the encrypted store; ``len(serialized row) + tag`` for the in-memory store)
+    compared to the WHOLE-EXCHANGE ceiling (``_stored_payload_ceiling``), NOT the wire-observed length, NOT
+    the redacted flag, and NOT the per-body cap. This is essential and backwards-compatible: a legacy
     ancestor stored uncapped full responses and set ``redacted=true`` whenever any bytes were scrubbed, so
     the flag cannot distinguish a current row's tiny withheld MARKER from a legacy row's HUGE
-    redacted-in-place response. Only the stored length is a reliable, tamper-independent bound, so an
-    oversized legacy payload is never decrypted regardless of any flag, while a current row (small request
-    + always-withheld tiny response marker = small stored payload) stays bounded and serves its request.
-    """
-    return stored_payload_size <= _effective_cap(max_body_bytes)
+    redacted-in-place response; and comparing the whole ciphertext to the per-body cap would withhold
+    legitimate near-cap requests. Only the whole stored length vs the whole-exchange ceiling is a reliable,
+    tamper-independent, non-over-withholding bound."""
+    return stored_payload_size <= _stored_payload_ceiling(max_body_bytes)
 
 
 def _conservative_exchange(meta: DebugExchangeSummary) -> DebugExchange:
@@ -899,14 +928,16 @@ def _read_view(
     return _conservative_exchange(meta)
 
 
-def _stored_body_size(exchange: DebugExchange) -> int:
-    """Stored-payload-size proxy for the IN-MEMORY store (which holds plaintext rows, not a ciphertext):
-    the length of the stored request + response body data strings (these are what the encrypted store
-    serializes into the ciphertext, so a char count tracks the stored size without an O(size) re-encode).
-    Bodies dominate the stored payload, so this is the in-memory analogue of the encrypted store's
-    ``octet_length(ciphertext)`` for the bounded read decision — a current row (tiny withheld response
-    marker) is small; a legacy row with a huge stored response is large, regardless of its redacted flag."""
-    return len(exchange.request_body.data) + len(exchange.response_body.data)
+def _stored_payload_size(exchange: DebugExchange) -> int:
+    """The IN-MEMORY store's whole-exchange stored size in the SAME byte unit the encrypted store uses.
+
+    The encrypted store measures ``octet_length(ciphertext)`` == len(serialized-row bytes) + the AES-GCM
+    tag. The in-memory store holds the plaintext row, so it measures the EXACT serialized-row byte length
+    (``model_dump_json().encode()`` — real encoded bytes covering EVERYTHING that would be
+    decrypted/sanitized: both bodies, headers, query, error_detail, metadata and JSON structure) plus the
+    same tag constant. So both stores compare an identical whole-exchange byte size to the same ceiling —
+    a complete byte/work bound, not a code-point count and not body-only."""
+    return len(exchange.model_dump_json().encode()) + _GCM_TAG_BYTES
 
 
 def _const_exchange(exchange: DebugExchange) -> Callable[[], DebugExchange]:
@@ -1023,7 +1054,7 @@ class InMemoryDebugStore:
                     heapq.heapreplace(heap, entry)
             page = [row for _, _, row in sorted(heap, reverse=True)]  # newest first
             out = [
-                _summary(_read_view(_summary(row), _stored_body_size(row), _const_exchange(row), cap))
+                _summary(_read_view(_summary(row), _stored_payload_size(row), _const_exchange(row), cap))
                 for row in page
             ]
             return out, matched > limit
@@ -1042,7 +1073,7 @@ class InMemoryDebugStore:
         # legacy body is never disclosed on detail. Offloaded to keep the loop free; normalize returns a
         # copy, so the stored row is never mutated.
         return await asyncio.to_thread(
-            _read_view, _summary(row), _stored_body_size(row), _const_exchange(row), self._max_body_bytes
+            _read_view, _summary(row), _stored_payload_size(row), _const_exchange(row), self._max_body_bytes
         )
 
     async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
@@ -1110,20 +1141,21 @@ class PostgresDebugStore:
     ) -> DebugExchangeList:
         after = _pagination(limit, cursor)
         cap = self._max_body_bytes
-        # Phase 1: fetch the CLEAR summary columns PLUS octet_length(ciphertext) — never the ciphertext
-        # BYTES. octet_length is computed server-side and returns an int, so this stays payload-free (no
-        # decrypt, no byte transfer) while giving the ACTUAL stored size that drives the bounded decision
-        # (the observed_bytes/redacted-flag proxies are unreliable for legacy rows). This alone avoids the
-        # load-all-and-decrypt DoS.
+        ceiling = _stored_payload_ceiling(cap)
+        # ONE atomic query (no TOCTOU): fetch the clear summary columns AND the ciphertext ONLY when
+        # octet_length(ciphertext) <= the whole-exchange ceiling, else NULL (a CASE evaluated server-side,
+        # so an over-ceiling row's bytes are NEVER transferred, and the check + fetch are a single
+        # consistent read — no check-then-fetch window). key_id/nonce ride along for the lazy decode.
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
-                f"SELECT {','.join(DebugExchangeSummary.model_fields)},octet_length(ciphertext) AS ciphertext_len "  # noqa: S608 - fixed columns
+                f"SELECT {','.join(DebugExchangeSummary.model_fields)},key_id,nonce,"  # noqa: S608 - fixed columns
+                "CASE WHEN octet_length(ciphertext) <= $8 THEN ciphertext END AS ciphertext "
                 "FROM fs2_request_debug "
                 "WHERE ($1::text IS NULL OR model_id=$1) AND ($2::uuid IS NULL OR operation_id=$2) "
                 "AND ($3::text IS NULL OR tenant_id=$3) AND ($4::timestamptz IS NULL OR started_at >= $4) "
                 "AND ($5::timestamptz IS NULL OR started_at < $5) "
                 "AND ($6::timestamptz IS NULL OR (started_at,id) < ($6,$7::uuid)) "
-                "ORDER BY started_at DESC,id DESC LIMIT $8",
+                "ORDER BY started_at DESC,id DESC LIMIT $9",
                 model_id,
                 operation_id,
                 tenant_id,
@@ -1131,43 +1163,30 @@ class PostgresDebugStore:
                 to_at,
                 after[0] if after else None,
                 after[1] if after else None,
+                ceiling,
                 limit + 1,
             )
         page = rows[:limit]
-        # Phase 2: for BOUNDED rows only (stored ciphertext within the effective ceiling), fetch just
-        # their ciphertext and derive truthful truncation/redaction OFF the event loop. Larger rows are
-        # withheld/metadata-only anyway, so their (possibly huge) payloads are never fetched or decrypted.
-        bounded_ids = [row["id"] for row in page if _bounded_for_summary(row["ciphertext_len"], cap)]
-        truthful: dict[UUID, DebugExchangeSummary] = {}
-        if bounded_ids:
-            async with self.pool.acquire() as connection:
-                cipher_rows = await connection.fetch(
-                    "SELECT * FROM fs2_request_debug WHERE id = ANY($1::uuid[])", bounded_ids
+
+        def _derive() -> list[DebugExchangeSummary]:
+            # Derive every page row OFF the event loop via the SAME shared _read_view the detail path uses,
+            # so list and detail cannot diverge. A row whose ciphertext came back (within ceiling) is
+            # decoded LAZILY (only inside _read_view, after the bound is reasserted on the actually-fetched
+            # bytes); a row whose ciphertext is NULL (over ceiling) is metadata-only, never decoded.
+            out: list[DebugExchangeSummary] = []
+            for row in page:
+                meta = DebugExchangeSummary.model_validate(
+                    {field: row[field] for field in DebugExchangeSummary.model_fields}
                 )
+                ciphertext = row["ciphertext"]
+                if ciphertext is None:
+                    out.append(_conservative_summary(meta))  # over ceiling: metadata-only, no decode
+                else:
+                    stored = len(bytes(ciphertext))
+                    out.append(_summary(_read_view(meta, stored, self._decrypter(row), cap)))
+            return out
 
-            def _derive() -> dict[UUID, DebugExchangeSummary]:
-                # Summarize the bounded rows via the SAME shared _read_view derivation the detail path
-                # uses (decrypt + egress-sanitize with the hard ceiling enforced inside normalize), in a
-                # worker thread (off the loop). Using _read_view here — not a direct normalize call —
-                # keeps the list and detail on ONE derivation, so they cannot diverge. These rows are all
-                # bounded, so _read_view always decrypts; decoding eagerly and passing it via
-                # _const_exchange is equivalent and keeps the closure simply typed.
-                out: dict[UUID, DebugExchangeSummary] = {}
-                for cr in cipher_rows:
-                    meta = DebugExchangeSummary.model_validate(
-                        {field: cr[field] for field in DebugExchangeSummary.model_fields}
-                    )
-                    stored = len(bytes(cr["ciphertext"]))
-                    out[cr["id"]] = _summary(_read_view(meta, stored, _const_exchange(self._decode(cr)), cap))
-                return out
-
-            truthful = await asyncio.to_thread(_derive)
-        items = [
-            truthful[row["id"]]
-            if row["id"] in truthful
-            else _conservative_summary(DebugExchangeSummary.model_validate(dict(row)))
-            for row in page
-        ]
+        items = await asyncio.to_thread(_derive)
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
 
     def _decode(self, row: asyncpg.Record) -> DebugExchange:
@@ -1178,42 +1197,44 @@ class PostgresDebugStore:
         )
         return DebugExchange.model_validate_json(raw)
 
+    def _decrypter(self, row: asyncpg.Record) -> Callable[[], DebugExchange]:
+        """A LAZY decode closure for ``_read_view``: it decodes ``row`` only if/when _read_view confirms
+        the row is bounded, so an over-ceiling row is never decrypted even defensively."""
+
+        def _decode() -> DebugExchange:
+            return self._decode(row)
+
+        return _decode
+
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
-        # Phase 1: fetch the clear summary columns PLUS octet_length(ciphertext) — never the ciphertext
-        # BYTES (octet_length is a server-side int), so a NON-bounded row's (possibly huge) payload is
-        # never fetched, let alone decrypted, on the detail path. The stored ciphertext length is the
-        # reliable bounded discriminator (the observed_bytes/redacted-flag proxies are not).
+        # ONE atomic query (no TOCTOU): fetch the clear summary columns AND the ciphertext ONLY when
+        # octet_length(ciphertext) <= the whole-exchange ceiling, else NULL — a server-side CASE, so an
+        # over-ceiling row's (possibly huge) bytes are NEVER transferred or decrypted, and the size check +
+        # payload fetch are one consistent read (no check-then-fetch window). key_id/nonce ride along for
+        # the lazy decode.
+        ceiling = _stored_payload_ceiling(self._max_body_bytes)
         async with self.pool.acquire() as connection:
-            meta_row = await connection.fetchrow(
-                f"SELECT {','.join(DebugExchangeSummary.model_fields)},octet_length(ciphertext) AS ciphertext_len "  # noqa: S608 - fixed columns
+            row = await connection.fetchrow(
+                f"SELECT {','.join(DebugExchangeSummary.model_fields)},key_id,nonce,"  # noqa: S608 - fixed columns
+                "CASE WHEN octet_length(ciphertext) <= $3 THEN ciphertext END AS ciphertext "
                 "FROM fs2_request_debug WHERE id=$1 AND ($2::text IS NULL OR tenant_id=$2)",
                 exchange_id,
                 tenant_id,
+                ceiling,
             )
-        if meta_row is None:
-            return None
+        if row is None:
+            return None  # not found (or purged)
         meta = DebugExchangeSummary.model_validate(
-            {field: meta_row[field] for field in DebugExchangeSummary.model_fields}
+            {field: row[field] for field in DebugExchangeSummary.model_fields}
         )
-        if not _bounded_for_summary(meta_row["ciphertext_len"], self._max_body_bytes):
-            # NON-bounded (stored ciphertext over the effective ceiling): metadata-only view, NO ciphertext
-            # fetch/decrypt — identical to this row's list summary (one shared derivation), and safe even
-            # under a default cap=None (an oversized legacy payload is never fetched/decrypted/disclosed).
+        if row["ciphertext"] is None:
+            # Over the whole-exchange ceiling: metadata-only view, NO ciphertext fetched/decrypted —
+            # identical to this row's list summary (one shared derivation), safe even under cap=None.
             return _conservative_exchange(meta)
-        # Phase 2 (BOUNDED only): fetch + decrypt the small (<= ceiling) payload and fully egress-sanitize
-        # OFF the event loop via the SAME shared derivation the list uses, so detail and list agree.
-        async with self.pool.acquire() as connection:
-            cipher_row = await connection.fetchrow(
-                "SELECT * FROM fs2_request_debug WHERE id=$1 AND ($2::text IS NULL OR tenant_id=$2)",
-                exchange_id,
-                tenant_id,
-            )
-        if cipher_row is None:
-            return None  # raced a concurrent retention purge between the two phases
-        stored = len(bytes(cipher_row["ciphertext"]))
-        return await asyncio.to_thread(
-            _read_view, meta, stored, _const_exchange(self._decode(cipher_row)), self._max_body_bytes
-        )
+        # Within ceiling: decrypt + fully egress-sanitize OFF the event loop via the SAME shared derivation
+        # the list uses (decode is LAZY inside _read_view, after the bound is reasserted on the fetched bytes).
+        stored = len(bytes(row["ciphertext"]))
+        return await asyncio.to_thread(_read_view, meta, stored, self._decrypter(row), self._max_body_bytes)
 
     async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         # Payload-free: aggregates over the clear started_at column only. No ciphertext is
