@@ -3,14 +3,18 @@ from __future__ import annotations
 import ast
 import copy
 import gzip
+import ipaddress
 import json
+import math
 import re
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Union
+from urllib.parse import urlsplit
 
 import pydantic
 import pytest
+import yaml
 from conftest import CATALOG_ROOT, SOLUTION_ROOT
 from jsonschema import Draft202012Validator
 
@@ -453,3 +457,50 @@ def test_cosmos_media_contracts_are_mode_specific_and_unqualified_actions_are_re
         for example in contract.examples:
             Draft202012Validator(contract.input_schema).validate(example)
         generic_validator.validate(contract.examples[0] | defaults)
+
+
+def cosmos_adapter_request():
+    """Load actual YAML DTOs and validators without importing/starting the GPU adapter."""
+    path = SOLUTION_ROOT / "models/general-media/k8s/cosmos3-nano.yaml"
+    documents = yaml.safe_load_all(path.read_text())
+    source = next(doc["data"]["adapter.py"] for doc in documents if "adapter.py" in doc.get("data", {}))
+    nodes = []
+    constants = {"MODEL_REPOSITORY", "MODEL_REVISION", "RESOLVED_MODEL", "ACTION_DOMAINS", "GenerateRequest"}
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id in constants:
+            nodes.append(node)
+        elif isinstance(node, ast.FunctionDef) and node.name == "validate_reference_syntax":
+            nodes.append(node)
+        elif isinstance(node, ast.ClassDef) and (node.name.endswith("Request") or node.name == "TransferControl"):
+            nodes.append(node)
+    namespace = {name: getattr(pydantic, name) for name in ("BaseModel", "ConfigDict", "Field", "model_validator")}
+    namespace.update(
+        Annotated=Annotated, Literal=Literal, Union=Union, ipaddress=ipaddress, math=math, urlsplit=urlsplit
+    )
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec", dont_inherit=True), namespace)  # noqa: S102
+    return pydantic.TypeAdapter(namespace["GenerateRequest"])
+
+
+@pytest.mark.parametrize(
+    "mode", ["text-to-image", "text-to-video", "image-to-video", "video-to-video", "transfer-video"]
+)
+def test_cosmos_specialized_defaults_validate_against_actual_adapter(registry, mode):
+    contract, defaults = next(
+        (contract, defaults)
+        for _, contract, defaults, _, _ in cosmos_specialized_contracts(selected(registry, "cosmos3-nano"))
+        if defaults["mode"] == mode
+    )
+    payload = copy.deepcopy(contract.examples[0]) | defaults
+    # The gateway resolves tenant-owned references before sending to the adapter.
+    if "input_reference" in payload:
+        payload["input_reference"] = "https://media.example.test/fixture.mp4"
+    for control in payload.get("controls", []):
+        control["reference"] = "https://media.example.test/control.mp4"
+    parsed = cosmos_adapter_request().validate_python(payload)
+    assert parsed.mode == mode
+    if mode == "text-to-image":
+        assert defaults == {"mode": mode, "output_format": "png"}
+        assert parsed.output_format == "png"
+        assert "output_delivery" not in parsed.model_dump()
+    else:
+        assert parsed.output_delivery == "artifact" and parsed.output_format == "mp4"

@@ -219,7 +219,8 @@ async def test_large_native_examples_publish_small_server_fixture_references(reg
 
 
 @pytest.mark.asyncio
-async def test_cosmos_video_to_video_tool_admits_customer_url_as_artifact_work(registry, cipher, hasher):
+@pytest.mark.parametrize("mode", ["text-to-image", "video-to-video"])
+async def test_cosmos_typed_tools_preserve_mode_specific_runtime_defaults(registry, cipher, hasher, mode):
     native = bound_model_registry(registry, "cosmos3-nano")
     model = native.get("cosmos3-nano")
     native = Registry(
@@ -248,6 +249,9 @@ async def test_cosmos_video_to_video_tool_admits_customer_url_as_artifact_work(r
         "condition_video_keep": "first",
         "idempotency_key": "timothy-robot-pouring-v2v-0001",
     }
+    if mode == "text-to-image":
+        customer_request = {"prompt": "A red cube on a white table", "idempotency_key": "cosmos-t2i-legacy-json-0001"}
+    tool_name = "cosmos3_nano_" + mode.replace("-", "_")
     async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
         tools = {item.name: item for item in (await client.list_tools()).tools}
         assert expected <= tools.keys()
@@ -260,7 +264,7 @@ async def test_cosmos_video_to_video_tool_admits_customer_url_as_artifact_work(r
         discovered = _data(await client.call_tool("get_model_schema", {"model_id": "cosmos3-nano"}))
         assert expected <= {contract["tool_name"] for contract in discovered["contracts"]}
 
-        admitted = _data(await client.call_tool("cosmos3_nano_video_to_video", customer_request))
+        admitted = _data(await client.call_tool(tool_name, customer_request))
         assert admitted["status"] == "queued"
         claimed = await runtime.store.claim_operation("cosmos-contract-test", lease_seconds=30)
         assert claimed is not None and str(claimed.id) == admitted["id"]
@@ -273,9 +277,9 @@ async def test_cosmos_video_to_video_tool_admits_customer_url_as_artifact_work(r
         )
         assert payload == {
             **{key: value for key, value in customer_request.items() if key != "idempotency_key"},
-            "mode": "video-to-video",
-            "output_delivery": "artifact",
-            "output_format": "mp4",
+            "mode": mode,
+            **({} if mode == "text-to-image" else {"output_delivery": "artifact"}),
+            "output_format": "png" if mode == "text-to-image" else "mp4",
         }
 
         with pytest.raises(MCPError) as missing_reference:

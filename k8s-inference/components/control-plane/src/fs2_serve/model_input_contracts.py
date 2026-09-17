@@ -995,7 +995,9 @@ def cosmos_specialized_contracts(
             ModelInputContract(_cosmos_mode_schema(mode), (examples[mode],), _COSMOS_SOURCE_REFS, model_ref, "native"),
             {
                 "mode": mode,
-                "output_delivery": "inline-base64" if mode == "text-to-image" else "artifact",
+                # The pinned TextToImageRequest returns legacy JSON and forbids
+                # output_delivery; only the video request DTOs accept it.
+                **({} if mode == "text-to-image" else {"output_delivery": "artifact"}),
                 "output_format": "png" if mode == "text-to-image" else "mp4",
             },
             title,
