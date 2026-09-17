@@ -1,6 +1,6 @@
 # Cosmos and Stockholm remediation — 17 September 2026
 
-Release status: **Helm 143 deployed; public workflow validation in progress;
+Release status: **Helm 145 deployed; public workflow validation in progress;
 not customer-qualified**.
 The implementation is integrated on `agent/fs2-cosmos-stockholm-remediation-r20260917`, based on
 `bad3f9cba9cac2762ddbe0b62f8c6ab3a780a6d7`. This baseline preserves the newer
@@ -10,8 +10,8 @@ reset or overwritten. This document is not a replacement for live evidence.
 ## Latest deployed state
 
 The explicit `sandbox2` profile restored authorized access. The original global
-profile is unchanged. Helm release 143 deploys the corrected CP/controller
-`sha256:624763c6141a990125c37b71fccc0a8d7ba5371a4efd5be325336cbc58d54020`
+profile is unchanged. Helm release 145 deploys the corrected CP/controller
+`sha256:849020eabbcf07d07112bcebae4032639e8e995a9eda078410ccf4879a188ee8`
 and admin `sha256:6428b3500d2dd6784c0ff2308335b3d2962f725434cc5e7ea8fd5098dbf21659`.
 The complete additive model contract retains 20 model identities and all 22 old
 template revisions, adding only the new Cosmos template. It does not drop the
@@ -27,15 +27,16 @@ The isolated snapshot preview and its ConfigMap/port-forward were removed;
 media and receipts remain protected. The LeRobot CPU image is published, but its
 App remains unrouted and is not claimed ready.
 
-Gateway 3/3, admin 2/2 and controller 2/2 were ready on release 143 at 14:57 UTC.
-Nine public/admin read APIs returned HTTP 200 at 14:57:48 UTC and retained 34 Apps.
-These are availability checks, not inference qualification. The release-143
-readback at 14:58:18 UTC confirmed all three metrics endpoints HTTP 200 and
+Gateway 3/3, admin 2/2 and controller 2/2 were ready on release 145 at 15:29 UTC.
+Nine public/admin read APIs returned HTTP 200 at 15:30:38 UTC and retained 34 Apps.
+These are availability checks, not inference qualification. The release-145
+readback at 15:29:56 UTC confirmed all three metrics endpoints HTTP 200 and
 actually scraped by Prometheus; all 13 rules had healthy evaluation. Existing
 two lifecycle and three certificate alerts remain open. GPU observer coverage
-was 14/16 Ready at that instant, not complete cluster telemetry. The receipt is
-`final-deployment-verification-r143.json` under the protected rollout directory,
-SHA-256 `d7569ced946e40915d320c617eaf5cd8deecf660ca06cc7ff8c03bfd54420bd0`.
+was 15/15 Ready but only 12/15 updated at that instant; that is not proof of
+homogeneous observer versions or exact per-request GPU attribution. The receipt is
+`final-deployment-verification-r145.json` under the protected rollout directory,
+SHA-256 `8062cf90707b03e3d98ae19f88044002eea986f2cde0d995313945243de31c95`.
 
 Helm 141's global watcher waited on unchanged GPU observers on unavailable nodes
 after the application rollout had finished. Only the task-owned local Helm wait
@@ -100,8 +101,27 @@ default, retaining PNG format and the legacy JSON image response. All four video
 modes keep artifact delivery. The actual adapter schemas for all five modes,
 MCP T2I/V2V admission, legacy output/artifact and Magpie regressions passed in a
 177-test focused suite. Runtime, snapshot, template, model, admin and schema are
-unchanged. Publication/deployment and fresh acceptance of this correction are
-pending; all new test admissions were paused and previously admitted work settled.
+unchanged. This typed-only correction was deployed as release 144; no customer
+cohort was started on it because the same unsupported field was also discovered
+in the generic named-tool schema.
+
+Final source `ad819a0118b7fcd113ce68d3e597d475c0813582` also removes that field
+from the generic text-to-image schema branch and clarifies that delivery options
+apply to videos. All five generic branches are tested against the actual adapter
+DTOs. Unsupported image delivery fields are rejected before admission by the
+schema-aware named native tool; the arbitrary-payload `invoke_model` API remains
+a pass-through and is not claimed to validate every model field. Legacy T2I
+without the field and T2V inline/artifact behavior are preserved. The complete
+focused suite passed 179 tests. Helm 145 deploys this final source; final-image
+public compatibility and two bounded cohorts resumed only after all gateways
+were on its immutable digest.
+
+First final-image T2I operation `ee17634b-9e72-4771-bba0-8364337b3851` succeeded
+on attempt one. Its externalized JSON/base64 result was downloaded and verified,
+then decoded into a 196,993-byte 256x256 PNG. In-flight/terminal replay retained
+the same operation. Cached-node cold activation was 37.839581 seconds and total
+request time 40.245465 seconds; this is not an image-pull/new-node measurement.
+Live adapter/runtime logs and Pod/events were archived before natural scale-down.
 
 Stockholm's release-143 cohort one passed 13 protein calls with actual peak-five
 outstanding operations, an ESMFold2 batch and all three artifact downloads, with
@@ -228,36 +248,39 @@ The pre-resume CP release was Helm 138 / image
 from source `1f745bf18`. **Re-read the actual deployment before changing it**;
 this historical receipt cannot prove that no later release occurred.
 
-Remaining sequence (access and initial image deployment are now complete):
+Access, image publication, migration 32, coordinated CP/admin rollout, Cosmos
+template promotion and real metrics scraping are complete. Do not repeat those
+steps merely because they appear in the historical cards. Remaining work:
 
-1. Read actual CP/admin/runtime images, release values, database contract,
-   public discovery, customer grants and installed LibreChat/skill build. Retain
-   predecessor digests and current working speech/storage/workshop checks.
-2. Build/publish CP, admin and LeRobot images from the final integrated commit;
-   retain digests. Apply additive migration 0032 and verify its release contract.
-   Update CP and admin together because usage-response names changed. Build/publish
-   the Cosmos adapter/template containing this source; do not change pinned model,
-   upstream runtime, quality controls, offload or quantization silently.
-3. Bind the new LeRobot CPU image and scoped internal API through the existing
-   scientific execution map and catalog promotion path. Do not mark the candidate
-   profile qualified merely because the image builds. It needs the real media
-   workflow, artifact publication and reader-reopen checks.
-4. Deploy using the normal tracked Helm/Terraform release path. Observe readiness,
-   logs, DB migration, metrics, existing speech/storage and model regression paths.
-   No Terraform apply or managed-resource drift claim was made in this session.
-5. Run the [Cosmos customer runner](../acceptance/cosmos3-customer-20260915/README.md)
-   and [Stockholm release verifier](../acceptance/stockholm-customer-20260917/README.md)
-   with exact same-policy canaries, real client traces and representative workload
-   fixtures. The latter does not create missing per-model live fixtures for you.
-   Use [CUSTOMER_RELEASE_POLICY.md](../CUSTOMER_RELEASE_POLICY.md), not a smoke
-   shortcut. Do not broaden a real customer key silently.
-6. Read-only export the actual Stockholm usage cohort using
-   [the reconciliation CLI](stockholm-usage-accounting-20260917.md). Observe real
-   Prometheus, alerts and admin pages for the same operations. Preserve failed,
-   skipped or uncovered capabilities. Require two consecutive unchanged cohorts
-   before saying the customer workflows are ready.
-7. Remove/revoke only explicitly created canary resources and retain the evidence.
-   Do not delete existing customer workloads, tokens, artifacts or logs.
+1. Finish and record the final-image public compatibility and bounded cohorts
+   using the [Cosmos runner](../acceptance/cosmos3-customer-20260917/README.md)
+   and [Stockholm runner](../acceptance/stockholm-customer-20260917/README.md).
+   Retain every negative/interrupted intermediate attempt. Scope these results
+   to the actual modes/models/clients tested, not the entire catalog.
+2. Bind the published LeRobot CPU image and complete its scientific profile,
+   execution identity and execution map through the existing promotion path.
+   Then test real public parent-to-child delegation, both dataset augmentations,
+   published artifacts, reader reopening, cancellation/priority and usage. The
+   isolated reader round-trips do not establish this public workflow or physical
+   action/video alignment; do not mark the candidate qualified from its build.
+3. Complete actual hosted-LibreChat plus installed-skill testing with a same-policy
+   caller. The current client uses a global server-managed MCP key and exposes no
+   per-user canary binding. Do not replace that shared key or silently change all
+   users' client configuration. The raw MCP SDK is not a substitute for this test.
+4. Supply representative fixtures and public/client evidence for the remaining
+   advertised Apps. The bounded Stockholm driver covers OpenFold2, Boltz2 and
+   ESMFold2, not all non-Cosmos Apps. See
+   [CUSTOMER_RELEASE_POLICY.md](../CUSTOMER_RELEASE_POLICY.md).
+5. Preserve truthful usage limitations: missing historical event data cannot be
+   reconstructed, and multiple Ready serving replicas do not give an exact
+   request-to-GPU join. Keep unavailable measurements separate from zero, budgets
+   and billable occupancy. Existing lifecycle/certificate alerts also remain open.
+6. Reconcile the older Terraform state and retained live storage/speech overlays
+   before a broad apply. The protected tfvars and release delta pin the new image,
+   but no Terraform apply or zero-drift claim was made.
+7. Revoke only explicitly created canaries after admitted work settles; preserve
+   customer keys, jobs, artifacts and diagnostic evidence. Update the task cards
+   and this record with precise results rather than declaring the parent done.
 
 ## Local resources and evidence
 
