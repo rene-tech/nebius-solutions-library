@@ -215,6 +215,36 @@ async def test_cosmos_actual_transfer_control_path_materializes_owned_artifact(r
 
 
 @pytest.mark.asyncio
+async def test_cosmos_exact_limit_padded_control_materializes_for_runtime_gate(registry):
+    content = b"\x89PNG\r\n\x1a\n" + b"x" * (4 * 1024 * 1024 - 8)
+    reference = _reference(content, media_type="image/png")
+    artifacts = _Artifacts(content, reference)
+    materializer = ArtifactInputMaterializer(artifacts)  # type: ignore[arg-type]
+    model = selected(registry, "cosmos3-nano")
+
+    body = await materializer.materialize(
+        model,
+        "native",
+        tenant_id="tenant-a",
+        request_body=json.dumps(
+            {
+                "mode": "transfer-video",
+                "prompt": "Exact padded control",
+                "controls": [
+                    {
+                        "control_type": "depth",
+                        "reference": reference.model_dump(mode="json"),
+                    }
+                ],
+            }
+        ).encode(),
+    )
+
+    enforce_cosmos_runtime_payload_policy(model, "native", body)
+    assert artifacts.calls == [(UUID(reference.artifact_id), "tenant-a")]
+
+
+@pytest.mark.asyncio
 async def test_cosmos_aggregate_budget_fails_before_any_artifact_stream_is_opened(registry):
     content = b"unused"
     stored = _reference(content, media_type="video/mp4")

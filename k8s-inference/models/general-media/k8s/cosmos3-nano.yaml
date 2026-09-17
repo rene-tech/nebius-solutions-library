@@ -889,6 +889,13 @@ data:
     TextToVideoRequest = MediaTextToVideoRequest
 
 
+    class MediaTextToImageRequest(TextToImageRequest):
+        output_delivery: Literal["inline-base64"] = "inline-base64"
+
+
+    TextToImageRequest = MediaTextToImageRequest
+
+
     class ReferencedVideoRequest(CommonRequest):
         input_reference: str | None = None
         vision_path: str | None = None
@@ -1432,6 +1439,11 @@ data:
                             "control_weight": control.control_weight,
                         }
                     elif control.control_weight != 1.0:
+                        value = {"control_weight": control.control_weight}
+                    if not isinstance(value, dict) and (
+                        control.edge_threshold is not None
+                        or control.blur_strength is not None
+                    ):
                         value = {"control_weight": control.control_weight}
                     if isinstance(value, dict) and control.edge_threshold is not None:
                         value["preset_edge_threshold"] = control.edge_threshold

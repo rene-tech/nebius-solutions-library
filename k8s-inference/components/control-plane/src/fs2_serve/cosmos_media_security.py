@@ -216,6 +216,22 @@ def _materialized_reference(
     media_type = metadata[5:-7].lower()
     if media_type not in media_types:
         raise CosmosMediaReferenceError(f"{field} media type is outside the Cosmos runtime contract")
+    base64_alphabet = frozenset(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+    )
+    padding = 2 if encoded.endswith("==") else 1 if encoded.endswith("=") else 0
+    first_padding = encoded.find("=")
+    if (
+        not encoded
+        or len(encoded) % 4
+        or any(character not in base64_alphabet for character in encoded)
+        or (first_padding != -1 and first_padding != len(encoded) - padding)
+    ):
+        raise CosmosMediaReferenceError(f"{field} is not canonical base64")
+    decoded_bytes = (len(encoded) // 4) * 3 - padding
+    if decoded_bytes > max_bytes:
+        raise CosmosMediaReferenceError(f"{field} exceeds the Cosmos runtime byte budget")
+    return decoded_bytes
     if len(encoded) > 4 * (max_bytes // 3 + 1) + 4:
         raise CosmosMediaReferenceError(f"{field} exceeds the Cosmos runtime byte budget")
     return (len(encoded) * 3) // 4

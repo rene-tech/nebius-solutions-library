@@ -103,6 +103,25 @@ class CosmosMediaSecurityTests(unittest.TestCase):
             [self.request.validate_python(item).mode for item in payloads],
         )
 
+    def test_text_to_image_accepts_explicit_published_inline_delivery(self) -> None:
+        body = self.request.validate_python(
+            {
+                "mode": "text-to-image",
+                "prompt": "Synthetic image",
+                "output_delivery": "inline-base64",
+            }
+        )
+
+        self.assertEqual("inline-base64", body.output_delivery)
+        with self.assertRaises(ValidationError):
+            self.request.validate_python(
+                {
+                    "mode": "text-to-image",
+                    "prompt": "Synthetic image",
+                    "output_delivery": "artifact",
+                }
+            )
+
     def test_runtime_dto_rejects_every_external_locator_path(self) -> None:
         private_target = "https://10.5.0.1/"
         payloads = (
@@ -195,6 +214,36 @@ class CosmosMediaSecurityTests(unittest.TestCase):
             extra_params["depth"]["control_path"].startswith(
                 "/cosmos-control-tmp/fs2-cosmos-control-"
             )
+        )
+
+    def test_reference_less_edge_and_blur_presets_survive_default_weight(self) -> None:
+        body = self.request.validate_python(
+            {
+                "mode": "transfer-video",
+                "prompt": "Synthetic preset transfer",
+                "input_reference": data_url("video/mp4", MP4),
+                "controls": [
+                    {"control_type": "edge", "edge_threshold": "high"},
+                    {"control_type": "blur", "blur_strength": "low"},
+                ],
+            }
+        )
+        client = _Client()
+
+        raw, media_type = asyncio.run(
+            self.adapter["generate_media_video"](client, body)
+        )
+
+        self.assertEqual(MP4, raw)
+        self.assertEqual("video/mp4", media_type)
+        extra_params = json.loads(client.calls[0]["files"]["extra_params"][1])
+        self.assertEqual(
+            {"control_weight": 1.0, "preset_edge_threshold": "high"},
+            extra_params["edge"],
+        )
+        self.assertEqual(
+            {"control_weight": 1.0, "preset_blur_strength": "low"},
+            extra_params["blur"],
         )
 
     def test_text_image_and_video_conditioning_modes_reach_the_bounded_dispatch(self) -> None:
