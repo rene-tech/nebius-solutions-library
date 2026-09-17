@@ -29,11 +29,13 @@ App remains unrouted and is not claimed ready.
 
 Gateway 3/3, admin 2/2 and controller 2/2 were ready on release 143 at 14:57 UTC.
 Nine public/admin read APIs returned HTTP 200 at 14:57:48 UTC and retained 34 Apps.
-These are availability checks, not inference qualification. On release 142 all three metrics
-endpoints returned HTTP 200 and were actually scraped by Prometheus; all 13 rules
-loaded with healthy evaluation at 14:29 UTC. Existing lifecycle and certificate
-alerts remain open. GPU observer coverage was 13/15 ready at that instant, not
-complete cluster telemetry.
+These are availability checks, not inference qualification. The release-143
+readback at 14:58:18 UTC confirmed all three metrics endpoints HTTP 200 and
+actually scraped by Prometheus; all 13 rules had healthy evaluation. Existing
+two lifecycle and three certificate alerts remain open. GPU observer coverage
+was 14/16 Ready at that instant, not complete cluster telemetry. The receipt is
+`final-deployment-verification-r143.json` under the protected rollout directory,
+SHA-256 `d7569ced946e40915d320c617eaf5cd8deecf660ca06cc7ff8c03bfd54420bd0`.
 
 Helm 141's global watcher waited on unchanged GPU observers on unavailable nodes
 after the application rollout had finished. Only the task-owned local Helm wait
@@ -76,15 +78,49 @@ actual r7 GPU preview MP4/PNG files. Release 143 contains this correction; new
 public cohorts started after all three gateways were Ready on its digest. The
 failed release-142 operation remains in the evidence and is not overwritten.
 
+### Release-143 compatibility result and next correction
+
+The first fresh public V2V/transfer matrix passed all eight combinations of
+HTTP/MCP, HTTPS/upload input and the two video modes, on attempt one. Every MP4
+was downloaded, SHA/size checked and fully decoded; same-operation replay was
+verified. Its cached-node preemptible H100 cold start was 38.023528 seconds,
+41.930 seconds end to end, not a new-node provisioning benchmark. Numeric/data
+integrity does not establish robot-action fidelity: generated motion/details
+can still differ from the source.
+
+An additional typed T2I check found a separate real HTTP 422: the gateway added
+`output_delivery=inline-base64`, but the exact image request DTO forbids that
+field. Operation `82a3903b-2e4f-4670-8bed-5159d4e8aff9` failed on attempt one
+after a 300.254-second activation on a node which first pulled the runtime
+image. The snapshot restored, but image generation was never accepted. This is
+not a passing image workflow or a successful uncached-node latency benchmark.
+
+Source `f8cbadb3bf14ad5ec157cf8f41466d95de645053` removes only that T2I fixed
+default, retaining PNG format and the legacy JSON image response. All four video
+modes keep artifact delivery. The actual adapter schemas for all five modes,
+MCP T2I/V2V admission, legacy output/artifact and Magpie regressions passed in a
+177-test focused suite. Runtime, snapshot, template, model, admin and schema are
+unchanged. Publication/deployment and fresh acceptance of this correction are
+pending; all new test admissions were paused and previously admitted work settled.
+
+Stockholm's release-143 cohort one passed 13 protein calls with actual peak-five
+outstanding operations, an ESMFold2 batch and all three artifact downloads, with
+zero transport failures. Cohort two completed six protein calls before the
+operator pause. One OpenFold2 call spent about 134 seconds in activation, then
+completed inference in 1.7 seconds on attempt one. Its exact readiness-wait cause
+is not established; Ready containers are not equivalent to a Ready Pod. These
+are retained intermediate results, not the final unchanged-release pair or
+actual hosted-LibreChat/full-catalog qualification.
+
 ## What changed
 
 | Area | Implementation | Remaining live proof |
 | --- | --- | --- |
 | Stockholm MCP | Normalize misplaced generic gateway controls before SDK defaults; reject conflicting copies before admission; keep controls out of runtime payloads | Exact public named/generic OpenFold2 and Boltz2 results through the installed LibreChat/skills client |
-| Cosmos media | Five distinct typed tools, mode-specific validation, HTTPS/artifact inputs, binary artifact outputs, V2V and transfer runtime adapter | Publish integrated adapter and CP; Timothy's MP4 URL and upload flows with decoded, changed MP4 output |
-| LeRobot | Pinned v3 reader/writer, action/state preservation, scoped parent-to-child Cosmos calls, migration 0032, cancellation/attempt fencing | Publish CPU image and qualified catalog/execution binding; two augmentation dimensions, real Cosmos output, dataset reload |
-| Outcomes | Transport status separated from semantic/tool result; durable terminal failures exported by tenant/model/protocol/workload/error class; admin request logs and readiness evidence | Real scrape/alert/admin correlation and failed-versus-successful customer operation proof |
-| Usage | Conservative admission budget explicitly named; recorded occupancy, classified idle, startup and unknown separated; read-only historical export | Stockholm historical export, coordinated CP/admin rollout and customer observations |
+| Cosmos media | Five distinct typed tools, mode-specific validation, HTTPS/artifact inputs, binary artifact outputs, V2V/transfer adapter and corrected gateway deployed | Complete public URL/upload HTTP/MCP matrix with decoded output; distinguish mechanics from robot-action fidelity |
+| LeRobot | Pinned v3 reader/writer, published CPU image, action/state preservation, deployed scoped delegation/migration 0032 and cancellation/attempt fencing | Catalog/execution binding; actual public parent/child runs for two augmentation dimensions and published dataset reload |
+| Outcomes | Durable semantic failure metrics, shared-replica deduplication, admin request logs and Prometheus rule selection deployed; actual scrapes/evaluation verified | Customer-run correlation and complete supported-client/model coverage; existing unrelated alerts remain open |
+| Usage | Conservative admission budget explicitly named; occupancy/startup/unknown separated; historical and live read-only exports | Exact per-request serving GPU attribution with multiple Ready replicas is unavailable; historical event records are absent and cannot be reconstructed |
 | Operations | Bounded dependency-readiness checks; retention preserves referenced/in-flight scientific operations and restricted-role cleanup works | Verify against actual cluster/database without deleting customer evidence |
 | Acceptance | Cosmos executable public runner; capability-level evidence expiration; Stockholm exact-release verifier | Actual client traces, representative fixtures for every advertised App, two unchanged public cohorts |
 

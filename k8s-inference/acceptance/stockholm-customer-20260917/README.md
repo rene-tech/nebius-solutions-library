@@ -6,6 +6,30 @@ bounded resumable OpenFold2/Boltz2 SDK/HTTP driver with representative ESMFold2
 batch readback. This is **not a complete customer release gate**. Raw client
 passes never establish actual LibreChat or all-App readiness.
 
+Latest checkpoint (2026-09-17 15:11 UTC): release 143 CP
+`sha256:624763c6141a990125c37b71fccc0a8d7ba5371a4efd5be325336cbc58d54020`
+completed one full bounded cohort: 13 OpenFold2/Boltz2 operations with semantic
+validation/replay, actual outstanding overlap five, and ESMFold2 batch
+`6b6bab61-bf48-43d4-93ff-77ed20033e57` with released stage resources and three
+HTTPS artifact size/SHA checks. The batch transport journal contains zero
+failures. Six serving calls in cohort two also succeeded before the release
+owner paused new admissions for a separate Cosmos T2I envelope fix. All admitted
+work settled; no replacement requests were submitted. The partial receipt's
+sole failure is `operator_paused_new_submissions`, not a failed model operation.
+This is **not a final pair**. The disposable key remains available for the next
+explicit release-owner GO; teardown is deferred until testing has finished.
+Release-143 speech discovery/storage/MindEval public checks passed separately;
+the optional internal MindEval health probe remained unavailable.
+
+The release-143 mixed OpenFold2 operation activated for approximately 134s and
+then succeeded on attempt one without manual intervention. A hot Ready Pod and
+a warming burst Pod were observed, but no causal explanation for that activation
+delay was proven. Missing per-operation serving runtime identities have a
+separate confirmed explanation: the current Kubernetes identity provider returns
+no identity unless exactly one Ready model Pod exists. Multi-replica ambiguity
+is unavailable attribution, never measured zero GPU use or permission to
+backfill an arbitrary Pod. These limits remain visible in the receipts.
+
 Authorized sandbox2 access was restored on 2026-09-17. The first live attempt
 completed three OpenFold2 MCP operations (named, generic, legacy nested), each
 with in-flight and terminal replay plus semantic PDB validation, against CP
@@ -30,9 +54,9 @@ that collector error is preserved as a negative attempt, not a backend defect.
 Only saved results were read on resume; no replacement inference was submitted.
 
 `cohorts-final-1/partial-receipt.json` reports `partial_scope_passed`, still
-`customer_ready: false`. This is one intermediate cohort, not two qualifying
-customer cohorts. Both bounded cohorts must be repeated after release-owner GO
-for the additive release 141 configuration identity. No cold-start, all-App,
+`customer_ready: false`. This was one intermediate cohort, not two qualifying
+customer cohorts. At that checkpoint both bounded cohorts required repetition
+after release-owner GO for the additive release 141 configuration identity. No cold-start, all-App,
 or actual LibreChat qualification is inferred from these results.
 
 The first fresh release-142 attempt passed all 13 protein operations but failed
@@ -274,15 +298,17 @@ The following pieces remain incomplete or unexecuted:
    skill hashes do not prove use; per-model skills must be mapped honestly into
    the verifier's BioNeMo integration evidence, not fabricated group labels.
 3. Two complete unchanged-final-release cohorts, including concurrency five,
-   representative batch and failure/cancellation behavior. One corrected-release
-   bounded cohort passed, but release 141 changes configuration and requires a
-   fresh pair. The new bounded
-   driver is not a full all-model or LibreChat driver.
+   representative batch and failure/cancellation behavior. Release 143 has one
+   complete bounded cohort and six passing calls in its interrupted second
+   cohort; the next corrected CP image requires a fresh pair. The bounded driver
+   is not a full all-model or LibreChat driver.
 4. Approved, bounded, model-specific synthetic inputs and semantic/artifact
    validators for every advertised serving and scientific App. No fake
    all-model fixture inventory is supplied here.
-5. Collectors for client traces, upstream shapes, complete attempts, lifecycle
-   identity, usage reconciliation, warning/restart/resource counts, and cleanup.
+5. Full-catalog collectors for client traces, upstream shapes, complete attempts,
+   lifecycle identity and warning/restart/resource counts. Scoped usage and
+   guarded disposable-key cleanup collectors exist; missing serving runtime
+   attribution is explicitly unavailable, not fabricated from Pod snapshots.
 6. Root-owned release evaluation, disposable-key teardown evidence and a
    human-readable customer handoff. The first live discovery advertised 21
    serving and 10 scientific Apps / 60 tools; excluding Cosmos leaves 30 Apps,
@@ -320,3 +346,9 @@ supersede the original credential blocker. Earlier failed/incomplete client
 collector receipts are retained, including pagination and redaction corrections;
 use `librechat-final-readback.json` for the complete 32-skill inventory. No
 historical scientific data or customer key was deleted.
+
+Latest bounded collector/verifier/shared-gate suite: **82 passed in 0.62s**;
+Ruff and diff checks passed. This includes persisted GET-only transport retry
+failures, POST/PUT no-retry negatives, concurrency-five validation and explicit
+missing-runtime-identity handling. Acceptance-only source commits include
+`3b4ae2533`, `e6251aeae` and `03150f24f`; the parent owns the final source push.
