@@ -269,27 +269,41 @@ HTTP 0 or success.
   (including legacy rows captured under an earlier, narrower contract), a read applies the CURRENT
   contract on the way out. Boundedness is decided by the ACTUAL WHOLE-EXCHANGE STORED SIZE against a
   whole-exchange ceiling that is DISTINCT FROM and ABOVE the per-body cap and is a PROVABLE upper bound on
-  a legitimate current exchange, not an assumption: it is the per-body cap times the 6x worst-case
-  JSON-string escaping factor (a within-cap body of control bytes serializes to `\u00XX` = 6 chars/byte,
-  which dominates base64's 4/3), PLUS ENFORCED per-field byte budgets for EVERY non-body debug field, PLUS
-  the AES-GCM tag. EVERY non-body field is bounded at CAPTURE — the clear scalar metadata
-  (endpoint, method, model_id, tenant_id, principal_id, mcp_tool, error_type), the query string,
-  error_detail, BOTH header lists, and both bodies' content_type — whole-or-truncate with a disclosed
-  marker, so the overhead is enforced rather than assumed. Only a pathologically large (often
-  attacker-influenced, e.g. an endpoint that copies the request path) field is truncated; real fields are far
-  under budget and untouched, and the customer's request/response processing is unaffected. This bounding
-  runs OFF the event loop, INSIDE the capture offload (build and bound happen together in the offload thread,
-  before the row is retained or persisted), with bounded, incremental per-field work — a huge structure is
-  never fully materialized or serialized on the loop just to be measured. `persist_debug_exchange` itself
-  performs no on-loop metadata bounding; it stores the already-bounded exchange. The size is measured in
-  identical byte units in both stores (the encrypted store uses
-  `octet_length(ciphertext)`; the in-memory store computes the serialized-row byte length plus the same tag
-  constant ONCE at record() and caches it, so a read never serializes a payload to measure it). This
-  whole-exchange budget is used precisely so a legitimate near-cap request (its ciphertext = the within-cap
-  body plus the envelope, which always exceeds the per-body cap) is NOT wrongly withheld. A BOUNDED row is decrypted and
-  re-sanitized via `normalize_exchange_for_read` — response withheld; a wire-incomplete, legacy-prefixed,
-  or over-cap request body withheld; `error_detail` replaced with a generic marker; response headers
-  reduced to structural-only; request headers/query re-scrubbed. A current row (request within cap +
+  a legitimate current exchange, not an assumption: it applies the 6x worst-case JSON-string escaping factor
+  (a within-budget field of control bytes serializes to `\u00XX` = 6 chars/byte, which dominates base64's 4/3)
+  to the per-body cap AND to EVERY attacker-influenced non-body field budget — each field is stored INSIDE the
+  JSON-serialized exchange, so counting the non-body fields at 1x would undercount their serialized size and
+  wrongly withhold a legitimate control-character metadata row. To the 6x-expanded (body + all attacker
+  fields) it adds a fixed 6x allowance for the two AES-GCM AAD identifier fields and a 1x envelope (fixed
+  ASCII JSON field names / structure / non-string clear fields), PLUS the AES-GCM tag. EVERY attacker-influenced
+  non-body field is bounded at CAPTURE — the clear scalar metadata (endpoint, method, principal_id, mcp_tool,
+  error_type), the query string, error_detail, BOTH header lists, and both bodies' content_type —
+  whole-or-truncate with a disclosed marker, so the overhead is enforced rather than assumed. The two AES-GCM
+  AAD identifier fields (tenant_id, model_id) are DELIBERATELY NOT truncated anywhere: they are sealed into the
+  authentication tag at encrypt and must stay authentic on read, and they are inherently bounded,
+  server-controlled identifiers (tenant from the authenticated principal; model from the model registry), not
+  attacker free-text. Only a pathologically large (often attacker-influenced, e.g. an endpoint that copies the
+  request path) field is truncated; real fields are far under budget and untouched, and the customer's
+  request/response processing is unaffected. Header lists and the query are additionally bounded INCREMENTALLY
+  at capture — while the raw ASGI/upstream header pairs are iterated, before any full copy, credential-learning,
+  or redaction — so a request or response with pathologically many or huge headers never materializes its full
+  header list (on the event loop or in the offload); the queue depth bounds the number of captures, this bounds
+  the size of each. The per-field byte budgets then run OFF the event loop, INSIDE the capture offload (build
+  and bound happen together in the offload thread, before the row is retained or persisted), with bounded,
+  incremental per-field work — a huge structure is never fully materialized or serialized on the loop just to be
+  measured. `persist_debug_exchange` itself performs no on-loop metadata bounding; it stores the already-bounded
+  exchange. The size is measured in identical byte units in both stores (the encrypted store uses
+  `octet_length(ciphertext)`; the in-memory store retains the exchange as immutable serialized bytes and its
+  size is `len(bytes) + tag`, derived from those immutable bytes — structurally incapable of going stale, being
+  forged, or diverging from the content even under nested mutation of a handed-out copy — computed ONCE at
+  record(), so a read never re-serializes a payload to measure it). This whole-exchange budget is used precisely
+  so a legitimate near-cap request (its ciphertext = the within-cap body plus the envelope, which always exceeds
+  the per-body cap) is NOT wrongly withheld. A BOUNDED row is decrypted and re-sanitized via
+  `normalize_exchange_for_read` — response withheld; a wire-incomplete, legacy-prefixed, or over-cap request
+  body withheld; `error_detail` replaced with a generic marker; response headers reduced to structural-only;
+  request headers/query re-scrubbed; AND the per-field byte budgets reapplied, so a legacy row that is under the
+  whole-exchange ceiling but carries an individual over-budget field (endpoint, a header, query, content_type)
+  has that field failed closed on the way OUT, not only at capture. A current row (request within cap +
   always-withheld tiny response marker) is under the ceiling and its safe request is served regardless of
   the response's wire length. A NON-bounded row — one whose whole stored payload exceeds the ceiling,
   reachable only by a LEGACY row that stored a large raw body (or pathologically large headers) — is NOT
@@ -303,8 +317,11 @@ HTTP 0 or success.
   the ceiling. `left` counts characters, so that SQL step is a bounded transfer (at most ~4x the byte budget
   for multibyte content); the exact per-field BYTE budget is then reasserted on the fetched value when the
   metadata-only view is built, so the returned clear metadata is byte-accurate and identical in units to the
-  capture-time budgets on every store and path. So an arbitrarily large legacy payload OR clear column is
-  never fetched unbounded, decrypted, or served — even under an unset cap. The stored ciphertext is never rewritten or deleted (the separately
+  capture-time budgets on every store and path. The AES-GCM AAD identifier columns (tenant_id, model_id) are
+  EXCLUDED from that `left()` truncation and fetched VERBATIM — they are sealed into the authentication tag, so
+  altering them before decryption would cause a spurious InvalidTag; they are inherently bounded identifiers, not
+  attacker free-text. So an arbitrarily large legacy payload OR attacker-controlled clear column is never
+  fetched unbounded, decrypted, or served — even under an unset cap. The stored ciphertext is never rewritten or deleted (the separately
   owned purge handles TTL), so this is redaction on the way out only.
 - Full detail documents are encrypted in PostgreSQL using the existing payload
   cipher/keyring. Searchable summary metadata is stored separately. Preserve the

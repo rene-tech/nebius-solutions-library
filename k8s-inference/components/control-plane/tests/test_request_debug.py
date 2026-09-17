@@ -1786,11 +1786,12 @@ async def test_all_control_char_within_cap_request_is_served_not_withheld():
 
 
 def test_bound_debug_metadata_bounds_every_field_and_is_idempotent():
-    """SAI-01 regression (blocker 1): EVERY non-body served/clear field is ENFORCED to its budget at capture
-    — the clear scalars (endpoint/method/model_id/tenant_id/principal_id/mcp_tool/error_type), the query
-    string, error_detail, BOTH header lists, and both bodies' content_type — whole-or-truncate with a
-    disclosed marker, so the WHOLE serialized exchange provably fits under _stored_payload_ceiling (the
-    ceiling overhead is enforced, not assumed). Real (small) fields are untouched, and re-bounding an
+    """SAI-01 regression (blocker 1): EVERY attacker-influenced non-body served/clear field is ENFORCED to its
+    budget at capture — the clear scalars (endpoint/method/principal_id/mcp_tool/error_type), the query string,
+    error_detail, BOTH header lists, and both bodies' content_type — whole-or-truncate with a disclosed marker,
+    so the WHOLE serialized exchange provably fits under _stored_payload_ceiling (the ceiling overhead is
+    enforced, not assumed). The AES-GCM AAD identifiers (tenant_id, model_id) are DELIBERATELY NOT bounded
+    (they must stay authentic for decrypt). Real (small) fields are untouched, and re-bounding an
     already-bounded exchange returns it unchanged (idempotent — safe on a re-queued retry). Authored; not
     executed here."""
     from fs2_serve.request_debug import (
@@ -1822,6 +1823,35 @@ def test_bound_debug_metadata_bounds_every_field_and_is_idempotent():
     assert "truncated" in bounded.query_string and len(bounded.query_string.encode()) <= _MAX_DEBUG_QUERY_BYTES
     assert bounded.error_detail is not None and len(bounded.error_detail.encode()) <= _MAX_DEBUG_ERROR_BYTES
     assert _bound_debug_metadata(bounded) is bounded  # idempotent: already within budget -> unchanged object
+
+
+def test_ceiling_accounts_control_char_escaping_for_non_body_metadata_fields():
+    """SAI-01 regression (blocker 1): the ceiling must account for JSON escaping on the NON-BODY fields too,
+    not only the body. A metadata field whose RAW bytes are exactly at its budget but are ALL control
+    characters serializes to ~6x its raw size (each \\u00XX = 6 chars). A within-RAW-budget control-char
+    metadata row (left untouched by the field bounder) must still serialize UNDER the whole-exchange ceiling
+    so it is classified BOUNDED and SERVED, not wrongly withheld. Authored; not executed here."""
+    from fs2_serve.request_debug import (
+        _MAX_DEBUG_QUERY_BYTES,
+        _META_SCALAR_BUDGETS,
+        _bound_debug_metadata,
+        _serialized_size,
+        _stored_payload_ceiling,
+    )
+
+    # Every attacker field at its RAW byte budget, entirely NUL bytes (worst-case 6x JSON escaping).
+    control = row(
+        endpoint="\x00" * _META_SCALAR_BUDGETS["endpoint"],
+        method="\x00" * _META_SCALAR_BUDGETS["method"],
+        error_type="\x00" * _META_SCALAR_BUDGETS["error_type"],
+        query_string="\x00" * _MAX_DEBUG_QUERY_BYTES,
+        error_detail="\x00" * 8192,
+    )
+    bounded = _bound_debug_metadata(control)
+    # Within RAW budget -> the field bounder leaves them untouched, and the serialized (6x-escaped) exchange
+    # still fits under the ceiling that now applies the 6x factor to every non-body field.
+    assert _bound_debug_metadata(bounded) is bounded  # nothing over the RAW budget -> unchanged
+    assert _serialized_size(bounded) <= _stored_payload_ceiling(64 * 1024)  # serialized 6x expansion still fits
 
 
 async def test_bounded_builder_bounds_metadata_off_loop_before_persist():
@@ -1856,27 +1886,74 @@ async def test_bounded_builder_bounds_metadata_off_loop_before_persist():
     assert _bounded_builder(_none_builder)() is None  # None (nothing captured) passes through
 
 
-async def test_in_memory_size_is_cached_at_record_not_serialized_on_read(monkeypatch):
-    """SAI-01 regression (blocker 3): the in-memory stored size is computed ONCE at record() and cached;
-    a READ (list/get) never serializes the (possibly huge legacy) payload to measure it. Proven by counting
-    _serialized_size calls: one per record(), zero per read. Authored; not executed here."""
+async def test_in_memory_size_is_serialized_once_at_record_not_on_read(monkeypatch):
+    """SAI-01 regression (blocker 5): the in-memory row is serialized to its immutable bytes ONCE at record()
+    (whose length is the size); a READ (list/get) reconstructs by PARSING those bytes and never re-serializes
+    the payload to measure it. Proven by counting _serialize_exchange calls: one per record(), zero per read.
+    Authored; not executed here."""
     import fs2_serve.request_debug as rd
 
     calls = {"n": 0}
-    real = rd._serialized_size
+    real = rd._serialize_exchange
 
     def _counting(exchange):
         calls["n"] += 1
         return real(exchange)
 
-    monkeypatch.setattr(rd, "_serialized_size", _counting)
+    monkeypatch.setattr(rd, "_serialize_exchange", _counting)
     store = InMemoryDebugStore(max_body_bytes=64 * 1024)
     ex_id = uuid4()
     await store.record(row(id=ex_id))
-    assert calls["n"] == 1  # computed once at record()
+    assert calls["n"] == 1  # serialized once at record() (to the immutable bytes)
     await store.list()
     await store.get(ex_id)
-    assert calls["n"] == 1  # reads used the cached size; no re-serialization of any payload
+    assert calls["n"] == 1  # reads parsed the stored bytes and used len(raw) for the size; no re-serialization
+
+
+async def test_read_path_rebounds_under_ceiling_legacy_oversized_field():
+    """SAI-01 regression (blocker 3): a legacy row whose WHOLE payload is UNDER the ceiling (so it IS
+    decrypted/served) may still carry an individual field that predates the per-field budgets and exceeds it.
+    The read path (normalize_exchange_for_read) must reapply the per-field bounds, so an over-budget endpoint /
+    header / query is failed closed on the way OUT, not only at capture. Authored; not executed here."""
+    from fs2_serve.request_debug import _META_SCALAR_BUDGETS, _serialized_size, _stored_payload_ceiling
+
+    store = InMemoryDebugStore(max_body_bytes=64 * 1024)
+    # Small body (so the WHOLE row is well under the ceiling => BOUNDED => decrypted on read), but a huge
+    # endpoint/header/query stored raw as a legacy row would (recorded directly, bypassing _bounded_builder).
+    legacy = row(
+        endpoint="/v1/" + "p" * 60_000,
+        request_headers=[("x-legacy", "v" * 60_000)],
+        query_string="k=" + "z" * 60_000,
+    )
+    assert _serialized_size(legacy) <= _stored_payload_ceiling(64 * 1024)  # precondition: the WHOLE row is bounded
+    await store.record(legacy)
+    served = await store.get(legacy.id)
+    assert served is not None  # under the whole-exchange ceiling => decrypted and served
+    assert len(served.endpoint.encode()) <= _META_SCALAR_BUDGETS["endpoint"]  # per-field bound reapplied on read
+    assert all(len(value.encode()) <= 2 * 1024 for _, value in served.request_headers)  # header values bounded
+    assert len(served.query_string.encode()) <= 8 * 1024  # query bounded on read
+
+
+async def test_stored_entry_is_immutable_against_external_mutation():
+    """SAI-01 regression (blocker 5): the stored entry holds the row as IMMUTABLE bytes, so mutating a handed
+    -out reconstructed exchange (or its nested lists) cannot change the stored content OR stale the derived
+    size. Each read returns a fresh, isolated reconstruction. Authored; not executed here."""
+    store = InMemoryDebugStore(max_body_bytes=64 * 1024)
+    ex = row(request_headers=[("a", "b")])
+    await store.record(ex)
+    entry = store._entries[ex.id]
+    size_before = entry.size
+    raw_before = entry.raw
+
+    # Mutate a handed-out copy every way an adversary might: mutate the model AND its nested list in place.
+    handed_out = store.exchanges[ex.id]
+    handed_out.request_headers.append(("x-injected", "y" * 1_000_000))  # nested list mutation after "cache warm"
+    handed_out.request_headers.clear()
+
+    # The stored entry is unaffected: same immutable bytes, same size, and a fresh read is pristine.
+    assert store._entries[ex.id] is entry and entry.size == size_before and entry.raw == raw_before
+    fresh = await store.get(ex.id)
+    assert fresh is not None and fresh.request_headers == [("a", "b")]  # pristine, not the mutated copy
 
 
 async def test_queue_reprocesses_item_after_mid_item_cancellation():
@@ -2016,19 +2093,22 @@ async def test_legacy_huge_stored_response_is_not_bounded_even_when_redacted(mon
     decrypting. Proven by counting normalize calls: only the genuinely-small bounded row is sanitized.
     Authored; not executed here."""
     import fs2_serve.request_debug as rd
-    from fs2_serve.request_debug import _MAX_SANITIZE_BODY
+    from fs2_serve.request_debug import _stored_payload_ceiling
 
     cap = 1024
     store = InMemoryDebugStore(max_body_bytes=cap)
+    # Size the stored response OVER the whole-exchange ceiling itself (robust to the ceiling formula), so the
+    # WHOLE row is non-bounded regardless of the per-field escaping factors.
+    huge = _stored_payload_ceiling(cap) + 100
     bounded = row(request_body=body_capture(b'{"input":"small"}', "application/json", True))
     legacy_huge = row(
         started_at=NOW - timedelta(seconds=1),  # sorts after `bounded`
         request_body=body_capture(b'{"input":"small"}', "application/json", True),
         response_body=DebugBody(
             encoding="utf-8",
-            data="x" * (_MAX_SANITIZE_BODY + 100),  # genuinely-LARGE stored response data
+            data="x" * huge,  # genuinely-LARGE stored response data (over the whole-exchange ceiling)
             content_type="application/json",
-            observed_bytes=_MAX_SANITIZE_BODY + 100,
+            observed_bytes=huge,
             complete=True,
             redacted=True,  # ancestor 88520758f set redacted=True when scrubbed — NOT a tiny marker
             truncated=False,

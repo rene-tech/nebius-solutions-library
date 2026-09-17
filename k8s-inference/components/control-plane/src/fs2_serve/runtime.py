@@ -25,6 +25,8 @@ from .request_debug import (
     DebugPersistQueue,
     DebugStore,
     body_credential_prefixes,
+    bound_capture_headers,
+    bound_capture_query,
     bounded_body_capture,
     capture_store_limit,
     credential_values,
@@ -104,7 +106,8 @@ class _UpstreamCapture:
         # retain or scan the whole request body.
         self.request_observed = len(request_body)
         self.request_body = request_body[: self.store_limit]
-        self.request_headers = list(request_headers.items())
+        # Bound the header list INCREMENTALLY at capture (before credential learning/redaction/retention).
+        self.request_headers = bound_capture_headers(request_headers.items())
         self.response_headers: list[tuple[str, str]] = []
         self.request_content_type: str | None = operation.request_content_type
         self.response_content_type: str | None = None
@@ -122,9 +125,10 @@ class _UpstreamCapture:
 
     def request(self, request: httpx.Request) -> None:
         self.endpoint = request.url.path
-        self.query_string = request.url.query.decode("ascii", errors="replace")
+        # Bound the query and header list at capture, WHILE iterating, before credential learning/redaction.
+        self.query_string = bound_capture_query(request.url.query.decode("ascii", errors="replace"))
         self.method = request.method
-        self.request_headers = list(request.headers.multi_items())
+        self.request_headers = bound_capture_headers(request.headers.multi_items())
         self.request_content_type = request.headers.get("content-type")
         try:
             content = request.content
@@ -137,7 +141,8 @@ class _UpstreamCapture:
     def response(self, response: httpx.Response) -> None:
         self.request(response.request)
         self.status = response.status_code
-        self.response_headers = list(response.headers.multi_items())
+        # Bound the (possibly malicious upstream) response header list at capture, before redaction/retention.
+        self.response_headers = bound_capture_headers(response.headers.multi_items())
         self.response_content_type = response.headers.get("content-type")
         self.known_credentials.extend(credential_values(self.response_headers))
 

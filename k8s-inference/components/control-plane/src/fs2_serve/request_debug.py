@@ -591,7 +591,7 @@ def normalize_exchange_for_read(exchange: DebugExchange, max_body_bytes: int | N
             }
         )
     response = exchange.response_body
-    return exchange.model_copy(
+    normalized = exchange.model_copy(
         update={
             "request_body": request_body,
             "response_body": suppressed_body(response.content_type, response.observed_bytes, response.complete),
@@ -601,6 +601,13 @@ def normalize_exchange_for_read(exchange: DebugExchange, max_body_bytes: int | N
             "error_detail": None if exchange.error_detail is None else _READ_WITHHELD_DETAIL,
         }
     )
+    # Reassert the per-field byte budgets on the DECRYPTED row too, not only at capture: a legacy row whose
+    # WHOLE payload is under the ceiling (so it is decrypted here) may still carry an INDIVIDUAL field —
+    # endpoint, a header, query, content_type — that predates the per-field budgets and exceeds it. Applying
+    # _bound_debug_metadata here fails those closed on the way out (idempotent for an already-bounded current
+    # row). It never touches the AAD identifiers (tenant_id/model_id are excluded from the budgets), and this
+    # runs off the event loop with the rest of the read derivation.
+    return _bound_debug_metadata(normalized)
 
 
 def _redact_prefix_runs(raw: bytes, prefixes: Credentials) -> bytes:
@@ -853,22 +860,40 @@ _MAX_DEBUG_CONTENT_TYPE_BYTES = 512  # request_body.content_type + response_body
 _MAX_HEADER_NAME_BYTES = 512
 _MAX_HEADER_VALUE_BYTES = 2 * 1024
 _HEADER_PAIR_JSON_OVERHEAD = 8  # approx per-pair JSON structure: ["","" ] plus a comma
-# Per-field byte budgets for the clear SCALAR metadata strings (some attacker-influenced, e.g. endpoint
-# copies the request path; model_id/mcp_tool derive from the request; content_type from a request header).
+# Per-field byte budgets for the ATTACKER-INFLUENCED clear SCALAR strings that ARE truncated at capture and on
+# read (endpoint copies the request path; method is the request-line verb; mcp_tool derives from the request;
+# principal_id/error_type are server-side but bounded here defensively). These are NEVER used as AES-GCM AAD,
+# so truncating them cannot break decryption.
 _META_SCALAR_BUDGETS: dict[str, int] = {
     "endpoint": 4 * 1024,
     "method": 64,
-    "model_id": 1024,
-    "tenant_id": 1024,
     "principal_id": 1024,
     "mcp_tool": 1024,
     "error_type": 512,
+}
+# AES-GCM AAD identifier fields: tenant_id and model_id are sealed into the AAD at encrypt time (see
+# ``_aad``), so they MUST NEVER be altered (truncated) before decryption or the authentication tag will not
+# match (InvalidTag). They are inherently bounded, server-controlled identifiers (tenant from the authenticated
+# principal; model from the model registry / operation backfill), NOT attacker free-text, so they are left
+# intact everywhere and only ACCOUNTED here for the whole-exchange ceiling — never passed to any truncator.
+_AAD_IDENTIFIER_BUDGETS: dict[str, int] = {
+    "tenant_id": 1024,
+    "model_id": 1024,
 }
 # Fixed allowance for the non-string clear fields (uuids, ints, bools, timestamps), the response
 # withheld-marker body, truncation markers, and the JSON field-name/structure envelope.
 _METADATA_ENVELOPE_BYTES = 4 * 1024
 _TRUNCATION_MARKER = "…[truncated]"
 _HEADERS_TRUNCATED_MARKER: tuple[str, str] = ("x-fs2-debug-headers", "[truncated: over debug capture bound]")
+_HEADERS_TRUNCATED_MARKER_BYTES: tuple[bytes, bytes] = (
+    _HEADERS_TRUNCATED_MARKER[0].encode(),
+    _HEADERS_TRUNCATED_MARKER[1].encode(),
+)
+# Incremental capture-time guards on the RAW ASGI header lists, enforced WHILE iterating (before any full
+# copy/redact/materialization), so a request/response with pathologically many or huge headers can never
+# materialize an unbounded list on the event loop or in the offload — the queue depth bounds the number of
+# captures, not the size of each one. The redacted result is re-bounded to the serialized budgets later.
+_MAX_CAPTURE_HEADER_PAIRS = 256
 
 
 def _stored_payload_ceiling(max_body_bytes: int | None) -> int:
@@ -882,14 +907,27 @@ def _stored_payload_ceiling(max_body_bytes: int | None) -> int:
     two header lists + query + error_detail + the metadata/marker/JSON-structure envelope + the AES-GCM
     tag. EVERY field is bounded at capture by ``_bound_debug_metadata``, so the sum is a true ceiling: a
     legitimate near-cap request (any byte content) fits and is served; a legacy row whose COMBINED stored
-    payload exceeds this is conservatively metadata-only, and the decrypt is bounded to this ceiling."""
+    payload exceeds this is conservatively metadata-only, and the decrypt is bounded to this ceiling.
+
+    The ``_BODY_JSON_EXPANSION`` (6x) factor applies to EVERY attacker-influenced field, not just the body:
+    each field is stored INSIDE the JSON-serialized exchange (the ciphertext plaintext), and a raw byte can
+    serialize to a 6-char ``\\u00XX`` escape, so a field within its RAW byte budget can occupy up to 6x that
+    many bytes serialized. Counting the non-body fields at 1x would undercount the serialized size and wrongly
+    withhold a legitimate control-character metadata row. The AAD identifier fields (tenant_id, model_id) are
+    NOT truncated (they are sealed into the AAD and must stay authentic) but ARE serialized, so they get a
+    generous fixed 6x allowance as inherently-bounded server identifiers. Only the envelope (fixed ASCII field
+    names / JSON structure / non-string clear fields) stays at 1x."""
     return (
-        _BODY_JSON_EXPANSION * _effective_cap(max_body_bytes)
-        + sum(_META_SCALAR_BUDGETS.values())
-        + 2 * _MAX_DEBUG_CONTENT_TYPE_BYTES
-        + 2 * _MAX_DEBUG_HEADERS_BYTES
-        + _MAX_DEBUG_QUERY_BYTES
-        + _MAX_DEBUG_ERROR_BYTES
+        _BODY_JSON_EXPANSION
+        * (
+            _effective_cap(max_body_bytes)
+            + sum(_META_SCALAR_BUDGETS.values())
+            + sum(_AAD_IDENTIFIER_BUDGETS.values())
+            + 2 * _MAX_DEBUG_CONTENT_TYPE_BYTES
+            + 2 * _MAX_DEBUG_HEADERS_BYTES
+            + _MAX_DEBUG_QUERY_BYTES
+            + _MAX_DEBUG_ERROR_BYTES
+        )
         + _METADATA_ENVELOPE_BYTES
         + _GCM_TAG_BYTES
     )
@@ -907,9 +945,12 @@ def _summary_select_columns() -> str:
     reasserted on the fetched value in ``_conservative_exchange`` (via ``_bounded_text``), so the returned
     metadata-only view is byte-accurate and identical in units to the capture-time budgets — the char count
     here is only to keep the wire transfer bounded, not the final accounting. Non-text clear columns
-    (uuids/ints/bools/timestamps) are bounded by their type. The column names are the fixed model fields and
-    the budgets are fixed integer literals — no user input — so the interpolation is injection-free (hence the
-    S608 waiver at each call site)."""
+    (uuids/ints/bools/timestamps) are bounded by their type. The AES-GCM AAD identifier columns
+    (``_AAD_IDENTIFIER_BUDGETS``: tenant_id, model_id) are DELIBERATELY EXCLUDED from ``left()`` — they are
+    sealed into the AAD and are fetched VERBATIM so the decrypt AAD matches what was sealed (truncating them
+    would cause a spurious InvalidTag); they are inherently bounded server identifiers, not attacker free-text.
+    The column names are the fixed model fields and the budgets are fixed integer literals — no user input — so
+    the interpolation is injection-free (hence the S608 waiver at each call site)."""
     return ",".join(
         f"left({field},{_META_SCALAR_BUDGETS[field]}) AS {field}" if field in _META_SCALAR_BUDGETS else field
         for field in DebugExchangeSummary.model_fields
@@ -931,11 +972,12 @@ def _bounded_text_opt(value: str | None, byte_limit: int) -> str | None:
     return None if value is None else _bounded_text(value, byte_limit)
 
 
-def _bound_headers(headers: list[tuple[str, str]], byte_limit: int) -> list[tuple[str, str]]:
+def _bound_headers(headers: Iterable[tuple[str, str]], byte_limit: int) -> list[tuple[str, str]]:
     """Bound a header list to <= ``byte_limit`` serialized bytes INCREMENTALLY: each name/value is first
     truncated to its own bounded budget (so a single huge value is bounded work), then whole pairs are kept
     until the running budget would be exceeded, at which point iteration STOPS and a disclosed marker pair
-    is appended. Never serializes the full list and never processes more than ~budget of it."""
+    is appended. Never serializes the full list and never processes more than ~budget of it. Accepts any
+    iterable of pairs so a caller can bound a header view WHILE iterating (before materializing a full copy)."""
     out: list[tuple[str, str]] = []
     used = 0
     for name, value in headers:
@@ -954,6 +996,51 @@ def _bound_body_content_type(body: DebugBody) -> DebugBody:
     if body.content_type is None or len(body.content_type.encode()) <= _MAX_DEBUG_CONTENT_TYPE_BYTES:
         return body
     return body.model_copy(update={"content_type": _bounded_text(body.content_type, _MAX_DEBUG_CONTENT_TYPE_BYTES)})
+
+
+def _capture_bounded_pairs(raw_pairs: Iterable[tuple[bytes, bytes]]) -> list[tuple[bytes, bytes]]:
+    """Copy RAW ASGI header pairs into a capture buffer with INCREMENTAL count + byte limits enforced WHILE
+    iterating — so the bound happens BEFORE any full copy/redaction/materialization, not after. A request or
+    response with pathologically many or huge headers therefore never materializes its full header list (on the
+    event loop where this is called, nor later in the offload): each name/value is byte-sliced to its own
+    budget, whole pairs are kept until the running byte budget OR the pair-count cap is hit, then iteration
+    STOPS and a disclosed marker pair is appended. The queue depth bounds the NUMBER of captures; this bounds
+    the SIZE of each one. The redacted result is re-bounded to the serialized budgets later by
+    ``_bound_debug_metadata``. Values stay as bytes for the downstream redactors (which decode via latin-1)."""
+    out: list[tuple[bytes, bytes]] = []
+    used = 0
+    for name, value in raw_pairs:
+        if len(out) >= _MAX_CAPTURE_HEADER_PAIRS:
+            out.append(_HEADERS_TRUNCATED_MARKER_BYTES)
+            break
+        bname = name[:_MAX_HEADER_NAME_BYTES]
+        bvalue = value[:_MAX_HEADER_VALUE_BYTES]
+        cost = len(bname) + len(bvalue) + _HEADER_PAIR_JSON_OVERHEAD
+        if used + cost > _MAX_DEBUG_HEADERS_BYTES:
+            out.append(_HEADERS_TRUNCATED_MARKER_BYTES)
+            break
+        used += cost
+        out.append((bname, bvalue))
+    return out
+
+
+def _capture_bounded_query(raw_query: bytes) -> bytes:
+    """Byte-truncate the RAW query string at capture, BEFORE it is redacted/retained, so a pathologically long
+    query never materializes. The dropped tail is never stored (no disclosure); the redacted result is
+    re-bounded to the serialized query budget later by ``_bound_debug_metadata``."""
+    return raw_query[:_MAX_DEBUG_QUERY_BYTES]
+
+
+def bound_capture_headers(pairs: Iterable[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Capture-time incremental bound for STR header pairs (the upstream/httpx capture path), applied WHILE
+    iterating and BEFORE credential learning/redaction/retention — the same budget the public path enforces on
+    the raw ASGI bytes pairs. Prevents an oversized upstream header set from materializing in full."""
+    return _bound_headers(pairs, _MAX_DEBUG_HEADERS_BYTES)
+
+
+def bound_capture_query(query: str) -> str:
+    """Capture-time bound for the STR query (upstream path), applied before credential learning/redaction."""
+    return _bounded_text(query, _MAX_DEBUG_QUERY_BYTES)
 
 
 def _bound_debug_metadata(exchange: DebugExchange) -> DebugExchange:
@@ -1066,29 +1153,58 @@ def _read_view(
     return _conservative_exchange(meta)
 
 
+def _serialize_exchange(exchange: DebugExchange) -> bytes:
+    """The CANONICAL serialized bytes of the whole exchange (``model_dump_json().encode()`` — real encoded
+    bytes covering EVERYTHING: both bodies, headers, query, error_detail, metadata and JSON structure). This is
+    the immutable form the in-memory store retains, and its length plus the AES-GCM tag is the whole-exchange
+    size in the SAME unit the encrypted store measures (octet_length(ciphertext) == len(serialized plaintext)
+    + tag)."""
+    return exchange.model_dump_json().encode()
+
+
 def _serialized_size(exchange: DebugExchange) -> int:
-    """The whole-exchange stored size in the SAME byte unit the encrypted store uses: the exact serialized
-    row length (``model_dump_json().encode()`` — real encoded bytes covering EVERYTHING: both bodies,
-    headers, query, error_detail, metadata and JSON structure) plus the AES-GCM tag (octet_length(ciphertext)
-    == len(serialized plaintext) + tag). A complete byte/work bound, not a code-point count and not
-    body-only. Used only inside ``_StoredEntry`` as a CONTENT-DERIVED property, so it can never be a separate
-    forgeable/settable/stale value."""
-    return len(exchange.model_dump_json().encode()) + _GCM_TAG_BYTES
+    """The whole-exchange stored size in the SAME byte unit the encrypted store uses: the serialized-bytes
+    length plus the AES-GCM tag. A complete byte/work bound, not a code-point count and not body-only. Used by
+    ``_StoredEntry`` (via the stored bytes) and by tests to assert a serialized exchange fits the ceiling."""
+    return len(_serialize_exchange(exchange)) + _GCM_TAG_BYTES
 
 
 @dataclass(frozen=True)
 class _StoredEntry:
-    """The in-memory store's single, immutable, tamper-proof unit: a stored row and its size coupled in one
-    frozen record. ``size`` is a CONTENT-DERIVED ``cached_property`` (computed from ``exchange`` itself, no
-    setter), so it can never be forged (a fabricated small size on a large row is impossible — the size is
-    computed from the content), never omitted (every entry has it), and never disagree with the content.
-    ``record()`` warms the cache once at write, so a READ reads it O(1) and never re-serializes a payload."""
+    """The in-memory store's single, immutable, tamper-proof unit for one row. It holds the exchange ONLY as
+    its CANONICAL SERIALIZED BYTES (``raw``, an immutable ``bytes``) plus the immutable primitive scalars the
+    list/retention paths filter on — it holds NO mutable ``DebugExchange`` or ``list`` reference, so no nested
+    mutation after construction can stale the size or diverge from the stored content. ``size`` is derived from
+    ``raw`` (``len(raw) + tag``), so it is structurally incapable of being forged, omitted, or going stale (the
+    bytes are immutable; changing content means new bytes, i.e. a new entry). The full exchange is
+    RECONSTRUCTED fresh from ``raw`` on demand (``exchange()``), so every handout is an isolated copy that
+    cannot mutate stored state, and a read measures the size via ``len(raw)`` — never by re-serializing."""
 
-    exchange: DebugExchange
+    raw: bytes
+    row_id: UUID
+    started_at: datetime
+    tenant_id: str | None
+    model_id: str | None
+    operation_id: UUID | None
 
     @cached_property
     def size(self) -> int:
-        return _serialized_size(self.exchange)
+        return len(self.raw) + _GCM_TAG_BYTES
+
+    def exchange(self) -> DebugExchange:
+        """Reconstruct the full exchange fresh from the immutable bytes (isolated per call)."""
+        return DebugExchange.model_validate_json(self.raw)
+
+    @classmethod
+    def from_exchange(cls, exchange: DebugExchange) -> _StoredEntry:
+        return cls(
+            raw=_serialize_exchange(exchange),
+            row_id=exchange.id,
+            started_at=exchange.started_at,
+            tenant_id=exchange.tenant_id,
+            model_id=exchange.model_id,
+            operation_id=exchange.operation_id,
+        )
 
 
 def _const_exchange(exchange: DebugExchange) -> Callable[[], DebugExchange]:
@@ -1140,18 +1256,18 @@ class InMemoryDebugStore:
 
     @property
     def exchanges(self) -> dict[UUID, DebugExchange]:
-        """READ-ONLY view for callers/tests: a fresh dict of DEEP COPIES of the stored rows. Mutating the
-        returned dict or its rows cannot affect the private authority or the content-derived cached size, so
-        the stored size can never be staled by outside mutation."""
-        return {row_id: entry.exchange.model_copy(deep=True) for row_id, entry in self._entries.items()}
+        """READ-ONLY view for callers/tests: a fresh dict of freshly RECONSTRUCTED rows (parsed from each
+        entry's immutable bytes). Mutating the returned dict or its rows cannot affect the private authority or
+        the size (derived from the immutable bytes), so the stored size can never be staled by outside mutation."""
+        return {row_id: entry.exchange() for row_id, entry in self._entries.items()}
 
     async def record(self, exchange: DebugExchange) -> None:
         # The exchange is already sanitized exactly once, off the event loop, by the
         # capturing middleware/runtime (offload_capture); the store never re-sanitizes.
         if exchange.id in self._entries:
             return  # idempotent: a fully-recorded row is never re-added or duplicated
-        entry = _StoredEntry(exchange=exchange.model_copy(deep=True))
-        assert entry.size >= 0  # warm the content-derived size cache ONCE at write; reads then read it O(1)
+        entry = _StoredEntry.from_exchange(exchange)  # serialize to immutable bytes ONCE at write
+        assert entry.size >= 0  # warm the size cache ONCE at write; reads then read it O(1) (no re-serialize)
         # FAULT-ATOMIC add: append the id FIRST, then commit the single coupled (row, size) entry (the
         # AUTHORITY for get()/idempotency and the list() liveness filter). If the entry commit fails (e.g.
         # MemoryError on resize), roll back the just-appended id so the two indexes can never permanently
@@ -1187,37 +1303,36 @@ class InMemoryDebugStore:
             # copies), feeding a BOUNDED top-k min-heap (size <= limit). Total auxiliary memory is O(limit)
             # (the heap), and time is O(N log limit) — never an O(N) full copy or O(N)-sorted list. LIVENESS
             # FILTER: skip any id not (yet) committed to `_entries` (a rolled-back/transient partial add), so
-            # detail and list can never disagree. Each row's size comes from its immutable entry (O(1), no
-            # serialization). (dict .get is a GIL-atomic lookup, safe under concurrent inserts.)
+            # detail and list can never disagree. Filtering uses the entry's IMMUTABLE primitive scalars (no
+            # per-entry JSON parse over the whole set); each row's size comes from its immutable bytes (O(1), no
+            # serialization). Only the <=limit page rows are reconstructed. (dict .get is a GIL-atomic lookup.)
             heap: list[tuple[datetime, UUID, _StoredEntry]] = []
             matched = 0
             for row_id in order:
                 entry = entries.get(row_id)
                 if entry is None:
                     continue  # not-yet-committed / rolled-back partial add: invisible on both paths
-                row = entry.exchange
                 if not (
-                    (model_id is None or row.model_id == model_id)
-                    and (operation_id is None or row.operation_id == operation_id)
-                    and (tenant_id is None or row.tenant_id == tenant_id)
-                    and (from_at is None or row.started_at >= from_at)
-                    and (to_at is None or row.started_at < to_at)
-                    and (after is None or (row.started_at, row.id) < after)
+                    (model_id is None or entry.model_id == model_id)
+                    and (operation_id is None or entry.operation_id == operation_id)
+                    and (tenant_id is None or entry.tenant_id == tenant_id)
+                    and (from_at is None or entry.started_at >= from_at)
+                    and (to_at is None or entry.started_at < to_at)
+                    and (after is None or (entry.started_at, entry.row_id) < after)
                 ):
                     continue
                 matched += 1
                 # (started_at, id) is a total order (id is a unique UUID), so the _StoredEntry third element
                 # is never reached in a heap comparison.
-                heap_item = (row.started_at, row.id, entry)
+                heap_item = (entry.started_at, entry.row_id, entry)
                 if len(heap) < limit:
                     heapq.heappush(heap, heap_item)
                 elif heap_item > heap[0]:
                     heapq.heapreplace(heap, heap_item)
-            page = [entry for _, _, entry in sorted(heap, reverse=True)]  # newest first
-            out = [
-                _summary(_read_view(_summary(e.exchange), e.size, _const_exchange(e.exchange), cap))
-                for e in page
-            ]
+            out: list[DebugExchangeSummary] = []
+            for _, _, e in sorted(heap, reverse=True):  # newest first
+                ex = e.exchange()  # reconstruct ONCE per page row from the immutable bytes
+                out.append(_summary(_read_view(_summary(ex), e.size, _const_exchange(ex), cap)))
             return out, matched > limit
 
         items, has_more = await asyncio.to_thread(_derive)
@@ -1225,26 +1340,30 @@ class InMemoryDebugStore:
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
         entry = self._entries.get(exchange_id)
-        if entry is None or (tenant_id is not None and entry.exchange.tenant_id != tenant_id):
-            return None
+        if entry is None or (tenant_id is not None and entry.tenant_id != tenant_id):
+            return None  # tenant scope checked on the immutable scalar (no parse)
         # Egress-sanitize on read via the SHARED per-row derivation, so detail and the list summary agree
         # and the hard ceiling applies here too: a BOUNDED row (stored payload within the effective
         # ceiling) is fully re-sanitized; a NON-bounded row (stored payload over the ceiling) is rendered
         # metadata-only WITHOUT serving its stored payload — even under a default cap=None, an oversized
-        # legacy body is never disclosed on detail. The stored size is the entry's content-derived property
-        # (no read-time serialization). Offloaded to keep the loop free; normalize returns a copy, unmutated.
-        return await asyncio.to_thread(
-            _read_view, _summary(entry.exchange), entry.size, _const_exchange(entry.exchange), self._max_body_bytes
-        )
+        # legacy body is never disclosed on detail. The stored size comes from the immutable bytes (no
+        # read-time re-serialization). Offloaded to keep the loop free; normalize returns a fresh copy.
+        cap = self._max_body_bytes
+
+        def _derive() -> DebugExchange:
+            ex = entry.exchange()  # reconstruct ONCE from the immutable bytes
+            return _read_view(_summary(ex), entry.size, _const_exchange(ex), cap)
+
+        return await asyncio.to_thread(_derive)
 
     async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         # Cutoff is fixed at the 90-day TTL, never caller-supplied. tenant_id (when set)
         # scopes the aggregate to that tenant so a tenant-scoped admin sees only its own rows.
         cutoff = now - timedelta(seconds=DEBUG_RETENTION_SECONDS)
         started = [
-            e.exchange.started_at
+            e.started_at  # immutable scalar on the entry (no per-row parse)
             for e in self._entries.values()
-            if tenant_id is None or e.exchange.tenant_id == tenant_id
+            if tenant_id is None or e.tenant_id == tenant_id
         ]
         expired = sum(1 for timestamp in started if timestamp < cutoff)
         return RetentionPreflight(
@@ -1276,12 +1395,10 @@ class PostgresDebugStore:
                     exchange.operation_id,
                     exchange.tenant_id,
                 )
-                # Bound the server-canonical backfill to the same per-field budget as every other stored
-                # field: this value bypasses _bounded_builder (it is looked up here at record), so bounding it
-                # keeps the "every stored field within budget" contract airtight and the ceiling a true bound.
-                exchange = exchange.model_copy(
-                    update={"model_id": _bounded_text_opt(model_id, _META_SCALAR_BUDGETS["model_id"])}
-                )
+                # model_id is an AES-GCM AAD input (see _aad) AND is a bounded, server-canonical registry
+                # identifier, so it is stored VERBATIM — never truncated. Altering it here would change the
+                # AAD sealed at encrypt vs. the value fetched at decrypt and break authentication.
+                exchange = exchange.model_copy(update={"model_id": model_id})
             # Already sanitized exactly once off the event loop (offload_capture); the
             # store never re-sanitizes. The model_id backfill above is a server-side
             # canonicalization from the operations table, not a re-scrub.
@@ -1972,7 +2089,9 @@ class DebugCaptureMiddleware:
         # (normal, exception, cancellation, or a build/submit failure) — no leak window between
         # winning the slot and protecting it; the worker takes ownership only once submit commits.
         with reservation:
-            request_headers = list(scope.get("headers", []))
+            # Bound the header list INCREMENTALLY as it is copied (count + bytes), BEFORE any redaction or
+            # retention, so an oversized/flooded request-header set never materializes in full here or downstream.
+            request_headers = _capture_bounded_pairs(scope.get("headers", []))
             # Tenant scope is enforced AFTER the app runs, from the auth-resolved principal on
             # scope state — not by re-verifying the bearer token here. Re-verifying would repeat
             # the Argon2 password hash the auth stack already performs (a per-request CPU
@@ -1990,7 +2109,8 @@ class DebugCaptureMiddleware:
             error_type: str | None = None
             response_headers: list[tuple[bytes, bytes]] = []
             response_operation: UUID | None = None
-            query = scope.get("query_string", b"")
+            # Bound the raw query at capture, before redaction/retention (the dropped tail is never stored).
+            query = _capture_bounded_query(scope.get("query_string", b""))
 
             def _accumulate(buffer: bytearray, chunk: bytes) -> None:
                 # Keep only a bounded prefix; the observed counters below track the
@@ -2016,7 +2136,8 @@ class DebugCaptureMiddleware:
                 nonlocal status, response_headers, response_operation, response_complete, finished_at, response_observed
                 if message["type"] == "http.response.start":
                     status = message["status"]
-                    response_headers = list(message.get("headers", []))
+                    # Bound the response header list INCREMENTALLY as it is copied, before redaction/retention.
+                    response_headers = _capture_bounded_pairs(message.get("headers", []))
                     response_operation = next(
                         (
                             _uuid(value.decode("ascii", errors="ignore"))

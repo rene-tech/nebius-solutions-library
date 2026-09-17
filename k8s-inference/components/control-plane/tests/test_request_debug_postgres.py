@@ -154,6 +154,32 @@ async def test_legacy_unbounded_clear_columns_are_truncated_on_read(debug_databa
     assert summary.id == legacy.id and len(summary.endpoint.encode()) <= budget  # list agrees, byte-bounded
 
 
+async def test_long_aad_identifiers_are_not_truncated_and_still_decrypt(debug_database):
+    """SAI-01 regression (blocker 4, decryption-breaking regression): tenant_id and model_id are AES-GCM AAD.
+    They must NEVER be truncated before decryption (via SQL left() or _bounded_text) or the AAD at decrypt time
+    would not match what was sealed -> InvalidTag (an availability break). This proves a row whose tenant_id and
+    model_id are LONGER than the old per-field truncation budget still decrypts cleanly on both detail and list
+    (the AAD columns are fetched verbatim), while the whole-exchange ceiling still governs decryptability.
+    Postgres-marked; run by CI."""
+    db = debug_database
+    store = PostgresDebugStore(db.pool, db.cipher, max_body_bytes=64 * 1024)
+    long_tenant = "tenant-" + "x" * 2000  # far over the former 1024-byte truncation budget
+    long_model = "model-" + "y" * 2000
+    captured = row(
+        tenant_id=long_tenant,
+        model_id=long_model,
+        request_body=body_capture(b'{"input":"served"}', "application/json", True),
+    )
+    await store.record(captured)  # AAD is sealed with the FULL tenant_id/model_id
+    # Detail decrypts (no InvalidTag) because the AAD columns are fetched verbatim, not left()-truncated.
+    detail = await store.get(captured.id, long_tenant)
+    assert detail is not None and detail.request_body.data == '{"input":"served"}'
+    assert detail.tenant_id == long_tenant and detail.model_id == long_model  # AAD identifiers intact on read
+    # The list summary for the same row also decrypts and agrees (one shared derivation).
+    summary = (await store.list(tenant_id=long_tenant)).items[0]
+    assert summary.id == captured.id and summary.request_redacted is False
+
+
 async def test_actual_generated_runtime_role_can_insert_list_and_decrypt(debug_database):
     db = debug_database
     suffix = uuid4().hex[:10]
