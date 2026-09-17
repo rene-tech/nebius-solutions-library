@@ -1,8 +1,10 @@
 output "current_handoff" {
   description = "Non-secret provider-enforced egress handoff for the additive compatibility-v3 reconciler."
   value = {
-    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v9"
+    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v10"
     generation                                        = local.authority.current_generation
+    provisioning_generation                           = local.generations[local.authority.current_generation].provisioning_generation
+    provisioning_receipt_sha256                       = local.generations[local.authority.current_generation].provisioning_receipt_sha256
     lane_id                                           = local.generations[local.authority.current_generation].lane_id
     authority_manifest_sha256                         = data.external.authority.result.manifest_sha256
     prior_head_receipt_sha256                         = data.external.authority.result.prior_head_receipt_sha256
@@ -13,8 +15,8 @@ output "current_handoff" {
     boundary_policy_sha256                            = local.generations[local.authority.current_generation].boundary_policy_sha256
     workload_policy_sha256                            = local.generations[local.authority.current_generation].workload_policy_sha256
     release_values_sha256                             = local.generations[local.authority.current_generation].release_values_sha256
-    security_group_id                                 = nebius_vpc_v1_security_group.generation[local.authority.current_generation].id
-    node_group_id                                     = nebius_mk8s_v1_node_group.generation[local.authority.current_generation].id
+    security_group_id                                 = local.generations[local.authority.current_generation].security_group_id
+    node_group_id                                     = local.generations[local.authority.current_generation].node_group_id
     node_selector_key                                 = local.generations[local.authority.current_generation].scheduling_key
     node_selector_value                               = local.generations[local.authority.current_generation].lane_id
     taint_key                                         = local.generations[local.authority.current_generation].scheduling_key
@@ -28,6 +30,8 @@ output "current_handoff" {
     protected_node_inventory_sha256                   = local.generations[local.authority.current_generation].protected_node_inventory_sha256
     protected_node_scheduling_labels                  = local.generations[local.authority.current_generation].protected_node_scheduling_labels
     protected_node_scheduling_labels_sha256           = local.generations[local.authority.current_generation].protected_node_scheduling_labels_sha256
+    protected_node_attestations                       = local.generations[local.authority.current_generation].protected_node_attestations
+    protected_node_attestation_sha256                 = local.generations[local.authority.current_generation].protected_node_attestation_sha256
     provider_api_cidrs                                = local.generations[local.authority.current_generation].provider_api_cidrs
     kubernetes_api_cidrs                              = local.generations[local.authority.current_generation].kubernetes_api_cidrs
     authority_service_account_sha256                  = sha256(data.external.authority.result.authority_service_account_id)
@@ -35,10 +39,7 @@ output "current_handoff" {
     kubernetes_identity_inventory_sha256              = data.external.authority.result.kubernetes_identity_inventory_sha256
     kubernetes_service_account_inventory_sha256       = data.external.authority.result.kubernetes_service_account_inventory_sha256
     kubernetes_system_subject_inventory_sha256        = data.external.authority.result.kubernetes_system_subject_inventory_sha256
-    deployment_controller_username                    = data.external.authority.result.deployment_controller_username
-    replicaset_controller_username                    = data.external.authority.result.replicaset_controller_username
-    daemonset_controller_username                     = data.external.authority.result.daemonset_controller_username
-    scheduler_username                                = data.external.authority.result.scheduler_username
+    controller_identities                             = local.controller_identities
     kubernetes_rbac_inventory_sha256                  = data.external.authority.result.kubernetes_rbac_inventory_sha256
     kubernetes_rbac_effective_authority_sha256        = data.external.authority.result.kubernetes_rbac_effective_authority_sha256
     kubernetes_rbac_inventory_receipt_sha256          = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256

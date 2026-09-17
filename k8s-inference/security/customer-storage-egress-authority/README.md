@@ -101,3 +101,24 @@ the backend metadata and dependency-lock descriptors stable across the exact
 saved-plan apply, verifies clean source and rejected-SAI-10 ancestry, and
 proves predecessor and successor remote-state identities. It has no plan,
 destroy, replace, state-forget, or cleanup mode.
+
+## v10 provisioning/attestation split
+
+The v10 successor supersedes the earlier five-role and precomputed-label
+description above without removing its historical record. Stable provider
+provisioning now lives in `security/customer-storage-lane-provisioning`, under
+its own locked remote state and signed provider-input-only manifest. Its
+content-bound `p...` generation creates the lane key, taint, security group and
+NodeGroup before any Node identity exists. It outputs only a receipt seed; a
+separate owner verifies remote-state custody and signs the resulting exact
+security-group and NodeGroup IDs.
+
+Only then may this authority ledger append a `g...` attestation generation. It
+binds that provisioning receipt, exact Node name/UID/observed resourceVersion,
+full labels and taints, and the audit-derived controller `userInfo` username,
+UID and deterministic groups. No `system:controller:*` role label is accepted
+as an authenticated actor. The signed RBAC receipt also contains the complete
+cluster-wide inventory of every DaemonSet with a keyless blanket
+`Exists`/`NoSchedule` toleration; the admission inventory must equal it exactly,
+so CNI, kube-proxy, GPU, storage and telemetry agents are not represented by a
+fixed source allowlist.

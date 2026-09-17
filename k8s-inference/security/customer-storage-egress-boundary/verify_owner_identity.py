@@ -554,11 +554,13 @@ def verify(query: dict[str, str]) -> dict[str, str]:
     declared_identities = json.loads(query["identity_inventory_json"])
     declared_service_accounts = json.loads(query["service_account_inventory_json"])
     declared_system_subjects = json.loads(query["system_subject_inventory_json"])
+    controller_identities = json.loads(query["controller_identities_json"])
     if (
         not isinstance(names, dict)
         or not isinstance(declared_identities, dict)
         or not isinstance(declared_service_accounts, list)
         or not isinstance(declared_system_subjects, list)
+        or not isinstance(controller_identities, dict)
     ):
         raise ValueError("identity inventory or protected names are invalid")
     owner_declarations = [
@@ -745,12 +747,6 @@ def verify(query: dict[str, str]) -> dict[str, str]:
     if effective_authority_sha256 != query["expected_effective_authority_sha256"]:
         raise ValueError("live RBAC effective authority differs from the signed receipt")
 
-    controller_users = {
-        "deployment": query["deployment_controller_username"],
-        "replicaset": query["replicaset_controller_username"],
-        "daemonset": query["daemonset_controller_username"],
-        "scheduler": query["scheduler_username"],
-    }
     for identity in checked:
         _, semantic_dangerous = subject_authority(
             effective_authority,
@@ -800,6 +796,7 @@ def verify(query: dict[str, str]) -> dict[str, str]:
             != {
                 "namespace",
                 "name",
+                "uid",
                 "owner",
                 "groups",
                 "effective_authority_sha256",
@@ -807,7 +804,7 @@ def verify(query: dict[str, str]) -> dict[str, str]:
             }
             or any(
                 not isinstance(subject.get(field), str) or not subject[field]
-                for field in ("namespace", "name", "owner")
+                for field in ("namespace", "name", "uid", "owner")
             )
             or not isinstance(subject.get("groups"), list)
             or subject["groups"] != sorted(set(subject["groups"]))
@@ -838,6 +835,7 @@ def verify(query: dict[str, str]) -> dict[str, str]:
             != {
                 "kind",
                 "name",
+                "uid",
                 "namespace",
                 "owner",
                 "groups",
@@ -848,6 +846,8 @@ def verify(query: dict[str, str]) -> dict[str, str]:
             or not isinstance(subject.get("name"), str)
             or not subject["name"].startswith("system:")
             or subject.get("namespace") != ""
+            or not isinstance(subject.get("uid"), str)
+            or not subject["uid"]
             or not isinstance(subject.get("owner"), str)
             or not subject["owner"]
             or not isinstance(subject.get("groups"), list)
@@ -880,7 +880,7 @@ def verify(query: dict[str, str]) -> dict[str, str]:
         declared_service_accounts,
         declared_system_subjects,
         effective_authority,
-        controller_users=controller_users,
+        controller_identities=controller_identities,
     )
     for subject in rbac_subjects:
         if subject["kind"] == "User" and subject["name"] not in authorized_users:

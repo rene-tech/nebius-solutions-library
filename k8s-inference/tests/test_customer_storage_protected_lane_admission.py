@@ -33,7 +33,31 @@ NODE_AGENT_ROLES = (
     "filesystem-csi",
     "prometheus-node-exporter",
     "retained-otel-node",
+    "cni-node",
+    "kube-proxy",
+    "gpu-device-plugin",
 )
+
+
+def controller_identities() -> dict[str, dict[str, object]]:
+    return {
+        role: {
+            "kind": "ServiceAccount",
+            "namespace": "kube-system",
+            "name": f"fs2-observed-{role}-controller",
+            "username": f"system:serviceaccount:kube-system:fs2-observed-{role}-controller",
+            "uid": f"10000000-0000-4000-8000-{index:012d}",
+            "groups": [
+                "system:authenticated",
+                "system:serviceaccounts",
+                "system:serviceaccounts:kube-system",
+            ],
+            "audit_evidence_sha256": f"{index}" * 64,
+        }
+        for index, role in enumerate(
+            ("deployment", "replicaset", "daemonset", "scheduler"), start=1
+        )
+    }
 
 
 def observer_spec(generation: str, role: str) -> dict[str, object]:
@@ -61,6 +85,8 @@ def observer_spec(generation: str, role: str) -> dict[str, object]:
         if lane_scoped
         else {"tolerations": [{"operator": "Exists"}]}
     )
+    if role in {"cni-node", "kube-proxy"}:
+        scheduling.update({"hostNetwork": True, "dnsPolicy": "ClusterFirstWithHostNet"})
     return {
         "selector": {"matchLabels": labels},
         "template": {
@@ -82,6 +108,7 @@ def contract(generation: str) -> dict[str, object]:
     for index, role in enumerate(LANE_ROLES + NODE_AGENT_ROLES, start=1):
         spec = observer_spec(generation, role)
         observers[role] = {
+            "class": "lane" if role in LANE_ROLES else "critical-blanket-agent",
             "namespace": "kube-system",
             "name": (
                 f"fs2-{role}-{suffix}"
@@ -89,7 +116,15 @@ def contract(generation: str) -> dict[str, object]:
                 else f"fs2-retained-{role}"
             ),
             "uid": f"00000000-0000-4000-8000-{index:012d}",
-            "owner_username": f"fs2:{role}-release:{lane_id}",
+            "owner_identity": {
+                "username": f"system:serviceaccount:kube-system:fs2-{role}-owner",
+                "uid": f"20000000-0000-4000-8000-{index:012d}",
+                "groups": [
+                    "system:authenticated",
+                    "system:serviceaccounts",
+                    "system:serviceaccounts:kube-system",
+                ],
+            },
             "daemonset_spec": spec,
             "daemonset_spec_sha256": ADMISSION.digest(spec),
         }
@@ -104,8 +139,23 @@ def contract(generation: str) -> dict[str, object]:
             "workload.fs2.nebius/system": "false",
         }
     }
+    protected_node_attestations = {
+        protected_node_names[0]: {
+            "name": protected_node_names[0],
+            "uid": "30000000-0000-4000-8000-000000000001",
+            "resource_version": "81234",
+            "labels": protected_node_scheduling_labels[protected_node_names[0]],
+            "taints": [
+                {
+                    "key": scheduling_key,
+                    "value": lane_id,
+                    "effect": "NoSchedule",
+                }
+            ],
+        }
+    }
     result = {
-        "schema": "fs2-serve.nebius.ai/protected-lane-admission/v3",
+        "schema": "fs2-serve.nebius.ai/protected-lane-admission/v4",
         "generation": generation,
         "lane_id": lane_id,
         "selector_key": scheduling_key,
@@ -119,8 +169,11 @@ def contract(generation: str) -> dict[str, object]:
         "protected_node_scheduling_labels_sha256": ADMISSION.digest(
             protected_node_scheduling_labels
         ),
-        "daemonset_controller_username": "system:controller:daemon-set-controller",
-        "scheduler_username": "system:kube-scheduler",
+        "protected_node_attestations": protected_node_attestations,
+        "protected_node_attestation_sha256": ADMISSION.digest(
+            protected_node_attestations
+        ),
+        "controller_identities": controller_identities(),
         "observers": observers,
         "observer_inventory_sha256": ADMISSION.digest(observers),
     }
@@ -156,7 +209,9 @@ def observer_pod_request(value: dict[str, object], role: str) -> dict[str, objec
         "resource": "pods",
         "operation": "CREATE",
         "namespace": observer["namespace"],
-        "username": value["daemonset_controller_username"],
+        "username": value["controller_identities"]["daemonset"]["username"],
+        "uid": value["controller_identities"]["daemonset"]["uid"],
+        "groups": value["controller_identities"]["daemonset"]["groups"],
         "object": {
             "metadata": {
                 "name": observer["name"] + "-protected",
@@ -197,7 +252,9 @@ def test_retained_broad_kube_system_exception_cannot_admit_rogue_blanket_pod() -
         "resource": "pods",
         "operation": "CREATE",
         "namespace": "kube-system",
-        "username": "system:controller:daemon-set-controller",
+        "username": successor["controller_identities"]["daemonset"]["username"],
+        "uid": successor["controller_identities"]["daemonset"]["uid"],
+        "groups": successor["controller_identities"]["daemonset"]["groups"],
         "object": {
             "metadata": {
                 "name": "rogue-node-a",
@@ -255,6 +312,18 @@ def test_exact_observer_owner_cannot_forge_child_service_account_or_image() -> N
     assert not ADMISSION.successor_allows(request, successor)
 
 
+def test_controller_role_label_or_wrong_uid_cannot_create_daemonset_child() -> None:
+    successor = contract("g20260917020000-222222222222")
+    request = observer_pod_request(successor, "cni-node")
+    assert ADMISSION.successor_allows(request, successor)
+
+    request["username"] = "system:controller:daemon-set-controller"
+    assert not ADMISSION.successor_allows(request, successor)
+    request["username"] = successor["controller_identities"]["daemonset"]["username"]
+    request["uid"] = "40000000-0000-4000-8000-000000000099"
+    assert not ADMISSION.successor_allows(request, successor)
+
+
 def test_fresh_install_denies_lane_targeting_daemonset_but_allows_exact_update() -> None:
     successor = contract("g20260917020000-222222222222")
     rogue = {
@@ -306,7 +375,9 @@ def test_fresh_install_denies_lane_targeting_daemonset_but_allows_exact_update()
         "resource": "daemonsets",
         "operation": "UPDATE",
         "namespace": observer["namespace"],
-        "username": observer["owner_username"],
+        "username": observer["owner_identity"]["username"],
+        "uid": observer["owner_identity"]["uid"],
+        "groups": observer["owner_identity"]["groups"],
         "object": copy.deepcopy(exact_object),
         "old_object": copy.deepcopy(exact_object),
     }
@@ -378,7 +449,9 @@ def test_generation_unique_key_prevents_retained_policy_cross_denial() -> None:
         "resource": "pods",
         "operation": "CREATE",
         "namespace": "fs2-system",
-        "username": "system:controller:replicaset-controller",
+        "username": successor["controller_identities"]["replicaset"]["username"],
+        "uid": successor["controller_identities"]["replicaset"]["uid"],
+        "groups": successor["controller_identities"]["replicaset"]["groups"],
         "storage_contract": True,
         "object": {
             "metadata": {"name": "storage-successor"},
@@ -524,7 +597,9 @@ def test_blanket_toleration_without_constraints_is_guarded_and_denied() -> None:
         "resource": "pods",
         "operation": "CREATE",
         "namespace": "kube-system",
-        "username": "system:controller:daemon-set-controller",
+        "username": successor["controller_identities"]["daemonset"]["username"],
+        "uid": successor["controller_identities"]["daemonset"]["uid"],
+        "groups": successor["controller_identities"]["daemonset"]["groups"],
         "object": {
             "metadata": {
                 "name": "rogue-blanket",
@@ -546,7 +621,7 @@ def test_blanket_toleration_without_constraints_is_guarded_and_denied() -> None:
     assert not ADMISSION.successor_allows(request, successor)
 
 
-def test_blanket_toleration_with_unrelated_selector_is_not_lane_targeting() -> None:
+def test_blanket_toleration_with_unrelated_selector_is_conservatively_guarded() -> None:
     successor = contract("g20260917020000-222222222222")
     request = {
         "resource": "daemonsets",
@@ -575,10 +650,11 @@ def test_blanket_toleration_with_unrelated_selector_is_not_lane_targeting() -> N
             },
         },
     }
-    assert not ADMISSION.request_targets_lane(request, successor)
+    assert ADMISSION.request_targets_lane(request, successor)
+    assert not ADMISSION.successor_allows(request, successor)
 
 
-def test_required_affinity_uses_term_or_and_requirement_and_semantics() -> None:
+def test_blanket_toleration_remains_guarded_when_affinity_is_unsatisfiable() -> None:
     successor = contract("g20260917020000-222222222222")
     key = successor["selector_key"]
     required = {
@@ -635,10 +711,10 @@ def test_required_affinity_uses_term_or_and_requirement_and_semantics() -> None:
     assert ADMISSION.request_targets_lane(request, successor)
 
     required["nodeSelectorTerms"] = required["nodeSelectorTerms"][:1]
-    assert not ADMISSION.request_targets_lane(request, successor)
+    assert ADMISSION.request_targets_lane(request, successor)
 
 
-def test_required_affinity_field_and_expression_must_match_in_same_term() -> None:
+def test_blanket_toleration_cannot_hide_behind_contradictory_match_fields() -> None:
     successor = contract("g20260917020000-222222222222")
     request = {
         "resource": "pods",
@@ -674,7 +750,8 @@ def test_required_affinity_field_and_expression_must_match_in_same_term() -> Non
             },
         },
     }
-    assert not ADMISSION.request_targets_lane(request, successor)
+    assert ADMISSION.request_targets_lane(request, successor)
+    assert not ADMISSION.successor_allows(request, successor)
 
 
 def test_update_matches_both_entry_to_and_exit_from_the_lane() -> None:
@@ -724,3 +801,6 @@ def test_existing_critical_node_agents_survive_retained_policy_conjunction() -> 
         assert ADMISSION.conjunction_allows(
             request, retained=[predecessor], successor=successor
         )
+    assert observer_pod_request(successor, "cni-node")["object"]["spec"][
+        "hostNetwork"
+    ] is True

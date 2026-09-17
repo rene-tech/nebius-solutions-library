@@ -14,9 +14,8 @@ import re
 import sys
 from typing import Any
 
-LANE_ROLES = {"gpu-allocation-observer", "otel-node"}
-NODE_AGENT_ROLES = {"filesystem-csi", "prometheus-node-exporter", "retained-otel-node"}
-ROLES = LANE_ROLES | NODE_AGENT_ROLES
+CONTROLLER_ROLES = {"deployment", "replicaset", "daemonset", "scheduler"}
+OBSERVER_CLASSES = {"lane", "critical-blanket-agent"}
 UID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
@@ -52,14 +51,15 @@ def validate_contract(value: object) -> dict[str, Any]:
         "protected_node_inventory_sha256",
         "protected_node_scheduling_labels",
         "protected_node_scheduling_labels_sha256",
-        "daemonset_controller_username",
-        "scheduler_username",
+        "protected_node_attestations",
+        "protected_node_attestation_sha256",
+        "controller_identities",
         "observers",
         "observer_inventory_sha256",
     }
     if set(value) != expected:
         raise ValueError("protected-lane contract fields differ")
-    if value.get("schema") != "fs2-serve.nebius.ai/protected-lane-admission/v3":
+    if value.get("schema") != "fs2-serve.nebius.ai/protected-lane-admission/v4":
         raise ValueError("protected-lane contract schema differs")
     generation = _string(value.get("generation"), "generation")
     if not re.fullmatch(r"g[0-9]{14}-[a-f0-9]{12}", generation):
@@ -106,34 +106,124 @@ def validate_contract(value: object) -> dict[str, Any]:
         != value.get("protected_node_scheduling_labels_sha256")
     ):
         raise ValueError("complete protected-node scheduling-label projection differs")
-    if value.get("daemonset_controller_username") != "system:controller:daemon-set-controller":
-        raise ValueError("DaemonSet controller identity differs")
-    if value.get("scheduler_username") != "system:kube-scheduler":
-        raise ValueError("scheduler identity differs")
+    attestations = value.get("protected_node_attestations")
+    if (
+        not isinstance(attestations, dict)
+        or set(attestations) != set(protected_node_names)
+        or digest(attestations) != value.get("protected_node_attestation_sha256")
+    ):
+        raise ValueError("protected-node attestation inventory differs")
+    for node_name, attestation in attestations.items():
+        if (
+            not isinstance(attestation, dict)
+            or set(attestation) != {"name", "uid", "resource_version", "labels", "taints"}
+            or attestation.get("name") != node_name
+            or not UID_RE.fullmatch(str(attestation.get("uid", "")))
+            or not isinstance(attestation.get("resource_version"), str)
+            or not attestation["resource_version"]
+            or attestation.get("labels") != scheduling_labels[node_name]
+            or not isinstance(attestation.get("taints"), list)
+            or {
+                "key": expected_key,
+                "value": lane_id,
+                "effect": "NoSchedule",
+            }
+            not in attestation["taints"]
+        ):
+            raise ValueError("protected-node identity, labels, or taints differ")
+
+    identities = value.get("controller_identities")
+    if not isinstance(identities, dict) or set(identities) != CONTROLLER_ROLES:
+        raise ValueError("audited controller identity inventory differs")
+    for role, identity in identities.items():
+        service_account = (
+            isinstance(identity, dict)
+            and identity.get("kind") == "ServiceAccount"
+            and identity.get("namespace") == "kube-system"
+            and identity.get("username")
+            == f"system:serviceaccount:kube-system:{identity.get('name', '')}"
+            and UID_RE.fullmatch(str(identity.get("uid", ""))) is not None
+            and identity.get("groups")
+            == [
+                "system:authenticated",
+                "system:serviceaccounts",
+                "system:serviceaccounts:kube-system",
+            ]
+        )
+        native_user = (
+            isinstance(identity, dict)
+            and identity.get("kind") == "User"
+            and identity.get("namespace") == ""
+            and isinstance(identity.get("name"), str)
+            and identity["name"].startswith("system:")
+            and identity.get("username") == identity["name"]
+            and isinstance(identity.get("uid"), str)
+            and bool(identity["uid"])
+            and identity.get("groups") == ["system:authenticated"]
+        )
+        if (
+            not isinstance(identity, dict)
+            or set(identity)
+            != {
+                "kind",
+                "namespace",
+                "name",
+                "username",
+                "uid",
+                "groups",
+                "audit_evidence_sha256",
+            }
+            or not (service_account or native_user)
+            or not re.fullmatch(
+                r"[a-f0-9]{64}", str(identity.get("audit_evidence_sha256", ""))
+            )
+        ):
+            raise ValueError(f"{role} controller is not an audited live identity")
 
     observers = value.get("observers")
-    if not isinstance(observers, dict) or set(observers) != ROLES:
-        raise ValueError("exact lane-observer and retained node-agent inventory is required")
+    if not isinstance(observers, dict) or not observers:
+        raise ValueError("complete signed observer inventory is required")
     seen: set[tuple[str, str] | str] = set()
     for role, observer in observers.items():
         if not isinstance(observer, dict) or set(observer) != {
+            "class",
             "namespace",
             "name",
             "uid",
-            "owner_username",
+            "owner_identity",
             "daemonset_spec",
             "daemonset_spec_sha256",
         }:
             raise ValueError(f"{role} observer fields differ")
+        observer_class = observer.get("class")
+        if observer_class not in OBSERVER_CLASSES:
+            raise ValueError(f"{role} observer class differs")
         namespace = _string(observer.get("namespace"), f"{role} namespace")
         name = _string(observer.get("name"), f"{role} name")
         uid = _string(observer.get("uid"), f"{role} UID")
-        owner = _string(observer.get("owner_username"), f"{role} owner")
+        owner = observer.get("owner_identity")
         spec = observer.get("daemonset_spec")
-        if role in LANE_ROLES and namespace != "kube-system":
+        if not isinstance(owner, dict) or set(owner) != {"username", "uid", "groups"}:
+            raise ValueError(f"{role} owner identity differs")
+        _string(owner.get("username"), f"{role} owner username")
+        owner_uid = _string(owner.get("uid"), f"{role} owner UID")
+        owner_match = re.fullmatch(
+            r"system:serviceaccount:([^:]+):([^:]+)", owner["username"]
+        )
+        if (
+            owner_match is None
+            or not UID_RE.fullmatch(owner_uid)
+            or not isinstance(owner.get("groups"), list)
+            or owner["groups"]
+            != [
+                "system:authenticated",
+                "system:serviceaccounts",
+                f"system:serviceaccounts:{owner_match.group(1)}",
+            ]
+        ):
+            raise ValueError(f"{role} owner groups differ")
+        if observer_class == "lane" and namespace != "kube-system":
             raise ValueError(f"{role} additive compatibility observer must be in kube-system")
-        if role in LANE_ROLES and name != f"fs2-{role}-{lane_id[-12:]}":
-            raise ValueError(f"{role} observer name is not lane-bound")
         if not UID_RE.fullmatch(uid):
             raise ValueError(f"{role} UID is invalid")
         if (namespace, name) in seen or uid in seen:
@@ -163,7 +253,7 @@ def validate_contract(value: object) -> dict[str, Any]:
             or any(not isinstance(container, dict) for container in pod_spec["containers"])
         ):
             raise ValueError(f"{role} observer identity or image custody differs")
-        if role in LANE_ROLES:
+        if observer_class == "lane":
             if (
                 not isinstance(pod_spec.get("serviceAccountName"), str)
                 or not pod_spec["serviceAccountName"]
@@ -205,8 +295,6 @@ def validate_contract(value: object) -> dict[str, Any]:
                 raise ValueError(f"{role} retained node agent lacks its recorded blanket toleration")
         if pod_spec.get("nodeName") not in {None, ""}:
             raise ValueError(f"{role} observer cannot bind nodeName directly")
-        if owner.startswith("system:"):
-            raise ValueError(f"{role} owner must be a separately inventoried release identity")
 
     if digest(observers) != value.get("observer_inventory_sha256"):
         raise ValueError("observer inventory digest differs")
@@ -246,40 +334,6 @@ def _target_cel(contract: dict[str, Any], path: str) -> str:
     value = _q(contract["taint_value"])
     effect = _q(contract["taint_effect"])
     node_name = _q(contract["protected_node_names"][0])
-    labels = json.dumps(
-        contract["protected_node_scheduling_labels"][
-            contract["protected_node_names"][0]
-        ],
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    fields = json.dumps(
-        {"metadata.name": contract["protected_node_names"][0]},
-        separators=(",", ":"),
-    )
-    selector_matches = " ".join(
-        [
-            f"(!has({path}.nodeSelector) || {path}.nodeSelector.all(selectorKey, selectorValue,",
-            f"selectorKey in {labels} && {labels}[selectorKey] == selectorValue))",
-        ]
-    )
-    required = f"{path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution"
-    term_matches = " ".join(
-        [
-            "((has(term.matchExpressions) && size(term.matchExpressions) > 0) ||",
-            "(has(term.matchFields) && size(term.matchFields) > 0)) &&",
-            f"(!has(term.matchExpressions) || term.matchExpressions.all(requirement, {_requirement_cel('requirement', labels)})) &&",
-            f"(!has(term.matchFields) || term.matchFields.all(requirement, {_requirement_cel('requirement', fields)}))",
-        ]
-    )
-    affinity_matches = " ".join(
-        [
-            f"(!has({path}.affinity) || !has({path}.affinity.nodeAffinity) ||",
-            f"!has({required}) ||",
-            f"(has({required}.nodeSelectorTerms) &&",
-            f"{required}.nodeSelectorTerms.exists(term, {term_matches})))",
-        ]
-    )
     toleration_matches = " ".join(
         [
             f"(has({path}.tolerations) && {path}.tolerations.exists(toleration,",
@@ -294,9 +348,22 @@ def _target_cel(contract: dict[str, Any], path: str) -> str:
     return " ".join(
         [
             "(",
-            f"(has({path}.nodeName) && {path}.nodeName != '' ? {path}.nodeName == {node_name} :",
-            f"(({selector_matches}) && ({affinity_matches}) && ({toleration_matches})))",
+            f"(has({path}.nodeName) && {path}.nodeName == {node_name}) ||",
+            f"({toleration_matches})",
             ")",
+        ]
+    )
+
+
+def _identity_cel(identity: dict[str, Any]) -> str:
+    groups = json.dumps(identity["groups"], separators=(",", ":"))
+    return " ".join(
+        [
+            f"request.userInfo.username == {_q(identity['username'])} &&",
+            f"has(request.userInfo.uid) && request.userInfo.uid == {_q(identity['uid'])} &&",
+            f"size(request.userInfo.groups) == size({groups}) &&",
+            f"request.userInfo.groups.all(group, group in {groups}) &&",
+            f"{groups}.all(group, group in request.userInfo.groups)",
         ]
     )
 
@@ -309,7 +376,7 @@ def _observer_daemonset_cel(contract: dict[str, Any]) -> str:
                 [
                     f"(request.namespace == {_q(observer['namespace'])} &&",
                     f"request.name == {_q(observer['name'])} &&",
-                    f"request.userInfo.username == {_q(observer['owner_username'])} &&",
+                    f"({_identity_cel(observer['owner_identity'])}) &&",
                     "request.operation == 'UPDATE' &&",
                     f"object.metadata.uid == {_q(observer['uid'])} && oldObject.metadata.uid == {_q(observer['uid'])} &&",
                     f"object.spec == {json.dumps(observer['daemonset_spec'], sort_keys=True, separators=(',', ':'))} &&",
@@ -322,7 +389,7 @@ def _observer_daemonset_cel(contract: dict[str, Any]) -> str:
 
 def _observer_pod_cel(contract: dict[str, Any]) -> str:
     choices: list[str] = []
-    controller = _q(contract["daemonset_controller_username"])
+    controller = _identity_cel(contract["controller_identities"]["daemonset"])
     for observer in contract["observers"].values():
         labels = observer["daemonset_spec"]["template"]["metadata"]["labels"]
         pod_spec = observer["daemonset_spec"]["template"]["spec"]
@@ -347,6 +414,10 @@ def _observer_pod_cel(contract: dict[str, Any]) -> str:
             "priorityClassName",
             "dnsPolicy",
             "dnsConfig",
+            "hostNetwork",
+            "hostPID",
+            "hostIPC",
+            "shareProcessNamespace",
         )
         exact_optional = " && ".join(
             (
@@ -359,7 +430,7 @@ def _observer_pod_cel(contract: dict[str, Any]) -> str:
         choices.append(
             " ".join(
                 [
-                    f"(request.namespace == {_q(observer['namespace'])} && request.userInfo.username == {controller} &&",
+                    f"(request.namespace == {_q(observer['namespace'])} && ({controller}) &&",
                     "request.operation == 'CREATE' && size(object.metadata.ownerReferences) == 1 &&",
                     "object.metadata.ownerReferences[0].apiVersion == 'apps/v1' && object.metadata.ownerReferences[0].kind == 'DaemonSet' &&",
                     f"object.metadata.ownerReferences[0].name == {_q(observer['name'])} && object.metadata.ownerReferences[0].uid == {_q(observer['uid'])} &&",
@@ -369,10 +440,6 @@ def _observer_pod_cel(contract: dict[str, Any]) -> str:
                     "(key in ['controller-revision-hash','pod-template-generation'] && value != '')) &&",
                     f"{exact_spec} && {exact_optional} &&",
                     "(!has(object.spec.nodeName) || object.spec.nodeName == '') &&",
-                    "(!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&",
-                    "(!has(object.spec.hostPID) || object.spec.hostPID == false) &&",
-                    "(!has(object.spec.hostIPC) || object.spec.hostIPC == false) &&",
-                    "(!has(object.spec.shareProcessNamespace) || object.spec.shareProcessNamespace == false) &&",
                     "(!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0))",
                 ]
             )
@@ -523,9 +590,20 @@ def targets_lane(spec: object, contract: object) -> bool:
     direct_name = spec.get("nodeName")
     if direct_name not in {None, ""}:
         return direct_name == node_name
-    labels = value["protected_node_scheduling_labels"][node_name]
-    return _constraints_match(spec, labels=labels, node_name=node_name) and (
-        _tolerates_protected_taint(spec, value)
+    # The taint key is a stable provider-provisioning identity.  Any exact-key
+    # or blanket toleration can schedule onto the lane regardless of selectors
+    # that may later change, so admission conservatively guards it.  Exact
+    # critical DaemonSet identities are the only availability exceptions.
+    return _tolerates_protected_taint(spec, value)
+
+
+def _request_identity_matches(
+    request: dict[str, Any], identity: dict[str, Any]
+) -> bool:
+    return (
+        request.get("username") == identity["username"]
+        and request.get("uid") == identity["uid"]
+        and sorted(request.get("groups", [])) == identity["groups"]
     )
 
 
@@ -559,7 +637,9 @@ def successor_allows(request: dict[str, Any], contract: object) -> bool:
     if request.get("storage_contract") is True:
         return True
     if request.get("resource") == "pods/binding":
-        return request.get("username") == value["scheduler_username"]
+        return _request_identity_matches(
+            request, value["controller_identities"]["scheduler"]
+        )
     observer = _observer_for_request(request, value)
     obj = request.get("object") or {}
     metadata = obj.get("metadata") or {}
@@ -567,7 +647,7 @@ def successor_allows(request: dict[str, Any], contract: object) -> bool:
         old = request.get("old_object") or {}
         return (
             request.get("operation") == "UPDATE"
-            and request.get("username") == observer["owner_username"]
+            and _request_identity_matches(request, observer["owner_identity"])
             and metadata.get("uid") == observer["uid"]
             and (old.get("metadata") or {}).get("uid") == observer["uid"]
             and obj.get("spec") == observer["daemonset_spec"]
@@ -581,7 +661,9 @@ def successor_allows(request: dict[str, Any], contract: object) -> bool:
         for candidate in value["observers"].values():
             if (
                 request.get("namespace") == candidate["namespace"]
-                and request.get("username") == value["daemonset_controller_username"]
+                and _request_identity_matches(
+                    request, value["controller_identities"]["daemonset"]
+                )
                 and request.get("operation") == "CREATE"
                 and owner
                 == {
@@ -622,6 +704,10 @@ def successor_allows(request: dict[str, Any], contract: object) -> bool:
                     "priorityClassName",
                     "dnsPolicy",
                     "dnsConfig",
+                    "hostNetwork",
+                    "hostPID",
+                    "hostIPC",
+                    "shareProcessNamespace",
                 }
                 spec_matches = all(
                     actual_spec.get(field) == expected_spec.get(field)
@@ -630,14 +716,9 @@ def successor_allows(request: dict[str, Any], contract: object) -> bool:
                     actual_spec.get(field) == expected_spec.get(field)
                     for field in optional_spec_fields
                 )
-                no_pivots = (
-                    actual_spec.get("nodeName") in {None, ""}
-                    and actual_spec.get("hostNetwork") in {None, False}
-                    and actual_spec.get("hostPID") in {None, False}
-                    and actual_spec.get("hostIPC") in {None, False}
-                    and actual_spec.get("shareProcessNamespace") in {None, False}
-                    and actual_spec.get("ephemeralContainers") in (None, [], ())
-                )
+                no_pivots = actual_spec.get("nodeName") in {None, ""} and actual_spec.get(
+                    "ephemeralContainers"
+                ) in (None, [], ())
                 return labels_match and spec_matches and no_pivots
     return False
 
@@ -663,7 +744,9 @@ def predecessor_allows(request: dict[str, Any], predecessor: object) -> bool:
         request.get("resource") == "pods"
         and request.get("namespace") == "kube-system"
         and request.get("operation") == "CREATE"
-        and request.get("username") == value["daemonset_controller_username"]
+        and _request_identity_matches(
+            request, value["controller_identities"]["daemonset"]
+        )
         and isinstance(owners, list)
         and len(owners) == 1
         and owners[0].get("kind") == "DaemonSet"
