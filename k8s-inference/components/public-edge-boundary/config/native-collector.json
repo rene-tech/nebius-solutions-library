@@ -1,0 +1,1 @@
+{"schema":"fs2-serve.nebius.ai/public-edge-external-enrollment-gate/v1","component":"native-collector","status":"blocked-pending-owner-enrollment","blockers":["accepted-current-next-identities","evidence-volume-and-snapshot-authority-enrollment","mandatory-native-request-plan-enrollment"]}
