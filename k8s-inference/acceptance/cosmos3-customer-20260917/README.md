@@ -14,6 +14,14 @@ this is neither a clean cohort nor a public media pass. The likely failure is
 the gateway's JSON-only native semantic validation preceding binary result
 artifactization. The release owner is handling that separate control-plane fix.
 
+Release 143 corrected binary media handling and passed one complete eight-case
+HTTP/MCP × HTTPS/upload × V2V/edge-transfer cohort with real artifact decode and
+replay checks. A subsequent typed PNG compatibility call exposed an independent
+fixed-default mismatch; `public-t2i-failure-20260917.json` records its HTTP422 and
+the exact offline reproduction. Further admissions stopped at that failure.
+The video cohort does not qualify the failing image tool or the full customer
+workflow, and no LeRobot route was activated.
+
 ## Reproduction inputs
 
 - `render_media_preview.py` renders only task-owned ConfigMap/Deployment names,
