@@ -37,7 +37,7 @@ export function RequestDebugLog({
     <section className="panel request-debug-log" aria-labelledby={headingId}>
       <div className="section-heading">
         <h3 id={headingId}>
-          {operationId ? "Run request / response debug" : "Request log"}
+          {operationId ? "Run request debug" : "Request log"}
         </h3>
         <button
           type="button"
@@ -69,7 +69,7 @@ export function RequestDebugLog({
         pending={query.isPending}
         loadingLabel="Loading request log…"
         empty={query.data?.data.items.length === 0}
-        emptyLabel="No request/response capture recorded in this window. Historical payloads cannot be reconstructed; this does not mean there were no requests."
+        emptyLabel="No request-debug capture recorded in this window. Historical payloads cannot be reconstructed; this does not mean there were no requests."
       >
         {({ data }) => (
           <>

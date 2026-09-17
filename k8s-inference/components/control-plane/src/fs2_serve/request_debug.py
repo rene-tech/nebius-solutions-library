@@ -948,12 +948,14 @@ class _CaptureReservation:
         self._active = True  # True while this handle still owns a slot to release
 
     def submit(self, builder: Callable[[], DebugExchange | None]) -> bool:
-        """Hand the reserved capture to the background worker. On success, ownership of the slot
-        transfers to the worker (this handle no longer releases it); on a (defensive) enqueue drop
-        the slot stays with this handle and is released on context exit. Non-blocking."""
+        """Hand the reserved capture to the background worker. This handle IS the ownership token:
+        enqueueing is only reachable here, on a live reservation, so unreserved work can never enter
+        the queue and the worker can only ever release a slot this handle held. On success, ownership
+        of the slot transfers to the worker (this handle no longer releases it); on a (defensive)
+        enqueue drop the slot stays with this handle and is released on context exit. Non-blocking."""
         if not self._active:
             return False
-        if self._queue.submit(builder):
+        if self._queue._enqueue(builder):
             self._active = False
             return True
         return False
@@ -1019,8 +1021,12 @@ class DebugPersistQueue:
         if self._inflight >= self._max_inflight:
             self.dropped += 1
             return None
+        # Construct the handle FIRST, then increment: a handle-construction failure (e.g. MemoryError)
+        # must not leave a counted-but-unheld slot. Nothing between the increment and the return can
+        # raise (integer add + return, no await), so once counted the slot is always owned by a handle.
+        reservation = _CaptureReservation(self)
         self._inflight += 1
-        return _CaptureReservation(self)
+        return reservation
 
     def _release(self) -> None:
         """Return one admission slot. Called by a reservation handle on context exit (un-committed)
@@ -1029,12 +1035,14 @@ class DebugPersistQueue:
         if self._inflight > 0:
             self._inflight -= 1
 
-    def submit(self, builder: Callable[[], DebugExchange | None]) -> bool:
-        """Enqueue a capture builder for background persistence. Reached via a reservation handle
-        (``_CaptureReservation.submit``), which transfers the slot to the worker on success; the
-        worker frees that slot after it persists. On QueueFull (a defensive backstop — with
-        max_inflight <= maxsize a reserved capture always fits) it returns False and the handle
-        keeps the slot (released on context exit). Non-blocking: never blocks or awaits."""
+    def _enqueue(self, builder: Callable[[], DebugExchange | None]) -> bool:
+        """INTERNAL enqueue, reachable ONLY through a live reservation handle
+        (``_CaptureReservation.submit``) — there is no public unreserved submit, so unreserved work
+        can never enter the queue and the worker only ever releases a slot a handle actually held.
+        The handle transfers the slot to the worker on success; the worker frees it after it
+        persists. On QueueFull (a defensive backstop — with max_inflight <= maxsize a reserved
+        capture always fits) it returns False and the handle keeps the slot (released on context
+        exit). Non-blocking: never blocks or awaits."""
         self._ensure_worker()
         try:
             self._queue.put_nowait(builder)

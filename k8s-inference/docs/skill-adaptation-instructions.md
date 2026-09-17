@@ -297,9 +297,11 @@ elapsed client time, and the submitted request/returned error in an appropriate
 private debug record. Exclude authentication secrets and signed download tokens.
 Do not discard the upstream response merely because it is not JSON or not 2xx.
 
-Give the user a short summary and correlation IDs; keep complete request/response
-data privately available for authorized debugging rather than dumping it into
-chat or source control. Do not require customer skills to have admin API access.
+Give the user a short summary and correlation IDs; keep your own request and correlation
+detail privately available for authorized debugging rather than dumping it into chat or
+source control (this is not a promise that the platform retains full payloads — see the
+capture contract below: the request body is stored credential-redacted and the response body
+is never stored). Do not require customer skills to have admin API access.
 Opt-in request and upstream-attempt debug capture is available but DEFAULT-OFF; when an
 operator enables it (tenant-scoped and time-bounded), authorized ADMINs find it in
 Admin → Apps → Runs / request logs, including errors with no operation ID.
