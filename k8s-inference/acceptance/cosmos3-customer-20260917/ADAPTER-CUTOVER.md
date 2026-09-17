@@ -31,6 +31,14 @@ The sidecar starts `python3 /adapter/adapter.py` separately from the snapshotted
 2. `fs2-models/cosmos3-nano-adapter` changes adapter source SHA-256 from
    `65247912a803546358a337eb1c4024afbc3521a42ebbd4d5bacd3e50057085b2` to
    `8b5c283086fbb00405889d861adcead0cc5461091dc036e7e5af4c668b5fb6dd`.
+   This is the source/isolated-preview hash. The approved `stockholm-v2`
+   renderer bundle and live ConfigMap omit exactly one terminal newline and
+   therefore have SHA-256
+   `cbdea972edc77cc9735eea0d30dfc70d733464fb39f8cdc7889c12c8a435363e`.
+   The public runner pins those exact rendered bytes. Its first preflight
+   correctly refused the source-only hash before creating any uploads or
+   inference operations; that negative receipt is retained. The acceptance-only
+   correction changes neither serving configuration nor adapter logic.
 3. The managed Cosmos template adds a shared 512 MiB disk-backed
    `cosmos-control-tmp` emptyDir at `/cosmos-control-tmp` to both containers,
    and a bounded 2 GiB memory-backed `runtime-shm` emptyDir at `/dev/shm` to the

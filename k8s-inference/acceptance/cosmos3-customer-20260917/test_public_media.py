@@ -6,9 +6,23 @@ from datetime import UTC, datetime, timedelta
 
 import public_media as runner
 import pytest
+import yaml
 from jsonschema import Draft202012Validator
 
 from fs2_serve.model_input_contracts import _cosmos_mode_schema
+
+
+def test_rendered_adapter_pin_differs_from_preview_only_by_one_terminal_newline():
+    documents = yaml.safe_load_all((runner.ROOT / "models/general-media/k8s/cosmos3-nano.yaml").read_text())
+    config = next(
+        row
+        for row in documents
+        if row and row.get("kind") == "ConfigMap" and row["metadata"]["name"] == "cosmos3-nano-adapter"
+    )
+    source = config["data"]["adapter.py"].encode()
+    assert source.endswith(b"\n") and not source.endswith(b"\n\n")
+    assert hashlib.sha256(source).hexdigest() == runner.SOURCE_ADAPTER_SHA256
+    assert hashlib.sha256(source[:-1]).hexdigest() == runner.ADAPTER_SHA256
 
 
 def canary():

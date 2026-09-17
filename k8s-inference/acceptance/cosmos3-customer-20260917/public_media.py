@@ -48,7 +48,10 @@ SOURCE_URL = (
     "cookbooks/cosmos3/generator/action/assets/videos/umi.mp4"
 )
 SOURCE_SHA256 = "9880133da0e4da3411e38a38069686b187a7bbb1893513f7d0b523accf5ddce4"
-ADAPTER_SHA256 = "8b5c283086fbb00405889d861adcead0cc5461091dc036e7e5af4c668b5fb6dd"
+SOURCE_ADAPTER_SHA256 = "8b5c283086fbb00405889d861adcead0cc5461091dc036e7e5af4c668b5fb6dd"
+# The approved renderer bundle omits the source YAML's single terminal newline.
+# Pin those exact deployed bytes; do not normalize live content or accept drift.
+ADAPTER_SHA256 = "cbdea972edc77cc9735eea0d30dfc70d733464fb39f8cdc7889c12c8a435363e"
 RUNTIME_DIGEST = "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587"
 PREFIX = "robotics-media-canary-"
 
