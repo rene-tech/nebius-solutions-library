@@ -49,19 +49,33 @@ controller-assigned `pod-template-hash`, before readiness.
 Admission continuously permits only the exact content-bound selecting policy;
 an additional signed policy constrains every Pod or workload-producing object
 to the exact Secret allowlist, image and provider-protected node target.
-The same retained policy has no namespace exemption: it guards the protected
-selector and exact taint key globally, while a keyless blanket `Exists`
-toleration alone is not treated as intent to enter that lane. This preserves
-replacement Pods for node-wide telemetry and allocation observers without a
-broad DaemonSet exception. Pod binding is admitted only from the provider-bound
-scheduler. Ordinary `nodeName` use is not globally regressed; the exact storage
-Pod contract and semantic RBAC closure prevent it from bypassing the dedicated
-lane. The security owner's otherwise namespace-wide RBAC create permission is
+The same retained policy has no namespace exemption. Each successor uses a
+signed lane-unique selector and taint key plus an exact `Equal` toleration, so a
+retained policy cannot select or deny a later storage or observer generation.
+A keyless blanket `Exists` toleration is always matched and denied. OTel and GPU
+allocation continuity is provided by two additive, lane-named observer
+DaemonSets whose exact namespace, name, UID, immutable spec, release owner and
+DaemonSet-controller child identity are committed by the signed provider
+ledger. UPDATE matching evaluates both the old and new object, so removing a
+selector or shifting to affinity plus a blanket toleration cannot escape
+admission. Pod binding is admitted only from the provider-bound scheduler.
+Ordinary `nodeName` use is not globally regressed; the exact storage and
+observer contracts and semantic RBAC closure prevent it from bypassing the
+dedicated lane. The security owner's otherwise namespace-wide RBAC create permission is
 admission-confined to a generation-named, read-only NetworkPolicy inventory
 Role and a same-name ServiceAccount binding; it cannot delegate ConfigMap or
 workload authority. Every retained legacy and v3 policy and Deny binding is
 re-read and compared with the canonical
-separately signed prior checkpoint before a new generation is admitted.
+separately signed prior checkpoint before a new generation is admitted. The
+transition never edits or deletes a predecessor. Before a new protected node
+group exists, the two exact observer successors are created against its
+as-yet-unmatched signed lane key, their live UIDs/specs are captured and signed,
+and the provider root creates only a zero-minimum, one-maximum autoscaling node
+group. The new Deny policy is installed before the credential-bearing storage
+release; only its admitted pending Pod may trigger lane scale-up. Existing
+observer and admission objects remain retained; the old and
+new policy conjunction admits the exact successors and rejects a rogue blanket
+DaemonSet.
 Public runtime NetworkPolicies do not contain a customer-storage HTTPS
 exception.
 

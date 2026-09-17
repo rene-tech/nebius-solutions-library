@@ -1,3 +1,31 @@
+data "external" "protected_lane_admission" {
+  program = [
+    "uv",
+    "run",
+    "--frozen",
+    "--project",
+    "${path.module}/../../components/control-plane",
+    "python",
+    "${path.module}/protected_lane_admission.py",
+  ]
+  query = {
+    contract_json = jsonencode({
+      schema                        = "fs2-serve.nebius.ai/protected-lane-admission/v1"
+      generation                    = var.provider_authority.generation
+      lane_id                       = var.provider_authority.lane_id
+      selector_key                  = var.provider_authority.node_selector_key
+      selector_value                = var.provider_authority.node_selector_value
+      taint_key                     = var.provider_authority.taint_key
+      taint_value                   = var.provider_authority.taint_value
+      taint_effect                  = var.provider_authority.taint_effect
+      daemonset_controller_username = var.daemonset_controller_username
+      scheduler_username            = var.scheduler_username
+      observers                     = var.provider_authority.protected_observers
+      observer_inventory_sha256     = var.provider_authority.protected_observer_inventory_sha256
+    })
+  }
+}
+
 locals {
   namespace = "fs2-system"
 
@@ -453,35 +481,21 @@ locals {
     "POD",
     "object.spec",
   )
-  protected_node_explicit_spec_cel = join(" ", [
-    "((has(POD.nodeSelector) && '${var.provider_authority.node_selector_key}' in POD.nodeSelector &&",
-    "POD.nodeSelector['${var.provider_authority.node_selector_key}'] == '${var.provider_authority.node_selector_value}') ||",
-    "(has(POD.tolerations) && POD.tolerations.exists(toleration,",
-    "has(toleration.key) && toleration.key == '${var.provider_authority.taint_key}' &&",
-    "(!has(toleration.effect) || toleration.effect == '' || toleration.effect == '${var.provider_authority.taint_effect}'))))",
-  ])
-  # A keyless blanket Exists toleration is common on node telemetry agents and
-  # is not protected-lane intent. Only the exact selector or taint key enters
-  # this guard; no namespace or DaemonSet-child exception is needed.
-  protected_node_pod_cel = replace(
-    local.protected_node_explicit_spec_cel,
-    "POD",
-    "object.spec",
-  )
-  protected_node_template_cel = replace(
-    local.protected_node_explicit_spec_cel,
-    "POD",
-    "object.spec.template.spec",
-  )
-  protected_node_cronjob_cel = replace(
-    local.protected_node_explicit_spec_cel,
-    "POD",
-    "object.spec.jobTemplate.spec.template.spec",
-  )
+  protected_node_pod_cel          = data.external.protected_lane_admission.result.pod_target_cel
+  protected_node_old_pod_cel      = data.external.protected_lane_admission.result.old_pod_target_cel
+  protected_node_template_cel     = data.external.protected_lane_admission.result.template_target_cel
+  protected_node_old_template_cel = data.external.protected_lane_admission.result.old_template_target_cel
+  protected_node_cronjob_cel      = data.external.protected_lane_admission.result.cronjob_target_cel
+  protected_node_old_cronjob_cel  = data.external.protected_lane_admission.result.old_cronjob_target_cel
+  observer_daemonset_allow_cel    = data.external.protected_lane_admission.result.observer_daemonset_allow_cel
+  observer_pod_allow_cel          = data.external.protected_lane_admission.result.observer_pod_allow_cel
   protected_node_target_cel = join(" ", [
-    "(request.resource.resource == 'pods' && request.subResource == '' && (${local.protected_node_pod_cel})) ||",
-    "(request.resource.resource in ['deployments','daemonsets','statefulsets','replicasets','jobs'] && (${local.protected_node_template_cel})) ||",
-    "(request.resource.resource == 'cronjobs' && (${local.protected_node_cronjob_cel}))",
+    "(request.resource.resource == 'pods' && request.subResource == '' &&",
+    "(request.operation == 'UPDATE' ? ((${local.protected_node_pod_cel}) || (${local.protected_node_old_pod_cel})) : (${local.protected_node_pod_cel}))) ||",
+    "(request.resource.resource in ['deployments','daemonsets','statefulsets','replicasets','jobs'] &&",
+    "(request.operation == 'UPDATE' ? ((${local.protected_node_template_cel}) || (${local.protected_node_old_template_cel})) : (${local.protected_node_template_cel}))) ||",
+    "(request.resource.resource == 'cronjobs' &&",
+    "(request.operation == 'UPDATE' ? ((${local.protected_node_cronjob_cel}) || (${local.protected_node_old_cronjob_cel})) : (${local.protected_node_cronjob_cel})))",
   ])
   workload_policy_spec = {
     failurePolicy = "Fail"
@@ -533,14 +547,18 @@ locals {
     }]
     validations = [
       {
-        expression = "request.resource.resource in ['pods', 'serviceaccounts', 'deployments', 'replicasets']"
-        message    = "Customer-storage release authority cannot create Job, CronJob, DaemonSet or StatefulSet workloads."
-        reason     = "Forbidden"
+        expression = join(" ", [
+          "request.resource.resource in ['pods', 'serviceaccounts', 'deployments', 'replicasets'] ||",
+          "(request.resource.resource == 'daemonsets' && (${local.observer_daemonset_allow_cel}))",
+        ])
+        message = "Customer-storage release authority cannot create Job, CronJob, DaemonSet or StatefulSet workloads."
+        reason  = "Forbidden"
       },
       {
         expression = join(" ", [
           "request.resource.resource in ['pods', 'replicasets'] ||",
-          "(request.operation == 'CREATE' && request.userInfo.username == '${var.non_owner_identities[var.release_identity_name].username}')",
+          "(request.operation == 'CREATE' && request.userInfo.username == '${var.non_owner_identities[var.release_identity_name].username}') ||",
+          "(request.resource.resource == 'daemonsets' && (${local.observer_daemonset_allow_cel}))",
         ])
         message = "Only the exact release identity may create the generation-named ServiceAccount or Deployment."
         reason  = "Forbidden"
@@ -577,7 +595,8 @@ locals {
           "object.metadata.labels.all(key, value, (key in ${local.v3_pod_labels_cel} && ${local.v3_pod_labels_cel}[key] == value) || key == 'pod-template-hash') &&",
           "'pod-template-hash' in object.metadata.labels && object.metadata.labels['pod-template-hash'] != '' &&",
           "${local.v3_pod_labels_cel}.all(key, value, key in object.metadata.labels && object.metadata.labels[key] == value) &&",
-          "(${local.pod_spec_cel}))",
+          "(${local.pod_spec_cel})) ||",
+          "(${local.observer_pod_allow_cel})",
         ])
         message = "A successor Pod differs from the signed generation, Secret allowlist, or protected scheduling contract."
         reason  = "Forbidden"
@@ -620,6 +639,7 @@ locals {
       authority = {
         schema                         = var.provider_authority.schema
         generation                     = var.provider_authority.generation
+        laneId                         = var.provider_authority.lane_id
         manifestSha256                 = var.provider_authority.authority_manifest_sha256
         priorHeadReceiptSha256         = var.provider_authority.prior_head_receipt_sha256
         iamInventoryReceiptSha256      = var.provider_authority.provider_project_iam_inventory_receipt_sha256
@@ -889,6 +909,19 @@ data "kubernetes_resource" "predecessor_deployment" {
   }
 }
 
+# The observer allowlist is authoritative only when the exact live DaemonSets
+# still have the independently signed UID and canonical spec. These reads do
+# not inspect Pods, Secrets, logs or customer data.
+data "kubernetes_resource" "protected_observer" {
+  for_each    = var.provider_authority.protected_observers
+  api_version = "apps/v1"
+  kind        = "DaemonSet"
+  metadata {
+    name      = each.value.name
+    namespace = each.value.namespace
+  }
+}
+
 # Re-read every legacy and v3 enforcement generation retained by the separately signed
 # prior state. Terraform's ignore_changes protects ownership but is never used
 # as evidence that a live admission policy or binding still has the approved
@@ -968,15 +1001,22 @@ resource "terraform_data" "separate_security_owner" {
     predecessor_compatibility          = local.predecessor_compatibility_sha256
     provider_security_group_id         = var.provider_authority.security_group_id
     provider_node_group_id             = var.provider_authority.node_group_id
-    predecessor_network_policy_uid     = data.kubernetes_resource.predecessor_network_policy.object.metadata.uid
-    predecessor_contract_uid           = data.kubernetes_resource.predecessor_contract.object.metadata.uid
-    predecessor_policy_uid             = data.kubernetes_resource.predecessor_policy.object.metadata.uid
-    predecessor_binding_uid            = data.kubernetes_resource.predecessor_binding.object.metadata.uid
-    predecessor_deployment_uid         = data.kubernetes_resource.predecessor_deployment.object.metadata.uid
-    boundary_backend_config            = data.external.backend_custody.result.backend_config_sha256
-    boundary_backend_lineage           = data.external.backend_custody.result.backend_lineage
-    boundary_state_lineage             = data.external.backend_custody.result.state_lineage
-    boundary_state_serial              = data.external.backend_custody.result.state_serial
+    protected_observer_inventory       = var.provider_authority.protected_observer_inventory_sha256
+    protected_observer_live = sha256(jsonencode({
+      for role, observer in data.kubernetes_resource.protected_observer : role => {
+        uid         = observer.object.metadata.uid
+        spec_sha256 = sha256(jsonencode(observer.object.spec))
+      }
+    }))
+    predecessor_network_policy_uid = data.kubernetes_resource.predecessor_network_policy.object.metadata.uid
+    predecessor_contract_uid       = data.kubernetes_resource.predecessor_contract.object.metadata.uid
+    predecessor_policy_uid         = data.kubernetes_resource.predecessor_policy.object.metadata.uid
+    predecessor_binding_uid        = data.kubernetes_resource.predecessor_binding.object.metadata.uid
+    predecessor_deployment_uid     = data.kubernetes_resource.predecessor_deployment.object.metadata.uid
+    boundary_backend_config        = data.external.backend_custody.result.backend_config_sha256
+    boundary_backend_lineage       = data.external.backend_custody.result.backend_lineage
+    boundary_state_lineage         = data.external.backend_custody.result.state_lineage
+    boundary_state_serial          = data.external.backend_custody.result.state_serial
   }
 
   lifecycle {
@@ -993,6 +1033,19 @@ resource "terraform_data" "separate_security_owner" {
     precondition {
       condition     = data.external.backend_custody.result.authorized == "true"
       error_message = "The initialized Terraform backend is not the separately anchored workloads-state lineage."
+    }
+    precondition {
+      condition = alltrue([
+        for role, expected in var.provider_authority.protected_observers :
+        try(data.kubernetes_resource.protected_observer[role].object.metadata.uid, "") == expected.uid &&
+        try(data.kubernetes_resource.protected_observer[role].object.spec, null) == expected.daemonset_spec &&
+        sha256(jsonencode(try(data.kubernetes_resource.protected_observer[role].object.spec, null))) == expected.daemonset_spec_sha256 &&
+        length([
+          for identity in values(var.non_owner_identities) : identity.username
+          if identity.category == "release" && identity.username == expected.owner_username
+        ]) == 1
+      ])
+      error_message = "A protected-lane OTel/GPU observer differs from the signed UID/spec inventory or its independently checked release identity."
     }
     precondition {
       condition = (
@@ -1178,13 +1231,20 @@ resource "terraform_data" "security_generation_v4" {
     kubernetes_rbac_effective_authority_sha256 = data.external.identity_separation.result.rbac_effective_authority_sha256
     provider_authority_adapter_sha256          = var.provider_authority.provider_authority_adapter_sha256
     predecessor_compatibility_sha256           = local.predecessor_compatibility_sha256
-    boundary_backend_config_sha256             = data.external.backend_custody.result.backend_config_sha256
-    boundary_backend_lineage                   = data.external.backend_custody.result.backend_lineage
-    boundary_state_lineage                     = data.external.backend_custody.result.state_lineage
-    boundary_state_serial                      = data.external.backend_custody.result.state_serial
-    boundary_state_version_id                  = data.external.backend_custody.result.state_version_id
-    boundary_state_snapshot_sha256             = data.external.backend_custody.result.state_snapshot_sha256
-    boundary_state_managed_addresses_sha256    = data.external.backend_custody.result.managed_addresses_sha256
+    protected_observer_inventory_sha256        = var.provider_authority.protected_observer_inventory_sha256
+    protected_observer_live_sha256 = sha256(jsonencode({
+      for role, observer in data.kubernetes_resource.protected_observer : role => {
+        uid         = observer.object.metadata.uid
+        spec_sha256 = sha256(jsonencode(observer.object.spec))
+      }
+    }))
+    boundary_backend_config_sha256          = data.external.backend_custody.result.backend_config_sha256
+    boundary_backend_lineage                = data.external.backend_custody.result.backend_lineage
+    boundary_state_lineage                  = data.external.backend_custody.result.state_lineage
+    boundary_state_serial                   = data.external.backend_custody.result.state_serial
+    boundary_state_version_id               = data.external.backend_custody.result.state_version_id
+    boundary_state_snapshot_sha256          = data.external.backend_custody.result.state_snapshot_sha256
+    boundary_state_managed_addresses_sha256 = data.external.backend_custody.result.managed_addresses_sha256
   }
 
   lifecycle {

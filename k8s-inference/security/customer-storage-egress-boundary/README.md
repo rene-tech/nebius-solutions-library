@@ -87,17 +87,33 @@ Pods must keep the signed image, generation labels, protected node target,
 Secret and image-pull-secret allowlists; projected Secrets, host paths, PVCs,
 CSI volumes, `spec.nodeName`, and additional secret-backed environment sources
 are denied.
-The workload policy has no namespace exemption. It denies the generation's
-node selector or exact taint key globally. A keyless blanket `Exists`
-toleration does not by itself express protected-lane intent, so node-wide OTel,
-GPU allocation, and similar DaemonSet replacement Pods remain available. There
-is no kube-system or generic DaemonSet-child exception. Pod binding subresources
-are matched cluster-wide and accepted only from the provider-bound scheduler.
-Ordinary direct `nodeName` use is not globally rejected; direct Pod creators
-are instead closed by independently derived RBAC authority, while the exact
-storage contract forbids `nodeName`. Retained
-policies protect their own retained node groups without selecting later exact
-storage workloads.
+The workload policy has no namespace exemption. It matches the signed lane's
+unique node selector and exact `Equal` taint toleration globally, and it also
+matches every keyless blanket `Exists` toleration. Blanket toleration is denied.
+Only the two provider-ledger-bound OTel and GPU compatibility observers are
+admitted: each has an exact namespace, lane-named DaemonSet name, live
+UID, canonical spec digest, separately inventoried release owner and exact
+DaemonSet-controller child owner reference. UPDATE matches both `object` and
+`oldObject`, so selector removal or a shift to affinity plus blanket tolerance
+cannot evade the policy. Pod binding subresources are matched cluster-wide and
+accepted only from the provider-bound scheduler. Ordinary direct `nodeName` use
+is not globally rejected; direct Pod creators are instead closed by
+independently derived RBAC authority, while the exact storage contract forbids
+`nodeName`. Retained policies protect their own retained node groups without
+selecting later exact storage or observer workloads because both selector and
+taint keys carry the signed lane digest.
+
+Retained Deny policies are never overridden, edited, disabled or deleted. The
+non-destructive handoff is ordered: first create lane-named OTel and GPU
+observer successors using the future lane-unique key while no matching
+node exists; next capture and independently sign their exact UIDs/specs; then
+create the provider node group with a zero-node minimum; then install the new
+workload Deny policy. Only after that gate is live may the credential-bearing
+storage release trigger scale-up to the one-node maximum. The former observer DaemonSets and every
+predecessor admission object remain present. Under policy conjunction, old
+exact-key rules do not select the successors and the new rule rejects every
+unlisted blanket workload. A generation cannot be accepted if either observer
+receipt is absent.
 
 The ConfigMap Helm driver is not a namespace-wide exemption. RBAC may grant
 the release identity namespace-scoped create only because Kubernetes cannot

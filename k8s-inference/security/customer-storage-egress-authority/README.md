@@ -42,8 +42,20 @@ project IAM inventory, a provider-native effective-authority graph covering
 inherited/federated/external principals, the fresh signed target-cluster RBAC
 inventory, its complete subject closure and its derived binding-to-rule
 effective-authority graph, deterministic Kubernetes-native groups, exact
-provider-bound controller identities, and every content-named
-route/node generation. Canonical state uses a locked,
+provider-bound controller identities, the exact signed OTel/GPU compatibility
+observer inventory, and every content-named route/node generation. Every new
+node generation uses a separately signed lane-unique selector/taint key. The
+lane ID is independent of the final content-hashed authority generation so
+observer UIDs can be captured before that generation is sealed. Retained resources
+keep their original key under `ignore_changes`, so source never proposes their
+replacement. The signed observer inventory includes exact namespace, lane-derived name,
+live UID, canonical DaemonSet spec and non-system release owner. The provider
+generation is invalid until both additive observers have been created while
+the new node selector matches no node and their UID/spec receipt has been
+independently signed. A successor node group is created with autoscaling bounded
+to zero through one node. It stays at zero until the admission boundary is live
+and the exact storage Pod is admitted, eliminating a pre-policy scheduling
+window. Canonical state uses a locked,
 versioned remote backend; local or omitted state is never an authority source.
 
 Before provider evaluation, a paginated read-only Nebius CLI preflight proves that the

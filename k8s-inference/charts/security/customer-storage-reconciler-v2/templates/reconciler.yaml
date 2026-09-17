@@ -1,5 +1,6 @@
 {{- $generation := required "contract.generation is required" .Values.contract.generation -}}
 {{- $authorityGeneration := required "authority.generation is required" .Values.authority.generation -}}
+{{- $laneId := required "authority.laneId is required" .Values.authority.laneId -}}
 {{- $suffix := trunc 12 (last (splitList "-" $generation)) -}}
 {{- $rolloutGeneration := required "rollout.generation is required" .Values.rollout.generation -}}
 {{- $rolloutSuffix := trunc 12 (last (splitList "-" $rolloutGeneration)) -}}
@@ -9,11 +10,15 @@
 {{- if ne .Release.Name $expectedRelease }}{{ fail "each additive rollout requires its exact generation-named Helm release" }}{{ end -}}
 {{- $name := printf "fs2-storage-v3-%s-%s" $suffix $rolloutSuffix -}}
 {{- if ne .Release.Namespace "fs2-system" }}{{ fail "customer-storage compatibility-v3 reconciler is restricted to fs2-system" }}{{ end -}}
-{{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v5" }}{{ fail "provider authority handoff is required" }}{{ end -}}
+{{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v7" }}{{ fail "provider authority handoff is required" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.releaseValuesSha256) }}{{ fail "externally signed release-values digest is required" }}{{ end -}}
 {{- if or (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.priorHeadReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.iamInventoryReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.rbacInventoryReceiptSha256)) }}{{ fail "separately anchored prior head and exact provider IAM/RBAC receipts are required" }}{{ end -}}
-{{- if ne .Values.authority.nodeSelectorValue $authorityGeneration }}{{ fail "authority node selector must equal its generation" }}{{ end -}}
-{{- if ne .Values.authority.taintValue $authorityGeneration }}{{ fail "authority taint must equal its generation" }}{{ end -}}
+{{- if ne .Values.authority.nodeSelectorValue $laneId }}{{ fail "authority node selector must equal its protected lane" }}{{ end -}}
+{{- if ne .Values.authority.taintValue $laneId }}{{ fail "authority taint must equal its protected lane" }}{{ end -}}
+{{- $authoritySuffix := trunc 12 (last (splitList "-" $laneId)) -}}
+{{- $expectedSchedulingKey := printf "workload.fs2.nebius/customer-storage-egress-%s" $authoritySuffix -}}
+{{- if ne .Values.authority.nodeSelectorKey $expectedSchedulingKey }}{{ fail "authority node selector key must be lane-unique" }}{{ end -}}
+{{- if ne .Values.authority.taintKey $expectedSchedulingKey }}{{ fail "authority taint key must be lane-unique" }}{{ end -}}
 {{- if ne .Values.contract.configMapName (printf "fs2-storage-v3-contract-%s" $generation) }}{{ fail "contract ConfigMap must equal its compatibility-v3 generation" }}{{ end -}}
 {{- if ne .Values.contract.networkPolicyName (printf "fs2-storage-v3-network-policy-%s" $generation) }}{{ fail "NetworkPolicy must equal its compatibility-v3 generation" }}{{ end -}}
 {{- if ne (last (splitList "-" $generation)) (trunc 12 .Values.contract.sha256) }}{{ fail "contract generation must be content-bound" }}{{ end -}}

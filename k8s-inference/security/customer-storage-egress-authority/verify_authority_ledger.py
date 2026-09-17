@@ -8,6 +8,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -31,12 +32,12 @@ PRIOR_HEAD_PATH = Path(
 )
 REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v6"
 PRIOR_HEAD_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-prior-head/v5"
-MANIFEST_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-ledger/v3"
+MANIFEST_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-ledger/v5"
 MAX_BYTES = 1024 * 1024
 NEBIUS_TERRAFORM_PROVIDER_VERSION = "0.5.232"
 REJECTED_SAI10_COMMIT = "1ae009b858924138de70932ac84b8e595a2656a1"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-GENERATION_FIELDS = {
+LEGACY_GENERATION_FIELDS = {
     "generation",
     "predecessor_sha256",
     "contract_sha256",
@@ -68,6 +69,18 @@ GENERATION_FIELDS = {
     "boot_disk_type",
     "boot_disk_gib",
 }
+GENERATION_FIELDS = LEGACY_GENERATION_FIELDS | {
+    "lane_id",
+    "scheduling_key",
+    "protected_observers",
+    "protected_observer_inventory_sha256",
+    "min_node_count",
+    "max_node_count",
+}
+PROTECTED_OBSERVER_ROLES = {"gpu-allocation-observer", "otel-node"}
+UID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
 
 
 def canonical(value: object) -> bytes:
@@ -186,6 +199,85 @@ def digest(value: object, label: str) -> str:
         or any(character not in "0123456789abcdef" for character in value)
     ):
         raise ValueError(f"{label} is not a SHA-256 digest")
+    return value
+
+
+def protected_observers(value: object, lane_id: str) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, dict) or set(value) != PROTECTED_OBSERVER_ROLES:
+        raise ValueError("exact OTel and GPU protected-observer inventory is required")
+    scheduling_key = f"workload.fs2.nebius/customer-storage-egress-{lane_id[-12:]}"
+    seen_names: set[tuple[str, str]] = set()
+    seen_uids: set[str] = set()
+    for role, observer in value.items():
+        if not isinstance(observer, dict) or set(observer) != {
+            "namespace",
+            "name",
+            "uid",
+            "owner_username",
+            "daemonset_spec",
+            "daemonset_spec_sha256",
+        }:
+            raise ValueError(f"{role} protected-observer fields differ")
+        namespace = observer.get("namespace")
+        name = observer.get("name")
+        uid = observer.get("uid")
+        owner = observer.get("owner_username")
+        spec = observer.get("daemonset_spec")
+        if (
+            namespace != "kube-system"
+            or not isinstance(name, str)
+            or name != f"fs2-{role}-{lane_id[-12:]}"
+            or not isinstance(uid, str)
+            or not UID_RE.fullmatch(uid)
+            or not isinstance(owner, str)
+            or not owner
+            or owner.startswith("system:")
+            or not isinstance(spec, dict)
+            or hashlib.sha256(canonical(spec)).hexdigest()
+            != observer.get("daemonset_spec_sha256")
+        ):
+            raise ValueError(f"{role} protected-observer identity or spec is invalid")
+        if (namespace, name) in seen_names or uid in seen_uids:
+            raise ValueError("protected-observer names and UIDs must be unique")
+        seen_names.add((namespace, name))
+        seen_uids.add(uid)
+        template = spec.get("template")
+        if not isinstance(template, dict):
+            raise ValueError(f"{role} protected-observer template is absent")
+        metadata = template.get("metadata")
+        pod_spec = template.get("spec")
+        if (
+            not isinstance(metadata, dict)
+            or not isinstance(metadata.get("labels"), dict)
+            or spec.get("selector") != {"matchLabels": metadata["labels"]}
+            or metadata["labels"].get("app.kubernetes.io/component") != role
+            or metadata["labels"].get("fs2.nebius.ai/protected-lane-id") != lane_id
+            or not isinstance(pod_spec, dict)
+            or not isinstance(pod_spec.get("serviceAccountName"), str)
+            or not pod_spec["serviceAccountName"]
+            or pod_spec.get("automountServiceAccountToken") is not False
+            or not isinstance(pod_spec.get("containers"), list)
+            or not pod_spec["containers"]
+            or any(
+                not isinstance(container, dict)
+                or not re.fullmatch(
+                    r"[^@]+@sha256:[a-f0-9]{64}", str(container.get("image", ""))
+                )
+                for container in pod_spec["containers"]
+            )
+            or pod_spec.get("nodeSelector") != {scheduling_key: lane_id}
+            or pod_spec.get("tolerations")
+            != [
+                {
+                    "key": scheduling_key,
+                    "operator": "Equal",
+                    "value": lane_id,
+                    "effect": "NoSchedule",
+                }
+            ]
+            or pod_spec.get("nodeName") not in {None, ""}
+        ):
+            raise ValueError(f"{role} protected-observer scheduling contract differs")
     return value
 
 
@@ -799,10 +891,12 @@ def verify(manifest_json: str) -> dict[str, str]:
         raise ValueError("provider state custody is not canonical and complete")
     retained_generations = provider_state_custody["retained_generations"]
     retained_generation_digests: dict[str, str] = {}
+    protected_lane_ids: set[str] = set()
     for generation, retained in retained_generations.items():
         if (
             not isinstance(retained, dict)
-            or set(retained) != GENERATION_FIELDS
+            or frozenset(retained)
+            not in {frozenset(LEGACY_GENERATION_FIELDS), frozenset(GENERATION_FIELDS)}
             or retained.get("generation") != generation
         ):
             raise ValueError("provider retained-generation payload fields differ")
@@ -818,6 +912,35 @@ def verify(manifest_json: str) -> dict[str, str]:
             retained.get("bootstrap_https_cidrs"), "retained bootstrap HTTPS CIDRs"
         )
         private_routes(retained.get("private_cidrs"))
+        if set(retained) == GENERATION_FIELDS:
+            lane_id = retained.get("lane_id")
+            if (
+                not isinstance(lane_id, str)
+                or not re.fullmatch(r"l[0-9]{14}-[a-f0-9]{12}", lane_id)
+                or lane_id in protected_lane_ids
+            ):
+                raise ValueError("provider retained protected-lane ID is invalid or reused")
+            protected_lane_ids.add(lane_id)
+            expected_scheduling_key = (
+                f"workload.fs2.nebius/customer-storage-egress-{lane_id[-12:]}"
+            )
+            observers = protected_observers(retained.get("protected_observers"), lane_id)
+            if (
+                retained.get("scheduling_key") != expected_scheduling_key
+                or retained.get("protected_observer_inventory_sha256")
+                != hashlib.sha256(canonical(observers)).hexdigest()
+                or not {
+                    observer["owner_username"] for observer in observers.values()
+                }
+                <= {
+                    identity["username"]
+                    for identity in kubernetes_subjects
+                    if identity["category"] == "release"
+                }
+                or retained.get("min_node_count") != 0
+                or retained.get("max_node_count") != 1
+            ):
+                raise ValueError("provider retained protected-lane custody differs")
         if (
             not isinstance(retained.get("platform"), str)
             or not retained["platform"]
@@ -1213,6 +1336,7 @@ def verify(manifest_json: str) -> dict[str, str]:
             "boundary_state_custody_sha256",
             "prior_live_custody_sha256",
             "accepted_sai10_review_sha256",
+            "protected_observer_inventory_sha256",
         ):
             value = entry.get(field)
             if (
@@ -1252,6 +1376,34 @@ def verify(manifest_json: str) -> dict[str, str]:
         host_routes(entry.get("kubernetes_api_cidrs"), "Kubernetes API CIDRs")
         host_routes(entry.get("bootstrap_https_cidrs"), "bootstrap HTTPS CIDRs")
         private_routes(entry.get("private_cidrs"))
+        lane_id = entry.get("lane_id")
+        if (
+            not isinstance(lane_id, str)
+            or not re.fullmatch(r"l[0-9]{14}-[a-f0-9]{12}", lane_id)
+            or lane_id in protected_lane_ids
+        ):
+            raise ValueError("authority generation protected-lane ID is invalid or reused")
+        protected_lane_ids.add(lane_id)
+        expected_scheduling_key = (
+            f"workload.fs2.nebius/customer-storage-egress-{lane_id[-12:]}"
+        )
+        observers = protected_observers(entry.get("protected_observers"), lane_id)
+        if (
+            entry.get("scheduling_key") != expected_scheduling_key
+            or entry.get("protected_observer_inventory_sha256")
+            != hashlib.sha256(canonical(observers)).hexdigest()
+            or not {
+                observer["owner_username"] for observer in observers.values()
+            }
+            <= {
+                identity["username"]
+                for identity in kubernetes_subjects
+                if identity["category"] == "release"
+            }
+            or entry.get("min_node_count") != 0
+            or entry.get("max_node_count") != 1
+        ):
+            raise ValueError("authority generation protected-lane custody differs")
         if (
             not isinstance(entry.get("platform"), str)
             or not entry["platform"]
