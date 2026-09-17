@@ -197,6 +197,47 @@ class CosmosMediaSecurityTests(unittest.TestCase):
             )
         )
 
+    def test_text_image_and_video_conditioning_modes_reach_the_bounded_dispatch(self) -> None:
+        cases = (
+            (
+                {"mode": "text-to-video", "prompt": "Synthetic text video"},
+                None,
+            ),
+            (
+                {
+                    "mode": "image-to-video",
+                    "prompt": "Synthetic image animation",
+                    "input_reference": data_url("image/png", PNG),
+                },
+                PNG,
+            ),
+            (
+                {
+                    "mode": "video-to-video",
+                    "prompt": "Synthetic video restyle",
+                    "vision_path": data_url("video/mp4", MP4),
+                },
+                MP4,
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            self.adapter["UPSTREAM_TMP"] = Path(temporary)
+            for payload, expected_reference in cases:
+                with self.subTest(mode=payload["mode"]):
+                    body = self.request.validate_python(payload)
+                    client = _Client()
+                    raw, media_type = asyncio.run(
+                        self.adapter["generate_media_video"](client, body)
+                    )
+                    self.assertEqual(MP4, raw)
+                    self.assertEqual("video/mp4", media_type)
+                    files = client.calls[0]["files"]
+                    if expected_reference is None:
+                        self.assertNotIn("input_reference", files)
+                    else:
+                        self.assertEqual(expected_reference, files["input_reference"][1])
+
     def test_manifest_shares_only_the_bounded_control_spool(self) -> None:
         _, documents = adapter_source()
         deployment = next(item for item in documents if item["kind"] == "Deployment")
