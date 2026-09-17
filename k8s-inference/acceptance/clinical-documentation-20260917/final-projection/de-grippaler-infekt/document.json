@@ -1,0 +1,811 @@
+{
+  "schema": "clinical-documentation/v4",
+  "kind": "consultation",
+  "language": "de",
+  "transcript_sha256": "38296792e498333a4af42bc2e977b63df2e1a068f8b5eb14099a224790464b4a",
+  "facts": [
+    {
+      "id": "F0001",
+      "section": "history",
+      "statement": "Der Patient Jonas Neu leidet seit drei Monaten an Symptomen eines gripalen Infekts.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S1",
+          "quote": "Sie arbeiten als Vertretung des Hausarztes in der Praxis von Doktor Berg.  Der Patient Jonas Neu stellt sich heute mit Symptomen eines gripalen Infekts bei Ihnen vor.  Vor der körperlichen Untersuchung möchten Sie mit ihm ein Gespräch über seine aktuellen Beschwerden führen. Hallo, was führt Sie her?  Ich bin seit drei Monaten erkältet mitten im Sommer, und",
+          "spans": [
+            {
+              "start": 0,
+              "end": 359
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0001",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Patient Jonas Neu seit drei Monaten an Symptomen eines gripalen Infekts leidet, wird durch die direkte Patientenäußerung 'Ich bin seit drei Monaten erkältet mitten im Sommer' im zitierten Textabschnitt (S1) belegt. Der Begriff 'erkältet' wird im klinischen Kontext als Synonym für einen grippalen Infekt verwendet, und die Dauer von drei Monaten wird explizit genannt."
+      }
+    },
+    {
+      "id": "F0002",
+      "section": "history",
+      "statement": "Die Beschwerden begannen während einer Besprechung, in der die Klimaanlage stark lief und der Patient nur ein T-Shirt trug.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " war und deswegen musste den ganzen Tag die Klimaanlage voll laufen und alle anderen haben gefroren mitunter ich und nur mit einem T Shirt an und eigentlich ging es da los. Ja also klassisch erkältet.  Was ich spüre ist, dass da schon relativ viel Druck ist bei Ihnen.  Ja was heißt Druck, ich habe halt, ich bin halt gerade an einem Projekt, das geht nur in",
+          "spans": [
+            {
+              "start": 1431,
+              "end": 1789
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0002",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Beschwerden begannen, während der Patient in einer Besprechung mit stark laufender Klimaanlage nur ein T-Shirt trug, wird durch die direkte Aussage im Zitat gestützt: 'war und deswegen musste den ganzen Tag die Klimaanlage voll laufen [...] und nur mit einem T Shirt an und eigentlich ging es da los.' Dies beschreibt klar den Beginn der Beschwerden unter genau diesen Umständen."
+      }
+    },
+    {
+      "id": "F0003",
+      "section": "history",
+      "statement": "Der Patient beschreibt anhaltende Kopfschmerzen, verstopfte Nasennebenhöhlen und gelegentliches Fieber.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " zwar heftig mein Kopf tut dauernd weh meine Nasennebenhöhlen sind eigentlich ständig zu ab und zu, denke ich, dass ich Fieber habe und das nervt ohne Ende.  Ich habe da auch keine Zeit zu kurz gesagt, das muss aufhören und deswegen bin ich hier seit drei Monaten in Fekt.  Ja das nervt, das nervt Sie haben weder Lust noch Zeit dazu, haben Sie gesagt.  Womit",
+          "spans": [
+            {
+              "start": 359,
+              "end": 718
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0003",
+        "verdict": "supported",
+        "reason": "Der Patient beschreibt in der zitierten Passage Schmerzen im Kopf (\"mein Kopf tut dauernd weh\"), verstopfte Nasennebenhöhlen (\"meine Nasennebenhöhlen sind eigentlich ständig zu\") und gelegentliches Fieber (\"ab und zu, denke ich, dass ich Fieber habe\"). Diese Aussagen decken sich direkt mit der Behauptung und sind im Kontext klar belegt."
+      }
+    },
+    {
+      "id": "F0004",
+      "section": "history",
+      "statement": "Die Symptome beeinträchtigen die Leistungsfähigkeit und Motivation des Patienten.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S3",
+          "quote": " würden Sie Ihre Zeit lieber verbringen?  Also ich verbringe meine Zeit momentan überwiegend mit Arbeiten.  Das tue ich auch trotzdem, aber es bremst mich natürlich so ein bisschen aus.  Ich bin nicht so leistungsfähig, ich bin auch nicht so motiviert wie sonst, habe mühemorgens in die Gänge zu kommen. Ja, ist halt nicht so toll richtig ausgebremst.  Ja,",
+          "spans": [
+            {
+              "start": 718,
+              "end": 1074
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0004",
+        "verdict": "supported",
+        "reason": "Der Patient beschreibt im zitierten Abschnitt aus S3 explizit, dass die Symptome ihn 'ein bisschen ausbremsen', er 'nicht so leistungsfähig' und 'nicht so motiviert wie sonst' sei und morgens 'Mühe' habe, in die Gänge zu kommen. Diese Aussagen belegen direkt, dass die Symptome seine Leistungsfähigkeit und Motivation beeinträchtigen."
+      }
+    },
+    {
+      "id": "F0005",
+      "section": "history",
+      "statement": "Der Patient hat Schwierigkeiten, morgens in Schwung zu kommen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S3",
+          "quote": " würden Sie Ihre Zeit lieber verbringen?  Also ich verbringe meine Zeit momentan überwiegend mit Arbeiten.  Das tue ich auch trotzdem, aber es bremst mich natürlich so ein bisschen aus.  Ich bin nicht so leistungsfähig, ich bin auch nicht so motiviert wie sonst, habe mühemorgens in die Gänge zu kommen. Ja, ist halt nicht so toll richtig ausgebremst.  Ja,",
+          "spans": [
+            {
+              "start": 718,
+              "end": 1074
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0005",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Patient morgens Schwierigkeiten hat, in Schwung zu kommen, wird durch die direkte Aussage im Zitat bestätigt: 'habe mühemorgens in die Gänge zu kommen.' Dieser Ausdruck entspricht inhaltlich und sprachlich der behaupteten Tatsache und befindet sich im Kontext der Beschreibung von vermindertem Antrieb und Motivation."
+      }
+    },
+    {
+      "id": "F0006",
+      "section": "history",
+      "statement": "Der Patient nimmt gelegentlich Ibuprofen zur Schmerzlinderung.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " was heißt ausgebremst?  Ich funktioniere schon, aber unter Schmerzen sozusagen, also ich nehme ab und zu ein bisschen Iboprofen um das zu lindern, aber ich versuche halt nicht zu übertreiben, weil ich weiß, dass ja auch belastet den Körper. Haben Sie die Idee, wie es dazu kam? Ja ich habe in der Besprechung gesessen den ganzen Tag, wo zwei Leuten zu heiß",
+          "spans": [
+            {
+              "start": 1074,
+              "end": 1431
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0006",
+        "verdict": "supported",
+        "reason": "Der Patient äußert im zitierten Abschnitt explizit, dass er 'ab und zu ein bisschen Ibuprofen' einnimmt, um Schmerzen zu lindern. Dies entspricht direkt der Aussage, dass er gelegentlich Ibuprofen zur Schmerzlinderung einnimmt. Die Aussage ist wörtlich im Kontext enthalten und wird daher als unterstützt betrachtet."
+      }
+    },
+    {
+      "id": "F0007",
+      "section": "history",
+      "statement": "Der Patient möchte die Einnahme von Schmerzmitteln begrenzen, da er die Belastung für den Körper kennt.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " was heißt ausgebremst?  Ich funktioniere schon, aber unter Schmerzen sozusagen, also ich nehme ab und zu ein bisschen Iboprofen um das zu lindern, aber ich versuche halt nicht zu übertreiben, weil ich weiß, dass ja auch belastet den Körper. Haben Sie die Idee, wie es dazu kam? Ja ich habe in der Besprechung gesessen den ganzen Tag, wo zwei Leuten zu heiß",
+          "spans": [
+            {
+              "start": 1074,
+              "end": 1431
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0007",
+        "verdict": "supported",
+        "reason": "Der Patient äußert explizit, dass er versucht, die Einnahme von Ibuprofen nicht zu übertreiben, weil er weiß, dass es den Körper belastet. Dies entspricht direkt der Aussage, dass er die Einnahme von Schmerzmitteln begrenzen möchte, da er die Belastung für den Körper kennt. Die Aussage im Zitat ist klar und im Kontext eindeutig."
+      }
+    },
+    {
+      "id": "F0008",
+      "section": "background",
+      "statement": "Der Patient arbeitet in einem Projekt an der Freien Universität Berlin im Bereich Forschung.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " sechs Monat, man hatte geht das, wir sind jetzt gut halb durch und erzählt halt jeder Tag, ne da machen wir auch Überstunden und das muss halt laufen, das ist die Zeit des E knapp bemessen und das muss halt durchgezogen werden einfach eine Projekt, wo arbeiten die in der Forschung an der freien Uni Berlin. Da ist viel Druck.  Der Vertrag dauert so lange",
+          "spans": [
+            {
+              "start": 1789,
+              "end": 2145
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0008",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Patient in einem Forschungsprojekt an der Freien Universität Berlin arbeitet, wird durch die direkte Aussage im Zitat aus S6 gestützt: 'da arbeiten die in der Forschung an der freien Uni Berlin'. Der Kontext bezieht sich auf den Patienten und sein Projekt, das unter Zeitdruck steht, was die Zugehörigkeit zum Projekt und den Arbeitsbereich belegt."
+      }
+    },
+    {
+      "id": "F0009",
+      "section": "background",
+      "statement": "Das Projekt hat eine Laufzeit von sechs Monaten, derzeit befindet sich der Patient in der Mitte des Projekts.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " sechs Monat, man hatte geht das, wir sind jetzt gut halb durch und erzählt halt jeder Tag, ne da machen wir auch Überstunden und das muss halt laufen, das ist die Zeit des E knapp bemessen und das muss halt durchgezogen werden einfach eine Projekt, wo arbeiten die in der Forschung an der freien Uni Berlin. Da ist viel Druck.  Der Vertrag dauert so lange",
+          "spans": [
+            {
+              "start": 1789,
+              "end": 2145
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0009",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass das Projekt eine Laufzeit von sechs Monaten hat und sich der Patient derzeit in der Mitte des Projekts befindet, wird durch die direkte Aussage im Zitat gestützt: 'sechs Monat, man hatte geht das, wir sind jetzt gut halb durch'. Der Kontext bestätigt sowohl die Projektdauer als auch den aktuellen Fortschritt."
+      }
+    },
+    {
+      "id": "F0010",
+      "section": "background",
+      "statement": "Der Arbeitsvertrag des Patienten ist an die Dauer des Projekts gebunden.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " sechs Monat, man hatte geht das, wir sind jetzt gut halb durch und erzählt halt jeder Tag, ne da machen wir auch Überstunden und das muss halt laufen, das ist die Zeit des E knapp bemessen und das muss halt durchgezogen werden einfach eine Projekt, wo arbeiten die in der Forschung an der freien Uni Berlin. Da ist viel Druck.  Der Vertrag dauert so lange",
+          "spans": [
+            {
+              "start": 1789,
+              "end": 2145
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0010",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Arbeitsvertrag des Patienten an die Dauer des Projekts gebunden ist, wird durch die Aussage im Quelltext gestützt: 'Der Vertrag dauert so lange' im Kontext der Beschreibung des befristeten Forschungsprojekts an der Freien Uni Berlin, das noch etwa zur Hälfte abgeschlossen ist und unter Zeitdruck steht."
+      }
+    },
+    {
+      "id": "F0012",
+      "section": "background",
+      "statement": "Der Patient arbeitet derzeit täglich zehn bis elf Stunden, teilweise auch am Abend mit weiterer Arbeit an Unterlagen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S8",
+          "quote": " typisch begonnen haben, was ich jetzt nicht gehört habe, ist, dass Sie zwischendrin mal irgendwie eine Pause gemacht haben.  Sie sprechen von Ebo Prophäen und anderen Hilfsmitteln, aber Pause wann also ich arbeite jetzt nicht jedes Wochenende durch oder so, aber unsere Arbeitstage dauernd zehn elf Stunden manchmal auch noch mit Unterlagen danach sichten",
+          "spans": [
+            {
+              "start": 2497,
+              "end": 2853
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0012",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Patient täglich zehn bis elf Stunden arbeitet, teilweise auch abends mit weiterer Arbeit an Unterlagen, wird durch die direkte Aussage im Zitat aus S8 gestützt: 'unsere Arbeitstage dauernd zehn elf Stunden manchmal auch noch mit Unterlagen danach sichten'. Dies entspricht inhaltlich exakt der behaupteten Tätigkeit und Dauer."
+      }
+    },
+    {
+      "id": "F0013",
+      "section": "background",
+      "statement": "Der Patient macht derzeit kaum Pausen und hat keine Zeit für Hobbys oder Sport.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S8",
+          "quote": " typisch begonnen haben, was ich jetzt nicht gehört habe, ist, dass Sie zwischendrin mal irgendwie eine Pause gemacht haben.  Sie sprechen von Ebo Prophäen und anderen Hilfsmitteln, aber Pause wann also ich arbeite jetzt nicht jedes Wochenende durch oder so, aber unsere Arbeitstage dauernd zehn elf Stunden manchmal auch noch mit Unterlagen danach sichten",
+          "spans": [
+            {
+              "start": 2497,
+              "end": 2853
+            }
+          ]
+        },
+        {
+          "source_id": "S13",
+          "quote": " gehört über diesen Infekte einiges erfahren.  Das tun Sie sonst so, wie leben Sie sonst so?  Meine Freundin wohnt hier, das heißt Wochenendes ab und zu dann hierher fahren es natürlich auch ein bisschen eng für zwei Tage dann.  Ich glaube es auch jetzt nicht dauernd, aber zu viel anderen komme ich gerade nicht, also Hobby Solar Sport so ist jetzt gerade",
+          "spans": [
+            {
+              "start": 4271,
+              "end": 4627
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0013",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Patient kaum Pausen macht und keine Zeit für Hobbys oder Sport hat, wird durch die zitierten Stellen gestützt. In S8 beschreibt der Patient lange Arbeitstage von zehn bis elf Stunden, gelegentlich mit anschließender Arbeit an Unterlagen, und bestätigt, dass er nicht jedes Wochenende durcharbeitet, aber kaum Pausen einlegt. In S13 gibt er an: 'zu viel anderen komme ich gerade nicht, also Hobby Solar Sport so ist jetzt gerade', was direkt belegt, dass er derzeit keine Zeit für Hobbys oder Sport hat."
+      }
+    },
+    {
+      "id": "F0016",
+      "section": "findings",
+      "statement": "Der Patient empfindet viel Stress und Druck im Zusammenhang mit seiner Arbeit.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " sechs Monat, man hatte geht das, wir sind jetzt gut halb durch und erzählt halt jeder Tag, ne da machen wir auch Überstunden und das muss halt laufen, das ist die Zeit des E knapp bemessen und das muss halt durchgezogen werden einfach eine Projekt, wo arbeiten die in der Forschung an der freien Uni Berlin. Da ist viel Druck.  Der Vertrag dauert so lange",
+          "spans": [
+            {
+              "start": 1789,
+              "end": 2145
+            }
+          ]
+        },
+        {
+          "source_id": "S15",
+          "quote": " Ibopoffee, das beseitigt halt die Symptome und der Körper kriegt halt, dass das er braucht, nämlich Ruhe nicht.  Tja und das ist das ist schon was, was ich spür an kann, dass sie sehr, dass da sehr viel Spannung ist und einfach Druck und ich sehe das oft, dass dann irgendwann einfach zu viel ist natürlich auch schwierig verstehe, was Sie sagen, aber es ist",
+          "spans": [
+            {
+              "start": 4983,
+              "end": 5342
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0016",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Patient viel Stress und Druck im Zusammenhang mit seiner Arbeit empfindet, wird durch direkte Zitate aus den Quellen S6 und S15 gestützt. In S6 wird von 'viel Druck' im Arbeitskontext gesprochen, insbesondere im Rahmen eines forschungsbezogenen Projekts an der Freien Uni Berlin mit Überstunden und Zeitdruck. In S15 beschreibt der Patient selbst 'sehr viel Spannung und einfach Druck' und bestätigt, diese Belastung bewusst zu spüren. Diese Äußerungen belegen die subjektive Wahrnehmung des Stresses durch den Patienten."
+      }
+    },
+    {
+      "id": "F0017",
+      "section": "findings",
+      "statement": "Der Patient fühlt sich ausgebremst, funktioniert aber weiter unter Schmerzen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S3",
+          "quote": " würden Sie Ihre Zeit lieber verbringen?  Also ich verbringe meine Zeit momentan überwiegend mit Arbeiten.  Das tue ich auch trotzdem, aber es bremst mich natürlich so ein bisschen aus.  Ich bin nicht so leistungsfähig, ich bin auch nicht so motiviert wie sonst, habe mühemorgens in die Gänge zu kommen. Ja, ist halt nicht so toll richtig ausgebremst.  Ja,",
+          "spans": [
+            {
+              "start": 718,
+              "end": 1074
+            }
+          ]
+        },
+        {
+          "source_id": "S4",
+          "quote": " was heißt ausgebremst?  Ich funktioniere schon, aber unter Schmerzen sozusagen, also ich nehme ab und zu ein bisschen Iboprofen um das zu lindern, aber ich versuche halt nicht zu übertreiben, weil ich weiß, dass ja auch belastet den Körper. Haben Sie die Idee, wie es dazu kam? Ja ich habe in der Besprechung gesessen den ganzen Tag, wo zwei Leuten zu heiß",
+          "spans": [
+            {
+              "start": 1074,
+              "end": 1431
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0017",
+        "verdict": "supported",
+        "reason": "Die Aussage 'Der Patient fühlt sich ausgebremst, funktioniert aber weiter unter Schmerzen' wird durch die direkten Zitate aus S3 und S4 gestützt. In S3 sagt der Patient: 'es bremst mich natürlich so ein bisschen aus' und 'ist halt nicht so toll richtig ausgebremst'. In S4 präzisiert er: 'Ich funktioniere schon, aber unter Schmerzen'. Diese Äußerungen belegen die im Fakt genannte Einschränkung und das Fortbestehen der Funktionsfähigkeit unter Schmerzen."
+      }
+    },
+    {
+      "id": "F0018",
+      "section": "findings",
+      "statement": "Der Patient äußert Hilflosigkeit gegenüber seiner Situation.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S17",
+          "quote": " dass ich krank schreiben auch mit dem Quatsch, wenn ihre Freundin versuche das nicht so sehr zu thematisieren, ehrlich gesagt, aber deckt jetzt auch nicht den Eindruck, als ob sie das total gut findet, wie es mir geht. Tja, jetzt spüre ich außer diesem gewissen Druck, den ich ja schon erwähnt habe, auch noch eine gewisse Hilflosigkeit. Ja, was könnten",
+          "spans": [
+            {
+              "start": 5699,
+              "end": 6053
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0018",
+        "verdict": "supported",
+        "reason": "Der Patient äußert direkt: 'jetzt spüre ich außer diesem gewissen Druck, den ich ja schon erwähnt habe, auch noch eine gewisse Hilflosigkeit.' Diese Aussage belegt klar, dass er Hilflosigkeit gegenüber seiner Situation empfindet und äußert."
+      }
+    },
+    {
+      "id": "F0019",
+      "section": "assessment",
+      "statement": "Es handelt sich vermutlich um einen langanhaltenden viralen Infekt mit typischen Erkältungssymptomen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S7",
+          "quote": " wie das Projekt und danach kommt dann hoffentlich der nächste.  Von daher ja also es geht quasi von halbem Jahr zu halben Jahr immer.  Also sie haben die klassischen Symptome einer typischen Präpareninfektion beschrieben mit Nasennebenhöhlen beschwerden, halschmerzen, Kopf, Schmerzen abgeschlagenheit, die sich jetzt lange hinziehen und auch ziemlich",
+          "spans": [
+            {
+              "start": 2145,
+              "end": 2497
+            }
+          ]
+        },
+        {
+          "source_id": "S10",
+          "quote": " untersuchen.  Aber wenn ich das finde, was ich erwarte, dann haben Sie ein jetzt sehr lange sich hinziehenden viralen Infekt, wo außer Ruhe und Schonung eigentlich kein Kraut gegen Gewachsen ist.  Die Antibiotika schaden mehr als dass sie nützen, weil die natürlich nur gegen bakterielle Infekte helfen.  Und das eigentliche, worum es geht, nämlich dem",
+          "spans": [
+            {
+              "start": 3204,
+              "end": 3557
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0019",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass es sich vermutlich um einen langanhaltenden viralen Infekt mit typischen Erkältungssymptomen handelt, wird durch die Quellen S7 und S10 gestützt. In S7 werden die 'klassischen Symptome einer typischen Präpareninfektion' mit Nasennebenhöhlenbeschwerden, Halsschmerzen, Kopfschmerzen und Abgeschlagenheit beschrieben, die sich 'lange hinziehen'. In S10 wird explizit von einem 'sehr lange sich hinziehenden viralen Infekt' gesprochen, was die Vermutung eines viralen Ursprungs untermauert. Die Verwendung von 'vermutlich' im Fakt entspricht der unsicheren, aber wahrscheinlichen Diagnose im Gespräch."
+      }
+    },
+    {
+      "id": "F0020",
+      "section": "assessment",
+      "statement": "Antibiotika wären bei einem viralen Infekt nicht hilfreich und könnten mehr schaden als nützen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S10",
+          "quote": " untersuchen.  Aber wenn ich das finde, was ich erwarte, dann haben Sie ein jetzt sehr lange sich hinziehenden viralen Infekt, wo außer Ruhe und Schonung eigentlich kein Kraut gegen Gewachsen ist.  Die Antibiotika schaden mehr als dass sie nützen, weil die natürlich nur gegen bakterielle Infekte helfen.  Und das eigentliche, worum es geht, nämlich dem",
+          "spans": [
+            {
+              "start": 3204,
+              "end": 3557
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0020",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass Antibiotika bei einem viralen Infekt nicht hilfreich seien und mehr schaden könnten als nützen, wird durch die zitierte Stelle direkt gestützt, in der erklärt wird, dass Antibiotika nur gegen bakterielle Infekte wirken und beim vorliegenden viralen Infekt mehr schaden als nützen."
+      }
+    },
+    {
+      "id": "F0021",
+      "section": "assessment",
+      "statement": "Die Haupttherapieempfehlung ist körperliche Schonung und Ruhe.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S10",
+          "quote": " untersuchen.  Aber wenn ich das finde, was ich erwarte, dann haben Sie ein jetzt sehr lange sich hinziehenden viralen Infekt, wo außer Ruhe und Schonung eigentlich kein Kraut gegen Gewachsen ist.  Die Antibiotika schaden mehr als dass sie nützen, weil die natürlich nur gegen bakterielle Infekte helfen.  Und das eigentliche, worum es geht, nämlich dem",
+          "spans": [
+            {
+              "start": 3204,
+              "end": 3557
+            }
+          ]
+        },
+        {
+          "source_id": "S14",
+          "quote": " nicht die Gelegenheit und auch nicht die Energie für vorhanden brauchen Sie nehmen wir an, das Einzige, was ich Ihnen wirklich guten Gewissensempfehlen könnte wäre, sie krank zu schreiben für zwei, drei Tage um sich zu schonen ganz ungünstig.  Also das einzige meinen Sie.  Ja man kann natürlich symptomatisch viel tun, wie sie es ja auch schon machen mit",
+          "spans": [
+            {
+              "start": 4627,
+              "end": 4983
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0021",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Haupttherapieempfehlung körperliche Schonung und Ruhe ist, wird durch die Zitate aus S10 und S14 gestützt. In S10 wird explizit gesagt, dass bei einem lang andauernden viralen Infekt 'außer Ruhe und Schonung eigentlich kein Kraut dagegen gewachsen ist'. In S14 wird ergänzt, dass die Patientin 'sich zu schonen' solle und für zwei bis drei Tage krankgeschrieben werden könnte, um Erholung zu ermöglichen. Beide Aussagen belegen direkt die Empfehlung von Ruhe und Schonung als zentrale therapeutische Maßnahme."
+      }
+    },
+    {
+      "id": "F0022",
+      "section": "plan",
+      "statement": "Der Arzt schlägt vor, den Patienten für zwei bis drei Tage krankzuschreiben, um Erholung zu ermöglichen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S14",
+          "quote": " nicht die Gelegenheit und auch nicht die Energie für vorhanden brauchen Sie nehmen wir an, das Einzige, was ich Ihnen wirklich guten Gewissensempfehlen könnte wäre, sie krank zu schreiben für zwei, drei Tage um sich zu schonen ganz ungünstig.  Also das einzige meinen Sie.  Ja man kann natürlich symptomatisch viel tun, wie sie es ja auch schon machen mit",
+          "spans": [
+            {
+              "start": 4627,
+              "end": 4983
+            }
+          ]
+        },
+        {
+          "source_id": "S20",
+          "quote": " ich krank geschrieben sein, dass das weggeht.  Ja man würde mit einigen wenigen Tagen anfangen.  Mit dem Wochenende hätten Sie dann ja jetzt von heute ausgerechnet fast eine Woche fünf Tage sich zu erholen und mal zu gucken, wie sie ein bisschen den Druck aus dem System nehmen, könnten mal telefonieren.  Gut, dann würden wir jetzt die Anukündigkeit",
+          "spans": [
+            {
+              "start": 6766,
+              "end": 7117
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0022",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Arzt vorschlägt, den Patienten für zwei bis drei Tage krankzuschreiben, um Erholung zu ermöglichen, wird durch die Zitate aus S14 und S20 gestützt. In S14 sagt der Arzt: 'das Einzige, was ich Ihnen wirklich guten Gewissensempfehlen könnte wäre, sie krank zu schreiben für zwei, drei Tage um sich zu schonen', was direkt den Vorschlag zur Krankschreibung für Erholung belegt. In S20 wird ergänzt: 'man würde mit einigen wenigen Tagen anfangen', was den Zeitraum bestätigt. Beide Aussagen belegen die Tatsache im Kontext."
+      }
+    },
+    {
+      "id": "F0023",
+      "section": "plan",
+      "statement": "Der Patient zeigt Skepsis gegenüber einer Krankschreibung, da er berufliche Nachteile befürchtet.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S11",
+          "quote": " Körper Ruhe zu verschaffen, wird natürlich durch die Tablette sowieso nicht gelöst.  Ja, aber das Meter Ruhe klappt halt im Moment nicht, was würde passieren? Naja, erstmal ist das Zeit, die dann einfach fehlt, wie gesagt hier ist eh sehr knapp gemessen.  Zweitens, ich will meinen nächsten Vertrag kriegen und ehrlich gesagt, ich habe auch schon lange nicht",
+          "spans": [
+            {
+              "start": 3557,
+              "end": 3916
+            }
+          ]
+        },
+        {
+          "source_id": "S16",
+          "quote": " irgendwie das einzige, was ich mir im Prinzip nicht leisten kann.  Deswegen bin ich jetzt ein bisschen in einer Zwickmühle da.  Ja, das ist ein Dilemma, ne.  Also ihn leuchtet aber schon ein, was ich ihnen empfehle theoretisch ja, was würden Sie Ihrem besten Freund empfehlen bei bei anderen Leuten ist es immer anders, ne, ja ich gebe zu, ich würde sagen,",
+          "spans": [
+            {
+              "start": 5342,
+              "end": 5699
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0023",
+        "verdict": "supported",
+        "reason": "Die Skepsis des Patienten gegenüber einer Krankschreibung aufgrund beruflicher Nachteile wird durch die zitierten Aussagen belegt: Er äußert, dass ihm die fehlende Zeit im Job schaden könnte, da es 'eh sehr knapp gemessen' ist, und er seinen nächsten Vertrag bekommen möchte. Zudem beschreibt er die Situation als 'Zwickmühle' und gibt zu, dass er bei anderen eher zur Krankschreibung raten würde, was seine innere Konfliktsituation und berufliche Bedenken unterstreicht."
+      }
+    },
+    {
+      "id": "F0025",
+      "section": "plan",
+      "statement": "Der Arzt schlägt vor, die Erholung über das anstehende Wochenende zu beginnen, was insgesamt fünf Tage Ruhezeit ergäbe.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S20",
+          "quote": " ich krank geschrieben sein, dass das weggeht.  Ja man würde mit einigen wenigen Tagen anfangen.  Mit dem Wochenende hätten Sie dann ja jetzt von heute ausgerechnet fast eine Woche fünf Tage sich zu erholen und mal zu gucken, wie sie ein bisschen den Druck aus dem System nehmen, könnten mal telefonieren.  Gut, dann würden wir jetzt die Anukündigkeit",
+          "spans": [
+            {
+              "start": 6766,
+              "end": 7117
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0025",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Arzt vorschlägt, die Erholung über das anstehende Wochenende zu beginnen, was insgesamt fünf Tage Ruhezeit ergäbe, wird durch die zitierte Äußerung gestützt: 'Mit dem Wochenende hätten Sie dann ja jetzt von heute ausgerechnet fast eine Woche fünf Tage sich zu erholen'. Dies entspricht direkt der behaupteten Empfehlung und Dauer."
+      }
+    },
+    {
+      "id": "F0026",
+      "section": "plan",
+      "statement": "Nach der geplanten Erholungsphase soll evaluiert werden, wie sich der Zustand des Patienten entwickelt hat.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S20",
+          "quote": " ich krank geschrieben sein, dass das weggeht.  Ja man würde mit einigen wenigen Tagen anfangen.  Mit dem Wochenende hätten Sie dann ja jetzt von heute ausgerechnet fast eine Woche fünf Tage sich zu erholen und mal zu gucken, wie sie ein bisschen den Druck aus dem System nehmen, könnten mal telefonieren.  Gut, dann würden wir jetzt die Anukündigkeit",
+          "spans": [
+            {
+              "start": 6766,
+              "end": 7117
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0026",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass nach der Erholungsphase evaluiert werden soll, wie sich der Zustand des Patienten entwickelt hat, wird durch die zitierte Stelle gestützt, in der es heißt, man solle 'mal gucken, wie sie ein bisschen den Druck aus dem System nehmen, könnten mal telefonieren', was eine Evaluation des Zustands nach der Erholung impliziert."
+      }
+    },
+    {
+      "id": "F0027",
+      "section": "plan",
+      "statement": "Es ist eine körperliche Untersuchung geplant.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S21",
+          "quote": " untersuchung noch vornehmen und treffen uns dann gleich vorne an der Liege.",
+          "spans": [
+            {
+              "start": 7117,
+              "end": 7193
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0027",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass eine körperliche Untersuchung geplant ist, wird durch die Quelle S21 gestützt, in der es heißt: 'untersuchung noch vornehmen und treffen uns dann gleich vorne an der Liege.' Dies deutet im Kontext auf eine geplante Untersuchung hin."
+      }
+    }
+  ],
+  "uncertainties": [
+    {
+      "description": "Der Patient erwähnt 'Ibopoffee' – unsichere Schreibweise oder Aussprache des Medikaments Ibuprofen; wird im Kontext aber klar verwendet.",
+      "evidence": [
+        {
+          "source_id": "S14",
+          "quote": " nicht die Gelegenheit und auch nicht die Energie für vorhanden brauchen Sie nehmen wir an, das Einzige, was ich Ihnen wirklich guten Gewissensempfehlen könnte wäre, sie krank zu schreiben für zwei, drei Tage um sich zu schonen ganz ungünstig.  Also das einzige meinen Sie.  Ja man kann natürlich symptomatisch viel tun, wie sie es ja auch schon machen mit",
+          "spans": [
+            {
+              "start": 4627,
+              "end": 4983
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Der Patient spricht von 'Ebo Prophäen' – möglicherweise Tippfehler oder falsche Aussprache; gemeint sein könnte 'Echinacea' oder anderes Erkältungsmittel; im Text nicht näher definiert.",
+      "evidence": [
+        {
+          "source_id": "S8",
+          "quote": " typisch begonnen haben, was ich jetzt nicht gehört habe, ist, dass Sie zwischendrin mal irgendwie eine Pause gemacht haben.  Sie sprechen von Ebo Prophäen und anderen Hilfsmitteln, aber Pause wann also ich arbeite jetzt nicht jedes Wochenende durch oder so, aber unsere Arbeitstage dauernd zehn elf Stunden manchmal auch noch mit Unterlagen danach sichten",
+          "spans": [
+            {
+              "start": 2497,
+              "end": 2853
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "question": "Welches Präparat oder Mittel ist mit 'Ebo Prophäen' gemeint, das der Patient als Hilfsmittel bei seinen Erkältungssymptomen erwähnt?",
+      "reason": "Die Bezeichnung 'Ebo Prophäen' ist nicht klar identifizierbar und könnte eine Fehlschreibung oder Fehlausprache eines pflanzlichen Mittels wie Echinacea sein; dies ist jedoch nicht dokumentiert.",
+      "fact_ids": [
+        "F0013"
+      ],
+      "basis": "unclear_source"
+    },
+    {
+      "question": "In welcher Dosierung und Häufigkeit nimmt der Patient gelegentlich Ibuprofen ein?",
+      "reason": "Obwohl die Einnahme von Ibuprofen zur Schmerzlinderung dokumentiert ist, fehlen Angaben zur konkreten Dosierung und Frequenz, was für die Beurteilung der Schmerztherapie relevant wäre.",
+      "fact_ids": [
+        "F0006"
+      ],
+      "basis": "not_documented"
+    }
+  ],
+  "rejected": [
+    {
+      "candidate": {
+        "id": "F0014",
+        "section": "background",
+        "statement": "Der Patient hat eine Freundin, die nicht in Berlin wohnt, und besucht sie an einigen Wochenenden.",
+        "uncertain": false,
+        "evidence": [
+          {
+            "source_id": "S13",
+            "quote": " gehört über diesen Infekte einiges erfahren.  Das tun Sie sonst so, wie leben Sie sonst so?  Meine Freundin wohnt hier, das heißt Wochenendes ab und zu dann hierher fahren es natürlich auch ein bisschen eng für zwei Tage dann.  Ich glaube es auch jetzt nicht dauernd, aber zu viel anderen komme ich gerade nicht, also Hobby Solar Sport so ist jetzt gerade",
+            "spans": [
+              {
+                "start": 4271,
+                "end": 4627
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S13",
+              "quote": " gehört über diesen Infekte einiges erfahren.  Das tun Sie sonst so, wie leben Sie sonst so?  Meine Freundin wohnt hier, das heißt Wochenendes ab und zu dann hierher fahren es natürlich auch ein bisschen eng für zwei Tage dann.  Ich glaube es auch jetzt nicht dauernd, aber zu viel anderen komme ich gerade nicht, also Hobby Solar Sport so ist jetzt gerade",
+              "spans": [
+                {
+                  "start": 4271,
+                  "end": 4627
+                }
+              ]
+            }
+          ],
+          "reason": "Die Aussage, dass die Freundin nicht in Berlin wohnt und der Patient sie an einigen Wochenenden besucht, wird durch das Zitat nicht gestützt. Im Gegenteil, das Zitat sagt: 'Meine Freundin wohnt hier', was darauf hindeutet, dass sie in Berlin wohnt. Der Patient erwähnt, dass er an Wochenenden 'hierher fahren' muss, was im Widerspruch zur Behauptung steht, dass er sie besucht, weil 'hierher' nahelegt, dass er selbst nicht dauerhaft vor Ort ist. Die Aussage im Fakt ist daher nicht mit dem zitierten Textabschnitt vereinbar."
+        }
+      },
+      "reason": "Das Zitat besagt, dass die Freundin 'hier' wohnt, was im Kontext auf Berlin hindeutet, und der Patient fährt an Wochenenden 'hierher', was bedeutet, dass er selbst nicht ständig vor Ort ist. Damit widerspricht der Quelltext direkt der Behauptung, die Freundin wohne nicht in Berlin und werde von ihm an Wochenenden besucht. Die Aussage im Fakt ist daher durch das Zitat nicht gestützt, sondern widerlegt."
+    },
+    {
+      "candidate": {
+        "id": "F0015",
+        "section": "findings",
+        "statement": "Der Patient berichtet von anhaltendem Druck im Kopfbereich und körperlichem Unwohlsein.",
+        "uncertain": false,
+        "evidence": [
+          {
+            "source_id": "S2",
+            "quote": " zwar heftig mein Kopf tut dauernd weh meine Nasennebenhöhlen sind eigentlich ständig zu ab und zu, denke ich, dass ich Fieber habe und das nervt ohne Ende.  Ich habe da auch keine Zeit zu kurz gesagt, das muss aufhören und deswegen bin ich hier seit drei Monaten in Fekt.  Ja das nervt, das nervt Sie haben weder Lust noch Zeit dazu, haben Sie gesagt.  Womit",
+            "spans": [
+              {
+                "start": 359,
+                "end": 718
+              }
+            ]
+          },
+          {
+            "source_id": "S4",
+            "quote": " was heißt ausgebremst?  Ich funktioniere schon, aber unter Schmerzen sozusagen, also ich nehme ab und zu ein bisschen Iboprofen um das zu lindern, aber ich versuche halt nicht zu übertreiben, weil ich weiß, dass ja auch belastet den Körper. Haben Sie die Idee, wie es dazu kam? Ja ich habe in der Besprechung gesessen den ganzen Tag, wo zwei Leuten zu heiß",
+            "spans": [
+              {
+                "start": 1074,
+                "end": 1431
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S5",
+              "quote": " war und deswegen musste den ganzen Tag die Klimaanlage voll laufen und alle anderen haben gefroren mitunter ich und nur mit einem T Shirt an und eigentlich ging es da los. Ja also klassisch erkältet.  Was ich spüre ist, dass da schon relativ viel Druck ist bei Ihnen.  Ja was heißt Druck, ich habe halt, ich bin halt gerade an einem Projekt, das geht nur in",
+              "spans": [
+                {
+                  "start": 1431,
+                  "end": 1789
+                }
+              ]
+            }
+          ],
+          "reason": "Die Aussage über 'anhaltenden Druck im Kopfbereich und körperliches Unwohlsein' wird nicht vollständig durch die zitierte Stelle gestützt. Der Arzt erwähnt 'relativ viel Druck', der Patient bestätigt dies jedoch nicht explizit, und 'körperliches Unwohlsein' wird im Zitat nicht erwähnt. Die Passage beschreibt vielmehr eine Erkältungssituation und Umgebungsbeschwerden (Klimaanlage), nicht direkt persistierende Kopfdruck- oder allgemeine Unwohlsein-Symptome des Patienten."
+        }
+      },
+      "reason": "Die Aussage über 'anhaltenden Druck im Kopfbereich und körperliches Unwohlsein' wird nicht vollständig durch die zitierten Stellen belegt. Obwohl im Arztgespräch von 'relativ viel Druck' die Rede ist, bestätigt der Patient dies nicht explizit als eigenen Beschwerdebericht. 'Körperliches Unwohlsein' wird im gesamten zitierten Text nicht erwähnt. Die genannten Symptome wie Kopfschmerzen und verstopfte Nasennebenhöhlen deuten auf Beschwerden hin, aber der spezifische Begriff 'Druck im Kopfbereich' als anhaltendes Symptom des Patienten und 'körperliches Unwohlsein' sind nicht direkt belegt. Die Passage in S5 beschreibt vielmehr die Entstehung einer Erkältung durch Umwelteinflüsse, nicht die subjektive Wahrnehmung des Patienten bezüglich anhaltenden Drucks oder allgemeinen Unwohlseins."
+    },
+    {
+      "candidate": {
+        "id": "F0024",
+        "section": "plan",
+        "statement": "Der Patient überlegt, das Thema mit seinem Professor oder Betreuer zu besprechen.",
+        "uncertain": false,
+        "evidence": [
+          {
+            "source_id": "S18",
+            "quote": " Ihrer Meinung nach gute Auswege sein aus diesem Dilemma.  Vielleicht muss ich das mal versuchen zu klären damit ihrem Themen oder mit meinem Profil zu tun, der sehr lange geht, der klassisch angefangen hat und nicht vergehen will.  Und Sie wünschen sich eine Lösung und ich schlage Ihnen vor, sich mal ein bisschen rauszunehmen, weil ich den Eindruck habe,",
+            "spans": [
+              {
+                "start": 6053,
+                "end": 6410
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S18",
+              "quote": " Ihrer Meinung nach gute Auswege sein aus diesem Dilemma.  Vielleicht muss ich das mal versuchen zu klären damit ihrem Themen oder mit meinem Profil zu tun, der sehr lange geht, der klassisch angefangen hat und nicht vergehen will.  Und Sie wünschen sich eine Lösung und ich schlage Ihnen vor, sich mal ein bisschen rauszunehmen, weil ich den Eindruck habe,",
+              "spans": [
+                {
+                  "start": 6053,
+                  "end": 6410
+                }
+              ]
+            }
+          ],
+          "reason": "Die Aussage, dass der Patient überlegt, das Thema mit seinem Professor oder Betreuer zu besprechen, wird durch die zitierte Stelle nicht gestützt. Im zitierten Text äußert der Patient Unsicherheit bezüglich ‚Themen‘ oder ‚Profil‘ und erwähnt einen lang andauernden, nicht vergehenden Zustand, ohne explizit eine Absicht zur Besprechung mit einem Professor oder Betreuer zu formulieren. Die Erwähnung eines Profils oder akademischer Bezugspersonen ist vage und nicht hinreichend, um die konkrete Absicht zur Diskussion zu belegen."
+        }
+      },
+      "reason": "Die zitierte Stelle enthält keine klare Äußerung des Patienten, das Thema mit einem Professor oder Betreuer besprechen zu wollen. Die Erwähnung von 'Themen' oder 'Profil' ist vage und bezieht sich möglicherweise auf akademische oder persönliche Kontexte, aber es fehlt ein direkter Hinweis auf eine geplante oder erwogene Besprechung mit einer entsprechenden Bezugsperson. Die Aussage im Fakt ist daher nicht durch die angegebene Quelle belegt."
+    },
+    {
+      "candidate": {
+        "id": "F0011",
+        "section": "background",
+        "statement": "Nach Abschluss des Projekts hofft der Patient auf einen weiteren Vertrag.",
+        "uncertain": true,
+        "evidence": [
+          {
+            "source_id": "S6",
+            "quote": " sechs Monat, man hatte geht das, wir sind jetzt gut halb durch und erzählt halt jeder Tag, ne da machen wir auch Überstunden und das muss halt laufen, das ist die Zeit des E knapp bemessen und das muss halt durchgezogen werden einfach eine Projekt, wo arbeiten die in der Forschung an der freien Uni Berlin. Da ist viel Druck.  Der Vertrag dauert so lange",
+            "spans": [
+              {
+                "start": 1789,
+                "end": 2145
+              }
+            ]
+          }
+        ],
+        "review": {
+          "id": "F0011",
+          "verdict": "unclear",
+          "reason": "Die Aussage, dass der Patient nach Abschluss des Projekts auf einen weiteren Vertrag hofft, wird im zitierten Text nicht explizit erwähnt. Es wird zwar über den laufenden Vertrag, Zeitdruck und Projektumfang gesprochen, aber keine Hoffnung oder Erwartung bezüglich eines Folgevertrags geäußert. Der Text lässt keine klare Schlussfolgerung über zukünftige Vertragsabsichten zu."
+        }
+      },
+      "verdict": "unclear",
+      "reason": "Die Aussage, dass der Patient nach Abschluss des Projekts auf einen weiteren Vertrag hofft, wird im zitierten Text nicht explizit erwähnt. Es wird zwar über den laufenden Vertrag, Zeitdruck und Projektumfang gesprochen, aber keine Hoffnung oder Erwartung bezüglich eines Folgevertrags geäußert. Der Text lässt keine klare Schlussfolgerung über zukünftige Vertragsabsichten zu."
+    }
+  ],
+  "validation": "literal source checks and automated fact review; not clinical validation",
+  "projection": {
+    "source_document_sha256": "560aaf8dd68abf2711e6b1e329ab4e603ae57e69e34f91328d236a8bd304d12c",
+    "source": "k8s-inference/acceptance/clinical-documentation-20260917/full-r2/de-grippaler-infekt",
+    "live_inference": false,
+    "change": "unclear source support withheld for human review; neutral empty-section text; readable review queue"
+  }
+}

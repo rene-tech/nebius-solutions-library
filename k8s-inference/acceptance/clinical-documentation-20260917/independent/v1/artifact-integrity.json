@@ -1,0 +1,73 @@
+{
+  "unchanged_transcript_bytes": true,
+  "transcript_sha256": "d811f14710485ff6716f639ba407368633f309cb1b130cbcbbe2e2b9b298d0fd",
+  "delivered_files": {
+    "transcript.txt": true,
+    "report.md": false,
+    "follow-up.md": false,
+    "document.json": false,
+    "review.json": true,
+    "run.json": true
+  },
+  "fact_count": 0,
+  "excluded_count": 23,
+  "uncertainty_count": 5,
+  "question_count": 0,
+  "source_spans_checked": 5,
+  "bad_source_spans": [],
+  "all_question_fact_ids_valid": null,
+  "raw_candidate_count": 23,
+  "raw_candidates_missing_uncertain": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+  ],
+  "raw_candidates_nonliteral_quotes": [
+    15
+  ],
+  "request_had_required_uncertain_field": true,
+  "request_had_unanswered_question_instruction": true,
+  "output_file_modes": {
+    "run.json": "0o600",
+    "transcript.txt": "0o600",
+    "catalog.json": "0o600",
+    "review.json": "0o600"
+  },
+  "calls": [
+    {
+      "stage": "extract-000",
+      "operation_id": "6ed88952-1ef3-4c49-95b0-8c3ccbe44ee6",
+      "status": "succeeded",
+      "elapsed_seconds": 221.90630561113358,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 1287,
+        "total_tokens": 3614,
+        "completion_tokens": 2327,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      }
+    }
+  ],
+  "clinical_validation": false
+}

@@ -1,0 +1,861 @@
+{
+  "schema": "clinical-documentation/v3",
+  "kind": "consultation",
+  "language": "de",
+  "transcript_sha256": "d811f14710485ff6716f639ba407368633f309cb1b130cbcbbe2e2b9b298d0fd",
+  "facts": [
+    {
+      "id": "F0001",
+      "section": "history",
+      "statement": "Die Patientin berichtet seit ungefähr zehn Tagen über Schwindelgefühl beim Aufstehen aus dem Bett oder vom Stuhl, begleitet von Schwarzwerden vor Augen, das nach etwa einer halben Minute im Sitzen nachlässt.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S1",
+          "quote": "[Synthetisches Testgespräch. Alle Personen und Angaben sind frei erfunden. Eine einzelne hausärztliche Konsultation.]\n\nÄrztin: Frau Berger, was führt Sie heute zu mir?\nPatientin: Seit ungefähr zehn Tagen wird mir beim Aufstehen aus dem Bett oder vom Stuhl schwindelig. Es dreht sich nicht, eher wird mir schwarz vor Augen. Nach vielleicht einer halben Minute",
+          "spans": [
+            {
+              "start": 0,
+              "end": 358
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0001",
+        "verdict": "supported",
+        "reason": "Die Aussage der Patientin im Zitat aus S1 entspricht exakt der behaupteten Tatsache: Sie berichtet über Schwindel beim Aufstehen, begleitet von Schwarzwerden vor Augen, das nach etwa einer halben Minute im Sitzen nachlässt. Die zeitliche Angabe von zehn Tagen und die beschriebenen Symptome sind direkt aus dem zitierten Text enthalten und werden im Kontext klar bestätigt."
+      }
+    },
+    {
+      "id": "F0002",
+      "section": "history",
+      "statement": "Die Tochter berichtet, dass die Patientin gestern beim Frühstück kurz 'weg' war, was etwa zwei bis drei Sekunden andauerte.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " im Sitzen ist es vorbei.\nTochter: Ich bin ihre Tochter. Gestern beim Frühstück war sie kurz weg, so kam es mir vor. Vielleicht zwei oder drei Sekunden.\nPatientin: Ich glaube nicht, dass ich bewusstlos war. Ich habe alles gehört, musste mich nur festhalten. Gestürzt bin ich nicht.\nÄrztin: Ob tatsächlich eine Bewusstlosigkeit vorlag, können wir aus Ihren",
+          "spans": [
+            {
+              "start": 358,
+              "end": 713
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0002",
+        "verdict": "supported",
+        "reason": "Die Tochter berichtet direkt, dass die Patientin beim Frühstück 'kurz weg' war, was sie als etwa zwei bis drei Sekunden beschreibt. Dies wird durch die wörtliche Aussage 'Gestern beim Frühstück war sie kurz weg, so kam es mir vor. Vielleicht zwei oder drei Sekunden.' belegt. Die Angabe entspricht exakt der Behauptung im Fakt."
+      }
+    },
+    {
+      "id": "F0003",
+      "section": "history",
+      "statement": "Die Patientin glaubt nicht, dass sie bewusstlos war, hörte alles und musste sich nur festhalten; ein Sturz erfolgte nicht.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " im Sitzen ist es vorbei.\nTochter: Ich bin ihre Tochter. Gestern beim Frühstück war sie kurz weg, so kam es mir vor. Vielleicht zwei oder drei Sekunden.\nPatientin: Ich glaube nicht, dass ich bewusstlos war. Ich habe alles gehört, musste mich nur festhalten. Gestürzt bin ich nicht.\nÄrztin: Ob tatsächlich eine Bewusstlosigkeit vorlag, können wir aus Ihren",
+          "spans": [
+            {
+              "start": 358,
+              "end": 713
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0003",
+        "verdict": "supported",
+        "reason": "Die Patientin äußert direkt: 'Ich glaube nicht, dass ich bewusstlos war. Ich habe alles gehört, musste mich nur festhalten. Gestürzt bin ich nicht.', was dem Fakt entspricht, dass sie keine Bewusstlosigkeit annimmt, alles hörte, sich festhielt und keinen Sturz erlitt. Die Aussage ist wörtlich im Zitat enthalten und wird im Kontext klar belegt."
+      }
+    },
+    {
+      "id": "F0004",
+      "section": "history",
+      "statement": "Die Patientin verneint Brustschmerzen und Luftnot während der Episoden.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S3",
+          "quote": " unterschiedlichen Beschreibungen jetzt nicht sicher klären. Hatten Sie dabei Brustschmerzen oder Luftnot?\nPatientin: Nein, beides nicht.\nÄrztin: Gab es auch neue Kopfschmerzen?\nTochter: Entschuldigung, bevor ich es vergesse: Seit zwei Wochen hat sie eine neue Blutdrucktablette.\nÄrztin: Welche Medikamente nehmen Sie aktuell?\nPatientin: Seit Jahren Ramipril,",
+          "spans": [
+            {
+              "start": 713,
+              "end": 1072
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0004",
+        "verdict": "supported",
+        "reason": "Die Patientin antwortet auf die direkte Frage nach Brustschmerzen oder Luftnot mit 'Nein, beides nicht.', was die Aussage, dass sie Brustschmerzen und Luftnot verneint, direkt belegt."
+      }
+    },
+    {
+      "id": "F0005",
+      "section": "history",
+      "statement": "Die Patientin nimmt seit Jahren Ramipril 5 mg morgens ein.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S3",
+          "quote": " unterschiedlichen Beschreibungen jetzt nicht sicher klären. Hatten Sie dabei Brustschmerzen oder Luftnot?\nPatientin: Nein, beides nicht.\nÄrztin: Gab es auch neue Kopfschmerzen?\nTochter: Entschuldigung, bevor ich es vergesse: Seit zwei Wochen hat sie eine neue Blutdrucktablette.\nÄrztin: Welche Medikamente nehmen Sie aktuell?\nPatientin: Seit Jahren Ramipril,",
+          "spans": [
+            {
+              "start": 713,
+              "end": 1072
+            }
+          ]
+        },
+        {
+          "source_id": "S4",
+          "quote": " fünf Milligramm morgens. Die neue heißt, glaube ich, „Amlodip“, vielleicht fünf Milligramm, einmal abends. Die Packung habe ich nicht dabei. Und morgens nehme ich eine halbe Schilddrüsentablette, den Namen und die Stärke weiß ich nicht.\nTochter: Die halbe Schilddrüsentablette steht auch so auf unserem alten Zettel. Seit wann sie die bekommt, weiß ich aber",
+          "spans": [
+            {
+              "start": 1072,
+              "end": 1430
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0005",
+        "verdict": "supported",
+        "reason": "Die Patientin sagt selbst: 'Seit Jahren Ramipril,' und ergänzt später: 'fünf Milligramm morgens.' Diese Aussagen in den Zitaten aus S3 und S4 belegen direkt, dass sie seit Jahren Ramipril 5 mg morgens einnimmt."
+      }
+    },
+    {
+      "id": "F0006",
+      "section": "history",
+      "statement": "Die Patientin nimmt seit zwei Wochen eine neue Blutdrucktablette, die sie vermutlich 'Amlodip' nennt, möglicherweise 5 mg einmal abends.",
+      "uncertain": true,
+      "evidence": [
+        {
+          "source_id": "S3",
+          "quote": " unterschiedlichen Beschreibungen jetzt nicht sicher klären. Hatten Sie dabei Brustschmerzen oder Luftnot?\nPatientin: Nein, beides nicht.\nÄrztin: Gab es auch neue Kopfschmerzen?\nTochter: Entschuldigung, bevor ich es vergesse: Seit zwei Wochen hat sie eine neue Blutdrucktablette.\nÄrztin: Welche Medikamente nehmen Sie aktuell?\nPatientin: Seit Jahren Ramipril,",
+          "spans": [
+            {
+              "start": 713,
+              "end": 1072
+            }
+          ]
+        },
+        {
+          "source_id": "S4",
+          "quote": " fünf Milligramm morgens. Die neue heißt, glaube ich, „Amlodip“, vielleicht fünf Milligramm, einmal abends. Die Packung habe ich nicht dabei. Und morgens nehme ich eine halbe Schilddrüsentablette, den Namen und die Stärke weiß ich nicht.\nTochter: Die halbe Schilddrüsentablette steht auch so auf unserem alten Zettel. Seit wann sie die bekommt, weiß ich aber",
+          "spans": [
+            {
+              "start": 1072,
+              "end": 1430
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0006",
+        "verdict": "unclear",
+        "reason": "Die Aussage, dass die Patientin seit zwei Wochen eine neue Blutdrucktablette namens 'Amlodip' einnimmt, möglicherweise 5 mg einmal abends, basiert auf unsicheren Angaben der Patientin und Tochter. Der Name 'Amlodip' ist vermutlich gemeint (\"heißt, glaube ich“), die Dosis und Einnahmezeit (\"vielleicht fünf Milligramm, einmal abends“) sind unsicher formuliert. Zudem fehlt die Packung als Bestätigung. Die Angaben sind daher nicht eindeutig belegt, obwohl sie im Kontext genannt werden. Eine sichere Bestätigung des Medikaments, der Dosis und der Einnahmeweise liegt nicht vor."
+      }
+    },
+    {
+      "id": "F0007",
+      "section": "history",
+      "statement": "Die Patientin nimmt morgens eine halbe Schilddrüsentablette, deren Name und Stärke sie nicht kennt.",
+      "uncertain": true,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " fünf Milligramm morgens. Die neue heißt, glaube ich, „Amlodip“, vielleicht fünf Milligramm, einmal abends. Die Packung habe ich nicht dabei. Und morgens nehme ich eine halbe Schilddrüsentablette, den Namen und die Stärke weiß ich nicht.\nTochter: Die halbe Schilddrüsentablette steht auch so auf unserem alten Zettel. Seit wann sie die bekommt, weiß ich aber",
+          "spans": [
+            {
+              "start": 1072,
+              "end": 1430
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0007",
+        "verdict": "supported",
+        "reason": "Die Patientin äußert explizit: 'Und morgens nehme ich eine halbe Schilddrüsentablette, den Namen und die Stärke weiß ich nicht.' Diese Aussage wird direkt durch den zitierten Textabschnitt aus S4 belegt, in dem sie ihre Medikation beschreibt. Die Unsicherheit in der Aussage ('glaube ich', 'vielleicht') bezieht sich auf andere Medikamente, nicht auf die Schilddrüsentablette. Die Tatsache, dass sie Name und Stärke der Schilddrüsentablette nicht kennt, ist klar benannt und entspricht exakt der behaupteten Aussage."
+      }
+    },
+    {
+      "id": "F0008",
+      "section": "history",
+      "statement": "Die Tochter bestätigt, dass die halbe Schilddrüsentablette auf einem alten Medikamentenzettel steht, weiß aber nicht, seit wann die Patientin sie einnimmt.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " fünf Milligramm morgens. Die neue heißt, glaube ich, „Amlodip“, vielleicht fünf Milligramm, einmal abends. Die Packung habe ich nicht dabei. Und morgens nehme ich eine halbe Schilddrüsentablette, den Namen und die Stärke weiß ich nicht.\nTochter: Die halbe Schilddrüsentablette steht auch so auf unserem alten Zettel. Seit wann sie die bekommt, weiß ich aber",
+          "spans": [
+            {
+              "start": 1072,
+              "end": 1430
+            }
+          ]
+        },
+        {
+          "source_id": "S5",
+          "quote": " nicht.\nÄrztin: Ich übernehme die neue Tablette und die Schilddrüsentablette vorerst als unklare Angaben. Bitte bringen Sie die Packungen und den aktuellen Medikamentenplan mit. Ändern Sie bis zur Klärung heute nichts an der Einnahme.\nPatientin: Wegen Bluthochdruck bin ich schon lange in Behandlung. Eine Zuckerkrankheit wurde bei mir nie festgestellt. Vor",
+          "spans": [
+            {
+              "start": 1430,
+              "end": 1787
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0008",
+        "verdict": "supported",
+        "reason": "Die Tochter bestätigt im ersten Zitat ausdrücklich, dass die halbe Schilddrüsentablette auf dem alten Zettel steht, und sagt explizit: 'Seit wann sie die bekommt, weiß ich aber nicht.' Dies entspricht exakt der Aussage im Fakt. Die Information ist direkt aus dem Kontext der Äußerung enthalten und wird durch die wörtliche Wiedergabe belegt."
+      }
+    },
+    {
+      "id": "F0009",
+      "section": "history",
+      "statement": "Die Patientin ist langjährig wegen Bluthochdruck in Behandlung.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " nicht.\nÄrztin: Ich übernehme die neue Tablette und die Schilddrüsentablette vorerst als unklare Angaben. Bitte bringen Sie die Packungen und den aktuellen Medikamentenplan mit. Ändern Sie bis zur Klärung heute nichts an der Einnahme.\nPatientin: Wegen Bluthochdruck bin ich schon lange in Behandlung. Eine Zuckerkrankheit wurde bei mir nie festgestellt. Vor",
+          "spans": [
+            {
+              "start": 1430,
+              "end": 1787
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0009",
+        "verdict": "supported",
+        "reason": "Die Patientin äußert im Gespräch explizit: 'Wegen Bluthochdruck bin ich schon lange in Behandlung.' Diese Aussage entspricht direkt der Behauptung, dass sie langjährig wegen Bluthochdruck in Behandlung ist. Die Aussage ist klar und eindeutig im Kontext des Gesprächs enthalten."
+      }
+    },
+    {
+      "id": "F0010",
+      "section": "history",
+      "statement": "Eine Zuckerkrankheit wurde bei der Patientin nie festgestellt.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " nicht.\nÄrztin: Ich übernehme die neue Tablette und die Schilddrüsentablette vorerst als unklare Angaben. Bitte bringen Sie die Packungen und den aktuellen Medikamentenplan mit. Ändern Sie bis zur Klärung heute nichts an der Einnahme.\nPatientin: Wegen Bluthochdruck bin ich schon lange in Behandlung. Eine Zuckerkrankheit wurde bei mir nie festgestellt. Vor",
+          "spans": [
+            {
+              "start": 1430,
+              "end": 1787
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0010",
+        "verdict": "supported",
+        "reason": "Die Patientin äußert im Gespräch explizit: 'Eine Zuckerkrankheit wurde bei mir nie festgestellt.' Diese direkte Aussage in der ersten Person bestätigt die Tatsache, dass bei ihr bisher kein Diabetes diagnostiziert wurde. Die Aussage ist klar und eindeutig im Kontext des Gesprächs enthalten."
+      }
+    },
+    {
+      "id": "F0011",
+      "section": "history",
+      "statement": "Die Patientin hatte vor vielen Jahren nach Einnahme eines Antibiotikums rote Flecken, kennt aber weder den Namen noch ist klar, ob es sich um eine Allergie handelte.",
+      "uncertain": true,
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " vielen Jahren hatte ich nach einem Antibiotikum rote Flecken, aber ich weiß weder den Namen noch, ob es wirklich eine Allergie war.\nÄrztin: Wie viel trinken Sie ungefähr?\nPatientin: Vielleicht einen Liter am Tag. Kein Erbrechen und keinen Durchfall in den letzten Tagen.\nÄrztin: Der heute hier im Sitzen gemessene Blutdruck beträgt 118 zu 72 Millimeter",
+          "spans": [
+            {
+              "start": 1787,
+              "end": 2140
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0011",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Patientin vor vielen Jahren nach Einnahme eines Antibiotikums rote Flecken hatte, aber weder den Namen kennt noch sicher ist, ob es eine Allergie war, wird direkt durch die zitierte Äußerung der Patientin im Gespräch bestätigt: 'vielen Jahren hatte ich nach einem Antibiotikum rote Flecken, aber ich weiß weder den Namen noch, ob es wirklich eine Allergie war.'"
+      }
+    },
+    {
+      "id": "F0012",
+      "section": "history",
+      "statement": "Die Patientin trinkt ungefähr einen Liter Flüssigkeit pro Tag.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " vielen Jahren hatte ich nach einem Antibiotikum rote Flecken, aber ich weiß weder den Namen noch, ob es wirklich eine Allergie war.\nÄrztin: Wie viel trinken Sie ungefähr?\nPatientin: Vielleicht einen Liter am Tag. Kein Erbrechen und keinen Durchfall in den letzten Tagen.\nÄrztin: Der heute hier im Sitzen gemessene Blutdruck beträgt 118 zu 72 Millimeter",
+          "spans": [
+            {
+              "start": 1787,
+              "end": 2140
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0012",
+        "verdict": "supported",
+        "reason": "Die Patientin äußert im Gespräch mit der Ärztin: 'Vielleicht einen Liter am Tag.', was direkt die Aussage unterstützt, dass sie ungefähr einen Liter Flüssigkeit pro Tag trinkt. Die Angabe ist klar im Kontext der Frage zur Flüssigkeitsaufnahme und wird nicht als Unsicherheit oder Schätzung widerlegt."
+      }
+    },
+    {
+      "id": "F0013",
+      "section": "history",
+      "statement": "Die Patientin verneint Erbrechen und Durchfall in den letzten Tagen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " vielen Jahren hatte ich nach einem Antibiotikum rote Flecken, aber ich weiß weder den Namen noch, ob es wirklich eine Allergie war.\nÄrztin: Wie viel trinken Sie ungefähr?\nPatientin: Vielleicht einen Liter am Tag. Kein Erbrechen und keinen Durchfall in den letzten Tagen.\nÄrztin: Der heute hier im Sitzen gemessene Blutdruck beträgt 118 zu 72 Millimeter",
+          "spans": [
+            {
+              "start": 1787,
+              "end": 2140
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0013",
+        "verdict": "supported",
+        "reason": "Die Patientin äußert im Gespräch explizit: 'Kein Erbrechen und keinen Durchfall in den letzten Tagen.', was direkt die Aussage bestätigt, dass sie Erbrechen und Durchfall verneint."
+      }
+    },
+    {
+      "id": "F0014",
+      "section": "findings",
+      "statement": "Der im Sitzen gemessene Blutdruck beträgt heute 118/72 mmHg.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " vielen Jahren hatte ich nach einem Antibiotikum rote Flecken, aber ich weiß weder den Namen noch, ob es wirklich eine Allergie war.\nÄrztin: Wie viel trinken Sie ungefähr?\nPatientin: Vielleicht einen Liter am Tag. Kein Erbrechen und keinen Durchfall in den letzten Tagen.\nÄrztin: Der heute hier im Sitzen gemessene Blutdruck beträgt 118 zu 72 Millimeter",
+          "spans": [
+            {
+              "start": 1787,
+              "end": 2140
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0014",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der im Sitzen gemessene Blutdruck 118/72 mmHg beträgt, wird direkt durch das Zitat aus der Quelle S6 gestützt, in dem die Ärztin sagt: 'Der heute hier im Sitzen gemessene Blutdruck beträgt 118 zu 72 Millimeter'."
+      }
+    },
+    {
+      "id": "F0016",
+      "section": "findings",
+      "statement": "Eine Blutdruckmessung im Stehen wurde heute noch nicht durchgeführt.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S7",
+          "quote": " Quecksilbersäule, der Puls 78 pro Minute und regelmäßig. Eine Messung im Stehen haben wir heute noch nicht gemacht. Eine körperliche Untersuchung ist bisher ebenfalls noch nicht erfolgt.\nPatientin: Ist dann sicher die neue Tablette schuld?\nÄrztin: Das ist nicht gesichert. Ich vermute einen Zusammenhang mit Blutdruckschwankungen; die neue Medikation könnte",
+          "spans": [
+            {
+              "start": 2140,
+              "end": 2498
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0016",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass eine Blutdruckmessung im Stehen heute noch nicht durchgeführt wurde, wird direkt durch das Zitat aus S7 bestätigt: 'Eine Messung im Stehen haben wir heute noch nicht gemacht.' Dies steht im Kontext der noch nicht erfolgten körperlichen Untersuchung und bezieht sich auf den aktuellen Untersuchungstag."
+      }
+    },
+    {
+      "id": "F0017",
+      "section": "findings",
+      "statement": "Eine körperliche Untersuchung wurde bisher noch nicht durchgeführt.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S7",
+          "quote": " Quecksilbersäule, der Puls 78 pro Minute und regelmäßig. Eine Messung im Stehen haben wir heute noch nicht gemacht. Eine körperliche Untersuchung ist bisher ebenfalls noch nicht erfolgt.\nPatientin: Ist dann sicher die neue Tablette schuld?\nÄrztin: Das ist nicht gesichert. Ich vermute einen Zusammenhang mit Blutdruckschwankungen; die neue Medikation könnte",
+          "spans": [
+            {
+              "start": 2140,
+              "end": 2498
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0017",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass eine körperliche Untersuchung bisher noch nicht durchgeführt wurde, wird direkt durch die Aussage der Ärztin im Zitat aus S7 bestätigt: 'Eine körperliche Untersuchung ist bisher ebenfalls noch nicht erfolgt.' Dies entspricht exakt der behaupteten Tatsache."
+      }
+    },
+    {
+      "id": "F0018",
+      "section": "assessment",
+      "statement": "Ob eine Bewusstlosigkeit vorlag, kann anhand der unterschiedlichen Beschreibungen nicht sicher geklärt werden.",
+      "uncertain": true,
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " im Sitzen ist es vorbei.\nTochter: Ich bin ihre Tochter. Gestern beim Frühstück war sie kurz weg, so kam es mir vor. Vielleicht zwei oder drei Sekunden.\nPatientin: Ich glaube nicht, dass ich bewusstlos war. Ich habe alles gehört, musste mich nur festhalten. Gestürzt bin ich nicht.\nÄrztin: Ob tatsächlich eine Bewusstlosigkeit vorlag, können wir aus Ihren",
+          "spans": [
+            {
+              "start": 358,
+              "end": 713
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0018",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass nicht sicher geklärt werden kann, ob eine Bewusstlosigkeit vorlag, wird durch die unterschiedlichen Beschreibungen der Tochter (kurzes Wegsein) und der Patientin (glaube nicht, dass ich bewusstlos war, habe alles gehört) sowie die abschließende Äußerung der Ärztin (Ob tatsächlich eine Bewusstlosigkeit vorlag, können wir aus Ihren...) direkt belegt. Die Unsicherheit wird im Zitat explizit ausgedrückt und entspricht der Tatsache, dass die Informationen widersprüchlich oder uneindeutig sind."
+      }
+    },
+    {
+      "id": "F0019",
+      "section": "assessment",
+      "statement": "Ein Zusammenhang der Symptome mit Blutdruckschwankungen wird vermutet; die neue Medikation könnte dazu beitragen.",
+      "uncertain": true,
+      "evidence": [
+        {
+          "source_id": "S7",
+          "quote": " Quecksilbersäule, der Puls 78 pro Minute und regelmäßig. Eine Messung im Stehen haben wir heute noch nicht gemacht. Eine körperliche Untersuchung ist bisher ebenfalls noch nicht erfolgt.\nPatientin: Ist dann sicher die neue Tablette schuld?\nÄrztin: Das ist nicht gesichert. Ich vermute einen Zusammenhang mit Blutdruckschwankungen; die neue Medikation könnte",
+          "spans": [
+            {
+              "start": 2140,
+              "end": 2498
+            }
+          ]
+        },
+        {
+          "source_id": "S8",
+          "quote": " dazu beitragen. Eine gesicherte Ursache haben wir bisher nicht.\nÄrztin: Wir planen heute noch eine Blutdruckmessung im Liegen und im Stehen und ein EKG. Ergebnisse liegen dazu noch nicht vor. Morgen soll die Blutabnahme erfolgen; besprochen sind Blutbild, Elektrolyte und Nierenwerte. Die Befundbesprechung vereinbaren wir für übermorgen, am",
+          "spans": [
+            {
+              "start": 2498,
+              "end": 2840
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0019",
+        "verdict": "supported",
+        "reason": "Die Ärztin äußert im ersten Zitat explizit den Verdacht eines Zusammenhangs der Symptome mit Blutdruckschwankungen und nennt die neue Medikation als mögliche Mitursache ('Ich vermute einen Zusammenhang mit Blutdruckschwankungen; die neue Medikation könnte'). Dies wird im zweiten Zitat fortgeführt und bestätigt, ohne dass eine gesicherte Ursache vorliegt. Die Aussage im Fakt spiegelt somit die im Gespräch geäußerte Vermutung korrekt wider."
+      }
+    },
+    {
+      "id": "F0020",
+      "section": "assessment",
+      "statement": "Eine gesicherte Ursache für die Symptome liegt bisher nicht vor.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S8",
+          "quote": " dazu beitragen. Eine gesicherte Ursache haben wir bisher nicht.\nÄrztin: Wir planen heute noch eine Blutdruckmessung im Liegen und im Stehen und ein EKG. Ergebnisse liegen dazu noch nicht vor. Morgen soll die Blutabnahme erfolgen; besprochen sind Blutbild, Elektrolyte und Nierenwerte. Die Befundbesprechung vereinbaren wir für übermorgen, am",
+          "spans": [
+            {
+              "start": 2498,
+              "end": 2840
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0020",
+        "verdict": "supported",
+        "reason": "Die Aussage 'Eine gesicherte Ursache haben wir bisher nicht' im zitierten Textabschnitt (S8) bestätigt direkt die Behauptung, dass bisher keine gesicherte Ursache für die Symptome vorliegt. Die Ärztin äußert dies explizit im Gespräch, was die Aussage im Kontext klar belegt."
+      }
+    },
+    {
+      "id": "F0021",
+      "section": "plan",
+      "statement": "Es ist geplant, heute eine Blutdruckmessung im Liegen und im Stehen sowie ein EKG durchzuführen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S8",
+          "quote": " dazu beitragen. Eine gesicherte Ursache haben wir bisher nicht.\nÄrztin: Wir planen heute noch eine Blutdruckmessung im Liegen und im Stehen und ein EKG. Ergebnisse liegen dazu noch nicht vor. Morgen soll die Blutabnahme erfolgen; besprochen sind Blutbild, Elektrolyte und Nierenwerte. Die Befundbesprechung vereinbaren wir für übermorgen, am",
+          "spans": [
+            {
+              "start": 2498,
+              "end": 2840
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0021",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass eine Blutdruckmessung im Liegen und Stehen sowie ein EKG geplant sind, wird direkt durch die zitierte Äußerung der Ärztin im Transkript belegt: 'Wir planen heute noch eine Blutdruckmessung im Liegen und im Stehen und ein EKG.'"
+      }
+    },
+    {
+      "id": "F0022",
+      "section": "plan",
+      "statement": "Für morgen ist eine Blutabnahme geplant, um Blutbild, Elektrolyte und Nierenwerte zu bestimmen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S8",
+          "quote": " dazu beitragen. Eine gesicherte Ursache haben wir bisher nicht.\nÄrztin: Wir planen heute noch eine Blutdruckmessung im Liegen und im Stehen und ein EKG. Ergebnisse liegen dazu noch nicht vor. Morgen soll die Blutabnahme erfolgen; besprochen sind Blutbild, Elektrolyte und Nierenwerte. Die Befundbesprechung vereinbaren wir für übermorgen, am",
+          "spans": [
+            {
+              "start": 2498,
+              "end": 2840
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0022",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass für morgen eine Blutabnahme zur Bestimmung von Blutbild, Elektrolyten und Nierenwerten geplant ist, wird durch die direkte Aussage der Ärztin im Zitat aus S8 belegt: 'Morgen soll die Blutabnahme erfolgen; besprochen sind Blutbild, Elektrolyte und Nierenwerte.' Dies entspricht exakt der behaupteten Tatsache."
+      }
+    },
+    {
+      "id": "F0024",
+      "section": "plan",
+      "statement": "Die Patientin soll die Medikamentenpackungen und den aktuellen Medikamentenplan mitbringen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " nicht.\nÄrztin: Ich übernehme die neue Tablette und die Schilddrüsentablette vorerst als unklare Angaben. Bitte bringen Sie die Packungen und den aktuellen Medikamentenplan mit. Ändern Sie bis zur Klärung heute nichts an der Einnahme.\nPatientin: Wegen Bluthochdruck bin ich schon lange in Behandlung. Eine Zuckerkrankheit wurde bei mir nie festgestellt. Vor",
+          "spans": [
+            {
+              "start": 1430,
+              "end": 1787
+            }
+          ]
+        },
+        {
+          "source_id": "S9",
+          "quote": " Donnerstagvormittag, telefonisch.\nTochter: Die Packungen kann ich heute Nachmittag vorbeibringen.\nÄrztin: Ja, bitte. Falls Sie erneut das Bewusstsein verlieren, Brustschmerzen oder starke Atemnot bekommen, rufen Sie den Rettungsdienst. Ist das angekommen?\nPatientin: Ja, dann rufe ich den Rettungsdienst. Den Telefontermin am Donnerstagvormittag habe ich",
+          "spans": [
+            {
+              "start": 2840,
+              "end": 3195
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0024",
+        "verdict": "supported",
+        "reason": "Die Ärztin fordert explizit in der Quelle S5 auf: 'Bitte bringen Sie die Packungen und den aktuellen Medikamentenplan mit.' Dies entspricht exakt der Aussage im Fakt. Die Anweisung ist klar und wird direkt an die Patientin gerichtet. Auch in S9 wird von der Tochter bestätigt, dass die Packungen überbracht werden sollen, was die Anweisung indirekt bestätigt."
+      }
+    },
+    {
+      "id": "F0025",
+      "section": "plan",
+      "statement": "Die Patientin soll bis zur Klärung der Medikation keine Änderungen an der Einnahme vornehmen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " nicht.\nÄrztin: Ich übernehme die neue Tablette und die Schilddrüsentablette vorerst als unklare Angaben. Bitte bringen Sie die Packungen und den aktuellen Medikamentenplan mit. Ändern Sie bis zur Klärung heute nichts an der Einnahme.\nPatientin: Wegen Bluthochdruck bin ich schon lange in Behandlung. Eine Zuckerkrankheit wurde bei mir nie festgestellt. Vor",
+          "spans": [
+            {
+              "start": 1430,
+              "end": 1787
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0025",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Patientin bis zur Klärung der Medikation keine Änderungen an der Einnahme vornehmen soll, wird direkt durch die Ärztin im Zitat bestätigt: 'Ändern Sie bis zur Klärung heute nichts an der Einnahme.' Dies entspricht exakt der behaupteten Tatsache."
+      }
+    },
+    {
+      "id": "F0026",
+      "section": "plan",
+      "statement": "Die Tochter wird die Medikamentenpackungen am selben Nachmittag vorbeibringen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S9",
+          "quote": " Donnerstagvormittag, telefonisch.\nTochter: Die Packungen kann ich heute Nachmittag vorbeibringen.\nÄrztin: Ja, bitte. Falls Sie erneut das Bewusstsein verlieren, Brustschmerzen oder starke Atemnot bekommen, rufen Sie den Rettungsdienst. Ist das angekommen?\nPatientin: Ja, dann rufe ich den Rettungsdienst. Den Telefontermin am Donnerstagvormittag habe ich",
+          "spans": [
+            {
+              "start": 2840,
+              "end": 3195
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0026",
+        "verdict": "supported",
+        "reason": "Die Tochter sagt im Gespräch: 'Die Packungen kann ich heute Nachmittag vorbeibringen.' Dieser direkte Zitat belegt, dass sie die Medikamentenpackungen am selben Nachmittag vorbeibringen wird. Die Aussage im Fakt entspricht exakt der Äußerung in der Quelle."
+      }
+    },
+    {
+      "id": "F0027",
+      "section": "plan",
+      "statement": "Die Patientin soll bei erneutem Bewusstseinsverlust, Brustschmerzen oder starker Atemnot den Rettungsdienst rufen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S9",
+          "quote": " Donnerstagvormittag, telefonisch.\nTochter: Die Packungen kann ich heute Nachmittag vorbeibringen.\nÄrztin: Ja, bitte. Falls Sie erneut das Bewusstsein verlieren, Brustschmerzen oder starke Atemnot bekommen, rufen Sie den Rettungsdienst. Ist das angekommen?\nPatientin: Ja, dann rufe ich den Rettungsdienst. Den Telefontermin am Donnerstagvormittag habe ich",
+          "spans": [
+            {
+              "start": 2840,
+              "end": 3195
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0027",
+        "verdict": "supported",
+        "reason": "Die Ärztin weist die Patientin direkt an, bei erneutem Bewusstseinsverlust, Brustschmerzen oder starker Atemnot den Rettungsdienst zu rufen, und die Patientin bestätigt die Anweisung. Die Aussage im Fact wird durch die wörtliche Zitierung im Transkript belegt."
+      }
+    },
+    {
+      "id": "F0028",
+      "section": "plan",
+      "statement": "Die Patientin hat den telefonischen Befundtermin am Donnerstagvormittag notiert.",
+      "uncertain": true,
+      "evidence": [
+        {
+          "source_id": "S10",
+          "quote": " notiert.\n",
+          "spans": [
+            {
+              "start": 3195,
+              "end": 3205
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0028",
+        "verdict": "unclear",
+        "reason": "Die angegebene Quelle 'notiert.' ist zu ungenau, um zu bestätigen, dass die Patientin den telefonischen Befundtermin am Donnerstagvormittag selbst notiert hat. Es fehlt der klare Bezug zum genannten Termin und zur Handlung der Patientin."
+      }
+    }
+  ],
+  "uncertainties": [
+    {
+      "description": "Die genaue Bezeichnung und Dosierung der neuen Blutdrucktablette (vermutlich 'Amlodip') ist unklar; die Patientin hat die Packung nicht dabei.",
+      "evidence": [
+        {
+          "source_id": "S3",
+          "quote": " unterschiedlichen Beschreibungen jetzt nicht sicher klären. Hatten Sie dabei Brustschmerzen oder Luftnot?\nPatientin: Nein, beides nicht.\nÄrztin: Gab es auch neue Kopfschmerzen?\nTochter: Entschuldigung, bevor ich es vergesse: Seit zwei Wochen hat sie eine neue Blutdrucktablette.\nÄrztin: Welche Medikamente nehmen Sie aktuell?\nPatientin: Seit Jahren Ramipril,",
+          "spans": [
+            {
+              "start": 713,
+              "end": 1072
+            }
+          ]
+        },
+        {
+          "source_id": "S4",
+          "quote": " fünf Milligramm morgens. Die neue heißt, glaube ich, „Amlodip“, vielleicht fünf Milligramm, einmal abends. Die Packung habe ich nicht dabei. Und morgens nehme ich eine halbe Schilddrüsentablette, den Namen und die Stärke weiß ich nicht.\nTochter: Die halbe Schilddrüsentablette steht auch so auf unserem alten Zettel. Seit wann sie die bekommt, weiß ich aber",
+          "spans": [
+            {
+              "start": 1072,
+              "end": 1430
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Name und Stärke der Schilddrüsentablette sind unbekannt.",
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " fünf Milligramm morgens. Die neue heißt, glaube ich, „Amlodip“, vielleicht fünf Milligramm, einmal abends. Die Packung habe ich nicht dabei. Und morgens nehme ich eine halbe Schilddrüsentablette, den Namen und die Stärke weiß ich nicht.\nTochter: Die halbe Schilddrüsentablette steht auch so auf unserem alten Zettel. Seit wann sie die bekommt, weiß ich aber",
+          "spans": [
+            {
+              "start": 1072,
+              "end": 1430
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Unklar, ob es sich bei den roten Flecken nach Antibiotikaeinnahme um eine Allergie handelte; Antibiotikumname ist nicht bekannt.",
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " vielen Jahren hatte ich nach einem Antibiotikum rote Flecken, aber ich weiß weder den Namen noch, ob es wirklich eine Allergie war.\nÄrztin: Wie viel trinken Sie ungefähr?\nPatientin: Vielleicht einen Liter am Tag. Kein Erbrechen und keinen Durchfall in den letzten Tagen.\nÄrztin: Der heute hier im Sitzen gemessene Blutdruck beträgt 118 zu 72 Millimeter",
+          "spans": [
+            {
+              "start": 1787,
+              "end": 2140
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Ob die Patientin tatsächlich bewusstlos war, bleibt unklar aufgrund unterschiedlicher Beschreibungen.",
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " im Sitzen ist es vorbei.\nTochter: Ich bin ihre Tochter. Gestern beim Frühstück war sie kurz weg, so kam es mir vor. Vielleicht zwei oder drei Sekunden.\nPatientin: Ich glaube nicht, dass ich bewusstlos war. Ich habe alles gehört, musste mich nur festhalten. Gestürzt bin ich nicht.\nÄrztin: Ob tatsächlich eine Bewusstlosigkeit vorlag, können wir aus Ihren",
+          "spans": [
+            {
+              "start": 358,
+              "end": 713
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "question": "Wie lautet der genaue Wirkstoff und die Dosierung der neuen Blutdrucktablette, die die Patientin seit zwei Wochen einnimmt?",
+      "reason": "Die Patientin nennt die Tablette unsicher als 'Amlodip', möglicherweise 5 mg abends, was auf Amlodipin hindeuten könnte, aber nicht gesichert ist. Eine klare Identifikation ist wichtig, um mögliche Ursachen für orthostatische Beschwerden zu bewerten.",
+      "fact_ids": [
+        "F0006"
+      ],
+      "basis": "unclear_source"
+    },
+    {
+      "question": "Um welche Schilddrüsenmedikation handelt es sich genau, insbesondere Wirkstoff und Stärke der halben Tablette, die morgens eingenommen wird?",
+      "reason": "Sowohl Patientin als auch Tochter kennen den Namen und die Stärke der Schilddrüsentablette nicht, obwohl sie regelmäßig eingenommen wird. Eine Klärung ist relevant für die Gesamtmedikation und mögliche Wechselwirkungen oder Unter-/Überfunktion.",
+      "fact_ids": [
+        "F0007",
+        "F0008"
+      ],
+      "basis": "unclear_source"
+    },
+    {
+      "question": "Wurde der Blutdruck der Patientin bereits im Liegen und Stehen gemessen, um eine orthostatische Hypotonie auszuwerten?",
+      "reason": "Die Patientin berichtet Schwindel und Dunkelwerden beim Aufstehen, der aktuelle Blutdruck im Sitzen ist normal. Eine Messung im Stehen wurde laut Angaben noch nicht durchgeführt, ist aber zentral für die Beurteilung der Symptome.",
+      "fact_ids": [
+        "F0014",
+        "F0016",
+        "F0021"
+      ],
+      "basis": "not_documented"
+    },
+    {
+      "question": "Könnte die neue Blutdruckmedikation in Zusammenhang mit dem vorübergehenden 'Wegsein'-Ereignis stehen, und wie bewertet die Patientin die zeitliche Abfolge zur Medikamentenumstellung?",
+      "reason": "Die Tochter berichtet über ein kurzzeitiges 'Wegsein', die Patientin verneint Bewusstlosigkeit. Die Einführung einer neuen blutdrucksenkenden Therapie könnte hier eine Rolle spielen, insbesondere wenn diese erst seit zwei Wochen läuft.",
+      "fact_ids": [
+        "F0002",
+        "F0003",
+        "F0006",
+        "F0019"
+      ],
+      "basis": "unclear_source"
+    },
+    {
+      "question": "Lag bei den roten Flecken nach Einnahme des Antibiotikums eine dokumentierte allergische Reaktion vor, und welches Antibiotikum könnte gemeint sein?",
+      "reason": "Die Patientin berichtet über Hauterscheinungen nach einem Antibiotikum, kennt aber weder den Namen noch die genaue Art der Reaktion. Dies ist wichtig für die Allergieanamnese, insbesondere bei geplanter medikamentöser Therapie.",
+      "fact_ids": [
+        "F0011"
+      ],
+      "basis": "unclear_source"
+    }
+  ],
+  "rejected": [
+    {
+      "candidate": {
+        "id": "F0015",
+        "section": "findings",
+        "statement": "Der Puls beträgt 78 pro Minute und ist regelmäßig.",
+        "uncertain": false,
+        "evidence": [
+          {
+            "source_id": "S7",
+            "quote": " Quecksilbersäule, der Puls 78 pro Minute und regelmäßig. Eine Messung im Stehen haben wir heute noch nicht gemacht. Eine körperliche Untersuchung ist bisher ebenfalls noch nicht erfolgt.\nPatientin: Ist dann sicher die neue Tablette schuld?\nÄrztin: Das ist nicht gesichert. Ich vermute einen Zusammenhang mit Blutdruckschwankungen; die neue Medikation könnte",
+            "spans": [
+              {
+                "start": 2140,
+                "end": 2498
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S6",
+              "quote": " vielen Jahren hatte ich nach einem Antibiotikum rote Flecken, aber ich weiß weder den Namen noch, ob es wirklich eine Allergie war.\nÄrztin: Wie viel trinken Sie ungefähr?\nPatientin: Vielleicht einen Liter am Tag. Kein Erbrechen und keinen Durchfall in den letzten Tagen.\nÄrztin: Der heute hier im Sitzen gemessene Blutdruck beträgt 118 zu 72 Millimeter",
+              "spans": [
+                {
+                  "start": 1787,
+                  "end": 2140
+                }
+              ]
+            }
+          ],
+          "reason": "Die Aussage über den Puls von 78 pro Minute und dass er regelmäßig ist, wird durch das zitierte Textfragment nicht gestützt. Im zitierten Abschnitt ist lediglich vom Blutdruck (118 zu 72 mmHg) die Rede, nicht jedoch von der Herzfrequenz oder der Pulsregelmäßigkeit. Es fehlt ein direktes Zitat, das den Puls betrifft."
+        }
+      },
+      "reason": "Die Aussage über einen Puls von 78 pro Minute und dessen Regelmäßigkeit wird durch das zitierte Textfragment aus S7 nicht gestützt. Obwohl der Pulswert im Zitat genannt wird, fehlt ein direkter Bezug im Kontext der körperlichen Untersuchung, da explizit erwähnt wird, dass eine körperliche Untersuchung noch nicht erfolgt ist. Zudem wird im ursprünglichen Zitat aus S6 lediglich der Blutdruck erwähnt, nicht der Puls. Ein direktes, kontextuell passendes Zitat, das den Puls und seine Regelmäßigkeit als festgestellten Befund belegt, fehlt."
+    },
+    {
+      "candidate": {
+        "id": "F0023",
+        "section": "plan",
+        "statement": "Die Befundbesprechung ist für übermorgen, Donnerstagvormittag, telefonisch vereinbart.",
+        "uncertain": false,
+        "evidence": [
+          {
+            "source_id": "S8",
+            "quote": " dazu beitragen. Eine gesicherte Ursache haben wir bisher nicht.\nÄrztin: Wir planen heute noch eine Blutdruckmessung im Liegen und im Stehen und ein EKG. Ergebnisse liegen dazu noch nicht vor. Morgen soll die Blutabnahme erfolgen; besprochen sind Blutbild, Elektrolyte und Nierenwerte. Die Befundbesprechung vereinbaren wir für übermorgen, am",
+            "spans": [
+              {
+                "start": 2498,
+                "end": 2840
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S8",
+              "quote": " dazu beitragen. Eine gesicherte Ursache haben wir bisher nicht.\nÄrztin: Wir planen heute noch eine Blutdruckmessung im Liegen und im Stehen und ein EKG. Ergebnisse liegen dazu noch nicht vor. Morgen soll die Blutabnahme erfolgen; besprochen sind Blutbild, Elektrolyte und Nierenwerte. Die Befundbesprechung vereinbaren wir für übermorgen, am",
+              "spans": [
+                {
+                  "start": 2498,
+                  "end": 2840
+                }
+              ]
+            },
+            {
+              "source_id": "S10",
+              "quote": " notiert.\n",
+              "spans": [
+                {
+                  "start": 3195,
+                  "end": 3205
+                }
+              ]
+            }
+          ],
+          "reason": "Die Aussage behauptet, dass die Befundbesprechung für Donnerstagvormittag telefonisch vereinbart wurde. Die zitierte Quelle (S8) erwähnt lediglich, dass die Befundbesprechung für übermorgen vereinbart wird, nennt aber keinen Wochentag oder die Tageszeit und auch nicht, dass die Vereinbarung telefonisch erfolgte. Diese zusätzlichen Details (Donnerstagvormittag, telefonisch) sind im Text nicht enthalten und können nicht sicher abgeleitet werden."
+        }
+      },
+      "reason": "Die Aussage nennt spezifische Details (Donnerstagvormittag, telefonisch), die in der zitierten Quelle (S8) nicht enthalten sind. Die Quelle erwähnt lediglich, dass die Befundbesprechung für „übermorgen“ vereinbart wird, ohne Wochentag, Tageszeit oder Kommunikationsform zu spezifizieren. Diese zusätzlichen Informationen sind im Gespräch nicht belegt und können nicht sicher abgeleitet werden."
+    }
+  ],
+  "validation": "literal source checks and automated fact review; not clinical validation"
+}
