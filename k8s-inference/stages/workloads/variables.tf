@@ -670,6 +670,62 @@ variable "kubeconfig_path" {
   }
 }
 
+variable "model_network_boundary_kubeconfig_path" {
+  description = "Separate Platform-Security-issued kubeconfig for the exact network authorizer (prepare) or transition writer (post-prepare). It must not be the shared deployment kubeconfig and must not rely on impersonation."
+  type        = string
+  default     = "/var/run/fs2-network-boundary/credential-required"
+  nullable    = false
+  sensitive   = true
+
+  validation {
+    condition = (
+      startswith(nonsensitive(var.model_network_boundary_kubeconfig_path), "/") &&
+      !strcontains(nonsensitive(var.model_network_boundary_kubeconfig_path), "..") &&
+      nonsensitive(var.model_network_boundary_kubeconfig_path) != var.kubeconfig_path
+    )
+    error_message = "model_network_boundary_kubeconfig_path must be an absolute, traversal-free credential path distinct from kubeconfig_path."
+  }
+}
+
+variable "model_network_boundary_trust_root_sha256" {
+  description = "SHA-256 of the Platform-Security custody signing public key pinned by the root deployment contract."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition = (
+      var.model_network_boundary_trust_root_sha256 == "" ||
+      can(regex("^[a-f0-9]{64}$", var.model_network_boundary_trust_root_sha256))
+    )
+    error_message = "model_network_boundary_trust_root_sha256 must be empty only for offline source checks or an exact SHA-256."
+  }
+}
+
+variable "model_network_boundary_authority_receipt" {
+  description = "Signature-verified, non-secret external custody receipt supplied only by inference-stack after live authority preflight."
+  type        = any
+  default     = null
+}
+
+variable "model_network_helm_kubeconfig_path" {
+  description = "Shared deployment kubeconfig normally; the externally custodied transition kubeconfig only for deny-absent rollback-helm."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition = (
+      var.model_network_helm_kubeconfig_path == "" ||
+      (
+        startswith(var.model_network_helm_kubeconfig_path, "/") &&
+        !strcontains(var.model_network_helm_kubeconfig_path, "..")
+      )
+    )
+    error_message = "model_network_helm_kubeconfig_path must be empty or an absolute traversal-free path."
+  }
+}
+
 variable "run_id" {
   description = "Disposable lifecycle ID shared with infrastructure and foundation state."
   type        = string
@@ -1518,18 +1574,20 @@ variable "model_runtime_network_policy" {
       profiles_sha256 = string
       resource_apis   = map(bool)
       workloads = map(object({
-        uid        = string
-        generation = number
-        profile    = string
-        rollout    = map(number)
+        uid            = string
+        generation     = number
+        profile        = string
+        workload_class = string
+        rollout        = map(number)
       }))
       pods = map(object({
-        uid        = string
-        profile    = string
-        owner_kind = string
-        owner_uid  = string
-        phase      = string
-        ready      = bool
+        uid            = string
+        profile        = string
+        workload_class = string
+        owner_kind     = string
+        owner_uid      = string
+        phase          = string
+        ready          = bool
       }))
       live_controller = object({
         deployment_name     = string
@@ -1544,8 +1602,24 @@ variable "model_runtime_network_policy" {
           ready    = bool
         }))
       })
-      admission_bindings = map(string)
-      payload_sha256     = string
+      transition_lock_uid = string
+      admission_policies = map(object({
+        uid              = string
+        resource_version = string
+        spec_sha256      = string
+      }))
+      admission_bindings = map(object({
+        uid              = string
+        resource_version = string
+        spec_sha256      = string
+      }))
+      admission_webhook = object({
+        uid              = string
+        resource_version = string
+        spec_sha256      = string
+      })
+      boundary_authority_sha256 = string
+      payload_sha256            = string
     }), null)
     deny_absent_receipt = optional(object({
       schema                     = string
@@ -1587,6 +1661,55 @@ variable "model_runtime_network_policy" {
       )
     )
     error_message = "prepare and inventory accept no receipts; enforce and rollback-remove-deny require only the inventory receipt; rollback-helm requires both receipts."
+  }
+}
+
+variable "model_network_transition_lock_identity" {
+  description = "Ephemeral holder identity supplied only by inference-stack while it owns the cluster-wide model-network transition Lease."
+  type        = string
+  default     = ""
+  nullable    = false
+  sensitive   = true
+
+  validation {
+    condition = (
+      var.model_network_transition_lock_identity == "" ||
+      can(regex("^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$", nonsensitive(var.model_network_transition_lock_identity)))
+    )
+    error_message = "A model-network transition holder must be empty or the wrapper's run:pid:128-bit-token identity."
+  }
+}
+
+variable "model_network_transition_writer_username" {
+  description = "Exact Kubernetes-authenticated username that acquired the retained model-network transition Lease; supplied only by inference-stack."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition = (
+      (var.model_runtime_network_policy.phase == "prepare" && var.model_network_transition_writer_username == "") ||
+      var.model_network_transition_writer_username == "fs2-model-network-transition"
+    )
+    error_message = "Every held model-network transition requires the exact separately authenticated fs2-model-network-transition username."
+  }
+}
+
+variable "model_network_transition_lock_required" {
+  description = "True only for a supported workloads apply running under the cluster-wide model-network transition Lease; offline plans leave it false."
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition = (
+      !var.model_network_transition_lock_required ||
+      (
+        var.model_network_transition_lock_identity != "" &&
+        var.model_network_transition_writer_username == "fs2-model-network-transition"
+      )
+    )
+    error_message = "A required model-network transition lock needs the wrapper's random holder identity and exact separately authenticated transition writer."
   }
 }
 

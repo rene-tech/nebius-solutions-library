@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fs2-model-network-boundary
+description: Separately custodied fail-closed admission authority for SAI-03
+type: application
+version: 0.1.0
+appVersion: "1"

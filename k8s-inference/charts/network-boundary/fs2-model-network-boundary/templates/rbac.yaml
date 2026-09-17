@@ -1,0 +1,171 @@
+{{- if ne .Release.Namespace .Values.authorityNamespace }}
+{{- fail "the boundary authority release must run in fs2-network-security" }}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fs2-model-network-boundary
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.acquisitionServiceAccountName }}
+  namespace: {{ .Values.systemNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+    app.kubernetes.io/component: catalog-acquisition-writer
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-model-network-boundary-reader
+  namespace: {{ .Values.modelNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "replicationcontrollers"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get"]
+  - apiGroups: ["jobset.x-k8s.io"]
+    resources: ["jobsets"]
+    verbs: ["get"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    resourceNames: ["default-deny"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-model-network-boundary-reader
+  namespace: {{ .Values.modelNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: fs2-model-network-boundary
+    namespace: {{ .Values.authorityNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-model-network-boundary-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-model-network-boundary-lease-reader
+  namespace: {{ .Values.systemNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["fs2-model-network-transition"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-model-network-boundary-lease-reader
+  namespace: {{ .Values.systemNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: fs2-model-network-boundary
+    namespace: {{ .Values.authorityNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-model-network-boundary-lease-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-catalog-acquisition-job-writer
+  namespace: {{ .Values.modelNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-catalog-acquisition-job-writer
+  namespace: {{ .Values.modelNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.acquisitionServiceAccountName }}
+    namespace: {{ .Values.systemNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-catalog-acquisition-job-writer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-model-network-transition
+  namespace: {{ .Values.systemNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["fs2-model-network-transition"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-model-network-transition
+  namespace: {{ .Values.systemNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+subjects:
+  - kind: User
+    name: {{ .Values.transitionWriterUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-model-network-transition

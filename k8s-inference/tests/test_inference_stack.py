@@ -248,6 +248,187 @@ def regional_dynamic(run_root: Path) -> dict:
 
 
 class InferenceStackTests(unittest.TestCase):
+    @mock.patch.object(STACK.subprocess, "run")
+    def test_network_transition_rejects_an_already_pending_helm_release(
+        self, subprocess_run: mock.Mock
+    ) -> None:
+        subprocess_run.return_value = subprocess.CompletedProcess(
+            args=["kubectl-test", "get", "secrets,configmaps"],
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "items": [
+                        {
+                            "metadata": {
+                                "labels": {
+                                    "owner": "helm",
+                                    "name": "fs2-serve-control-plane",
+                                    "version": "135",
+                                    "status": "pending-upgrade",
+                                }
+                            }
+                        }
+                    ]
+                }
+            ),
+            stderr="",
+        )
+
+        with self.assertRaisesRegex(STACK.DeploymentError, "not idle"):
+            STACK.ensure_control_plane_helm_release_idle(
+                kubectl="kubectl-test",
+                kubeconfig="/read-only/kubeconfig",
+                context="test-context",
+            )
+
+    @mock.patch.object(STACK, "run")
+    @mock.patch.object(STACK.subprocess, "run")
+    def test_transition_lock_fails_closed_on_unauthorized_get(
+        self,
+        subprocess_run: mock.Mock,
+        mutating_run: mock.Mock,
+    ) -> None:
+        subprocess_run.return_value = subprocess.CompletedProcess(
+            args=["kubectl-test", "auth", "whoami"],
+            returncode=0,
+            stdout=json.dumps(
+                {"status": {"userInfo": {"username": "reviewer@example.test"}}}
+            ),
+            stderr="",
+        )
+
+        with self.assertRaisesRegex(STACK.DeploymentError, "dedicated"):
+            with STACK.model_network_transition_lock(
+                kubectl="kubectl-test",
+                kubeconfig="/read-only/kubeconfig",
+                context="test-context",
+                run_id="testrun",
+            ):
+                self.fail("an unauthorized Lease read must not acquire the lock")
+
+        mutating_run.assert_not_called()
+
+    @mock.patch.object(STACK, "run")
+    @mock.patch.object(STACK.subprocess, "run")
+    def test_transition_lock_binds_the_authenticated_writer_in_the_lease(
+        self,
+        subprocess_run: mock.Mock,
+        mutating_run: mock.Mock,
+    ) -> None:
+        username = "fs2-model-network-transition"
+        subprocess_run.side_effect = [
+            subprocess.CompletedProcess(
+                args=["kubectl-test", "auth", "whoami"],
+                returncode=0,
+                stdout=json.dumps({"status": {"userInfo": {"username": username}}}),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=["kubectl-test", "get", "lease"],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "metadata": {
+                            "resourceVersion": "17",
+                            "annotations": {
+                                "fs2-serve.nebius.ai/network-transition-writer": username
+                            },
+                        },
+                        "spec": {
+                            "holderIdentity": "",
+                            "leaseDurationSeconds": 1,
+                            "renewTime": "2020-01-01T00:00:00Z",
+                            "leaseTransitions": 4,
+                        },
+                    }
+                ),
+                stderr="",
+            ),
+        ]
+
+        with STACK.model_network_transition_lock(
+            kubectl="kubectl-test",
+            kubeconfig="/read-only/kubeconfig",
+            context="test-context",
+            run_id="testrun",
+        ) as (holder, observed_username):
+            self.assertTrue(holder.startswith("testrun:"))
+            self.assertEqual(username, observed_username)
+
+        acquisition_patch = json.loads(
+            mutating_run.call_args_list[0].kwargs["input_text"]
+        )
+        self.assertIn(
+            {
+                "op": "add",
+                "path": "/metadata/annotations/fs2-serve.nebius.ai~1network-transition-writer",
+                "value": username,
+            },
+            acquisition_patch,
+        )
+        self.assertEqual(2, mutating_run.call_count)
+
+    @mock.patch.object(STACK, "run")
+    @mock.patch.object(STACK.subprocess, "run")
+    def test_transition_lock_replaces_an_expired_nonempty_holder_by_rv_cas(
+        self,
+        subprocess_run: mock.Mock,
+        mutating_run: mock.Mock,
+    ) -> None:
+        username = "fs2-model-network-transition"
+        old_holder = "testrun:100:0123456789abcdef0123456789abcdef"
+        subprocess_run.side_effect = [
+            subprocess.CompletedProcess(
+                args=["kubectl-test", "auth", "whoami"],
+                returncode=0,
+                stdout=json.dumps({"status": {"userInfo": {"username": username}}}),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=["kubectl-test", "get", "lease"],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "metadata": {
+                            "resourceVersion": "41",
+                            "annotations": {
+                                "fs2-serve.nebius.ai/network-transition-writer": username,
+                                "fs2-serve.nebius.ai/network-transition-holder": old_holder,
+                            },
+                        },
+                        "spec": {
+                            "holderIdentity": old_holder,
+                            "leaseDurationSeconds": 1,
+                            "renewTime": "2020-01-01T00:00:00Z",
+                            "leaseTransitions": 7,
+                        },
+                    }
+                ),
+                stderr="",
+            ),
+        ]
+
+        with STACK.model_network_transition_lock(
+            kubectl="kubectl-test",
+            kubeconfig="/read-only/kubeconfig",
+            context="test-context",
+            run_id="testrun",
+        ) as (holder, observed_username):
+            self.assertNotEqual(old_holder, holder)
+            self.assertEqual(username, observed_username)
+
+        acquisition_patch = json.loads(
+            mutating_run.call_args_list[0].kwargs["input_text"]
+        )
+        self.assertIn(
+            {"op": "test", "path": "/metadata/resourceVersion", "value": "41"},
+            acquisition_patch,
+        )
+        self.assertIn(
+            {"op": "test", "path": "/spec/holderIdentity", "value": old_holder},
+            acquisition_patch,
+        )
+
     def test_rollback_remove_deny_plan_is_exactly_bounded(self) -> None:
         current = contract()
         current["stages"]["workloads"]["model_runtime_network_policy"] = {
@@ -262,8 +443,43 @@ class InferenceStackTests(unittest.TestCase):
                 },
                 {
                     "mode": "managed",
+                    "address": "terraform_data.model_runtime_network_policy_apply_fence[0]",
+                    "change": {"actions": ["delete"]},
+                },
+                {
+                    "mode": "managed",
                     "address": "terraform_data.model_runtime_network_policy_transition",
                     "change": {"actions": ["update"]},
+                },
+                {
+                    "mode": "managed",
+                    "address": (
+                        "kubernetes_network_policy_v1."
+                        'model_runtime_base_profile["gateway-dns-tcp-8000-v1"]'
+                    ),
+                    "change": {
+                        "actions": ["update"],
+                        "before": {
+                            "metadata": [
+                                {
+                                    "annotations": {
+                                        "fs2-serve.nebius.ai/network-transition-holder": "old"
+                                    },
+                                    "name": "profile",
+                                }
+                            ]
+                        },
+                        "after": {
+                            "metadata": [
+                                {
+                                    "annotations": {
+                                        "fs2-serve.nebius.ai/network-transition-holder": "new"
+                                    },
+                                    "name": "profile",
+                                }
+                            ]
+                        },
+                    },
                 },
                 {
                     "mode": "data",
@@ -276,7 +492,7 @@ class InferenceStackTests(unittest.TestCase):
         STACK.validate_model_network_policy_rollback_plan(
             {"resource_changes": []}, current
         )
-        for remaining in safe["resource_changes"][:2]:
+        for remaining in safe["resource_changes"][:4]:
             STACK.validate_model_network_policy_rollback_plan(
                 {"resource_changes": [remaining]}, current
             )
@@ -308,6 +524,35 @@ class InferenceStackTests(unittest.TestCase):
                         "mode": "managed",
                         "address": "helm_release.control_plane",
                         "change": {"actions": ["update"]},
+                    }
+                ]
+            },
+            current,
+        )
+
+    def test_active_boundary_rejects_any_control_plane_helm_change(self) -> None:
+        current = contract()
+        current["stages"]["workloads"]["model_runtime_network_policy"] = {
+            "phase": "prepare"
+        }
+        with self.assertRaisesRegex(STACK.DeploymentError, "already active"):
+            STACK.validate_model_network_frozen_plan(
+                {
+                    "resource_changes": [
+                        {
+                            "address": "helm_release.control_plane",
+                            "change": {"actions": ["update"]},
+                        }
+                    ]
+                },
+                current,
+            )
+        STACK.validate_model_network_frozen_plan(
+            {
+                "resource_changes": [
+                    {
+                        "address": "helm_release.control_plane",
+                        "change": {"actions": ["no-op"]},
                     }
                 ]
             },

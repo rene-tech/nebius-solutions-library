@@ -185,6 +185,24 @@ locals {
         enabled = var.model_controller.writes_enabled
       }
     }
+    networkBoundaryAdmission = {
+      # Rejected compatibility artifact only. The active authority is the
+      # separately released and externally custodied network-boundary chart.
+      enabled                   = false
+      modelNamespace            = "fs2-models"
+      systemNamespace           = "fs2-system"
+      authorizerUsername        = "fs2-model-network-authorizer"
+      transitionWriterUsername  = "fs2-model-network-transition"
+      acquisitionWriterUsername = "system:serviceaccount:fs2-system:fs2-catalog-acquisition"
+      directJobWriterUsername   = "system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime"
+      jobsetWriterUsername = format(
+        "system:serviceaccount:jobset-system:%s",
+        try(
+          data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.controller_name,
+          "fs2-${var.run_id}-jobset-controller",
+        ),
+      )
+    }
     publicLoadBalancer = {
       enabled               = local.public_edge_enabled
       targetProjectId       = var.project_id
@@ -225,6 +243,7 @@ locals {
 }
 
 resource "helm_release" "control_plane" {
+  provider         = helm.control_plane
   name             = "fs2-serve-control-plane"
   namespace        = "fs2-system"
   chart            = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"

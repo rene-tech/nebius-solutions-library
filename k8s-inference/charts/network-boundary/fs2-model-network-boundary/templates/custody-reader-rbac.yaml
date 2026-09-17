@@ -1,0 +1,96 @@
+{{- range $namespace := list .Values.modelNamespace .Values.systemNamespace .Values.authorityNamespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-model-network-custody-reader
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" $ | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" $ | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "serviceaccounts", "services"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["issuers", "certificates"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-model-network-custody-reader
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" $ | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" $ | nindent 4 }}
+subjects:
+  - kind: User
+    name: {{ $.Values.authorizerUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+  - kind: User
+    name: {{ $.Values.transitionWriterUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-model-network-custody-reader
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fs2-model-network-custody-reader
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+rules:
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations"]
+    resourceNames: ["fs2-model-network-boundary"]
+    verbs: ["get"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles", "clusterrolebindings"]
+    resourceNames:
+      - fs2-model-network-admission-author
+      - fs2-model-network-custody-reader
+      - fs2-model-network-helm-rollback
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fs2-model-network-custody-reader
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+subjects:
+  - kind: User
+    name: {{ .Values.authorizerUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+  - kind: User
+    name: {{ .Values.transitionWriterUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fs2-model-network-custody-reader

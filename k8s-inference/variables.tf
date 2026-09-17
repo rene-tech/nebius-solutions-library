@@ -261,7 +261,8 @@ variable "deployment" {
       # rollback removes the deny in one apply and permits Helm rollback only
       # after a second live absence receipt.
       network_policy = optional(object({
-        phase = optional(string, "prepare")
+        phase                       = optional(string, "prepare")
+        authority_trust_root_sha256 = optional(string, "")
         inventory_receipt = optional(object({
           schema          = string
           cluster_id      = string
@@ -270,18 +271,20 @@ variable "deployment" {
           profiles_sha256 = string
           resource_apis   = map(bool)
           workloads = map(object({
-            uid        = string
-            generation = number
-            profile    = string
-            rollout    = map(number)
+            uid            = string
+            generation     = number
+            profile        = string
+            workload_class = string
+            rollout        = map(number)
           }))
           pods = map(object({
-            uid        = string
-            profile    = string
-            owner_kind = string
-            owner_uid  = string
-            phase      = string
-            ready      = bool
+            uid            = string
+            profile        = string
+            workload_class = string
+            owner_kind     = string
+            owner_uid      = string
+            phase          = string
+            ready          = bool
           }))
           live_controller = object({
             deployment_name     = string
@@ -296,8 +299,24 @@ variable "deployment" {
               ready    = bool
             }))
           })
-          admission_bindings = map(string)
-          payload_sha256     = string
+          transition_lock_uid = string
+          admission_policies = map(object({
+            uid              = string
+            resource_version = string
+            spec_sha256      = string
+          }))
+          admission_bindings = map(object({
+            uid              = string
+            resource_version = string
+            spec_sha256      = string
+          }))
+          admission_webhook = object({
+            uid              = string
+            resource_version = string
+            spec_sha256      = string
+          })
+          boundary_authority_sha256 = string
+          payload_sha256            = string
         }), null)
         deny_absent_receipt = optional(object({
           schema                     = string
@@ -861,6 +880,14 @@ variable "deployment" {
       "rollback-helm",
     ], var.deployment.models.network_policy.phase)
     error_message = "deployment.models.network_policy.phase must be prepare, inventory, enforce, rollback-remove-deny, or rollback-helm."
+  }
+
+  validation {
+    condition = (
+      var.deployment.models.network_policy.authority_trust_root_sha256 == "" ||
+      can(regex("^[a-f0-9]{64}$", var.deployment.models.network_policy.authority_trust_root_sha256))
+    )
+    error_message = "deployment.models.network_policy.authority_trust_root_sha256 must be empty for offline source checks or the exact SHA-256 of the independently custodied signing public key."
   }
 
   validation {

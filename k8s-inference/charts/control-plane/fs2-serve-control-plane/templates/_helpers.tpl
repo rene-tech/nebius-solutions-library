@@ -70,6 +70,11 @@ app.kubernetes.io/component: bootstrap-scientific-access
 app.kubernetes.io/component: model-controller
 {{- end -}}
 
+{{- define "fs2-serve.networkBoundarySelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: network-boundary-admission
+{{- end -}}
+
 {{- define "fs2-serve.serviceAccountName" -}}
 {{- $root := .root -}}
 {{- $component := .component -}}

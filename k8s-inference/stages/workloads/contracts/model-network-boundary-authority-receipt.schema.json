@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-boundary-authority/v1",
+  "title": "Externally signed model-network boundary custody receipt",
+  "type": "object",
+  "required": ["schema", "cluster_id", "authority_namespace", "issued_at", "expires_at", "deployment", "webhook", "acquisition_writer", "custody", "protected_objects", "payload_sha256"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-authority/v1"},
+    "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
+    "authority_namespace": {"const": "fs2-network-security"},
+    "issued_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "deployment": {
+      "type": "object",
+      "required": ["image"],
+      "properties": {
+        "image": {
+          "type": "object",
+          "required": ["repository", "digest"],
+          "properties": {
+            "repository": {"type": "string", "pattern": "^[^@\\s]+/network-boundary-authority$"},
+            "digest": {"$ref": "#/$defs/imageDigest"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "webhook": {
+      "type": "object",
+      "required": ["name", "uid", "resource_version", "spec_sha256"],
+      "properties": {
+        "name": {"const": "fs2-model-network-boundary"},
+        "uid": {"type": "string", "minLength": 1},
+        "resource_version": {"type": "string", "minLength": 1},
+        "spec_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "acquisition_writer": {
+      "type": "object",
+      "required": ["username", "service_account_uid", "resource_version"],
+      "properties": {
+        "username": {"const": "system:serviceaccount:fs2-system:fs2-catalog-acquisition"},
+        "service_account_uid": {"type": "string", "minLength": 1},
+        "resource_version": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "custody": {
+      "type": "object",
+      "required": ["trust_root_sha256", "impersonation_allowed", "credentials"],
+      "properties": {
+        "trust_root_sha256": {"$ref": "#/$defs/sha256"},
+        "impersonation_allowed": {"const": false},
+        "credentials": {
+          "type": "object",
+          "required": ["authorizer", "transition"],
+          "properties": {
+            "authorizer": {"$ref": "#/$defs/credential"},
+            "transition": {"$ref": "#/$defs/credential"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "protected_objects": {
+      "type": "array",
+      "minItems": 32,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["resource", "namespace", "name", "uid", "resource_version", "object_sha256"],
+        "properties": {
+          "resource": {"type": "string", "minLength": 1, "maxLength": 253},
+          "namespace": {"type": "string", "maxLength": 63},
+          "name": {"type": "string", "minLength": 1, "maxLength": 253},
+          "uid": {"type": "string", "minLength": 1},
+          "resource_version": {"type": "string", "minLength": 1},
+          "object_sha256": {"$ref": "#/$defs/sha256"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "payload_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "imageDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "credential": {
+      "type": "object",
+      "required": ["username", "authentication_mode", "impersonation_allowed", "kubeconfig_sha256", "client_certificate_sha256", "issuer_ca_sha256"],
+      "properties": {
+        "username": {"enum": ["fs2-model-network-authorizer", "fs2-model-network-transition"]},
+        "authentication_mode": {"const": "x509-client-certificate"},
+        "impersonation_allowed": {"const": false},
+        "kubeconfig_sha256": {"$ref": "#/$defs/sha256"},
+        "client_certificate_sha256": {"$ref": "#/$defs/sha256"},
+        "issuer_ca_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

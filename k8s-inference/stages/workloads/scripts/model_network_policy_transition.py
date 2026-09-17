@@ -15,25 +15,34 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 PROFILE_LABEL = "fs2-serve.nebius.ai/network-profile"
+WORKLOAD_CLASS_LABEL = "fs2-serve.nebius.ai/network-workload-class"
 COMPONENT_LABEL = "app.kubernetes.io/component"
 PART_OF_LABEL = "app.kubernetes.io/part-of"
 NAMESPACE = "fs2-models"
 SYSTEM_NAMESPACE = "fs2-system"
-INVENTORY_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-inventory/v2"
+INVENTORY_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-inventory/v6"
 DENY_ABSENT_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-deny-absent/v2"
+HOLDER_PATTERN = re.compile(r"^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$")
 WORKLOAD_RESOURCES = {
     "deployments": ("apps/v1", "Deployment", "deployments.apps"),
     "statefulsets": ("apps/v1", "StatefulSet", "statefulsets.apps"),
     "daemonsets": ("apps/v1", "DaemonSet", "daemonsets.apps"),
     "replicasets": ("apps/v1", "ReplicaSet", "replicasets.apps"),
+    "replicationcontrollers": (
+        "v1",
+        "ReplicationController",
+        "replicationcontrollers",
+    ),
     "jobs": ("batch/v1", "Job", "jobs.batch"),
+    "cronjobs": ("batch/v1", "CronJob", "cronjobs.batch"),
     "jobsets": ("jobset.x-k8s.io/v1alpha2", "JobSet", "jobsets.jobset.x-k8s.io"),
 }
 
@@ -148,6 +157,11 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
     if contract.get("namespace") != NAMESPACE:
         raise ReceiptError(f"transition contract namespace must be {NAMESPACE}")
     profiles = _strings(contract.get("profiles"), "contract.profiles")
+    serving_profiles = _strings(
+        contract.get("serving_profiles"), "contract.serving_profiles"
+    )
+    if not set(serving_profiles).issubset(profiles):
+        raise ReceiptError("transition serving profiles are outside its finite catalog")
     policy_names = _strings(
         contract.get("allow_policy_names"), "contract.allow_policy_names"
     )
@@ -164,16 +178,56 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
     admission_bindings = _strings(
         contract.get("admission_binding_names"), "contract.admission_binding_names"
     )
-    if admission_bindings != [f"{name}-fs2-models" for name in admission_policies]:
-        raise ReceiptError(
-            "transition contract admission bindings do not match its policies"
-        )
+    policy_hashes = _object(
+        contract.get("admission_policy_spec_sha256"),
+        "contract.admission_policy_spec_sha256",
+    )
+    binding_hashes = _object(
+        contract.get("admission_binding_spec_sha256"),
+        "contract.admission_binding_spec_sha256",
+    )
+    if (
+        sorted(policy_hashes) != admission_policies
+        or sorted(binding_hashes) != admission_bindings
+    ):
+        raise ReceiptError("transition admission spec hashes do not cover exact names")
+    if not all(
+        isinstance(value, str) and len(value) == 64
+        for value in [*policy_hashes.values(), *binding_hashes.values()]
+    ):
+        raise ReceiptError("transition admission spec hashes are invalid")
     cluster_id = contract.get("cluster_id")
     if not isinstance(cluster_id, str) or not cluster_id:
         raise ReceiptError("transition contract cluster_id is missing")
     controller_name = contract.get("controller_deployment_name")
     if not isinstance(controller_name, str) or not controller_name:
         raise ReceiptError("transition contract controller Deployment name is missing")
+    if contract.get("transition_lock_name") != "fs2-model-network-transition":
+        raise ReceiptError("transition contract Lease name is invalid")
+    if contract.get("transition_lock_namespace") != SYSTEM_NAMESPACE:
+        raise ReceiptError("transition contract Lease namespace is invalid")
+    if contract.get("boundary_webhook_name") != "fs2-model-network-boundary":
+        raise ReceiptError("transition contract boundary webhook name is invalid")
+    transition_writer = contract.get("transition_writer_username")
+    if transition_writer != "fs2-model-network-transition":
+        raise ReceiptError("transition contract authenticated writer is not exact")
+    authority = _object(
+        contract.get("boundary_authority"), "contract.boundary_authority"
+    )
+    if (
+        authority.get("schema")
+        != "fs2-serve.nebius.ai/model-network-boundary-authority/v1"
+        or authority.get("cluster_id") != cluster_id
+        or authority.get("authority_namespace") != "fs2-network-security"
+    ):
+        raise ReceiptError(
+            "transition contract has no exact external boundary authority"
+        )
+    authority_payload = {
+        key: value for key, value in authority.items() if key != "payload_sha256"
+    }
+    if authority.get("payload_sha256") != _sha256(authority_payload):
+        raise ReceiptError("external boundary authority payload digest is inconsistent")
     image = _object(contract.get("control_plane_image"), "contract.control_plane_image")
     if not isinstance(image.get("repository"), str) or not image["repository"]:
         raise ReceiptError("control-plane image repository is missing")
@@ -207,6 +261,83 @@ def _profile(labels: dict[str, Any], recognized: set[str], field: str) -> str:
     return profile
 
 
+def _authorized_profile(
+    contract: dict[str, Any],
+    kind: str,
+    metadata: dict[str, Any],
+    field: str,
+) -> tuple[str, str]:
+    labels = _labels(metadata, field)
+    profile = _profile(labels, set(contract["profiles"]), field)
+    workload_class = labels.get(WORKLOAD_CLASS_LABEL)
+    component = labels.get(COMPONENT_LABEL)
+    job_kind = labels.get("fs2-serve.nebius.ai/job-kind")
+    authorized = False
+    if workload_class == "runtime":
+        authorized = (
+            kind
+            in {
+                "Deployment",
+                "StatefulSet",
+                "ReplicaSet",
+                "ReplicationController",
+                "Pod",
+            }
+            and component == "model-runtime"
+            and profile in set(contract["serving_profiles"])
+        )
+    elif workload_class == "cache-keeper":
+        authorized = (
+            kind in {"DaemonSet", "Pod"}
+            and component == "model-cache-keeper"
+            and profile == "cache-resident-zero-egress-v1"
+        )
+    elif workload_class == "acceptance":
+        authorized = (
+            kind in {"Job", "Pod"}
+            and component == "acceptance"
+            and profile == "acceptance-zero-egress-v1"
+        )
+    elif workload_class == "internal-job":
+        authorized = (
+            kind in {"Job", "JobSet", "CronJob", "Pod"}
+            and profile == "job-internal-v1"
+            and (kind == "Pod" or job_kind in {"batch", "evaluation"})
+        )
+    elif workload_class == "cache-resident":
+        authorized = (
+            kind in {"Job", "Pod"}
+            and profile == "cache-resident-zero-egress-v1"
+            and (kind == "Pod" or job_kind == "cache")
+        )
+    elif workload_class == "public-acquisition":
+        annotations = _object(metadata.get("annotations", {}), f"{field}.annotations")
+        acquisition_plan = annotations.get(
+            "fs2-serve.nebius.ai/acquisition-plan-sha256"
+        )
+        authorized = (
+            kind in {"Job", "Pod"}
+            and profile == "job-public-acquisition-v1"
+            and labels.get("app.kubernetes.io/managed-by") == "fs2-serve-models"
+            and isinstance(labels.get("fs2-serve.nebius.ai/model-id"), str)
+            and bool(labels.get("fs2-serve.nebius.ai/model-id"))
+            and isinstance(labels.get("fs2-serve.nebius.ai/operation-id"), str)
+            and bool(labels.get("fs2-serve.nebius.ai/operation-id"))
+            and labels.get("fs2-serve.nebius.ai/acquisition-authority")
+            == "catalog-qualified-v1"
+            and (kind == "Pod" or job_kind == "cache")
+            and isinstance(acquisition_plan, str)
+            and len(acquisition_plan) == 64
+            and all(character in "0123456789abcdef" for character in acquisition_plan)
+        )
+    if not authorized:
+        raise ReceiptError(
+            f"{field} profile {profile!r} is not authorized for {kind} "
+            f"workload class {workload_class!r}"
+        )
+    return profile, str(workload_class)
+
+
 def _identity(metadata: dict[str, Any], field: str) -> tuple[str, str, int]:
     name = metadata.get("name")
     uid = metadata.get("uid")
@@ -237,7 +368,14 @@ def _controller_converged(kind: str, item: dict[str, Any]) -> dict[str, int]:
     status = _object(item.get("status", {}), f"{kind}.status")
     generation = metadata.get("generation", 0)
     if (
-        kind in {"Deployment", "StatefulSet", "DaemonSet", "ReplicaSet"}
+        kind
+        in {
+            "Deployment",
+            "StatefulSet",
+            "DaemonSet",
+            "ReplicaSet",
+            "ReplicationController",
+        }
         and status.get("observedGeneration", 0) != generation
     ):
         raise ReceiptError(
@@ -300,7 +438,7 @@ def _controller_converged(kind: str, item: dict[str, Any]) -> dict[str, int]:
                 f"DaemonSet {metadata.get('name')} rollout is not converged"
             )
         return values
-    if kind == "ReplicaSet":
+    if kind in {"ReplicaSet", "ReplicationController"}:
         desired = spec.get("replicas", 1)
         values = {
             "desired": desired,
@@ -309,7 +447,7 @@ def _controller_converged(kind: str, item: dict[str, Any]) -> dict[str, int]:
         }
         if values != {"desired": desired, "ready": desired, "available": desired}:
             raise ReceiptError(
-                f"ReplicaSet {metadata.get('name')} rollout is not converged"
+                f"{kind} {metadata.get('name')} rollout is not converged"
             )
         return values
     return {}
@@ -317,6 +455,10 @@ def _controller_converged(kind: str, item: dict[str, Any]) -> dict[str, int]:
 
 def _pod_template(item: dict[str, Any], kind: str) -> dict[str, Any]:
     spec = _object(item.get("spec"), f"{kind}.spec")
+    if kind == "CronJob":
+        job_template = _object(spec.get("jobTemplate"), "CronJob.spec.jobTemplate")
+        job_spec = _object(job_template.get("spec"), "CronJob.spec.jobTemplate.spec")
+        return _object(job_spec.get("template"), "CronJob PodTemplate")
     if kind != "JobSet":
         return _object(spec.get("template"), f"{kind}.spec.template")
     replicated_jobs = spec.get("replicatedJobs")
@@ -360,7 +502,6 @@ def _workload_inventory(
     contract: dict[str, Any],
     resources: dict[str, dict[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, bool]]:
-    recognized = set(contract["profiles"])
     workloads: dict[str, Any] = {}
     availability: dict[str, bool] = {}
     for key, (api_version, kind, _resource) in WORKLOAD_RESOURCES.items():
@@ -378,21 +519,50 @@ def _workload_inventory(
         for item in _items(document, key):
             metadata = _object(item.get("metadata"), f"{kind}.metadata")
             name, uid, generation = _identity(metadata, kind)
-            profile = _profile(_labels(metadata, kind), recognized, f"{kind} {name}")
+            profile, workload_class = _authorized_profile(
+                contract, kind, metadata, f"{kind} {name}"
+            )
             template = _pod_template(item, kind)
             template_metadata = _object(
                 template.get("metadata"),
                 f"{kind} {name} PodTemplate.metadata",
             )
-            template_profile = _profile(
-                _labels(template_metadata, f"{kind} {name} PodTemplate"),
-                recognized,
+            template_profile, template_class = _authorized_profile(
+                contract,
+                "Pod",
+                template_metadata,
                 f"{kind} {name} PodTemplate",
             )
-            if profile != template_profile:
+            if profile != template_profile or workload_class != template_class:
                 raise ReceiptError(
-                    f"{kind} {name} workload and Pod template profiles differ"
+                    f"{kind} {name} workload and Pod template network identities differ"
                 )
+            if workload_class == "public-acquisition":
+                template_spec = _object(
+                    template.get("spec"),
+                    f"{kind} {name} PodTemplate.spec",
+                )
+                if template_spec.get("serviceAccountName") != "cache-service-account":
+                    raise ReceiptError(
+                        f"{kind} {name} public acquisition has the wrong "
+                        "service account"
+                    )
+                workload_annotations = _object(
+                    metadata.get("annotations", {}),
+                    f"{kind} {name}.metadata.annotations",
+                )
+                template_annotations = _object(
+                    template_metadata.get("annotations", {}),
+                    f"{kind} {name} PodTemplate.metadata.annotations",
+                )
+                if template_annotations.get(
+                    "fs2-serve.nebius.ai/acquisition-plan-sha256"
+                ) != workload_annotations.get(
+                    "fs2-serve.nebius.ai/acquisition-plan-sha256"
+                ):
+                    raise ReceiptError(
+                        f"{kind} {name} acquisition plan differs from its Pod template"
+                    )
             if kind == "JobSet":
                 replicated_jobs = _object(item.get("spec"), "JobSet.spec").get(
                     "replicatedJobs"
@@ -404,21 +574,38 @@ def _workload_inventory(
                         _object(raw, f"JobSet.replicatedJobs[{index}]").get("template"),
                         f"JobSet.replicatedJobs[{index}].template",
                     )
-                    job_profile = _profile(
-                        _labels(
-                            _object(
-                                job_template.get("metadata"),
-                                f"JobSet.replicatedJobs[{index}].template.metadata",
-                            ),
-                            f"JobSet.replicatedJobs[{index}].template",
+                    job_profile, job_class = _authorized_profile(
+                        contract,
+                        "Job",
+                        _object(
+                            job_template.get("metadata"),
+                            f"JobSet.replicatedJobs[{index}].template.metadata",
                         ),
-                        recognized,
                         f"JobSet {name} replicated Job template {index}",
                     )
-                    if job_profile != profile:
+                    if job_profile != profile or job_class != workload_class:
                         raise ReceiptError(
-                            f"JobSet {name} replicated Job and workload profiles differ"
+                            f"JobSet {name} replicated Job and workload network "
+                            "identities differ"
                         )
+            if kind == "CronJob":
+                job_template = _object(
+                    _object(item.get("spec"), "CronJob.spec").get("jobTemplate"),
+                    "CronJob.spec.jobTemplate",
+                )
+                job_profile, job_class = _authorized_profile(
+                    contract,
+                    "Job",
+                    _object(
+                        job_template.get("metadata"),
+                        "CronJob JobTemplate.metadata",
+                    ),
+                    f"CronJob {name} JobTemplate",
+                )
+                if job_profile != profile or job_class != workload_class:
+                    raise ReceiptError(
+                        f"CronJob {name} Job and Pod template network identities differ"
+                    )
             identity = f"{api_version}/{kind}/{name}"
             if identity in workloads:
                 raise ReceiptError(f"duplicate workload identity {identity}")
@@ -426,6 +613,7 @@ def _workload_inventory(
                 "uid": uid,
                 "generation": generation,
                 "profile": profile,
+                "workload_class": workload_class,
                 "rollout": _controller_converged(kind, item),
             }
     if not workloads:
@@ -436,12 +624,13 @@ def _workload_inventory(
 def _pod_inventory(
     contract: dict[str, Any], resources: dict[str, Any]
 ) -> dict[str, Any]:
-    recognized = set(contract["profiles"])
     pods: dict[str, Any] = {}
     for item in _items(resources, "pods"):
         metadata = _object(item.get("metadata"), "Pod.metadata")
         name, uid, _generation = _identity(metadata, "Pod")
-        profile = _profile(_labels(metadata, "Pod"), recognized, f"Pod {name}")
+        profile, workload_class = _authorized_profile(
+            contract, "Pod", metadata, f"Pod {name}"
+        )
         owners = metadata.get("ownerReferences")
         if not isinstance(owners, list):
             raise ReceiptError(
@@ -472,9 +661,16 @@ def _pod_inventory(
             raise ReceiptError(f"Pod {name} is Running but not Ready")
         if phase == "Pending" and owner_kind != "Job":
             raise ReceiptError(f"non-Job Pod {name} is still Pending")
+        if workload_class == "public-acquisition":
+            spec = _object(item.get("spec"), f"Pod {name}.spec")
+            if spec.get("serviceAccountName") != "cache-service-account":
+                raise ReceiptError(
+                    f"Pod {name} public acquisition has the wrong service account"
+                )
         pods[name] = {
             "uid": uid,
             "profile": profile,
+            "workload_class": workload_class,
             "owner_kind": owner_kind,
             "owner_uid": controlling[0]["uid"],
             "phase": phase,
@@ -611,26 +807,548 @@ def _live_controller(
     }
 
 
-def _admission_bindings(
+def _admission_state(
     contract: dict[str, Any],
-    resources: dict[str, Any],
-) -> dict[str, str]:
-    expected = set(contract["admission_binding_names"])
-    found: dict[str, str] = {}
-    for item in _items(resources, "admission bindings"):
+    policy_resources: dict[str, Any],
+    binding_resources: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    expected_policies = set(contract["admission_policy_names"])
+    policies: dict[str, Any] = {}
+    for item in _items(policy_resources, "admission policies"):
+        metadata = _object(item.get("metadata"), "admission policy.metadata")
+        name = metadata.get("name")
+        if not isinstance(name, str) or name not in expected_policies:
+            continue
+        uid = metadata.get("uid")
+        if not isinstance(uid, str) or not uid:
+            raise ReceiptError(f"admission policy {name} has no UID")
+        resource_version = metadata.get("resourceVersion")
+        if not isinstance(resource_version, str) or not resource_version:
+            raise ReceiptError(f"admission policy {name} has no resourceVersion")
+        spec = _object(item.get("spec"), f"admission policy {name}.spec")
+        spec_sha256 = _sha256(spec)
+        if spec_sha256 != contract["admission_policy_spec_sha256"].get(name):
+            raise ReceiptError(f"admission policy {name} spec differs from Terraform")
+        policies[name] = {
+            "uid": uid,
+            "resource_version": resource_version,
+            "spec_sha256": spec_sha256,
+        }
+    missing_policies = sorted(expected_policies - set(policies))
+    if missing_policies:
+        raise ReceiptError(
+            "network-profile admission policies are missing: "
+            + ", ".join(missing_policies)
+        )
+
+    expected_bindings = set(contract["admission_binding_names"])
+    bindings: dict[str, Any] = {}
+    for item in _items(binding_resources, "admission bindings"):
         metadata = _object(item.get("metadata"), "admission binding.metadata")
         name = metadata.get("name")
         uid = metadata.get("uid")
-        if isinstance(name, str) and name in expected:
+        if isinstance(name, str) and name in expected_bindings:
             if not isinstance(uid, str) or not uid:
                 raise ReceiptError(f"admission binding {name} has no UID")
-            found[name] = uid
-    missing = sorted(expected - set(found))
-    if missing:
+            resource_version = metadata.get("resourceVersion")
+            if not isinstance(resource_version, str) or not resource_version:
+                raise ReceiptError(f"admission binding {name} has no resourceVersion")
+            spec = _object(item.get("spec"), f"admission binding {name}.spec")
+            spec_sha256 = _sha256(spec)
+            if spec_sha256 != contract["admission_binding_spec_sha256"].get(name):
+                raise ReceiptError(
+                    f"admission binding {name} spec differs from Terraform"
+                )
+            bindings[name] = {
+                "uid": uid,
+                "resource_version": resource_version,
+                "spec_sha256": spec_sha256,
+            }
+    missing_bindings = sorted(expected_bindings - set(bindings))
+    if missing_bindings:
         raise ReceiptError(
-            "network-profile admission bindings are missing: " + ", ".join(missing)
+            "network-profile admission bindings are missing: "
+            + ", ".join(missing_bindings)
         )
-    return dict(sorted(found.items()))
+    return dict(sorted(policies.items())), dict(sorted(bindings.items()))
+
+
+def _transition_lock(
+    contract: dict[str, Any],
+    resources: dict[str, Any],
+    *,
+    expected_holder: str | None,
+) -> str:
+    matches = []
+    for item in _items(resources, "transition Leases"):
+        metadata = _object(item.get("metadata"), "transition Lease.metadata")
+        if (
+            metadata.get("name") == contract["transition_lock_name"]
+            and metadata.get("namespace") == contract["transition_lock_namespace"]
+        ):
+            matches.append(item)
+    if len(matches) != 1:
+        raise ReceiptError("model-network transition Lease is missing or ambiguous")
+    metadata = _object(matches[0].get("metadata"), "transition Lease.metadata")
+    uid = metadata.get("uid")
+    if not isinstance(uid, str) or not uid:
+        raise ReceiptError("model-network transition Lease has no UID")
+    annotations = _object(
+        metadata.get("annotations", {}), "transition Lease.metadata.annotations"
+    )
+    if (
+        annotations.get("fs2-serve.nebius.ai/network-transition-writer")
+        != contract["transition_writer_username"]
+    ):
+        raise ReceiptError(
+            "model-network transition Lease authenticated writer differs from Terraform"
+        )
+    spec = _object(matches[0].get("spec", {}), "transition Lease.spec")
+    holder = spec.get("holderIdentity", "")
+    if not isinstance(holder, str):
+        raise ReceiptError("model-network transition Lease holder is malformed")
+    if expected_holder is None:
+        if holder:
+            raise ReceiptError(
+                "model-network transition Lease is active; capture after it is released"
+            )
+        return uid
+    if (
+        not expected_holder
+        or HOLDER_PATTERN.fullmatch(expected_holder) is None
+        or holder != expected_holder
+    ):
+        raise ReceiptError(
+            "model-network transition Lease holder differs from this apply"
+        )
+    if (
+        annotations.get("fs2-serve.nebius.ai/network-transition-holder")
+        != expected_holder
+    ):
+        raise ReceiptError(
+            "model-network transition Lease is not bound to this apply's random holder"
+        )
+    duration = spec.get("leaseDurationSeconds")
+    renew_time = spec.get("renewTime")
+    if (
+        not isinstance(duration, int)
+        or isinstance(duration, bool)
+        or duration <= 0
+        or not isinstance(renew_time, str)
+    ):
+        raise ReceiptError("model-network transition Lease timing is malformed")
+    try:
+        renewed = datetime.fromisoformat(renew_time.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ReceiptError(
+            "model-network transition Lease renewTime is invalid"
+        ) from exc
+    if renewed.tzinfo is None or renewed + timedelta(seconds=duration) <= datetime.now(
+        UTC
+    ):
+        raise ReceiptError("model-network transition Lease expired during verification")
+    return uid
+
+
+def _boundary_webhook_state(
+    contract: dict[str, Any], resources: dict[str, Any]
+) -> dict[str, str]:
+    matches = []
+    for item in _items(resources, "boundary admission webhooks"):
+        metadata = _object(item.get("metadata"), "boundary webhook.metadata")
+        if metadata.get("name") == contract["boundary_webhook_name"]:
+            matches.append(item)
+    if len(matches) != 1:
+        raise ReceiptError(
+            "independent model-network boundary webhook is missing or ambiguous"
+        )
+    webhook = matches[0]
+    metadata = _object(webhook.get("metadata"), "boundary webhook.metadata")
+    uid = metadata.get("uid")
+    resource_version = metadata.get("resourceVersion")
+    if not isinstance(uid, str) or not uid:
+        raise ReceiptError("boundary webhook has no UID")
+    if not isinstance(resource_version, str) or not resource_version:
+        raise ReceiptError("boundary webhook has no resourceVersion")
+    raw = webhook.get("webhooks")
+    if not isinstance(raw, list) or not all(isinstance(item, dict) for item in raw):
+        raise ReceiptError("boundary webhook list is malformed")
+    by_name = {item.get("name"): item for item in raw}
+    expected_names = {
+        "admission.network.fs2.nebius.ai",
+        "children.network.fs2.nebius.ai",
+        "control-plane.network.fs2.nebius.ai",
+        "cluster-custody.network.fs2.nebius.ai",
+        "custody.network.fs2.nebius.ai",
+        "helm.network.fs2.nebius.ai",
+        "lease.network.fs2.nebius.ai",
+        "marker.network.fs2.nebius.ai",
+        "models.network.fs2.nebius.ai",
+    }
+    if set(by_name) != expected_names or len(raw) != len(expected_names):
+        raise ReceiptError("boundary webhook does not contain the exact bounded hooks")
+    common = {
+        "admissionReviewVersions": ["v1"],
+        "sideEffects": "None",
+        "failurePolicy": "Fail",
+        "matchPolicy": "Equivalent",
+        "timeoutSeconds": 3,
+    }
+    expected_namespace_selectors = {
+        "children.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": NAMESPACE}
+        },
+        "models.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": NAMESPACE}
+        },
+        "marker.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": NAMESPACE}
+        },
+        "helm.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
+        },
+        "control-plane.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
+        },
+        "lease.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
+        },
+        "custody.network.fs2.nebius.ai": {
+            "matchExpressions": [
+                {
+                    "key": "kubernetes.io/metadata.name",
+                    "operator": "In",
+                    "values": [NAMESPACE, SYSTEM_NAMESPACE, "fs2-network-security"],
+                }
+            ]
+        },
+        "cluster-custody.network.fs2.nebius.ai": {},
+        "admission.network.fs2.nebius.ai": {},
+    }
+    expected_object_selectors = {
+        "children.network.fs2.nebius.ai": {
+            "matchExpressions": [
+                {
+                    "key": PROFILE_LABEL,
+                    "operator": "Exists",
+                }
+            ]
+        },
+        "models.network.fs2.nebius.ai": {},
+        "marker.network.fs2.nebius.ai": {},
+        "helm.network.fs2.nebius.ai": {
+            "matchLabels": {
+                "name": "fs2-serve-control-plane",
+                "owner": "helm",
+            }
+        },
+        "control-plane.network.fs2.nebius.ai": {
+            "matchLabels": {"app.kubernetes.io/instance": "fs2-serve-control-plane"}
+        },
+        "lease.network.fs2.nebius.ai": {
+            "matchLabels": {"fs2-serve.nebius.ai/network-boundary-object": "true"}
+        },
+        "custody.network.fs2.nebius.ai": {
+            "matchLabels": {"fs2-serve.nebius.ai/network-boundary-authority": "true"}
+        },
+        "cluster-custody.network.fs2.nebius.ai": {
+            "matchLabels": {"fs2-serve.nebius.ai/network-boundary-authority": "true"}
+        },
+        "admission.network.fs2.nebius.ai": {
+            "matchLabels": {"fs2-serve.nebius.ai/network-boundary-object": "true"}
+        },
+    }
+    expected_conditions = {
+        "children.network.fs2.nebius.ai": [],
+        "models.network.fs2.nebius.ai": [],
+        "marker.network.fs2.nebius.ai": [
+            {
+                "name": "exact-boundary-marker",
+                "expression": "request.name == 'fs2-runtime-network-policy-boundary-v2'",
+            }
+        ],
+        "helm.network.fs2.nebius.ai": [],
+        "control-plane.network.fs2.nebius.ai": [],
+        "lease.network.fs2.nebius.ai": [
+            {
+                "name": "exact-transition-lease",
+                "expression": "request.name == 'fs2-model-network-transition'",
+            }
+        ],
+        "custody.network.fs2.nebius.ai": [],
+        "cluster-custody.network.fs2.nebius.ai": [
+            {
+                "name": "exact-custody-rbac",
+                "expression": (
+                    "request.name in ['fs2-model-network-admission-author', "
+                    "'fs2-model-network-custody-reader', "
+                    "'fs2-model-network-helm-rollback']"
+                ),
+            }
+        ],
+        "admission.network.fs2.nebius.ai": [
+            {
+                "name": "exact-network-admission-object",
+                "expression": (
+                    "request.name == 'fs2-model-network-boundary' || "
+                    "request.name.startsWith('fs2-model-network-')"
+                ),
+            }
+        ],
+    }
+    allowed_keys = {
+        "name",
+        "admissionReviewVersions",
+        "sideEffects",
+        "failurePolicy",
+        "matchPolicy",
+        "timeoutSeconds",
+        "clientConfig",
+        "namespaceSelector",
+        "objectSelector",
+        "matchConditions",
+        "rules",
+    }
+    expected_rules = {
+        "children.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE"],
+                "resources": ["pods", "replicationcontrollers"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["apps"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE"],
+                "resources": [
+                    "deployments",
+                    "statefulsets",
+                    "daemonsets",
+                    "replicasets",
+                ],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["batch"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE"],
+                "resources": ["jobs", "cronjobs"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["jobset.x-k8s.io"],
+                "apiVersions": ["v1alpha2"],
+                "operations": ["CREATE", "UPDATE"],
+                "resources": ["jobsets"],
+                "scope": "Namespaced",
+            },
+        ],
+        "models.network.fs2.nebius.ai": [
+            {
+                "apiGroups": ["networking.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["networkpolicies"],
+                "scope": "Namespaced",
+            }
+        ],
+        "marker.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["configmaps"],
+                "scope": "Namespaced",
+            },
+        ],
+        "helm.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["configmaps", "secrets"],
+                "scope": "Namespaced",
+            }
+        ],
+        "control-plane.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": [
+                    "configmaps",
+                    "secrets",
+                    "serviceaccounts",
+                    "services",
+                    "persistentvolumeclaims",
+                ],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["apps"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["deployments", "statefulsets", "daemonsets"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["batch"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["jobs", "cronjobs"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["autoscaling"],
+                "apiVersions": ["v2"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["horizontalpodautoscalers"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["networking.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["ingresses", "networkpolicies"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["policy"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["poddisruptionbudgets"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["rbac.authorization.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["roles", "rolebindings"],
+                "scope": "Namespaced",
+            },
+        ],
+        "lease.network.fs2.nebius.ai": [
+            {
+                "apiGroups": ["coordination.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["leases"],
+                "scope": "Namespaced",
+            }
+        ],
+        "custody.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["serviceaccounts", "services", "secrets"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["apps"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["deployments"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["policy"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["poddisruptionbudgets"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["networking.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["networkpolicies"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["rbac.authorization.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["roles", "rolebindings"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["cert-manager.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["issuers", "certificates"],
+                "scope": "Namespaced",
+            },
+        ],
+        "cluster-custody.network.fs2.nebius.ai": [
+            {
+                "apiGroups": ["rbac.authorization.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["clusterroles", "clusterrolebindings"],
+                "scope": "Cluster",
+            }
+        ],
+        "admission.network.fs2.nebius.ai": [
+            {
+                "apiGroups": ["admissionregistration.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": [
+                    "validatingadmissionpolicies",
+                    "validatingadmissionpolicybindings",
+                    "validatingwebhookconfigurations",
+                ],
+                "scope": "Cluster",
+            }
+        ],
+    }
+    for name in sorted(expected_names):
+        item = by_name[name]
+        if set(item) - allowed_keys:
+            raise ReceiptError(
+                f"boundary webhook {name} has unreviewed semantic fields"
+            )
+        if any(item.get(key) != value for key, value in common.items()):
+            raise ReceiptError(f"boundary webhook {name} is not fail closed")
+        if item.get("objectSelector", {}) != expected_object_selectors[name]:
+            raise ReceiptError(f"boundary webhook {name} objectSelector is not exact")
+        if item.get("namespaceSelector", {}) != expected_namespace_selectors[name]:
+            raise ReceiptError(
+                f"boundary webhook {name} namespaceSelector is not exact"
+            )
+        if item.get("matchConditions", []) != expected_conditions[name]:
+            raise ReceiptError(f"boundary webhook {name} matchConditions are not exact")
+        client = _object(
+            item.get("clientConfig"), f"boundary webhook {name}.clientConfig"
+        )
+        if set(client) != {"caBundle", "service"}:
+            raise ReceiptError(
+                f"boundary webhook {name} clientConfig is not service-only"
+            )
+        ca_bundle = client.get("caBundle")
+        if not isinstance(ca_bundle, str) or not ca_bundle:
+            raise ReceiptError(f"boundary webhook {name} has no injected CA bundle")
+        if client.get("service") != {
+            "name": "fs2-model-network-boundary",
+            "namespace": "fs2-network-security",
+            "path": "/validate",
+            "port": 443,
+        }:
+            raise ReceiptError(f"boundary webhook {name} service target is not exact")
+        if item.get("rules") != expected_rules[name]:
+            raise ReceiptError(f"boundary webhook {name} resource rules are not exact")
+    state = {
+        "uid": uid,
+        "resource_version": resource_version,
+        "spec_sha256": _sha256({"webhooks": raw}),
+    }
+    expected_hash = contract["boundary_authority"]["webhook"]["spec_sha256"]
+    if state["spec_sha256"] != expected_hash:
+        raise ReceiptError("live boundary webhook differs from signed external custody")
+    return state
 
 
 def inventory_receipt(
@@ -639,14 +1357,23 @@ def inventory_receipt(
     pods: dict[str, Any],
     controller_deployments: dict[str, Any],
     controller_pods: dict[str, Any],
+    admission_policies: dict[str, Any],
     admission_bindings: dict[str, Any],
+    boundary_webhooks: dict[str, Any],
+    transition_leases: dict[str, Any],
     *,
     captured_at: str,
+    expected_lock_holder: str | None = None,
 ) -> dict[str, Any]:
     contract = _contract(contract, phases={"inventory", "enforce"})
     workloads, resource_apis = _workload_inventory(contract, resources)
     pod_inventory = _pod_inventory(contract, pods)
     _verify_pod_owners(workloads, pod_inventory)
+    policy_inventory, binding_inventory = _admission_state(
+        contract,
+        admission_policies,
+        admission_bindings,
+    )
     payload = {
         "schema": INVENTORY_SCHEMA,
         "cluster_id": contract["cluster_id"],
@@ -661,10 +1388,15 @@ def inventory_receipt(
             controller_deployments,
             controller_pods,
         ),
-        "admission_bindings": _admission_bindings(
+        "transition_lock_uid": _transition_lock(
             contract,
-            admission_bindings,
+            transition_leases,
+            expected_holder=expected_lock_holder,
         ),
+        "admission_policies": policy_inventory,
+        "admission_bindings": binding_inventory,
+        "admission_webhook": _boundary_webhook_state(contract, boundary_webhooks),
+        "boundary_authority_sha256": contract["boundary_authority"]["payload_sha256"],
     }
     return {**payload, "payload_sha256": _sha256(payload)}
 
@@ -676,20 +1408,30 @@ def verify_enforce(
     pods: dict[str, Any],
     controller_deployments: dict[str, Any],
     controller_pods: dict[str, Any],
+    admission_policies: dict[str, Any],
     admission_bindings: dict[str, Any],
+    boundary_webhooks: dict[str, Any],
+    transition_leases: dict[str, Any],
 ) -> dict[str, Any]:
     _contract(contract, phases={"enforce"})
     captured_at = receipt.get("captured_at")
     if not isinstance(captured_at, str):
         raise ReceiptError("inventory receipt captured_at is missing")
+    lock_identity = os.environ.get("FS2_NETWORK_TRANSITION_LOCK_IDENTITY")
+    if not lock_identity:
+        raise ReceiptError("apply-time model-network transition lock is missing")
     observed = inventory_receipt(
         contract,
         resources,
         pods,
         controller_deployments,
         controller_pods,
+        admission_policies,
         admission_bindings,
+        boundary_webhooks,
+        transition_leases,
         captured_at=captured_at,
+        expected_lock_holder=lock_identity,
     )
     if observed != receipt:
         raise ReceiptError(
@@ -783,6 +1525,9 @@ def _collect_inventory(
     dict[str, Any],
     dict[str, Any],
     dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
 ]:
     resources = {
         key: _kubectl_json(
@@ -818,18 +1563,40 @@ def _collect_inventory(
         resource="pods",
         selector=f"{COMPONENT_LABEL}=model-controller",
     )
+    admission_policies = _kubectl_json(
+        kubectl=args.kubectl,
+        kubeconfig=args.kubeconfig,
+        context=args.context,
+        resource="validatingadmissionpolicies.admissionregistration.k8s.io",
+    )
     admission_bindings = _kubectl_json(
         kubectl=args.kubectl,
         kubeconfig=args.kubeconfig,
         context=args.context,
         resource="validatingadmissionpolicybindings.admissionregistration.k8s.io",
     )
+    boundary_webhooks = _kubectl_json(
+        kubectl=args.kubectl,
+        kubeconfig=args.kubeconfig,
+        context=args.context,
+        resource="validatingwebhookconfigurations.admissionregistration.k8s.io",
+    )
+    transition_leases = _kubectl_json(
+        kubectl=args.kubectl,
+        kubeconfig=args.kubeconfig,
+        context=args.context,
+        namespace=SYSTEM_NAMESPACE,
+        resource="leases.coordination.k8s.io",
+    )
     return (
         resources,
         pods,
         controller_deployments,
         controller_pods,
+        admission_policies,
         admission_bindings,
+        boundary_webhooks,
+        transition_leases,
     )
 
 

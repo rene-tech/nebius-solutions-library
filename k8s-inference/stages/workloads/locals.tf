@@ -669,7 +669,8 @@ locals {
         jsonencode(merge(document.manifest, {
           metadata = merge(document.manifest.metadata, {
             labels = merge(try(document.manifest.metadata.labels, {}), {
-              "app.kubernetes.io/component" = "model-runtime"
+              "app.kubernetes.io/component"               = "model-runtime"
+              (local.model_runtime_network_class_label)   = "runtime"
               (local.model_runtime_network_profile_label) = format(
                 "gateway-%s-tcp-%d-v1",
                 contains(local.model_runtime_zero_egress_model_ids, document.model_id) ? "zero-egress" : "dns",
@@ -681,7 +682,8 @@ locals {
             template = merge(document.manifest.spec.template, {
               metadata = merge(document.manifest.spec.template.metadata, {
                 labels = merge(try(document.manifest.spec.template.metadata.labels, {}), {
-                  "app.kubernetes.io/component" = "model-runtime"
+                  "app.kubernetes.io/component"               = "model-runtime"
+                  (local.model_runtime_network_class_label)   = "runtime"
                   (local.model_runtime_network_profile_label) = format(
                     "gateway-%s-tcp-%d-v1",
                     contains(local.model_runtime_zero_egress_model_ids, document.model_id) ? "zero-egress" : "dns",
@@ -950,16 +952,20 @@ locals {
       manifest = document.manifest.kind != "DaemonSet" ? document.manifest : merge(document.manifest, {
         metadata = merge(document.manifest.metadata, {
           labels = merge(try(document.manifest.metadata.labels, {}), {
-            "app.kubernetes.io/part-of"           = "fs2-serve"
-            "fs2-serve.nebius.ai/network-profile" = "cache-resident-zero-egress-v1"
+            "app.kubernetes.io/component"                       = "model-cache-keeper"
+            "app.kubernetes.io/part-of"                         = "fs2-serve"
+            "fs2-serve.nebius.ai/network-profile"               = "cache-resident-zero-egress-v1"
+            "fs2-serve.nebius.ai/network-workload-class"        = "cache-keeper"
           })
         })
         spec = merge(document.manifest.spec, {
           template = merge(document.manifest.spec.template, {
             metadata = merge(try(document.manifest.spec.template.metadata, {}), {
               labels = merge(try(document.manifest.spec.template.metadata.labels, {}), {
-                "app.kubernetes.io/part-of"           = "fs2-serve"
-                "fs2-serve.nebius.ai/network-profile" = "cache-resident-zero-egress-v1"
+                "app.kubernetes.io/component"                       = "model-cache-keeper"
+                "app.kubernetes.io/part-of"                         = "fs2-serve"
+                "fs2-serve.nebius.ai/network-profile"               = "cache-resident-zero-egress-v1"
+                "fs2-serve.nebius.ai/network-workload-class"        = "cache-keeper"
               })
             })
           })

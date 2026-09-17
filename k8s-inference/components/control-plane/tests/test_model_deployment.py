@@ -815,6 +815,7 @@ def test_renderer_injects_exact_modelexpress_vllm_client_without_claiming_a_leve
         "app.kubernetes.io/component": "model-runtime",
         "fs2-serve.nebius.ai/model-deployment": "qwen-live",
         "fs2-serve.nebius.ai/model-id": "qwen.3-8b",
+        "fs2-serve.nebius.ai/network-workload-class": "runtime",
         "fs2-serve.nebius.ai/network-profile": "gateway-dns-tcp-8000-v1",
     }
     assert "fs2-serve.nebius.ai/workload-role" not in baseline_pod_labels

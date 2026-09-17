@@ -297,6 +297,7 @@ resource "kubernetes_manifest" "kueue_admission_acceptance" {
       namespace = "fs2-models"
       labels = merge(local.common_labels, {
         "app.kubernetes.io/component"               = "acceptance"
+        (local.model_runtime_network_class_label)   = "acceptance"
         (local.model_runtime_network_profile_label) = "acceptance-zero-egress-v1"
         "kueue.x-k8s.io/queue-name"                 = local.selected_accelerator_pool_profile.queue.local_queue_name
       })
@@ -312,6 +313,7 @@ resource "kubernetes_manifest" "kueue_admission_acceptance" {
         metadata = {
           labels = merge(local.common_labels, {
             "app.kubernetes.io/component"               = "acceptance"
+            (local.model_runtime_network_class_label)   = "acceptance"
             (local.model_runtime_network_profile_label) = "acceptance-zero-egress-v1"
           })
         }

@@ -930,6 +930,21 @@ class KubernetesAdapterTests(unittest.TestCase):
                         "fs2-serve.nebius.ai/network-profile"
                     ],
                 )
+                expected_class = (
+                    "cache-resident" if kind == "cache" else "internal-job"
+                )
+                self.assertEqual(
+                    expected_class,
+                    job["metadata"]["labels"][
+                        "fs2-serve.nebius.ai/network-workload-class"
+                    ],
+                )
+                self.assertEqual(
+                    expected_class,
+                    job["spec"]["template"]["metadata"]["labels"][
+                        "fs2-serve.nebius.ai/network-workload-class"
+                    ],
+                )
                 self.assertNotIn("ClusterQueue", json.dumps(job))
                 if kind != "cache":
                     self.assertEqual(
@@ -1195,6 +1210,20 @@ class KubernetesAdapterTests(unittest.TestCase):
             "job-public-acquisition-v1",
             acquisition["metadata"]["labels"]["fs2-serve.nebius.ai/network-profile"],
         )
+        self.assertEqual(
+            "public-acquisition",
+            acquisition["metadata"]["labels"][
+                "fs2-serve.nebius.ai/network-workload-class"
+            ],
+        )
+        self.assertEqual(
+            acquisition["metadata"]["annotations"][
+                "fs2-serve.nebius.ai/acquisition-plan-sha256"
+            ],
+            acquisition["spec"]["template"]["metadata"]["annotations"][
+                "fs2-serve.nebius.ai/acquisition-plan-sha256"
+            ],
+        )
         helper_admission = self.helper_admission(cxr)
         self.assertEqual(
             helper_admission.image_reference,
@@ -1415,6 +1444,20 @@ class KubernetesAdapterTests(unittest.TestCase):
         self.assertEqual(
             "job-public-acquisition-v1",
             canary["metadata"]["labels"]["fs2-serve.nebius.ai/network-profile"],
+        )
+        self.assertEqual(
+            "public-acquisition",
+            canary["metadata"]["labels"][
+                "fs2-serve.nebius.ai/network-workload-class"
+            ],
+        )
+        self.assertEqual(
+            canary["metadata"]["annotations"][
+                "fs2-serve.nebius.ai/acquisition-plan-sha256"
+            ],
+            canary["spec"]["template"]["metadata"]["annotations"][
+                "fs2-serve.nebius.ai/acquisition-plan-sha256"
+            ],
         )
         self.assertEqual([{"name": "fs2-ngc-pull"}], canary_pod["imagePullSecrets"])
         self.assertEqual([GPU_TOLERATION], canary_pod["tolerations"])
