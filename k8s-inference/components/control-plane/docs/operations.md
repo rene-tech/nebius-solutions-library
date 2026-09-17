@@ -288,16 +288,20 @@ or an unkeyed hash. A separate, much larger aggregate ceiling bounds total
 password work without collapsing normal administrators into a shared
 per-source bucket.
 
-On the first post-commit call, migration `0034` atomically imports every active
-legacy admitted count into the exact sliding ledger at the bridge-call time.
-Old and new replicas use that same bridge, so the prior budget survives a full
-window without an empty-ring reset or a blanket login outage. Do not bypass the
-gate or revoke the legacy SQL signature during rollout. The platform-root
+On the first post-commit call, migration `0034` atomically imports every visible
+current aligned-bucket admission into the exact sliding ledger at the
+bridge-call time. Because `0032` may have overwritten a still-active prior
+bucket, old and new callers receive a conservative 429 until that prior
+bucket's latest possible aligned-boundary expiry. The imported current budget
+remains active afterward, so cutover cannot reset or under-count capacity. Do
+not bypass the gate or revoke the legacy SQL signature during rollout. The platform-root
 application contract requires and regionally mirrors the independent immutable
 `schema_compatibility_image`, then Terraform wires it as
 `control_plane_schema_compatibility_image` to
 `migration.compatibilityImage`; for source-forward rollback retain that
-successor value and change only `control_plane_image`. The migration and
+successor value and change only `control_plane_image`. Direct Helm upgrades and
+rollbacks fail rendering if that independent image is absent; fresh installs
+retain the application-image fallback. The migration and
 schema-wait containers must understand the newest additive schema. An admin
 can invalidate every session for an in-scope principal with
 `DELETE /admin/api/v1/principals/{principal_id}/sessions`.

@@ -112,7 +112,7 @@ EXPECTED_MIGRATIONS: Final = (
     ),
     (
         "0034_session_exchange_cutover_bridge.sql",
-        "35ea43d1cebab826f7c52aa432ca8e3d782c5fe924400fdeb0703bdc7c4ad6e2",
+        "1101f12b14be71454a02081ce9559236d82426dfeb1d4f20144e9297fb99f404",
     ),
 )
 

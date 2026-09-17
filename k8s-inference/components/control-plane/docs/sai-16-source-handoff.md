@@ -3,15 +3,14 @@
 This document describes a static source candidate. It is not integration,
 deployment, live verification, or security acceptance evidence.
 
-The exact parent `362026705237be0ffd3eeb88353d768fb465e27f` / tree
-`cdf5954c85669daa3dfa466535641193e1c0f1cc` is preserved as
-SOURCE/INTEGRATION/LIVE NO-GO. It added the first mixed-version bridge and
-signed full-object retention receipts, but began a blanket cutover interval
-inside the migration transaction, preserved an internal runtime ACL, used an
-ambient verifier and same-inventory trust root, lacked an apply-time fence and
-strong admission identity/lifecycle, left assertion Secret DELETE open, and
-did not platform-wire the rollback image. Every prior rejected commit remains
-provenance; this successor is additive.
+The exact parent `74aac745affe1cdbbf80b64c9f9c35a9b99c6ce1` / tree
+`23fdaad04c70fff26f6bd7cd5130e93f2c722d3a` is preserved as
+SOURCE/INTEGRATION/LIVE NO-GO. Its bridge could omit a still-active previous
+fixed-bucket tail; its immutable admission rules bound every future generation
+to one expiring credential ID; its assertion-Secret DELETE match dereferenced a
+missing request object; and direct Helm upgrades could silently reuse the old
+application image as schema compatibility. Every prior rejected commit remains
+provenance; this successor corrects those findings additively.
 
 ## Session-exchange admission
 
@@ -36,14 +35,17 @@ historical window.
 Migration `0034` repairs the `0032`/`0033` rollout boundary without rewriting
 either rejected migration. The migration runner publishes the schema version
 which existed before its serialized transaction. The first post-commit call
-locks one shared bridge, binds the limiter configuration, checks that active
-legacy source and aggregate counts agree, and imports each still-active legacy
-admission into the exact ring at that call's timestamp. The synthetic entries
-conservatively retain the whole prior budget for a complete new window without
-resetting capacity or denying every operator/debug-login attempt. Old rolling
-replicas and new replicas use the legacy and exact public wrappers over that
-same bridge. The internal bridge and renamed exact-v2 function have inherited
-runtime/current-role execute grants explicitly revoked.
+locks one shared bridge and binds the limiter configuration. Legacy `0032` has
+only one aligned bucket per slot, so a current bucket can have overwritten a
+still-active prior tail. The bridge imports only authoritatively visible current
+source/aggregate counts, timestamps them at the bridge call, and denies all
+admission until the previous bucket's latest possible aligned-boundary expiry.
+After that bounded fence, imported current counts continue consuming exact
+capacity. Cutover cannot reset or under-count a lost tail and does not pretend
+legacy buckets contain per-event timestamps. Old rolling replicas and new
+replicas use the legacy and exact public wrappers over that same bridge. The
+internal bridge and renamed exact-v2 function have inherited runtime/current-
+role execute grants explicitly revoked.
 
 The platform-root deployment contract requires, validates, regionally mirrors,
 and forwards the independent immutable
@@ -51,14 +53,16 @@ and forwards the independent immutable
 `control_plane_schema_compatibility_image`, which Terraform maps to Helm
 `migration.compatibilityImage`. Rollback retains that successor
 migration/schema-wait image while selecting the prior application image; it
-never reverses schema or discards limiter state.
+never reverses schema or discards limiter state. The chart independently
+requires the compatibility repository and digest for every Helm upgrade or
+rollback; only a fresh install retains the application-image fallback.
 
 The regenerated `0034` SHA-256 is
-`35ea43d1cebab826f7c52aa432ca8e3d782c5fe924400fdeb0703bdc7c4ad6e2`;
+`1101f12b14be71454a02081ce9559236d82426dfeb1d4f20144e9297fb99f404`;
 the ordered migration-set SHA-256 is
-`f87489dff4d81a15ddd8496a1876e10ec9e9cfe29f243a7cd14ce767ee80ef73`;
+`be86591a208bb3247539838960b7618403ea5376f1cccc34e4e18bc3cfc50ff6`;
 and the release-contract payload SHA-256 is
-`08c4bed91506b78ab0a15542ff59df174dabdc8b4fb13ddd52568fccf59c7eac`.
+`fec202c5834668f3aa41119329da90d79eb0a111db64d2e92e37bbb0ccdbb5be`.
 The exact successor commit/tree is recorded in the Task Deck handoff after the
 additive commit is sealed.
 
@@ -89,12 +93,20 @@ Job object. It also binds the already consumed release
 assertion receipt. A ConfigMap-only partial-apply receipt is permitted before
 assertion consumption, but cannot attest a Job.
 
-Recovery now requires a policy-first apply. The lifecycle guardian and exact
-history/trust/receipt/assertion/verification policies are installed before any
-object may be accepted. Every CREATE is bound to a generation-specific release
-ServiceAccount username, its canonical UID, and the exact Kubernetes bound
-token credential ID; a reusable username alone is insufficient. The accepted
-policy and binding UIDs are integration inputs. The trust binding separately
+Recovery now requires a policy-first apply. A four-object stable epoch-router
+lifecycle/policy boundary first rejects unlabeled protected names, denies
+protected mutation/deletion, and admits new epochs only from bound-token
+automation release ServiceAccounts. Every assertion generation then gets six
+uniquely named lifecycle/history/trust/receipt/assertion/verification policy and
+binding pairs. Their immutable Deny rules match only objects carrying that same
+authority epoch, and every CREATE is bound to that generation's release
+ServiceAccount username, canonical UID, and exact Kubernetes bound-token
+credential ID. A retained old policy cannot match or deny a later generation,
+and a reusable username alone is insufficient. Rotation retains all prior
+authority tuples, appends the next epoch's policies, and then extends the UID
+pin containing the four shared router objects with that complete 12-object set
+before bootstrap can run. Partial epoch
+pins fail closed. The trust binding separately
 pins the trust ConfigMap UID, full-object digest, trust JSON digest, canonical
 issuer/key-set digest, and policy/binding UIDs. Provider inventory recomputes
 all pins and requires object creation after the relevant binding.
@@ -114,7 +126,10 @@ ConfigMaps and zero-retry, non-root, tokenless Jobs remain generation-keyed and
 protected with `prevent_destroy` plus cluster admission. A separate fail-closed
 ValidatingAdmissionPolicy, installed before Secret creation, admits only
 immutable, generation-labeled, uniquely named Secrets containing exactly the
-`assertion` key. UPDATE and DELETE are both denied.
+`assertion` key. Its match uses the admission request namespace/name and an
+operation-aware `oldObject` label on DELETE, so unrelated Secret deletions
+cannot fail because the request object is absent. UPDATE and matched DELETE are
+both denied.
 
 ## Parent integration dependencies
 
@@ -134,4 +149,8 @@ immutable, generation-labeled, uniquely named Secrets containing exactly the
   storage, or retention behavior.
 
 The coordinator's static-only boundary prohibited executing authored tests,
-Terraform, builds, formatters, scanners, package managers, or live probes.
+Terraform, builds, formatters, scanners, package managers, or live probes; none
+were executed. Two stdout-only Python standard-library calculations read the
+edited SQL and committed JSON contract to derive the immutable SHA-256 values
+above. They imported no project code and created, overwrote, or removed no
+artifact.

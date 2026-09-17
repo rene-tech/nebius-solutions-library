@@ -535,7 +535,9 @@ dynamic_models = {
   enabled                        = true
   writes_enabled                 = true
   workload_owner                 = "controller"
-  bootstrap_model_ids            = ["cosmos3-nano", "qwen3-8b"]
+  # Policy-first phase. Set model IDs only after the four shared epoch-router
+  # objects, this epoch's 12 admission objects, and trust are pinned.
+  bootstrap_model_ids            = []
   bootstrap_assertion_secret_name = "fs2-release-model-bootstrap-release-20260917-01"
   bootstrap_assertion_generation  = "release-20260917-01"
   bootstrap_authority = {
@@ -543,28 +545,17 @@ dynamic_models = {
     uid           = "11111111-2222-4333-8444-555555555555"
     credential_id = "JTI=replace-with-bound-token-credential-id"
   }
-  # Enable only after the policy-first apply. Values below are non-secret
-  # placeholders for the integration-reviewed provider observations.
+  bootstrap_retained_authorities = {}
+  # Enable only after the policy-first apply, using exact provider observations
+  # and the keys in dynamic_model_contract.bootstrap_epoch_router_policy_names
+  # plus dynamic_model_contract.bootstrap_admission_policy_names.
   bootstrap_trust_binding = {
-    enabled                  = true
-    config_map_uid           = "11111111-2222-4333-8444-666666666666"
-    config_map_object_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    trust_json_sha256        = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    key_set_sha256           = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    admission_object_uids = {
-      "validatingadmissionpolicy/fs2-model-bootstrap-policy-lifecycle"                = "11111111-2222-4333-8444-700000000001"
-      "validatingadmissionpolicybinding/fs2-model-bootstrap-policy-lifecycle"         = "11111111-2222-4333-8444-700000000002"
-      "validatingadmissionpolicy/fs2-model-bootstrap-history"                         = "11111111-2222-4333-8444-700000000003"
-      "validatingadmissionpolicybinding/fs2-model-bootstrap-history"                  = "11111111-2222-4333-8444-700000000004"
-      "validatingadmissionpolicy/fs2-model-bootstrap-retention-receipts"              = "11111111-2222-4333-8444-700000000005"
-      "validatingadmissionpolicybinding/fs2-model-bootstrap-retention-receipts"       = "11111111-2222-4333-8444-700000000006"
-      "validatingadmissionpolicy/fs2-release-identity-trust"                          = "11111111-2222-4333-8444-700000000007"
-      "validatingadmissionpolicybinding/fs2-release-identity-trust"                   = "11111111-2222-4333-8444-700000000008"
-      "validatingadmissionpolicy/fs2-model-bootstrap-assertion-secrets"               = "11111111-2222-4333-8444-700000000009"
-      "validatingadmissionpolicybinding/fs2-model-bootstrap-assertion-secrets"        = "11111111-2222-4333-8444-700000000010"
-      "validatingadmissionpolicy/fs2-model-bootstrap-verifications"                   = "11111111-2222-4333-8444-700000000011"
-      "validatingadmissionpolicybinding/fs2-model-bootstrap-verifications"            = "11111111-2222-4333-8444-700000000012"
-    }
+    enabled                  = false
+    config_map_uid           = ""
+    config_map_object_sha256 = ""
+    trust_json_sha256        = ""
+    key_set_sha256           = ""
+    admission_object_uids    = {}
   }
   bootstrap_retained_assertions   = {}
   fresh_install                  = true
@@ -574,16 +565,21 @@ dynamic_models = {
 The assertion generation is a signed claim and the immutable Secret name is
 exactly `fs2-release-model-bootstrap-<generation>`; neither is an assertion
 byte. Every retry or recovery uses a new generation, while
-`bootstrap_retained_assertions` remains empty. The Kubernetes provider
+`bootstrap_retained_assertions` remains empty. On rotation, move the prior
+generation's public authority tuple into `bootstrap_retained_authorities`,
+append the new policy epoch, and extend the trust pin (which retains the four
+shared epoch-router objects) only with its complete 12-object set before adding
+`bootstrap_model_ids`. The Kubernetes provider
 discovers all retained generation-prefixed ConfigMaps, terminal Jobs, and
 public retention receipts. Discovery alone is not authority: Terraform imports
 only objects with a release-authority Ed25519 receipt binding the exact identity
 digest, ConfigMap UID/full-object digest, and terminal Job UID/entire observed
 object digest. UID replacement, unsigned injection, one-sided history, or a
 mismatched receipt fails closed. Admission makes history, trust, and receipts
-append-only and permits trust/receipt creation only to the automation-only
-release ServiceAccount. A separate policy accepts only immutable, generation-labeled,
-single-key assertion Secrets. The short-lived release credential and the
+append-only and permits each generation's creation only to its exact short-lived
+automation credential. Old Deny policies select only their own authority epoch
+and cannot block a later credential. A separate policy accepts only immutable,
+generation-labeled, single-key assertion Secrets. The short-lived release credential and the
 integration-reviewed trust/policy pins are ordinary root deployment fields;
 the workloads stage cannot be invoked through the supported platform facade
 without forwarding them.

@@ -40,7 +40,7 @@ INSERT INTO fs2_session_exchange_cutover_state(
 );
 
 COMMENT ON TABLE fs2_session_exchange_cutover_state IS
-    'First-post-commit bridge state and one-time conservative legacy-budget import into exact-v2 admission';
+    'First-post-commit bridge state, visible-current legacy import, and conservative unknown-tail fence';
 
 CREATE FUNCTION fs2_consume_session_exchange_bridge(
     p_source_fingerprint text,
@@ -67,6 +67,9 @@ DECLARE
     v_state fs2_session_exchange_cutover_state%ROWTYPE;
     v_sliding_state fs2_session_exchange_sliding_state%ROWTYPE;
     v_first_bridge_at timestamptz;
+    v_current_window_start timestamptz;
+    v_unknown_tail_until timestamptz;
+    v_decision_at timestamptz;
     v_interval interval;
     v_legacy_source_count integer;
     v_legacy_aggregate_count integer;
@@ -89,10 +92,9 @@ BEGIN
     FROM public.fs2_session_exchange_cutover_state AS state
     WHERE state.singleton = 1;
 
-    -- The migration transaction never starts the compatibility interval. The
-    -- first runtime call after commit serializes here and gives every active
-    -- legacy admission a complete new window. This preserves budget without
-    -- a blanket operator-login outage and cannot reset at the migration commit.
+    -- The migration transaction never starts the compatibility transition.
+    -- The first runtime call after commit serializes the visible-current
+    -- import and anchors the conservative prior-tail fence.
     IF v_state.first_bridge_at IS NULL THEN
         SELECT state.* INTO STRICT v_state
         FROM public.fs2_session_exchange_cutover_state AS state
@@ -101,6 +103,10 @@ BEGIN
         IF v_state.first_bridge_at IS NULL THEN
             v_first_bridge_at := clock_timestamp();
             v_interval := make_interval(secs => p_window_seconds);
+            v_current_window_start := to_timestamp(
+                floor(extract(epoch FROM v_first_bridge_at) / p_window_seconds)
+                * p_window_seconds
+            );
 
             SELECT state.* INTO STRICT v_sliding_state
             FROM public.fs2_session_exchange_sliding_state AS state
@@ -128,16 +134,22 @@ BEGIN
             END IF;
 
             IF v_state.cutover_required THEN
+                -- 0032 retained only one aligned bucket per source/aggregate
+                -- slot. A pre-commit call in the current aligned window can
+                -- overwrite the previous bucket even though its tail remains
+                -- active under exact sliding semantics. Import the visible
+                -- current bucket and conservatively fence all admission until
+                -- that unobservable previous tail must have expired.
                 SELECT coalesce(sum(bucket.admitted_count), 0)::integer
                 INTO v_legacy_source_count
                 FROM public.fs2_session_exchange_source_buckets AS bucket
                 WHERE bucket.source_fingerprint IS NOT NULL
-                  AND bucket.window_started_at > v_first_bridge_at - v_interval;
+                  AND bucket.window_started_at = v_current_window_start;
 
                 SELECT coalesce(sum(bucket.admitted_count), 0)::integer
                 INTO v_legacy_aggregate_count
                 FROM public.fs2_session_exchange_aggregate_buckets AS bucket
-                WHERE bucket.window_started_at > v_first_bridge_at - v_interval;
+                WHERE bucket.window_started_at = v_current_window_start;
 
                 SELECT count(*)::integer INTO v_existing_exact_count
                 FROM public.fs2_session_exchange_admissions AS admission
@@ -154,7 +166,7 @@ BEGIN
                     SELECT 1
                     FROM public.fs2_session_exchange_source_buckets AS bucket
                     WHERE bucket.source_fingerprint IS NOT NULL
-                      AND bucket.window_started_at > v_first_bridge_at - v_interval
+                      AND bucket.window_started_at = v_current_window_start
                       AND bucket.admitted_count > p_maximum_source_attempts
                 ) THEN
                     RAISE EXCEPTION 'legacy session exchange source budget exceeds exact-v2 capacity';
@@ -169,7 +181,7 @@ BEGIN
                     FROM public.fs2_session_exchange_source_buckets AS bucket
                     CROSS JOIN LATERAL generate_series(1, bucket.admitted_count) AS attempt(ordinal)
                     WHERE bucket.source_fingerprint IS NOT NULL
-                      AND bucket.window_started_at > v_first_bridge_at - v_interval
+                      AND bucket.window_started_at = v_current_window_start
                 )
                 INSERT INTO public.fs2_session_exchange_admissions(
                     slot,
@@ -213,6 +225,37 @@ BEGIN
        OR v_state.maximum_source_attempts <> p_maximum_source_attempts
        OR v_state.maximum_aggregate_attempts <> p_maximum_aggregate_attempts THEN
         RAISE EXCEPTION 'session exchange cutover settings differ from bound state';
+    END IF;
+
+    IF v_state.cutover_required THEN
+        -- The previous aligned bucket can contain an attempt immediately
+        -- before this window started. It is certainly expired at the next
+        -- aligned boundary. Until then the bridge is read-only and fail
+        -- closed; visible current-window attempts remain in exact-v2 and
+        -- continue to consume budget after the fence opens.
+        v_interval := make_interval(secs => p_window_seconds);
+        v_current_window_start := to_timestamp(
+            floor(extract(epoch FROM v_state.first_bridge_at) / p_window_seconds)
+            * p_window_seconds
+        );
+        v_unknown_tail_until := v_current_window_start + v_interval;
+        v_decision_at := clock_timestamp();
+        IF v_decision_at < v_unknown_tail_until THEN
+            RETURN QUERY SELECT
+                'aggregate_throttled'::text,
+                greatest(
+                    extract(epoch FROM (v_unknown_tail_until - v_decision_at)),
+                    0.001
+                )::double precision,
+                NULL::integer,
+                NULL::integer,
+                'legacy_cutover_tail_fence'::text,
+                false,
+                v_decision_at,
+                v_current_window_start,
+                NULL::bigint;
+            RETURN;
+        END IF;
     END IF;
 
     RETURN QUERY

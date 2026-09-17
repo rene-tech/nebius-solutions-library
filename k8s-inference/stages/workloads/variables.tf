@@ -1083,7 +1083,7 @@ variable "release_identity_model_bootstrap_retained_assertions" {
 }
 
 variable "release_identity_model_bootstrap_authority" {
-  description = "Exact short-lived release credential admitted to create bootstrap trust, receipts, assertions, history, and verification Jobs. username alone is insufficient: Kubernetes service-account UID and bound-token credential ID are mandatory and are embedded in admission policy."
+  description = "Exact short-lived release credential for the current assertion generation. username alone is insufficient: Kubernetes service-account UID and bound-token credential ID are mandatory. Admission policies are immutable and generation-scoped so this credential never governs later generations."
   type = object({
     username      = string
     uid           = string
@@ -1111,6 +1111,30 @@ variable "release_identity_model_bootstrap_authority" {
       )
     )
     error_message = "release_identity_model_bootstrap_authority must be wholly empty or bind a generation-specific release service-account username, canonical UID, and exact bound-token credential ID; the reusable fs2-release-identity username is refused."
+  }
+}
+
+variable "release_identity_model_bootstrap_retained_authorities" {
+  description = "Append-only prior assertion-generation authorities whose immutable admission policies remain managed. Preserve every applied entry; removing one is refused by prevent_destroy. Each generation receives disjoint policy names and label scope, so an expired credential cannot deny a later generation."
+  type = map(object({
+    username      = string
+    uid           = string
+    credential_id = string
+  }))
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for generation, authority in var.release_identity_model_bootstrap_retained_authorities :
+      can(regex("^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$", generation)) &&
+      can(regex(
+        "^system:serviceaccount:fs2-system:fs2-release-identity-[a-z0-9](?:[-a-z0-9]{0,49}[a-z0-9])$",
+        authority.username,
+      )) &&
+      can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", authority.uid)) &&
+      can(regex("^[A-Za-z0-9][A-Za-z0-9._:/=-]{7,255}$", authority.credential_id))
+    ])
+    error_message = "release_identity_model_bootstrap_retained_authorities must map public assertion generations to exact generation-specific service-account username, UID, and bound-token credential ID tuples."
   }
 }
 
@@ -1143,19 +1167,19 @@ variable "release_identity_model_bootstrap_trust_binding" {
           var.release_identity_model_bootstrap_trust_binding.key_set_sha256,
         ] : can(regex("^[a-f0-9]{64}$", digest))
       ]) &&
-      toset(keys(var.release_identity_model_bootstrap_trust_binding.admission_object_uids)) == toset([
-        "validatingadmissionpolicy/fs2-model-bootstrap-policy-lifecycle",
-        "validatingadmissionpolicybinding/fs2-model-bootstrap-policy-lifecycle",
-        "validatingadmissionpolicy/fs2-model-bootstrap-history",
-        "validatingadmissionpolicybinding/fs2-model-bootstrap-history",
-        "validatingadmissionpolicy/fs2-model-bootstrap-retention-receipts",
-        "validatingadmissionpolicybinding/fs2-model-bootstrap-retention-receipts",
-        "validatingadmissionpolicy/fs2-release-identity-trust",
-        "validatingadmissionpolicybinding/fs2-release-identity-trust",
-        "validatingadmissionpolicy/fs2-model-bootstrap-assertion-secrets",
-        "validatingadmissionpolicybinding/fs2-model-bootstrap-assertion-secrets",
-        "validatingadmissionpolicy/fs2-model-bootstrap-verifications",
-        "validatingadmissionpolicybinding/fs2-model-bootstrap-verifications",
+      length(var.release_identity_model_bootstrap_trust_binding.admission_object_uids) >= 16 &&
+      (length(var.release_identity_model_bootstrap_trust_binding.admission_object_uids) - 4) % 12 == 0 &&
+      alltrue([
+        for object_key in keys(var.release_identity_model_bootstrap_trust_binding.admission_object_uids) :
+        can(regex(
+          "^validatingadmissionpolicy(?:binding)?/fs2-bootstrap-(?:policy|history|receipts|trust|secrets|verify)-[a-f0-9]{16}$",
+          object_key,
+        )) || contains([
+          "validatingadmissionpolicy/fs2-bootstrap-epoch-router-lifecycle",
+          "validatingadmissionpolicybinding/fs2-bootstrap-epoch-router-lifecycle",
+          "validatingadmissionpolicy/fs2-bootstrap-epoch-router",
+          "validatingadmissionpolicybinding/fs2-bootstrap-epoch-router",
+        ], object_key)
       ]) &&
       alltrue([
         for uid in values(var.release_identity_model_bootstrap_trust_binding.admission_object_uids) :

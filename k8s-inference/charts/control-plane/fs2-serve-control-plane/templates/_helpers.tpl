@@ -88,6 +88,8 @@ app.kubernetes.io/component: model-controller
 {{- define "fs2-serve.compatibilityImage" -}}
 {{- if and .Values.migration.compatibilityImage.repository .Values.migration.compatibilityImage.digest -}}
 {{- printf "%s@%s" .Values.migration.compatibilityImage.repository .Values.migration.compatibilityImage.digest -}}
+{{- else if .Release.IsUpgrade -}}
+{{- fail "migration.compatibilityImage repository and digest are required for upgrade and rollback safety" -}}
 {{- else -}}
 {{- include "fs2-serve.image" . -}}
 {{- end -}}

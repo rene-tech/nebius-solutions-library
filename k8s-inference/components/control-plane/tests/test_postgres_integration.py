@@ -1115,7 +1115,7 @@ async def test_migration_and_schema_wait_entrypoints_need_only_database_credenti
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_legacy_and_exact_callers_share_first_post_commit_budget_bridge(
+async def test_legacy_and_exact_callers_share_conservative_cutover_fence_and_current_budget(
     postgres_store: PostgresStore,
 ) -> None:
     async with postgres_store.pool.acquire() as connection:
@@ -1123,7 +1123,11 @@ async def test_legacy_and_exact_callers_share_first_post_commit_budget_bridge(
             """
             INSERT INTO fs2_session_exchange_source_buckets(
                 slot,source_fingerprint,window_started_at,admitted_count,updated_at
-            ) VALUES (7,$1,clock_timestamp(),4,clock_timestamp())
+            ) VALUES (
+                7,$1,
+                to_timestamp(floor(extract(epoch FROM clock_timestamp()) / 60) * 60),
+                4,clock_timestamp()
+            )
             """,
             "7" * 64,
         )
@@ -1131,7 +1135,11 @@ async def test_legacy_and_exact_callers_share_first_post_commit_budget_bridge(
             """
             INSERT INTO fs2_session_exchange_aggregate_buckets(
                 shard,window_started_at,admitted_count,updated_at
-            ) VALUES (0,clock_timestamp(),4,clock_timestamp())
+            ) VALUES (
+                0,
+                to_timestamp(floor(extract(epoch FROM clock_timestamp()) / 60) * 60),
+                4,clock_timestamp()
+            )
             """
         )
         await connection.execute(
@@ -1156,7 +1164,10 @@ async def test_legacy_and_exact_callers_share_first_post_commit_budget_bridge(
             "SELECT * FROM fs2_consume_session_exchange_sliding($1,60,5,200)",
             "8" * 64,
         )
-        assert legacy["admission"] == exact["admission"] == "admitted"
+        assert legacy["admission"] == exact["admission"] == "aggregate_throttled"
+        assert legacy["evidence_kind"] == exact["evidence_kind"] == "legacy_cutover_tail_fence"
+        assert legacy["retry_after_seconds"] > 0
+        assert exact["retry_after_seconds"] > 0
         assert legacy["emit_audit"] is exact["emit_audit"] is False
         cutover_before = await connection.fetchrow(
             "SELECT xmin::text AS xmin,* FROM fs2_session_exchange_cutover_state WHERE singleton=1"
@@ -1170,14 +1181,65 @@ async def test_legacy_and_exact_callers_share_first_post_commit_budget_bridge(
         assert await connection.fetchval(
             "SELECT count(*) FROM fs2_session_exchange_admissions WHERE source_fingerprint=$1",
             "7" * 64,
-        ) == 5
+        ) == 4
         assert await connection.fetchrow(
             "SELECT xmin::text AS xmin,* FROM fs2_session_exchange_cutover_state WHERE singleton=1"
         ) == cutover_before
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_cutover_fences_an_unobservable_previous_fixed_bucket_tail(
+    postgres_store: PostgresStore,
+) -> None:
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            INSERT INTO fs2_session_exchange_source_buckets(
+                slot,source_fingerprint,window_started_at,admitted_count,updated_at
+            ) VALUES (
+                9,$1,
+                to_timestamp(floor(extract(epoch FROM clock_timestamp()) / 60) * 60) - interval '60 seconds',
+                5,clock_timestamp()
+            )
+            """,
+            "9" * 64,
+        )
+        await connection.execute(
+            """
+            INSERT INTO fs2_session_exchange_aggregate_buckets(
+                shard,window_started_at,admitted_count,updated_at
+            ) VALUES (
+                0,
+                to_timestamp(floor(extract(epoch FROM clock_timestamp()) / 60) * 60) - interval '60 seconds',
+                5,clock_timestamp()
+            )
+            """
+        )
+        await connection.execute(
+            """
+            UPDATE fs2_session_exchange_cutover_state
+            SET cutover_required=true,
+                prior_schema_version='0032_session_exchange_buckets.sql',
+                first_bridge_at=NULL,
+                legacy_admissions_imported=false,
+                window_seconds=NULL,
+                maximum_source_attempts=NULL,
+                maximum_aggregate_attempts=NULL
+            WHERE singleton=1
+            """
+        )
+        decision = await connection.fetchrow(
+            "SELECT * FROM fs2_consume_session_exchange($1,60,5,200)",
+            "a" * 64,
+        )
+        assert decision["admission"] == "aggregate_throttled"
+        assert decision["evidence_kind"] == "legacy_cutover_tail_fence"
+        assert decision["retry_after_seconds"] > 0
+        assert decision["emit_audit"] is False
         assert await connection.fetchval(
-            "SELECT admission FROM fs2_consume_session_exchange($1,60,5,200)",
-            "7" * 64,
-        ) == "source_throttled"
+            "SELECT count(*) FROM fs2_session_exchange_admissions"
+        ) == 0
 
 
 @pytest.mark.postgres

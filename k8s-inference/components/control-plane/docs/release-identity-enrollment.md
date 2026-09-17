@@ -66,17 +66,24 @@ Bootstrap recovery is append-only, receipt-driven, and staged. First apply the
 admission-policy lifecycle guard and the history, trust, receipt, assertion,
 and verification policies with model bootstrap disabled and root deployment
 `dynamic_models.bootstrap_trust_binding.enabled=false` (forwarded internally as
-`release_identity_model_bootstrap_trust_binding`). Every CREATE is
-bound to one generation-specific release ServiceAccount username, its exact
-Kubernetes UID, and the credential ID of one bound short-lived token; the old
-reusable `fs2-release-identity` username is refused. These three public
+`release_identity_model_bootstrap_trust_binding`). The first policy phase also
+creates a four-object stable epoch-router policy/lifecycle boundary. It rejects
+protected names without an authority label, denies every protected update or
+delete using request namespace/name matching, and admits CREATE only from a
+bound-token automation release ServiceAccount. Every assertion generation then
+gets six uniquely named policy/binding pairs. Their CREATE rules are bound to
+that generation's release ServiceAccount username, exact Kubernetes UID, and
+one bound short-lived-token credential ID; their object match conditions select
+only the same `fs2.nebius.ai/authority-epoch` (or assertion-generation) label.
+An expired old policy therefore cannot deny a later generation. The old
+reusable `fs2-release-identity` username is refused. These three public current
 identifiers are root `dynamic_models.bootstrap_authority`; no bearer token is a
-Terraform value. The lifecycle policy makes
-the accepted policies and bindings append-only. Record their provider-observed
-UIDs only after that policy-first apply.
+Terraform value. The lifecycle policy makes its own generation's policies and
+bindings append-only. Record their provider-observed UIDs only after that
+policy-first apply.
 
 The same exact release credential may then create the immutable public trust
-ConfigMap. Integration records its UID, full provider-object SHA-256, trust
+ConfigMap labeled with its authority epoch. Integration records its UID, full provider-object SHA-256, trust
 document SHA-256, canonical issuer/key-set SHA-256, and every policy/binding
 UID in root `dynamic_models.bootstrap_trust_binding`. Source preconditions
 recompute and compare all values and require trust/history creation timestamps
@@ -100,10 +107,17 @@ authority. A replaced object has a new UID and cannot reuse either receipt or
 verification Job. The deprecated
 `release_identity_model_bootstrap_retained_assertions` input must be empty.
 
-To rotate or recover, supply a new assertion generation and its exact
-`fs2-release-model-bootstrap-<generation>` Secret; never copy history into
-tfvars. Terraform creates a new immutable ConfigMap and zero-retry Job while
-`prevent_destroy` protects prior terminal generations. Missing, mismatched,
+To rotate or recover, retain every applied prior generation/authority tuple in
+`dynamic_models.bootstrap_retained_authorities`, supply a new assertion
+generation and current authority, and first perform a policy-only apply. The
+old trust pin remains valid for the four shared router objects plus complete
+older 12-object epoch sets while the new set is created. Record the new UIDs,
+extend the trust binding with the complete new set, and only then enable the bootstrap execution with its exact
+`fs2-release-model-bootstrap-<generation>` Secret. Partial epoch pins and
+execution from an unpinned epoch fail closed. Terraform creates a new immutable
+ConfigMap and zero-retry Job while `prevent_destroy` protects prior terminal
+generations and policies. Never remove a retained authority or copy history
+into tfvars. Missing, mismatched,
 nonterminal, one-sided, unsigned, or UID-mismatched history fails closed. A
 current ConfigMap-only partial apply requires its own authority-signed
 ConfigMap-phase receipt before import and Job creation; it cannot self-attest.
@@ -127,16 +141,22 @@ shared secret.
 
 Limiter rollout is also source-forward. Migration `0034` keeps both old and
 new SQL entry points behind one bridge. Its first post-commit caller locks the
-cutover state, validates the limiter configuration, and conservatively imports
-every still-active fixed-window admission into the exact ring at that call's
-timestamp. The imported budget remains active for one complete window; there
-is no empty-ring reset and no blanket 60-second operator/debug-login outage.
+cutover state, validates the limiter configuration, and imports every visible
+current aligned-bucket admission into the exact ring at that call's timestamp.
+Because legacy state may already have overwritten a still-active prior bucket,
+the bridge denies admission only until that prior bucket's latest possible
+aligned-boundary expiry. The imported current budget then remains active for a
+complete window. There is no empty-ring reset or claim that lost legacy event
+timestamps were reconstructed exactly.
 The migration explicitly removes inherited execute privileges from the
 internal exact and bridge functions before granting only the legacy and exact
 public wrappers.
 
 Terraform always supplies Helm `migration.compatibilityImage` from the
 independent root `applications.control_plane.schema_compatibility_image`.
+The chart itself also refuses an upgrade or rollback when either compatibility
+repository or digest is absent; only a fresh install may fall back to the
+application image.
 During application
 rollback, retain that successor image for the migration Job and schema-wait
 init container and change only `control_plane_image`. This preserves forward

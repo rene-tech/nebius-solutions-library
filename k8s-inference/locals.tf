@@ -1146,6 +1146,9 @@ locals {
     release_identity_model_bootstrap_authority = (
       var.deployment.dynamic_models.bootstrap_authority
     )
+    release_identity_model_bootstrap_retained_authorities = (
+      var.deployment.dynamic_models.bootstrap_retained_authorities
+    )
     release_identity_model_bootstrap_trust_binding = (
       var.deployment.dynamic_models.bootstrap_trust_binding
     )

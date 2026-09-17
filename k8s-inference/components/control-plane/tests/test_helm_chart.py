@@ -860,6 +860,7 @@ def test_source_forward_rollback_keeps_successor_migration_and_schema_wait_image
     compatibility_repository = "registry.nebius.cloud/unit/fs2-schema-compatibility"
     compatibility_digest = "sha256:" + "9" * 64
     documents = render(
+        "--is-upgrade",
         "--set",
         f"migration.compatibilityImage.repository={compatibility_repository}",
         "--set",
@@ -877,6 +878,26 @@ def test_source_forward_rollback_keeps_successor_migration_and_schema_wait_image
     )
     assert migration["spec"]["template"]["spec"]["containers"][0]["image"] == (
         f"{compatibility_repository}@{compatibility_digest}"
+    )
+
+
+def test_upgrade_refuses_missing_schema_compatibility_image_but_fresh_install_retains_fallback() -> None:
+    fresh = render()
+    fresh_gateway = gateway_deployment(fresh)
+    assert fresh_gateway["spec"]["template"]["spec"]["initContainers"][0]["image"] == (
+        f"{TEST_REPOSITORY}@{TEST_DIGEST}"
+    )
+
+    upgrade = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        render_command("--is-upgrade"),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert upgrade.returncode != 0
+    assert (
+        "migration.compatibilityImage repository and digest are required for upgrade and rollback safety"
+        in upgrade.stderr
     )
 
 

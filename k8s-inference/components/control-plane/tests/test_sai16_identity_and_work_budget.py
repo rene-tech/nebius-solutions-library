@@ -147,6 +147,7 @@ def test_model_bootstrap_recovery_is_generation_keyed_and_retains_job_history() 
     assert "bootstrap_managed_generations" in outputs
     assert "bootstrap_retained_generations" in outputs
     assert 'bootstrap_inventory_authority   = "policy-first-apply-time-verified-kubernetes-inventory-v3"' in outputs
+    assert "bootstrap_epoch_router_policy_names" in outputs
 
 
 def test_postgres_session_exchange_uses_exact_bounded_sliding_state() -> None:
@@ -198,6 +199,10 @@ def test_postgres_session_exchange_cutover_is_shared_fail_closed_and_rollback_co
     assert "legacy_admissions_imported" in migration
     assert "generate_series(1, bucket.admitted_count)" in migration
     assert "v_first_bridge_at" in migration
+    assert "legacy_cutover_tail_fence" in migration
+    assert "v_unknown_tail_until := v_current_window_start + v_interval" in migration
+    assert "bucket.window_started_at = v_current_window_start" in migration
+    assert "bucket.window_started_at > v_first_bridge_at - v_interval" not in migration
     assert "cutover_not_before" not in migration
     assert "cutover_quiescence" not in migration
     assert "fs2_consume_session_exchange_bridge($1,$2,$3,$4)" in migration
@@ -253,6 +258,7 @@ def test_model_bootstrap_assertion_secret_is_append_only_and_credential_bound() 
     assert 'operations  = ["CREATE", "UPDATE", "DELETE"]' in bootstrap
     assert "assertion Secrets are generation-retained and cannot be updated or deleted" in bootstrap
     assert "release_identity_model_bootstrap_authority" in variables
+    assert "release_identity_model_bootstrap_retained_authorities" in variables
     assert "the reusable fs2-release-identity username is refused" in variables
     assert "config_map_object_sha256" in variables
     assert "key_set_sha256" in variables
@@ -260,7 +266,27 @@ def test_model_bootstrap_assertion_secret_is_append_only_and_credential_bound() 
     assert "bootstrap_authority = optional(object" in root_variables
     assert "bootstrap_trust_binding = optional(object" in root_variables
     assert "var.deployment.dynamic_models.bootstrap_authority" in root_locals
+    assert "var.deployment.dynamic_models.bootstrap_retained_authorities" in root_locals
     assert "var.deployment.dynamic_models.bootstrap_trust_binding" in root_locals
+    assert "model_controller_bootstrap_policy_names" in bootstrap
+    assert bootstrap.count(
+        "for_each = local.model_controller_bootstrap_security_enabled ? "
+        "local.model_controller_bootstrap_authority_epochs : {}"
+    ) == 12
+    assert "model_controller_bootstrap_bound_authority_epochs" in bootstrap
+    assert "model_controller_bootstrap_bound_admission_keys" in bootstrap
+    assert "model_controller_bootstrap_current_authority_consistent" in bootstrap
+    assert "admission_object_uids) - 4) % 12 == 0" in variables
+    assert "model_controller_bootstrap_epoch_router_lifecycle" in bootstrap
+    assert "model_controller_bootstrap_epoch_router_binding" in bootstrap
+    assert "model-bootstrap routed objects require a well-formed authority epoch" in bootstrap
+    assert "model_controller_bootstrap_rotatable_authority_cel" in bootstrap
+    assert '"fs2.nebius.ai/authority-epoch" = each.key' in bootstrap
+    assert 'lifecycle = "fs2-bootstrap-policy-${substr(sha256' in bootstrap
+    assert "an expired retained epoch cannot authorize a later generation" in bootstrap
+    assert "request.namespace == 'fs2-system' && request.name.startsWith('fs2-release-model-bootstrap-')" in bootstrap
+    assert "request.operation == 'DELETE' && has(oldObject.metadata.labels)" in bootstrap
+    assert "object.metadata.namespace == 'fs2-system'" not in bootstrap
 
 
 def test_trusted_proxy_source_is_canonical_and_untrusted_forwarding_is_ignored() -> None:

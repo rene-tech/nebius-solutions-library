@@ -206,6 +206,11 @@ variable "deployment" {
         uid           = ""
         credential_id = ""
       })
+      bootstrap_retained_authorities = optional(map(object({
+        username      = string
+        uid           = string
+        credential_id = string
+      })), {})
       bootstrap_trust_binding = optional(object({
         enabled                  = bool
         config_map_uid           = string
