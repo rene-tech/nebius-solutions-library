@@ -1,11 +1,13 @@
 # ruff: noqa: S603 -- fixed repository helper and test-owned command fakes.
 from __future__ import annotations
 
+import ast
 import contextlib
 import importlib.util
 import json
 import re
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
@@ -48,6 +50,31 @@ PROVIDER_PROJECT_FIXTURE = CONTROL_ROOT / "tests" / "fixtures" / "nebius-iam-pro
 PROVIDER_MEMBER_OF_GROUP_FIXTURE = (
     CONTROL_ROOT / "tests" / "fixtures" / "nebius-iam-list-member-of-group.json"
 )
+
+
+def _literal_function_assignment(
+    path: Path,
+    function_name: str,
+    assignment_name: str,
+) -> Any:
+    module = ast.parse(path.read_text(), filename=str(path))
+    functions = [
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    ]
+    assert len(functions) == 1
+    assignments = [
+        node
+        for node in ast.walk(functions[0])
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == assignment_name
+            for target in node.targets
+        )
+    ]
+    assert len(assignments) == 1
+    return ast.literal_eval(assignments[0].value)
 
 
 def _load_transition_module() -> ModuleType:
@@ -3289,6 +3316,35 @@ def test_external_rbac_boundary_separates_runtime_audit_and_subject_rotation() -
     assert "external_role_bundle_sha256" in preflight
     assert "external_role_bundle_evidence" in retirement
     assert "current_bootstrap_kubeconfig" in retirement
+
+
+def test_auditor_role_contract_is_identical_before_and_after_apply() -> None:
+    preflight_rules = _literal_function_assignment(
+        BOUNDARY_PREFLIGHT,
+        "auditor_bootstrap_contract",
+        "expected_rules",
+    )
+    retirement_rules = _literal_function_assignment(
+        EPOCH_RETIREMENT,
+        "auditor_role_evidence",
+        "expected_rules",
+    )
+    token_review_rule = {
+        "apiGroups": ["authentication.k8s.io"],
+        "resources": ["tokenreviews"],
+        "verbs": ["create"],
+    }
+    boundary = BOUNDARY_TERRAFORM.read_text()
+    auditor = boundary.split(
+        'resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_auditor"',
+        maxsplit=1,
+    )[1].split('resource "kubernetes_cluster_role_binding_v1"', maxsplit=1)[0]
+
+    assert preflight_rules == retirement_rules
+    assert preflight_rules.count(token_review_rule) == 1
+    assert 'api_groups = ["authentication.k8s.io"]' in auditor
+    assert 'resources  = ["tokenreviews"]' in auditor
+    assert 'verbs      = ["create"]' in auditor
 
 
 def test_rbac_inventory_derives_named_impersonation_delegation_and_custom_signers() -> None:

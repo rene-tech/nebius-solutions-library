@@ -149,6 +149,11 @@ def auditor_role_evidence(value: dict[str, Any]) -> dict[str, Any]:
             "verbs": ["create"],
         },
         {
+            "apiGroups": ["authentication.k8s.io"],
+            "resources": ["tokenreviews"],
+            "verbs": ["create"],
+        },
+        {
             "apiGroups": ["rbac.authorization.k8s.io"],
             "resources": ["roles", "clusterroles"],
             "verbs": ["get", "list"],

@@ -866,7 +866,10 @@ root-owned short-lived provider OIDC probe is submitted to the selected API
 server's TokenReview endpoint; its issuer, audiences, provider subject,
 username and groups must map to one freshly collected directory subject, and
 the resulting userInfo is bound to the exact API-server hash and `kube-system`
-UID. The separately recovery-signed cluster inventory
+UID. The external auditor role grants only the required SubjectAccessReview and
+TokenReview creation alongside its bounded reads; plan-time preflight and
+post-apply epoch retirement validate the same exact role contract. The
+separately recovery-signed cluster inventory
 must reproduce that provider snapshot's users, groups and provenance exactly
 while also binding the API-server hash, `kube-system` UID and rollback window.
 Provider snapshots contain raw directory responses and are sensitive local
