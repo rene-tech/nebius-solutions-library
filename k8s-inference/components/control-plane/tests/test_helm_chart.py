@@ -35,6 +35,8 @@ TEST_EDGE_ISSUER_KEY_ID = "sha256:" + "f" * 64
 TEST_EDGE_LOAD_BALANCER_ID = "loadbalancer-e00abc123xyz"
 TEST_HTTP_NODE_PORT = 31425
 TEST_HTTPS_NODE_PORT = 32633
+TEST_RUN_ID = "r0123456789"
+TEST_SYSTEM_NODE_GROUP_ID = "mk8snodegroup-e00abc123xyz"
 TEST_CATALOG_ROLLOUT_DIGEST = "sha256:" + "3" * 64
 HELM = shutil.which("helm")
 assert HELM is not None, "helm is required for chart tests"
@@ -149,6 +151,10 @@ def render_command(*extra: str) -> list[str]:
         "httpRoute.enabled=true",
         "--set",
         "publicLoadBalancer.enabled=true",
+        "--set-string",
+        f"envoyProxy.nodeSelector.lifecycle\\.fs2\\.nebius/run={TEST_RUN_ID}",
+        "--set-string",
+        f"envoyProxy.nodeSelector.nebius\\.com/node-group-id={TEST_SYSTEM_NODE_GROUP_ID}",
         "--set",
         f"publicLoadBalancer.targetProjectId={TEST_TARGET_PROJECT_ID}",
         "--set",
@@ -729,7 +735,10 @@ def test_public_envoy_has_redundant_bounded_node_spread_data_plane() -> None:
         "workload.fs2.nebius/system": "true",
         "capacity.fs2.nebius/type": "regular",
         "capacity.fs2.nebius/pool": "system",
+        "lifecycle.fs2.nebius/run": TEST_RUN_ID,
+        "nebius.com/node-group-id": TEST_SYSTEM_NODE_GROUP_ID,
     }
+    assert deployment["pod"]["tolerations"] == []
     assert deployment["strategy"] == {
         "type": "RollingUpdate",
         "rollingUpdate": {"maxUnavailable": 0, "maxSurge": 1},

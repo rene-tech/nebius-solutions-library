@@ -873,17 +873,23 @@ locals {
   }
 
   public_edge_availability_contract = {
-    schema               = "fs2-serve.nebius.ai/public-edge-availability/v2"
+    schema               = "fs2-serve.nebius.ai/public-edge-availability/v3"
     enabled              = var.public_edge_mode == "public"
     system_node_group_id = nebius_mk8s_v1_node_group.system.id
     system_node_count    = local.effective_system_pool.node_count
     node_selector = {
-      "workload.fs2.nebius/system" = "true"
-      "capacity.fs2.nebius/type"   = local.effective_system_pool.capacity
-      "capacity.fs2.nebius/pool"   = "system"
+      "workload.fs2.nebius/system"   = "true"
+      "capacity.fs2.nebius/type"     = local.effective_system_pool.capacity
+      "capacity.fs2.nebius/pool"     = "system"
+      "lifecycle.fs2.nebius/run"     = var.run_id
+      "nebius.com/node-group-id"     = nebius_mk8s_v1_node_group.system.id
     }
     topology_key    = "kubernetes.io/hostname"
     minimum_domains = 3
+    scheduler_eligibility = {
+      tolerated_hard_taints  = []
+      blocking_taint_effects = ["NoExecute", "NoSchedule"]
+    }
     update_strategy = {
       max_surge               = local.effective_system_pool.max_surge
       max_unavailable         = local.effective_system_pool.max_unavailable

@@ -1667,6 +1667,7 @@
       "required": [
         "replicaCount",
         "nodeSelector",
+        "tolerations",
         "podDisruptionBudget",
         "resources",
         "affinity",
@@ -1679,11 +1680,33 @@
           "maximum": 20
         },
         "nodeSelector": {
-          "const": {
-            "workload.fs2.nebius/system": "true",
-            "capacity.fs2.nebius/type": "regular",
-            "capacity.fs2.nebius/pool": "system"
-          }
+          "type": "object",
+          "required": [
+            "workload.fs2.nebius/system",
+            "capacity.fs2.nebius/type",
+            "capacity.fs2.nebius/pool"
+          ],
+          "properties": {
+            "workload.fs2.nebius/system": {
+              "const": "true"
+            },
+            "capacity.fs2.nebius/type": {
+              "const": "regular"
+            },
+            "capacity.fs2.nebius/pool": {
+              "const": "system"
+            },
+            "lifecycle.fs2.nebius/run": {
+              "type": "string"
+            },
+            "nebius.com/node-group-id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "tolerations": {
+          "const": []
         },
         "podDisruptionBudget": {
           "type": "object",

@@ -55,16 +55,22 @@ required hostname anti-affinity, three-domain `minDomains` spread, probes, and
 bounded resources cover a member/update loss. Public mode is rejected at both
 the root and infrastructure stage unless the fixed regular system pool has at
 least three nodes. Infrastructure emits an exact availability receipt naming
-that node group, count, three-label selector, topology key, and minimum domain
-count, plus the node-group update strategy and minimum retained capacity.
+that node group, count, five-label selector, topology key, and minimum domain
+count, plus the node-group update strategy and minimum retained capacity. The
+selector includes the provider-owned `nebius.com/node-group-id` and the
+task-owned `lifecycle.fs2.nebius/run`, not only generic system-pool labels.
 Public mode requires positive surge, at most one unavailable system node, and
 at least two nodes retained during an update. Foundation reopens the fixed
 run-owned infrastructure state directly, compares both the whole receipt and
 its canonical SHA-256, and queries the selected Nodes before creating the
-foundation contract. Every contracted Node must be Ready and schedulable, with
-at least three distinct `kubernetes.io/hostname` values. Workloads consume the
-foundation state's exact digest and Ready-node receipt rather than trusting the
-wrapper's copy alone.
+foundation contract. Every eligible Node must have the exact group/run labels,
+a non-empty UID and Kubernetes `resourceVersion`, Ready status, schedulable
+state, no `NoSchedule` or `NoExecute` taint, and one of at least three distinct
+`kubernetes.io/hostname` values. The edge workloads carry no hard-taint
+tolerations. Workloads independently reread those exact Nodes, recompute the
+UID/resourceVersion-bound receipt, and require every foundation UID to remain
+currently eligible; neither a wrapper copy nor a saved foundation snapshot is
+sufficient.
 If the complete HA authority or RLS is unavailable, Envoy is fail-closed rather
 than silently removing the security control.
 
@@ -80,7 +86,9 @@ The Envoy data plane has two replicas, rolling availability, CPU/memory
 requests and limits, a one-Pod minimum PDB, required hostname anti-affinity,
 and hostname topology spread with `minDomains: 3`. The Envoy Gateway controller
 and RLS use the same public-only hard placement contract; internal-only mode
-retains soft placement and does not claim node-loss HA. Both
+retains soft placement and does not claim node-loss HA. Its `ScheduleAnyway`
+constraints omit `minDomains`, which Kubernetes permits only with
+`DoNotSchedule`; public mode retains `minDomains: 3` and `DoNotSchedule`. Both
 listeners cap concurrent connections, connection lifetime, requests per
 connection, incomplete-body time, idle time, stream lifetime, and concurrent
 HTTP/2 streams. The active-stream ceiling is exactly 7,500 seconds, preserving
@@ -120,7 +128,15 @@ receipt and public callers could override the system-pool update strategy to
 remove too much capacity. It is preserved as intermediate negative evidence.
 The current additive successor binds foundation to infrastructure state and
 its digest, records the Ready-node/hostname preflight, and closes the update
-strategy override. The production issuer registry remains intentionally empty.
+strategy override. Exact commit `2cb99698fd106be5225e722de14f318238d418cb`
+(tree `fb2f388f3e00c0779ab43eb84864b512fc1deff9`) is preserved as rejected
+evidence: workloads trusted only its saved foundation receipt, its selector did
+not bind provider node-group/run ownership, and it counted hard-tainted Nodes
+as eligible. Its internal-only soft-spread objects also paired `minDomains`
+with `ScheduleAnyway`, which Kubernetes rejects. The current additive successor
+adds an independent workloads-stage Node reread and exact UID/resourceVersion,
+ownership, and taint eligibility while omitting `minDomains` only for the soft
+internal mode. The production issuer registry remains intentionally empty.
 
 ### Receipt and issuer custody
 
@@ -168,9 +184,10 @@ the coordinator's static-only boundary. A later reviewed integration must:
 1. Validate and render the chart and foundation configuration from the exact
    accepted successor commit, including CRD compatibility with Envoy Gateway
    v1.8.3, the exact 7,500-second audio rule, the exact three-domain placement
-   receipt and digest, the Ready/schedulable three-hostname preflight, the
-   retained-capacity update strategy, and equality between the plan count and
-   address allowlist.
+   receipt and digest, both Node rereads and their UID/resourceVersion evidence,
+   exact node-group/run ownership, rejection of hard-tainted Nodes, valid
+   internal soft spread, the retained-capacity update strategy, and equality
+   between the plan count and address allowlist.
 2. Scan and promote every introduced image digest before creating resources.
 3. Record the current shared-service release/image identity and integrate all
    deployed sibling remediations before rollout.
@@ -193,8 +210,10 @@ the coordinator's static-only boundary. A later reviewed integration must:
    PDB, bounded resources, two Ready controller and rate-limit-service replicas
    on distinct nodes, three Ready store members on three distinct system nodes,
    the exact infrastructure node-group/count/selector/update receipt and digest,
-   `maxUnavailable <= 1`, positive surge, at least two retained system nodes,
-   and accepted traffic policies.
+   every foundation UID remaining in the current workloads-stage eligible UID
+   set with a current resource version, zero untolerated
+   `NoSchedule`/`NoExecute` taints, `maxUnavailable <= 1`, positive surge, at
+   least two retained system nodes, and accepted traffic policies.
 9. Prove the existing Deployment/Service to StatefulSet/headless/Sentinel
    transition is a non-destructive staged migration: no old resource is deleted
    or replaced before the new single-primary/quorum contract is Ready, and no

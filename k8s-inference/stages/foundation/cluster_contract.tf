@@ -101,21 +101,47 @@ resource "terraform_data" "cluster_contract" {
             "workload.fs2.nebius/system" = "true"
             "capacity.fs2.nebius/type"   = "regular"
             "capacity.fs2.nebius/pool"   = "system"
+            "lifecycle.fs2.nebius/run"   = var.run_id
+            "nebius.com/node-group-id"   = var.public_edge_availability_contract.system_node_group_id
+          } &&
+          var.public_edge_availability_contract.scheduler_eligibility == {
+            tolerated_hard_taints  = []
+            blocking_taint_effects = ["NoExecute", "NoSchedule"]
           }
         )
       )
-      error_message = "The public edge foundation requires the infrastructure-derived three-node, three-domain regular system-pool placement contract."
+      error_message = "The public edge foundation requires the infrastructure-derived node-group/run selector, empty hard-taint tolerations, and three-node/three-domain regular system-pool placement contract."
     }
 
     precondition {
       condition = (
         !local.public_edge_enabled ||
         (
+          local.public_edge_ready_node_preflight.selector == var.public_edge_availability_contract.node_selector &&
+          local.public_edge_ready_node_preflight.system_node_group_id == var.public_edge_availability_contract.system_node_group_id &&
+          local.public_edge_ready_node_preflight.run_id == var.run_id &&
+          local.public_edge_ready_node_preflight.tolerated_hard_taints == [] &&
+          local.public_edge_ready_node_preflight.blocking_taint_effects == ["NoExecute", "NoSchedule"] &&
           local.public_edge_ready_node_preflight.ready_node_count >= var.public_edge_availability_contract.system_node_count &&
-          local.public_edge_ready_node_preflight.distinct_hostname_count >= var.public_edge_availability_contract.minimum_domains
+          length(local.public_edge_ready_node_preflight.eligible_node_uids) == local.public_edge_ready_node_preflight.ready_node_count &&
+          local.public_edge_ready_node_preflight.eligible_node_uids == sort([
+            for node in local.public_edge_ready_node_preflight.eligible_nodes : node.uid
+          ]) &&
+          local.public_edge_ready_node_preflight.eligible_nodes_sha256 == sha256(jsonencode(local.public_edge_ready_node_preflight.eligible_nodes)) &&
+          local.public_edge_ready_node_preflight.distinct_hostname_count >= var.public_edge_availability_contract.minimum_domains &&
+          alltrue([
+            for node in local.public_edge_ready_node_preflight.eligible_nodes :
+            node.node_group_id == var.public_edge_availability_contract.system_node_group_id &&
+            node.run_id == var.run_id &&
+            node.ready &&
+            !node.unschedulable &&
+            length(node.uid) > 0 &&
+            length(node.resource_version) > 0 &&
+            length(node.blocking_taints) == 0
+          ])
         )
       )
-      error_message = "Public edge foundation preflight requires every contracted system node Ready and schedulable with at least three distinct kubernetes.io/hostname values."
+      error_message = "Public edge foundation preflight requires current UID/resourceVersion-bound Nodes from the exact node group/run, Ready, schedulable, free of untolerated NoSchedule/NoExecute taints, and spread across at least three hostnames."
     }
 
     precondition {

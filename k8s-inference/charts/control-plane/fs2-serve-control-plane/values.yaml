@@ -623,6 +623,9 @@ publicGateway:
 # tuning.
 envoyProxy:
   replicaCount: 2
+  # Public edge workloads intentionally tolerate no NoSchedule/NoExecute
+  # taints; the cross-stage Node preflight enforces the same contract.
+  tolerations: []
   nodeSelector:
     workload.fs2.nebius/system: "true"
     capacity.fs2.nebius/type: regular

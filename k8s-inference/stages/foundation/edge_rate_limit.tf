@@ -316,7 +316,7 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
 
         topology_spread_constraint {
           max_skew           = 1
-          min_domains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : 1
+          min_domains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : null
           topology_key       = var.public_edge_availability_contract.topology_key
           when_unsatisfiable = local.public_edge_enabled ? "DoNotSchedule" : "ScheduleAnyway"
           label_selector {

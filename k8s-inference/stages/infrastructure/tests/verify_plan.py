@@ -573,11 +573,6 @@ def validate_public_edge_outputs(
             return ["planned public_edge_availability_contract output is absent or unknown"]
     else:
         expected_enabled = public_edge_mode == "public"
-        expected_selector = {
-            "workload.fs2.nebius/system": "true",
-            "capacity.fs2.nebius/type": "regular",
-            "capacity.fs2.nebius/pool": "system",
-        }
         node_count = availability.get("system_node_count")
         system_change = next(
             (
@@ -589,6 +584,17 @@ def validate_public_edge_outputs(
         )
         system_labels = nested(system_change, "template", "metadata", "labels") or {}
         system_id = system_change.get("id")
+        run_id = variable(document, "run_id")
+        expected_template_selector = {
+            "workload.fs2.nebius/system": "true",
+            "capacity.fs2.nebius/type": "regular",
+            "capacity.fs2.nebius/pool": "system",
+            "lifecycle.fs2.nebius/run": run_id,
+        }
+        expected_selector = {
+            **expected_template_selector,
+            "nebius.com/node-group-id": availability.get("system_node_group_id"),
+        }
         max_surge = nested(system_change, "strategy", "max_surge", "count")
         max_unavailable = nested(
             system_change, "strategy", "max_unavailable", "count"
@@ -607,7 +613,7 @@ def validate_public_edge_outputs(
         }
         if (
             availability.get("schema")
-            != "fs2-serve.nebius.ai/public-edge-availability/v2"
+            != "fs2-serve.nebius.ai/public-edge-availability/v3"
             or availability.get("enabled") is not expected_enabled
             or isinstance(node_count, bool)
             or not isinstance(node_count, int)
@@ -615,10 +621,18 @@ def validate_public_edge_outputs(
             or availability.get("node_selector") != expected_selector
             or availability.get("topology_key") != "kubernetes.io/hostname"
             or availability.get("minimum_domains") != 3
+            or availability.get("scheduler_eligibility")
+            != {
+                "tolerated_hard_taints": [],
+                "blocking_taint_effects": ["NoExecute", "NoSchedule"],
+            }
             or availability.get("update_strategy") != expected_update_strategy
             or availability_sha256 != canonical_sha256(availability)
             or node_count != system_change.get("fixed_node_count")
-            or any(system_labels.get(key) != value for key, value in expected_selector.items())
+            or any(
+                system_labels.get(key) != value
+                for key, value in expected_template_selector.items()
+            )
             or (
                 expected_enabled
                 and (
@@ -644,7 +658,7 @@ def validate_public_edge_outputs(
             )
         ):
             return [
-                "planned public_edge_availability_contract or digest differs from the exact three-domain system-pool and retained-capacity contract"
+                "planned public_edge_availability_contract or digest differs from the exact node-group/run, taint eligibility, three-domain, and retained-capacity contract"
             ]
     if not isinstance(edge, dict):
         if mode == "create" and public_edge_mode == "public":

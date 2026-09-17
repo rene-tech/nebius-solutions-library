@@ -13,6 +13,14 @@
 {{- if ne .Values.publicLoadBalancer.allocationType "public-ipv4" }}
 {{- fail "publicLoadBalancer allocation must be a public IPv4 allocation" }}
 {{- end }}
+{{- $systemNodeGroupId := required "envoyProxy.nodeSelector must include the exact nebius.com/node-group-id" (index .Values.envoyProxy.nodeSelector "nebius.com/node-group-id") }}
+{{- $runId := required "envoyProxy.nodeSelector must include the exact lifecycle.fs2.nebius/run" (index .Values.envoyProxy.nodeSelector "lifecycle.fs2.nebius/run") }}
+{{- if not (regexMatch "^mk8snodegroup-[a-z0-9]+$" $systemNodeGroupId) }}
+{{- fail "envoyProxy.nodeSelector nebius.com/node-group-id must be an exact provider node-group ID" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z][a-z0-9]{5,11}$" $runId) }}
+{{- fail "envoyProxy.nodeSelector lifecycle.fs2.nebius/run must be the exact run ID" }}
+{{- end }}
 {{- $http := .Values.publicLoadBalancer.servicePorts.http }}
 {{- $https := .Values.publicLoadBalancer.servicePorts.https }}
 {{- if eq (int $http.nodePort) (int $https.nodePort) }}
@@ -38,6 +46,8 @@ spec:
         pod:
           nodeSelector:
             {{- toYaml .Values.envoyProxy.nodeSelector | nindent 12 }}
+          tolerations:
+            {{- toYaml .Values.envoyProxy.tolerations | nindent 12 }}
           affinity:
             {{- toYaml .Values.envoyProxy.affinity | nindent 12 }}
           topologySpreadConstraints:

@@ -125,7 +125,7 @@ def dynamic_outputs(run_root: Path) -> dict:
         },
         "public_edge_contract": {"mode": "internal-only"},
         "public_edge_availability_contract": {
-            "schema": "fs2-serve.nebius.ai/public-edge-availability/v2",
+            "schema": "fs2-serve.nebius.ai/public-edge-availability/v3",
             "enabled": False,
             "system_node_group_id": "mk8snodegroup-test",
             "system_node_count": 1,
@@ -133,9 +133,15 @@ def dynamic_outputs(run_root: Path) -> dict:
                 "workload.fs2.nebius/system": "true",
                 "capacity.fs2.nebius/type": "regular",
                 "capacity.fs2.nebius/pool": "system",
+                "lifecycle.fs2.nebius/run": "r0123456789",
+                "nebius.com/node-group-id": "mk8snodegroup-test",
             },
             "topology_key": "kubernetes.io/hostname",
             "minimum_domains": 3,
+            "scheduler_eligibility": {
+                "tolerated_hard_taints": [],
+                "blocking_taint_effects": ["NoExecute", "NoSchedule"],
+            },
             "update_strategy": {
                 "max_surge": 1,
                 "max_unavailable": 0,
@@ -1046,7 +1052,7 @@ class InferenceStackTests(unittest.TestCase):
             "accelerator_pool_contract": {"schema": "accelerators-test/v2"},
             "public_edge_contract": {"mode": "internal-only"},
             "public_edge_availability_contract": {
-                "schema": "fs2-serve.nebius.ai/public-edge-availability/v2",
+                "schema": "fs2-serve.nebius.ai/public-edge-availability/v3",
                 "enabled": False,
                 "system_node_group_id": "mk8snodegroup-test",
                 "system_node_count": 1,
@@ -1054,9 +1060,15 @@ class InferenceStackTests(unittest.TestCase):
                     "workload.fs2.nebius/system": "true",
                     "capacity.fs2.nebius/type": "regular",
                     "capacity.fs2.nebius/pool": "system",
+                    "lifecycle.fs2.nebius/run": "r0123456789",
+                    "nebius.com/node-group-id": "mk8snodegroup-test",
                 },
                 "topology_key": "kubernetes.io/hostname",
                 "minimum_domains": 3,
+                "scheduler_eligibility": {
+                    "tolerated_hard_taints": [],
+                    "blocking_taint_effects": ["NoExecute", "NoSchedule"],
+                },
                 "update_strategy": {
                     "max_surge": 1,
                     "max_unavailable": 0,

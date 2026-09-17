@@ -553,6 +553,10 @@ variable "public_edge_availability_contract" {
     node_selector        = map(string)
     topology_key         = string
     minimum_domains      = number
+    scheduler_eligibility = object({
+      tolerated_hard_taints  = list(string)
+      blocking_taint_effects = list(string)
+    })
     update_strategy = object({
       max_surge               = number
       max_unavailable         = number
@@ -560,13 +564,17 @@ variable "public_edge_availability_contract" {
     })
   })
   default = {
-    schema               = "fs2-serve.nebius.ai/public-edge-availability/v2"
+    schema               = "fs2-serve.nebius.ai/public-edge-availability/v3"
     enabled              = false
     system_node_group_id = null
     system_node_count    = 0
     node_selector        = {}
     topology_key         = "kubernetes.io/hostname"
     minimum_domains      = 3
+    scheduler_eligibility = {
+      tolerated_hard_taints  = []
+      blocking_taint_effects = ["NoExecute", "NoSchedule"]
+    }
     update_strategy = {
       max_surge               = 0
       max_unavailable         = 0
@@ -577,9 +585,11 @@ variable "public_edge_availability_contract" {
 
   validation {
     condition = try(
-      var.public_edge_availability_contract.schema == "fs2-serve.nebius.ai/public-edge-availability/v2" &&
+      var.public_edge_availability_contract.schema == "fs2-serve.nebius.ai/public-edge-availability/v3" &&
       var.public_edge_availability_contract.topology_key == "kubernetes.io/hostname" &&
       var.public_edge_availability_contract.minimum_domains == 3 &&
+      var.public_edge_availability_contract.scheduler_eligibility.tolerated_hard_taints == [] &&
+      var.public_edge_availability_contract.scheduler_eligibility.blocking_taint_effects == ["NoExecute", "NoSchedule"] &&
       (
         !var.public_edge_availability_contract.enabled ||
         (
@@ -597,12 +607,14 @@ variable "public_edge_availability_contract" {
             "workload.fs2.nebius/system" = "true"
             "capacity.fs2.nebius/type"   = "regular"
             "capacity.fs2.nebius/pool"   = "system"
+            "lifecycle.fs2.nebius/run"   = var.run_id
+            "nebius.com/node-group-id"   = var.public_edge_availability_contract.system_node_group_id
           }
         )
       ),
       false,
     )
-    error_message = "A public edge requires the exact infrastructure-derived regular system-pool selector, at least three fixed nodes/domains, max_unavailable <= 1, max_surge >= 1, and at least two retained nodes during update."
+    error_message = "A public edge requires the exact infrastructure-derived node-group/run selector, no tolerated NoSchedule/NoExecute taints, at least three fixed nodes/domains, max_unavailable <= 1, max_surge >= 1, and at least two retained nodes during update."
   }
 }
 

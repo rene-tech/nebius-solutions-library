@@ -27,6 +27,16 @@ data "kubernetes_resources" "kubernetes_api_endpoint_slices" {
   label_selector = "kubernetes.io/service-name=kubernetes"
 }
 
+data "kubernetes_resources" "public_edge_system_nodes" {
+  count          = local.public_edge_enabled ? 1 : 0
+  api_version    = "v1"
+  kind           = "Node"
+  label_selector = join(",", [
+    for key in sort(keys(var.public_edge_availability_contract.node_selector)) :
+    "${key}=${var.public_edge_availability_contract.node_selector[key]}"
+  ])
+}
+
 data "kubernetes_config_map_v1" "foundation_contract" {
   metadata {
     name      = "fs2-terraform-cluster-contract"
@@ -78,7 +88,8 @@ resource "terraform_data" "cluster_contract" {
     public_edge_contract                       = var.public_edge_contract
     public_edge_availability_contract          = var.public_edge_availability_contract
     public_edge_availability_contract_sha256 = local.public_edge_availability_contract_sha256
-    public_edge_client_identity                = local.verified_edge_client_identity
+    public_edge_current_node_preflight       = local.public_edge_current_node_preflight
+    public_edge_client_identity              = local.verified_edge_client_identity
   }
 
   lifecycle {
@@ -100,16 +111,52 @@ resource "terraform_data" "cluster_contract" {
           !local.public_edge_enabled ||
           (
             data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.required &&
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.selector == var.public_edge_availability_contract.node_selector &&
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.system_node_group_id == var.public_edge_availability_contract.system_node_group_id &&
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.run_id == var.run_id &&
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.tolerated_hard_taints == [] &&
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.blocking_taint_effects == ["NoExecute", "NoSchedule"] &&
             data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.required_node_count == var.public_edge_availability_contract.system_node_count &&
             data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.required_domains == var.public_edge_availability_contract.minimum_domains &&
             data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.ready_node_count >= var.public_edge_availability_contract.system_node_count &&
             length(data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.ready_node_names) == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.ready_node_count &&
+            length(data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.eligible_node_uids) == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.ready_node_count &&
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.eligible_node_uids == sort([
+              for node in data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.eligible_nodes : node.uid
+            ]) &&
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.eligible_nodes_sha256 == sha256(jsonencode(data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.eligible_nodes)) &&
             data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.distinct_hostname_count >= var.public_edge_availability_contract.minimum_domains &&
-            length(data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.distinct_hostnames) == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.distinct_hostname_count
+            length(data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.distinct_hostnames) == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.distinct_hostname_count &&
+            local.public_edge_current_node_preflight.required &&
+            local.public_edge_current_node_preflight.selector == var.public_edge_availability_contract.node_selector &&
+            local.public_edge_current_node_preflight.system_node_group_id == var.public_edge_availability_contract.system_node_group_id &&
+            local.public_edge_current_node_preflight.run_id == var.run_id &&
+            local.public_edge_current_node_preflight.tolerated_hard_taints == [] &&
+            local.public_edge_current_node_preflight.blocking_taint_effects == ["NoExecute", "NoSchedule"] &&
+            local.public_edge_current_node_preflight.ready_node_count >= var.public_edge_availability_contract.system_node_count &&
+            local.public_edge_current_node_preflight.distinct_hostname_count >= var.public_edge_availability_contract.minimum_domains &&
+            local.public_edge_current_node_preflight.eligible_node_uids == sort([
+              for node in local.public_edge_current_node_preflight.eligible_nodes : node.uid
+            ]) &&
+            local.public_edge_current_node_preflight.eligible_nodes_sha256 == sha256(jsonencode(local.public_edge_current_node_preflight.eligible_nodes)) &&
+            alltrue([
+              for node in local.public_edge_current_node_preflight.eligible_nodes :
+              node.node_group_id == var.public_edge_availability_contract.system_node_group_id &&
+              node.run_id == var.run_id &&
+              node.ready &&
+              !node.unschedulable &&
+              length(node.uid) > 0 &&
+              length(node.resource_version) > 0 &&
+              length(node.blocking_taints) == 0
+            ]) &&
+            length(setsubtract(
+              toset(data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.eligible_node_uids),
+              toset(local.public_edge_current_node_preflight.eligible_node_uids),
+            )) == 0
           )
         )
       )
-      error_message = "Workloads require the foundation state digest and Ready-node/hostname preflight for the exact public-edge availability contract."
+      error_message = "Workloads must independently reread current UID/resourceVersion-bound Nodes and confirm the foundation identities remain Ready, schedulable, exact-node-group/run owned, free of untolerated NoSchedule/NoExecute taints, and spread across three hostnames."
     }
 
     precondition {

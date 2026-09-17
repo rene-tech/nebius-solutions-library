@@ -221,6 +221,11 @@ output "deployment_contract" {
   }
 }
 
+output "public_edge_current_node_preflight" {
+  description = "Current workloads-stage Kubernetes Node reread, bound to UID/resourceVersion, exact node-group/run ownership, hostname domains, and untolerated hard-taint eligibility."
+  value       = local.public_edge_current_node_preflight
+}
+
 output "dynamic_model_handoff_receipt" {
   description = "Copy this non-secret receipt into deployment.dynamic_models.handoff_receipt only after the explicit workload_owner=released apply has completed."
   value = (

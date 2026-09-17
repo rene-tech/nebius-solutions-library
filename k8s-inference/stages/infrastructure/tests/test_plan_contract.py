@@ -102,6 +102,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                             "workload.fs2.nebius/system": "true",
                             "capacity.fs2.nebius/type": "regular",
                             "capacity.fs2.nebius/pool": "system",
+                            "lifecycle.fs2.nebius/run": run_id,
                         }
                     }
                 },
@@ -209,6 +210,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
         document = {
             "variables": {
                 "project_id": {"value": project_id},
+                "run_id": {"value": run_id},
                 "source_commit": {"value": source_commit},
                 "capacity_profile": {"value": capacity_profile},
                 "gpu_floor_profile": {"value": gpu_floor_profile},
@@ -327,7 +329,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 ),
             }
             public_edge_availability_contract = {
-                "schema": "fs2-serve.nebius.ai/public-edge-availability/v2",
+                "schema": "fs2-serve.nebius.ai/public-edge-availability/v3",
                 "enabled": public_edge_mode == "public",
                 "system_node_group_id": "mk8snodegroup-test",
                 "system_node_count": capacity["system"]["nodes"],
@@ -335,9 +337,15 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                     "workload.fs2.nebius/system": "true",
                     "capacity.fs2.nebius/type": "regular",
                     "capacity.fs2.nebius/pool": "system",
+                    "lifecycle.fs2.nebius/run": run_id,
+                    "nebius.com/node-group-id": "mk8snodegroup-test",
                 },
                 "topology_key": "kubernetes.io/hostname",
                 "minimum_domains": 3,
+                "scheduler_eligibility": {
+                    "tolerated_hard_taints": [],
+                    "blocking_taint_effects": ["NoExecute", "NoSchedule"],
+                },
                 "update_strategy": {
                     "max_surge": capacity["system"]["max_surge"],
                     "max_unavailable": capacity["system"]["max_unavailable"],
@@ -484,7 +492,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
             result = self.invoke(plan_path, metadata_path, mode="noop")
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(
-                "exact three-domain system-pool and retained-capacity contract",
+                "exact node-group/run, taint eligibility, three-domain",
                 result.stdout,
             )
 
@@ -541,6 +549,39 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 any("retained-capacity contract" in error for error in errors),
                 errors,
             )
+
+    def test_public_edge_rejects_foreign_ownership_and_hard_taint_toleration(self) -> None:
+        mutations = (
+            (
+                ("node_selector", "nebius.com/node-group-id"),
+                "mk8snodegroup-foreign",
+            ),
+            (("node_selector", "lifecycle.fs2.nebius/run"), "rforeign01"),
+            (
+                ("scheduler_eligibility", "tolerated_hard_taints"),
+                ["workload.example/foreign"],
+            ),
+        )
+        for path, replacement in mutations:
+            with self.subTest(path=path), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                os.chmod(root, 0o700)
+                plan_path, _metadata_path = self.fixture(root, mode="noop")
+                document = json.loads(plan_path.read_text(encoding="utf-8"))
+                availability = document["planned_values"]["outputs"][
+                    "public_edge_availability_contract"
+                ]["value"]
+                availability[path[0]][path[1]] = replacement
+                document["planned_values"]["outputs"][
+                    "public_edge_availability_contract_sha256"
+                ]["value"] = VERIFY.canonical_sha256(availability)
+                errors = VERIFY.validate_public_edge_outputs(
+                    document, "noop", "public"
+                )
+                self.assertTrue(
+                    any("node-group/run" in error for error in errors),
+                    errors,
+                )
 
     def test_enabled_reference_data_has_exact_optional_types_and_count(self) -> None:
         for reference_data_mode in ("retain", "disposable"):

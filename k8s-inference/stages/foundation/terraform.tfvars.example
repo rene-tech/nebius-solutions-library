@@ -18,12 +18,13 @@ project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 # infra-disposable output documented by the legacy profile example.
 # Pass `public_edge_availability_contract` from infrastructure unchanged. In
 # public mode it must bind the real system node-group ID, at least three fixed
-# nodes, the regular system selector, three hostname domains, and an update
-# strategy that permits at most one unavailable node, requires positive surge,
-# and retains at least two nodes. Foundation also reopens <run_root>/terraform.tfstate,
-# verifies this receipt's canonical digest, and requires all contracted Nodes
-# Ready and schedulable across three distinct hostnames. The deployment workflow
-# supplies the input automatically; never hand-author a public receipt.
+# nodes, the provider node-group ID label, run-ownership label, regular system
+# selector, three hostname domains, and an update strategy that permits at most
+# one unavailable node, requires positive surge, and retains at least two nodes.
+# Foundation also reopens <run_root>/terraform.tfstate, verifies the canonical
+# digest, and requires UID/resourceVersion-bound Nodes Ready, schedulable, and
+# free of NoSchedule/NoExecute taints across three distinct hostnames. The
+# deployment workflow supplies the input automatically; never hand-author it.
 
 # This is a reference to an externally created Secret, never credential data.
 grafana_admin_secret_ref = {

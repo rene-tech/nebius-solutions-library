@@ -720,15 +720,20 @@ one-Pod minimum disruption budget, rolling updates with zero unavailable Pods,
 required hostname anti-affinity, and hostname spread with `minDomains: 3`.
 Public mode fails closed unless Terraform's fixed regular system pool contains
 at least three nodes. Its infrastructure output binds the exact node-group ID,
-node count, three-label system selector, hostname topology key, and minimum
-domain count, plus the effective update strategy. It permits at most one
+node count, provider node-group label, task run label, three system labels,
+hostname topology key, and minimum domain count, plus the effective update
+strategy. It permits at most one
 unavailable node, requires positive surge, and retains at least two system
 nodes during an update. Foundation reopens the fixed run-owned infrastructure
-state, verifies the whole receipt and canonical digest, and requires all
-contracted selector-matching Nodes to be Ready and schedulable across at least
-three distinct hostname labels. Workloads require the exact foundation digest
-and Ready-node receipt before rendering; a wrapper-propagated value alone is
-not authority.
+state, verifies the whole receipt and canonical digest, and requires exact
+node-group/run-owned Nodes with non-empty UID/resourceVersion to be Ready,
+schedulable, free of `NoSchedule`/`NoExecute` taints, and distributed across at
+least three distinct hostname labels. Workloads independently reread the same
+exact selector, recompute current UID/resourceVersion evidence, and require
+every foundation UID to remain eligible before rendering. A wrapper-propagated
+value or saved foundation snapshot alone is not authority. Public edge Pods
+carry no hard-taint tolerations. Internal-only `ScheduleAnyway` constraints
+omit `minDomains`; public `DoNotSchedule` constraints retain `minDomains: 3`.
 The controller, data plane, rate-limit service, Redis, and Sentinel workloads
 all consume the bound public placement. The foundation runs Envoy Gateway's
 shared rate-limit service with two replicas and a network-isolated ephemeral

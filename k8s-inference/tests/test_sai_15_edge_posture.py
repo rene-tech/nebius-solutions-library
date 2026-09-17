@@ -57,7 +57,7 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
     assert 'resource "kubernetes_pod_disruption_budget_v1" "edge_rate_limit_redis"' in terraform
     assert 'min_available = "2"' in terraform
     assert 'resource "kubernetes_network_policy_v1" "edge_rate_limit_redis"' in terraform
-    assert "min_domains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : 1" in terraform
+    assert "min_domains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : null" in terraform
     assert 'dynamic "affinity"' in terraform
     assert "required_during_scheduling_ignored_during_execution" in terraform
     assert "var.public_edge_availability_contract.node_selector" in terraform
@@ -85,7 +85,11 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
     foundation_locals = (ROOT / "stages/foundation/locals.tf").read_text(
         encoding="utf-8"
     )
-    assert foundation_locals.count("minDomains        = local.public_edge_enabled ?") == 2
+    assert foundation_locals.count(
+        "minDomains = var.public_edge_availability_contract.minimum_domains"
+    ) == 2
+    assert "minDomains        = local.public_edge_enabled ?" not in foundation_locals
+    assert foundation_locals.count("tolerations = []") == 2
     assert foundation_locals.count(
         "requiredDuringSchedulingIgnoredDuringExecution"
     ) == 2
@@ -147,6 +151,7 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert values["httpRoute"]["audioStreamRequestTimeout"] == "7500s"
     assert values["httpRoute"]["audioStreamBackendRequestTimeout"] == "7500s"
     assert values["envoyProxy"]["topologySpreadConstraints"][0]["minDomains"] == 3
+    assert values["envoyProxy"]["tolerations"] == []
     assert values["envoyProxy"]["affinity"]["podAntiAffinity"][
         "requiredDuringSchedulingIgnoredDuringExecution"
     ][0]["topologyKey"] == "kubernetes.io/hostname"
@@ -166,6 +171,16 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     workload_contract = (ROOT / "stages/workloads/cluster_contract.tf").read_text(
         encoding="utf-8"
     )
+    workload_locals = (ROOT / "stages/workloads/locals.tf").read_text(
+        encoding="utf-8"
+    )
+    workload_control_plane = (ROOT / "stages/workloads/control_plane.tf").read_text(
+        encoding="utf-8"
+    )
+    envoy_proxy_template = (
+        ROOT
+        / "charts/control-plane/fs2-serve-control-plane/templates/envoyproxy.yaml"
+    ).read_text(encoding="utf-8")
     adapter_contract = (ROOT / "stages/workloads/edge_client_identity.tf").read_text(
         encoding="utf-8"
     )
@@ -227,10 +242,13 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         assert identity in infrastructure_outputs
     assert 'output "public_edge_availability_contract"' in infrastructure_outputs
     assert 'output "public_edge_availability_contract_sha256"' in infrastructure_outputs
-    assert 'schema               = "fs2-serve.nebius.ai/public-edge-availability/v2"' in infrastructure_variables
+    assert 'schema               = "fs2-serve.nebius.ai/public-edge-availability/v3"' in infrastructure_variables
     assert 'topology_key    = "kubernetes.io/hostname"' in infrastructure_variables
     assert "minimum_domains = 3" in infrastructure_variables
     assert "minimum_available_nodes" in infrastructure_variables
+    assert '"nebius.com/node-group-id"' in infrastructure_variables
+    assert '"lifecycle.fs2.nebius/run"' in infrastructure_variables
+    assert 'blocking_taint_effects = ["NoExecute", "NoSchedule"]' in infrastructure_variables
     assert 'data "terraform_remote_state" "infrastructure"' in foundation_contract
     assert "local.expected_infrastructure_state" in foundation_contract
     assert (
@@ -240,8 +258,25 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert "data.terraform_remote_state.infrastructure.outputs.cluster_id" in foundation_contract
     assert "data.terraform_remote_state.infrastructure.outputs.target_contract" in foundation_contract
     assert 'data "kubernetes_resources" "public_edge_system_nodes"' in foundation_contract
+    assert 'data "kubernetes_resources" "public_edge_system_nodes"' in workload_contract
     assert "public_edge_ready_node_preflight" in foundation_locals
     assert "distinct_hostname_count" in foundation_locals
+    assert "resource_version" in foundation_locals
+    assert "blocking_taints" in foundation_locals
+    assert "public_edge_current_node_preflight" in workload_locals
+    assert "resource_version" in workload_locals
+    assert "blocking_taints" in workload_locals
+    assert "eligible_nodes_sha256" in workload_contract
+    assert "setsubtract(" in workload_contract
+    assert (
+        "nodeSelector = local.public_edge_enabled ? "
+        "var.public_edge_availability_contract.node_selector"
+        in workload_control_plane
+    )
+    assert "tolerations    = []" in workload_control_plane
+    assert "nebius.com/node-group-id" in envoy_proxy_template
+    assert "lifecycle.fs2.nebius/run" in envoy_proxy_template
+    assert ".Values.envoyProxy.tolerations" in envoy_proxy_template
     for variables in (foundation_variables, workloads_variables):
         assert "update_strategy.max_unavailable <= 1" in variables
         assert "update_strategy.max_surge >= 1" in variables

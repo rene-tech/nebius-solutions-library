@@ -221,15 +221,17 @@ locals {
     nodeSelector = local.public_edge_enabled ? var.public_edge_availability_contract.node_selector : {
       "workload.fs2.nebius/system" = "true"
     }
-    topologySpreadConstraints = [{
+    tolerations = []
+    topologySpreadConstraints = [merge({
       maxSkew           = 1
-      minDomains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : 1
       topologyKey       = var.public_edge_availability_contract.topology_key
       whenUnsatisfiable = local.public_edge_enabled ? "DoNotSchedule" : "ScheduleAnyway"
       labelSelector = {
         matchLabels = local.edge_gateway_controller_labels
       }
-    }]
+    }, local.public_edge_enabled ? {
+      minDomains = var.public_edge_availability_contract.minimum_domains
+    } : {})]
     affinity = local.public_edge_enabled ? {
       podAntiAffinity = {
         requiredDuringSchedulingIgnoredDuringExecution = [{
@@ -246,15 +248,17 @@ locals {
     nodeSelector = local.public_edge_enabled ? var.public_edge_availability_contract.node_selector : {
       "workload.fs2.nebius/system" = "true"
     }
-    topologySpreadConstraints = [{
+    tolerations = []
+    topologySpreadConstraints = [merge({
       maxSkew           = 1
-      minDomains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : 1
       topologyKey       = var.public_edge_availability_contract.topology_key
       whenUnsatisfiable = local.public_edge_enabled ? "DoNotSchedule" : "ScheduleAnyway"
       labelSelector = {
         matchLabels = local.edge_rate_limit_service_labels
       }
-    }]
+    }, local.public_edge_enabled ? {
+      minDomains = var.public_edge_availability_contract.minimum_domains
+    } : {})]
     affinity = local.public_edge_enabled ? {
       podAntiAffinity = {
         requiredDuringSchedulingIgnoredDuringExecution = [{
@@ -295,31 +299,71 @@ locals {
     data.kubernetes_resources.public_edge_system_nodes[0].objects,
     [],
   ) : []
+  public_edge_system_node_observations_by_name = {
+    for node in local.public_edge_system_nodes : try(node.metadata.name, "") => {
+      name             = try(node.metadata.name, "")
+      uid              = try(node.metadata.uid, "")
+      resource_version = try(node.metadata.resourceVersion, "")
+      node_group_id    = try(node.metadata.labels["nebius.com/node-group-id"], "")
+      run_id           = try(node.metadata.labels["lifecycle.fs2.nebius/run"], "")
+      hostname         = try(node.metadata.labels[var.public_edge_availability_contract.topology_key], "")
+      ready = try(
+        one([
+          for condition in node.status.conditions : condition.status
+          if condition.type == "Ready"
+        ]) == "True",
+        false,
+      )
+      unschedulable = try(node.spec.unschedulable, false)
+      blocking_taints = sort([
+        for taint in try(node.spec.taints, []) : jsonencode({
+          effect = try(taint.effect, "")
+          key    = try(taint.key, "")
+          value  = try(taint.value, "")
+        })
+        if contains(
+          var.public_edge_availability_contract.scheduler_eligibility.blocking_taint_effects,
+          try(taint.effect, ""),
+        )
+      ])
+    }
+  }
+  public_edge_system_node_observations = [
+    for name in sort(keys(local.public_edge_system_node_observations_by_name)) :
+    local.public_edge_system_node_observations_by_name[name]
+  ]
+  public_edge_eligible_system_nodes = [
+    for node in local.public_edge_system_node_observations : node
+    if node.ready &&
+    !node.unschedulable &&
+    length(node.name) > 0 &&
+    length(node.uid) > 0 &&
+    length(node.resource_version) > 0 &&
+    length(node.hostname) > 0 &&
+    node.node_group_id == var.public_edge_availability_contract.system_node_group_id &&
+    node.run_id == var.run_id &&
+    length(node.blocking_taints) == 0
+  ]
   public_edge_ready_system_node_names = sort([
-    for node in local.public_edge_system_nodes : node.metadata.name
-    if !try(node.spec.unschedulable, false) && try(
-      one([
-        for condition in node.status.conditions : condition.status
-        if condition.type == "Ready"
-      ]) == "True",
-      false,
-    )
+    for node in local.public_edge_eligible_system_nodes : node.name
   ])
   public_edge_ready_system_hostnames = sort(distinct([
-    for node in local.public_edge_system_nodes : try(
-      node.metadata.labels[local.public_edge_availability_contract.topology_key],
-      "",
-    )
-    if !try(node.spec.unschedulable, false) && try(
-      one([
-        for condition in node.status.conditions : condition.status
-        if condition.type == "Ready"
-      ]) == "True",
-      false,
-    ) && try(length(node.metadata.labels[local.public_edge_availability_contract.topology_key]) > 0, false)
+    for node in local.public_edge_eligible_system_nodes : node.hostname
   ]))
+  public_edge_eligible_system_node_uids = sort([
+    for node in local.public_edge_eligible_system_nodes : node.uid
+  ])
   public_edge_ready_node_preflight = {
     required                = local.public_edge_enabled
+    selector                = var.public_edge_availability_contract.node_selector
+    system_node_group_id    = local.public_edge_enabled ? var.public_edge_availability_contract.system_node_group_id : null
+    run_id                  = local.public_edge_enabled ? var.run_id : null
+    blocking_taint_effects  = var.public_edge_availability_contract.scheduler_eligibility.blocking_taint_effects
+    tolerated_hard_taints   = var.public_edge_availability_contract.scheduler_eligibility.tolerated_hard_taints
+    observed_node_count     = length(local.public_edge_system_node_observations)
+    eligible_nodes          = local.public_edge_eligible_system_nodes
+    eligible_nodes_sha256   = sha256(jsonencode(local.public_edge_eligible_system_nodes))
+    eligible_node_uids      = local.public_edge_eligible_system_node_uids
     ready_node_names        = local.public_edge_ready_system_node_names
     ready_node_count        = length(local.public_edge_ready_system_node_names)
     distinct_hostnames      = local.public_edge_ready_system_hostnames

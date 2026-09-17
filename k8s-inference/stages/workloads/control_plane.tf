@@ -230,7 +230,8 @@ locals {
       interval = "5s"
     } : {})
     prometheusRule = { enabled = true }
-    nodeSelector = {
+    tolerations    = []
+    nodeSelector = local.public_edge_enabled ? var.public_edge_availability_contract.node_selector : {
       "workload.fs2.nebius/system" = "true"
       "capacity.fs2.nebius/type"   = "regular"
       "capacity.fs2.nebius/pool"   = "system"
