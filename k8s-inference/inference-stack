@@ -84,22 +84,29 @@ DEBUG_CREDENTIAL_BROKER_EXECUTABLE = Path(
 DEBUG_CREDENTIAL_BROKER_CONFIG = Path(
     "/etc/fs2/internal-debug-credential-broker.json"
 )
-CAPSULE_COMMANDS = {
-    "validate",
-    "preflight",
-    "plan",
-    "apply",
-    "destroy",
-    "status",
-    "output",
-    "proxy",
-    "debug-proxy",
-    "debug-view",
-    "debug-export",
-    "activate-debug",
-    "disable-debug",
-    "reconcile",
-}
+LOCAL_READ_ONLY_COMMANDS = frozenset(
+    {
+        "status",
+        "output",
+        "proxy",
+        "debug-proxy",
+        "debug-view",
+        "debug-export",
+        "activate-debug",
+        "disable-debug",
+    }
+)
+CLOUD_AUTHORIZED_COMMANDS = frozenset(
+    {
+        "validate",
+        "preflight",
+        "plan",
+        "apply",
+        "destroy",
+        "reconcile",
+    }
+)
+CAPSULE_COMMANDS = LOCAL_READ_ONLY_COMMANDS | CLOUD_AUTHORIZED_COMMANDS
 
 
 class DeploymentError(RuntimeError):
@@ -128,13 +135,14 @@ def enter_accepted_capsule(argv: Sequence[str]) -> None:
             "operator commands require the independently installed public-edge execution "
             "capsule; follow docs/security/public-edge-execution-capsule.md"
         )
+    local_read_only = argv[0] in LOCAL_READ_ONLY_COMMANDS
     forwarded = list(argv)
-    if not any(
+    if not local_read_only and not any(
         value == "--var-file" or value.startswith("--var-file=")
         for value in forwarded
     ):
         forwarded.extend(["--var-file", str(DEPLOY_ROOT / "terraform.tfvars")])
-    if not any(
+    if not local_read_only and not any(
         value == "--nebius-profile" or value.startswith("--nebius-profile=")
         for value in forwarded
     ) and os.environ.get("NEBIUS_PROFILE"):
@@ -824,16 +832,7 @@ def require_protected_read_only_start(command: str) -> None:
         }
     )
     if (
-        command not in {
-            "status",
-            "output",
-            "proxy",
-            "debug-proxy",
-            "debug-view",
-            "debug-export",
-            "activate-debug",
-            "disable-debug",
-        }
+        command not in LOCAL_READ_ONLY_COMMANDS
         or CAPSULE_ACCESS_MODE != "local-read-only"
         or os.environ.get("FS2_CAPSULE_LAUNCHER") != "fs2-public-edge-capsule-v1"
         or os.environ.get("FS2_CAPSULE_SOURCE_ID") != "inference-stack"
@@ -8676,16 +8675,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # any run-root mutation. Public mode is learned from that later plan, so
     # every operator command takes the same protected path and public mode
     # checks it again.
-    local_read_only = args.command in {
-        "status",
-        "output",
-        "proxy",
-        "debug-proxy",
-        "debug-view",
-        "debug-export",
-        "activate-debug",
-        "disable-debug",
-    }
+    local_read_only = args.command in LOCAL_READ_ONLY_COMMANDS
     if local_read_only:
         require_protected_read_only_start(args.command)
     else:

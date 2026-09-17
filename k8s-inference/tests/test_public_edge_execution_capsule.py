@@ -138,6 +138,11 @@ def test_apply_reexecs_before_argument_parsing_or_terraform_probe() -> None:
     )
     protected_prefix = main[: main.index("require_terraform_version(args.terraform)")]
     assert 'if args.command == "apply":' not in protected_prefix
+    command_contract = source[
+        source.index("LOCAL_READ_ONLY_COMMANDS") : source.index(
+            "class DeploymentError"
+        )
+    ]
     for command in (
         "validate",
         "preflight",
@@ -153,7 +158,7 @@ def test_apply_reexecs_before_argument_parsing_or_terraform_probe() -> None:
         "activate-debug",
         "disable-debug",
     ):
-        assert f'"{command}"' in source[source.index("CAPSULE_COMMANDS") : source.index("class DeploymentError")]
+        assert f'"{command}"' in command_contract
     for name in ("terraform", "kubectl", "nebius", "crane"):
         assert f'args.{name} = CAPSULE_TOOL_PATHS["{name}"]' in main
 
@@ -161,19 +166,59 @@ def test_apply_reexecs_before_argument_parsing_or_terraform_probe() -> None:
 def test_authenticated_local_debugging_does_not_require_cloud_broker() -> None:
     bootstrap = BOOTSTRAP_PATH.read_text(encoding="utf-8")
     stack = (ROOT / "inference-stack").read_text(encoding="utf-8")
+    bootstrap_main = bootstrap[bootstrap.index("def main()") :]
+    stack_enter = stack[
+        stack.index("def enter_accepted_capsule(") : stack.index(
+            "def load_capsule_contract("
+        )
+    ]
+    stack_main = stack[stack.index("def main(") :]
+    local_bootstrap_branch = bootstrap_main[
+        bootstrap_main.index("if read_only_operator:") : bootstrap_main.index(
+            "else:", bootstrap_main.index("if read_only_operator:")
+        )
+    ]
     assert '"activate-debug",' in bootstrap
     assert '"disable-debug",' in bootstrap
     assert '"debug-view",' in bootstrap
     assert '"debug-export",' in bootstrap
+    assert "LOCAL_READ_ONLY_OPERATOR_COMMANDS" in bootstrap
     assert '"local-read-only" if read_only_operator else "brokered-cloud"' in bootstrap
+    assert "request_brokered_auth(" not in local_bootstrap_branch
+    assert "token_fd = -1" in local_bootstrap_branch
+    assert "auth_envelope_raw = b\"\"" in local_bootstrap_branch
+    assert "auth_payload = {}" in local_bootstrap_branch
+    assert "local_read_only = argv[0] in LOCAL_READ_ONLY_COMMANDS" in stack_enter
+    assert stack_enter.count("if not local_read_only and not any(") == 2
     assert 'if token_fd >= 0:' in bootstrap
-    assert '"debug-proxy",\n            "debug-view",\n            "debug-export",\n            "activate-debug",' in stack
-    assert '"disable-debug",' in stack
-    assert '"debug-view",' in stack
-    assert '"debug-export",' in stack
+    for command in (
+        "status",
+        "output",
+        "proxy",
+        "debug-proxy",
+        "debug-view",
+        "debug-export",
+        "activate-debug",
+        "disable-debug",
+    ):
+        command_contract = stack[
+            stack.index("LOCAL_READ_ONLY_COMMANDS") : stack.index(
+                "class DeploymentError"
+            )
+        ]
+        assert f'"{command}"' in command_contract
     assert 'CAPSULE_ACCESS_MODE != "local-read-only"' in stack
     assert '"nebius_token" in CAPSULE_TOOL_PATHS' in stack
-    assert 'if not local_read_only:\n            require_brokered_target' in stack
+    assert stack_main.index("if local_read_only:") < stack_main.index(
+        "require_terraform_version(args.terraform)"
+    )
+    assert stack_main.index("retained_run_contract(run_root)") < stack_main.index(
+        "require_terraform_version(args.terraform)"
+    )
+    assert stack_main.index(
+        "require_brokered_profile(args.nebius_profile)"
+    ) < stack_main.index("require_terraform_version(args.terraform)")
+    assert 'if not local_read_only:\n            require_brokered_target' in stack_main
     assert "brokered_proxy_session(" in stack
     assert '"host_listeners") != []' in stack
     assert '"kubeconfig_custody")\n            != "root-broker-only"' in stack

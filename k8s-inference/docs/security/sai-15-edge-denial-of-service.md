@@ -280,6 +280,15 @@ the retained cluster identity and contract digest to an independently enrolled
 root proxy broker. The operator never receives a kubeconfig and never starts a
 raw `kubectl port-forward` listener.
 
+The local-read-only command is classified by the accepted bootstrap before any
+cloud-auth request. Its launcher handoff synthesizes neither an inherited
+`--nebius-profile` nor an implicit tfvars argument, so an empty cloud-auth issuer registry or
+unavailable cloud token broker cannot disable retained `status`/`output` or the
+separately owned internal proxy broker. An explicitly supplied `--var-file`
+selects only the retained run-root name and is not opened in this lane. The
+proxy broker remains an explicit local availability dependency; it is not
+replaced with ambient cloud credentials.
+
 For cloud-authorized commands, the brokered token descriptor is not part of
 the global child FD set. Only a child whose environment carries the exact
 current signed delegated-auth envelope receives that one descriptor; local

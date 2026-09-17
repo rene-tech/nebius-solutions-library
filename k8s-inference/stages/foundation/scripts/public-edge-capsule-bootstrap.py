@@ -73,6 +73,18 @@ SOURCE_MODES = {
     "kueue-admission-gate": {"local-exec"},
     "kueue-destroy-cleanup": {"local-exec"},
 }
+LOCAL_READ_ONLY_OPERATOR_COMMANDS = frozenset(
+    {
+        "status",
+        "output",
+        "proxy",
+        "debug-proxy",
+        "debug-view",
+        "debug-export",
+        "activate-debug",
+        "disable-debug",
+    }
+)
 SOURCE_PATHS = {
     "edge-client-identity-verifier": "stages/workloads/scripts/verify-edge-client-identity-receipt.py",
     "inference-stack": "inference-stack",
@@ -1399,17 +1411,7 @@ def main() -> int:
     read_only_operator = (
         source_id == "inference-stack"
         and bool(arguments)
-        and arguments[0]
-        in {
-            "status",
-            "output",
-            "proxy",
-            "debug-proxy",
-            "debug-view",
-            "debug-export",
-            "activate-debug",
-            "disable-debug",
-        }
+        and arguments[0] in LOCAL_READ_ONLY_OPERATOR_COMMANDS
     )
     if source_id == "inference-stack":
         secret_broker_fd = inherited_fd("FS2_CAPSULE_SECRET_BROKER_FD")

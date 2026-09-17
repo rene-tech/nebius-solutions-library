@@ -154,7 +154,11 @@ state are not trusted outside the accepted release. `status`, `output`,
 `proxy`, `debug-proxy`, `debug-view`, `debug-export`, `activate-debug`, and
 `disable-debug` enter a distinct authenticated
 local-read-only capsule mode: it carries no Nebius token or refresh descriptor
-and remains usable when the cloud auth broker is unavailable. Proxy commands
+and remains usable when the cloud auth broker is unavailable or its production
+authority registry is intentionally empty. The launcher does not synthesize an
+inherited Nebius profile or default tfvars argument for these local commands;
+an explicit `--var-file` can select a retained run root but is never opened.
+Proxy commands
 never accept or receive a kubeconfig; the separately enrolled root proxy
 broker owns the credential and its private-network raw transports. The other
 commands use the separately brokered cloud mode.
