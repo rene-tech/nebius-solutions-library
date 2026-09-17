@@ -150,3 +150,96 @@ workflow qualification. Helm 143 deployed this index to the existing release;
 CP 3/3 and controller 2/2 were Ready at 14:57 UTC. All nine public/operator read
 surfaces returned HTTP 200 at 14:57:48 UTC, with 34 Apps still listed. Public
 inference acceptance is recorded separately, including every failed attempt.
+
+## CP-only typed text-to-image default correction
+
+Release-143 public typed T2I operation
+`82a3903b-2e4f-4670-8bed-5159d4e8aff9` reached the adapter but failed HTTP 422:
+the CP injected `output_delivery=inline-base64`, which the pinned
+`TextToImageRequest` does not accept. No model generation occurred. Correction
+`f8cbadb3bf14ad5ec157cf8f41466d95de645053`, tree
+`80bd96e34b9c076ae5a5d9160d1d442d4705a680`, omits only that specialized T2I
+default. `output_format=png` and the legacy JSON image response remain unchanged;
+all four typed video modes retain artifact delivery. No adapter, template,
+model/runtime image, schema or admin change was made.
+
+The new regression first reproduced the exact T2I `extra_forbidden` failure
+against the actual YAML adapter `GenerateRequest`; the other four typed modes
+passed. With the correction, **177 focused tests passed**, including all five
+actual adapter DTOs, real MCP HTTP/ASGI T2I/V2V admission, legacy JSON/artifact
+handling and Magpie regressions. Ruff and whitespace checks passed. Existing
+Starlette deprecation and old pytest temporary-directory ownership warnings
+remain disclosed; they are not GPU/model acceptance evidence.
+
+Published Linux/amd64 tag: `cosmos-stockholm-f8cbadb3b-20260917`, in the same
+`fs2-serve-control-plane` registry repository above. The exact-source wrapper
+verified all 426 context files, frozen dependencies, packaging and image checks.
+Remote labels/index descriptors matched the committed source and retained
+max-mode SLSA provenance and SPDX SBOM attestations. The tag was absent before
+build and immediately before publication; no existing tag was overwritten.
+
+- CP OCI index: `sha256:84a1b5e02ca28af811e72bd7c97cbc6c5337665aac3a708f07087edb9fac10bc`.
+- Linux/amd64 runtime: `sha256:958f30efe7b66c0f3a4e64d2e5f8b124b19638e86cd754528f4a2661205cc9c4`.
+- SLSA/SPDX attestation manifest: `sha256:c3d51ebe79a7271637be55bed3a1b70dd34e49ec1c0cde2e1abf71b4dada354e`.
+- Publication receipt SHA-256: `733370b6b43176722452229b43229bd0ef661a4520b554f6b7909fed0b3a900d`.
+- Provenance JSON SHA-256: `289351b8be21421a223dba25c08b121af5be7022264c185b95a0815419954380`.
+- OCI archive SHA-256: `2f6a114aa203f1f42b4b8dac0d6a370d31312117b450cd1c1b63203b9e8b1803`.
+- Remote image-config receipt SHA-256: `3776e5276e1438c6c9cc213d5249d6e94f64506691794dc2e220ce230d2e8339`.
+
+Protected build/publication directory:
+`/home/tux/secure-handoff/cosmos-t2i-defaults-build-20260917-XRqpUzQ1`.
+The CP lock/Dockerfile/context-policy hashes remain exactly those in the build
+inputs table. The authorized `sandbox2` profile was always selected explicitly;
+no default-profile setting was changed. The isolated registry login was removed
+and its absence verified. This lane did not mutate the cluster or claim public
+T2I success from the local contract tests; the original failure remains retained.
+
+## CP-only generic T2I schema alignment
+
+The typed-default correction above was deployed as release 144, but a bounded
+cross-contract follow-up found the generic Cosmos T2I schema still advertised
+the same unsupported optional field. Correction
+`ad819a0118b7fcd113ce68d3e597d475c0813582`, tree
+`f9837ec1147ef18e9479c5edaeecd4b5cd5a5236`, removes `output_delivery` from that
+T2I branch and describes the outer union field as video-only. Existing
+mode-specific exclusions now reject it for T2I. T2V retains both legacy inline
+and artifact delivery; all other video contracts are unchanged.
+
+The exact boundary is **schema-aware named-native validation before admission**
+(`cosmos3_nano_native`) and truthful `get_model_schema` discovery. The legacy
+opaque `invoke_model` envelope accepts arbitrary model payloads and is not
+claimed to provide this model-specific validation. No new HTTP/generic
+validation layer, dispatcher behavior or runtime normalization was introduced;
+valid T2I without the field remains compatible through that opaque route.
+
+**179 focused tests passed** in 57.27 seconds, with all five generic/specialized
+branches checked against actual YAML adapter DTOs, T2I rejection through the
+real named-native MCP transport, valid opaque T2I compatibility, T2V legacy
+inline delivery, binary artifacts and existing Magpie behavior. Ruff and
+whitespace checks passed. An initial test incorrectly expected the opaque
+route to enforce the named schema; its failure exposed the boundary above,
+and the test was corrected without broadening production behavior. This is
+not a live inference or client qualification claim.
+
+Published Linux/amd64 tag: `cosmos-stockholm-ad819a011-20260917` in the same CP
+repository. Exact-source/context, packaging, provenance and remote descriptor
+verification passed; all 426 build-context files matched Git. The target was
+absent before build and publication. The explicit authorized `sandbox2` profile
+and separate private Docker config were used, no default setting was changed,
+and the temporary registry login was removed and verified absent.
+
+- CP OCI index: `sha256:849020eabbcf07d07112bcebae4032639e8e995a9eda078410ccf4879a188ee8`.
+- Linux/amd64 runtime: `sha256:2b59afc1472c7ca9730d20a413586a3b18772a6f5c521abd9b5be7926f201f5c`.
+- SLSA/SPDX attestation manifest: `sha256:cfebe01a6bc8c792d869692002d18fa38a7459f6bd8e5c664598b49ba1454d9d`.
+- Publication receipt SHA-256: `ddee02a30035449689baace97c5d4ac53f1e4cd3e0380ed7db668c5908ea27a2`.
+- Provenance JSON SHA-256: `f0e216be2693acf969f41e217dd6165087ea95f28736c145b582ae25b480c726`.
+- OCI archive SHA-256: `c46afe7d24e05d36508d8fbaa703261e7f6a76554fea71ec4c2c142e44b91cde`.
+- Remote image-config receipt SHA-256: `3b4da2fe7e995b73b0dcd8b41d60fd18228edf8f05f6753ce1f2d8d69af342cc`.
+- Final focused test log SHA-256: `d65027d16e3ffabf58f0e9e93916021abedfed5303931a3a469187d522509f29`.
+
+Protected directory:
+`/home/tux/secure-handoff/cosmos-t2i-generic-build-20260917-nwj6cyCw`.
+Lock, Dockerfile and context-policy hashes remain unchanged from the table above.
+Admin `6428b350...`, schema 32, Cosmos adapter/template/runtime/snapshot and
+customer settings remain unchanged. Root owns release deployment and fresh
+public acceptance; this build lane made no cluster mutations.
