@@ -1,0 +1,37 @@
+{
+  "started_at": "2026-09-17T06:35:29.777636+00:00",
+  "clinical_validation": false,
+  "source": "synthetic German multi-speaker transcript",
+  "attempts": 1,
+  "script_hashes_before": {
+    "clinical_report.py": "4b8cbf6120873840fb45923936c68205691934b121d9dd9d6ae1464a8f683fb7",
+    "document.py": "a09e3a68c5bbf60fe5280b3c3e166c2cf5fef1d4c361461e62ff31318c8c2c3c"
+  },
+  "key_revoked": false,
+  "temporary_key_id": "e8aa8437-aca4-424b-bcf1-341d25ddba2d",
+  "command_without_credentials": [
+    "uv",
+    "run",
+    "/home/tux/worktrees/fs2-mindeval-workshop-20260916/k8s-inference/integrations/librechat/skills/clinical-documentation/scripts/clinical_report.py",
+    "--transcript",
+    "/tmp/clinical-documentation-forward-9bTAMx/transcript-source.txt",
+    "--language",
+    "de",
+    "--report-model",
+    "qwen3-8b",
+    "--output",
+    "/tmp/clinical-documentation-forward-9bTAMx/result",
+    "--timeout",
+    "600"
+  ],
+  "returncode": 1,
+  "wall_seconds": 222.94112573191524,
+  "cli_stdout": "{\"status\": \"incomplete\", \"reason\": \"no supported clinical facts; transcript retained without a report\", \"output\": \"/tmp/clinical-documentation-forward-9bTAMx/result\"}\n",
+  "cli_stderr": "Installed 7 packages in 18ms\n",
+  "script_hashes_after": {
+    "clinical_report.py": "92d9ab03fd0102be9f3e4972e82d39d24d966c8fa7a4753f9e20030eab87b2af",
+    "document.py": "26959ab1222872ab14f0d19e3d9162256187cc612385745968abded85d3db3f4"
+  },
+  "revocation_status": 404,
+  "finished_at": "2026-09-17T06:39:14.669465+00:00"
+}

@@ -72,4 +72,13 @@ Access to an App is not a scientific license or proof of biological/clinical
 validity. Present outputs as model predictions. Preserve useful result files
 before acknowledging an ordinary operation.
 
+For a recorded consultation that should become an Arztbrief or medical report,
+use the `clinical-documentation` skill. Preserve the original transcript and
+deliver source-linked report and follow-up files separately. It reuses ordinary
+model APIs; it is not a new server-side MCP tool. Its executable helper needs
+the current user's file workspace and credential. Do not assume filesystem
+skills alone install a file executor or give it the MCP user's authentication.
+Never describe suggested questions, inferred normal findings, or uncertain
+medication guesses as facts from the consultation.
+
 ---

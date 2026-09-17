@@ -99,6 +99,41 @@ separately if the workbench advertises them.
 
 ## MCP behavior the agent and UI must preserve
 
+### Consultation report workflow (2026-09-17)
+
+The additional `skills/clinical-documentation/` package turns uploaded recordings
+or completed transcripts into `report.md`, `follow-up.md`, `transcript.txt` and
+structured source-linked JSON. Copy that **whole directory including scripts**
+into the deployment skill loader. Its Python 3.11+ helper needs `httpx==0.28.1`
+(or `uv run`, which installs the pinned dependency), a user-isolated file executor,
+and an explicit per-user mapping to `FS2_API_KEY`/`FS2_API_KEY_FILE`. Do not inject
+one shared operator key into a multi-customer LibreChat instance. The existing
+MCP custom variable does not automatically become an executor environment value.
+
+Nemotron ASR runs through the ordinary public platform APIs. The recommended
+report profile uses `Qwen/Qwen3-235B-A22B-Instruct-2507` on Token Factory: configure
+`CLINICAL_REPORT_MODEL`, `CLINICAL_REPORT_BASE_URL` and an operator-side protected
+`CLINICAL_REPORT_API_KEY_FILE` in the executor service. Do not expose the provider
+key to participants, source, skill text or tool arguments. This direct provider
+path is explicit: its usage receipts are retained in the workflow output; those
+calls are **not yet platform Apps/tenant-billing records**. No new gateway route
+or upstream-secret handoff to the MCP client is implied.
+
+The platform-only report mode can use an authorized chat App with the ordinary
+key, but live quality tests did not qualify `qwen3-8b` for this workflow. Do not
+select it simply to avoid configuring the recommended backend. MCP-only
+clients can transcribe with the typed speech tool, then pass the retrieved
+transcript file to the helper. No new MCP tool, microphone recorder, EHR write,
+or hospital discharge workflow is implied. Never switch providers silently.
+
+Before advertising this in LibreChat, test a real attachment → artifact upload
+→ completed transcription → report → downloadable files with that user's key.
+Repository/helper acceptance is not proof that a separate LibreChat installation
+has its file bridge, executor or skill mount configured. See
+`../../acceptance/clinical-documentation-20260917/README.md` for measured coverage.
+
+### Shared model calls
+
 - Discover with `list_models` / `list_scientific_models`; obtain exact fields,
   examples, source references and selected runtime through `get_model_schema`.
 - Prefer each returned named typed tool. Model fields are flat; submission

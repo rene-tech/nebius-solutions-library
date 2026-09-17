@@ -1,0 +1,1004 @@
+{
+  "schema": "clinical-documentation/v4",
+  "kind": "consultation",
+  "language": "en",
+  "transcript_sha256": "461b6a41f33104d2f9f51befd761a68326815d5742a26a9fe6c7851950b405cf",
+  "facts": [
+    {
+      "id": "F0001",
+      "section": "history",
+      "statement": "The patient has had diarrhea for the last three days.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S1",
+          "quote": "Hello hello yeah, okay hello how can I help you this morning hi um I've just had some um diarrhea for the last three days um and it's been affecting me I need to stay close to the toilet and um yeah it's been affecting my day to day activities sorry to hear that um and when you say diarrhea what do you mean by diarrhea do you mean you're going to the toilet",
+          "spans": [
+            {
+              "start": 0,
+              "end": 359
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0001",
+        "verdict": "supported",
+        "reason": "The patient explicitly states, 'I've just had some um diarrhea for the last three days,' which directly supports the claim that the patient has had diarrhea for the last three days."
+      }
+    },
+    {
+      "id": "F0002",
+      "section": "history",
+      "statement": "The diarrhea is described as loose and watery stool.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " more often or are your stools more loose Yeah so it's like loose and watery stool going to the toilet quite often um and like some pain in my like lower stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you",
+          "spans": [
+            {
+              "start": 359,
+              "end": 711
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0002",
+        "verdict": "supported",
+        "reason": "The quote explicitly describes the stool as 'loose and watery,' directly supporting the statement about the nature of the diarrhea."
+      }
+    },
+    {
+      "id": "F0003",
+      "section": "history",
+      "statement": "The patient is going to the toilet six to seven times a day.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " more often or are your stools more loose Yeah so it's like loose and watery stool going to the toilet quite often um and like some pain in my like lower stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you",
+          "spans": [
+            {
+              "start": 359,
+              "end": 711
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0003",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'over the last couple of days probably like six seven times a day' in response to a question about frequency of bowel movements, directly supporting the claim that they are going to the toilet six to seven times a day."
+      }
+    },
+    {
+      "id": "F0004",
+      "section": "history",
+      "statement": "There is no blood in the stools.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S3",
+          "quote": " noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy as well Yeah whereabouts is a pain exactly so it's like in my lower abdomen so uh like um yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the",
+          "spans": [
+            {
+              "start": 711,
+              "end": 1068
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0004",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'no no blood' when asked about blood in the stools, directly supporting the claim that there is no blood in the stools."
+      }
+    },
+    {
+      "id": "F0005",
+      "section": "history",
+      "statement": "The patient has pain in the lower abdomen, specifically on the left side.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S3",
+          "quote": " noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy as well Yeah whereabouts is a pain exactly so it's like in my lower abdomen so uh like um yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the",
+          "spans": [
+            {
+              "start": 711,
+              "end": 1068
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0005",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'it's like in my lower abdomen' and specifies 'on the left side' when asked about the location of the pain, directly supporting the claim of lower abdominal pain on the left side."
+      }
+    },
+    {
+      "id": "F0006",
+      "section": "history",
+      "statement": "The abdominal pain is described as a muscular cramp.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " pain to me Yeah it feels um like uh cramp uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um no just mainly my stomach okay fine and you mentioned you've been feeling quite",
+          "spans": [
+            {
+              "start": 1068,
+              "end": 1424
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0006",
+        "verdict": "supported",
+        "reason": "The patient explicitly describes the abdominal pain as 'like a muscular cramp' in the quoted segment, which directly supports the statement."
+      }
+    },
+    {
+      "id": "F0007",
+      "section": "history",
+      "statement": "The abdominal pain comes and goes.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " pain to me Yeah it feels um like uh cramp uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um no just mainly my stomach okay fine and you mentioned you've been feeling quite",
+          "spans": [
+            {
+              "start": 1068,
+              "end": 1424
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0007",
+        "verdict": "supported",
+        "reason": "The statement 'The abdominal pain comes and goes' is directly supported by the patient's quote: 'it comes and goes and goes', in response to the clinician's question about whether the pain is constant or intermittent. This is stated within the provided evidence span and context."
+      }
+    },
+    {
+      "id": "F0008",
+      "section": "history",
+      "statement": "The pain does not radiate to the back or elsewhere.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " pain to me Yeah it feels um like uh cramp uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um no just mainly my stomach okay fine and you mentioned you've been feeling quite",
+          "spans": [
+            {
+              "start": 1068,
+              "end": 1424
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0008",
+        "verdict": "supported",
+        "reason": "The quote explicitly states 'no just mainly my stomach' in response to whether the pain moves elsewhere, such as towards the back, directly supporting the claim that the pain does not radiate to the back or elsewhere."
+      }
+    },
+    {
+      "id": "F0009",
+      "section": "history",
+      "statement": "The patient feels weak and shaky.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " pain to me Yeah it feels um like uh cramp uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um no just mainly my stomach okay fine and you mentioned you've been feeling quite",
+          "spans": [
+            {
+              "start": 1068,
+              "end": 1424
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0009",
+        "verdict": "supported",
+        "reason": "The patient explicitly states, 'I feel a bit weak and shaky,' which directly supports the fact that the patient feels weak and shaky. The quote is in context and clearly conveys the patient's subjective experience."
+      }
+    },
+    {
+      "id": "F0010",
+      "section": "history",
+      "statement": "The patient did not measure their temperature but felt a bit hot around the time symptoms started.",
+      "uncertain": true,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " weak and shaky as well would you mean by shaky do you mean you've been having uh are you been feeling feverish for example um yeah it doesn't feel like uh yeah I just mainly feel weaker I haven't had a fever um at the moment but I did notice um a temperature when the symptom started so um yeah around about three or four days ago you measure your",
+          "spans": [
+            {
+              "start": 1424,
+              "end": 1772
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0010",
+        "verdict": "supported",
+        "reason": "The patient states they did not measure their temperature but noticed a temperature when symptoms started, which aligns with the statement that they felt a bit hot even though they did not formally measure it. The quote supports the feeling of being hot around symptom onset."
+      }
+    },
+    {
+      "id": "F0011",
+      "section": "history",
+      "statement": "The patient had vomiting at the start of symptoms but has since stopped.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " temperature then yeah I didn't measure my temperature no but I felt um just a bit hot okay okay any other symptoms like sweating or um no and uh any vomiting at all Yeah so um I vomited at the start of the symptoms but now um I've stopped vomiting stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food",
+          "spans": [
+            {
+              "start": 1772,
+              "end": 2127
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0011",
+        "verdict": "supported",
+        "reason": "The statement is directly supported by the patient's quote: 'I vomited at the start of the symptoms but now um I've stopped vomiting.' This clearly indicates that vomiting occurred at the onset of symptoms and has since ceased."
+      }
+    },
+    {
+      "id": "F0012",
+      "section": "history",
+      "statement": "The vomit was normal in color with no blood.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " temperature then yeah I didn't measure my temperature no but I felt um just a bit hot okay okay any other symptoms like sweating or um no and uh any vomiting at all Yeah so um I vomited at the start of the symptoms but now um I've stopped vomiting stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food",
+          "spans": [
+            {
+              "start": 1772,
+              "end": 2127
+            }
+          ]
+        },
+        {
+          "source_id": "S7",
+          "quote": " colour yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vomiting anything else that comes to mind um I had a loss of appetite um so I haven't been eating as much um but I've been able to hold down",
+          "spans": [
+            {
+              "start": 2127,
+              "end": 2481
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0012",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'just normal vomit' and confirms 'no blood in your vomit' with agreement, directly supporting the statement that the vomit was normal in color with no blood."
+      }
+    },
+    {
+      "id": "F0013",
+      "section": "history",
+      "statement": "The patient has experienced loss of appetite.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S7",
+          "quote": " colour yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vomiting anything else that comes to mind um I had a loss of appetite um so I haven't been eating as much um but I've been able to hold down",
+          "spans": [
+            {
+              "start": 2127,
+              "end": 2481
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0013",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'I had a loss of appetite' and elaborates by saying 'I haven't been eating as much,' which directly supports the fact that the patient has experienced loss of appetite."
+      }
+    },
+    {
+      "id": "F0014",
+      "section": "history",
+      "statement": "The patient has been able to hold down fluids.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S7",
+          "quote": " colour yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vomiting anything else that comes to mind um I had a loss of appetite um so I haven't been eating as much um but I've been able to hold down",
+          "spans": [
+            {
+              "start": 2127,
+              "end": 2481
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0014",
+        "verdict": "supported",
+        "reason": "The patient states, 'I've been able to hold down,' which directly supports the claim that they have been able to keep fluids down, within the context of discussing symptoms including vomiting and appetite."
+      }
+    },
+    {
+      "id": "F0015",
+      "section": "history",
+      "statement": "The patient has been consuming soups, smoothies, and other liquid or light foods.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S8",
+          "quote": " fluids okay so you're drinking fluids what kind of foods have you managed to eat anything um just soups and uh yeah light foods like smoothies and yeah liquid foods mainly okay fine um and so you start just three days ago the symptoms are you aware of any triggers which may have caused your symptoms to uh to kick on So for example take away food or eating",
+          "spans": [
+            {
+              "start": 2481,
+              "end": 2839
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0015",
+        "verdict": "supported",
+        "reason": "The patient explicitly states consuming 'just soups,' 'light foods like smoothies,' and 'liquid foods mainly,' which directly supports the claim about consuming soups, smoothies, and other liquid or light foods."
+      }
+    },
+    {
+      "id": "F0016",
+      "section": "history",
+      "statement": "Symptoms started about three to four days ago.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " weak and shaky as well would you mean by shaky do you mean you've been having uh are you been feeling feverish for example um yeah it doesn't feel like uh yeah I just mainly feel weaker I haven't had a fever um at the moment but I did notice um a temperature when the symptom started so um yeah around about three or four days ago you measure your",
+          "spans": [
+            {
+              "start": 1424,
+              "end": 1772
+            }
+          ]
+        },
+        {
+          "source_id": "S8",
+          "quote": " fluids okay so you're drinking fluids what kind of foods have you managed to eat anything um just soups and uh yeah light foods like smoothies and yeah liquid foods mainly okay fine um and so you start just three days ago the symptoms are you aware of any triggers which may have caused your symptoms to uh to kick on So for example take away food or eating",
+          "spans": [
+            {
+              "start": 2481,
+              "end": 2839
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0016",
+        "verdict": "supported",
+        "reason": "The statement that symptoms started about three to four days ago is directly supported by the patient's statement in S5: 'yeah around about three or four days ago you measure your' and in S8: 'and so you start just three days ago the symptoms'. These quotes, in context, confirm the timing of symptom onset as reported by the patient."
+      }
+    },
+    {
+      "id": "F0017",
+      "section": "history",
+      "statement": "The patient had a takeaway meal from a Chinese restaurant about four days ago.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S8",
+          "quote": " fluids okay so you're drinking fluids what kind of foods have you managed to eat anything um just soups and uh yeah light foods like smoothies and yeah liquid foods mainly okay fine um and so you start just three days ago the symptoms are you aware of any triggers which may have caused your symptoms to uh to kick on So for example take away food or eating",
+          "spans": [
+            {
+              "start": 2481,
+              "end": 2839
+            }
+          ]
+        },
+        {
+          "source_id": "S9",
+          "quote": " out or being around other people who would similar symptoms Yeah so I had takeaway about four days ago um uh but other than that I've yeah been uh eating normally I think unusual Yeah do you remember where you ate um yeah I ate at a Chinese restaurant with friends okay anyone else on well with similar symptoms um so no one else in the family so I uh wife",
+          "spans": [
+            {
+              "start": 2839,
+              "end": 3196
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0017",
+        "verdict": "supported",
+        "reason": "The patient explicitly states, 'Yeah so I had takeaway about four days ago' and specifies 'I ate at a Chinese restaurant with friends,' which directly supports the claim that they had a takeaway meal from a Chinese restaurant about four days ago."
+      }
+    },
+    {
+      "id": "F0018",
+      "section": "history",
+      "statement": "No one else in the family has diarrhea.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S9",
+          "quote": " out or being around other people who would similar symptoms Yeah so I had takeaway about four days ago um uh but other than that I've yeah been uh eating normally I think unusual Yeah do you remember where you ate um yeah I ate at a Chinese restaurant with friends okay anyone else on well with similar symptoms um so no one else in the family so I uh wife",
+          "spans": [
+            {
+              "start": 2839,
+              "end": 3196
+            }
+          ]
+        },
+        {
+          "source_id": "S10",
+          "quote": " and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms okay okay fine um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine okay and did your asthma well controlled uh yeah that's fine",
+          "spans": [
+            {
+              "start": 3196,
+              "end": 3552
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0018",
+        "verdict": "supported",
+        "reason": "The statement 'No one else in the family has diarrhea' is supported by the quotes. The patient explicitly states, 'no one else in the family... my wife and two kids and one um child was vomiting but they haven't got diarrhea,' which directly confirms that no family member has diarrhea, even though one child had vomiting."
+      }
+    },
+    {
+      "id": "F0019",
+      "section": "history",
+      "statement": "One child in the household had vomiting but not diarrhea.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S9",
+          "quote": " out or being around other people who would similar symptoms Yeah so I had takeaway about four days ago um uh but other than that I've yeah been uh eating normally I think unusual Yeah do you remember where you ate um yeah I ate at a Chinese restaurant with friends okay anyone else on well with similar symptoms um so no one else in the family so I uh wife",
+          "spans": [
+            {
+              "start": 2839,
+              "end": 3196
+            }
+          ]
+        },
+        {
+          "source_id": "S10",
+          "quote": " and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms okay okay fine um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine okay and did your asthma well controlled uh yeah that's fine",
+          "spans": [
+            {
+              "start": 3196,
+              "end": 3552
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0019",
+        "verdict": "supported",
+        "reason": "The statement is directly supported by the quote from S10: 'one um child was vomiting but they haven't got diarrhea', which confirms that one child in the household had vomiting but not diarrhea."
+      }
+    },
+    {
+      "id": "F0020",
+      "section": "background",
+      "statement": "The patient has asthma and uses an inhaler.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S10",
+          "quote": " and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms okay okay fine um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine okay and did your asthma well controlled uh yeah that's fine",
+          "spans": [
+            {
+              "start": 3196,
+              "end": 3552
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0020",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'other than asthma um I use an inhaler' in the cited quote, directly confirming both the presence of asthma and inhaler use."
+      }
+    },
+    {
+      "id": "F0021",
+      "section": "background",
+      "statement": "The patient's asthma is well controlled.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S10",
+          "quote": " and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms okay okay fine um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine okay and did your asthma well controlled uh yeah that's fine",
+          "spans": [
+            {
+              "start": 3196,
+              "end": 3552
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0021",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'did your asthma well controlled uh yeah that's fine,' which directly supports the claim that their asthma is well controlled, in the context of discussing their overall health and symptoms."
+      }
+    },
+    {
+      "id": "F0022",
+      "section": "background",
+      "statement": "The patient takes no medications other than the inhaler.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S11",
+          "quote": " just yeah you send inhaler and uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in t ap apart from the inhalers do you take any other medications uh no no other medications okay fine and in terms of just your your day to day life you said it's been affecting your life um in what way",
+          "spans": [
+            {
+              "start": 3552,
+              "end": 3909
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0022",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'no no other medications okay' when asked if they take any other medications apart from the inhalers, directly supporting the claim that they take no medications other than the inhaler."
+      }
+    },
+    {
+      "id": "F0023",
+      "section": "history",
+      "statement": "The patient's daily life has been affected by needing to stay close to the toilet.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S12",
+          "quote": " has it been affecting your life uh sorry I need to stay close to the toilet cause I go quite frequently during the these past three days okay um yeah other than that it's uh yeah the main concern and have you are you currently working at the moment uh yeah I I work work um I'm an accountant okay have you been going into work the last three days or have you",
+          "spans": [
+            {
+              "start": 3909,
+              "end": 4268
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0023",
+        "verdict": "supported",
+        "reason": "The patient explicitly states, 'I need to stay close to the toilet cause I go quite frequently during these past three days,' which directly supports the claim that their daily life has been affected by needing to stay close to the toilet. The context of discussing impact on life and work further confirms this."
+      }
+    },
+    {
+      "id": "F0024",
+      "section": "history",
+      "statement": "The patient has been going to work during the illness despite difficulties.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S12",
+          "quote": " has it been affecting your life uh sorry I need to stay close to the toilet cause I go quite frequently during the these past three days okay um yeah other than that it's uh yeah the main concern and have you are you currently working at the moment uh yeah I I work work um I'm an accountant okay have you been going into work the last three days or have you",
+          "spans": [
+            {
+              "start": 3909,
+              "end": 4268
+            }
+          ]
+        },
+        {
+          "source_id": "S13",
+          "quote": " been at home uh yeah I've been going to work okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Yes all right um just couple of other questions we need to ask so um do you smoke at all uh no I don't smoke and do you drink much in the web alcohol  no I I don't",
+          "spans": [
+            {
+              "start": 4268,
+              "end": 4627
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0024",
+        "verdict": "supported",
+        "reason": "The patient confirms they have been going to work despite the illness, with the quote 'yeah I've been going to work okay that must be difficult for you then yeah it's been quite difficult' directly supporting the statement that they continued working during the illness despite difficulties."
+      }
+    },
+    {
+      "id": "F0025",
+      "section": "background",
+      "statement": "The patient lives with a wife and two children.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S13",
+          "quote": " been at home uh yeah I've been going to work okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Yes all right um just couple of other questions we need to ask so um do you smoke at all uh no I don't smoke and do you drink much in the web alcohol  no I I don't",
+          "spans": [
+            {
+              "start": 4268,
+              "end": 4627
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0025",
+        "verdict": "supported",
+        "reason": "The statement is directly supported by the quoted dialogue in which the patient confirms, 'you mentioned you live with a wife and two children is that right Yes,' indicating clear affirmation of the living situation."
+      }
+    },
+    {
+      "id": "F0026",
+      "section": "background",
+      "statement": "The patient does not smoke.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S13",
+          "quote": " been at home uh yeah I've been going to work okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Yes all right um just couple of other questions we need to ask so um do you smoke at all uh no I don't smoke and do you drink much in the web alcohol  no I I don't",
+          "spans": [
+            {
+              "start": 4268,
+              "end": 4627
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0026",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'no I don't smoke' in response to the question about smoking, directly supporting the claim that the patient does not smoke."
+      }
+    },
+    {
+      "id": "F0027",
+      "section": "background",
+      "statement": "The patient does not drink alcohol.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S13",
+          "quote": " been at home uh yeah I've been going to work okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Yes all right um just couple of other questions we need to ask so um do you smoke at all uh no I don't smoke and do you drink much in the web alcohol  no I I don't",
+          "spans": [
+            {
+              "start": 4268,
+              "end": 4627
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0027",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'no I I don't' in response to the question 'do you drink much in the web alcohol', directly confirming abstinence from alcohol use."
+      }
+    },
+    {
+      "id": "F0028",
+      "section": "assessment",
+      "statement": "The clinician suspects gastroenteritis, possibly caused by a virus or bacteria.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S15",
+          "quote": " side uh um and vomiting and being generally quite weak and lethargic you mentioned you having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay um it seems like you may have something uh called gastroenteritis which essentially just uh tummy bug or infection of your of your tummy mainly caused",
+          "spans": [
+            {
+              "start": 4986,
+              "end": 5343
+            }
+          ]
+        },
+        {
+          "source_id": "S16",
+          "quote": " by viruses but it can be uh possibility of bacteria uh causing your symptoms at this stage uh what what we'd recommend is just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated so drinking fluids um there are things like dire light you can get from the pharmacy which",
+          "spans": [
+            {
+              "start": 5343,
+              "end": 5700
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0028",
+        "verdict": "supported",
+        "reason": "The clinician explicitly mentions the possibility of gastroenteritis caused by a virus or bacteria, referring to it as a 'tummy bug or infection' and noting that it is 'mainly caused by viruses but it can be uh possibility of bacteria,' which directly supports the statement."
+      }
+    },
+    {
+      "id": "F0029",
+      "section": "assessment",
+      "statement": "The Chinese takeaway may have been a trigger for the symptoms.",
+      "uncertain": true,
+      "evidence": [
+        {
+          "source_id": "S15",
+          "quote": " side uh um and vomiting and being generally quite weak and lethargic you mentioned you having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay um it seems like you may have something uh called gastroenteritis which essentially just uh tummy bug or infection of your of your tummy mainly caused",
+          "spans": [
+            {
+              "start": 4986,
+              "end": 5343
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0029",
+        "verdict": "supported",
+        "reason": "The statement that the Chinese takeaway may have been a trigger is supported by the clinician's expressed uncertainty and hypothesis in the quote: 'I wonder whether that might be the cause of your problems,' directly linking the takeaway to the possible cause of symptoms, consistent with the uncertain nature of the claim."
+      }
+    },
+    {
+      "id": "F0030",
+      "section": "plan",
+      "statement": "The recommended treatment is conservative management without antibiotics.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S16",
+          "quote": " by viruses but it can be uh possibility of bacteria uh causing your symptoms at this stage uh what what we'd recommend is just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated so drinking fluids um there are things like dire light you can get from the pharmacy which",
+          "spans": [
+            {
+              "start": 5343,
+              "end": 5700
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0030",
+        "verdict": "supported",
+        "reason": "The statement that conservative management without antibiotics is recommended is directly supported by the quote stating 'I don't think you need anything like antibiotics' and emphasizing hydration and over-the-counter remedies like 'dire light' (likely Dioralyte). The context clearly indicates a deliberate choice against antibiotics in favor of conservative measures."
+      }
+    },
+    {
+      "id": "F0031",
+      "section": "plan",
+      "statement": "The patient should maintain hydration and may use oral rehydration solutions like Dioralyte.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S16",
+          "quote": " by viruses but it can be uh possibility of bacteria uh causing your symptoms at this stage uh what what we'd recommend is just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated so drinking fluids um there are things like dire light you can get from the pharmacy which",
+          "spans": [
+            {
+              "start": 5343,
+              "end": 5700
+            }
+          ]
+        },
+        {
+          "source_id": "S17",
+          "quote": " uh it's um it helps replenish some of your minerals and vitamins and if you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol two tablets up to four times a day for the first few days can also help I would certainly advise you to take",
+          "spans": [
+            {
+              "start": 5700,
+              "end": 6057
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0031",
+        "verdict": "supported",
+        "reason": "The statement that the patient should maintain hydration and may use oral rehydration solutions like Dioralyte is supported by the quoted segments. The first quote recommends ensuring the patient is well hydrated and mentions 'dire light' (a phonetic match to Dioralyte) as something available from the pharmacy. The second quote explicitly recommends it for vomiting and diarrhea, aligning with the advice in the fact. Despite the misspelling 'dire light', the context and common knowledge of the brand name support the intended reference to Dioralyte as an oral rehydration solution."
+      }
+    },
+    {
+      "id": "F0032",
+      "section": "plan",
+      "statement": "The patient can take paracetamol, two tablets up to four times a day, for fever and weakness in the first few days.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S17",
+          "quote": " uh it's um it helps replenish some of your minerals and vitamins and if you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol two tablets up to four times a day for the first few days can also help I would certainly advise you to take",
+          "spans": [
+            {
+              "start": 5700,
+              "end": 6057
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0032",
+        "verdict": "supported",
+        "reason": "The statement is directly supported by the quoted evidence, which specifies that the patient can take paracetamol, two tablets up to four times a day, for fever and weakness in the first few days. The quote matches the fact in dosage, frequency, indication, and duration."
+      }
+    },
+    {
+      "id": "F0033",
+      "section": "plan",
+      "statement": "The patient is advised to take two to three days off work and rest.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S18",
+          "quote": " some time work actually I know you're quite keen to work but um I would say next two two to three days um clears from your system take some time off and rest um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again because if it is ongoing then we have to wonder whether there's something else",
+          "spans": [
+            {
+              "start": 6057,
+              "end": 6416
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0033",
+        "verdict": "supported",
+        "reason": "The statement is supported by the quote in S18, where the clinician advises the patient to 'take some time off and rest' over the next 'two to three days' while the illness clears from their system. The advice to rest and take time off work is clearly stated in context."
+      }
+    },
+    {
+      "id": "F0034",
+      "section": "plan",
+      "statement": "The patient should return if symptoms do not improve in three to four days.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S18",
+          "quote": " some time work actually I know you're quite keen to work but um I would say next two two to three days um clears from your system take some time off and rest um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again because if it is ongoing then we have to wonder whether there's something else",
+          "spans": [
+            {
+              "start": 6057,
+              "end": 6416
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0034",
+        "verdict": "supported",
+        "reason": "The statement is supported by the quote in S18, where the clinician advises the patient to take time off and rest for two to three days, and explicitly states, 'if your symptoms haven't got better...in three to four days I'd like you to come back and see you again.' This directly supports the fact that the patient should return if symptoms do not improve within that timeframe."
+      }
+    },
+    {
+      "id": "F0036",
+      "section": "plan",
+      "statement": "The treatment plan was confirmed as clear by the patient.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S19",
+          "quote": " causing symptoms and we may need to do further tests like um taking a sample of your store so we can test that um et cetera et cetera yeah sure yeah how's that sound that sounds great Yeah yeah do you have any questions for me um no further questions okay is is is the treatment plan clear uh yeah yeah that's that's very clear thank you great well I wish",
+          "spans": [
+            {
+              "start": 6416,
+              "end": 6772
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0036",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'uh yeah yeah that's that's very clear thank you' in response to the provider asking if the treatment plan is clear, which directly supports the claim that the treatment plan was confirmed as clear by the patient."
+      }
+    }
+  ],
+  "uncertainties": [
+    {
+      "description": "The patient felt hot but did not measure temperature; presence of fever is uncertain.",
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " weak and shaky as well would you mean by shaky do you mean you've been having uh are you been feeling feverish for example um yeah it doesn't feel like uh yeah I just mainly feel weaker I haven't had a fever um at the moment but I did notice um a temperature when the symptom started so um yeah around about three or four days ago you measure your",
+          "spans": [
+            {
+              "start": 1424,
+              "end": 1772
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "The clinician suggests the Chinese takeaway may have triggered symptoms, but this is speculative.",
+      "evidence": [
+        {
+          "source_id": "S15",
+          "quote": " side uh um and vomiting and being generally quite weak and lethargic you mentioned you having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay um it seems like you may have something uh called gastroenteritis which essentially just uh tummy bug or infection of your of your tummy mainly caused",
+          "spans": [
+            {
+              "start": 4986,
+              "end": 5343
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "question": "Did the patient mean 'Dioralyte' when referring to 'dire light' as the oral rehydration solution?",
+      "reason": "The term 'dire light' is likely a phonetic misstatement of 'Dioralyte', a common oral rehydration product. Clarifying the intended product ensures accurate understanding of the recommended treatment.",
+      "fact_ids": [
+        "F0031"
+      ],
+      "basis": "unclear_source"
+    },
+    {
+      "question": "What is the exact dosage and frequency of the inhaler the patient uses for asthma?",
+      "reason": "While the patient confirms using an inhaler for asthma, the specific medication, dose, and frequency are not documented, which could be relevant for assessing overall health and potential interactions.",
+      "fact_ids": [
+        "F0020"
+      ],
+      "basis": "not_documented"
+    },
+    {
+      "question": "Was the vomiting at the start of symptoms isolated to one or two episodes, and over what timeframe did it occur?",
+      "reason": "The fact that vomiting occurred at symptom onset is documented, but the number of episodes and duration are not, which could help differentiate between viral gastroenteritis and other causes.",
+      "fact_ids": [
+        "F0011"
+      ],
+      "basis": "not_documented"
+    },
+    {
+      "question": "How severe is the abdominal pain, and has it changed in intensity since onset?",
+      "reason": "The pain is described as a cramp and intermittent, but no assessment of severity (e.g., on a scale) or progression over time is provided, which could inform clinical monitoring.",
+      "fact_ids": [
+        "F0006",
+        "F0007"
+      ],
+      "basis": "not_documented"
+    },
+    {
+      "question": "Did the child who had vomiting receive any medical evaluation or treatment?",
+      "reason": "One child had vomiting, but it is unclear if this was investigated or treated, which could provide context on possible household transmission or infection source.",
+      "fact_ids": [
+        "F0019"
+      ],
+      "basis": "not_documented"
+    }
+  ],
+  "rejected": [
+    {
+      "candidate": {
+        "id": "F0035",
+        "section": "plan",
+        "statement": "Further tests, such as a stool sample, may be needed if symptoms persist.",
+        "uncertain": true,
+        "evidence": [
+          {
+            "source_id": "S18",
+            "quote": " some time work actually I know you're quite keen to work but um I would say next two two to three days um clears from your system take some time off and rest um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again because if it is ongoing then we have to wonder whether there's something else",
+            "spans": [
+              {
+                "start": 6057,
+                "end": 6416
+              }
+            ]
+          }
+        ],
+        "review": {
+          "id": "F0035",
+          "verdict": "unclear",
+          "reason": "The evidence suggests the patient should return if symptoms persist, and further evaluation may be needed, but it does not explicitly mention a stool sample or any specific test. The statement introduces a specific test (stool sample) not referenced in the cited quote, making the exact claim unsupported by the provided evidence."
+        }
+      },
+      "verdict": "unclear",
+      "reason": "The evidence suggests the patient should return if symptoms persist, and further evaluation may be needed, but it does not explicitly mention a stool sample or any specific test. The statement introduces a specific test (stool sample) not referenced in the cited quote, making the exact claim unsupported by the provided evidence."
+    }
+  ],
+  "validation": "literal source checks and automated fact review; not clinical validation",
+  "projection": {
+    "source_document_sha256": "bb546026d6d5a8515d858b8c86792cc5a74ccb70f3a94ad46408c388440705c1",
+    "source": "k8s-inference/acceptance/clinical-documentation-20260917/full-r2/en-01",
+    "live_inference": false,
+    "change": "unclear source support withheld for human review; neutral empty-section text; readable review queue"
+  }
+}
