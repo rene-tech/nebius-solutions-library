@@ -14,7 +14,9 @@ import re
 import sys
 from typing import Any
 
-ROLES = {"gpu-allocation-observer", "otel-node"}
+LANE_ROLES = {"gpu-allocation-observer", "otel-node"}
+NODE_AGENT_ROLES = {"filesystem-csi", "prometheus-node-exporter", "retained-otel-node"}
+ROLES = LANE_ROLES | NODE_AGENT_ROLES
 UID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
@@ -46,6 +48,8 @@ def validate_contract(value: object) -> dict[str, Any]:
         "taint_key",
         "taint_value",
         "taint_effect",
+        "protected_node_names",
+        "protected_node_inventory_sha256",
         "daemonset_controller_username",
         "scheduler_username",
         "observers",
@@ -53,7 +57,7 @@ def validate_contract(value: object) -> dict[str, Any]:
     }
     if set(value) != expected:
         raise ValueError("protected-lane contract fields differ")
-    if value.get("schema") != "fs2-serve.nebius.ai/protected-lane-admission/v1":
+    if value.get("schema") != "fs2-serve.nebius.ai/protected-lane-admission/v2":
         raise ValueError("protected-lane contract schema differs")
     generation = _string(value.get("generation"), "generation")
     if not re.fullmatch(r"g[0-9]{14}-[a-f0-9]{12}", generation):
@@ -68,6 +72,18 @@ def validate_contract(value: object) -> dict[str, Any]:
         raise ValueError("protected-lane scheduling value differs from lane ID")
     if value.get("taint_effect") != "NoSchedule":
         raise ValueError("protected-lane taint effect differs")
+    protected_node_names = value.get("protected_node_names")
+    if (
+        not isinstance(protected_node_names, list)
+        or len(protected_node_names) != 1
+        or any(not isinstance(node_name, str) for node_name in protected_node_names)
+        or protected_node_names != sorted(set(protected_node_names))
+        or not re.fullmatch(
+            r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?", protected_node_names[0]
+        )
+        or digest(protected_node_names) != value.get("protected_node_inventory_sha256")
+    ):
+        raise ValueError("exact activated protected-node inventory differs")
     if value.get("daemonset_controller_username") != "system:controller:daemon-set-controller":
         raise ValueError("DaemonSet controller identity differs")
     if value.get("scheduler_username") != "system:kube-scheduler":
@@ -75,7 +91,7 @@ def validate_contract(value: object) -> dict[str, Any]:
 
     observers = value.get("observers")
     if not isinstance(observers, dict) or set(observers) != ROLES:
-        raise ValueError("exact OTel and GPU observer inventory is required")
+        raise ValueError("exact lane-observer and retained node-agent inventory is required")
     seen: set[tuple[str, str] | str] = set()
     for role, observer in observers.items():
         if not isinstance(observer, dict) or set(observer) != {
@@ -92,9 +108,9 @@ def validate_contract(value: object) -> dict[str, Any]:
         uid = _string(observer.get("uid"), f"{role} UID")
         owner = _string(observer.get("owner_username"), f"{role} owner")
         spec = observer.get("daemonset_spec")
-        if namespace != "kube-system":
+        if role in LANE_ROLES and namespace != "kube-system":
             raise ValueError(f"{role} additive compatibility observer must be in kube-system")
-        if name != f"fs2-{role}-{lane_id[-12:]}":
+        if role in LANE_ROLES and name != f"fs2-{role}-{lane_id[-12:]}":
             raise ValueError(f"{role} observer name is not lane-bound")
         if not UID_RE.fullmatch(uid):
             raise ValueError(f"{role} UID is invalid")
@@ -113,38 +129,58 @@ def validate_contract(value: object) -> dict[str, Any]:
         labels = metadata["labels"]
         if (
             spec.get("selector") != {"matchLabels": labels}
-            or labels.get("app.kubernetes.io/component") != role
-            or labels.get("fs2.nebius.ai/protected-lane-id") != lane_id
+            or not isinstance(labels.get("app.kubernetes.io/component"), str)
+            or not labels["app.kubernetes.io/component"]
         ):
-            raise ValueError(f"{role} selector or generation labels differ")
+            raise ValueError(f"{role} selector or component labels differ")
         if not isinstance(pod_spec, dict):
             raise ValueError(f"{role} Pod spec is absent")
         if (
-            not isinstance(pod_spec.get("serviceAccountName"), str)
-            or not pod_spec["serviceAccountName"]
-            or pod_spec.get("automountServiceAccountToken") is not False
-            or not isinstance(pod_spec.get("containers"), list)
+            not isinstance(pod_spec.get("containers"), list)
             or not pod_spec["containers"]
-            or any(
-                not isinstance(container, dict)
-                or not re.fullmatch(
-                    r"[^@]+@sha256:[a-f0-9]{64}", str(container.get("image", ""))
-                )
-                for container in pod_spec["containers"]
-            )
+            or any(not isinstance(container, dict) for container in pod_spec["containers"])
         ):
             raise ValueError(f"{role} observer identity or image custody differs")
-        if pod_spec.get("nodeSelector") != {expected_key: lane_id}:
-            raise ValueError(f"{role} observer does not select only this generation")
-        if pod_spec.get("tolerations") != [
-            {
-                "key": expected_key,
-                "operator": "Equal",
-                "value": lane_id,
-                "effect": "NoSchedule",
-            }
-        ]:
-            raise ValueError(f"{role} observer must use the exact generation toleration")
+        if role in LANE_ROLES:
+            if (
+                not isinstance(pod_spec.get("serviceAccountName"), str)
+                or not pod_spec["serviceAccountName"]
+                or pod_spec.get("automountServiceAccountToken") is not False
+                or any(
+                    not re.fullmatch(
+                        r"[^@]+@sha256:[a-f0-9]{64}", str(container.get("image", ""))
+                    )
+                    for container in pod_spec["containers"]
+                )
+            ):
+                raise ValueError(f"{role} additive observer image is not digest-pinned")
+            if labels.get("fs2.nebius.ai/protected-lane-id") != lane_id:
+                raise ValueError(f"{role} protected-lane label differs")
+            if pod_spec.get("nodeSelector") != {expected_key: lane_id}:
+                raise ValueError(f"{role} observer does not select only this lane")
+            if pod_spec.get("tolerations") != [
+                {
+                    "key": expected_key,
+                    "operator": "Equal",
+                    "value": lane_id,
+                    "effect": "NoSchedule",
+                }
+            ]:
+                raise ValueError(f"{role} observer must use the exact lane toleration")
+        else:
+            if labels.get("fs2.nebius.ai/protected-lane-id") is not None:
+                raise ValueError(f"{role} retained node agent cannot claim a lane identity")
+            selector = pod_spec.get("nodeSelector", {})
+            if not isinstance(selector, dict) or expected_key in selector:
+                raise ValueError(f"{role} retained node-agent selector is not independent")
+            if not any(
+                isinstance(toleration, dict)
+                and toleration.get("key") in {None, ""}
+                and toleration.get("operator") == "Exists"
+                and toleration.get("effect") in {None, "", "NoSchedule"}
+                for toleration in pod_spec.get("tolerations", [])
+            ):
+                raise ValueError(f"{role} retained node agent lacks its recorded blanket toleration")
         if pod_spec.get("nodeName") not in {None, ""}:
             raise ValueError(f"{role} observer cannot bind nodeName directly")
         if owner.startswith("system:"):
@@ -163,19 +199,63 @@ def _target_cel(contract: dict[str, Any], path: str) -> str:
     key = _q(contract["taint_key"])
     value = _q(contract["taint_value"])
     effect = _q(contract["taint_effect"])
-    return " ".join(
+    node_names = json.dumps(contract["protected_node_names"], separators=(",", ":"))
+    lane_affinity = " ".join(
         [
-            f"((has({path}.nodeSelector) && {key} in {path}.nodeSelector &&",
-            f"{path}.nodeSelector[{key}] == {value}) ||",
+            f"(has({path}.affinity) && has({path}.affinity.nodeAffinity) &&",
+            f"has({path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution) &&",
+            f"has({path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms) &&",
+            f"{path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms.exists(term,",
+            "has(term.matchExpressions) && term.matchExpressions.exists(requirement,",
+            f"requirement.key == {key} && (",
+            f"(requirement.operator == 'In' && has(requirement.values) && {value} in requirement.values) ||",
+            "requirement.operator == 'Exists' ||",
+            f"(requirement.operator == 'NotIn' && (!has(requirement.values) || !({value} in requirement.values)))))))",
+        ]
+    )
+    direct_affinity = " ".join(
+        [
+            f"(has({path}.affinity) && has({path}.affinity.nodeAffinity) &&",
+            f"has({path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution) &&",
+            f"has({path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms) &&",
+            f"{path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms.exists(term,",
+            "has(term.matchFields) && term.matchFields.exists(requirement,",
+            "requirement.key == 'metadata.name' && requirement.operator == 'In' &&",
+            f"has(requirement.values) && requirement.values.exists(nodeName, nodeName in {node_names}))))",
+        ]
+    )
+    keyed_toleration = " ".join(
+        [
             f"(has({path}.tolerations) && {path}.tolerations.exists(toleration,",
             f"has(toleration.key) && toleration.key == {key} &&",
-            "has(toleration.operator) && toleration.operator == 'Equal' &&",
-            f"has(toleration.value) && toleration.value == {value} &&",
-            f"has(toleration.effect) && toleration.effect == {effect})) ||",
+            f"(!has(toleration.effect) || toleration.effect == '' || toleration.effect == {effect}) && (",
+            "(has(toleration.operator) && toleration.operator == 'Exists') ||",
+            "((!has(toleration.operator) || toleration.operator == '' || toleration.operator == 'Equal') &&",
+            f"has(toleration.value) && toleration.value == {value}))))",
+        ]
+    )
+    blanket_toleration = " ".join(
+        [
             f"(has({path}.tolerations) && {path}.tolerations.exists(toleration,",
             "(!has(toleration.key) || toleration.key == '') &&",
             "has(toleration.operator) && toleration.operator == 'Exists' &&",
-            f"(!has(toleration.effect) || toleration.effect == '' || toleration.effect == {effect}))))",
+            f"(!has(toleration.effect) || toleration.effect == '' || toleration.effect == {effect})))",
+        ]
+    )
+    lane_selector = " ".join(
+        [
+            f"(has({path}.nodeSelector) && {key} in {path}.nodeSelector &&",
+            f"{path}.nodeSelector[{key}] == {value})",
+        ]
+    )
+    return " ".join(
+        [
+            "(",
+            keyed_toleration,
+            "||",
+            f"(has({path}.nodeName) && {path}.nodeName in {node_names}) ||",
+            f"((({lane_selector}) || ({lane_affinity}) || ({direct_affinity})) &&",
+            f"({blanket_toleration})))",
         ]
     )
 
@@ -207,9 +287,6 @@ def _observer_pod_cel(contract: dict[str, Any]) -> str:
         pod_spec = observer["daemonset_spec"]["template"]["spec"]
         labels_json = json.dumps(labels, sort_keys=True, separators=(",", ":"))
         required_spec_fields = (
-            "serviceAccountName",
-            "automountServiceAccountToken",
-            "nodeSelector",
             "tolerations",
             "containers",
         )
@@ -218,6 +295,9 @@ def _observer_pod_cel(contract: dict[str, Any]) -> str:
             for field in required_spec_fields
         )
         optional_spec_fields = (
+            "serviceAccountName",
+            "automountServiceAccountToken",
+            "nodeSelector",
             "initContainers",
             "volumes",
             "imagePullSecrets",
@@ -293,20 +373,62 @@ def targets_lane(spec: object, contract: object) -> bool:
     value = validate_contract(contract)
     if not isinstance(spec, dict):
         return False
-    selector = spec.get("nodeSelector")
-    if isinstance(selector, dict) and selector.get(value["selector_key"]) == value["selector_value"]:
+    if spec.get("nodeName") in value["protected_node_names"]:
         return True
+    selector = spec.get("nodeSelector")
+    lane_constraint = bool(
+        isinstance(selector, dict)
+        and selector.get(value["selector_key"]) == value["selector_value"]
+    )
+    required = (
+        (spec.get("affinity") or {})
+        .get("nodeAffinity", {})
+        .get("requiredDuringSchedulingIgnoredDuringExecution", {})
+    )
+    terms = required.get("nodeSelectorTerms", []) if isinstance(required, dict) else []
+    direct_affinity = False
+    for term in terms if isinstance(terms, list) else []:
+        if not isinstance(term, dict):
+            continue
+        for requirement in term.get("matchExpressions", []):
+            if not isinstance(requirement, dict) or requirement.get("key") != value["selector_key"]:
+                continue
+            operator = requirement.get("operator")
+            values = requirement.get("values", [])
+            if (
+                operator == "Exists"
+                or (operator == "In" and value["selector_value"] in values)
+                or (operator == "NotIn" and value["selector_value"] not in values)
+            ):
+                lane_constraint = True
+        direct_affinity = direct_affinity or any(
+            isinstance(requirement, dict)
+            and requirement.get("key") == "metadata.name"
+            and requirement.get("operator") == "In"
+            and isinstance(requirement.get("values"), list)
+            and any(
+                node_name in value["protected_node_names"]
+                for node_name in requirement["values"]
+            )
+            for requirement in term.get("matchFields", [])
+        )
     tolerations = spec.get("tolerations")
     if not isinstance(tolerations, list):
         return False
+    blanket = False
     for toleration in tolerations:
         if not isinstance(toleration, dict):
             continue
         if (
             toleration.get("key") == value["taint_key"]
-            and toleration.get("operator") == "Equal"
-            and toleration.get("value") == value["taint_value"]
-            and toleration.get("effect") == value["taint_effect"]
+            and toleration.get("effect") in {None, "", value["taint_effect"]}
+            and (
+                toleration.get("operator") == "Exists"
+                or (
+                    toleration.get("operator") in {None, "", "Equal"}
+                    and toleration.get("value") == value["taint_value"]
+                )
+            )
         ):
             return True
         if (
@@ -314,8 +436,8 @@ def targets_lane(spec: object, contract: object) -> bool:
             and toleration.get("operator") == "Exists"
             and toleration.get("effect") in {None, "", value["taint_effect"]}
         ):
-            return True
-    return False
+            blanket = True
+    return blanket and (lane_constraint or direct_affinity)
 
 
 def request_targets_lane(request: dict[str, Any], contract: object) -> bool:
@@ -396,13 +518,13 @@ def successor_allows(request: dict[str, Any], contract: object) -> bool:
                 expected_spec = candidate["daemonset_spec"]["template"]["spec"]
                 actual_spec = obj.get("spec") or {}
                 required_spec_fields = {
-                    "serviceAccountName",
-                    "automountServiceAccountToken",
-                    "nodeSelector",
                     "tolerations",
                     "containers",
                 }
                 optional_spec_fields = {
+                    "serviceAccountName",
+                    "automountServiceAccountToken",
+                    "nodeSelector",
                     "initContainers",
                     "volumes",
                     "imagePullSecrets",

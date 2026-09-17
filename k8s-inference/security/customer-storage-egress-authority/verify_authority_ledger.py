@@ -74,10 +74,18 @@ GENERATION_FIELDS = LEGACY_GENERATION_FIELDS | {
     "scheduling_key",
     "protected_observers",
     "protected_observer_inventory_sha256",
+    "protected_node_names",
+    "protected_node_inventory_sha256",
     "min_node_count",
     "max_node_count",
 }
-PROTECTED_OBSERVER_ROLES = {"gpu-allocation-observer", "otel-node"}
+LANE_OBSERVER_ROLES = {"gpu-allocation-observer", "otel-node"}
+RETAINED_NODE_AGENT_ROLES = {
+    "filesystem-csi",
+    "prometheus-node-exporter",
+    "retained-otel-node",
+}
+PROTECTED_OBSERVER_ROLES = LANE_OBSERVER_ROLES | RETAINED_NODE_AGENT_ROLES
 UID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
@@ -204,7 +212,7 @@ def digest(value: object, label: str) -> str:
 
 def protected_observers(value: object, lane_id: str) -> dict[str, dict[str, Any]]:
     if not isinstance(value, dict) or set(value) != PROTECTED_OBSERVER_ROLES:
-        raise ValueError("exact OTel and GPU protected-observer inventory is required")
+        raise ValueError("exact lane-observer and retained node-agent inventory is required")
     scheduling_key = f"workload.fs2.nebius/customer-storage-egress-{lane_id[-12:]}"
     seen_names: set[tuple[str, str]] = set()
     seen_uids: set[str] = set()
@@ -224,9 +232,10 @@ def protected_observers(value: object, lane_id: str) -> dict[str, dict[str, Any]
         owner = observer.get("owner_username")
         spec = observer.get("daemonset_spec")
         if (
-            namespace != "kube-system"
+            not isinstance(namespace, str)
+            or not namespace
             or not isinstance(name, str)
-            or name != f"fs2-{role}-{lane_id[-12:]}"
+            or not name
             or not isinstance(uid, str)
             or not UID_RE.fullmatch(uid)
             or not isinstance(owner, str)
@@ -237,6 +246,10 @@ def protected_observers(value: object, lane_id: str) -> dict[str, dict[str, Any]
             != observer.get("daemonset_spec_sha256")
         ):
             raise ValueError(f"{role} protected-observer identity or spec is invalid")
+        if role in LANE_OBSERVER_ROLES and (
+            namespace != "kube-system" or name != f"fs2-{role}-{lane_id[-12:]}"
+        ):
+            raise ValueError(f"{role} additive observer identity is not lane-bound")
         if (namespace, name) in seen_names or uid in seen_uids:
             raise ValueError("protected-observer names and UIDs must be unique")
         seen_names.add((namespace, name))
@@ -250,34 +263,70 @@ def protected_observers(value: object, lane_id: str) -> dict[str, dict[str, Any]
             not isinstance(metadata, dict)
             or not isinstance(metadata.get("labels"), dict)
             or spec.get("selector") != {"matchLabels": metadata["labels"]}
-            or metadata["labels"].get("app.kubernetes.io/component") != role
-            or metadata["labels"].get("fs2.nebius.ai/protected-lane-id") != lane_id
+            or not isinstance(
+                metadata["labels"].get("app.kubernetes.io/component"), str
+            )
+            or not metadata["labels"]["app.kubernetes.io/component"]
             or not isinstance(pod_spec, dict)
-            or not isinstance(pod_spec.get("serviceAccountName"), str)
-            or not pod_spec["serviceAccountName"]
-            or pod_spec.get("automountServiceAccountToken") is not False
             or not isinstance(pod_spec.get("containers"), list)
             or not pod_spec["containers"]
-            or any(
-                not isinstance(container, dict)
-                or not re.fullmatch(
-                    r"[^@]+@sha256:[a-f0-9]{64}", str(container.get("image", ""))
-                )
-                for container in pod_spec["containers"]
-            )
-            or pod_spec.get("nodeSelector") != {scheduling_key: lane_id}
-            or pod_spec.get("tolerations")
-            != [
-                {
-                    "key": scheduling_key,
-                    "operator": "Equal",
-                    "value": lane_id,
-                    "effect": "NoSchedule",
-                }
-            ]
+            or any(not isinstance(container, dict) for container in pod_spec["containers"])
             or pod_spec.get("nodeName") not in {None, ""}
         ):
             raise ValueError(f"{role} protected-observer scheduling contract differs")
+        if role in LANE_OBSERVER_ROLES:
+            if (
+                not isinstance(pod_spec.get("serviceAccountName"), str)
+                or not pod_spec["serviceAccountName"]
+                or pod_spec.get("automountServiceAccountToken") is not False
+                or any(
+                    not re.fullmatch(
+                        r"[^@]+@sha256:[a-f0-9]{64}",
+                        str(container.get("image", "")),
+                    )
+                    for container in pod_spec["containers"]
+                )
+                or
+                metadata["labels"].get("fs2.nebius.ai/protected-lane-id") != lane_id
+                or pod_spec.get("nodeSelector") != {scheduling_key: lane_id}
+                or pod_spec.get("tolerations")
+                != [
+                    {
+                        "key": scheduling_key,
+                        "operator": "Equal",
+                        "value": lane_id,
+                        "effect": "NoSchedule",
+                    }
+                ]
+            ):
+                raise ValueError(f"{role} additive observer scheduling differs")
+        else:
+            selector = pod_spec.get("nodeSelector", {})
+            if (
+                metadata["labels"].get("fs2.nebius.ai/protected-lane-id") is not None
+                or not isinstance(selector, dict)
+                or scheduling_key in selector
+                or not any(
+                    isinstance(toleration, dict)
+                    and toleration.get("key") in {None, ""}
+                    and toleration.get("operator") == "Exists"
+                    and toleration.get("effect") in {None, "", "NoSchedule"}
+                    for toleration in pod_spec.get("tolerations", [])
+                )
+            ):
+                raise ValueError(f"{role} retained node-agent scheduling differs")
+    return value
+
+
+def protected_node_names(value: object) -> list[str]:
+    if (
+        not isinstance(value, list)
+        or len(value) != 1
+        or any(not isinstance(node_name, str) for node_name in value)
+        or value != sorted(set(value))
+        or not re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?", value[0])
+    ):
+        raise ValueError("exact activated protected-node inventory is invalid")
     return value
 
 
@@ -925,10 +974,13 @@ def verify(manifest_json: str) -> dict[str, str]:
                 f"workload.fs2.nebius/customer-storage-egress-{lane_id[-12:]}"
             )
             observers = protected_observers(retained.get("protected_observers"), lane_id)
+            node_names = protected_node_names(retained.get("protected_node_names"))
             if (
                 retained.get("scheduling_key") != expected_scheduling_key
                 or retained.get("protected_observer_inventory_sha256")
                 != hashlib.sha256(canonical(observers)).hexdigest()
+                or retained.get("protected_node_inventory_sha256")
+                != hashlib.sha256(canonical(node_names)).hexdigest()
                 or not {
                     observer["owner_username"] for observer in observers.values()
                 }
@@ -1388,10 +1440,13 @@ def verify(manifest_json: str) -> dict[str, str]:
             f"workload.fs2.nebius/customer-storage-egress-{lane_id[-12:]}"
         )
         observers = protected_observers(entry.get("protected_observers"), lane_id)
+        node_names = protected_node_names(entry.get("protected_node_names"))
         if (
             entry.get("scheduling_key") != expected_scheduling_key
             or entry.get("protected_observer_inventory_sha256")
             != hashlib.sha256(canonical(observers)).hexdigest()
+            or entry.get("protected_node_inventory_sha256")
+            != hashlib.sha256(canonical(node_names)).hexdigest()
             or not {
                 observer["owner_username"] for observer in observers.values()
             }

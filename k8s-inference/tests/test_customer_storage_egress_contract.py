@@ -365,6 +365,9 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     ).read_text(encoding="utf-8")
     provider = (PROVIDER_AUTHORITY_ROOT / "main.tf").read_text(encoding="utf-8")
     boundary = (SECURITY_ROOT / "main.tf").read_text(encoding="utf-8")
+    protected_lane = (SECURITY_ROOT / "protected_lane_admission.py").read_text(
+        encoding="utf-8"
+    )
     boundary_variables = (SECURITY_ROOT / "variables.tf").read_text(
         encoding="utf-8"
     )
@@ -435,6 +438,16 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert "old_template_target_cel" in boundary
     assert "observer_daemonset_allow_cel" in boundary
     assert "observer_pod_allow_cel" in boundary
+    assert "LANE_ROLES" in protected_lane
+    assert "NODE_AGENT_ROLES" in protected_lane
+    assert "requirement.operator == 'Exists'" in protected_lane
+    assert "(!has(toleration.effect) || toleration.effect == ''" in protected_lane
+    assert "has({path}.nodeName)" in protected_lane
+    assert 'nodeName in {node_names}' in protected_lane
+    assert "protected_node_inventory_sha256" in protected_lane
+    assert "protected_node_inventory_sha256" in authority
+    assert "metadata.name" in protected_lane
+    assert "lane_constraint or direct_affinity" in protected_lane
     assert "min_node_count = try(each.value.min_node_count, 0)" in provider
     assert "max_node_count = try(each.value.max_node_count, 1)" in provider
     assert "fixed_node_count = null" in provider
