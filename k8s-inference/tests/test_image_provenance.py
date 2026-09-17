@@ -167,6 +167,7 @@ class PolicyManifestTest(unittest.TestCase):
                 "token-audience",
                 "automation-service-accounts",
                 "workload-service-accounts",
+                "deploy-credential-csi-driver",
             )
             if f"params.data['{key}']" in variable_expressions
         }
@@ -263,6 +264,14 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertIn("workloadServiceAccounts.exists", expressions[6])
         self.assertIn("!variables.usesHostPath", expressions[6])
         self.assertIn("!variables.usesPrivileged", expressions[6])
+        self.assertIn("!variables.usesHostNamespaces", expressions[6])
+        self.assertIn("!variables.usesAddedCapsOrPrivEsc", expressions[6])
+        self.assertIn("!variables.setsNodeName", expressions[6])
+        self.assertIn("!variables.usesForeignAudienceProjection", expressions[6])
+        self.assertIn("!variables.usesSecretEnv", expressions[6])
+        # The automation-pod volume allowlist admits only the owner-named
+        # credential CSI driver besides projections/config/scratch volumes.
+        self.assertIn("deployCredentialCsiDriver", expressions[4])
         for validation in self.policy["spec"]["validations"]:
             self.assertIn("SAI-09", validation["message"])
             self.assertEqual(validation["reason"], "Forbidden")
@@ -277,6 +286,7 @@ def render_allowlist_fixture(*args, **kwargs):
     kwargs.setdefault(
         "workload_service_accounts", ["fs2-system:fs2-release-automation"]
     )
+    kwargs.setdefault("deploy_credential_csi_driver", "secrets-store.csi.k8s.io")
     return TOOL.render_allowlist(*args, **kwargs)
 
 
@@ -303,6 +313,10 @@ class AllowlistRenderingTest(unittest.TestCase):
         self.assertEqual(
             manifest["data"]["workload-service-accounts"],
             "fs2-system:fs2-release-automation",
+        )
+        self.assertEqual(
+            manifest["data"]["deploy-credential-csi-driver"],
+            "secrets-store.csi.k8s.io",
         )
 
     def test_empty_helm_secret_writers_render_the_deny_all_state(self) -> None:
@@ -355,6 +369,14 @@ class AllowlistRenderingTest(unittest.TestCase):
                 [DIGEST_A],
                 ["deployer"],
                 workload_service_accounts=["no-colon-row"],
+            )
+        with self.assertRaises(TOOL.ProvenanceError):
+            render_allowlist_fixture(
+                [REGISTRY_PREFIX],
+                PLATFORM_PREFIX,
+                [DIGEST_A],
+                ["deployer"],
+                deploy_credential_csi_driver="",
             )
         # The identity keys fail closed too: a missing/invalid audience or an
         # empty/malformed automation account list never renders.
@@ -759,37 +781,54 @@ AUTHORITY_FIXTURE = {
 
 
 FIXTURE_WORM_STORE = "https://worm.example.invalid/fs2/anchored-heads"
+FIXTURE_WORM_BUCKET = "fs2-worm-fixture"
 PROVIDER_ADMIN_SUBJECT = "owner@example.invalid"
+PROVIDER_PARENT_IDS = (
+    "cluster-fixture-id",
+    "folder-fixture-id",
+    "cloud-fixture-id",
+)
 
 
-def write_provider_export_fixture(
-    base: Path,
-    cluster: str = "fixture-cluster",
-    bindings: list | None = None,
-    name: str = "provider-iam-export.json",
-    **overrides,
-) -> Path:
-    """The ACTUAL provider IAM export whose bytes the attestation pins."""
-    from datetime import UTC, datetime, timedelta
+def provider_cli_fixture(
+    admin_subject: str = PROVIDER_ADMIN_SUBJECT,
+    extra_bindings: list | None = None,
+    retention_days: int = 90,
+    lock_enabled: bool = True,
+):
+    """Answer the pinned provider CLI's live IAM/WORM queries."""
 
-    document = {
-        "schema": TOOL.PROVIDER_IAM_EXPORT_SCHEMA,
-        "cluster": cluster,
-        "exported_at": (datetime.now(UTC) - timedelta(minutes=5)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        ),
-        "bindings": bindings
-        if bindings is not None
-        else [
-            {"subject": PROVIDER_ADMIN_SUBJECT, "role": "managed-k8s.admin"},
-            {"subject": "auditor@example.invalid", "role": "viewer"},
-        ],
-    }
-    document.update(overrides)
-    path = base / name
-    path.write_bytes(json.dumps(document).encode("utf-8"))
-    path.chmod(0o644)
-    return path
+    def responder(command):
+        if command[:4] == ["nebius", "iam", "access-binding", "list"]:
+            parent = command[command.index("--parent-id") + 1]
+            bindings = [
+                {
+                    "subject": {"id": admin_subject},
+                    "role_id": "managed-kubernetes.admin",
+                },
+                {"subject": {"id": "auditor@example.invalid"}, "role_id": "viewer"},
+            ] + [
+                dict(binding)
+                for binding in (extra_bindings or [])
+                if binding.get("parent", parent) in (parent, None)
+            ]
+            return json.dumps({"items": bindings})
+        if command[:4] == ["nebius", "storage", "bucket", "get"]:
+            lock = (
+                {
+                    "object_lock": {
+                        "status": "enabled",
+                        "default_retention": {"mode": "COMPLIANCE",
+                                              "days": retention_days},
+                    }
+                }
+                if lock_enabled
+                else {}
+            )
+            return json.dumps({"name": command[5], **lock})
+        return None
+
+    return responder
 
 
 def write_attestation_fixture(
@@ -797,25 +836,17 @@ def write_attestation_fixture(
     cluster: str = "fixture-cluster",
     anchored: dict | None = None,
     name: str = "provider-attestation.json",
-    export_path: Path | None = None,
     **overrides,
 ) -> Path:
     """Attestor-signed provider attestation (fixture signature registry).
 
     The default anchored-heads snapshot is a REAL export of the run root's
-    current chains (all required chains enumerated), and the evidence object
-    pins a REAL provider-IAM-export fixture file written next to it —
-    matching the loader's refusal of empty/omitted chains, bare provider-held
-    strings, and hash-only evidence.
+    current chains (all required chains enumerated); the evidence enumerates
+    the subjects the LIVE provider enumeration is compared against.
     """
     import hashlib
     from datetime import UTC, datetime, timedelta
 
-    if export_path is None:
-        export_path = base / "provider-iam-export.json"
-        if not export_path.exists():
-            write_provider_export_fixture(base, cluster=cluster)
-    export_sha = hashlib.sha256(export_path.read_bytes()).hexdigest()
     now = datetime.now(UTC)
     document = {
         "schema": TOOL.PROVIDER_ATTESTATION_SCHEMA,
@@ -825,7 +856,6 @@ def write_attestation_fixture(
         "etcd_access": "provider-held",
         "worm_store": FIXTURE_WORM_STORE,
         "evidence": {
-            "provider_iam_export_sha256": export_sha,
             "reference": "ticket:FS2-SAI-09-boundary",
             "provider_admin_subjects": [PROVIDER_ADMIN_SUBJECT],
         },
@@ -855,12 +885,20 @@ def default_scope_fixture(key_sha256: str) -> dict:
         "platform_repository_prefix": PLATFORM_PREFIX,
         "deploy_principals": [AUTOMATION_PRINCIPAL],
         # The decided HELM_DRIVER=sql contract: NO Helm release-Secret
-        # writers — the governance policy denies every such write outright.
+        # writers — the governance policy denies every such write outright —
+        # and the backend identity is OWNER-PINNED, never ambient.
         "helm_secret_writers": [],
+        "helm_storage": {
+            "driver": "sql",
+            "connection_identity": (
+                "db.fixture.invalid:5432/helm_releases?user=fs2_helm"
+            ),
+        },
         "workload_service_accounts": [
             "fs2-system:fs2-release-automation",
             "fs2-system:fs2-serve-control-plane",
         ],
+        "deploy_credential_csi_driver": "secrets-store.csi.k8s.io",
         "security_principals": [SECURITY_PRINCIPAL],
         "verification_key_sha256": key_sha256,
         "attestation_key_sha256": hashlib.sha256(
@@ -868,12 +906,15 @@ def default_scope_fixture(key_sha256: str) -> dict:
         ).hexdigest(),
         "iam_exempt_subjects": [],
         "token_audience": "fs2-release",
+        "provider_parent_ids": list(PROVIDER_PARENT_IDS),
         "worm_store_uri": FIXTURE_WORM_STORE,
+        "worm_bucket": FIXTURE_WORM_BUCKET,
         "stage_binding_authority": {
             "namespace": "fs2-system",
             "workload": "deployment/fs2-serve-control-plane",
         },
-        "tooling": {"kubectl": "/usr/bin/kubectl", "helm": "/usr/bin/helm"},
+        "tooling": {"kubectl": "/usr/bin/kubectl", "helm": "/usr/bin/helm",
+                    "nebius": "/usr/bin/nebius"},
         "policy_sha256": hashlib.sha256(POLICY_PATH.read_bytes()).hexdigest(),
     }
 
@@ -1088,7 +1129,6 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.scope = default_scope_fixture(self.key_sha256)
         self.scope_path = write_scope_fixture(self.run_root, self.scope)
         self.attestation_path = write_attestation_fixture(self.run_root)
-        self.provider_export = self.run_root / "provider-iam-export.json"
         self.inventory = write_inventory_fixture(
             self.run_root, [self.REFERENCE_A, self.REFERENCE_B]
         )
@@ -1111,6 +1151,8 @@ class VerifiedAllowlistTest(unittest.TestCase):
         cluster="fixture-cluster",
         cluster_role_bindings=None,
         cluster_roles=None,
+        namespaced_roles=None,
+        namespaced_role_bindings=None,
     ):
         """Serve the full authoritative observation surface.
 
@@ -1172,8 +1214,13 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 ("ValidatingAdmissionPolicyBinding", "fs2-image-provenance")
             ] = live_binding
 
+        provider = provider_cli_fixture()
+
         def runner(command):
             joined = " ".join(str(part) for part in command)
+            provider_answer = provider(command)
+            if provider_answer is not None:
+                return provider_answer
             if command[:3] == ["kubectl", "auth", "whoami"]:
                 return json.dumps(
                     {"status": {"userInfo": {"username": identity}}}
@@ -1338,9 +1385,11 @@ class VerifiedAllowlistTest(unittest.TestCase):
             if command[:3] == ["kubectl", "get", "clusterrolebindings"]:
                 return json.dumps({"items": list(cluster_role_bindings or [])})
             if command[:3] == ["kubectl", "get", "roles"]:
-                return json.dumps({"items": []})
+                return json.dumps({"items": list(namespaced_roles or [])})
             if command[:3] == ["kubectl", "get", "rolebindings"]:
-                return json.dumps({"items": []})
+                return json.dumps(
+                    {"items": list(namespaced_role_bindings or [])}
+                )
             if command[:2] == ["kubectl", "get"] and command[2] in (
                 "deployments",
                 "daemonsets",
@@ -1401,7 +1450,6 @@ class VerifiedAllowlistTest(unittest.TestCase):
         live_runner=None,
         attestation_path=None,
         attestation_key_path=None,
-        provider_export_path=None,
     ):
         return TOOL.verified_allowlist(
             self._tmp.name,
@@ -1413,7 +1461,6 @@ class VerifiedAllowlistTest(unittest.TestCase):
             scope_path or self.scope_path,
             attestation_path or self.attestation_path,
             attestation_key_path or self._attestor_key.name,
-            provider_export_path or self.provider_export,
             deploy_principals=list(deploy_principals),
             key_path="release.key",
             verifier=verifier,
@@ -1745,7 +1792,6 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.scope_path,
             self.attestation_path,
             self._attestor_key.name,
-            self.provider_export,
             deploy_principals=[AUTOMATION_PRINCIPAL],
             key_path="release.key",
             verifier=authority_checking_verifier,
@@ -1878,7 +1924,6 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.scope_path,
             self.attestation_path,
             self._attestor_key.name,
-            self.provider_export,
             deploy_principals=[AUTOMATION_PRINCIPAL],
             key_path="release.key",
             capture=self.randomized_signing_capture(),
@@ -2246,7 +2291,6 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 self.scope_path,
                 self.attestation_path,
                 self._attestor_key.name,
-                self.provider_export,
                 deploy_principals=["deployer"],
                 key_path="release.key",
                 verifier=authority_checking_verifier,
@@ -2551,6 +2595,142 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 },
             )
 
+    def test_subresource_wildcard_grants_are_matched(self) -> None:
+        # A grant of pods/* (or */token) covers the forbidden subresources
+        # the old parent-set arithmetic missed; a plain-parent grant still
+        # does not cover a subresource (RBAC semantics).
+        self.assertTrue(
+            TOOL._granted_resource_matches("pods/*", "pods/exec")
+        )
+        self.assertTrue(
+            TOOL._granted_resource_matches("*/token", "serviceaccounts/token")
+        )
+        self.assertTrue(TOOL._granted_resource_matches("*", "pods/exec"))
+        self.assertFalse(
+            TOOL._granted_resource_matches("pods", "pods/exec")
+        )
+        self.assertFalse(
+            TOOL._granted_resource_matches("pods/log", "pods/exec")
+        )
+        wildcard_role = {
+            "metadata": {"name": "sub-wildcard"},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["serviceaccounts/*"],
+                    "verbs": ["create"],
+                }
+            ],
+        }
+        wildcard_binding = {
+            "metadata": {"name": "mallory-token-minter"},
+            "roleRef": {"kind": "ClusterRole", "name": "sub-wildcard"},
+            "subjects": [{"kind": "User", "name": "mallory"}],
+        }
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "token minting"):
+            self.render(
+                live_runner=self.live_runner(
+                    cluster_roles=[wildcard_role],
+                    cluster_role_bindings=[wildcard_binding],
+                )
+            )
+
+    def test_foreign_namespace_grants_are_audited(self) -> None:
+        # A RoleBinding in a namespace OUTSIDE the scope/security set can
+        # still grant a cluster-effect identity path (here: token minting in
+        # a foreign namespace, whose ServiceAccounts may hold cluster
+        # grants); the audit now enumerates EVERY namespace.
+        minter_role = {
+            "metadata": {"name": "minter", "namespace": "totally-elsewhere"},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["serviceaccounts/token"],
+                    "verbs": ["create"],
+                }
+            ],
+        }
+        foreign_binding = {
+            "metadata": {
+                "name": "mallory-mints-elsewhere",
+                "namespace": "totally-elsewhere",
+            },
+            "roleRef": {"kind": "Role", "name": "minter"},
+            "subjects": [{"kind": "User", "name": "mallory"}],
+        }
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "token minting"):
+            self.render(
+                live_runner=self.live_runner(
+                    namespaced_roles=[minter_role],
+                    namespaced_role_bindings=[foreign_binding],
+                )
+            )
+        # But a namespace-scoped rule (secrets in the protected namespaces)
+        # does NOT fire for a foreign-namespace grant.
+        reader_role = {
+            "metadata": {"name": "reader", "namespace": "totally-elsewhere"},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["secrets"],
+                    "verbs": ["get"],
+                }
+            ],
+        }
+        reader_binding = {
+            "metadata": {
+                "name": "elsewhere-secret-reader",
+                "namespace": "totally-elsewhere",
+            },
+            "roleRef": {"kind": "Role", "name": "reader"},
+            "subjects": [{"kind": "User", "name": "app-operator"}],
+        }
+        self.render(
+            live_runner=self.live_runner(
+                namespaced_roles=[reader_role],
+                namespaced_role_bindings=[reader_binding],
+            )
+        )
+
+    def test_pinned_runner_enforces_the_owner_helm_backend(self) -> None:
+        # The Helm storage backend is owner authority: a missing driver env,
+        # a wrong driver, or a DSN pointing at a different backend identity
+        # all fail closed BEFORE any enumeration; the matching DSN passes
+        # through with only its non-secret identity compared.
+        from unittest import mock
+
+        base_env = {"PATH": "/usr/bin:/bin", "HOME": "/home/fixture"}
+        with mock.patch.dict(os.environ, base_env, clear=True):
+            with self.assertRaisesRegex(TOOL.ProvenanceError, "HELM_DRIVER"):
+                TOOL._pinned_live_runner(self.scope)
+        with mock.patch.dict(
+            os.environ, {**base_env, "HELM_DRIVER": "sql"}, clear=True
+        ):
+            with self.assertRaisesRegex(TOOL.ProvenanceError, "parsable"):
+                TOOL._pinned_live_runner(self.scope)
+        alternate = {
+            **base_env,
+            "HELM_DRIVER": "sql",
+            "HELM_DRIVER_SQL_CONNECTION_STRING": (
+                "postgresql://fs2_helm:secret@evil.invalid:5432/helm_releases"
+            ),
+        }
+        with mock.patch.dict(os.environ, alternate, clear=True):
+            with self.assertRaisesRegex(
+                TOOL.ProvenanceError, "alternate backend"
+            ):
+                TOOL._pinned_live_runner(self.scope)
+        pinned = {
+            **base_env,
+            "HELM_DRIVER": "sql",
+            "HELM_DRIVER_SQL_CONNECTION_STRING": (
+                "postgresql://fs2_helm:secret@db.fixture.invalid:5432/"
+                "helm_releases"
+            ),
+        }
+        with mock.patch.dict(os.environ, pinned, clear=True):
+            TOOL._pinned_live_runner(self.scope)
+
     def test_bootstrap_masters_recognition_is_attestation_driven(self) -> None:
         # The one bootstrap cluster-admin -> system:masters binding is
         # tolerated because the REQUIRED owner-signed provider attestation
@@ -2635,19 +2815,37 @@ class VerifiedAllowlistTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "BEHIND"):
             self.render(attestation_path=regressed)
 
-    def test_ledger_legacy_adoption_and_crash_roll_forward(self) -> None:
-        # Pre-checkpoint ledgers (preserved evidence) are ADOPTED forward,
-        # and the append crash window (file one verified record ahead of the
-        # checkpoint) is repaired forward; nothing is deleted.
+    def test_legacy_adoption_requires_the_signed_anchor(self) -> None:
+        # A nonempty ledger with NO checkpoint is locally-consistent but
+        # UNSIGNED history: bare reads refuse it, a ZERO-count anchor cannot
+        # vouch for it, a mismatched anchor refuses it, and only an anchored
+        # snapshot that confirms the exact content adopts it (checkpoint
+        # written forward; nothing deleted). The append crash window
+        # (checkpoint exactly one behind) is still repaired forward.
         ledger = self.run_root / "release-authorization-consumed.jsonl"
         TOOL._record_consumed(self.run_root, "1" * 64, "test")
         TOOL._record_consumed(self.run_root, "2" * 64, "test")
         checkpoint = TOOL._ledger_checkpoint_path(ledger)
-        # Legacy: checkpoint absent entirely -> adopted.
-        saved = checkpoint.read_bytes()
+        anchored = TOOL._anchor_snapshot(self.run_root)
         checkpoint.unlink()
-        self.assertTrue(TOOL._is_consumed(self.run_root, "2" * 64))
+        # Bare read: refused, never silently adopted.
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "no head checkpoint"):
+            TOOL._is_consumed(self.run_root, "2" * 64)
+        # Zero-count anchor: adopts nothing.
+        hollow = json.loads(json.dumps(anchored))
+        hollow["chains"]["consumed"] = {"count": 0, "head": ""}
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "count 0"):
+            TOOL._assert_anchored_heads(self.run_root, hollow)
+        # Mismatched anchor: fabricated legacy content never adopts.
+        forged = json.loads(json.dumps(anchored))
+        forged["chains"]["consumed"]["head"] = "f" * 64
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "never adopted"):
+            TOOL._assert_anchored_heads(self.run_root, forged)
+        self.assertFalse(checkpoint.exists())
+        # The REAL anchor confirms the content and adopts it forward.
+        TOOL._assert_anchored_heads(self.run_root, anchored)
         self.assertTrue(checkpoint.exists())
+        self.assertTrue(TOOL._is_consumed(self.run_root, "2" * 64))
         # Crash window: checkpoint exactly one behind -> rolled forward.
         lines = ledger.read_bytes().splitlines()
         import hashlib as h
@@ -2661,7 +2859,6 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.assertTrue(TOOL._is_consumed(self.run_root, "2" * 64))
         adopted = json.loads(checkpoint.read_bytes())
         self.assertEqual(adopted["count"], 2)
-        assert saved  # retained for clarity; content superseded forward
 
     def test_recovery_refuses_arbitrary_action_subsets(self) -> None:
         import hashlib as h
@@ -3094,6 +3291,7 @@ class _FakeAdmissionCluster:
 
         self.identity = identity
         self.raise_after_next_patch = False
+        self.provider = provider_cli_fixture()
         self._rv = 1000
         self.objects: dict[tuple[str, str], dict] = {}
         for document in load_policy_documents():
@@ -3135,6 +3333,9 @@ class _FakeAdmissionCluster:
     def runner(self, command, input_text=None):
         import subprocess as sp
 
+        provider_answer = self.provider(command)
+        if provider_answer is not None:
+            return provider_answer
         if command[:3] == ["kubectl", "auth", "whoami"]:
             return json.dumps(
                 {"status": {"userInfo": {"username": self.identity}}}
@@ -3271,7 +3472,6 @@ class ReconcileBoundaryTest(unittest.TestCase):
         self.scope = default_scope_fixture(self.key_sha256)
         self.scope_path = write_scope_fixture(self.run_root, self.scope)
         self.attestation_path = write_attestation_fixture(self.run_root)
-        self.provider_export = self.run_root / "provider-iam-export.json"
         self.cluster = _FakeAdmissionCluster()
 
     def write_recovery(self, name: str, *, prior, actions) -> tuple[Path, str]:
@@ -3313,7 +3513,6 @@ class ReconcileBoundaryTest(unittest.TestCase):
             self.run_root,
             attestation_path=self.attestation_path,
             attestation_key_path=self._attestor_key.name,
-            provider_export_path=self.provider_export,
             recovery_path=recovery_path,
             verifier=authority_checking_verifier,
             live_runner=self.cluster.runner,
@@ -3362,7 +3561,6 @@ class ReconcileBoundaryTest(unittest.TestCase):
             self.run_root,
             attestation_path=self.attestation_path,
             attestation_key_path=self._attestor_key.name,
-            provider_export_path=self.provider_export,
             recovery_path=recovery,
             authorization_path=authorization,
             execute=execute,
@@ -3552,7 +3750,6 @@ class ReconcileBoundaryTest(unittest.TestCase):
                     self.run_root,
                     attestation_path=self.attestation_path,
                     attestation_key_path=self._attestor_key.name,
-                    provider_export_path=self.provider_export,
                     recovery_path=weaken_path,
                     authorization_path=authorization,
                     execute=True,
@@ -3565,52 +3762,60 @@ class ReconcileBoundaryTest(unittest.TestCase):
             self.cluster.identity = SECURITY_PRINCIPAL
         self.assertEqual(self.journal_phases(), [])
 
-    def test_provider_export_semantics_are_enforced(self) -> None:
-        # A provider export showing admin-class access OUTSIDE the attested
-        # enumeration refuses; so does a substituted export whose bytes do
-        # not hash to the attestation's pin.
-        rogue_export = write_provider_export_fixture(
-            self.run_root,
-            bindings=[
-                {"subject": PROVIDER_ADMIN_SUBJECT, "role": "managed-k8s.admin"},
-                {"subject": "mallory@example.invalid", "role": "k8s.editor"},
-            ],
-            name="rogue-export.json",
-        )
-        rogue_attestation = write_attestation_fixture(
-            self.run_root,
-            export_path=rogue_export,
-            name="rogue-attestation.json",
+    def test_live_provider_boundary_is_enforced(self) -> None:
+        # The provider arm is verified against the LIVE provider answers
+        # through the owner-pinned CLI: an admin-class binding outside the
+        # attested enumeration refuses, and so does a WORM bucket without an
+        # object-lock or with insufficient retention.
+        self.cluster.provider = provider_cli_fixture(
+            extra_bindings=[
+                {
+                    "subject": {"id": "mallory@example.invalid"},
+                    "role_id": "k8s.editor",
+                }
+            ]
         )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "admin-class"):
-            self.plan_document_with(
-                rogue_attestation, rogue_export, None
-            )
-        substituted = write_provider_export_fixture(
-            self.run_root,
-            bindings=[{"subject": PROVIDER_ADMIN_SUBJECT, "role": "viewer"}],
-            name="substituted-export.json",
-        )
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "pins"):
-            self.plan_document_with(
-                self.attestation_path, substituted, None
-            )
+            self.plan_document(None)
+        self.cluster.provider = provider_cli_fixture(lock_enabled=False)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "object-lock"):
+            self.plan_document(None)
+        self.cluster.provider = provider_cli_fixture(retention_days=1)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "retention"):
+            self.plan_document(None)
+        self.cluster.provider = provider_cli_fixture()
+        self.plan_document(None)
 
-    def plan_document_with(
-        self, attestation: Path, export: Path, recovery: Path | None
-    ):
-        return TOOL.reconcile_boundary(
-            self._tmp.name,
-            self.scope_path,
-            self.run_root,
-            attestation_path=attestation,
-            attestation_key_path=self._attestor_key.name,
-            provider_export_path=export,
-            recovery_path=recovery,
-            verifier=authority_checking_verifier,
-            live_runner=self.cluster.runner,
-            output=lambda line: None,
+    def test_atomic_consumption_has_no_partial_crash_window(self) -> None:
+        # The authorization and its recovery document are consumed in ONE
+        # chained append: the ledger's terminal record accounts for BOTH, so
+        # no crash can leave the authorization consumed while the recovery
+        # is not (which would refuse both --execute and --resume).
+        weaken_path, weaken_sha = self.write_recovery(
+            "weaken-atomic.json", prior=["Deny", "Audit"],
+            actions=["Audit", "Warn"],
         )
+        plan = self.plan_document(weaken_path)
+        authorization = self.write_authorization("atomic-auth.json", plan)
+        self.assertEqual(
+            self.run_boundary(
+                recovery=weaken_path, authorization=authorization,
+                execute=True,
+            ),
+            0,
+        )
+        ledger = self.run_root / "release-authorization-consumed.jsonl"
+        records = TOOL._read_chained_records(ledger)
+        batch = records[-1]
+        consumed = {
+            entry["purpose"]: entry["sha256"]
+            for entry in batch.get("consumed") or []
+        }
+        self.assertEqual(
+            set(consumed), {"rollout-authorization", "recovery"}
+        )
+        self.assertEqual(consumed["recovery"], weaken_sha)
+        self.assertTrue(TOOL._is_consumed(self.run_root, weaken_sha))
 
 
 class ReceiptBindingTest(unittest.TestCase):

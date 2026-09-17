@@ -84,6 +84,7 @@ def render_allowlist(
     token_audience: str = "",
     automation_service_accounts: Sequence[str] = (),
     workload_service_accounts: Sequence[str] = (),
+    deploy_credential_csi_driver: str = "",
 ) -> dict:
     """Render the admission allow-list ConfigMap consumed by policy.yaml.
 
@@ -139,6 +140,14 @@ def render_allowlist(
                 f"the {label} service-account list is required; the "
                 "admission identity constraints fail closed without it"
             )
+    if not re.match(
+        r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$",
+        str(deploy_credential_csi_driver),
+    ):
+        raise ProvenanceError(
+            "the deploy credential CSI driver name is required; the "
+            "automation-pod volume allowlist fails closed without it"
+        )
     return {
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -164,6 +173,7 @@ def render_allowlist(
             "workload-service-accounts": "\n".join(
                 sorted(set(map(str, workload_service_accounts)))
             ),
+            "deploy-credential-csi-driver": str(deploy_credential_csi_driver),
         },
     }
 
@@ -377,16 +387,18 @@ def _read_evidence_bytes(
 RELEASE_KEY_SHA256 = (
     "56919b309fb65821c8a7d317730ed18613fe9b2a7e52295fce4fffb12c63a208"
 )
-# SOURCE-PINNED attestor key fingerprint. The provider attestation verifies
-# ONLY against a key whose SHA-256 equals this reviewed constant — the
-# owner-signed scope must carry the SAME value, so a release-key holder can
-# never rotate the attestor by re-signing the scope (attestor designation
-# goes through CODE REVIEW, independent of the release key). SHIPPED EMPTY:
-# no attestor is designated yet, and every attestation-consuming path fails
-# closed until the owner commits the real fingerprint here (together with
-# scope custody of the attestor private key OUTSIDE the release pipeline —
-# an owner action at the rollout window, stated, never claimed).
-ATTESTATION_KEY_SHA256 = ""
+# SOURCE-PINNED attestor key fingerprint — POPULATED. The provider
+# attestation verifies ONLY against the committed attestor.pub whose SHA-256
+# equals this reviewed constant — the owner-signed scope must carry the SAME
+# value, so a release-key holder can never rotate the attestor by re-signing
+# the scope (attestor designation goes through CODE REVIEW, independent of
+# the release key). The attestor PRIVATE key lives outside the release
+# pipeline's key directory (separate custody path; transferring it to the
+# security owner's HSM/workstation is the rollout-window step and rotation
+# is a reviewed commit of attestor.pub + this constant together).
+ATTESTATION_KEY_SHA256 = (
+    "78090e41cde862bc91bc61c1b65041bf113ad5bc641690578ba4184f14bda687"
+)
 
 
 class _PinnedPublicKey:
@@ -500,30 +512,60 @@ def _run_capture(command: Sequence[str], input_text: str | None = None) -> str:
 def _pinned_live_runner(owner_scope: dict):
     """Build the live-API runner from OWNER-PINNED tooling, never ambient PATH.
 
-    kubectl/helm are resolved from the owner-signed scope's absolute paths
-    and executed with an environment built from scratch (fixed system PATH;
-    KUBECONFIG/HOME pass through because that pair IS the caller's
-    authenticated identity, which whoami then proves, and the Helm storage
-    driver settings pass through because under the HELM_DRIVER=sql contract
-    stripping them would silently point every Helm enumeration at the
-    DEFAULT Secrets backend — an empty backend reads as "no releases" and
-    the rollback window would vanish from coverage). A caller cannot swap
-    the binaries via PATH or interpose via LD_PRELOAD.
+    kubectl/helm/nebius are resolved from the owner-signed scope's absolute
+    paths and executed with an environment built from scratch (fixed system
+    PATH; KUBECONFIG/HOME pass through because that pair IS the caller's
+    authenticated identity, which whoami then proves; NEBIUS_IAM_TOKEN
+    passes through as the read-only provider-CLI credential). The Helm
+    storage backend is OWNER AUTHORITY, never ambient trust: the scope's
+    helm_storage pins the driver, and under the SQL contract the live DSN's
+    NON-SECRET identity (host:port/database?user) must equal the scope pin —
+    a caller cannot point enumeration at an alternate or empty backend, and
+    a missing/mismatched driver env fails closed instead of silently reading
+    the default Secrets backend. A caller cannot swap the binaries via PATH
+    or interpose via LD_PRELOAD.
     """
     tooling = owner_scope["tooling"]
     environment = {"PATH": "/usr/bin:/bin"}
-    for passthrough in (
-        "KUBECONFIG",
-        "HOME",
-        "HELM_DRIVER",
-        "HELM_DRIVER_SQL_CONNECTION_STRING",
-    ):
+    for passthrough in ("KUBECONFIG", "HOME", "NEBIUS_IAM_TOKEN"):
         if os.environ.get(passthrough):
             environment[passthrough] = os.environ[passthrough]
+    helm_storage = owner_scope["helm_storage"]
+    if helm_storage["driver"] == "sql":
+        if os.environ.get("HELM_DRIVER") != "sql":
+            raise ProvenanceError(
+                "the owner-signed scope pins Helm storage to the SQL driver "
+                "but HELM_DRIVER is not 'sql'; enumeration against the "
+                "default Secrets backend would silently read an empty "
+                "release history — fails closed"
+            )
+        dsn = os.environ.get("HELM_DRIVER_SQL_CONNECTION_STRING", "")
+        match = HELM_DSN_PATTERN.match(dsn)
+        if match is None:
+            raise ProvenanceError(
+                "HELM_DRIVER_SQL_CONNECTION_STRING is missing or not a "
+                "parsable PostgreSQL DSN; the SQL-backed Helm enumeration "
+                "fails closed"
+            )
+        live_identity = (
+            f"{match.group('host')}:{match.group('port') or '5432'}/"
+            f"{match.group('database')}?user={match.group('user')}"
+        )
+        if live_identity != helm_storage["connection_identity"]:
+            raise ProvenanceError(
+                f"the live Helm SQL backend {live_identity!r} does not equal "
+                "the owner-pinned helm_storage.connection_identity; a "
+                "caller-selected alternate backend never serves the release "
+                "history — fails closed"
+            )
+        environment["HELM_DRIVER"] = "sql"
+        environment["HELM_DRIVER_SQL_CONNECTION_STRING"] = dsn
+    # driver == "secret": Helm's default backend; no driver env passes
+    # through, so ambient variables cannot redirect it either.
 
     def runner(command: Sequence[str], input_text: str | None = None) -> str:
         argv = list(command)
-        if argv and argv[0] in ("kubectl", "helm"):
+        if argv and argv[0] in ("kubectl", "helm", "nebius"):
             argv[0] = str(tooling[argv[0]])
         result = subprocess.run(
             argv,
@@ -1855,15 +1897,21 @@ def load_bound_receipt(
 INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v7"
 COLLECTOR_METHOD = "fs2-live-enumeration/v1"
 INVENTORY_CHECKPOINT_SCHEMA = "fs2-serve.nebius.ai/inventory-checkpoint/v1"
-SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v10"
+SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v11"
 ROLLOUT_AUTHORIZATION_SCHEMA = "fs2-serve.nebius.ai/rollout-authorization/v3"
-PROVIDER_ATTESTATION_SCHEMA = "fs2-serve.nebius.ai/provider-attestation/v1"
-PROVIDER_IAM_EXPORT_SCHEMA = "fs2-serve.nebius.ai/provider-iam-export/v1"
+PROVIDER_ATTESTATION_SCHEMA = "fs2-serve.nebius.ai/provider-attestation/v2"
 # Provider roles that amount to control over the managed cluster or its IAM.
-# Any export binding matching this pattern must name a subject the SIGNED
-# attestation explicitly enumerates — an unenumerated admin is a violation.
+# Any live provider access binding matching this pattern must name a subject
+# the SIGNED attestation explicitly enumerates — an unenumerated admin is a
+# violation. Bindings carrying conditions are NOT exempted: the role class
+# decides, fail-closed.
 PROVIDER_ADMIN_ROLE_PATTERN = re.compile(r"(admin|editor|owner)", re.IGNORECASE)
-PROVIDER_EXPORT_MAX_AGE_DAYS = 7
+PROVIDER_PARENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{1,127}$")
+WORM_MIN_RETENTION_DAYS = 30
+HELM_DSN_PATTERN = re.compile(
+    r"^postgres(?:ql)?(?:\+[a-z0-9]+)?://(?P<user>[^:@/]+)(?::[^@]*)?"
+    r"@(?P<host>[^:/?#]+)(?::(?P<port>\d+))?/(?P<database>[^?#]+)"
+)
 RECOVERY_SCHEMA = "fs2-serve.nebius.ai/admission-recovery/v2"
 GUARD_PARAMS_NAME = "fs2-security-guard-params"
 PROTECTED_POLICY_NAMES = (
@@ -1902,7 +1950,9 @@ SCOPE_FIELDS = (
     "platform_repository_prefix",
     "deploy_principals",
     "helm_secret_writers",
+    "helm_storage",
     "workload_service_accounts",
+    "deploy_credential_csi_driver",
     "security_principals",
     "verification_key_sha256",
     "attestation_key_sha256",
@@ -1911,7 +1961,9 @@ SCOPE_FIELDS = (
     "token_audience",
     "stage_binding_authority",
     "tooling",
+    "provider_parent_ids",
     "worm_store_uri",
+    "worm_bucket",
 )
 # Every tamper-evident local chain MUST be covered by the off-host anchor: a
 # snapshot that omits a chain anchors nothing for it, so verification refuses
@@ -2178,6 +2230,32 @@ def _validated_scope(value, context: str) -> dict:
             "and the governance policy then denies every release-Secret "
             "write outright"
         )
+    helm_storage = value.get("helm_storage")
+    if (
+        not isinstance(helm_storage, dict)
+        or set(helm_storage) != {"driver", "connection_identity"}
+        or helm_storage.get("driver") not in ("sql", "secret")
+        or not isinstance(helm_storage.get("connection_identity"), str)
+    ):
+        raise ProvenanceError(
+            f"{context} needs helm_storage {{driver, connection_identity}}: "
+            "the OWNER pins Helm's storage backend — the caller's ambient "
+            "environment never selects where releases are read from"
+        )
+    if helm_storage["driver"] == "sql":
+        if not helm_storage["connection_identity"].strip():
+            raise ProvenanceError(
+                f"{context} helm_storage.driver=sql requires "
+                "connection_identity (host:port/database?user=<user> — the "
+                "NON-SECRET backend identity the live DSN must match; the "
+                "password never enters the scope)"
+            )
+        if value.get("helm_secret_writers"):
+            raise ProvenanceError(
+                f"{context} helm_storage.driver=sql is incompatible with a "
+                "non-empty helm_secret_writers list: under the SQL contract "
+                "no principal writes helm.sh/release.v1 Secrets"
+            )
     workload_accounts = value.get("workload_service_accounts")
     if (
         not isinstance(workload_accounts, list)
@@ -2196,6 +2274,49 @@ def _validated_scope(value, context: str) -> dict:
             "workloads written by the automation identities may run as — "
             "the deploy identity can never schedule pods under an "
             "unenumerated ServiceAccount"
+        )
+    if any(
+        str(item).partition(":")[2] == "default" for item in workload_accounts
+    ):
+        raise ProvenanceError(
+            f"{context} workload_service_accounts may not enumerate a "
+            "'default' ServiceAccount: the catch-all identity is never an "
+            "owner-reviewed workload identity"
+        )
+    csi_driver = value.get("deploy_credential_csi_driver")
+    if not isinstance(csi_driver, str) or not re.match(
+        r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$", csi_driver
+    ):
+        raise ProvenanceError(
+            f"{context} needs deploy_credential_csi_driver: the ONE "
+            "owner-named CSI driver through which automation pods receive "
+            "file-mounted credentials (e.g. secrets-store.csi.k8s.io); "
+            "automation pods may mount no other credential path"
+        )
+    parent_ids = value.get("provider_parent_ids")
+    if (
+        not isinstance(parent_ids, list)
+        or not parent_ids
+        or len(set(parent_ids)) != len(parent_ids)
+        or not all(
+            isinstance(item, str) and PROVIDER_PARENT_ID_PATTERN.match(item)
+            for item in parent_ids
+        )
+    ):
+        raise ProvenanceError(
+            f"{context} needs provider_parent_ids: the non-empty "
+            "owner-enumerated provider resource ancestry (cluster, folder/"
+            "project, cloud/tenant ids) whose LIVE access bindings the "
+            "provider-boundary check enumerates through the pinned provider "
+            "CLI — an omitted ancestry level hides admin grants"
+        )
+    if not isinstance(value.get("worm_bucket"), str) or not re.match(
+        r"^[a-z0-9]([a-z0-9.-]{1,61}[a-z0-9])?$", str(value.get("worm_bucket"))
+    ):
+        raise ProvenanceError(
+            f"{context} needs worm_bucket: the object-storage bucket whose "
+            "LIVE object-lock/retention configuration the provider-boundary "
+            "check reads through the pinned provider CLI"
         )
     security = value.get("security_principals")
     if (
@@ -2218,6 +2339,17 @@ def _validated_scope(value, context: str) -> dict:
             f"{context} security principals must be DISJOINT from deploy "
             "principals: the identity that guards the provenance controls "
             "can never be the identity that deploys through them"
+        )
+    security_rows = {
+        item[len("system:serviceaccount:"):]
+        for item in security
+        if item.startswith("system:serviceaccount:")
+    }
+    if security_rows & set(map(str, workload_accounts)):
+        raise ProvenanceError(
+            f"{context} workload_service_accounts may not enumerate a "
+            "SECURITY principal: automation-written workloads must never "
+            "run as the identity that guards the controls"
         )
     if not SHA256_PATTERN.match(str(value.get("verification_key_sha256", ""))):
         raise ProvenanceError(
@@ -2296,16 +2428,18 @@ def _validated_scope(value, context: str) -> dict:
     tooling = value.get("tooling")
     if (
         not isinstance(tooling, dict)
-        or set(tooling) != {"kubectl", "helm"}
+        or set(tooling) != {"kubectl", "helm", "nebius"}
         or not all(
             isinstance(tooling[name], str)
             and BINARY_PATH_PATTERN.match(tooling[name])
-            for name in ("kubectl", "helm")
+            for name in ("kubectl", "helm", "nebius")
         )
     ):
         raise ProvenanceError(
-            f"{context} needs owner-pinned tooling {{kubectl, helm}} as "
-            "absolute binary paths; ambient PATH lookup is never a trust root"
+            f"{context} needs owner-pinned tooling {{kubectl, helm, nebius}} "
+            "as absolute binary paths (the provider CLI is a trust root for "
+            "the live provider-boundary enumeration); ambient PATH lookup is "
+            "never a trust root"
         )
     authority = value.get("stage_binding_authority")
     if (
@@ -2896,7 +3030,7 @@ def _ledger_checkpoint_path(path: Path) -> Path:
     return path.parent / (path.name + ".head.json")
 
 
-def _read_chained_records(path: Path) -> list[dict]:
+def _read_chained_records(path: Path, adopt_legacy: bool = False) -> list[dict]:
     """Read a chained ledger VERIFYING every link and the head checkpoint.
 
     A JSONL file is mutable on disk; trusting it raw would let truncation
@@ -2907,6 +3041,14 @@ def _read_chained_records(path: Path) -> list[dict]:
     truncation are all detected and fail closed. The checkpoint is local
     tamper-EVIDENCE; its off-host anchoring is exported via
     `export-anchored-heads` for the owner's WORM store.
+
+    A NONEMPTY file with NO checkpoint is legacy content whose chain is
+    internally consistent but locally UNSIGNED and unanchored — trusting it
+    bare would let an attacker fabricate a whole pre-checkpoint history.
+    Such a file is adopted ONLY when `adopt_legacy=True`, which callers set
+    exclusively inside anchored-heads verification after the SIGNED
+    attestation's anchor has confirmed the exact content (equality or
+    prefix); every other read fails closed and directs to that path.
     """
     if not path.exists():
         if _ledger_checkpoint_path(path).exists():
@@ -2954,10 +3096,18 @@ def _read_chained_records(path: Path) -> list[dict]:
 
     if not checkpoint_path.exists():
         if lines:
-            # LEGACY ADOPTION: pre-checkpoint ledgers (preserved evidence
-            # under the no-delete constraint) whose chain fully verifies are
-            # adopted by writing their checkpoint forward — never rejected,
-            # never rewritten.
+            if not adopt_legacy:
+                raise ProvenanceError(
+                    f"ledger {path} carries records but no head checkpoint; "
+                    "a locally verifiable-but-unsigned legacy chain is "
+                    "adopted ONLY through anchored-heads verification "
+                    "(the signed attestation's anchor must confirm the "
+                    "exact content first) — fails closed"
+                )
+            # ANCHORED LEGACY ADOPTION: the caller has already verified this
+            # exact content against the signed off-host anchor; the
+            # checkpoint is written forward — never rejected, never
+            # rewritten, nothing deleted.
             write_checkpoint_forward()
         return records
     try:
@@ -3048,15 +3198,34 @@ def _is_consumed(run_root: Path, document_sha256: str) -> bool:
     for record in _read_chained_records(_consume_ledger_path(run_root)):
         if record.get("sha256") == document_sha256:
             return True
+        for entry in record.get("consumed") or []:
+            if isinstance(entry, dict) and entry.get("sha256") == document_sha256:
+                return True
     return False
 
 
 def _record_consumed(run_root: Path, document_sha256: str, purpose: str) -> None:
+    _record_consumed_batch(run_root, [(document_sha256, purpose)])
+
+
+def _record_consumed_batch(
+    run_root: Path, entries: Sequence[tuple[str, str]]
+) -> None:
+    """Consume several documents in ONE chained append — atomically.
+
+    Consuming a rollout authorization and its recovery document in two
+    separate appends leaves a crash window where the authorization is
+    consumed but the recovery is not: --execute refuses (single-use) AND
+    --resume refuses (recovery never consumed) — a wedge. One record, one
+    fsync'd append, no window.
+    """
     _append_chained_record(
         _consume_ledger_path(run_root),
         {
-            "sha256": document_sha256,
-            "purpose": purpose,
+            "consumed": [
+                {"sha256": sha256_hex, "purpose": purpose}
+                for sha256_hex, purpose in entries
+            ],
             "consumed_at": datetime.now(UTC).isoformat(),
         },
     )
@@ -3265,9 +3434,6 @@ def load_provider_attestation(
     )
     if (
         not isinstance(evidence, dict)
-        or not SHA256_PATTERN.match(
-            str(evidence.get("provider_iam_export_sha256", ""))
-        )
         or not DRAIN_REASON_PATTERN.match(str(evidence.get("reference", "")))
         or not isinstance(admin_subjects, list)
         or not admin_subjects
@@ -3279,12 +3445,11 @@ def load_provider_attestation(
     ):
         raise ProvenanceError(
             f"{attestation_path} must bind concrete provider evidence: "
-            "evidence.provider_iam_export_sha256 (the exact SHA-256 of the "
-            "exported provider IAM policy document), evidence.reference "
-            "(a tracking identifier), and evidence.provider_admin_subjects "
-            "(the non-empty enumerated subjects allowed to hold provider "
-            "admin roles); bare provider-held strings are assertions, not "
-            "evidence"
+            "evidence.reference (a tracking identifier) and "
+            "evidence.provider_admin_subjects (the non-empty enumerated "
+            "subjects allowed to hold provider admin-class roles, which the "
+            "LIVE provider enumeration is compared against); bare "
+            "provider-held strings are assertions, not evidence"
         )
     anchored = document.get("anchored_heads")
     if not isinstance(anchored, dict) or not isinstance(
@@ -3334,105 +3499,176 @@ def load_provider_attestation(
     return document
 
 
-def load_provider_iam_export(
-    export_path: Path, attestation: dict, context: str = "provider IAM export"
-) -> dict:
-    """Verify the ACTUAL provider IAM export the attestation pins — bytes AND
-    semantics, not a hash assertion.
+def _assert_provider_boundary(
+    owner_scope: dict, attestation: dict, runner
+) -> None:
+    """Enforce the provider arm against LIVE, provider-native answers.
 
-    The exported document's exact bytes must hash to the attestation's
-    evidence pin; it must be a provider-iam-export/v1 document for the SAME
-    cluster; it must be fresh relative to the attestation (exported no more
-    than PROVIDER_EXPORT_MAX_AGE_DAYS before issuance, never after); and its
-    SEMANTICS are enforced: every binding whose role matches the provider
-    admin pattern (admin/editor/owner) must name a subject the SIGNED
-    attestation explicitly enumerates in evidence.provider_admin_subjects —
-    an unenumerated provider admin fails closed. Live provider-API
-    cross-checking is a rollout-window owner action; this verifies the
-    owner-supplied export artifact itself.
+    A caller-supplied export file is re-attested paper; the authority is the
+    provider's own API, queried READ-ONLY through the owner-pinned provider
+    CLI at verification time:
+
+    - IAM: for EVERY owner-enumerated ancestry level (cluster, folder/
+      project, cloud/tenant — scope.provider_parent_ids, so no level can be
+      omitted to hide a grant), the live access-binding listing is fetched
+      and every admin/editor/owner-class binding must name a subject the
+      SIGNED attestation enumerates (conditions never exempt a binding —
+      the role class decides). An unparseable or empty answer fails closed.
+    - WORM: the anchored-heads store's bucket configuration is fetched live
+      and must show object-lock/immutability ENABLED with a default
+      retention of at least WORM_MIN_RETENTION_DAYS days — a URI string is
+      a claim; the lock configuration is the proof.
+
+    The CLI binary path comes from the owner-signed scope's tooling (never
+    ambient PATH) and its read-only credential passes through the pinned
+    environment (NEBIUS_IAM_TOKEN). Both checks run wherever the attestation
+    is enforced: render, execute, and resume.
     """
-    if not export_path.is_file() or export_path.is_symlink():
-        raise ProvenanceError(
-            f"missing {context}: {export_path}; the attestation's evidence "
-            "pin is unverifiable without the exported bytes — fails closed"
-        )
-    payload = _read_evidence_bytes(export_path, private=False)
-    evidence = attestation.get("evidence") or {}
-    recorded = str(evidence.get("provider_iam_export_sha256", ""))
-    actual = hashlib.sha256(payload).hexdigest()
-    if actual != recorded:
-        raise ProvenanceError(
-            f"{context} {export_path} hashes to {actual}, but the signed "
-            f"attestation pins {recorded}; substituted or stale export "
-            "bytes never verify"
-        )
+    allowed_admins = set(
+        map(str, (attestation.get("evidence") or {}).get(
+            "provider_admin_subjects"
+        ) or [])
+    )
+    rogue: list[str] = []
     try:
-        document = json.loads(payload)
-    except json.JSONDecodeError as error:
-        raise ProvenanceError(f"{context} is malformed: {export_path}") from error
-    if (
-        not isinstance(document, dict)
-        or document.get("schema") != PROVIDER_IAM_EXPORT_SCHEMA
-    ):
-        raise ProvenanceError(
-            f"{export_path} is not a {PROVIDER_IAM_EXPORT_SCHEMA} document"
+        for parent_id in owner_scope["provider_parent_ids"]:
+            listing = json.loads(
+                runner(
+                    [
+                        "nebius",
+                        "iam",
+                        "access-binding",
+                        "list",
+                        "--parent-id",
+                        str(parent_id),
+                        "--format",
+                        "json",
+                    ]
+                )
+            )
+            items = (
+                listing.get("items")
+                if isinstance(listing, dict)
+                else listing
+            )
+            if not isinstance(items, list):
+                raise ProvenanceError(
+                    f"the provider access-binding listing for {parent_id} "
+                    "has no recognizable items; the provider boundary is "
+                    "unverifiable — fails closed"
+                )
+            for item in items:
+                if not isinstance(item, dict):
+                    raise ProvenanceError(
+                        f"unrecognizable provider access binding under "
+                        f"{parent_id}; fails closed"
+                    )
+                role = str(
+                    item.get("role_id")
+                    or item.get("roleId")
+                    or item.get("role")
+                    or ""
+                )
+                subject_field = item.get("subject")
+                if isinstance(subject_field, dict):
+                    subject = str(
+                        subject_field.get("id")
+                        or subject_field.get("name")
+                        or ""
+                    )
+                else:
+                    subject = str(subject_field or "")
+                if not role or not subject:
+                    raise ProvenanceError(
+                        f"a provider access binding under {parent_id} lacks "
+                        "a readable role/subject; fails closed"
+                    )
+                if (
+                    PROVIDER_ADMIN_ROLE_PATTERN.search(role)
+                    and subject not in allowed_admins
+                ):
+                    rogue.append(f"{subject} holds {role} on {parent_id}")
+        bucket = json.loads(
+            runner(
+                [
+                    "nebius",
+                    "storage",
+                    "bucket",
+                    "get",
+                    "--name",
+                    str(owner_scope["worm_bucket"]),
+                    "--format",
+                    "json",
+                ]
+            )
         )
-    if str(document.get("cluster", "")) != str(attestation.get("cluster", "")):
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
         raise ProvenanceError(
-            f"{export_path} was exported for cluster "
-            f"{document.get('cluster')!r}, not the attested cluster "
-            f"{attestation.get('cluster')!r}"
-        )
-    exported_at = _parse_rfc3339(
-        str(document.get("exported_at", "")), f"{export_path} exported_at"
-    )
-    issued_at = _parse_rfc3339(
-        str(attestation.get("issued_at", "")), "attestation issued_at"
-    )
-    if (exported_at - issued_at).total_seconds() > _CLOCK_SKEW_SECONDS:
-        raise ProvenanceError(
-            f"{export_path} postdates the attestation; the attestor signs "
-            "over evidence that existed at issuance"
-        )
-    if (issued_at - exported_at).total_seconds() > (
-        PROVIDER_EXPORT_MAX_AGE_DAYS * 24 * 3600
-    ):
-        raise ProvenanceError(
-            f"{export_path} is older than {PROVIDER_EXPORT_MAX_AGE_DAYS} "
-            "days at attestation issuance; stale provider evidence never "
-            "verifies"
-        )
-    bindings = document.get("bindings")
-    if not isinstance(bindings, list) or not all(
-        isinstance(binding, dict)
-        and isinstance(binding.get("subject"), str)
-        and binding["subject"]
-        and isinstance(binding.get("role"), str)
-        and binding["role"]
-        for binding in bindings
-    ):
-        raise ProvenanceError(
-            f"{export_path} must enumerate bindings as "
-            "[{subject, role}, ...]; an export without binding semantics is "
-            "a hash, not evidence"
-        )
-    allowed_admins = set(map(str, evidence.get("provider_admin_subjects") or []))
-    rogue = sorted(
-        {
-            f"{binding['subject']} holds {binding['role']}"
-            for binding in bindings
-            if PROVIDER_ADMIN_ROLE_PATTERN.search(str(binding["role"]))
-            and str(binding["subject"]) not in allowed_admins
-        }
-    )
+            "the live provider boundary cannot be enumerated through the "
+            "owner-pinned provider CLI; the provider arm is unverifiable — "
+            "fails closed"
+        ) from error
     if rogue:
         raise ProvenanceError(
-            f"{export_path} shows provider admin-class access outside the "
-            "attested subject enumeration: "
-            + "; ".join(rogue[:10])
+            "the LIVE provider IAM surface shows admin-class access outside "
+            "the attested subject enumeration: "
+            + "; ".join(sorted(rogue)[:10])
             + " — the provider boundary does not hold, fails closed"
         )
-    return document
+    _assert_worm_lock(bucket, owner_scope["worm_bucket"])
+
+
+def _assert_worm_lock(bucket: dict, bucket_name: str) -> None:
+    """The WORM claim is proven by the bucket's live lock configuration."""
+
+    def find_lock(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                normalized = key.replace("_", "").lower()
+                if normalized in ("objectlock", "lockconfiguration", "lock"):
+                    return value
+                found = find_lock(value)
+                if found is not None:
+                    return found
+        return None
+
+    lock = find_lock(bucket if isinstance(bucket, dict) else {})
+    if not isinstance(lock, dict):
+        raise ProvenanceError(
+            f"bucket {bucket_name} shows no object-lock configuration; a "
+            "WORM URI without a live lock is a claim, not a proof — fails "
+            "closed"
+        )
+    lock_text = json.dumps(lock).lower()
+    if not any(
+        marker in lock_text
+        for marker in ("enabled", "compliance", "governance")
+    ):
+        raise ProvenanceError(
+            f"bucket {bucket_name} object-lock is not enabled; fails closed"
+        )
+
+    def find_retention_days(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                normalized = key.replace("_", "").lower()
+                if normalized in ("days", "retentionperioddays", "period"):
+                    try:
+                        return int(str(value).rstrip("dD"))
+                    except (TypeError, ValueError):
+                        return None
+                found = find_retention_days(value)
+                if found is not None:
+                    return found
+        return None
+
+    retention = find_retention_days(lock)
+    if retention is None or retention < WORM_MIN_RETENTION_DAYS:
+        raise ProvenanceError(
+            f"bucket {bucket_name} default retention "
+            f"({retention!r} days) is absent or below the required "
+            f"{WORM_MIN_RETENTION_DAYS} days; fails closed"
+        )
 
 
 def _local_chain_element_hash(run_root: Path, name: str, position: int) -> str:
@@ -3473,6 +3709,68 @@ def _local_chain_element_hash(run_root: Path, name: str, position: int) -> str:
     return hashlib.sha256(lines[position - 1]).hexdigest()
 
 
+def _adopt_anchored_legacy(run_root: Path, anchored: dict) -> None:
+    """Adopt checkpoint-less legacy ledgers ONLY under anchored authority.
+
+    A pre-checkpoint ledger's hash chain proves internal consistency, not
+    provenance — an attacker can fabricate a whole consistent history. The
+    ONLY authority that can vouch for legacy content is the SIGNED
+    attestation's off-host anchor: the anchored head must confirm the exact
+    local content (at the anchored position), and a ZERO-count anchor can
+    vouch for nothing, so legacy content under an empty anchor is refused
+    outright. Confirmed content gets its checkpoint written forward
+    (additive; nothing rewritten or deleted).
+    """
+    chains = anchored.get("chains") or {}
+    for name, ledger in (
+        ("consumed", _consume_ledger_path(run_root)),
+        ("publication-journal", _publication_journal_path(run_root)),
+        ("reconcile-journal", run_root / "release-reconcile-journal.jsonl"),
+    ):
+        if not ledger.exists() or _ledger_checkpoint_path(ledger).exists():
+            continue
+        lines = _read_evidence_bytes(ledger).splitlines()
+        if not lines:
+            continue
+        previous = GENESIS_HASH
+        line_hashes: list[str] = []
+        for line in lines:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ProvenanceError(
+                    f"legacy ledger {ledger} is malformed; fails closed"
+                ) from error
+            if record.get("prev") != previous:
+                raise ProvenanceError(
+                    f"legacy ledger {ledger} breaks its hash chain; fails "
+                    "closed"
+                )
+            previous = hashlib.sha256(line).hexdigest()
+            line_hashes.append(previous)
+        raw_state = chains.get(name)
+        state: dict = raw_state if isinstance(raw_state, dict) else {}
+        anchored_count = int(state.get("count", 0))
+        if anchored_count < 1:
+            raise ProvenanceError(
+                f"legacy ledger {ledger} predates its checkpoint and the "
+                "anchor records count 0 for it; an unanchored legacy chain "
+                "is never adopted — fails closed"
+            )
+        if anchored_count > len(lines):
+            raise ProvenanceError(
+                f"legacy ledger {ledger} is BEHIND its anchored count; "
+                "truncated legacy content is never adopted — fails closed"
+            )
+        if line_hashes[anchored_count - 1] != str(state.get("head", "")):
+            raise ProvenanceError(
+                f"legacy ledger {ledger} does not match the anchored head "
+                "at the anchored position; fabricated legacy content is "
+                "never adopted — fails closed"
+            )
+        _read_chained_records(ledger, adopt_legacy=True)
+
+
 def _assert_anchored_heads(run_root: Path, anchored: dict) -> None:
     """Local chains must EXTEND the signed off-host anchor — never rewrite it.
 
@@ -3483,8 +3781,11 @@ def _assert_anchored_heads(run_root: Path, anchored: dict) -> None:
     hidden behind growth — a bare count comparison would accept it, so the
     anchored head is verified as a strict PREFIX of the local chain). The
     snapshot must also cover every required chain: an omitted chain anchors
-    nothing and never verifies.
+    nothing and never verifies. Checkpoint-less LEGACY ledgers are adopted
+    here and only here — after the anchor confirms their exact content — and
+    a zero-count anchor adopts nothing.
     """
+    _adopt_anchored_legacy(run_root, anchored)
     current = _anchor_snapshot(run_root)
     problems: list[str] = []
     chains = anchored.get("chains") or {}
@@ -4656,22 +4957,59 @@ def _rbac_rule_is_forbidden(
             and binding_namespace not in _security_namespaces(scope)
         ):
             continue
+        if forbidden.get("namespaced_to_scope") and (
+            binding_namespace is not None
+            and binding_namespace
+            not in set(scope["namespaces"]) | _security_namespaces(scope)
+        ):
+            # Namespace-scoped rules protect the scope/security namespaces;
+            # with EVERY namespace now enumerated, a foreign-namespace grant
+            # only matches the unflagged (cluster-effect) rules.
+            continue
         if not (groups & forbidden_groups or "*" in groups):
             continue
-        granted_parents = {resource.split("/", 1)[0] for resource in resources}
-        if not (
-            resources & forbidden_resources
-            or granted_parents
-            & {item.split("/", 1)[0] for item in forbidden_resources if "/" not in item}
-            & forbidden_resources
-            or "*" in resources
-            or "*" in forbidden_resources
+        if not any(
+            _granted_resource_matches(granted, banned)
+            for granted in resources
+            for banned in forbidden_resources
         ):
             continue
         if not (verbs & forbidden_verbs or "*" in verbs):
             continue
         return forbidden
     return None
+
+
+def _granted_resource_matches(granted: str, forbidden: str) -> bool:
+    """Wildcard-aware RBAC resource matching, subresources included.
+
+    RBAC grants may spell `pods`, `pods/exec`, `pods/*`, `*/token`, or `*`;
+    the forbidden table spells parents and exact subresources. A grant
+    covers a forbidden entry when every segment matches (with `*` matching
+    anything on either side). A plain-parent grant does NOT cover a
+    subresource (RBAC semantics), but `pods/*` covers both `pods` and every
+    `pods/<sub>` — the shape the previous set-arithmetic matcher missed.
+    """
+
+    def segment_match(left: str, right: str) -> bool:
+        return left == "*" or right == "*" or left == right
+
+    granted_parent, granted_slash, granted_sub = granted.partition("/")
+    forbidden_parent, forbidden_slash, forbidden_sub = forbidden.partition("/")
+    if not segment_match(granted_parent, forbidden_parent):
+        return False
+    if forbidden_slash:
+        # Forbidden names a subresource: a grant covers it via an exact or
+        # wildcard subresource, or the full `*` grant.
+        if granted_slash:
+            return segment_match(granted_sub, forbidden_sub)
+        return granted == "*"
+    # Forbidden names a parent resource: parent-level grants cover it, and
+    # so does a wildcard-subresource grant like `pods/*` (fail-closed
+    # reading: some API servers honor it for the parent too).
+    if granted_slash:
+        return granted_sub == "*"
+    return True
 
 
 def _binding_subjects(binding: dict) -> list[str]:
@@ -4712,9 +5050,6 @@ def _assert_iam_boundary(owner_scope: dict, live_runner, attestation: dict | Non
     """
     allowed = set(owner_scope["iam_exempt_subjects"])
     violations: list[str] = []
-    audited_namespaces = sorted(
-        set(owner_scope["namespaces"]) | _security_namespaces(owner_scope)
-    )
     try:
         cluster_roles = {
             str(item.get("metadata", {}).get("name", "")): item
@@ -4726,34 +5061,36 @@ def _assert_iam_boundary(owner_scope: dict, live_runner, attestation: dict | Non
         cluster_bindings = json.loads(
             live_runner(["kubectl", "get", "clusterrolebindings", "-o", "json"])
         ).get("items") or []
-        namespaced_bindings: list[tuple[str, dict, dict]] = []
-        for namespace in audited_namespaces:
-            roles = {
-                str(item.get("metadata", {}).get("name", "")): item
-                for item in json.loads(
-                    live_runner(
-                        ["kubectl", "get", "roles", "-n", namespace, "-o", "json"]
-                    )
-                ).get("items")
-                or []
-            }
-            for binding in (
-                json.loads(
-                    live_runner(
-                        [
-                            "kubectl",
-                            "get",
-                            "rolebindings",
-                            "-n",
-                            namespace,
-                            "-o",
-                            "json",
-                        ]
-                    )
-                ).get("items")
-                or []
-            ):
-                namespaced_bindings.append((namespace, binding, roles))
+        # EVERY namespace is audited, not only the scope/security set: a
+        # RoleBinding in a foreign namespace can still grant an unflagged
+        # identity path (token minting, CSR, RBAC mutation, impersonation)
+        # whose effect escapes that namespace transitively — e.g. minting a
+        # token for a foreign-namespace ServiceAccount that itself holds
+        # cluster-wide grants.
+        all_roles: dict[tuple[str, str], dict] = {}
+        for item in (
+            json.loads(
+                live_runner(["kubectl", "get", "roles", "-A", "-o", "json"])
+            ).get("items")
+            or []
+        ):
+            metadata = item.get("metadata", {}) or {}
+            all_roles[
+                (str(metadata.get("namespace", "")), str(metadata.get("name", "")))
+            ] = item
+        namespaced_bindings: list[tuple[str, dict]] = []
+        for binding in (
+            json.loads(
+                live_runner(
+                    ["kubectl", "get", "rolebindings", "-A", "-o", "json"]
+                )
+            ).get("items")
+            or []
+        ):
+            namespace = str(
+                (binding.get("metadata") or {}).get("namespace", "")
+            )
+            namespaced_bindings.append((namespace, binding))
     except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
         raise ProvenanceError(
             "the live RBAC surface cannot be audited through the "
@@ -4827,12 +5164,14 @@ def _assert_iam_boundary(owner_scope: dict, live_runner, attestation: dict | Non
         role_ref = binding.get("roleRef") or {}
         role = cluster_roles.get(str(role_ref.get("name", "")), {})
         check(binding, role.get("rules") or [], binding_namespace=None)
-    for namespace, binding, roles in namespaced_bindings:
+    for namespace, binding in namespaced_bindings:
         role_ref = binding.get("roleRef") or {}
         if str(role_ref.get("kind", "")) == "ClusterRole":
             role = cluster_roles.get(str(role_ref.get("name", "")), {})
         else:
-            role = roles.get(str(role_ref.get("name", "")), {})
+            role = all_roles.get(
+                (namespace, str(role_ref.get("name", ""))), {}
+            )
         check(binding, role.get("rules") or [], binding_namespace=namespace)
     if violations:
         raise ProvenanceError(
@@ -5364,7 +5703,6 @@ def verified_allowlist(
     scope_path: Path,
     attestation_path: Path | None = None,
     attestation_key_path: str | None = None,
-    provider_export_path: Path | None = None,
     deploy_principals: Sequence[str] = (),
     key_path: str | None = None,
     verifier=None,
@@ -5434,14 +5772,6 @@ def verified_allowlist(
             attestation = load_provider_attestation(
                 Path(attestation_path), attestor.path, verifier
             )
-        if provider_export_path is None:
-            raise ProvenanceError(
-                "allow-list rendering requires --provider-export: the "
-                "attestation's evidence pin is verified against the ACTUAL "
-                "exported provider IAM bytes and semantics, never accepted "
-                "as a bare hash"
-            )
-        load_provider_iam_export(Path(provider_export_path), attestation)
         if str(attestation.get("worm_store", "")) != owner_scope["worm_store_uri"]:
             raise ProvenanceError(
                 "the attestation names a different WORM store than the "
@@ -5451,6 +5781,9 @@ def verified_allowlist(
         _assert_anchored_heads(receipts_root, attestation["anchored_heads"])
         if live_runner is None:
             live_runner = _pinned_live_runner(owner_scope)
+        # The provider arm is enforced against LIVE provider-native answers
+        # (owner-pinned provider CLI), never a caller-supplied export file.
+        _assert_provider_boundary(owner_scope, attestation, live_runner)
         if pinned.sha256 != owner_scope["verification_key_sha256"]:
             raise ProvenanceError(
                 "verification key does not match the owner-approved scope: "
@@ -5619,6 +5952,7 @@ def verified_allowlist(
             owner_scope["token_audience"],
             automation_accounts,
             owner_scope["workload_service_accounts"],
+            owner_scope["deploy_credential_csi_driver"],
         )
         annotations = manifest["metadata"].setdefault("annotations", {})
         annotations["security.fs2.nebius.ai/verified-with-key-sha256"] = (
@@ -5768,7 +6102,6 @@ def reconcile_boundary(
     run_root: Path,
     attestation_path: Path | None = None,
     attestation_key_path: str | None = None,
-    provider_export_path: Path | None = None,
     recovery_path: Path | None = None,
     authorization_path: Path | None = None,
     execute: bool = False,
@@ -5806,13 +6139,6 @@ def reconcile_boundary(
                     "attestation verifies only against the SEPARATE "
                     "attestor key pinned in reviewed source"
                 )
-            if not ATTESTATION_KEY_SHA256:
-                raise ProvenanceError(
-                    "no attestor key is designated in reviewed source "
-                    "(ATTESTATION_KEY_SHA256 is empty); attestation-consuming "
-                    "paths fail closed until the owner commits the attestor "
-                    "fingerprint through review"
-                )
             with _PinnedPublicKey(
                 attestation_key_path, ATTESTATION_KEY_SHA256
             ) as attestor:
@@ -5825,13 +6151,6 @@ def reconcile_boundary(
                 attestation = load_provider_attestation(
                     attestation_path, attestor.path, verifier
                 )
-            if provider_export_path is None:
-                raise ProvenanceError(
-                    "--attestation requires --provider-export: the evidence "
-                    "pin is verified against the actual exported provider "
-                    "IAM bytes and semantics"
-                )
-            load_provider_iam_export(Path(provider_export_path), attestation)
             if (
                 str(attestation.get("worm_store", ""))
                 != owner_scope["worm_store_uri"]
@@ -5872,9 +6191,9 @@ def reconcile_boundary(
             ).strip()
 
         def enforce_attestation_binding() -> None:
-            # Re-run the anchor and cluster enforcement at the moment that
-            # matters: UNDER the exclusive lock for execute/resume (a
-            # pre-lock check alone could be raced by chain mutation).
+            # Re-run the anchor, cluster, and PROVIDER-BOUNDARY enforcement
+            # at the moment that matters: UNDER the exclusive lock for
+            # execute/resume (a pre-lock check alone could be raced).
             if attestation is None:
                 return
             _assert_anchored_heads(run_root, attestation["anchored_heads"])
@@ -5884,6 +6203,7 @@ def reconcile_boundary(
                     "the live kube-system UID; an attestation for another "
                     "cluster never authorizes anything here"
                 )
+            _assert_provider_boundary(owner_scope, attestation, runner)
 
         enforce_attestation_binding()
 
@@ -6373,11 +6693,13 @@ def reconcile_boundary(
                     "at": datetime.now(UTC).isoformat(),
                 },
             )
-            _record_consumed(
-                run_root, authorization_sha, "rollout-authorization"
-            )
+            consumed_entries = [(authorization_sha, "rollout-authorization")]
             if recovery_sha is not None:
-                _record_consumed(run_root, recovery_sha, "recovery")
+                consumed_entries.append((recovery_sha, "recovery"))
+            # ONE atomic append: no crash window can leave the authorization
+            # consumed while its recovery document is not (which would wedge
+            # both --execute and --resume).
+            _record_consumed_batch(run_root, consumed_entries)
             run_plan(plan)
             postcheck(recovery_document, recovery_sha)
             _append_chained_record(
@@ -6484,16 +6806,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             "ATTESTATION_KEY_SHA256, which the owner-signed scope must "
             "equal); the release pipeline key can never attest its own "
             "boundary, and a release-key holder cannot rotate the attestor"
-        ),
-    )
-    render.add_argument(
-        "--provider-export",
-        required=True,
-        type=Path,
-        help=(
-            "the ACTUAL provider IAM export whose exact bytes the signed "
-            "attestation pins; its cluster, freshness, and admin-binding "
-            "semantics are enforced — a bare hash is never evidence"
         ),
     )
     render.add_argument(
@@ -6610,14 +6922,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     reconcile.add_argument(
-        "--provider-export",
-        type=Path,
-        help=(
-            "the ACTUAL provider IAM export the attestation pins; required "
-            "with --attestation (bytes + semantics are enforced)"
-        ),
-    )
-    reconcile.add_argument(
         "--recovery",
         type=Path,
         help=(
@@ -6703,7 +7007,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.scope,
             args.attestation,
             args.attestation_key,
-            args.provider_export,
             args.deploy_principal,
             key_path=args.key,
             max_age_hours=args.max_inventory_age_hours,
@@ -6745,7 +7048,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.run_root,
             attestation_path=args.attestation,
             attestation_key_path=args.attestation_key,
-            provider_export_path=args.provider_export,
             recovery_path=args.recovery,
             authorization_path=args.authorization,
             execute=args.execute,

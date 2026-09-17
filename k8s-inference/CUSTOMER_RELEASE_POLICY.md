@@ -127,14 +127,16 @@ provenance gate (see `security/image-provenance/README.md`):
    provider/IAM owner control, attested by an ATTESTOR-SIGNED provider
    attestation whose key fingerprint is SOURCE-PINNED in reviewed code —
    separately from the release key, so a release-key holder can never
-   rotate the attestor — verified against the actual exported provider IAM
-   bytes and admin-binding semantics, and whose off-host anchored-heads
-   snapshot is enforced with prefix continuity; the
+   rotate the attestor — and enforced against the provider's LIVE answers
+   through the owner-pinned provider CLI (ancestry-wide admin-binding
+   enumeration and the WORM bucket's object-lock/retention configuration),
+   with the off-host anchored-heads snapshot enforced with prefix
+   continuity; the
    renderer detects and refuses drift or deletion of every policy object at
    render), with a reversible,
    owner-signed break-glass (never deletion) whose weaken/restore/crash-
-   resume sequencing is fence-preserving and proven in the regression
-   suite. MindEval passes these identical gates with no
+   resume sequencing is fence-preserving and exercised against a stateful
+   fake API server in the regression suite. MindEval passes these identical gates with no
    exception. The inventory carries a strictly monotonic generation checked
    against a SIGNED, hash-chained, no-replace acceptance chain (no replay of
    older signed inventories), and rendering authoritatively re-observes the

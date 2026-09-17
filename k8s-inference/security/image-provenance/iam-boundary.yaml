@@ -30,11 +30,15 @@
 #     attestation document — verified against the SEPARATE attestor key
 #     pinned by the owner-signed scope's attestation_key_sha256 (required to
 #     differ from the release verification key, so the pipeline can never
-#     attest its own boundary), binding the exported provider IAM policy by
-#     SHA-256 and embedding the anchored-heads snapshot for EVERY
-#     tamper-evident chain. The WORM anchor export (export-anchored-heads)
+#     attest its own boundary). The provider facts are checked LIVE through
+#     the owner-pinned provider CLI: every scope-enumerated ancestry level's
+#     access bindings (admin-class grants must name attestation-enumerated
+#     subjects) and the WORM bucket's object-lock/retention configuration.
+#     The attestation embeds the anchored-heads snapshot for EVERY
+#     tamper-evident chain; the WORM anchor export (export-anchored-heads)
 #     is stored off-host so chain deletion AND history rewrite beneath new
-#     growth are detectable (prefix-verified).
+#     growth are detectable (prefix-verified), and checkpoint-less legacy
+#     ledgers are adopted only when the signed anchor confirms them.
 #   * IDENTITY allowances in the audit are FUNCTION-SCOPED, never blanket:
 #     the security identity is permitted admission-configuration writes ONLY
 #     (its reconciler function), the deploy identity workload writes in the

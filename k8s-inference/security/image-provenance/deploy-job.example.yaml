@@ -1,0 +1,77 @@
+# RELEASE deploy job — CUSTODY DEFINITION (SAI-09). This is the exact shape
+# the fs2-image-provenance policy ADMITS for a workload written by (and
+# running as) the release automation identity; anything looser is denied at
+# admission (validation 5/7):
+#
+#   * runs as the release ServiceAccount, automountServiceAccountToken false
+#     at the POD level;
+#   * exactly one serviceAccountToken projection, bound to the scope's
+#     token_audience with <=3600s expiry (the apiserver accepts the audience
+#     via its --api-audiences configuration — provider-held);
+#   * the Helm SQL DSN reaches the job ONLY as a file mounted through the
+#     owner-named credential CSI driver (scope.deploy_credential_csi_driver;
+#     the SecretProviderClass below is owner-provisioned at the rollout
+#     window) — NO Secret volumes, NO Secret env, no other volume types;
+#   * the entrypoint exports HELM_DRIVER=sql and reads the DSN from the
+#     mounted file; the render/reconcile runner independently REFUSES any
+#     DSN whose host:port/database?user identity differs from the
+#     owner-signed scope's helm_storage.connection_identity.
+#
+# This file is an .example: the image below must be replaced with the exact
+# digest-pinned, receipted, allow-listed release-tooling image (the policy
+# denies anything else), and the SecretProviderClass must exist. Applying it
+# is a rollout-window action by the owner; nothing applies it from source.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fs2-release-deploy
+  namespace: fs2-system
+  labels:
+    app.kubernetes.io/name: fs2-image-provenance
+    app.kubernetes.io/part-of: fs2-serve
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        security.fs2.nebius.ai/finding: sai-09
+    spec:
+      serviceAccountName: fs2-release-automation
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      containers:
+        - name: deploy
+          # REPLACE with the digest-pinned, receipted release-tooling image:
+          # <registry>/<registryid>/fs2-platform/release-tooling@sha256:<64hex>
+          image: cr.example-region.example.invalid/registryid/fs2-platform/release-tooling@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              export HELM_DRIVER=sql
+              export HELM_DRIVER_SQL_CONNECTION_STRING="$(cat /var/run/fs2-credentials/helm-dsn)"
+              exec /usr/local/bin/fs2-release-deploy
+          volumeMounts:
+            - name: release-token
+              mountPath: /var/run/fs2-release-token
+              readOnly: true
+            - name: helm-dsn
+              mountPath: /var/run/fs2-credentials
+              readOnly: true
+      volumes:
+        - name: release-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: fs2-release
+                  expirationSeconds: 3600
+        - name: helm-dsn
+          csi:
+            # Must equal scope.deploy_credential_csi_driver exactly; the
+            # admission policy denies every other volume type on this pod.
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: fs2-release-helm-dsn

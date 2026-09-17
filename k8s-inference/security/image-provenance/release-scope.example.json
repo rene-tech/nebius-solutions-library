@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/release-scope/v10",
+  "schema": "fs2-serve.nebius.ai/release-scope/v11",
   "scope": {
     "cluster": "<kube-system-namespace-uid>",
     "namespaces": [
@@ -14,11 +14,15 @@
       "system:serviceaccount:fs2-system:fs2-release-automation"
     ],
     "helm_secret_writers": [],
+    "helm_storage": {
+      "driver": "sql",
+      "connection_identity": "postgres.fs2-system.svc:5432/helm_releases?user=fs2_helm"
+    },
     "workload_service_accounts": [
       "fs2-system:fs2-release-automation",
-      "fs2-system:fs2-serve-control-plane",
-      "fs2-models:default"
+      "fs2-system:fs2-serve-control-plane"
     ],
+    "deploy_credential_csi_driver": "secrets-store.csi.k8s.io",
     "security_principals": [
       "system:serviceaccount:fs2-security:fs2-admission-guard"
     ],
@@ -32,11 +36,18 @@
     },
     "tooling": {
       "kubectl": "/usr/bin/kubectl",
-      "helm": "/usr/bin/helm"
+      "helm": "/usr/bin/helm",
+      "nebius": "/usr/bin/nebius"
     },
+    "provider_parent_ids": [
+      "<managed-k8s-cluster-id>",
+      "<folder-or-project-id>",
+      "<cloud-or-tenant-id>"
+    ],
     "worm_store_uri": "<off-host WORM store URI holding the anchored-heads exports>",
+    "worm_bucket": "<object-storage bucket name whose object-lock configuration is verified live>",
     "verification_key_sha256": "<sha256 of cosign.pub>",
-    "attestation_key_sha256": "<sha256 of the SEPARATE attestor public key; must equal the reviewed ATTESTATION_KEY_SHA256 source constant and differ from verification_key_sha256>",
+    "attestation_key_sha256": "78090e41cde862bc91bc61c1b65041bf113ad5bc641690578ba4184f14bda687",
     "policy_sha256": "<sha256 of policy.yaml>"
   }
 }

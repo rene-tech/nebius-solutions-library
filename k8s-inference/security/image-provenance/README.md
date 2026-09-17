@@ -23,10 +23,14 @@ identity and a DISJOINT security identity (`iam-boundary.yaml` defines both,
 with the release Role holding no Secret verbs under the HELM_DRIVER=sql
 contract — a FEASIBLE contract: the scope's `helm_secret_writers` list MAY
 be empty, an empty list renders an empty deploy-principals key that denies
-every helm.sh/release.v1 Secret write outright, and the renderer's pinned
-tool runner passes the Helm SQL driver settings through so Helm operates
-and is enumerated on the SQL backend), (b) admission protection of the two
-parameter ConfigMaps through
+every helm.sh/release.v1 Secret write outright, and the Helm backend is
+OWNER AUTHORITY: scope `helm_storage` pins the driver and the non-secret
+DSN identity (host:port/database?user), which the pinned runner REQUIRES
+the live environment to match — a caller cannot point enumeration at an
+alternate or empty backend, and the DSN reaches the deploy job only as a
+file through the one owner-named credential CSI driver, per the committed
+deploy-job.example.yaml custody definition), (b) admission protection of
+the two parameter ConfigMaps through
 `fs2-provenance-guard` (once applied, only the security identity writes
 them), and (c) removal of human workload/ConfigMap-mutation/impersonation
 rights, which the renderer's read-only IAM audit ENFORCES at every render —
@@ -108,19 +112,22 @@ bump — in order:
    `provenance.py render-allowlist --public-key … --key <cosign.key>
    --run-root <run> --inventory inventory.json --scope
    security/image-provenance/release-scope.json --attestation
-   <provider-attestation.json> --attestation-key <attestor.pub>
-   --provider-export <provider-iam-export.json> --registry-prefix …
+   <provider-attestation.json> --attestation-key
+   security/image-provenance/attestor.pub --registry-prefix …
    --platform-repository-prefix … --deploy-principal
    system:serviceaccount:<ns>:<name>` (`--key` signs the acceptance-chain
    head on success; deploy principals are AUTOMATION ServiceAccounts by
    owner decision — a human username is refused; the attestation verifies
-   ONLY against the SEPARATE attestor key whose fingerprint is
+   ONLY against the committed attestor.pub whose fingerprint is
    SOURCE-PINNED as `ATTESTATION_KEY_SHA256` — reviewed code, which the
    owner-signed scope must equal, so a release-key holder can never rotate
-   the attestor — and `--provider-export` must supply the ACTUAL provider
-   IAM export whose exact bytes the attestation pins, whose cluster and
-   freshness are checked, and whose admin-role bindings must all name
-   subjects the attestation enumerates; optional
+   the attestor. The provider arm is then enforced against LIVE
+   provider-native answers, not a caller file: the owner-pinned provider
+   CLI (scope tooling `nebius`) lists the access bindings of EVERY
+   owner-enumerated ancestry level (`provider_parent_ids`) and every
+   admin/editor/owner-class binding must name a subject the attestation
+   enumerates, and the WORM bucket's live object-lock configuration must
+   show immutability enabled with at least the required retention; optional
    `--image` arguments must equal the inventory exactly and exist only as a
    cross-check). The inventory additionally carries a strictly increasing
    integer `generation` and a typed collector
@@ -511,8 +518,9 @@ policies; only new admissions are.
   same-actions state from any other patch is unaccounted drift and is
   re-patched under the pinned fences), and an apply entry is satisfied by
   policy equality itself. The full weaken -> restore -> crash -> resume
-  sequence is PROVEN against a stateful fake API server with real
-  resourceVersion-precondition semantics in the regression suite. The post-check accepts
+  sequence is exercised in the regression suite against a stateful fake API
+  server with real resourceVersion-precondition semantics (CI-run; this is
+  test evidence for the orchestration logic, not a live-cluster proof). The post-check accepts
   exactly ONE divergence from the committed policy: the recovery target
   carrying the authorized actions plus the authorizing annotation
   (everything else must equal the committed definitions) — so a sanctioned
@@ -574,30 +582,33 @@ policies; only new admissions are.
   at the authorized rollout window, while the PROVIDER-HELD arm
   (system:masters certificate issuance, apiserver/static admission, etcd)
   enters as the ATTESTOR-SIGNED provider attestation (`--attestation` +
-  `--attestation-key` + `--provider-export`, required by every render and
-  by every execute/resume): a cluster-pinned, time-bounded document
-  verified ONLY against the SEPARATE attestor key whose fingerprint is
-  SOURCE-PINNED in reviewed code (`ATTESTATION_KEY_SHA256`; the owner-signed
+  `--attestation-key`, required by every render and by every
+  execute/resume): a cluster-pinned, time-bounded document verified ONLY
+  against the committed attestor.pub whose fingerprint is SOURCE-PINNED in
+  reviewed code (`ATTESTATION_KEY_SHA256`, POPULATED; the owner-signed
   scope must carry the SAME value and it must differ from the release
-  verification key — the pipeline can never attest its own boundary, and a
-  release-key holder can never rotate the attestor by re-signing the scope;
-  the constant SHIPS EMPTY, so every attestation path fails closed until
-  the owner designates the attestor through code review). The attestation
-  must bind the exported provider IAM policy — and `--provider-export`
-  supplies the ACTUAL export, whose exact bytes must hash to the pin, whose
-  cluster and freshness are checked, and whose SEMANTICS are enforced:
-  every admin/editor/owner-class provider binding must name a subject the
-  attestation explicitly enumerates (an unenumerated provider admin fails
-  closed; live provider-API cross-checking remains a rollout-window owner
-  action). Its worm_store must equal the owner scope's `worm_store_uri`,
-  and it embeds the latest off-host anchored-heads snapshot (every required
-  chain enumerated; empty/omitted chains refuse), which the renderer and
-  the reconciler enforce against the local chains with strict PREFIX
-  continuity — nothing here is a comment or a manual export, and nothing
-  in this tree claims source-applied prevention: key separation and source
-  pinning make the attestation non-self-attestable BY CONSTRUCTION, and
-  the remaining step — custody of the attestor private key outside the
-  pipeline — is completed by the owner at the rollout window. Identity hygiene is verified for BOTH
+  verification key — the pipeline cannot attest its own boundary and a
+  release-key holder cannot rotate the attestor; the attestor PRIVATE key
+  lives outside the release key directory, and moving its custody to the
+  security owner is the remaining rollout-window step, stated, not
+  claimed). The provider facts are then checked against the provider
+  itself: the owner-pinned provider CLI enumerates the LIVE access
+  bindings of every scope-enumerated ancestry level (cluster, folder,
+  cloud — `provider_parent_ids`, so no level can be omitted) and every
+  admin-class binding must name an attestation-enumerated subject
+  (conditions never exempt; unparseable or unreachable answers fail
+  closed), and the WORM bucket's LIVE object-lock configuration must show
+  immutability enabled with at least the required default retention — a
+  URI string alone proves nothing. The attestation's worm_store must equal
+  the owner scope's `worm_store_uri`, and it embeds the latest off-host
+  anchored-heads snapshot (every required chain enumerated; empty/omitted
+  chains refuse), which the renderer and the reconciler enforce against
+  the local chains with strict PREFIX continuity; checkpoint-less LEGACY
+  ledgers are adopted ONLY when that signed anchor confirms their exact
+  content, and a zero-count anchor adopts nothing. The shipped
+  release-scope remains `scope: null` (fail-closed) until the owner
+  ratifies the production values — that population is an owner act this
+  tree does not perform. Identity hygiene is verified for BOTH
   automation identities (security and deploy): existence, automount
   disabled on the ServiceAccount AND explicitly on every pod running as
   it, no legacy token Secret, at least one REQUIRED pod-bound projection
@@ -611,14 +622,24 @@ policies; only new admissions are.
   audience, or mount Secret material, denies EVERY other pod that
   projects the automation token-audience, and — writer-scoped — denies any
   workload WRITTEN BY an automation identity that runs as a ServiceAccount
-  outside the owner-enumerated `workload_service_accounts`, uses hostPath
-  volumes, or requests privileged containers. So the deploy identity's
-  workload-create right cannot be pivoted into identity-token minting,
-  stored-credential exfiltration, arbitrary-ServiceAccount scheduling, host
-  filesystem access, or privileged execution; the security identity's RBAC
-  is equally narrow (admission-object writes name-scoped to the three
-  protected objects, ConfigMap writes namespaced and name-scoped to the two
-  parameter ConfigMaps, no secret/pod/serviceaccount reads). The wholesale
+  outside the owner-enumerated `workload_service_accounts` ('default' and
+  security principals are unenumerable), uses hostPath volumes, privileged
+  containers, host network/PID/IPC namespaces, added capabilities or
+  privilege escalation, direct nodeName scheduling, Secret volumes or
+  Secret env values, or token projections outside the bounded automation
+  audience; automation-identity pods may mount ONLY
+  projected/configMap/emptyDir/downwardAPI volumes plus the one owner-named
+  credential CSI driver. So the deploy identity's workload-create right
+  cannot be pivoted into identity-token minting, stored-credential
+  exfiltration, arbitrary-ServiceAccount scheduling, host/node access, or
+  privileged execution; the security identity's RBAC is equally narrow
+  (admission-object writes name-scoped to the three protected objects,
+  ConfigMap writes namespaced and name-scoped to the two parameter
+  ConfigMaps, no secret/pod/serviceaccount reads). The IAM audit itself
+  matches subresource wildcards (`pods/*`, `*/token`) and enumerates
+  Roles/RoleBindings in EVERY namespace, so cluster-effect grants (token
+  minting, CSR, RBAC mutation, impersonation) in foreign namespaces are
+  audited too. The wholesale
   kube-system ServiceAccount GROUP is not exemptible (controllers are
   exempted individually by name), Secret READS AND WRITES in protected
   namespaces are forbidden identity paths (exfiltration and legacy token

@@ -26,11 +26,16 @@
 #      release identity toward its verifiers.
 #   6. Workloads WRITTEN BY an automation identity (request.userInfo is a
 #      listed automation ServiceAccount) may only run as an OWNER-ENUMERATED
-#      ServiceAccount (workload-service-accounts key) and may carry no
-#      hostPath volumes and no privileged containers — the deploy identity's
-#      workload-create right cannot be pivoted into scheduling pods under an
-#      arbitrary ServiceAccount to harvest its tokens/Secrets, onto the
-#      host filesystem, or into privileged execution.
+#      ServiceAccount (workload-service-accounts key; 'default' and security
+#      principals are unenumerable by scope validation) and may carry NO
+#      hostPath volumes, NO privileged containers, NO host
+#      network/PID/IPC namespaces, NO added capabilities or privilege
+#      escalation, NO direct nodeName scheduling, NO Secret volumes or
+#      Secret env values (credentials reach automation-deployed workloads
+#      only through the owner-named credential CSI driver), and NO token
+#      projections outside the bounded automation audience — the deploy
+#      identity's workload-create right cannot be pivoted into identity,
+#      credential, host, node, storage, or privilege escalation.
 #
 # Matching workload controllers as well as Pods means a direct `helm upgrade`
 # or `kubectl apply` that introduces an unpinned or non-allow-listed image
@@ -182,10 +187,56 @@ spec:
       expression: >-
         variables.automationServiceAccounts.exists(a,
           'system:serviceaccount:' + a == request.userInfo.username)
+    - name: deployCredentialCsiDriver
+      expression: >-
+        'deploy-credential-csi-driver' in params.data
+        ? params.data['deploy-credential-csi-driver'] : ''
     - name: usesHostPath
       expression: >-
         has(variables.podSpec.volumes) &&
         variables.podSpec.volumes.exists(v, has(v.hostPath))
+    - name: usesHostNamespaces
+      expression: >-
+        (has(variables.podSpec.hostNetwork) && variables.podSpec.hostNetwork)
+        || (has(variables.podSpec.hostPID) && variables.podSpec.hostPID)
+        || (has(variables.podSpec.hostIPC) && variables.podSpec.hostIPC)
+    - name: usesAddedCapsOrPrivEsc
+      expression: >-
+        variables.podSpec.containers.exists(c, has(c.securityContext) && (
+          (has(c.securityContext.capabilities) &&
+           has(c.securityContext.capabilities.add) &&
+           size(c.securityContext.capabilities.add) > 0) ||
+          (has(c.securityContext.allowPrivilegeEscalation) &&
+           c.securityContext.allowPrivilegeEscalation)))
+        || (has(variables.podSpec.initContainers) &&
+            variables.podSpec.initContainers.exists(c,
+              has(c.securityContext) && (
+                (has(c.securityContext.capabilities) &&
+                 has(c.securityContext.capabilities.add) &&
+                 size(c.securityContext.capabilities.add) > 0) ||
+                (has(c.securityContext.allowPrivilegeEscalation) &&
+                 c.securityContext.allowPrivilegeEscalation))))
+        || (has(variables.podSpec.ephemeralContainers) &&
+            variables.podSpec.ephemeralContainers.exists(c,
+              has(c.securityContext) && (
+                (has(c.securityContext.capabilities) &&
+                 has(c.securityContext.capabilities.add) &&
+                 size(c.securityContext.capabilities.add) > 0) ||
+                (has(c.securityContext.allowPrivilegeEscalation) &&
+                 c.securityContext.allowPrivilegeEscalation))))
+    - name: usesForeignAudienceProjection
+      expression: >-
+        has(variables.podSpec.volumes) &&
+        variables.podSpec.volumes.exists(v,
+          has(v.projected) && has(v.projected.sources) &&
+          v.projected.sources.exists(s,
+            has(s.serviceAccountToken) &&
+            (!has(s.serviceAccountToken.audience) ||
+             s.serviceAccountToken.audience != variables.tokenAudience)))
+    - name: setsNodeName
+      expression: >-
+        has(variables.podSpec.nodeName) &&
+        (object.kind != 'Pod' || request.operation == 'CREATE')
     - name: usesPrivileged
       expression: >-
         variables.podSpec.containers.exists(c,
@@ -252,7 +303,10 @@ spec:
           variables.podSpec.automountServiceAccountToken == false &&
           (!has(variables.podSpec.volumes) ||
            variables.podSpec.volumes.all(v,
-             !has(v.secret) &&
+             (has(v.projected) || has(v.configMap) || has(v.emptyDir) ||
+              has(v.downwardAPI) ||
+              (has(v.csi) && variables.deployCredentialCsiDriver != '' &&
+               v.csi.driver == variables.deployCredentialCsiDriver)) &&
              (!has(v.projected) || !has(v.projected.sources) ||
               v.projected.sources.all(s,
                 !has(s.serviceAccountToken) || (
@@ -263,9 +317,11 @@ spec:
           !variables.usesSecretEnv)
       message: >-
         pods running as an automation identity must disable token automount,
-        project only the exact bounded token-audience (<=3600s), and mount no
-        Secret volumes or Secret env values; workload-create rights never
-        become identity-credential or stored-credential access (SAI-09)
+        project only the exact bounded token-audience (<=3600s), and mount
+        ONLY projected/configMap/emptyDir/downwardAPI volumes plus the one
+        owner-named credential CSI driver — no Secret volumes, no Secret env
+        values, no other storage; workload-create rights never become
+        identity-credential or stored-credential access (SAI-09)
       reason: Forbidden
     - expression: >-
         variables.isAutomationPod ||
@@ -285,12 +341,22 @@ spec:
           variables.workloadServiceAccounts.exists(
             a, a == variables.serviceAccountRow) &&
           !variables.usesHostPath &&
-          !variables.usesPrivileged)
+          !variables.usesPrivileged &&
+          !variables.usesHostNamespaces &&
+          !variables.usesAddedCapsOrPrivEsc &&
+          !variables.setsNodeName &&
+          !variables.usesForeignAudienceProjection &&
+          !variables.usesSecretEnv &&
+          (!has(variables.podSpec.volumes) ||
+           variables.podSpec.volumes.all(v, !has(v.secret))))
       message: >-
         workloads written by an automation identity must run as an
-        owner-enumerated ServiceAccount and may not use hostPath volumes or
-        privileged containers; workload-create rights never become identity,
-        host, or privilege escalation (SAI-09)
+        owner-enumerated ServiceAccount and may not use hostPath volumes,
+        privileged containers, host network/PID/IPC namespaces, added
+        capabilities or privilege escalation, direct nodeName scheduling,
+        Secret volumes or Secret env values, or token projections outside
+        the bounded automation audience; workload-create rights never become
+        identity, credential, host, node, or privilege escalation (SAI-09)
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
