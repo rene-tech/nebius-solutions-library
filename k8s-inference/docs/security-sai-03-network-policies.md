@@ -520,7 +520,7 @@ single-reading root-custodied documents and tools with descriptor-relative
 root-custodied static native verifier whose exact SHA-256 is pinned by the root
 deployment contract, copied to sealed executable bytes, and run in a fresh environment; requiring a
 provenance-bound static-ELF provider exporter with no `PT_INTERP`; binding the
-exact kubectl/Nebius hashes, profile, home and context into provider custody v7;
+exact kubectl/Nebius hashes, profile, home and context into provider custody v8;
 guarding authority-control as well as identity-mint roles; binding every phase
 credential to the active freeze epoch and server time, with every Lease renewal
 and its full duration contained by that freeze; verifying authority and
@@ -546,6 +546,44 @@ Provider journal configuration and receipt-signing material are enrolled in
 the provider authority census and zero-principal freeze; its durable record
 store independently permits only marker creation and one CAS resolution append,
 with replacement and deletion unsupported.
+
+Independent exact review rejected additive successor
+`40e72657456052583c0088a066b3b87de6f63339` / tree
+`1611b175fb35f554edbcd9a7ab61b9130d8dbebc` as
+**SOURCE/INTEGRATION/LIVE NO-GO**. Although it closed the caller-owned local
+resolution bypass, two defects remained. First, a nonzero Terraform parent exit
+raised before checking and fencing surviving provider/plugin children. Second,
+the append-only journal required its entire history in one response and rejected
+more than 4,096 records, guaranteeing a permanent outage at record 4,097 because
+history deletion is forbidden.
+
+This additive successor makes every Terraform exit path prove the complete
+credential-bearing process group dead before returning. On a nonzero exit it
+checks the process group, `SIGSTOP` fences any survivor, `SIGKILL`s and reaps it
+while stopped, and reports a separate fail-closed error if that proof cannot be
+completed; the already-open external marker remains unresolved in every failure
+case. The successful-exit survivor check remains in place.
+
+The provider journal protocol is now v2. It retains the non-deleting event log
+but returns only bounded pages of the unresolved materialized view. A detached
+provider signature covers an immutable checkpoint containing the resource
+version, event count, prior-checkpoint link, append-only history accumulator,
+unresolved count and unresolved accumulator. Pages are capped at 256 records,
+globally sorted, checkpoint-pinned, and carry exact start/end ordinals, record
+digest, incoming accumulator and resulting accumulator. The wrapper follows
+opaque cursors without a fixed total-record ceiling and accepts the terminal
+page only when its count and accumulator equal the signed checkpoint. `begin`
+and `resolve` return the one affected signed record, then require a complete
+unresolved read at that exact checkpoint. Thus retained historical growth is
+committed by the signed history accumulator without being replayed on every
+gate, while omission of any unresolved apply fails closed.
+Each CAS request supplies both the prior resourceVersion and prior checkpoint
+digest; the response must advance exactly one event and name that digest as its
+previous checkpoint, preventing a signed fork from being substituted between
+the gate and its append.
+
+These changes are static, unexecuted source corrections. They do not make the
+task, SAI-07/KEDA integration, or live rollout GO.
 
 This is an unexecuted source correction. No source test, parser, build,
 formatter, Terraform, Helm, provider, cluster, database, registry, cleanup or

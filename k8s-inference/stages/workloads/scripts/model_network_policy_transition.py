@@ -272,7 +272,7 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
         not isinstance(provider_root, str)
         or re.fullmatch(r"[a-f0-9]{64}", provider_root) is None
         or external_custody.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v7"
+        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v8"
         or external_custody.get("provider_trust_root_sha256") != provider_root
         or not isinstance(signature_verifier, str)
         or re.fullmatch(r"[a-f0-9]{64}", signature_verifier) is None

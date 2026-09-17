@@ -151,7 +151,7 @@ func journalMain(arguments []string) {
 		fail("journal request: %v", err)
 	}
 	var requestValue map[string]any
-	if err := json.Unmarshal(requestBytes, &requestValue); err != nil || requestValue["schema"] != "fs2-serve.nebius.ai/provider-apply-journal-request/v1" || requestValue["operation"] != operation {
+	if err := json.Unmarshal(requestBytes, &requestValue); err != nil || requestValue["schema"] != "fs2-serve.nebius.ai/provider-apply-journal-request/v2" || requestValue["operation"] != operation {
 		fail("journal request document is not exact")
 	}
 	origin, err := exactOrigin(os.Getenv("FS2_PROVIDER_AUTHORITY_API_URL"))
@@ -205,7 +205,7 @@ func journalMain(arguments []string) {
 		Schema: "fs2-serve.nebius.ai/provider-apply-journal-authority-request/v1",
 		Challenge: challenge, Operation: operation, ProjectID: projectID, ClusterID: clusterID,
 		Request: requestBytes,
-		RequiredProjection: "complete-append-only-history-with-signed-marker-and-resolution-receipts",
+		RequiredProjection: "signed-checkpoint-plus-bounded-range-proof-for-complete-unresolved-view",
 	})
 	if err != nil {
 		fail("cannot encode journal request")
@@ -235,7 +235,7 @@ func journalMain(arguments []string) {
 		fail("provider journal response identity is incomplete")
 	}
 	var observation map[string]any
-	if err := json.Unmarshal(envelope.Observation, &observation); err != nil || observation["schema"] != "fs2-serve.nebius.ai/provider-apply-journal-observation/v1" || observation["action"] != operation || observation["project_id"] != projectID || observation["cluster_id"] != clusterID || observation["provider_response_sha256"] != envelope.ProviderResponseSHA256 {
+	if err := json.Unmarshal(envelope.Observation, &observation); err != nil || observation["schema"] != "fs2-serve.nebius.ai/provider-apply-journal-observation/v2" || observation["action"] != operation || observation["project_id"] != projectID || observation["cluster_id"] != clusterID || observation["provider_response_sha256"] != envelope.ProviderResponseSHA256 {
 		fail("provider journal observation is outside the requested boundary")
 	}
 	encoder := json.NewEncoder(os.Stdout)

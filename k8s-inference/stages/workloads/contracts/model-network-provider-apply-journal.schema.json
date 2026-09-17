@@ -1,16 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fs2-serve.nebius.ai/schema/model-network-provider-apply-journal/v1",
-  "title": "Provider-authoritative append-only Terraform apply journal",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-provider-apply-journal/v2",
+  "title": "Provider-authoritative paginated append-only Terraform apply journal",
   "type": "object",
   "required": [
     "schema", "action", "observed_at", "provider_request_id",
     "provider_response_sha256", "project_id", "cluster_id",
-    "journal_resource_version", "records", "completeness",
+    "journal_resource_version", "view", "page", "checkpoint",
+    "checkpoint_sha256", "checkpoint_signature", "records",
     "observation_sha256"
   ],
   "properties": {
-    "schema": {"const": "fs2-serve.nebius.ai/provider-apply-journal-observation/v1"},
+    "schema": {"const": "fs2-serve.nebius.ai/provider-apply-journal-observation/v2"},
     "action": {"enum": ["observe", "begin", "resolve"]},
     "observed_at": {"type": "string", "format": "date-time"},
     "provider_request_id": {"type": "string", "minLength": 1, "maxLength": 253},
@@ -18,33 +19,92 @@
     "project_id": {"type": "string", "pattern": "^project-[a-z0-9]+$"},
     "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
     "journal_resource_version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "view": {"enum": ["unresolved", "affected"]},
+    "page": {"$ref": "#/$defs/page"},
+    "checkpoint": {"$ref": "#/$defs/checkpoint"},
+    "checkpoint_sha256": {"$ref": "#/$defs/sha256"},
+    "checkpoint_signature": {"$ref": "#/$defs/signature"},
     "records": {
       "type": "array",
-      "maxItems": 4096,
+      "maxItems": 256,
       "items": {"$ref": "#/$defs/record"}
-    },
-    "completeness": {
-      "type": "object",
-      "required": [
-        "all_records_enumerated", "append_only_history", "deletion_supported",
-        "history_closed_through_resource_version"
-      ],
-      "properties": {
-        "all_records_enumerated": {"const": true},
-        "append_only_history": {"const": true},
-        "deletion_supported": {"const": false},
-        "history_closed_through_resource_version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}
-      },
-      "additionalProperties": false
     },
     "observation_sha256": {"$ref": "#/$defs/sha256"}
   },
+  "allOf": [
+    {
+      "if": {"properties": {"action": {"const": "observe"}}},
+      "then": {"properties": {"view": {"const": "unresolved"}}}
+    },
+    {
+      "if": {"properties": {"action": {"enum": ["begin", "resolve"]}}},
+      "then": {"properties": {"view": {"const": "affected"}}}
+    }
+  ],
   "additionalProperties": false,
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "gitObject": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
     "transaction": {"type": "string", "pattern": "^[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}$"},
     "signature": {"type": "string", "contentEncoding": "base64", "minLength": 1, "maxLength": 16384},
+    "cursor": {
+      "oneOf": [
+        {"type": "string", "pattern": "^[A-Za-z0-9_-]{16,512}$"},
+        {"type": "null"}
+      ]
+    },
+    "page": {
+      "type": "object",
+      "required": [
+        "cursor", "next_cursor", "start_ordinal", "end_ordinal",
+        "record_count", "records_sha256", "prefix_accumulator_sha256",
+        "page_accumulator_sha256"
+      ],
+      "properties": {
+        "cursor": {"$ref": "#/$defs/cursor"},
+        "next_cursor": {"$ref": "#/$defs/cursor"},
+        "start_ordinal": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "end_ordinal": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "record_count": {"type": "integer", "minimum": 0, "maximum": 256},
+        "records_sha256": {"$ref": "#/$defs/sha256"},
+        "prefix_accumulator_sha256": {"$ref": "#/$defs/sha256"},
+        "page_accumulator_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "checkpoint": {
+      "type": "object",
+      "required": [
+        "schema", "project_id", "cluster_id", "journal_resource_version",
+        "checkpoint_sequence", "previous_checkpoint_sha256",
+        "history_event_count", "history_accumulator_algorithm",
+        "history_accumulator_sha256", "unresolved_record_count",
+        "unresolved_accumulator_algorithm", "unresolved_accumulator_sha256",
+        "append_only_history", "deletion_supported", "created_at",
+        "payload_sha256"
+      ],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/provider-apply-journal-checkpoint/v1"},
+        "project_id": {"type": "string", "pattern": "^project-[a-z0-9]+$"},
+        "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
+        "journal_resource_version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "checkpoint_sequence": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "previous_checkpoint_sha256": {
+          "oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]
+        },
+        "history_event_count": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "history_accumulator_algorithm": {"const": "sha256-append-event-chain-v1"},
+        "history_accumulator_sha256": {"$ref": "#/$defs/sha256"},
+        "unresolved_record_count": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "unresolved_accumulator_algorithm": {"const": "sha256-sorted-signed-record-chain-v1"},
+        "unresolved_accumulator_sha256": {"$ref": "#/$defs/sha256"},
+        "append_only_history": {"const": true},
+        "deletion_supported": {"const": false},
+        "created_at": {"type": "string", "format": "date-time"},
+        "payload_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
     "marker": {
       "type": "object",
       "required": [

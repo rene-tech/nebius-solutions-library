@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fs2-serve.nebius.ai/schema/model-network-boundary-provider-custody/v7",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-boundary-provider-custody/v8",
   "title": "Provider-issued model-network boundary custody snapshot",
   "type": "object",
   "required": [
@@ -12,7 +12,7 @@
     "payload_sha256"
   ],
   "properties": {
-    "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v7"},
+    "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v8"},
     "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
     "policy_id": {"type": "string", "minLength": 1, "maxLength": 253},
     "policy_revision": {"type": "string", "minLength": 1, "maxLength": 253},
@@ -420,7 +420,7 @@
             },
             "apply_journal": {
               "type": "object",
-              "required": ["resource_id", "resource_version", "semantic_sha256", "api_path_prefix", "storage", "compare_and_swap", "append_only", "deletion_supported", "receipt_signing_public_key_sha256"],
+              "required": ["resource_id", "resource_version", "semantic_sha256", "api_path_prefix", "storage", "compare_and_swap", "append_only", "deletion_supported", "receipt_signing_public_key_sha256", "journal_protocol", "checkpoint_algorithm", "unresolved_view_algorithm", "page_size", "history_retention", "pagination_snapshot"],
               "properties": {
                 "resource_id": {"type": "string", "minLength": 1, "maxLength": 253},
                 "resource_version": {"type": "integer", "minimum": 0},
@@ -430,7 +430,13 @@
                 "compare_and_swap": {"const": "resource-version-required"},
                 "append_only": {"const": true},
                 "deletion_supported": {"const": false},
-                "receipt_signing_public_key_sha256": {"$ref": "#/$defs/sha256"}
+                "receipt_signing_public_key_sha256": {"$ref": "#/$defs/sha256"},
+                "journal_protocol": {"const": "fs2-serve.nebius.ai/provider-apply-journal-observation/v2"},
+                "checkpoint_algorithm": {"const": "sha256-append-event-chain-v1"},
+                "unresolved_view_algorithm": {"const": "sha256-sorted-signed-record-chain-v1"},
+                "page_size": {"const": 256},
+                "history_retention": {"const": "append-only-unbounded"},
+                "pagination_snapshot": {"const": "immutable-checkpoint-cursor"}
               },
               "additionalProperties": false
             }

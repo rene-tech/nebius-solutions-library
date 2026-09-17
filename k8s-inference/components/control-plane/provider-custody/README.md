@@ -71,7 +71,7 @@ making endpoint, firewall, IAM and signing-material mutation atomic.
 
 The production exporter source is in `native-exporter/`. Build it with
 `CGO_ENABLED=0`, publish it as a provenance-bound Linux artifact, and enroll its
-exact SHA-256/source commit/tree in provider custody v7. `inference-stack`
+exact SHA-256/source commit/tree in provider custody v8. `inference-stack`
 accepts only a root-owned static ELF with no `PT_INTERP`, copies the exact bytes
 to a sealed memfd, and runs it with a new minimal environment. The Python entry
 point is retained only as a readable protocol reference and test surface; it is
@@ -127,7 +127,7 @@ from self-admission must resolve exclusively to the six external X.509 users.
 This closes the in-cluster bypass without deauthorizing the deployment,
 ReplicaSet, Job, JobSet or Endpoint controllers.
 
-Before the first mutating stage, the wrapper verifies provider custody v7 and
+Before the first mutating stage, the wrapper verifies provider custody v8 and
 authority receipt v4, fixes the signed cluster/context/tool/credential epoch,
 and refuses bootstrap through an unguarded shared kubeconfig. Terraform also
 refreshes `nebius_mk8s_v1_cluster` and the
@@ -138,7 +138,11 @@ every member challenge. During apply it repeats the full custody verifier every
 five seconds, accepts only a later expiry for the same stable transaction and
 policy, terminates the apply before the remaining window falls below 90
 seconds, and repeats custody after a successful apply. Terraform runs in a new
-process group. Before that process starts, the wrapper opens a marker in a
+process group. Whether Terraform returns success or failure, the wrapper checks
+the complete process group before reporting: any survivor is `SIGSTOP` fenced,
+`SIGKILL`ed while stopped and reaped, and any inability to prove the group dead
+leaves the provider marker unresolved and blocks every later mutation. Before
+that process starts, the wrapper opens a marker in a
 provider-native, multi-AZ, append-only CAS journal. The provider signs the full
 marker, including the exact source commit/tree, saved-plan digest, derived
 postcondition digest, credential epochs and freeze transaction. Local files in
@@ -158,9 +162,15 @@ refresh-only state plan, and compares refreshed state with the exact original
 saved-plan postconditions. Only then may a resourceVersion-CAS append the
 provider-signed resolution bound to the original marker digest, a distinct
 recovery transaction, provider settlement, refresh plan, refreshed state and
-target postconditions. The provider journal exposes the complete ordered
-history on every mutation gate and supports no delete operation. The journal
-service configuration and signing material are held by the provider freeze;
+target postconditions. The provider journal retains the complete ordered event
+history without deletion. Mutation gates read only the bounded, globally sorted
+unresolved view, in pages of at most 256 records, from one immutable signed
+checkpoint. Exact ordinals and chained range accumulators must converge to that
+checkpoint's signed unresolved count/root; the same checkpoint also binds the
+append-only event count/root and previous-checkpoint link. Thus no unresolved
+record can be omitted and no fixed total-history response limit can exhaust the
+service at record 4097. The journal service configuration and signing material
+are held by the provider freeze;
 the record store separately permits only service-mediated create and one
 resourceVersion-CAS resolution append, never update, replacement or deletion.
 A normal successful apply uses the same settlement and postcondition
@@ -191,9 +201,11 @@ task:
    in-cluster RBAC subject can mutate the five excluded admission guards while
    ordinary controllers still reconcile; and exercise custody renewal across a
    bounded apply before any SAI-03 prepare phase.
-8. Prove journal begin-before-process, failed-apply persistence, forged local
-   marker/resolution rejection, stale-resourceVersion rejection, signed fresh
-   recovery, exact state-postcondition equality and complete-history reads.
+8. Prove journal begin-before-process, nonzero-exit process-group fencing,
+   failed-apply persistence, forged local marker/resolution rejection,
+   stale-resourceVersion rejection, signed fresh recovery, exact
+   state-postcondition equality, multi-page range continuity and terminal
+   checkpoint equality beyond 4,096 retained history events.
 
 There is no destructive break-glass operation. A future recovery policy is a
 new signed, versioned provider policy and in-place update; it never deletes a

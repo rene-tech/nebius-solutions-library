@@ -2803,11 +2803,18 @@ _INDETERMINATE_RESOLUTION_SCHEMA = (
     "fs2-serve.nebius.ai/terraform-indeterminate-resolution/v2"
 )
 _PROVIDER_APPLY_JOURNAL_SCHEMA = (
-    "fs2-serve.nebius.ai/provider-apply-journal-observation/v1"
+    "fs2-serve.nebius.ai/provider-apply-journal-observation/v2"
 )
 _PROVIDER_APPLY_JOURNAL_REQUEST_SCHEMA = (
-    "fs2-serve.nebius.ai/provider-apply-journal-request/v1"
+    "fs2-serve.nebius.ai/provider-apply-journal-request/v2"
 )
+_PROVIDER_APPLY_JOURNAL_CHECKPOINT_SCHEMA = (
+    "fs2-serve.nebius.ai/provider-apply-journal-checkpoint/v1"
+)
+_PROVIDER_APPLY_JOURNAL_ACCUMULATOR_SCHEMA = (
+    "fs2-serve.nebius.ai/provider-apply-journal-page-accumulator/v1"
+)
+_PROVIDER_APPLY_JOURNAL_PAGE_SIZE = 256
 
 
 def _append_private_json_once(path: Path, value: Mapping[str, Any]) -> None:
@@ -2896,16 +2903,53 @@ def _verify_provider_journal_receipt_signature(
     )
 
 
+def _provider_journal_accumulator_start(
+    *,
+    project_id: str,
+    cluster_id: str,
+    journal_resource_version: str,
+    view: str,
+) -> str:
+    """Return the domain-separated empty page-view accumulator."""
+
+    if view not in {"unresolved", "affected"}:
+        raise DeploymentError("provider journal accumulator view is invalid")
+
+    return _json_sha256(
+        {
+            "schema": _PROVIDER_APPLY_JOURNAL_ACCUMULATOR_SCHEMA,
+            "project_id": project_id,
+            "cluster_id": cluster_id,
+            "journal_resource_version": journal_resource_version,
+            "view": view,
+        }
+    )
+
+
+def _provider_journal_accumulator_add(
+    accumulator_sha256: str, record: Mapping[str, Any]
+) -> str:
+    """Commit the next exact signed journal record to an ordered hash chain."""
+
+    if re.fullmatch(r"[a-f0-9]{64}", accumulator_sha256) is None:
+        raise DeploymentError("provider journal accumulator prefix is malformed")
+    record_sha256 = _json_sha256({"record": record})
+    return hashlib.sha256(
+        bytes.fromhex(accumulator_sha256) + bytes.fromhex(record_sha256)
+    ).hexdigest()
+
+
 def _verified_provider_apply_journal(
     observation: Mapping[str, Any],
     *,
     action: str,
+    request_document: Mapping[str, Any],
     project_id: str,
     cluster_id: str,
     provider_trust_root_sha256: str,
     signature_verifier_sha256: str,
 ) -> dict[str, Any]:
-    """Validate the complete external append-only apply journal and receipts."""
+    """Validate one bounded, checkpoint-pinned provider journal page."""
 
     if action not in {"observe", "begin", "resolve"}:
         raise DeploymentError("provider apply-journal action is invalid")
@@ -2930,8 +2974,12 @@ def _verified_provider_apply_journal(
         "project_id",
         "cluster_id",
         "journal_resource_version",
+        "view",
+        "page",
+        "checkpoint",
+        "checkpoint_sha256",
+        "checkpoint_signature",
         "records",
-        "completeness",
         "observation_sha256",
     }
     try:
@@ -2942,7 +2990,46 @@ def _verified_provider_apply_journal(
     except (KeyError, TypeError, ValueError) as exc:
         raise DeploymentError("provider apply-journal observation is malformed") from exc
     records = observation.get("records")
-    completeness = observation.get("completeness")
+    page = observation.get("page")
+    checkpoint_value = observation.get("checkpoint")
+    checkpoint = _journal_receipt_payload(
+        checkpoint_value if isinstance(checkpoint_value, Mapping) else {},
+        label="provider apply-journal checkpoint",
+    )
+    checkpoint_payload = {
+        key: value for key, value in checkpoint.items() if key != "payload_sha256"
+    }
+    try:
+        checkpoint_created_at = datetime.fromisoformat(
+            str(checkpoint["created_at"]).replace("Z", "+00:00")
+        )
+        checkpoint_sequence = int(str(checkpoint["checkpoint_sequence"]))
+        history_event_count = int(str(checkpoint["history_event_count"]))
+        unresolved_record_count = int(str(checkpoint["unresolved_record_count"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DeploymentError(
+            "provider apply-journal checkpoint is malformed"
+        ) from exc
+    expected_checkpoint_keys = {
+        "schema",
+        "project_id",
+        "cluster_id",
+        "journal_resource_version",
+        "checkpoint_sequence",
+        "previous_checkpoint_sha256",
+        "history_event_count",
+        "history_accumulator_algorithm",
+        "history_accumulator_sha256",
+        "unresolved_record_count",
+        "unresolved_accumulator_algorithm",
+        "unresolved_accumulator_sha256",
+        "append_only_history",
+        "deletion_supported",
+        "created_at",
+        "payload_sha256",
+    }
+    previous_checkpoint_sha256 = checkpoint.get("previous_checkpoint_sha256")
+    checkpoint_sha256 = _json_sha256(checkpoint)
     semantic = {
         key: value for key, value in observation.items() if key != "observation_sha256"
     }
@@ -2953,6 +3040,8 @@ def _verified_provider_apply_journal(
         or observation.get("action") != action
         or observation.get("project_id") != project_id
         or observation.get("cluster_id") != cluster_id
+        or observation.get("view")
+        != ("unresolved" if action == "observe" else "affected")
         or observed_at.tzinfo is None
         or observed_at > now + timedelta(seconds=30)
         or now - observed_at > timedelta(minutes=2)
@@ -2969,24 +3058,172 @@ def _verified_provider_apply_journal(
         is None
         or journal_revision < 0
         or not isinstance(records, list)
-        or len(records) > 4096
-        or not isinstance(completeness, Mapping)
-        or completeness
-        != {
-            "all_records_enumerated": True,
-            "append_only_history": True,
-            "deletion_supported": False,
-            "history_closed_through_resource_version": observation.get(
-                "journal_resource_version"
-            ),
-        }
+        or len(records) > _PROVIDER_APPLY_JOURNAL_PAGE_SIZE
+        or not isinstance(page, Mapping)
+        or set(checkpoint) != expected_checkpoint_keys
+        or checkpoint.get("schema")
+        != _PROVIDER_APPLY_JOURNAL_CHECKPOINT_SCHEMA
+        or checkpoint.get("project_id") != project_id
+        or checkpoint.get("cluster_id") != cluster_id
+        or any(
+            not isinstance(checkpoint.get(field), str)
+            or re.fullmatch(
+                r"(?:0|[1-9][0-9]*)", str(checkpoint.get(field, ""))
+            )
+            is None
+            for field in {
+                "journal_resource_version",
+                "checkpoint_sequence",
+                "history_event_count",
+                "unresolved_record_count",
+            }
+        )
+        or checkpoint.get("journal_resource_version")
+        != observation.get("journal_resource_version")
+        or checkpoint_sequence != journal_revision
+        or history_event_count != journal_revision
+        or unresolved_record_count < 0
+        or unresolved_record_count > history_event_count
+        or checkpoint.get("history_accumulator_algorithm")
+        != "sha256-append-event-chain-v1"
+        or checkpoint.get("unresolved_accumulator_algorithm")
+        != "sha256-sorted-signed-record-chain-v1"
+        or any(
+            re.fullmatch(r"[a-f0-9]{64}", str(checkpoint.get(field, "")))
+            is None
+            for field in {
+                "history_accumulator_sha256",
+                "unresolved_accumulator_sha256",
+            }
+        )
+        or (
+            journal_revision == 0
+            and previous_checkpoint_sha256 is not None
+        )
+        or (
+            journal_revision > 0
+            and re.fullmatch(
+                r"[a-f0-9]{64}", str(previous_checkpoint_sha256 or "")
+            )
+            is None
+        )
+        or checkpoint.get("append_only_history") is not True
+        or checkpoint.get("deletion_supported") is not False
+        or checkpoint_created_at.tzinfo is None
+        or checkpoint_created_at > observed_at
+        or checkpoint.get("payload_sha256") != _json_sha256(checkpoint_payload)
+        or observation.get("checkpoint_sha256") != checkpoint_sha256
         or observation.get("observation_sha256") != _json_sha256(semantic)
     ):
         raise DeploymentError(
-            "provider apply-journal observation is stale, incomplete, or malformed"
+            "provider apply-journal page or checkpoint is stale, incomplete, or malformed"
+        )
+    _verify_provider_journal_receipt_signature(
+        receipt=checkpoint,
+        encoded_signature=observation.get("checkpoint_signature"),
+        trust_root=trust_root,
+        verifier_sha256=signature_verifier_sha256,
+        label="provider apply-journal checkpoint",
+    )
+    expected_checkpoint_sha256 = request_document.get(
+        "expected_checkpoint_sha256"
+    )
+    if (
+        (action == "observe" and expected_checkpoint_sha256 is not None)
+        and expected_checkpoint_sha256 != checkpoint_sha256
+    ):
+        raise DeploymentError(
+            "provider apply-journal checkpoint changed during the bounded read"
+        )
+    if action in {"begin", "resolve"} and (
+        re.fullmatch(r"[a-f0-9]{64}", str(expected_checkpoint_sha256 or ""))
+        is None
+        or previous_checkpoint_sha256 != expected_checkpoint_sha256
+        or journal_revision
+        != int(str(request_document["expected_journal_resource_version"])) + 1
+    ):
+        raise DeploymentError(
+            "provider apply-journal CAS response does not extend the exact prior checkpoint"
+        )
+    expected_page_keys = {
+        "cursor",
+        "next_cursor",
+        "start_ordinal",
+        "end_ordinal",
+        "record_count",
+        "records_sha256",
+        "prefix_accumulator_sha256",
+        "page_accumulator_sha256",
+    }
+    try:
+        start_ordinal = int(str(page["start_ordinal"]))
+        end_ordinal = int(str(page["end_ordinal"]))
+        record_count = page["record_count"]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DeploymentError("provider apply-journal range proof is malformed") from exc
+    cursor = page.get("cursor")
+    next_cursor = page.get("next_cursor")
+    for cursor_value in (cursor, next_cursor):
+        if cursor_value is not None and (
+            not isinstance(cursor_value, str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{16,512}", cursor_value) is None
+        ):
+            raise DeploymentError(
+                "provider apply-journal range cursor is malformed"
+            )
+    if (
+        set(page) != expected_page_keys
+        or cursor != request_document.get("cursor")
+        or not isinstance(record_count, int)
+        or isinstance(record_count, bool)
+        or record_count != len(records)
+        or not isinstance(page.get("start_ordinal"), str)
+        or re.fullmatch(r"(?:0|[1-9][0-9]*)", page["start_ordinal"])
+        is None
+        or not isinstance(page.get("end_ordinal"), str)
+        or re.fullmatch(r"(?:0|[1-9][0-9]*)", page["end_ordinal"])
+        is None
+        or start_ordinal < 0
+        or end_ordinal != start_ordinal + record_count
+        or re.fullmatch(r"[a-f0-9]{64}", str(page.get("records_sha256", "")))
+        is None
+        or re.fullmatch(
+            r"[a-f0-9]{64}", str(page.get("prefix_accumulator_sha256", ""))
+        )
+        is None
+        or re.fullmatch(
+            r"[a-f0-9]{64}", str(page.get("page_accumulator_sha256", ""))
+        )
+        is None
+        or page.get("records_sha256") != _json_sha256({"records": records})
+        or (
+            start_ordinal == 0
+            and page.get("prefix_accumulator_sha256")
+            != _provider_journal_accumulator_start(
+                project_id=project_id,
+                cluster_id=cluster_id,
+                journal_resource_version=str(
+                    observation["journal_resource_version"]
+                ),
+                view=str(observation["view"]),
+            )
+        )
+        or (
+            action != "observe"
+            and (
+                cursor is not None
+                or next_cursor is not None
+                or start_ordinal != 0
+                or record_count != 1
+            )
+        )
+    ):
+        raise DeploymentError(
+            "provider apply-journal range proof is incomplete or malformed"
         )
     apply_ids: list[str] = []
     validated_records: list[dict[str, Any]] = []
+    page_accumulator_sha256 = str(page["prefix_accumulator_sha256"])
     for record in records:
         if not isinstance(record, Mapping) or set(record) != {
             "record_resource_version",
@@ -3085,7 +3322,7 @@ def _verified_provider_apply_journal(
             or started_at.tzinfo is None
             or opened_at.tzinfo is None
             or opened_at < started_at
-            or opened_at > observed_at
+            or opened_at > checkpoint_created_at
             or not isinstance(marker.get("journal_open_resource_version"), str)
             or marker_revision < 1
             or marker_revision > journal_revision
@@ -3203,7 +3440,7 @@ def _verified_provider_apply_journal(
                 or resolution.get("target_postconditions_satisfied") is not True
                 or resolved_at.tzinfo is None
                 or resolved_at < opened_at
-                or resolved_at > observed_at
+                or resolved_at > checkpoint_created_at
                 or previous_revision != marker_revision
                 or resolution_revision != record_revision
                 or resolution_revision <= previous_revision
@@ -3220,6 +3457,9 @@ def _verified_provider_apply_journal(
                 verifier_sha256=signature_verifier_sha256,
                 label="provider indeterminate resolution",
             )
+        page_accumulator_sha256 = _provider_journal_accumulator_add(
+            page_accumulator_sha256, record
+        )
         apply_ids.append(str(marker["apply_id"]))
         validated_records.append(
             {
@@ -3232,15 +3472,156 @@ def _verified_provider_apply_journal(
         raise DeploymentError(
             "provider apply-journal records are not uniquely sorted by apply ID"
         )
+    if page_accumulator_sha256 != page.get("page_accumulator_sha256"):
+        raise DeploymentError(
+            "provider apply-journal range accumulator does not cover the exact page"
+        )
+    if action == "observe" and any(
+        record["resolution"] is not None for record in validated_records
+    ):
+        raise DeploymentError(
+            "provider unresolved-view page contains a resolved record"
+        )
+    if action in {"begin", "resolve"}:
+        requested_apply_id = (
+            request_document.get("marker", {}).get("apply_id")
+            if action == "begin"
+            else request_document.get("apply_id")
+        )
+        affected = validated_records[0]
+        if (
+            affected["marker"]["apply_id"] != requested_apply_id
+            or int(str(affected["record_resource_version"])) != journal_revision
+            or (action == "begin" and affected["resolution"] is not None)
+            or (action == "resolve" and affected["resolution"] is None)
+        ):
+            raise DeploymentError(
+                "provider apply-journal affected view differs from the CAS request"
+            )
     result = dict(observation)
+    result["checkpoint"] = checkpoint
     result["records"] = validated_records
     return result
+
+
+def _complete_unresolved_provider_apply_journal(
+    *,
+    journal_guard: Callable[[str, Mapping[str, Any]], dict[str, Any]],
+    expected_checkpoint_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Read every bounded unresolved page from one signed immutable checkpoint."""
+
+    if expected_checkpoint_sha256 is not None and re.fullmatch(
+        r"[a-f0-9]{64}", expected_checkpoint_sha256
+    ) is None:
+        raise DeploymentError("expected provider journal checkpoint is malformed")
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+    pinned_checkpoint_sha256 = expected_checkpoint_sha256
+    aggregate: dict[str, Any] | None = None
+    records: list[dict[str, Any]] = []
+    expected_ordinal = 0
+    unresolved_record_count: int | None = None
+    accumulator_sha256: str | None = None
+    last_apply_id: str | None = None
+    while True:
+        observation = journal_guard(
+            "observe",
+            {
+                "schema": _PROVIDER_APPLY_JOURNAL_REQUEST_SCHEMA,
+                "operation": "observe",
+                "view": "unresolved",
+                "cursor": cursor,
+                "expected_checkpoint_sha256": pinned_checkpoint_sha256,
+                "page_size": _PROVIDER_APPLY_JOURNAL_PAGE_SIZE,
+            },
+        )
+        page = observation.get("page")
+        checkpoint = observation.get("checkpoint")
+        if not isinstance(page, Mapping) or not isinstance(checkpoint, Mapping):
+            raise DeploymentError(
+                "provider apply-journal page has no validated checkpoint"
+            )
+        if aggregate is None:
+            aggregate = dict(observation)
+            pinned_checkpoint_sha256 = str(observation["checkpoint_sha256"])
+            unresolved_record_count = int(
+                str(checkpoint["unresolved_record_count"])
+            )
+            accumulator_sha256 = _provider_journal_accumulator_start(
+                project_id=str(observation["project_id"]),
+                cluster_id=str(observation["cluster_id"]),
+                journal_resource_version=str(
+                    observation["journal_resource_version"]
+                ),
+                view="unresolved",
+            )
+        elif (
+            observation.get("checkpoint_sha256")
+            != pinned_checkpoint_sha256
+            or observation.get("journal_resource_version")
+            != aggregate.get("journal_resource_version")
+            or checkpoint != aggregate.get("checkpoint")
+        ):
+            raise DeploymentError(
+                "provider apply-journal checkpoint changed between pages"
+            )
+        if (
+            int(str(page["start_ordinal"])) != expected_ordinal
+            or page.get("prefix_accumulator_sha256") != accumulator_sha256
+        ):
+            raise DeploymentError(
+                "provider apply-journal range proof has a gap or overlap"
+            )
+        page_records = observation.get("records")
+        if not isinstance(page_records, list):
+            raise DeploymentError("provider apply-journal page has no records")
+        for record in page_records:
+            apply_id = str(record.get("marker", {}).get("apply_id", ""))
+            if last_apply_id is not None and apply_id <= last_apply_id:
+                raise DeploymentError(
+                    "provider unresolved journal pages are not globally sorted and unique"
+                )
+            last_apply_id = apply_id
+            records.append(record)
+        expected_ordinal = int(str(page["end_ordinal"]))
+        accumulator_sha256 = str(page["page_accumulator_sha256"])
+        next_cursor = page.get("next_cursor")
+        if next_cursor is None:
+            if (
+                unresolved_record_count is None
+                or expected_ordinal != unresolved_record_count
+                or accumulator_sha256
+                != checkpoint.get("unresolved_accumulator_sha256")
+            ):
+                raise DeploymentError(
+                    "provider apply-journal terminal range does not prove the "
+                    "complete unresolved view"
+                )
+            aggregate["records"] = records
+            aggregate["complete_unresolved_view"] = True
+            return aggregate
+        if (
+            not page_records
+            or unresolved_record_count is None
+            or expected_ordinal >= unresolved_record_count
+            or next_cursor in seen_cursors
+        ):
+            raise DeploymentError(
+                "provider apply-journal pagination cannot reach the signed checkpoint"
+            )
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
 
 
 def _unresolved_indeterminate_applies(
     run_root: Path, journal_observation: Mapping[str, Any]
 ) -> list[dict[str, Any]]:
     _audit_local_indeterminate_artifacts(run_root)
+    if journal_observation.get("complete_unresolved_view") is not True:
+        raise DeploymentError(
+            "provider apply journal is not a completely proven unresolved view"
+        )
     records = journal_observation.get("records")
     if not isinstance(records, list):
         raise DeploymentError("provider apply journal has no validated record set")
@@ -3289,13 +3670,11 @@ def _assert_no_unresolved_indeterminate_apply(
     *,
     journal_guard: Callable[[str, Mapping[str, Any]], dict[str, Any]],
     allowed_apply_ids: Sequence[str] = (),
+    expected_checkpoint_sha256: str | None = None,
 ) -> dict[str, Any]:
-    observation = journal_guard(
-        "observe",
-        {
-            "schema": _PROVIDER_APPLY_JOURNAL_REQUEST_SCHEMA,
-            "operation": "observe",
-        },
+    observation = _complete_unresolved_provider_apply_journal(
+        journal_guard=journal_guard,
+        expected_checkpoint_sha256=expected_checkpoint_sha256,
     )
     allowed = set(allowed_apply_ids)
     unresolved = [
@@ -3375,6 +3754,12 @@ def apply_plan(
         journal_guard=journal_guard,
         allowed_apply_ids=reconciling_apply_ids,
     )
+    prior_unresolved_records = {
+        record["marker"]["apply_id"]: record
+        for record in _unresolved_indeterminate_applies(
+            indeterminate_root, journal_observation
+        )
+    }
     print(f"+ {command_text(arguments)}", file=sys.stderr)
     expires_at = custody_guard()
     if expires_at - datetime.now(UTC) < timedelta(minutes=10):
@@ -3408,6 +3793,9 @@ def apply_plan(
         "operation": "begin",
         "expected_journal_resource_version": journal_observation[
             "journal_resource_version"
+        ],
+        "expected_checkpoint_sha256": journal_observation[
+            "checkpoint_sha256"
         ],
         "marker": {
             "schema": _INDETERMINATE_APPLY_SCHEMA,
@@ -3451,6 +3839,44 @@ def apply_plan(
             "provider apply journal did not atomically open the exact apply marker"
         )
     marker = dict(opened_record["marker"])
+    opened_unresolved_observation = _complete_unresolved_provider_apply_journal(
+        journal_guard=journal_guard,
+        expected_checkpoint_sha256=str(
+            opened_observation["checkpoint_sha256"]
+        ),
+    )
+    opened_unresolved_record = next(
+        (
+            record
+            for record in opened_unresolved_observation["records"]
+            if record["marker"]["apply_id"] == apply_id
+        ),
+        None,
+    )
+    if (
+        not isinstance(opened_unresolved_record, Mapping)
+        or opened_unresolved_record.get("resolution") is not None
+        or opened_unresolved_record.get("marker") != marker
+    ):
+        raise DeploymentError(
+            "provider checkpoint does not include the newly opened unresolved apply"
+        )
+    opened_unresolved_records = {
+        record["marker"]["apply_id"]: record
+        for record in _unresolved_indeterminate_applies(
+            indeterminate_root, opened_unresolved_observation
+        )
+    }
+    if (
+        set(opened_unresolved_records) != set(prior_unresolved_records) | {apply_id}
+        or any(
+            opened_unresolved_records[prior_apply_id] != prior_record
+            for prior_apply_id, prior_record in prior_unresolved_records.items()
+        )
+    ):
+        raise DeploymentError(
+            "provider begin checkpoint changed an unresolved record other than the exact new apply"
+        )
     apply_environment = dict(environment)
     if "TF_APPEND_USER_AGENT" in apply_environment:
         raise DeploymentError(
@@ -3530,9 +3956,27 @@ def apply_plan(
                     "epoch before any further mutation"
                 ) from custody_error
     if return_code != 0:
+        fence_error: BaseException | None = None
+        try:
+            # A failed Terraform parent is not evidence that provider/plugin
+            # children exited.  Test the session process group and, if any
+            # member remains, SIGSTOP-fence it before SIGKILL/reap.  The
+            # provider journal marker deliberately remains unresolved.
+            stop_process_tree(process)
+        except BaseException as error:
+            fence_error = error
+        if fence_error is not None:
+            raise DeploymentError(
+                "Terraform exited unsuccessfully and its credential-bearing "
+                "process group could not be fully fenced and reaped; the "
+                f"provider apply {apply_id} remains unresolved and no further "
+                "mutation is permitted"
+            ) from fence_error
         raise DeploymentError(
-            f"command failed with exit code {return_code}; remote outcome is "
-            f"indeterminate (provider apply {apply_id}): {command_text(arguments)}"
+            f"command failed with exit code {return_code}; its complete "
+            "credential-bearing process group was fenced and reaped, but the "
+            f"remote outcome remains indeterminate (provider apply {apply_id}): "
+            f"{command_text(arguments)}"
         )
     if process_group_alive(process.pid):
         stop_process_tree(process)
@@ -3586,6 +4030,9 @@ def apply_plan(
         "expected_journal_resource_version": opened_observation[
             "journal_resource_version"
         ],
+        "expected_checkpoint_sha256": opened_observation[
+            "checkpoint_sha256"
+        ],
         "apply_id": apply_id,
         "marker_sha256": _json_sha256(marker),
         "resolution": {
@@ -3606,11 +4053,27 @@ def apply_plan(
         },
     }
     resolved_observation = journal_guard("resolve", resolution_request)
-    _assert_no_unresolved_indeterminate_apply(
+    post_resolution_observation = _assert_no_unresolved_indeterminate_apply(
         indeterminate_root,
         journal_guard=journal_guard,
         allowed_apply_ids=reconciling_apply_ids,
+        expected_checkpoint_sha256=str(
+            resolved_observation["checkpoint_sha256"]
+        ),
     )
+    post_resolution_records = {
+        record["marker"]["apply_id"]: record
+        for record in _unresolved_indeterminate_applies(
+            indeterminate_root, post_resolution_observation
+        )
+    }
+    expected_post_resolution_records = dict(opened_unresolved_records)
+    expected_post_resolution_records.pop(apply_id)
+    if post_resolution_records != expected_post_resolution_records:
+        raise DeploymentError(
+            "provider resolution checkpoint changed an unresolved record other "
+            "than the exact completed apply"
+        )
     resolved_record = next(
         (
             record
@@ -4393,6 +4856,12 @@ def _verified_provider_authority_census(
             "append_only",
             "deletion_supported",
             "receipt_signing_public_key_sha256",
+            "journal_protocol",
+            "checkpoint_algorithm",
+            "unresolved_view_algorithm",
+            "page_size",
+            "history_retention",
+            "pagination_snapshot",
         }
         or not isinstance(journal_resource_id, str)
         or not journal_resource_id
@@ -4412,6 +4881,18 @@ def _verified_provider_authority_census(
         or apply_journal.get("deletion_supported") is not False
         or apply_journal.get("receipt_signing_public_key_sha256")
         != provider_trust_root_sha256
+        or apply_journal.get("journal_protocol")
+        != _PROVIDER_APPLY_JOURNAL_SCHEMA
+        or apply_journal.get("checkpoint_algorithm")
+        != "sha256-append-event-chain-v1"
+        or apply_journal.get("unresolved_view_algorithm")
+        != "sha256-sorted-signed-record-chain-v1"
+        or apply_journal.get("page_size")
+        != _PROVIDER_APPLY_JOURNAL_PAGE_SIZE
+        or apply_journal.get("history_retention")
+        != "append-only-unbounded"
+        or apply_journal.get("pagination_snapshot")
+        != "immutable-checkpoint-cursor"
     ):
         raise DeploymentError(
             "provider apply journal is not immutable, CAS-bound, and root-signed"
@@ -4848,7 +5329,7 @@ def _verified_provider_custody(
     now = datetime.now(UTC)
     if (
         attestation.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v7"
+        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v8"
         or attestation.get("cluster_id") != cluster_id
         or attestation.get("project_id") != project_id
         or attestation.get("payload_sha256") != _json_sha256(payload)
@@ -5859,7 +6340,38 @@ def _provider_apply_journal_operation(
     ):
         raise DeploymentError("provider apply-journal request is not exact")
     if operation == "observe":
-        if set(request_document) != {"schema", "operation"}:
+        cursor = request_document.get("cursor")
+        expected_checkpoint_sha256 = request_document.get(
+            "expected_checkpoint_sha256"
+        )
+        if (
+            set(request_document)
+            != {
+                "schema",
+                "operation",
+                "view",
+                "cursor",
+                "expected_checkpoint_sha256",
+                "page_size",
+            }
+            or request_document.get("view") != "unresolved"
+            or request_document.get("page_size")
+            != _PROVIDER_APPLY_JOURNAL_PAGE_SIZE
+            or (
+                cursor is not None
+                and (
+                    not isinstance(cursor, str)
+                    or re.fullmatch(r"[A-Za-z0-9_-]{16,512}", cursor) is None
+                )
+            )
+            or (
+                expected_checkpoint_sha256 is not None
+                and re.fullmatch(
+                    r"[a-f0-9]{64}", str(expected_checkpoint_sha256)
+                )
+                is None
+            )
+        ):
             raise DeploymentError("provider journal observe request is not exact")
     elif operation == "begin":
         marker = request_document.get("marker")
@@ -5891,6 +6403,7 @@ def _provider_apply_journal_operation(
                 "schema",
                 "operation",
                 "expected_journal_resource_version",
+                "expected_checkpoint_sha256",
                 "marker",
             }
             or not isinstance(marker, Mapping)
@@ -5903,6 +6416,11 @@ def _provider_apply_journal_operation(
             or re.fullmatch(
                 r"(?:0|[1-9][0-9]*)",
                 str(request_document.get("expected_journal_resource_version", "")),
+            )
+            is None
+            or re.fullmatch(
+                r"[a-f0-9]{64}",
+                str(request_document.get("expected_checkpoint_sha256", "")),
             )
             is None
             or any(
@@ -5955,6 +6473,7 @@ def _provider_apply_journal_operation(
                 "schema",
                 "operation",
                 "expected_journal_resource_version",
+                "expected_checkpoint_sha256",
                 "apply_id",
                 "marker_sha256",
                 "resolution",
@@ -5972,6 +6491,11 @@ def _provider_apply_journal_operation(
             or re.fullmatch(
                 r"[1-9][0-9]*",
                 str(request_document.get("expected_journal_resource_version", "")),
+            )
+            is None
+            or re.fullmatch(
+                r"[a-f0-9]{64}",
+                str(request_document.get("expected_checkpoint_sha256", "")),
             )
             is None
             or re.fullmatch(
@@ -6106,6 +6630,7 @@ def _provider_apply_journal_operation(
     return _verified_provider_apply_journal(
         observation,
         action=operation,
+        request_document=request_document,
         project_id=project_id,
         cluster_id=cluster_id,
         provider_trust_root_sha256=provider_trust_root_sha256,
@@ -8941,12 +9466,8 @@ def reconcile_indeterminate_stack(
             signature_verifier_sha256=signature_verifier_sha256,
         )
 
-    journal_observation = journal_guard(
-        "observe",
-        {
-            "schema": _PROVIDER_APPLY_JOURNAL_REQUEST_SCHEMA,
-            "operation": "observe",
-        },
+    journal_observation = _complete_unresolved_provider_apply_journal(
+        journal_guard=journal_guard
     )
     unresolved = _unresolved_indeterminate_applies(
         run_root, journal_observation
@@ -9201,6 +9722,9 @@ def reconcile_indeterminate_stack(
         "expected_journal_resource_version": resolution_observation[
             "journal_resource_version"
         ],
+        "expected_checkpoint_sha256": resolution_observation[
+            "checkpoint_sha256"
+        ],
         "apply_id": marker["apply_id"],
         "marker_sha256": marker_sha256,
         "resolution": {
@@ -9238,9 +9762,35 @@ def reconcile_indeterminate_stack(
     _require_journal_resolution_matches_request(
         resolved_record, resolution_request
     )
-    remaining = _unresolved_indeterminate_applies(
-        run_root, resolved_observation
+    remaining_observation = _complete_unresolved_provider_apply_journal(
+        journal_guard=recovery_journal_guard,
+        expected_checkpoint_sha256=str(
+            resolved_observation["checkpoint_sha256"]
+        ),
     )
+    remaining = _unresolved_indeterminate_applies(
+        run_root, remaining_observation
+    )
+    expected_remaining_records = {
+        record["marker"]["apply_id"]: record
+        for record in _unresolved_indeterminate_applies(
+            run_root, resolution_observation
+        )
+    }
+    removed_recovery_record = expected_remaining_records.pop(
+        str(marker["apply_id"]), None
+    )
+    if removed_recovery_record is None:
+        raise DeploymentError(
+            "provider recovery checkpoint lost the selected unresolved apply before its CAS"
+        )
+    if {
+        record["marker"]["apply_id"]: record for record in remaining
+    } != expected_remaining_records:
+        raise DeploymentError(
+            "provider recovery checkpoint changed an unresolved record other "
+            "than the exact recovered apply"
+        )
     if any(
         record["marker"]["apply_id"] == marker["apply_id"]
         for record in remaining
@@ -9258,7 +9808,7 @@ def reconcile_indeterminate_stack(
                 ),
                 "apply_id": marker["apply_id"],
                 "resolution": "provider-authority-append-only-cas",
-                "journal_resource_version": resolved_observation[
+                "journal_resource_version": remaining_observation[
                     "journal_resource_version"
                 ],
                 "remaining_unresolved": [

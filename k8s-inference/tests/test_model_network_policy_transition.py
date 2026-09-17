@@ -704,7 +704,7 @@ def boundary_authority() -> dict[str, object]:
             "serving_certificate_sha256": "3" * 64,
         },
         "external_custody": {
-            "schema": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v7",
+            "schema": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v8",
             "policy_id": "network-boundary-test",
             "policy_revision": "1",
             "provider_trust_root_sha256": "f" * 64,
@@ -772,7 +772,7 @@ def test_inventory_receipt_binds_workload_pod_controller_and_admission() -> None
     assert receipt["pods"]["qwen3-8b-pod"]["workload_class"] == "runtime"
     assert receipt["live_controller"]["deployment_uid"] == "uid-controller"
     assert receipt["transition_lock_uid"] == "uid-transition-lock"
-    assert receipt["schema"].endswith("/v7")
+    assert receipt["schema"].endswith("/v8")
     assert receipt["boundary_endpoints_sha256"] == "2" * 64
     assert receipt["boundary_ready_endpoints_sha256"] == transition._sha256(
         {"ready_endpoints": [{"node_name": "node-a"}, {"node_name": "node-b"}]}
@@ -1371,7 +1371,7 @@ def test_external_boundary_authority_is_separate_and_narrowly_scoped() -> None:
     assert "fs2-model-network-helm-writer" in helm_writer
     assert "fs2-model-network-maintenance" in helm_writer
     assert receipt_schema["properties"]["schema"]["const"].endswith("/v4")
-    assert provider_schema["properties"]["schema"]["const"].endswith("/v7")
+    assert provider_schema["properties"]["schema"]["const"].endswith("/v8")
     assert "protected_kubernetes_resources" in provider_schema["properties"][
         "mutation_freeze"
     ]["required"]
@@ -1463,11 +1463,21 @@ def test_provider_custody_closes_in_cluster_ha_inventory_and_apply_expiry_paths(
     assert schema["properties"]["provider_enumeration"]["properties"][
         "service_accounts_sha256"
     ]["$ref"] == "#/$defs/sha256"
-    assert schema["properties"]["schema"]["const"].endswith("/v7")
+    assert schema["properties"]["schema"]["const"].endswith("/v8")
     assert "provider_authority_census" in schema["required"]
     assert "apply_journal" in schema["$defs"]["providerAuthorityCensus"][
         "properties"
     ]["snapshot"]["required"]
+    apply_journal = schema["$defs"]["providerAuthorityCensus"]["properties"][
+        "snapshot"
+    ]["properties"]["apply_journal"]
+    assert apply_journal["properties"]["journal_protocol"]["const"].endswith(
+        "/v2"
+    )
+    assert apply_journal["properties"]["page_size"]["const"] == 256
+    assert apply_journal["properties"]["history_retention"]["const"] == (
+        "append-only-unbounded"
+    )
     assert schema["$defs"]["providerAuthorityCensus"]["properties"][
         "snapshot"
     ]["properties"]["provider_mutation_freeze"]["properties"][
@@ -1476,6 +1486,52 @@ def test_provider_custody_closes_in_cluster_ha_inventory_and_apply_expiry_paths(
     assert "server_certificate_sha256" in schema["$defs"]["gatewayMember"][
         "required"
     ]
+
+
+def test_provider_apply_journal_is_paginated_and_checkpoint_complete() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    journal = json.loads(
+        (
+            ROOT
+            / "stages/workloads/contracts/model-network-provider-apply-journal.schema.json"
+        ).read_text()
+    )
+    request = json.loads(
+        (
+            ROOT
+            / "stages/workloads/contracts/model-network-provider-apply-journal-request.schema.json"
+        ).read_text()
+    )
+
+    assert journal["properties"]["schema"]["const"].endswith("/v2")
+    assert journal["properties"]["records"]["maxItems"] == 256
+    assert "checkpoint_signature" in journal["required"]
+    assert journal["$defs"]["checkpoint"]["properties"][
+        "deletion_supported"
+    ]["const"] is False
+    assert journal["$defs"]["checkpoint"]["properties"][
+        "history_accumulator_algorithm"
+    ]["const"] == "sha256-append-event-chain-v1"
+    assert journal["$defs"]["checkpoint"]["properties"][
+        "unresolved_accumulator_algorithm"
+    ]["const"] == "sha256-sorted-signed-record-chain-v1"
+    observe = request["$defs"]["observe"]["allOf"][1]
+    assert set(observe["required"]) == {
+        "view",
+        "cursor",
+        "expected_checkpoint_sha256",
+        "page_size",
+    }
+    assert observe["properties"]["page_size"]["const"] == 256
+    assert "expected_checkpoint_sha256" in request["$defs"]["begin"][
+        "allOf"
+    ][1]["required"]
+    assert "expected_checkpoint_sha256" in request["$defs"]["resolve"][
+        "allOf"
+    ][1]["required"]
+    assert "_complete_unresolved_provider_apply_journal(" in wrapper
+    assert "provider apply-journal range proof has a gap or overlap" in wrapper
+    assert "len(records) > 4096" not in wrapper
 
 
 def test_terraform_enforcement_orders_apply_fence_before_default_deny() -> None:

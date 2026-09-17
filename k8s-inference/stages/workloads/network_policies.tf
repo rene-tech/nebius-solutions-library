@@ -928,7 +928,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         var.model_network_boundary_authority_receipt.jobset_writer.username == local.model_runtime_jobset_writer &&
         var.model_network_boundary_authority_receipt.custody.trust_root_sha256 == var.model_network_boundary_trust_root_sha256 &&
         var.model_network_boundary_authority_receipt.custody.provider.kind == "nebius-iam" &&
-        var.model_network_boundary_authority_receipt.external_custody.schema == "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v7" &&
+        var.model_network_boundary_authority_receipt.external_custody.schema == "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v8" &&
         var.model_network_boundary_authority_receipt.external_custody.provider_trust_root_sha256 == var.model_network_provider_trust_root_sha256 &&
         var.model_network_boundary_authority_receipt.external_custody.signature_verifier_sha256 == var.model_runtime_network_policy.signature_verifier_sha256 &&
         can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.client_tools_sha256)) &&
