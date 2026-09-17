@@ -25,6 +25,8 @@ from .access_models import (
     OperatorSession,
     OperatorSessionRecord,
     PrincipalKind,
+    ReleaseIdentityAssertion,
+    SessionExchangeAdmission,
 )
 from .admin_models import (
     AdminActivationPhase,
@@ -183,6 +185,8 @@ class MemoryStore:
         self.operator_credentials: dict[UUID, tuple[str, str, str]] = {}
         self.operator_sessions: dict[UUID, OperatorSessionRecord] = {}
         self.operator_session_exchange_attempts: dict[str, list[datetime]] = {}
+        self.operator_session_exchange_aggregate: list[datetime] = []
+        self.release_identity_assertions: set[UUID] = set()
         self.configuration_revisions: dict[int, ConfigurationRevision] = {}
         self.configuration_plans: dict[UUID, ConfigurationPlan] = {}
         self.configuration_status_events: dict[UUID, list[ReconciliationStatus]] = {}
@@ -834,14 +838,137 @@ class MemoryStore:
                 raise NotFoundError("operator credential not found")
             self.operator_credentials[principal_id] = (pepper_key_id, digest, stored[2])
 
+    def _consume_release_assertion(
+        self,
+        assertion: ReleaseIdentityAssertion,
+        *,
+        assertion_fingerprint: str,
+        capability: str,
+        actor: str,
+    ) -> None:
+        if assertion.assertion_id in self.release_identity_assertions:
+            raise ConflictError("release identity assertion was already consumed")
+        self.release_identity_assertions.add(assertion.assertion_id)
+        self._audit(
+            actor=actor,
+            tenant_id=assertion.operator.tenant_id if assertion.operator is not None else None,
+            token_id=None,
+            action="release_identity.consume",
+            target_type="release_identity_assertion",
+            target_id=str(assertion.assertion_id),
+            outcome="succeeded",
+            detail={
+                "assertion_fingerprint": assertion_fingerprint,
+                "capability": capability,
+                "purpose": str(assertion.purpose),
+                "session_id": assertion.session_id,
+            },
+        )
+
+    async def consume_release_identity_assertion(
+        self,
+        assertion: ReleaseIdentityAssertion,
+        *,
+        assertion_fingerprint: str,
+        capability: str,
+        actor: str,
+    ) -> None:
+        async with self._lock:
+            self._consume_release_assertion(
+                assertion,
+                assertion_fingerprint=assertion_fingerprint,
+                capability=capability,
+                actor=actor,
+            )
+
+    async def enroll_operator_credential(
+        self,
+        assertion: ReleaseIdentityAssertion,
+        *,
+        assertion_fingerprint: str,
+        pepper_key_id: str,
+        digest: str,
+        fingerprint: str,
+        actor: str,
+    ) -> tuple[OperatorPrincipal, int]:
+        target = assertion.operator
+        if target is None:
+            raise ValueError("operator enrollment assertion has no target")
+        async with self._lock:
+            if assertion.assertion_id not in self.release_identity_assertions:
+                raise ConflictError("release enrollment assertion was not reserved")
+            principal = self.operator_principals.get(target.principal_id)
+            subject_match = next(
+                (item for item in self.operator_principals.values() if item.subject == target.subject),
+                None,
+            )
+            if target.mode.value == "create":
+                if principal is not None or subject_match is not None:
+                    raise ConflictError("release enrollment target already exists")
+                now = datetime.now(UTC)
+                principal = OperatorPrincipal(
+                    id=target.principal_id,
+                    subject=target.subject,
+                    display_name=target.display_name,
+                    kind=PrincipalKind.HUMAN,
+                    role=target.role,
+                    tenant_id=target.tenant_id,
+                    enabled=True,
+                    created_at=now,
+                    created_by=actor,
+                    updated_at=now,
+                )
+                self.operator_principals[principal.id] = principal
+            elif (
+                principal is None
+                or subject_match is None
+                or subject_match.id != principal.id
+                or principal.subject != target.subject
+                or principal.display_name != target.display_name
+                or principal.kind is not PrincipalKind.HUMAN
+                or principal.role is not target.role
+                or principal.tenant_id != target.tenant_id
+                or not principal.enabled
+            ):
+                raise ConflictError("release recovery target does not match the enabled principal")
+            if any(stored[2] == fingerprint for stored in self.operator_credentials.values()):
+                raise ConflictError("operator credential already exists")
+            rotated = principal.id in self.operator_credentials
+            self.operator_credentials[principal.id] = (pepper_key_id, digest, fingerprint)
+            now = datetime.now(UTC)
+            revoked = 0
+            for session_id, record in tuple(self.operator_sessions.items()):
+                if record.session.principal.id != principal.id or record.session.revoked_at is not None:
+                    continue
+                self.operator_sessions[session_id] = record.model_copy(
+                    update={"session": record.session.model_copy(update={"revoked_at": now})}
+                )
+                revoked += 1
+            self._audit(
+                actor=actor,
+                tenant_id=principal.tenant_id,
+                token_id=None,
+                action="operator_credential.recover" if rotated else "operator_credential.enroll",
+                target_type="operator_principal",
+                target_id=str(principal.id),
+                outcome="succeeded",
+                detail={
+                    "assertion_fingerprint": assertion_fingerprint,
+                    "assertion_id": str(assertion.assertion_id),
+                    "sessions_revoked": revoked,
+                },
+            )
+            return principal.model_copy(deep=True), revoked
+
     async def consume_operator_session_exchange(
         self,
         source_fingerprint: str,
         *,
         attempted_at: datetime,
         window_seconds: int,
-        maximum_attempts: int,
-    ) -> bool:
+        maximum_source_attempts: int,
+        maximum_aggregate_attempts: int,
+    ) -> SessionExchangeAdmission:
         if attempted_at.tzinfo is None:
             raise ValueError("operator exchange timestamp must be timezone-aware")
         async with self._lock:
@@ -851,10 +978,17 @@ class MemoryStore:
                 for observed in self.operator_session_exchange_attempts.get(source_fingerprint, [])
                 if observed > window_start
             ]
-            allowed = len(attempts) < maximum_attempts
-            if allowed:
+            aggregate = [observed for observed in self.operator_session_exchange_aggregate if observed > window_start]
+            if len(aggregate) >= maximum_aggregate_attempts:
+                admission = SessionExchangeAdmission.AGGREGATE_THROTTLED
+            elif len(attempts) >= maximum_source_attempts:
+                admission = SessionExchangeAdmission.SOURCE_THROTTLED
+            else:
+                admission = SessionExchangeAdmission.ADMITTED
                 attempts.append(attempted_at)
                 self.operator_session_exchange_attempts[source_fingerprint] = attempts
+                aggregate.append(attempted_at)
+                self.operator_session_exchange_aggregate = aggregate
             self._audit(
                 actor="anonymous",
                 tenant_id=None,
@@ -862,10 +996,14 @@ class MemoryStore:
                 action="session.exchange.attempt",
                 target_type="network_source_fingerprint",
                 target_id=source_fingerprint,
-                outcome="accepted" if allowed else "throttled",
-                detail={"window_seconds": window_seconds, "maximum_attempts": maximum_attempts},
+                outcome="accepted" if admission is SessionExchangeAdmission.ADMITTED else str(admission),
+                detail={
+                    "window_seconds": window_seconds,
+                    "maximum_source_attempts": maximum_source_attempts,
+                    "maximum_aggregate_attempts": maximum_aggregate_attempts,
+                },
             )
-            return allowed
+            return admission
 
     async def create_operator_session(
         self,

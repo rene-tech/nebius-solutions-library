@@ -77,6 +77,7 @@ from .models import TokenCreate
 from .postgres import PostgresMaintenanceStore, PostgresStore
 from .postgresql_release import render_postgresql_release_contract
 from .registry import Registry
+from .release_identity import ReleaseIdentityVerifier
 from .request_debug import PostgresDebugStore
 from .route_revalidation import RouteRevalidator
 from .runtime import RuntimeClient
@@ -611,14 +612,15 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         admission=admission,
         request_debug_store=request_debug_store,
         metrics=metrics,
-        admin_token=settings.admin_token(),
         operator_sessions=OperatorSessionService(
             store,
             peppers,
             ttl_seconds=settings.admin_session_ttl_seconds,
             idle_timeout_seconds=settings.admin_session_idle_timeout_seconds,
             max_sessions_per_principal=settings.admin_session_max_per_principal,
+            credential_work_concurrency=settings.admin_session_credential_work_concurrency,
         ),
+        release_identities=ReleaseIdentityVerifier.from_file(settings.release_identity_trust_file),
         lifecycle=lifecycle,
         route_revalidator=route_revalidator,
         admin_read=admin_read,

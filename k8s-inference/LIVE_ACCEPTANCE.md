@@ -240,8 +240,10 @@ likewise tfvars inputs.
 Terraform exposes `mcp_endpoint_url`, `admin_web_interface_url`,
 `inference_base_url`, and `grafana_url` as workload outputs. The explicit
 `inference-stack output` command returns those endpoints together with the
-admin bootstrap token, the scoped MCP/inference token, Grafana credentials,
-and the kubeconfig command. The initial dual-cluster acceptance used
+deprecated rollback-only admin value, the scoped MCP/inference token, Grafana
+credentials, and the kubeconfig command. Interactive admin acceptance instead
+uses the personal credential delivered by the audited release-enrollment flow.
+The rollback value is not mounted and no current HTTP route accepts it. The initial dual-cluster acceptance used
 `edge.mode = "internal-only"`. The retained H100 deployment was converged
 through the same Terraform interface to `edge.mode = "public"`; its outputs
 contain the allocated public IP and require no foreground process or local port

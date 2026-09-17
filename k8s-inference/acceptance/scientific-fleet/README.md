@@ -153,8 +153,9 @@ admission overlap, not a claim of continuously busy GPUs. Priority values in
 the receipts establish policy assignment; saturated-queue ordering and node
 scale-from-zero require separate live evidence.
 
-Operators can add `--admin-metrics` with `FS2_ADMIN_TOKEN` set to include the
-existing benchmark's phase durations and occupied, active and idle GPU
+Operators can add `--admin-metrics --operator-credential-file /secure/operator`
+with a mode-0600 personal operator credential file to include the existing
+benchmark's phase durations and occupied, active and idle GPU
 accounting from those same completed operations. Missing or estimated phases
 remain explicitly unavailable/estimated; the runner does not infer GPU load
 time from total request duration. It also downloads each output manifest and
@@ -408,7 +409,6 @@ if any profile is still a candidate:
 
 ```bash
 export FS2_INFERENCE_TOKEN='...'
-export FS2_ADMIN_TOKEN='...'
 python3 acceptance/scientific-fleet/run_coldstart_benchmark.py \
   --endpoint https://inference.example \
   --repository-root "$PWD" \
@@ -418,6 +418,7 @@ python3 acceptance/scientific-fleet/run_coldstart_benchmark.py \
   --project-id project-e00rene \
   --region eu-north1 \
   --cluster-context k8s-inference-h100 \
+  --operator-credential-file /secure/operator-credential \
   --reserved-pool-id h100-reserved-8x \
   --repetitions 3 \
   --max-parallel 8

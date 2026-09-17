@@ -15,6 +15,7 @@
     "catalog",
     "federation",
     "secrets",
+    "releaseIdentity",
     "config",
     "adminReadAdapters",
     "migration",
@@ -1200,6 +1201,28 @@
       },
       "additionalProperties": false
     },
+    "releaseIdentity": {
+      "type": "object",
+      "required": [
+        "trustConfigMapName",
+        "trustConfigMapKey"
+      ],
+      "properties": {
+        "trustConfigMapName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+        },
+        "trustConfigMapKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        }
+      },
+      "additionalProperties": false
+    },
     "config": {
       "type": "object",
       "required": [
@@ -1212,7 +1235,10 @@
         "adminSessionIdleTimeoutSeconds",
         "adminSessionMaxPerPrincipal",
         "adminSessionExchangeAttempts",
+        "adminSessionExchangeAggregateAttempts",
         "adminSessionExchangeWindowSeconds",
+        "adminSessionCredentialWorkConcurrency",
+        "adminSessionTrustedProxyCidrs",
         "schemaWaitSeconds"
       ],
       "properties": {
@@ -1268,9 +1294,30 @@
           "type": "string",
           "pattern": "^(?:[1-9]|[1-9][0-9]|100)$"
         },
+        "adminSessionExchangeAggregateAttempts": {
+          "type": "string",
+          "pattern": "^(?:1[0-9]|[2-9][0-9]|[1-9][0-9]{2,3}|10000)$"
+        },
         "adminSessionExchangeWindowSeconds": {
           "type": "string",
           "pattern": "^(?:[1-9]|[1-9][0-9]{1,2}|[1-2][0-9]{3}|3[0-5][0-9]{2}|3600)$"
+        },
+        "adminSessionCredentialWorkConcurrency": {
+          "type": "string",
+          "pattern": "^[1-8]$"
+        },
+        "adminSessionTrustedProxyCidrs": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 64,
+            "not": {
+              "enum": ["0.0.0.0/0", "::/0"]
+            }
+          }
         },
         "syncWaitSeconds": {
           "type": "string",
@@ -1596,11 +1643,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "2db60ae50d28edfb6ead9ff5144ecaa1680843c03e155d655a3d5df7a19ef6f9"},
-            "migrationSetSha256": {"const": "24f3abc3997de473e1343f9d3467e84babb535cab889369de3620d7fb99c44c3"},
-            "migrationCount": {"const": 30},
+            "contractPayloadSha256": {"const": "cc6cf95284135b4dd94396f8dc5116756810e00dd894c3a3ddb13e51050a8342"},
+            "migrationSetSha256": {"const": "6db59f99747ad837a7b53137d9d1df7983eacc48383b75ba2ecdcf359bff0fc6"},
+            "migrationCount": {"const": 31},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0030_operator_credentials.sql"},
+            "lastMigrationVersion": {"const": "0031_release_identity_receipts.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false

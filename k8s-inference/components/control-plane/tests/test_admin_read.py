@@ -173,7 +173,6 @@ def _runtime(registry: Any, cipher: Any, hasher: Any, *, failing_kubernetes: boo
         tokens=TokenService(store, peppers),
         admission=admission,
         metrics=metrics,
-        admin_token=b"a" * 32,
         operator_sessions=OperatorSessionService(store, peppers),
         owns_store=False,
         admin_read=admin_read,
@@ -181,7 +180,11 @@ def _runtime(registry: Any, cipher: Any, hasher: Any, *, failing_kubernetes: boo
 
 
 def _client(runtime: AppRuntime, *, authenticated: bool = True) -> TestClient:
-    client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
+    client = TestClient(
+        create_app(runtime),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    )
     if authenticated:
         response = client.post("/admin/api/v1/session", headers=operator_auth(runtime))
         assert response.status_code == 200, response.text

@@ -26,6 +26,9 @@ from .access_models import (
     OperatorPrincipalPatch,
     OperatorSession,
     OperatorSessionRecord,
+    PrincipalKind,
+    ReleaseIdentityAssertion,
+    SessionExchangeAdmission,
 )
 from .activation_postgres import PostgresActivationStore
 from .admin_models import (
@@ -463,6 +466,7 @@ class PostgresStore:
                     f"REVOKE ALL ON fs2_schema_migrations,fs2_tokens,fs2_operations,"
                     f"fs2_operation_events,fs2_audit_events,fs2_usage_facts,"
                     f"fs2_operator_principals,fs2_operator_credentials,fs2_operator_sessions,"
+                    f"fs2_release_identity_receipts,"
                     f"fs2_configuration_revisions,fs2_configuration_plans,"
                     f"fs2_configuration_reconciliation_events,"
                     f"fs2_model_deployment_revisions,fs2_model_deployments,"
@@ -515,6 +519,9 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT SELECT,INSERT,UPDATE ON fs2_operator_principals,fs2_operator_credentials,"
                 f"fs2_operator_sessions TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT SELECT,INSERT ON fs2_release_identity_receipts TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT SELECT,INSERT ON fs2_operation_events,fs2_audit_events TO {quoted_runtime}"
@@ -750,6 +757,14 @@ class PostgresStore:
                             "'public.fs2_operator_credentials','INSERT')"
                             " AND has_table_privilege(current_user,"
                             "'public.fs2_operator_credentials','UPDATE')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_release_identity_receipts','SELECT')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_release_identity_receipts','INSERT')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_release_identity_receipts','SELECT')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_release_identity_receipts','INSERT')"
                             " AND has_function_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
                             " AND has_function_privilege(current_user,"
@@ -1577,6 +1592,192 @@ class PostgresStore:
         if result == "UPDATE 0":
             raise NotFoundError("operator credential not found")
 
+    async def _consume_release_assertion(
+        self,
+        connection: asyncpg.Connection,
+        assertion: ReleaseIdentityAssertion,
+        *,
+        assertion_fingerprint: str,
+        capability: str,
+        actor: str,
+    ) -> None:
+        try:
+            await connection.execute(
+                """
+                INSERT INTO fs2_release_identity_receipts(
+                    assertion_id,session_id,issuer,subject,purpose,capability,
+                    assertion_fingerprint,issued_at,expires_at,consumed_by
+                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                """,
+                assertion.assertion_id,
+                assertion.session_id,
+                assertion.issuer,
+                assertion.subject,
+                str(assertion.purpose),
+                capability,
+                assertion_fingerprint,
+                assertion.issued_at,
+                assertion.expires_at,
+                actor,
+            )
+        except asyncpg.UniqueViolationError as exc:
+            raise ConflictError("release identity assertion was already consumed") from exc
+        await self._audit(
+            connection,
+            actor=actor,
+            tenant_id=assertion.operator.tenant_id if assertion.operator is not None else None,
+            token_id=None,
+            action="release_identity.consume",
+            target_type="release_identity_assertion",
+            target_id=str(assertion.assertion_id),
+            outcome="succeeded",
+            detail={
+                "assertion_fingerprint": assertion_fingerprint,
+                "capability": capability,
+                "purpose": str(assertion.purpose),
+                "session_id": assertion.session_id,
+            },
+        )
+
+    @retry_serialization
+    async def consume_release_identity_assertion(
+        self,
+        assertion: ReleaseIdentityAssertion,
+        *,
+        assertion_fingerprint: str,
+        capability: str,
+        actor: str,
+    ) -> None:
+        async with self.pool.acquire() as connection, connection.transaction():
+            await self._consume_release_assertion(
+                connection,
+                assertion,
+                assertion_fingerprint=assertion_fingerprint,
+                capability=capability,
+                actor=actor,
+            )
+
+    @retry_serialization
+    async def enroll_operator_credential(
+        self,
+        assertion: ReleaseIdentityAssertion,
+        *,
+        assertion_fingerprint: str,
+        pepper_key_id: str,
+        digest: str,
+        fingerprint: str,
+        actor: str,
+    ) -> tuple[OperatorPrincipal, int]:
+        target = assertion.operator
+        if target is None:
+            raise ValueError("operator enrollment assertion has no target")
+        async with self.pool.acquire() as connection, connection.transaction():
+            reserved = bool(
+                await connection.fetchval(
+                    """
+                    SELECT EXISTS(
+                        SELECT 1 FROM fs2_release_identity_receipts
+                        WHERE assertion_id=$1 AND assertion_fingerprint=$2
+                          AND capability='operator.enroll' AND consumed_by=$3
+                    )
+                    """,
+                    assertion.assertion_id,
+                    assertion_fingerprint,
+                    actor,
+                )
+            )
+            if not reserved:
+                raise ConflictError("release enrollment assertion was not reserved")
+            rows = await connection.fetch(
+                "SELECT * FROM fs2_operator_principals WHERE id=$1 OR subject=$2 FOR UPDATE",
+                target.principal_id,
+                target.subject,
+            )
+            if target.mode.value == "create":
+                if rows:
+                    raise ConflictError("release enrollment target already exists")
+                principal = await connection.fetchrow(
+                    """
+                    INSERT INTO fs2_operator_principals(
+                        id,subject,display_name,kind,role,tenant_id,enabled,created_by
+                    ) VALUES($1,$2,$3,'human',$4,$5,true,$6)
+                    RETURNING *
+                    """,
+                    target.principal_id,
+                    target.subject,
+                    target.display_name,
+                    str(target.role),
+                    target.tenant_id,
+                    actor,
+                )
+            else:
+                if len(rows) != 1:
+                    raise ConflictError("release recovery target is ambiguous or absent")
+                principal = rows[0]
+                if (
+                    principal["id"] != target.principal_id
+                    or principal["subject"] != target.subject
+                    or principal["display_name"] != target.display_name
+                    or principal["kind"] != str(PrincipalKind.HUMAN)
+                    or principal["role"] != str(target.role)
+                    or principal["tenant_id"] != target.tenant_id
+                    or not principal["enabled"]
+                ):
+                    raise ConflictError("release recovery target does not match the enabled principal")
+            if principal is None:
+                raise RuntimeError("release enrollment did not resolve a principal")
+            rotated = bool(
+                await connection.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM fs2_operator_credentials WHERE principal_id=$1)",
+                    target.principal_id,
+                )
+            )
+            try:
+                await connection.execute(
+                    """
+                    INSERT INTO fs2_operator_credentials(
+                        principal_id,pepper_key_id,digest,fingerprint,created_by
+                    ) VALUES($1,$2,$3,$4,$5)
+                    ON CONFLICT (principal_id) DO UPDATE
+                    SET pepper_key_id=EXCLUDED.pepper_key_id,digest=EXCLUDED.digest,
+                        fingerprint=EXCLUDED.fingerprint,updated_at=clock_timestamp(),created_by=EXCLUDED.created_by
+                    """,
+                    target.principal_id,
+                    pepper_key_id,
+                    digest,
+                    fingerprint,
+                    actor,
+                )
+            except asyncpg.UniqueViolationError as exc:
+                raise ConflictError("operator credential already exists") from exc
+            revoked = int(
+                await connection.fetchval(
+                    """
+                    WITH revoked AS (
+                        UPDATE fs2_operator_sessions SET revoked_at=clock_timestamp()
+                        WHERE principal_id=$1 AND revoked_at IS NULL RETURNING 1
+                    ) SELECT count(*) FROM revoked
+                    """,
+                    target.principal_id,
+                )
+            )
+            await self._audit(
+                connection,
+                actor=actor,
+                tenant_id=target.tenant_id,
+                token_id=None,
+                action="operator_credential.recover" if rotated else "operator_credential.enroll",
+                target_type="operator_principal",
+                target_id=str(target.principal_id),
+                outcome="succeeded",
+                detail={
+                    "assertion_fingerprint": assertion_fingerprint,
+                    "assertion_id": str(assertion.assertion_id),
+                    "sessions_revoked": revoked,
+                },
+            )
+            return self._operator_principal(principal), revoked
+
     @retry_serialization
     async def consume_operator_session_exchange(
         self,
@@ -1584,28 +1785,50 @@ class PostgresStore:
         *,
         attempted_at: datetime,
         window_seconds: int,
-        maximum_attempts: int,
-    ) -> bool:
+        maximum_source_attempts: int,
+        maximum_aggregate_attempts: int,
+    ) -> SessionExchangeAdmission:
         if attempted_at.tzinfo is None:
             raise ValueError("operator exchange timestamp must be timezone-aware")
         async with self.pool.acquire() as connection, connection.transaction():
-            await connection.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
-                source_fingerprint,
-            )
-            attempts = int(
+            await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('admin-exchange-aggregate',0))")
+            aggregate_attempts = int(
                 await connection.fetchval(
                     """
                     SELECT count(*) FROM fs2_audit_events
                     WHERE action='session.exchange.attempt'
                       AND target_type='network_source_fingerprint'
-                      AND target_id=$1 AND outcome='accepted' AND occurred_at>$2
+                      AND outcome='accepted'
+                      AND occurred_at>clock_timestamp()-($1::double precision * interval '1 second')
                     """,
-                    source_fingerprint,
-                    attempted_at - timedelta(seconds=window_seconds),
+                    window_seconds,
                 )
             )
-            allowed = attempts < maximum_attempts
+            if aggregate_attempts >= maximum_aggregate_attempts:
+                admission = SessionExchangeAdmission.AGGREGATE_THROTTLED
+            else:
+                await connection.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+                    source_fingerprint,
+                )
+                source_attempts = int(
+                    await connection.fetchval(
+                        """
+                        SELECT count(*) FROM fs2_audit_events
+                        WHERE action='session.exchange.attempt'
+                          AND target_type='network_source_fingerprint'
+                          AND target_id=$1 AND outcome='accepted'
+                          AND occurred_at>clock_timestamp()-($2::double precision * interval '1 second')
+                        """,
+                        source_fingerprint,
+                        window_seconds,
+                    )
+                )
+                admission = (
+                    SessionExchangeAdmission.SOURCE_THROTTLED
+                    if source_attempts >= maximum_source_attempts
+                    else SessionExchangeAdmission.ADMITTED
+                )
             await self._audit(
                 connection,
                 actor="anonymous",
@@ -1614,10 +1837,14 @@ class PostgresStore:
                 action="session.exchange.attempt",
                 target_type="network_source_fingerprint",
                 target_id=source_fingerprint,
-                outcome="accepted" if allowed else "throttled",
-                detail={"window_seconds": window_seconds, "maximum_attempts": maximum_attempts},
+                outcome="accepted" if admission is SessionExchangeAdmission.ADMITTED else str(admission),
+                detail={
+                    "window_seconds": window_seconds,
+                    "maximum_source_attempts": maximum_source_attempts,
+                    "maximum_aggregate_attempts": maximum_aggregate_attempts,
+                },
             )
-            return allowed
+            return admission
 
     @retry_serialization
     async def create_operator_session(

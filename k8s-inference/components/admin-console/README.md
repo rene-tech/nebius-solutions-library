@@ -8,7 +8,9 @@ through their original routes and Advanced navigation.
 It exchanges a human principal's personal operator credential for a Secure,
 HttpOnly, SameSite operator session and applies the server-published viewer,
 operator, and administrator roles. The shared automation bootstrap credential
-cannot create an interactive session.
+is deprecated rollback data: it cannot create an interactive session or call
+the legacy automation routes. Those routes require single-use, capability-bound
+release assertions from the approved non-human release identity.
 
 The BFF joins the durable PostgreSQL ledger, catalog identity, current
 Kubernetes state, and bounded Prometheus data. The browser never receives

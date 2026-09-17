@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
 import secrets
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 from uuid import UUID, uuid4
 
 from argon2 import PasswordHasher
@@ -19,8 +21,10 @@ from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from .access_models import (
     AdminApiKeyPolicyPatch,
     OperatorCredentialDisclosure,
+    OperatorEnrollmentDisclosure,
     OperatorPrincipal,
     OperatorSession,
+    ReleaseIdentityAssertion,
 )
 from .models import OperationView, Principal, Scope, TokenCreate, TokenIssued, TokenView
 from .store import ConflictError, NotFoundError, Store
@@ -33,9 +37,15 @@ OPERATOR_SESSION_DIGEST_CONTEXT = b"fs2-serve.admin-session/v1\0"
 OPERATOR_CREDENTIAL_MARKER = "fs2_operator"
 MAX_OPERATOR_CREDENTIAL_LENGTH = 256
 OPERATOR_CREDENTIAL_DIGEST_CONTEXT = b"fs2-serve.operator-credential/v1\0"
+OPERATOR_SOURCE_DIGEST_CONTEXT = b"fs2-serve.operator-source/v1\0"
+PasswordResult = TypeVar("PasswordResult")
 
 
 class AuthenticationError(PermissionError):
+    pass
+
+
+class PasswordWorkCapacityError(RuntimeError):
     pass
 
 
@@ -43,6 +53,34 @@ class AuthenticationError(PermissionError):
 class IssuedOperatorSession:
     session: OperatorSession
     cookie_value: str
+
+
+class PasswordWorkBudget:
+    """Admit memory-hard work before allocating it to a fixed-size executor."""
+
+    def __init__(self, maximum_concurrency: int) -> None:
+        if not 1 <= maximum_concurrency <= 8:
+            raise ValueError("operator credential work concurrency is outside the bound")
+        self._slots: asyncio.Queue[None] = asyncio.Queue(maxsize=maximum_concurrency)
+        for _ in range(maximum_concurrency):
+            self._slots.put_nowait(None)
+        self._executor = ThreadPoolExecutor(
+            max_workers=maximum_concurrency,
+            thread_name_prefix="fs2-operator-argon2",
+        )
+
+    async def run(self, operation: Callable[[], PasswordResult]) -> PasswordResult:
+        try:
+            self._slots.get_nowait()
+        except asyncio.QueueEmpty as error:
+            raise PasswordWorkCapacityError("operator credential work capacity is exhausted") from error
+        try:
+            future = asyncio.get_running_loop().run_in_executor(self._executor, operation)
+        except BaseException:
+            self._slots.put_nowait(None)
+            raise
+        future.add_done_callback(lambda _: self._slots.put_nowait(None))
+        return await asyncio.shield(future)
 
 
 def require_operation_access(principal: Principal, operation: OperationView) -> None:
@@ -324,6 +362,7 @@ class OperatorSessionService:
         ttl_seconds: int = 8 * 60 * 60,
         idle_timeout_seconds: int | None = None,
         max_sessions_per_principal: int = 4,
+        credential_work_concurrency: int = 2,
     ) -> None:
         if not 5 * 60 <= ttl_seconds <= 24 * 60 * 60:
             raise ValueError("operator session TTL is outside the bound")
@@ -339,6 +378,7 @@ class OperatorSessionService:
         self.ttl_seconds = ttl_seconds
         self.idle_timeout_seconds = idle_timeout_seconds
         self.max_sessions_per_principal = max_sessions_per_principal
+        self._password_work = PasswordWorkBudget(credential_work_concurrency)
 
     def _digest(self, cookie_value: str, key_id: str) -> str:
         try:
@@ -391,7 +431,8 @@ class OperatorSessionService:
         secret = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
         credential = f"{OPERATOR_CREDENTIAL_MARKER}_{principal_id.hex}_{secret}"
         pepper_key_id = self._peppers.active_key_id
-        digest = self._hasher.hash(self._credential_prehash(credential, pepper_key_id))
+        prehash = self._credential_prehash(credential, pepper_key_id)
+        digest = await self._password_work.run(lambda: self._hasher.hash(prehash))
         fingerprint = hashlib.sha256(credential.encode()).hexdigest()
         principal = await self.store.replace_operator_credential(
             principal_id,
@@ -402,29 +443,67 @@ class OperatorSessionService:
         )
         return OperatorCredentialDisclosure(principal_id=principal.id, credential=credential)
 
+    async def enroll_credential(
+        self,
+        assertion: ReleaseIdentityAssertion,
+        *,
+        assertion_fingerprint: str,
+        actor: str,
+    ) -> OperatorEnrollmentDisclosure:
+        target = assertion.operator
+        if target is None:
+            raise AuthenticationError("release identity has no operator enrollment target")
+        secret = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+        credential = f"{OPERATOR_CREDENTIAL_MARKER}_{target.principal_id.hex}_{secret}"
+        pepper_key_id = self._peppers.active_key_id
+        prehash = self._credential_prehash(credential, pepper_key_id)
+        digest = await self._password_work.run(lambda: self._hasher.hash(prehash))
+        fingerprint = hashlib.sha256(credential.encode()).hexdigest()
+        principal, revoked_sessions = await self.store.enroll_operator_credential(
+            assertion,
+            assertion_fingerprint=assertion_fingerprint,
+            pepper_key_id=pepper_key_id,
+            digest=digest,
+            fingerprint=fingerprint,
+            actor=actor,
+        )
+        return OperatorEnrollmentDisclosure(
+            principal=principal,
+            mode=target.mode,
+            revoked_sessions=revoked_sessions,
+            credential=credential,
+        )
+
     async def authenticate_credential(self, credential: str) -> OperatorPrincipal:
         principal_id = self._parse_credential(credential)
         record = await self.store.operator_credential_for_verification(principal_id)
         if record is None or not record.principal.enabled or str(record.principal.kind) != "human":
             raise AuthenticationError("invalid operator credential")
         try:
-            valid = self._hasher.verify(
-                record.digest,
-                self._credential_prehash(credential, record.pepper_key_id),
-            )
+            prehash = self._credential_prehash(credential, record.pepper_key_id)
+            valid = await self._password_work.run(lambda: self._hasher.verify(record.digest, prehash))
         except (InvalidHashError, VerifyMismatchError) as exc:
             raise AuthenticationError("invalid operator credential") from exc
         if not valid:
             raise AuthenticationError("invalid operator credential")
         if record.pepper_key_id != self._peppers.active_key_id:
             active_id = self._peppers.active_key_id
-            replacement = self._hasher.hash(self._credential_prehash(credential, active_id))
+            active_prehash = self._credential_prehash(credential, active_id)
+            replacement = await self._password_work.run(lambda: self._hasher.hash(active_prehash))
             await self.store.rehash_operator_credential(
                 principal_id,
                 pepper_key_id=active_id,
                 digest=replacement,
             )
         return record.principal
+
+    def source_fingerprint(self, source: str) -> str:
+        pepper = self._peppers.keys[self._peppers.active_key_id]
+        return hmac.new(
+            pepper,
+            OPERATOR_SOURCE_DIGEST_CONTEXT + source.encode("ascii"),
+            hashlib.sha256,
+        ).hexdigest()
 
     def _new_material(self) -> tuple[UUID, str, str, str]:
         session_id = uuid4()

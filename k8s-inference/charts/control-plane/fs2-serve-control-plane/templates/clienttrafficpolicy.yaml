@@ -14,4 +14,10 @@ spec:
   tls:
     minVersion: "1.2"
     maxVersion: "1.3"
+  # Derive X-Envoy-External-Address from the immediate downstream socket and
+  # ignore caller-supplied X-Forwarded-For. The application accepts that value
+  # only when the backend peer belongs to its explicit Envoy CIDR contract.
+  clientIPDetection:
+    xForwardedFor:
+      numTrustedHops: 0
 {{- end }}

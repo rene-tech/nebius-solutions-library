@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import ssl
+import stat
 import sys
 import urllib.error
 import urllib.request
@@ -58,17 +59,20 @@ def normalize_origin(endpoint: str) -> str:
 
 
 def read_token(path: Path) -> str:
-    """Read one non-empty token without ever returning it in an error message."""
+    """Read one private operator credential without reflecting it in errors."""
     try:
-        if path.stat().st_size > MAX_TOKEN_BYTES:
-            raise SmokeError("admin token file is too large")
+        metadata = path.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) & 0o077:
+            raise SmokeError("operator credential file must be a mode-0600 regular file")
+        if metadata.st_size > MAX_TOKEN_BYTES:
+            raise SmokeError("operator credential file is too large")
         token = path.read_text(encoding="utf-8").strip()
     except SmokeError:
         raise
     except (OSError, UnicodeError) as exc:
-        raise SmokeError("admin token file could not be read") from exc
-    if not token:
-        raise SmokeError("admin token file is empty")
+        raise SmokeError("operator credential file could not be read") from exc
+    if not 64 <= len(token) <= 256 or any(character.isspace() for character in token):
+        raise SmokeError("operator credential file is invalid")
     return token
 
 
@@ -332,7 +336,7 @@ def _grafana_summary(transport: HttpsTransport) -> dict[str, object]:
     return {"mode": "login", "database": None, "version": None}
 
 
-def run_smoke(transport: HttpsTransport, admin_token: str) -> dict[str, object]:
+def run_smoke(transport: HttpsTransport, operator_credential: str) -> dict[str, object]:
     """Run read-only admin views and a native Grafana reachability check."""
     _validate_admin_html(transport.request("/admin/", headers={"Accept": "text/html"}))
 
@@ -341,7 +345,7 @@ def run_smoke(transport: HttpsTransport, admin_token: str) -> dict[str, object]:
         method="POST",
         headers={
             "Accept": "application/json",
-            "Authorization": f"Bearer {admin_token}",
+            "Authorization": f"Bearer {operator_credential}",
             "Origin": transport.origin,
         },
         body=b"",
@@ -444,7 +448,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         required=True,
         help="public HTTPS origin or admin_web_interface_url Terraform output",
     )
-    parser.add_argument("--admin-token-file", type=Path, required=True)
+    parser.add_argument("--operator-credential-file", type=Path, required=True)
     parser.add_argument(
         "--ca-file",
         type=Path,
@@ -458,7 +462,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not 1 <= args.timeout_seconds <= 300:
             raise SmokeError("timeout-seconds must be from 1 through 300")
         origin = normalize_origin(args.endpoint)
-        token = read_token(args.admin_token_file)
+        token = read_token(args.operator_credential_file)
         result = run_smoke(
             HttpsTransport(
                 origin,

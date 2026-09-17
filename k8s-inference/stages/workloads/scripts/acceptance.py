@@ -17,8 +17,7 @@ from mcp.client.streamable_http import streamable_http_client
 base_url = os.environ["FS2_BASE_URL"].rstrip("/")
 origin = os.environ["FS2_ORIGIN"].rstrip("/")
 authority = urlsplit(origin).netloc
-internal_url = os.environ["FS2_INTERNAL_URL"].rstrip("/")
-admin_token = os.environ["FS2_ADMIN_TOKEN"]
+access_token = os.environ["FS2_ACCESS_TOKEN"]
 context = ssl.create_default_context()
 
 
@@ -40,43 +39,10 @@ def request(
         return json.load(response)
 
 
-pat_request = urllib.request.Request(
-    internal_url + "/admin/v1/tokens",
-    data=json.dumps(
-        {
-            "principal_id": "terraform-disposable-acceptance",
-            "tenant_id": "terraform-acceptance",
-            "scopes": [
-                "catalog.read",
-                "inference.invoke",
-                "mcp.invoke",
-                "operations.read",
-                "operations.result",
-                "operations.cancel",
-                "operations.acknowledge",
-                "use.nonclinical",
-                "use.noncommercial",
-            ],
-            "models": ["*"],
-            "request_budget": 1000,
-            "gpu_seconds_budget": 10000000,
-            "max_concurrency": 4,
-        }
-    ).encode("utf-8"),
-    headers={
-        "Authorization": f"Bearer {admin_token}",
-        "Content-Type": "application/json",
-        "Host": authority,
-        "Origin": origin,
-    },
-)
-with urllib.request.urlopen(pat_request, timeout=30) as response:
-    issued = json.load(response)
-pat = issued["token"]
-if not isinstance(pat, str) or not pat.startswith("fs2_pat_"):
-    raise RuntimeError("internal admin API did not return a PAT")
+if not access_token.startswith("fs2_pat_"):
+    raise RuntimeError("acceptance access credential is not a scoped PAT")
 
-models = request("/v1/models", token=pat)
+models = request("/v1/models", token=access_token)
 if not isinstance(models.get("data"), list) or not models["data"]:
     raise RuntimeError("authenticated model catalog is empty")
 
@@ -84,7 +50,7 @@ if not isinstance(models.get("data"), list) or not models["data"]:
 async def discover_tools() -> int:
     async with httpx2.AsyncClient(
         headers={
-            "Authorization": f"Bearer {pat}",
+            "Authorization": f"Bearer {access_token}",
             "Origin": origin,
             "Host": authority,
         },

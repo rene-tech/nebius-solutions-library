@@ -23,6 +23,7 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.server.mcpserver import Context
 from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBatchRepository
 from test_scientific_artifacts import ALLOWED_MEDIA_TYPES, FakeObjectStore, digest
+from release_identity_testkit import ReleaseAuthorityFixture
 
 from fs2_serve.admission import AdmissionService
 from fs2_serve.api import AppRuntime, create_app
@@ -691,6 +692,7 @@ def scientific_runtime(
     )
     metrics = Metrics(registry.list(enabled_only=True))
     peppers = PepperRing(active_key_id="pepper-v1", keys={"pepper-v1": b"p" * 32})
+    release_authority = ReleaseAuthorityFixture.create()
     runtime = AppRuntime(
         settings=settings,
         registry=registry,
@@ -708,11 +710,12 @@ def scientific_runtime(
             shutdown_grace_seconds=1,
         ),
         metrics=metrics,
-        admin_token=b"a" * 32,
         operator_sessions=OperatorSessionService(store, peppers),
         owns_store=False,
         scientific_batches=service,
+        release_identities=release_authority.verifier,
     )
+    setattr(runtime, "_test_release_authority", release_authority)
     return runtime, controller, repository, cluster, pointer
 
 

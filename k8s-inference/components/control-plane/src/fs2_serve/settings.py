@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     payload_keyring_file: Path = Path("/var/run/secrets/fs2-serve/payload-keyring.json")
     ledger_hmac_keyring_file: Path = Path("/var/run/secrets/fs2-serve/ledger-hmac-keyring.json")
     route_attestors_file: Path | None = Path("/var/run/secrets/fs2-serve/attestors/route-attestors.json")
-    admin_token_file: Path = Path("/var/run/secrets/fs2-serve/admin-token")
+    release_identity_trust_file: Path = Path("/etc/fs2-serve/release-identity/trust.json")
     bootstrap_access_token_file: Path = Path("/var/run/secrets/fs2-serve/bootstrap-access-token")
     bootstrap_access_principal_id: str = Field(
         default="terraform-bootstrap-client",
@@ -293,7 +293,10 @@ class Settings(BaseSettings):
     admin_session_idle_timeout_seconds: int = Field(default=1800, ge=60, le=3600)
     admin_session_max_per_principal: int = Field(default=4, ge=1, le=20)
     admin_session_exchange_attempts: int = Field(default=5, ge=1, le=100)
+    admin_session_exchange_aggregate_attempts: int = Field(default=200, ge=10, le=10000)
     admin_session_exchange_window_seconds: int = Field(default=60, ge=1, le=3600)
+    admin_session_credential_work_concurrency: int = Field(default=2, ge=1, le=8)
+    admin_session_trusted_proxy_cidrs: tuple[str, ...] = Field(default=(), max_length=16)
     reporting_database_role: str = Field(
         default="fs2_serve_reporting", min_length=1, max_length=63, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$"
     )
@@ -372,6 +375,16 @@ class Settings(BaseSettings):
             raise ValueError("max_sync_waiters cannot be lower than worker_concurrency")
         if self.admin_session_idle_timeout_seconds > self.admin_session_ttl_seconds:
             raise ValueError("admin session idle timeout cannot exceed its absolute TTL")
+        if self.admin_session_exchange_aggregate_attempts <= self.admin_session_exchange_attempts:
+            raise ValueError("admin aggregate exchange ceiling must exceed the per-source ceiling")
+        trusted_proxy_networks = [
+            ipaddress.ip_network(value, strict=True)
+            for value in self.admin_session_trusted_proxy_cidrs
+        ]
+        if any(network.prefixlen == 0 for network in trusted_proxy_networks):
+            raise ValueError("admin trusted proxies cannot contain an all-address network")
+        if len(set(trusted_proxy_networks)) != len(trusted_proxy_networks):
+            raise ValueError("admin trusted proxy CIDRs must be unique")
         if self.federation_routes_file.parent != self.federation_secret_dir:
             raise ValueError("federation_routes_file must be directly inside federation_secret_dir")
         if self.scientific_artifacts_enabled:
@@ -473,9 +486,6 @@ class Settings(BaseSettings):
         if len(value) < minimum:
             raise ValueError(f"secret at {path} must be at least {minimum} bytes")
         return value
-
-    def admin_token(self) -> bytes:
-        return self._read_secret(self.admin_token_file, minimum=32)
 
     def artifact_media_types_set(self) -> frozenset[str]:
         """Return the exact media-type allowlist accepted for scientific bytes."""

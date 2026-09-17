@@ -37,9 +37,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0030_operator_credentials.sql",
-        "migration_count": 30,
-        "migration_set_sha256": "24f3abc3997de473e1343f9d3467e84babb535cab889369de3620d7fb99c44c3",
+        "last_migration_version": "0031_release_identity_receipts.sql",
+        "migration_count": 31,
+        "migration_set_sha256": "6db59f99747ad837a7b53137d9d1df7983eacc48383b75ba2ecdcf359bff0fc6",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -71,6 +71,8 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
         assert wait_source.count(f"fs2_scientific_admission_outbox','{privilege}'") == 2
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
+    for privilege in ("SELECT", "INSERT"):
+        assert wait_source.count(f"fs2_release_identity_receipts','{privilege}'") == 2
     assert "SELECT,INSERT" not in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
 

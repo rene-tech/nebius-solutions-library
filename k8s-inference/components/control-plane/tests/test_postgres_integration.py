@@ -30,6 +30,7 @@ from test_scientific_lifecycle_bridge import (
 from test_scientific_lifecycle_bridge import (
     operation as lifecycle_operation,
 )
+from release_identity_testkit import ReleaseAuthorityFixture
 
 from fs2_serve.access import AdminAccessService
 from fs2_serve.access_models import (
@@ -38,6 +39,9 @@ from fs2_serve.access_models import (
     OperatorPrincipalCreate,
     OperatorRole,
     PrincipalKind,
+    ReleaseIdentityCapability,
+    ReleaseIdentityPurpose,
+    SessionExchangeAdmission,
 )
 from fs2_serve.activation_contract import ScaleContract
 from fs2_serve.activation_health import activation_set
@@ -120,7 +124,6 @@ from fs2_serve.store import (
 )
 from fs2_serve.telemetry import Metrics
 
-ADMIN_TOKEN = "a" * 32
 INITIAL_RESOURCE_VERSION = "1"
 INITIAL_GENERATION = 1
 
@@ -210,7 +213,8 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
             "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
             "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
             "fs2_activation_model_fences,fs2_activation_intents,"
-            "fs2_operator_credentials,fs2_operator_sessions,fs2_usage_facts,fs2_audit_events,"
+            "fs2_release_identity_receipts,fs2_operator_credentials,fs2_operator_sessions,"
+            "fs2_usage_facts,fs2_audit_events,"
             "fs2_operation_events,fs2_operations,fs2_tokens "
             "RESTART IDENTITY CASCADE"
         )
@@ -226,7 +230,8 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
                 "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
                 "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
                 "fs2_activation_model_fences,fs2_activation_intents,"
-                "fs2_operator_credentials,fs2_operator_sessions,fs2_usage_facts,fs2_audit_events,"
+                "fs2_release_identity_receipts,fs2_operator_credentials,fs2_operator_sessions,"
+                "fs2_usage_facts,fs2_audit_events,"
                 "fs2_operation_events,fs2_operations,fs2_tokens "
                 "RESTART IDENTITY CASCADE"
             )
@@ -699,29 +704,31 @@ async def test_admin_access_migration_sessions_rotation_rate_and_reported_units_
     assert (await sessions.verify(replacement_session.cookie_value)).principal.id == tenant_operator.id
     attempt_at = datetime.now(UTC)
     assert all(
-        [
+        admission is SessionExchangeAdmission.ADMITTED
+        for admission in [
             await postgres_store.consume_operator_session_exchange(
                 "a" * 64,
                 attempted_at=attempt_at,
                 window_seconds=60,
-                maximum_attempts=5,
+                maximum_source_attempts=5,
+                maximum_aggregate_attempts=200,
             )
             for _ in range(5)
         ]
     )
-    assert not await postgres_store.consume_operator_session_exchange(
+    assert await postgres_store.consume_operator_session_exchange(
         "a" * 64,
         attempted_at=attempt_at,
         window_seconds=60,
-        maximum_attempts=5,
-    )
+        maximum_source_attempts=5,
+        maximum_aggregate_attempts=200,
+    ) is SessionExchangeAdmission.SOURCE_THROTTLED
     assert [
         item.id
         for item in await postgres_store.list_operator_principals(
             tenant_id="tenant-access", include_global=False, limit=20
         )
     ] == [tenant_operator.id]
-
     tokens = TokenService(postgres_store, pepper)
     issued = await tokens.issue(
         TokenCreate(
@@ -888,6 +895,68 @@ async def test_admin_access_migration_sessions_rotation_rate_and_reported_units_
         assert credential_row is not None
         assert disclosure.credential not in str(credential_row["digest"])
         assert len(str(credential_row["fingerprint"])) == 64
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_release_enrollment_receipt_precedes_argon_and_recovers_exact_principal(
+    postgres_store: PostgresStore,
+) -> None:
+    pepper = PepperRing(active_key_id="pepper-v1", keys={"pepper-v1": b"p" * 32})
+    sessions = OperatorSessionService(postgres_store, pepper, ttl_seconds=600)
+    authority = ReleaseAuthorityFixture.create()
+    principal_id = uuid4()
+    target = {
+        "principal_id": str(principal_id),
+        "subject": "operator:postgres-release-enrollment",
+        "display_name": "PostgreSQL release enrollment",
+        "role": "admin",
+        "tenant_id": None,
+        "mode": "create",
+    }
+    compact = authority.bearer(
+        ReleaseIdentityCapability.OPERATOR_ENROLL,
+        operator=target,
+    )
+    verified = authority.verifier.verify(
+        compact,
+        capability=ReleaseIdentityCapability.OPERATOR_ENROLL,
+        purpose=ReleaseIdentityPurpose.OPERATOR_ENROLLMENT,
+    )
+    await postgres_store.consume_release_identity_assertion(
+        verified.assertion,
+        assertion_fingerprint=verified.fingerprint,
+        capability="operator.enroll",
+        actor=verified.actor,
+    )
+    disclosure = await sessions.enroll_credential(
+        verified.assertion,
+        assertion_fingerprint=verified.fingerprint,
+        actor=verified.actor,
+    )
+    assert disclosure.principal.id == principal_id
+    assert (await sessions.authenticate_credential(disclosure.credential)).id == principal_id
+    async with postgres_store.pool.acquire() as connection:
+        receipt = await connection.fetchrow(
+            """
+            SELECT capability,assertion_fingerprint,consumed_by
+            FROM fs2_release_identity_receipts WHERE assertion_id=$1
+            """,
+            verified.assertion.assertion_id,
+        )
+    assert receipt is not None
+    assert dict(receipt) == {
+        "capability": "operator.enroll",
+        "assertion_fingerprint": verified.fingerprint,
+        "consumed_by": verified.actor,
+    }
+    with pytest.raises(ConflictError, match="already consumed"):
+        await postgres_store.consume_release_identity_assertion(
+            verified.assertion,
+            assertion_fingerprint=verified.fingerprint,
+            capability="operator.enroll",
+            actor=verified.actor,
+        )
 
 
 @pytest.mark.postgres
@@ -1282,6 +1351,12 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_pending_
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_operator_credentials')")
                 == "fs2_operator_credentials"
+            )
+            assert (
+                await upgraded_connection.fetchval(
+                    "SELECT to_regclass('public.fs2_release_identity_receipts')"
+                )
+                == "fs2_release_identity_receipts"
             )
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_model_deployments')")
@@ -2476,6 +2551,7 @@ def postgres_app(store: PostgresStore, registry) -> tuple[FastAPI, AppRuntime]:
         shutdown_grace_seconds=1,
     )
     peppers = PepperRing(active_key_id="pepper-v1", keys={"pepper-v1": b"p" * 32})
+    release_authority = ReleaseAuthorityFixture.create()
     runtime = AppRuntime(
         settings=settings,
         registry=registry,
@@ -2483,17 +2559,29 @@ def postgres_app(store: PostgresStore, registry) -> tuple[FastAPI, AppRuntime]:
         tokens=TokenService(store, peppers),
         admission=admission,
         metrics=metrics,
-        admin_token=ADMIN_TOKEN.encode(),
         operator_sessions=OperatorSessionService(store, peppers),
         owns_store=False,
+        release_identities=release_authority.verifier,
     )
+    setattr(runtime, "_test_release_authority", release_authority)
     return create_app(runtime), runtime
 
 
-async def issue_http_token(client: httpx2.AsyncClient, *, max_concurrency: int = 1) -> dict[str, object]:
+def postgres_release_auth(runtime: AppRuntime, capability: ReleaseIdentityCapability) -> dict[str, str]:
+    authority = getattr(runtime, "_test_release_authority")
+    assert isinstance(authority, ReleaseAuthorityFixture)
+    return authority.auth(capability)
+
+
+async def issue_http_token(
+    client: httpx2.AsyncClient,
+    runtime: AppRuntime,
+    *,
+    max_concurrency: int = 1,
+) -> dict[str, object]:
     response = await client.post(
         "/admin/v1/tokens",
-        headers={"authorization": f"Bearer {ADMIN_TOKEN}"},
+        headers=postgres_release_auth(runtime, ReleaseIdentityCapability.TOKENS_ISSUE),
         json={
             "principal_id": "postgres-endpoint-owner",
             "tenant_id": "tenant-a",
@@ -2539,7 +2627,7 @@ async def test_admin_audit_endpoint_decodes_asyncpg_jsonb_strings(postgres_store
         )
     assert isinstance(raw_detail, str)
 
-    app, _ = postgres_app(postgres_store, registry)
+    app, runtime = postgres_app(postgres_store, registry)
     async with app.router.lifespan_context(app):
         async with httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=app), base_url="https://inference.test.invalid", trust_env=False
@@ -2547,7 +2635,7 @@ async def test_admin_audit_endpoint_decodes_asyncpg_jsonb_strings(postgres_store
             response = await client.get(
                 "/admin/v1/audit",
                 params={"tenant_id": principal.tenant_id},
-                headers={"authorization": f"Bearer {ADMIN_TOKEN}"},
+                headers=postgres_release_auth(runtime, ReleaseIdentityCapability.AUDIT_READ),
             )
     assert response.status_code == 200, response.text
     payload = response.json()
@@ -2629,12 +2717,12 @@ async def test_deadline_janitor_terminalizes_unclaimed_work_and_releases_capacit
 async def test_expired_queued_http_operation_releases_token_capacity_before_payload_ttl(
     postgres_store: PostgresStore, registry
 ) -> None:
-    app, _ = postgres_app(postgres_store, registry)
+    app, runtime = postgres_app(postgres_store, registry)
     async with app.router.lifespan_context(app):
         async with httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=app), base_url="https://inference.test.invalid", trust_env=False
         ) as client:
-            issued = await issue_http_token(client, max_concurrency=1)
+            issued = await issue_http_token(client, runtime, max_concurrency=1)
             token = issued["token"]
             assert isinstance(token, str)
             invoke_headers = {
@@ -2684,7 +2772,7 @@ async def test_expired_queued_http_operation_releases_token_capacity_before_payl
             token_rows = await client.get(
                 "/admin/v1/tokens",
                 params={"tenant_id": "tenant-a"},
-                headers={"authorization": f"Bearer {ADMIN_TOKEN}"},
+                headers=postgres_release_auth(runtime, ReleaseIdentityCapability.TOKENS_LIST),
             )
             assert token_rows.status_code == 200, token_rows.text
             current = next(row for row in token_rows.json() if row["id"] == issued["id"])
@@ -3277,7 +3365,7 @@ async def test_malformed_audit_jsonb_fails_closed_at_store_and_endpoint(
     with pytest.raises(RuntimeError, match="stored audit detail is not an object"):
         await postgres_store.list_audit(tenant_id=principal.tenant_id)
 
-    app, _ = postgres_app(postgres_store, registry)
+    app, runtime = postgres_app(postgres_store, registry)
     async with app.router.lifespan_context(app):
         async with httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=app), base_url="https://inference.test.invalid", trust_env=False
@@ -3285,7 +3373,7 @@ async def test_malformed_audit_jsonb_fails_closed_at_store_and_endpoint(
             response = await client.get(
                 "/admin/v1/audit",
                 params={"tenant_id": principal.tenant_id},
-                headers={"authorization": f"Bearer {ADMIN_TOKEN}"},
+                headers=postgres_release_auth(runtime, ReleaseIdentityCapability.AUDIT_READ),
             )
     assert response.status_code == 503
     assert secret not in response.text

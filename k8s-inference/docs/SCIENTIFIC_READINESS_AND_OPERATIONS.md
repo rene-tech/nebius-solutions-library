@@ -26,8 +26,9 @@ zero-change three-stage Terraform post-apply plans.
 
 Use the private `inference-stack output --var-file terraform.tfvars` access
 bundle for the public HTTPS admin portal, MCP endpoint, inference endpoint,
-and credentials. The admin bootstrap token signs into the admin portal; it is
-not a customer inference key. The scientific access token has the academic
+and credentials. A personal operator credential from the audited release
+enrollment flow signs into the admin portal; the retained bootstrap value is
+not mounted by the control plane and cannot authenticate HTTP. The scientific access token has the academic
 tenant's scientific access. Do not distribute the admin token to participants.
 See [access and observability](ADMIN_OBSERVABILITY_ACCESS.md) for the exact
 output fields and Grafana credentials; no port forwarding is required for the

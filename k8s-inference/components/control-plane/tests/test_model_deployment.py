@@ -1720,7 +1720,11 @@ def test_preview_http_routes_are_feature_gated_and_mutations_return_501(
         prometheus_server_address="http://prometheus:9090",
     )
     payload = ModelDeploymentPreviewProposal(name="qwen-live", spec=model_spec()).model_dump(mode="json", by_alias=True)
-    with TestClient(create_app(runtime), base_url="https://inference.test.invalid") as client:
+    with TestClient(
+        create_app(runtime),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    ) as client:
         assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         preview = client.post("/admin/api/v1/model-deployments:plan-preview", json=payload)
         assert preview.status_code == 200 and preview.json()["data"]["mutation_supported"] is False

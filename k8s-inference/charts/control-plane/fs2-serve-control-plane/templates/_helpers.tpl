@@ -218,8 +218,8 @@ app.kubernetes.io/component: model-controller
   value: /var/run/secrets/fs2-serve/token-pepper
 - name: FS2_ROUTE_ATTESTORS_FILE
   value: /var/run/secrets/fs2-serve/attestors/route-attestors.json
-- name: FS2_ADMIN_TOKEN_FILE
-  value: /var/run/secrets/fs2-serve/admin-token
+- name: FS2_RELEASE_IDENTITY_TRUST_FILE
+  value: /etc/fs2-serve/release-identity/{{ .Values.releaseIdentity.trustConfigMapKey }}
 - name: FS2_ADMIN_SESSION_TTL_SECONDS
   value: {{ .Values.config.adminSessionTtlSeconds | quote }}
 - name: FS2_ADMIN_SESSION_IDLE_TIMEOUT_SECONDS
@@ -228,8 +228,14 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.config.adminSessionMaxPerPrincipal | quote }}
 - name: FS2_ADMIN_SESSION_EXCHANGE_ATTEMPTS
   value: {{ .Values.config.adminSessionExchangeAttempts | quote }}
+- name: FS2_ADMIN_SESSION_EXCHANGE_AGGREGATE_ATTEMPTS
+  value: {{ .Values.config.adminSessionExchangeAggregateAttempts | quote }}
 - name: FS2_ADMIN_SESSION_EXCHANGE_WINDOW_SECONDS
   value: {{ .Values.config.adminSessionExchangeWindowSeconds | quote }}
+- name: FS2_ADMIN_SESSION_CREDENTIAL_WORK_CONCURRENCY
+  value: {{ .Values.config.adminSessionCredentialWorkConcurrency | quote }}
+- name: FS2_ADMIN_SESSION_TRUSTED_PROXY_CIDRS
+  value: {{ .Values.config.adminSessionTrustedProxyCidrs | toJson | quote }}
 {{- if .Values.adminConfiguration.enabled }}
 - name: FS2_ADMIN_CONFIGURATION_FILE
   value: /etc/fs2-serve/admin/{{ .Values.adminConfiguration.key }}
@@ -473,9 +479,8 @@ app.kubernetes.io/component: model-controller
 - name: route-attestors
   mountPath: /var/run/secrets/fs2-serve/attestors
   readOnly: true
-- name: admin-token
-  mountPath: /var/run/secrets/fs2-serve/admin-token
-  subPath: token
+- name: release-identity-trust
+  mountPath: /etc/fs2-serve/release-identity
   readOnly: true
 - name: federation
   mountPath: /var/run/secrets/fs2-serve/federation
@@ -596,13 +601,13 @@ app.kubernetes.io/component: model-controller
     items:
       - key: {{ .Values.secrets.routeAttestors.key }}
         path: route-attestors.json
-- name: admin-token
-  secret:
-    secretName: {{ .Values.secrets.admin.name }}
-    defaultMode: 0400
+- name: release-identity-trust
+  configMap:
+    name: {{ required "releaseIdentity.trustConfigMapName is required" .Values.releaseIdentity.trustConfigMapName }}
+    defaultMode: 0444
     items:
-      - key: {{ .Values.secrets.admin.key }}
-        path: token
+      - key: {{ required "releaseIdentity.trustConfigMapKey is required" .Values.releaseIdentity.trustConfigMapKey }}
+        path: {{ .Values.releaseIdentity.trustConfigMapKey }}
 - name: federation
   secret:
     secretName: {{ .Values.federation.secretName }}

@@ -1472,25 +1472,26 @@ resource "kubernetes_config_map_v1" "model_controller_bootstrap" {
     "bootstrap.py"            = <<-PY
       import json
       import os
-      import time
       import urllib.error
       import urllib.parse
       import urllib.request
-      from http.cookies import SimpleCookie
       from pathlib import Path
 
       base = os.environ["FS2_BOOTSTRAP_BASE_URL"].rstrip("/")
       public_origin = os.environ["FS2_BOOTSTRAP_PUBLIC_ORIGIN"].rstrip("/")
       public_authority = urllib.parse.urlsplit(public_origin).netloc
-      token = Path("/var/run/fs2-admin/token").read_text(encoding="utf-8").strip()
+      assertion = Path("/var/run/fs2-release/assertion").read_text(encoding="utf-8").strip()
       payload = json.loads(Path("/bootstrap/bootstrap.json").read_text(encoding="utf-8"))
 
-      def call(path, *, method="GET", body=None, cookie=None, accepted=(200,)):
-          headers = {"Accept": "application/json", "Host": public_authority, "Origin": public_origin}
+      def call(path, *, method="GET", body=None, accepted=(200,)):
+          headers = {
+              "Accept": "application/json",
+              "Authorization": "Bearer " + assertion,
+              "Host": public_authority,
+              "Origin": public_origin,
+          }
           if body is not None:
               headers["Content-Type"] = "application/json"
-          if cookie is not None:
-              headers["Cookie"] = cookie
           request = urllib.request.Request(
               base + path,
               data=None if body is None else json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8"),
@@ -1511,71 +1512,23 @@ resource "kubernetes_config_map_v1" "model_controller_bootstrap" {
               code = document.get("code", "unknown") if isinstance(document, dict) else "unknown"
               raise RuntimeError(f"HTTP {error.code} ({code}) for {path}") from None
 
-      session = None
-      for attempt in range(12):
-          try:
-              request = urllib.request.Request(
-                  base + "/admin/api/v1/session",
-                  data=b"{}",
-                  headers={
-                      "Authorization": "Bearer " + token,
-                      "Content-Type": "application/json",
-                      "Host": public_authority,
-                      "Origin": public_origin,
-                  },
-                  method="POST",
-              )
-              response = urllib.request.urlopen(request, timeout=15)
-              cookies = SimpleCookie()
-              cookies.load(response.headers["Set-Cookie"])
-              session = "__Host-fs2_admin_session=" + cookies["__Host-fs2_admin_session"].value
-              break
-          except (OSError, urllib.error.URLError, KeyError):
-              if attempt == 11:
-                  raise
-              time.sleep(5)
-      if session is None:
-          raise RuntimeError("admin session bootstrap did not become ready")
-
-      for proposal in payload["proposals"]:
-          name = proposal["name"]
-          status, current, _ = call(
-              "/admin/api/v1/model-deployments/" + urllib.parse.quote(name, safe="") + "?namespace=fs2-models",
-              cookie=session,
-              accepted=(200, 404),
-          )
-          if status == 200:
-              spec = current["data"]["spec"]
-              if spec["modelRef"] != proposal["spec"]["modelRef"] or spec["tenantId"] != proposal["spec"]["tenantId"]:
-                  raise RuntimeError(f"existing bootstrap identity differs for {name}")
-              print(f"model bootstrap preserved existing desired revision: {name}")
-              continue
-
-          _, planned, _ = call(
-              "/admin/api/v1/model-deployments:plan-preview",
-              method="POST",
-              body=proposal,
-              cookie=session,
-          )
-          preview = planned["data"]
-          if preview["decision"]["disposition"] != "accepted" or not preview["mutation_supported"]:
-              raise RuntimeError(f"model bootstrap was not admitted: {name}")
-          apply_body = {
-              "preview_id": preview["preview_id"],
-              "proposed_etag": preview["proposed_etag"],
-              "proposal": proposal,
-              "idempotency_key": "terraform-bootstrap-" + preview["proposed_etag"].removeprefix("sha256:"),
-          }
-          _, applied, _ = call(
-              "/admin/api/v1/model-deployments:apply",
-              method="POST",
-              body=apply_body,
-              cookie=session,
-          )
-          projection = applied["data"]["projection"]
-          if projection not in ("applied", "pending"):
-              raise RuntimeError(f"model bootstrap returned an invalid projection for {name}")
-          print(f"model bootstrap stored desired revision: {name} ({projection})")
+      _, response, _ = call(
+          "/admin/api/v1/release/model-bootstrap",
+          method="POST",
+          body=payload,
+      )
+      data = response.get("data") if isinstance(response, dict) else None
+      models = data.get("models") if isinstance(data, dict) else None
+      if (
+          not isinstance(models, list)
+          or len(models) != len(payload["proposals"])
+          or data.get("payload_sha256") != "${local.model_controller_bootstrap_identity.payload_sha256}"
+      ):
+          raise RuntimeError("release model bootstrap returned an invalid receipt")
+      for model in models:
+          if not isinstance(model, dict) or model.get("projection") not in ("preserved", "applied", "pending"):
+              raise RuntimeError("release model bootstrap returned an invalid model projection")
+          print(f"model bootstrap projection: {model['name']} ({model['projection']})")
     PY
   }
 
@@ -1628,7 +1581,9 @@ resource "kubernetes_job_v1" "model_controller_bootstrap" {
   timeouts { create = "15m" }
 
   spec {
-    backoff_limit           = 4
+    # A signed release assertion is single-use. Never replay it through an
+    # automatic Job retry after an ambiguous response.
+    backoff_limit           = 0
     active_deadline_seconds = 600
     template {
       metadata {
@@ -1666,8 +1621,8 @@ resource "kubernetes_job_v1" "model_controller_bootstrap" {
             read_only  = true
           }
           volume_mount {
-            name       = "admin-token"
-            mount_path = "/var/run/fs2-admin"
+            name       = "release-assertion"
+            mount_path = "/var/run/fs2-release"
             read_only  = true
           }
         }
@@ -1676,12 +1631,12 @@ resource "kubernetes_job_v1" "model_controller_bootstrap" {
           config_map { name = kubernetes_config_map_v1.model_controller_bootstrap[0].metadata[0].name }
         }
         volume {
-          name = "admin-token"
+          name = "release-assertion"
           secret {
-            secret_name = kubernetes_secret_v1.admin.metadata[0].name
+            secret_name = var.release_identity_model_bootstrap_assertion_secret_name
             items {
-              key  = "token"
-              path = "token"
+              key  = "assertion"
+              path = "assertion"
             }
           }
         }

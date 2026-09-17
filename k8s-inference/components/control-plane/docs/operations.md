@@ -167,8 +167,8 @@ Public routes are:
   and `/v1/models/{model_id}:invoke`;
 - metadata-only operation status, cancel, and acknowledge routes;
 - an explicit owner-scoped result route—cancel never grants result access;
-- legacy bootstrap-admin PAT mint/list/revoke and payload-free audit routes
-  under `/admin/v1/*` for CLI compatibility;
+- capability-scoped, single-use release-automation PAT mint/list/revoke and
+  payload-free audit routes under `/admin/v1/*` for CLI compatibility;
 - session-authenticated, tenant-aware operator, API-key, audit, and reporting
   routes under `/admin/api/v1/*`;
 - `/mcp`, current Streamable HTTP with protocol-specific model tools plus
@@ -221,26 +221,67 @@ The raw value is disclosed exactly once; only its keyed Argon2id verifier is
 stored alongside a non-secret SHA-256 fingerprint. Rotation revokes that
 principal's existing sessions. Because the
 bootstrap service principal is not human, it cannot receive an interactive
-credential. The shared bootstrap bearer remains limited to the legacy
-`/admin/v1/*` automation routes and is refused by the browser session exchange.
+credential. The historical shared bootstrap bearer is inert for both the
+browser exchange and legacy `/admin/v1/*` routes. The control-plane Deployment
+does not mount or read that Secret; retaining the Terraform-owned object and
+output is rollback data, not an HTTP capability.
 
-Rollout is deliberately staged: retain one valid global-admin cookie jar before
-replacing the old exchange; after the migration and application are up, use
-that cookie to issue credentials for named human administrators, prove a
-personal sign-in, and only then end the retained session. If that prerequisite
-is unavailable, roll back instead of exposing a bootstrap-only enrollment
-route.
+Fresh install and break-glass recovery use
+`POST /admin/api/v1/operator-enrollment:consume` with no body or caller-selected
+principal identifier. The bearer is a compact Ed25519 assertion minted only
+after the release authority proves the approved provider
+`workload_identity_session`: non-human, non-interactive, impersonation disabled,
+audience `fs2-admin-release`, exact authorization-closure digest, at most one
+hour for the underlying workload session, and at most five minutes for the
+assertion. The signed assertion contains either an exact new global human
+administrator or an exact enabled existing global human administrator, and
+exactly the `operator.enroll` capability. Tenant identities and non-admin roles
+are refused. PostgreSQL consumes its UUID before any Argon2 allocation. The
+later credential transaction requires that exact payload-free receipt, creates
+or recovers the personal credential, revokes prior sessions, and writes the
+audit row. A failure burns only the short-lived assertion; release automation
+must obtain a new attested assertion to retry. A recovery assertion cannot
+change identity, role, tenant,
+display name, or enabled state. The raw personal credential is returned once to
+release automation for the separately approved secure delivery workflow.
+
+The same release authority protects the retained `/admin/v1/*` automation
+surface. Each request needs a fresh single-use assertion with only its route's
+capability (`tokens.issue`, `tokens.list`, `tokens.revoke`, or `audit.read`). A
+credential for one route cannot call another, and the durable receipt stores
+only issuer/session metadata and the assertion fingerprint. Configure the
+external, security-owned Ed25519 public trust policy through
+`releaseIdentity.trustConfigMapName`; never place a signing key or reusable
+release bearer in Helm values, Terraform state, the browser, or the control
+plane. Absence of that exact trust policy fails release automation closed.
+The complete issuer, enrollment/recovery, model-bootstrap, rollout, and
+rollback contract is in
+[`release-identity-enrollment.md`](release-identity-enrollment.md).
 
 Sessions have both the configured absolute TTL and a 30-minute default idle
 timeout. No principal may hold more than four active, non-idle sessions by
 default. The exchange consumes a database-backed per-network-source attempt
-budget before credential verification; repeated attempts return 429. An admin
+budget before credential verification; repeated attempts return 429. Argon2id
+hash and verification work runs only after admission in a fixed-size executor,
+never on the ASGI event loop; saturated credential-work capacity fails fast
+with 429 instead of queuing another memory-hard operation. The chart-owned Envoy policy derives
+`X-Envoy-External-Address` from the immediate downstream socket while ignoring
+caller-supplied forwarding chains. The application accepts that address only
+from the exact configured Envoy peer CIDR while the NetworkPolicy-selected
+Envoy proxy population is the only public-route peer; otherwise it keys on the
+direct peer. The fingerprint is an HMAC under the active pepper, not a reversible IP
+or an unkeyed hash. A separate, much larger aggregate ceiling bounds total
+password work without collapsing normal administrators into a shared
+per-source bucket. An admin
 can invalidate every session for an in-scope principal with
 `DELETE /admin/api/v1/principals/{principal_id}/sessions`.
 The bounded settings are `FS2_ADMIN_SESSION_IDLE_TIMEOUT_SECONDS`,
 `FS2_ADMIN_SESSION_MAX_PER_PRINCIPAL`,
-`FS2_ADMIN_SESSION_EXCHANGE_ATTEMPTS`, and
-`FS2_ADMIN_SESSION_EXCHANGE_WINDOW_SECONDS`.
+`FS2_ADMIN_SESSION_EXCHANGE_ATTEMPTS`,
+`FS2_ADMIN_SESSION_EXCHANGE_AGGREGATE_ATTEMPTS`,
+`FS2_ADMIN_SESSION_EXCHANGE_WINDOW_SECONDS`,
+`FS2_ADMIN_SESSION_CREDENTIAL_WORK_CONCURRENCY`, and
+`FS2_ADMIN_SESSION_TRUSTED_PROXY_CIDRS`.
 
 The authenticated principal's role and tenant are enforced on every later request by the server.
 Tenant-bound principals cannot enumerate another tenant or consume global
@@ -267,8 +308,8 @@ out-of-range usage stays unavailable without failing otherwise valid
 inference. Native imaging/BioNeMo modality totals remain unavailable unless a
 runtime adapter explicitly reports them. GPU-seconds are explicitly marked
 `estimated` when derived from admission reservations. Legacy `/admin/v1/*` CLI
-routes continue to accept the bootstrap bearer credential but are not browser
-BFF routes and cannot mint an interactive session.
+routes are not browser BFF routes and cannot mint an interactive session; they
+accept only capability-scoped, single-use release assertions.
 
 Deferred after this MVP: external OIDC/SSO, CSRF nonces beyond exact Origin
 enforcement plus `SameSite=Strict`, automatic

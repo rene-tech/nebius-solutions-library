@@ -17,6 +17,8 @@ from .access_models import (
     OperatorPrincipalPatch,
     OperatorSession,
     OperatorSessionRecord,
+    ReleaseIdentityAssertion,
+    SessionExchangeAdmission,
 )
 from .admin_models import (
     AdminModelActivity,
@@ -179,14 +181,35 @@ class Store(Protocol):
         digest: str,
     ) -> None: ...
 
+    async def enroll_operator_credential(
+        self,
+        assertion: ReleaseIdentityAssertion,
+        *,
+        assertion_fingerprint: str,
+        pepper_key_id: str,
+        digest: str,
+        fingerprint: str,
+        actor: str,
+    ) -> tuple[OperatorPrincipal, int]: ...
+
+    async def consume_release_identity_assertion(
+        self,
+        assertion: ReleaseIdentityAssertion,
+        *,
+        assertion_fingerprint: str,
+        capability: str,
+        actor: str,
+    ) -> None: ...
+
     async def consume_operator_session_exchange(
         self,
         source_fingerprint: str,
         *,
         attempted_at: datetime,
         window_seconds: int,
-        maximum_attempts: int,
-    ) -> bool: ...
+        maximum_source_attempts: int,
+        maximum_aggregate_attempts: int,
+    ) -> SessionExchangeAdmission: ...
 
     async def create_operator_session(
         self,

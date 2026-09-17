@@ -6,10 +6,11 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from test_admin_access_api import BOOTSTRAP_AUTH, operator_auth
+from test_admin_access_api import operator_auth, release_auth
 from test_scientific_batch_production import profile_value, scientific_runtime
 
 from fs2_serve.api import create_app
+from fs2_serve.access_models import ReleaseIdentityCapability
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileError
 
 
@@ -26,7 +27,11 @@ def key_request(models: list[str]) -> dict[str, Any]:
 
 def test_scientific_key_create_update_rotation_and_revocation(registry, cipher, hasher) -> None:
     runtime, _, _, cluster, _ = scientific_runtime(registry, cipher, hasher)
-    with TestClient(create_app(runtime), base_url="https://inference.test.invalid") as client:
+    with TestClient(
+        create_app(runtime),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    ) as client:
         assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         issued = client.post("/admin/api/v1/keys", json=key_request(["protein-design"]))
         assert issued.status_code == 201, issued.text
@@ -72,12 +77,22 @@ def test_scientific_key_create_update_rotation_and_revocation(registry, cipher, 
 
 def test_legacy_token_endpoint_accepts_only_configured_scientific_ids(registry, cipher, hasher) -> None:
     runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
-    with TestClient(create_app(runtime), base_url="https://inference.test.invalid") as client:
-        issued = client.post("/admin/v1/tokens", headers=BOOTSTRAP_AUTH, json=key_request(["protein-design"]))
+    with TestClient(
+        create_app(runtime),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    ) as client:
+        issued = client.post(
+            "/admin/v1/tokens",
+            headers=release_auth(runtime, ReleaseIdentityCapability.TOKENS_ISSUE),
+            json=key_request(["protein-design"]),
+        )
         assert issued.status_code == 200, issued.text
         assert issued.json()["models"] == ["protein-design"]
         assert client.post(
-            "/admin/v1/tokens", headers=BOOTSTRAP_AUTH, json=key_request(["not-a-model"])
+            "/admin/v1/tokens",
+            headers=release_auth(runtime, ReleaseIdentityCapability.TOKENS_ISSUE),
+            json=key_request(["not-a-model"]),
         ).status_code == 404
 
 
@@ -95,7 +110,11 @@ def test_scientific_allowlist_does_not_grant_availability_or_tenant_license(
             raise ScientificProfileError("tenant is not authorized for the licensed artifact")
 
         monkeypatch.setattr(runtime.scientific_batches.execution_binding, "access_context", unavailable_license)
-    with TestClient(create_app(runtime), base_url="https://inference.test.invalid") as client:
+    with TestClient(
+        create_app(runtime),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    ) as client:
         assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         issued = client.post("/admin/api/v1/keys", json=key_request(["protein-design"]))
         assert issued.status_code == 201, issued.text

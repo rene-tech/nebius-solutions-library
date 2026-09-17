@@ -190,7 +190,7 @@ usable only while the run-scoped operator proxy from the workloads
 
 The explicit `inference-stack output` command is the credential handoff. It
 prints the sensitive `access_bundle`, including the admin URL and bootstrap
-token, MCP and `/v1` URLs plus their scoped PAT, Grafana URL and native-login
+token retained only for rollback compatibility, MCP and `/v1` URLs plus their scoped PAT, Grafana URL and native-login
 credentials, cluster/project/region identity, and the kubeconfig command:
 
 ```json
@@ -198,7 +198,7 @@ credentials, cluster/project/region identity, and the kubeconfig command:
   "schema": "fs2-serve.nebius.ai/access-bundle/v1",
   "cluster": {"project_id": "project-...", "region": "...", "cluster_id": "mk8scluster-..."},
   "endpoints": {"admin_portal_url": "https://.../admin/", "mcp_url": "https://.../mcp", "inference_base_url": "https://.../v1", "grafana_url": "https://.../admin/observability/grafana"},
-  "credentials": {"admin_bootstrap_token": "<redacted>", "mcp_inference_token": "<redacted>", "inference_access_token": "<same scoped PAT>", "scientific_access_token": "<separate academic PAT or null>", "grafana": {"username": "<redacted>", "password": "<redacted>"}},
+  "credentials": {"admin_bootstrap_token": "<deprecated rollback-only value>", "mcp_inference_token": "<redacted>", "inference_access_token": "<same scoped PAT>", "scientific_access_token": "<separate academic PAT or null>", "grafana": {"username": "<redacted>", "password": "<redacted>"}},
   "mcp_access": {"tenant_id": "<cluster tenant>", "models": ["*"]},
   "scientific_access": {"tenant_id": "<academic tenant>", "models": ["*"]},
   "reference_data": {"filesystem_id": "computefilesystem-...", "bucket_id": "storagebucket-...", "bucket_name": "...", "cpu_pool_id": "mk8snodegroup-...", "status_service": "...", "pipeline": {"job_name": "..."}},
@@ -215,8 +215,10 @@ tenant. Use that credential for academic scientific submissions; tenant
 enforcement is not weakened or shared between the two credentials. Other
 tenant credentials remain a live admin-console operation.
 
-Open the emitted `admin_portal_url` and paste
-`credentials.admin_bootstrap_token` into the operator sign-in form. MCP clients
+Open the emitted `admin_portal_url` and enter the personal operator credential
+delivered by the audited release-enrollment workflow. The retained
+`credentials.admin_bootstrap_token` cannot authenticate the browser exchange or
+legacy admin HTTP routes. MCP clients
 use `credentials.mcp_inference_token` as a Bearer token, OpenAI-compatible
 clients use `credentials.inference_access_token`, academic scientific clients
 use `credentials.scientific_access_token`, and Grafana uses the emitted
@@ -225,7 +227,7 @@ one value directly from the bundle:
 
 ```bash
 NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars \
-  | jq -r '.credentials.admin_bootstrap_token'
+  | jq -r '.credentials.inference_access_token'
 ```
 
 Run it only in a private terminal and do not pipe its output to logs, CI

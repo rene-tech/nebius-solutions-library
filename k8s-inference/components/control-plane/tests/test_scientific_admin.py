@@ -528,7 +528,6 @@ def _runtime(registry: Registry, cipher, hasher) -> AppRuntime:
         tokens=TokenService(store, peppers),
         admission=admission,
         metrics=metrics,
-        admin_token=b"a" * 32,
         operator_sessions=OperatorSessionService(store, peppers),
         owns_store=False,
         admin_read=AdminReadService(registry=registry, store=store, clock=lambda: FIXED_NOW),
@@ -673,7 +672,11 @@ def test_run_query_rejects_unbounded_windows_and_limits() -> None:
 
 def test_authenticated_admin_routes_use_the_real_bff_service(registry, cipher, hasher) -> None:
     runtime = _runtime(registry, cipher, hasher)
-    client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
+    client = TestClient(
+        create_app(runtime),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    )
     assert client.get("/admin/api/v1/scientific-runs").status_code == 401
 
     session = client.post(
@@ -741,7 +744,11 @@ def test_admin_artifact_download_uses_existing_tenant_authority_and_exact_bytes(
     runtime = _runtime(registry, cipher, hasher)
     runtime.scientific_admin = _service(artifacts=DownloadArtifacts())
     runtime.artifact_service = cast(Any, ContentService())
-    client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
+    client = TestClient(
+        create_app(runtime),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    )
     endpoint = f"/admin/api/v1/scientific-runs/{OPERATION_ID}/artifacts/{artifact_id}/content"
     assert client.get(endpoint).status_code == 401
     assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
@@ -814,7 +821,11 @@ def test_cancel_route_requires_the_operator_role_and_is_absent_without_a_writer(
     read_only.scientific_admin = ScientificAdminReadService(
         runs=RunAdapter(), models=ModelAdapter(), clock=lambda: FIXED_NOW
     )
-    read_only_client = TestClient(create_app(read_only), base_url="https://inference.test.invalid")
+    read_only_client = TestClient(
+        create_app(read_only),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    )
     session = read_only_client.post("/admin/api/v1/session", headers=operator_auth(read_only))
     assert session.status_code == 200
     capabilities = read_only_client.get("/admin/api/v1/scientific-capabilities")
@@ -828,7 +839,11 @@ def test_cancel_route_requires_the_operator_role_and_is_absent_without_a_writer(
 def test_absent_run_reader_removes_only_run_routes(registry, cipher, hasher) -> None:
     runtime = _runtime(registry, cipher, hasher)
     runtime.scientific_admin = ScientificAdminReadService(models=ModelAdapter(), clock=lambda: FIXED_NOW)
-    client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
+    client = TestClient(
+        create_app(runtime),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    )
     assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
 
     capabilities = client.get("/admin/api/v1/scientific-capabilities")
@@ -966,7 +981,11 @@ def test_policy_routes_require_the_operator_role_and_are_absent_without_a_reposi
     runtime = _runtime(registry, cipher, hasher)
     assert isinstance(runtime.store, MemoryStore)
     assert runtime.operator_sessions is not None
-    client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
+    client = TestClient(
+        create_app(runtime),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    )
     body = {"expected_revision": 0, "paused": True, "max_active_runs": 2, "reason": "PoC window"}
     assert client.get("/admin/api/v1/scientific-model-policies").status_code == 401
     assert client.put("/admin/api/v1/scientific-model-policies/rfdiffusion", json=body).status_code == 401
@@ -1037,7 +1056,11 @@ def test_policy_routes_require_the_operator_role_and_are_absent_without_a_reposi
     read_only.scientific_admin = ScientificAdminReadService(
         runs=RunAdapter(), models=KnownModelAdapter(), clock=lambda: FIXED_NOW
     )
-    read_only_client = TestClient(create_app(read_only), base_url="https://inference.test.invalid")
+    read_only_client = TestClient(
+        create_app(read_only),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    )
     assert (
         read_only_client.post("/admin/api/v1/session", headers=operator_auth(read_only)).status_code
         == 200

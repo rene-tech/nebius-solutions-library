@@ -445,6 +445,9 @@ class ScientificColdStartBenchmarkTest(unittest.TestCase):
 
         with TemporaryDirectory() as directory:
             output_root = Path(directory) / "receipts"
+            operator_credential_file = Path(directory) / "operator-credential"
+            operator_credential_file.write_text(ADMIN_SECRET, encoding="utf-8")
+            operator_credential_file.chmod(0o600)
             config = MODULE.BenchmarkConfig(
                 endpoint="https://inference.example",
                 repository_root=MODULE.SOLUTION_ROOT,
@@ -456,6 +459,7 @@ class ScientificColdStartBenchmarkTest(unittest.TestCase):
                 cluster_context="k8s-inference-h100",
                 repetitions=3,
                 max_parallel=8,
+                operator_credential_file=operator_credential_file,
                 admin_convergence_seconds=0,
                 reserved_pool_ids=("h100-reserved-8x",),
             )
@@ -464,7 +468,6 @@ class ScientificColdStartBenchmarkTest(unittest.TestCase):
                     os.environ,
                     {
                         "FS2_INFERENCE_TOKEN": INFERENCE_SECRET,
-                        "FS2_ADMIN_TOKEN": ADMIN_SECRET,
                     },
                     clear=False,
                 ),

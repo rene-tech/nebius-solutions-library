@@ -156,7 +156,7 @@ def test_smoke_checks_public_admin_views_queues_and_grafana_without_forwarding_t
 ):
     module = _module()
     transport = _working_transport(module)
-    token = "admin-token-must-not-leak"
+    token = "personal-operator-credential-must-not-leak"
 
     result = module.run_smoke(transport, token)
 
@@ -276,9 +276,10 @@ def test_cli_redacts_token_from_failures(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     module = _module()
-    token = "admin-token-must-never-print"
-    token_file = tmp_path / "admin-token"
+    token = "fs2_operator_" + "1" * 32 + "_" + "x" * 43
+    token_file = tmp_path / "operator-credential"
     token_file.write_text(token, encoding="utf-8")
+    token_file.chmod(0o600)
     monkeypatch.setattr(module, "HttpsTransport", lambda *args, **kwargs: object())
 
     def fail(*args: object, **kwargs: object) -> None:
@@ -290,7 +291,7 @@ def test_cli_redacts_token_from_failures(
         [
             "--endpoint",
             "https://inference.example.test/admin/",
-            "--admin-token-file",
+            "--operator-credential-file",
             str(token_file),
         ]
     )

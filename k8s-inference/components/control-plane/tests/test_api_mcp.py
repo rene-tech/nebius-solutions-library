@@ -36,6 +36,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from pydantic import BaseModel, ValidationError
 
 from fs2_serve import cli
+from fs2_serve.access_models import ReleaseIdentityCapability
 from fs2_serve.activation_health import activation_set
 from fs2_serve.admission import AdmissionService
 from fs2_serve.api import AppRuntime, _model_view, create_app
@@ -58,6 +59,7 @@ from fs2_serve.request_telemetry import InMemoryRequestTelemetryStore, RequestTe
 from fs2_serve.runtime import StubRuntimeClient
 from fs2_serve.settings import Settings
 from fs2_serve.telemetry import Metrics
+from release_identity_testkit import ReleaseAuthorityFixture
 
 SECRET_PROMPT = "HTTP_PROMPT_MUST_NOT_LEAK_8427"
 CALLER_IDENTITY = "CALLER_SUPPLIED_IDENTITY_MUST_BE_STRIPPED"
@@ -109,17 +111,27 @@ def build_runtime(
         shutdown_grace_seconds=1,
     )
     peppers = PepperRing(active_key_id="pepper-v1", keys={"pepper-v1": b"p" * 32})
-    return AppRuntime(
+    release_authority = ReleaseAuthorityFixture.create()
+    runtime = AppRuntime(
         settings=settings,
         registry=registry,
         store=store,
         tokens=TokenService(store, peppers),
         admission=admission,
         metrics=metrics,
-        admin_token=b"a" * 32,
         operator_sessions=OperatorSessionService(store, peppers),
         owns_store=False,
+        release_identities=release_authority.verifier,
     )
+    setattr(runtime, "_test_release_authority", release_authority)
+    return runtime
+
+
+def release_headers(client: TestClient, capability: ReleaseIdentityCapability) -> dict[str, str]:
+    runtime = client.app.state.runtime
+    authority = getattr(runtime, "_test_release_authority")
+    assert isinstance(authority, ReleaseAuthorityFixture)
+    return authority.auth(capability)
 
 
 def publish_controller(runtime: AppRuntime, controller_id: str = "controller-a") -> None:
@@ -188,7 +200,7 @@ def issue(
 ) -> str:
     response = client.post(
         "/admin/v1/tokens",
-        headers={"authorization": f"Bearer {'a' * 32}"},
+        headers=release_headers(client, ReleaseIdentityCapability.TOKENS_ISSUE),
         json={
             "principal_id": principal,
             "tenant_id": tenant,
@@ -199,7 +211,7 @@ def issue(
     )
     assert response.status_code == 200, response.text
     value = response.json()
-    assert value["created_by"] == "bootstrap-admin"
+    assert value["created_by"] == "release:serviceaccount:test-release-automation"
     return value["token"]
 
 
@@ -436,7 +448,10 @@ def test_api_auth_model_list_openai_admission_revoke_and_nonleak(registry, ciphe
 
         token_id = next(iter(runtime.store.tokens))  # type: ignore[attr-defined]
         assert (
-            client.delete(f"/admin/v1/tokens/{token_id}", headers={"authorization": f"Bearer {'a' * 32}"}).status_code
+            client.delete(
+                f"/admin/v1/tokens/{token_id}",
+                headers=release_headers(client, ReleaseIdentityCapability.TOKENS_REVOKE),
+            ).status_code
             == 200
         )
         assert client.get("/v1/models", headers=auth).status_code == 401
@@ -686,7 +701,10 @@ def test_terminal_metrics_project_cancel_and_revoke_exactly_once(registry, ciphe
         assert second.status_code == 202
         token_id = next(iter(runtime.store.tokens))  # type: ignore[attr-defined]
         assert (
-            client.delete(f"/admin/v1/tokens/{token_id}", headers={"authorization": f"Bearer {'a' * 32}"}).status_code
+            client.delete(
+                f"/admin/v1/tokens/{token_id}",
+                headers=release_headers(client, ReleaseIdentityCapability.TOKENS_REVOKE),
+            ).status_code
             == 200
         )
         first_scrape = client.get("/metrics").text
@@ -714,7 +732,7 @@ def test_admin_created_by_is_rejected_without_echoing_value(registry, cipher, ha
     with TestClient(app) as client:
         response = client.post(
             "/admin/v1/tokens",
-            headers={"authorization": f"Bearer {'a' * 32}"},
+            headers=release_headers(client, ReleaseIdentityCapability.TOKENS_ISSUE),
             json={
                 "principal_id": "user",
                 "tenant_id": "tenant-a",
@@ -1104,7 +1122,7 @@ def test_external_identifiers_are_bounded_and_datetimes_require_timezones(regist
         assert oversized_idempotency_key not in key_response.text
         expiry_response = client.post(
             "/admin/v1/tokens",
-            headers={"authorization": f"Bearer {'a' * 32}"},
+            headers=release_headers(client, ReleaseIdentityCapability.TOKENS_ISSUE),
             json={
                 "principal_id": "naive-expiry",
                 "tenant_id": "tenant-a",

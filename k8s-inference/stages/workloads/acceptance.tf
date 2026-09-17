@@ -60,14 +60,10 @@ resource "kubernetes_job_v1" "authenticated_edge_acceptance" {
             value = local.public_base_url
           }
           env {
-            name  = "FS2_INTERNAL_URL"
-            value = "http://fs2-serve-control-plane.fs2-system.svc.cluster.local:8080"
-          }
-          env {
-            name = "FS2_ADMIN_TOKEN"
+            name = "FS2_ACCESS_TOKEN"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret_v1.admin.metadata[0].name
+                name = kubernetes_secret_v1.bootstrap_access.metadata[0].name
                 key  = "token"
               }
             }

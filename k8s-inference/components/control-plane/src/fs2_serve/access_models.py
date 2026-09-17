@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import AwareDatetime, Field, model_validator
@@ -123,6 +125,103 @@ class OperatorCredentialDisclosure(StrictModel):
 class OperatorSessionRevocation(StrictModel):
     principal_id: UUID
     revoked_sessions: int = Field(ge=0)
+
+
+class ReleaseIdentityPurpose(StrEnum):
+    OPERATOR_ENROLLMENT = "operator-enrollment"
+    ADMIN_AUTOMATION = "admin-automation"
+
+
+class ReleaseIdentityCapability(StrEnum):
+    OPERATOR_ENROLL = "operator.enroll"
+    TOKENS_ISSUE = "tokens.issue"
+    TOKENS_LIST = "tokens.list"
+    TOKENS_REVOKE = "tokens.revoke"
+    AUDIT_READ = "audit.read"
+    MODELS_BOOTSTRAP = "models.bootstrap"
+
+
+class OperatorEnrollmentMode(StrEnum):
+    CREATE = "create"
+    RECOVER = "recover"
+
+
+class ReleaseOperatorTarget(StrictModel):
+    """Issuer-selected human identity; the HTTP caller supplies no target fields."""
+
+    principal_id: UUID
+    subject: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$")
+    display_name: str = Field(min_length=1, max_length=200)
+    role: OperatorRole
+    tenant_id: str | None = Field(default=None, min_length=1, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+    mode: OperatorEnrollmentMode
+
+    @model_validator(mode="after")
+    def global_admin_only(self) -> ReleaseOperatorTarget:
+        if self.role is not OperatorRole.ADMIN or self.tenant_id is not None:
+            raise ValueError("release enrollment is limited to an exact global administrator")
+        return self
+
+
+class ReleaseIdentityAssertion(StrictModel):
+    """Signed provider-attested workload session consumed exactly once."""
+
+    schema: Literal["fs2-serve.nebius.ai/release-identity-assertion/v1"]
+    assertion_id: UUID
+    session_id: str = Field(min_length=16, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$")
+    issuer: str = Field(min_length=1, max_length=200)
+    subject: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$")
+    audience: Literal["fs2-admin-release"]
+    purpose: ReleaseIdentityPurpose
+    capabilities: frozenset[ReleaseIdentityCapability] = Field(min_length=1, max_length=6)
+    issued_at: AwareDatetime
+    not_before: AwareDatetime
+    expires_at: AwareDatetime
+    session_issued_at: AwareDatetime
+    session_expires_at: AwareDatetime
+    credential_kind: Literal["workload_identity_session"]
+    human_principal_allowed: Literal[False]
+    interactive_login_allowed: Literal[False]
+    impersonation_allowed: Literal[False]
+    authorization_closure_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    resource_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    operator: ReleaseOperatorTarget | None = None
+
+    @model_validator(mode="after")
+    def validate_release_identity(self) -> ReleaseIdentityAssertion:
+        if self.not_before < self.issued_at:
+            raise ValueError("release assertion not-before precedes issuance")
+        if self.expires_at <= self.not_before or self.expires_at - self.issued_at > timedelta(minutes=5):
+            raise ValueError("release assertion exceeds the five-minute lifetime")
+        if self.session_expires_at <= self.session_issued_at:
+            raise ValueError("release workload session has an invalid lifetime")
+        if self.session_expires_at - self.session_issued_at > timedelta(hours=1):
+            raise ValueError("release workload session exceeds one hour")
+        if self.issued_at < self.session_issued_at or self.expires_at > self.session_expires_at:
+            raise ValueError("release assertion is outside its workload session")
+        enrollment = ReleaseIdentityCapability.OPERATOR_ENROLL in self.capabilities
+        if self.purpose is ReleaseIdentityPurpose.OPERATOR_ENROLLMENT:
+            if self.capabilities != frozenset({ReleaseIdentityCapability.OPERATOR_ENROLL}) or self.operator is None:
+                raise ValueError("operator enrollment must contain one exact capability and target")
+        elif enrollment or self.operator is not None:
+            raise ValueError("admin automation cannot carry an operator enrollment target")
+        bootstrap = ReleaseIdentityCapability.MODELS_BOOTSTRAP in self.capabilities
+        if bootstrap != (self.resource_sha256 is not None):
+            raise ValueError("model bootstrap assertions alone require an exact resource digest")
+        return self
+
+
+class OperatorEnrollmentDisclosure(StrictModel):
+    principal: OperatorPrincipal
+    mode: OperatorEnrollmentMode
+    revoked_sessions: int = Field(ge=0)
+    credential: str = Field(min_length=64, max_length=256)
+
+
+class SessionExchangeAdmission(StrEnum):
+    ADMITTED = "admitted"
+    SOURCE_THROTTLED = "source_throttled"
+    AGGREGATE_THROTTLED = "aggregate_throttled"
 
 
 class AdminApiKeyCreate(TokenCreate):

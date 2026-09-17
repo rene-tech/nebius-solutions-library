@@ -65,6 +65,7 @@ locals {
       syncWaitSeconds        = "30"
       maxSyncWaitSeconds     = "30"
       requestDebugEnabled    = var.request_debug_enabled
+      adminSessionTrustedProxyCidrs = local.public_edge_enabled ? sort(tolist(var.admin_session_trusted_proxy_cidrs)) : []
       }, var.model_scaling_mode == "keda" ? {
       activationTimeoutSeconds = "7200"
     } : {})
@@ -243,6 +244,15 @@ resource "helm_release" "control_plane" {
   ]
 
   lifecycle {
+    precondition {
+      condition = local.public_edge_enabled ? (
+        length(var.admin_session_trusted_proxy_cidrs) > 0
+        ) : (
+        length(var.admin_session_trusted_proxy_cidrs) == 0
+      )
+      error_message = "Public-edge mode requires at least one exact Envoy backend-peer CIDR for operator-login source attribution; internal-only mode must use the direct peer and leave admin_session_trusted_proxy_cidrs empty."
+    }
+
     precondition {
       condition = (
         local.observability_operator.schema == "fs2-serve.nebius.ai/observability-operator/v1" &&

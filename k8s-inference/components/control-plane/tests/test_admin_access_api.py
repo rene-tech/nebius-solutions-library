@@ -15,6 +15,7 @@ from fs2_serve.access_models import (
     OperatorPrincipalPatch,
     OperatorRole,
     PrincipalKind,
+    ReleaseIdentityCapability,
 )
 from fs2_serve.admission import AdmissionService
 from fs2_serve.api import ADMIN_SESSION_COOKIE, AppRuntime, create_app
@@ -27,6 +28,7 @@ from fs2_serve.models import AdmissionRequest, Scope, TokenCreate
 from fs2_serve.runtime import StubRuntimeClient
 from fs2_serve.settings import Settings
 from fs2_serve.telemetry import Metrics
+from release_identity_testkit import ReleaseAuthorityFixture
 
 BOOTSTRAP_TOKEN = "a" * 32
 BOOTSTRAP_AUTH = {"authorization": f"Bearer {BOOTSTRAP_TOKEN}"}
@@ -47,7 +49,8 @@ def _runtime(registry: Any, cipher: Any, hasher: Any) -> AppRuntime:
     )
     metrics = Metrics(registry.list(enabled_only=True))
     peppers = PepperRing(active_key_id="pepper-v1", keys={"pepper-v1": b"p" * 32})
-    return AppRuntime(
+    release_authority = ReleaseAuthorityFixture.create()
+    runtime = AppRuntime(
         settings=settings,
         registry=registry,
         store=store,
@@ -64,14 +67,20 @@ def _runtime(registry: Any, cipher: Any, hasher: Any) -> AppRuntime:
             shutdown_grace_seconds=1,
         ),
         metrics=metrics,
-        admin_token=BOOTSTRAP_TOKEN.encode(),
         operator_sessions=OperatorSessionService(store, peppers, ttl_seconds=300),
         owns_store=False,
+        release_identities=release_authority.verifier,
     )
+    setattr(runtime, "_test_release_authority", release_authority)
+    return runtime
 
 
 def _client(runtime: AppRuntime) -> TestClient:
-    return TestClient(create_app(runtime), base_url="https://inference.test.invalid")
+    return TestClient(
+        create_app(runtime),
+        base_url="https://inference.test.invalid",
+        client=("127.0.0.1", 50000),
+    )
 
 
 def _cookie_from(response: Any) -> str:
@@ -107,6 +116,12 @@ def operator_auth(runtime: AppRuntime, principal_id: UUID = TEST_ADMIN_ID) -> di
         credentials[principal_id] = credential
         setattr(runtime, "_test_operator_credentials", credentials)
     return {"authorization": f"Bearer {credential}"}
+
+
+def release_auth(runtime: AppRuntime, capability: ReleaseIdentityCapability, **kwargs: Any) -> dict[str, str]:
+    authority = getattr(runtime, "_test_release_authority")
+    assert isinstance(authority, ReleaseAuthorityFixture)
+    return authority.auth(capability, **kwargs)
 
 
 def test_admin_lifecycle_routes_expose_persisted_payload_free_workloads(
@@ -303,7 +318,7 @@ def test_repeated_session_exchange_failures_are_throttled_per_network_source(
 
     assert {response.status_code for response in rejected} == {401}
     assert throttled.status_code == 429
-    assert throttled.json()["code"] == "operator_session_exchange_throttled"
+    assert throttled.json()["code"] == "operator_session_exchange_source_throttled"
 
 
 def test_admin_rotates_one_time_personal_credential_and_revokes_target_sessions(
@@ -386,13 +401,35 @@ def test_per_principal_session_cap_and_admin_revoke_all_are_enforced(
     assert replay.status_code == 401
 
 
-def test_legacy_bootstrap_routes_keep_cli_auth_status_contract(registry: Any, cipher: Any, hasher: Any) -> None:
+def test_static_bootstrap_is_refused_and_release_assertions_are_capability_scoped(
+    registry: Any, cipher: Any, hasher: Any
+) -> None:
     runtime = _runtime(registry, cipher, hasher)
     with _client(runtime) as client:
         missing = client.get("/admin/v1/tokens")
-        rejected = client.get(
+        bootstrap_rejected = [
+            client.get("/admin/v1/tokens", headers=BOOTSTRAP_AUTH),
+            client.post(
+                "/admin/v1/tokens",
+                headers=BOOTSTRAP_AUTH,
+                json={
+                    "principal_id": "rejected-bootstrap",
+                    "tenant_id": "tenant-a",
+                    "scopes": ["catalog.read"],
+                    "models": ["qwen3-8b"],
+                    "max_concurrency": 1,
+                },
+            ),
+            client.delete(f"/admin/v1/tokens/{uuid4()}", headers=BOOTSTRAP_AUTH),
+            client.get("/admin/v1/audit", headers=BOOTSTRAP_AUTH),
+        ]
+        wrong_capability = client.get(
             "/admin/v1/tokens",
-            headers={"authorization": f"Bearer {REJECTED_CREDENTIAL}"},
+            headers=release_auth(runtime, ReleaseIdentityCapability.AUDIT_READ),
+        )
+        accepted = client.get(
+            "/admin/v1/tokens",
+            headers=release_auth(runtime, ReleaseIdentityCapability.TOKENS_LIST),
         )
         session_rejected = client.post(
             "/admin/api/v1/session",
@@ -400,10 +437,66 @@ def test_legacy_bootstrap_routes_keep_cli_auth_status_contract(registry: Any, ci
         )
 
     assert missing.status_code == 401
-    assert rejected.status_code == 403
+    assert {response.status_code for response in bootstrap_rejected} == {401}
+    assert wrong_capability.status_code == 401
+    assert accepted.status_code == 200
     assert session_rejected.status_code == 401
-    assert REJECTED_CREDENTIAL not in missing.text + rejected.text + session_rejected.text
+    assert REJECTED_CREDENTIAL not in missing.text + session_rejected.text
+    assert all(BOOTSTRAP_TOKEN not in response.text for response in bootstrap_rejected)
     assert REJECTED_CREDENTIAL not in str(runtime.store.audit)
+
+
+def test_release_enrollment_creates_and_recovers_only_the_signed_human_target(
+    registry: Any, cipher: Any, hasher: Any
+) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    principal_id = uuid4()
+    target = {
+        "principal_id": str(principal_id),
+        "subject": "operator:first-admin",
+        "display_name": "First administrator",
+        "role": "admin",
+        "tenant_id": None,
+        "mode": "create",
+    }
+    authority = getattr(runtime, "_test_release_authority")
+    assertion_id = str(uuid4())
+    bearer = authority.bearer(
+        ReleaseIdentityCapability.OPERATOR_ENROLL,
+        operator=target,
+        assertion_id=assertion_id,
+    )
+    with _client(runtime) as client:
+        enrolled = client.post(
+            "/admin/api/v1/operator-enrollment:consume",
+            headers={"authorization": f"Bearer {bearer}"},
+            json={"principal_id": str(uuid4()), "role": "viewer"},
+        )
+        replay = client.post(
+            "/admin/api/v1/operator-enrollment:consume",
+            headers={"authorization": f"Bearer {bearer}"},
+        )
+        credential = enrolled.json()["data"]["credential"]
+        login = client.post(
+            "/admin/api/v1/session",
+            headers={"authorization": f"Bearer {credential}"},
+        )
+        recovery_target = {**target, "mode": "recover"}
+        recovered = client.post(
+            "/admin/api/v1/operator-enrollment:consume",
+            headers=release_auth(
+                runtime,
+                ReleaseIdentityCapability.OPERATOR_ENROLL,
+                operator=recovery_target,
+            ),
+        )
+
+    assert enrolled.status_code == recovered.status_code == 201
+    assert replay.status_code == 409
+    assert enrolled.json()["data"]["principal"]["id"] == str(principal_id)
+    assert login.status_code == 200
+    assert recovered.json()["data"]["revoked_sessions"] == 1
+    assert bearer not in str(runtime.store.audit)
 
 
 def test_session_rotation_fixation_logout_and_replay_are_denied(registry: Any, cipher: Any, hasher: Any) -> None:

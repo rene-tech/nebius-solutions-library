@@ -303,11 +303,17 @@ def gpu_overlap(rows: list[dict[str, Any]]) -> int:
     return peak
 
 
-def collect_metrics(endpoint: str, rows: list[dict[str, Any]], run_root: Path) -> None:
+def collect_metrics(
+    endpoint: str,
+    rows: list[dict[str, Any]],
+    run_root: Path,
+    operator_credential_file: Path,
+) -> None:
     """Reuse the benchmark's exact phase and GPU accounting projections."""
     import run_coldstart_benchmark as benchmark
 
-    client = benchmark.PUBLIC.PublicApiClient(endpoint, os.environ["FS2_ADMIN_TOKEN"])
+    credential = benchmark._read_operator_credential(operator_credential_file)
+    client = benchmark.PUBLIC.PublicApiClient(endpoint, credential)
     cookie = benchmark._open_admin_session(client)
     try:
         for row in rows:
@@ -365,13 +371,14 @@ def main() -> int:
     parser.add_argument(
         "--admin-metrics",
         action="store_true",
-        help="include exact GPU and phase metrics using FS2_ADMIN_TOKEN",
+        help="include exact GPU and phase metrics using a personal operator credential",
     )
+    parser.add_argument("--operator-credential-file", type=Path)
     args = parser.parse_args()
     if not fleet.SAFE_ID_RE.fullmatch(args.run_id) or not 1 <= args.max_parallel <= 32:
         parser.error("invalid run ID or parallelism")
-    if args.admin_metrics and not os.environ.get("FS2_ADMIN_TOKEN"):
-        parser.error("FS2_ADMIN_TOKEN is required for --admin-metrics")
+    if args.admin_metrics and args.operator_credential_file is None:
+        parser.error("--operator-credential-file is required with --admin-metrics")
     scenario_bytes = args.scenarios.read_bytes()
     scenarios = json.loads(scenario_bytes)
     ids = [scenario["id"] for scenario in scenarios]
@@ -414,7 +421,12 @@ def main() -> int:
     metrics_error = None
     if args.admin_metrics:
         try:
-            collect_metrics(args.endpoint, rows, run_root)
+            collect_metrics(
+                args.endpoint,
+                rows,
+                run_root,
+                args.operator_credential_file,
+            )
         except (KeyError, RuntimeError, ValueError, OSError) as error:
             # Preserve all GPU outcomes even when an observability reader
             # fails; class names are safe while transport messages may not be.

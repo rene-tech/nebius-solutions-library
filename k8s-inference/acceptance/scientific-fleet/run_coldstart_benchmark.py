@@ -111,10 +111,10 @@ class BenchmarkConfig:
     project_id: str
     region: str
     cluster_context: str
+    operator_credential_file: Path
     repetitions: int = 3
     max_parallel: int = 8
     inference_token_environment: str = "FS2_INFERENCE_TOKEN"
-    admin_token_environment: str = "FS2_ADMIN_TOKEN"
     timeout_seconds: float = 7200.0
     poll_seconds: float = 5.0
     request_timeout_seconds: float = 60.0
@@ -295,13 +295,30 @@ def _pool_bindings(bindings: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return result
 
 
-def _validate_config(config: BenchmarkConfig) -> tuple[Path, Path, dict[str, object]]:
+def _read_operator_credential(path: Path) -> str:
+    try:
+        metadata = path.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) & 0o077:
+            raise BenchmarkError("operator_credential_file_permissions")
+        if not 64 <= metadata.st_size <= 257:
+            raise BenchmarkError("operator_credential_file_size")
+        credential = path.read_text(encoding="utf-8").strip()
+    except BenchmarkError:
+        raise
+    except (OSError, UnicodeError) as error:
+        raise BenchmarkError("operator_credential_file_invalid") from error
+    if not 64 <= len(credential) <= 256 or any(character.isspace() for character in credential):
+        raise BenchmarkError("operator_credential_invalid")
+    return credential
+
+
+def _validate_config(config: BenchmarkConfig) -> tuple[Path, Path, dict[str, object], str]:
     if SAFE_ID_RE.fullmatch(config.run_id) is None:
         raise BenchmarkError("run_id_invalid")
     for value in (config.project_id, config.region, config.cluster_context, *config.reserved_pool_ids):
         if not isinstance(value, str) or not value or len(value) > 128:
             raise BenchmarkError("deployment_identity_invalid")
-    for name in (config.inference_token_environment, config.admin_token_environment):
+    for name in (config.inference_token_environment,):
         if ENVIRONMENT_RE.fullmatch(name) is None:
             raise BenchmarkError("token_environment_invalid")
         token = os.environ.get(name)
@@ -340,7 +357,9 @@ def _validate_config(config: BenchmarkConfig) -> tuple[Path, Path, dict[str, obj
             raise BenchmarkError("receipt_directory_permissions_invalid")
     except OSError as error:
         raise BenchmarkError("receipt_directory_invalid") from error
-    return repository_root, run_directory, endpoint
+    return repository_root, run_directory, endpoint, _read_operator_credential(
+        config.operator_credential_file
+    )
 
 
 def _source_commit(repository_root: Path) -> str:
@@ -957,13 +976,14 @@ def _validate_fleet_aggregate(value: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def run_benchmark(config: BenchmarkConfig) -> tuple[dict[str, Any], Path]:
-    repository_root, run_directory, endpoint = _validate_config(config)
+    repository_root, run_directory, endpoint, operator_credential = _validate_config(config)
     bindings, environment_digest = _environment_bindings(config)
     pool_map = _pool_bindings(bindings)
-    admin_token = os.environ[config.admin_token_environment]
     try:
         client = PUBLIC.PublicApiClient(
-            config.endpoint, admin_token, timeout_seconds=config.request_timeout_seconds
+            config.endpoint,
+            operator_credential,
+            timeout_seconds=config.request_timeout_seconds,
         )
     except PUBLIC.AcceptanceError as error:
         raise BenchmarkError("admin_client_invalid") from error
@@ -1115,7 +1135,7 @@ def _arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--max-parallel", type=int, default=8)
     parser.add_argument("--inference-token-env", default="FS2_INFERENCE_TOKEN")
-    parser.add_argument("--admin-token-env", default="FS2_ADMIN_TOKEN")
+    parser.add_argument("--operator-credential-file", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=float, default=7200.0)
     parser.add_argument("--poll-seconds", type=float, default=5.0)
     parser.add_argument("--request-timeout-seconds", type=float, default=60.0)
@@ -1138,7 +1158,7 @@ def main(argv: list[str] | None = None) -> int:
         repetitions=arguments.repetitions,
         max_parallel=arguments.max_parallel,
         inference_token_environment=arguments.inference_token_env,
-        admin_token_environment=arguments.admin_token_env,
+        operator_credential_file=arguments.operator_credential_file,
         timeout_seconds=arguments.timeout_seconds,
         poll_seconds=arguments.poll_seconds,
         request_timeout_seconds=arguments.request_timeout_seconds,

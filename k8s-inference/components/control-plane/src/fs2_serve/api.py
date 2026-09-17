@@ -5,15 +5,14 @@ import hashlib
 import json
 import logging
 import math
-import secrets
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import quote
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
@@ -35,12 +34,17 @@ from .access_models import (
     AdminAuditList,
     AdminPrincipalList,
     OperatorCredentialDisclosure,
+    OperatorEnrollmentDisclosure,
     OperatorPrincipal,
     OperatorPrincipalCreate,
     OperatorPrincipalPatch,
     OperatorRole,
     OperatorSession,
     OperatorSessionRevocation,
+    PrincipalKind,
+    ReleaseIdentityCapability,
+    ReleaseIdentityPurpose,
+    SessionExchangeAdmission,
 )
 from .activation_health import activation_set
 from .admin import AdminProblemError, AdminReadService
@@ -73,11 +77,13 @@ from .auth import (
     MAX_PAT_LENGTH,
     AuthenticationError,
     OperatorSessionService,
+    PasswordWorkCapacityError,
     TokenService,
     require_operation_access,
 )
 from .capacity_summary import CapacitySummaryService
 from .capacity_summary_routes import capacity_summary_router
+from .client_source import ClientSourceError, TrustedClientSource
 from .configuration import ConfigurationService
 from .configuration_routes import configuration_router
 from .lifecycle import (
@@ -89,8 +95,18 @@ from .lifecycle import (
 )
 from .model_deployment_admin import ModelDeploymentReadService, model_deployment_read_router
 from .model_deployment_bridge import ModelDeploymentRuntimeBridge
-from .model_deployment_mutation import ModelDeploymentMutationService, model_deployment_mutation_router
-from .model_deployment_preview import ModelDeploymentPreviewService, model_deployment_preview_router
+from .model_deployment_mutation import (
+    ModelDeploymentApplyRequest,
+    ModelDeploymentMutationProblemError,
+    ModelDeploymentMutationService,
+    model_deployment_mutation_router,
+)
+from .model_deployment_preview import (
+    ModelDeploymentPreviewProblemError,
+    ModelDeploymentPreviewProposal,
+    ModelDeploymentPreviewService,
+    model_deployment_preview_router,
+)
 from .model_inventory import ModelInventory, build_model_inventory
 from .models import (
     MAX_IDEMPOTENCY_KEY_LENGTH,
@@ -108,6 +124,12 @@ from .models import (
 from .registry import OperationalModel, Registry, RegistryError
 from .request_debug import DebugCaptureMiddleware, DebugStore, InMemoryDebugStore, PostgresDebugStore
 from .request_debug_routes import request_debug_router
+from .release_identity import (
+    MAX_RELEASE_ASSERTION_LENGTH,
+    ReleaseIdentityError,
+    ReleaseIdentityVerifier,
+    VerifiedReleaseIdentity,
+)
 from .request_telemetry import InMemoryRequestTelemetryStore, PostgresRequestTelemetryStore, RequestTelemetryMiddleware
 from .route_revalidation import RouteRevalidator
 from .scientific_admin import ScientificAdminReadService, ScientificRunQuery
@@ -186,6 +208,19 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ReleaseModelBootstrapRequest(StrictModel):
+    schema: Literal["fs2-serve.nebius.ai/model-bootstrap/v1"]
+    proposals: list[ModelDeploymentPreviewProposal] = Field(min_length=1, max_length=200)
+
+    def sha256(self) -> str:
+        payload = json.dumps(
+            self.model_dump(mode="json", by_alias=True, exclude_unset=True),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+
 class NativeInvocation(StrictModel):
     operation: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9._-]*$")
     payload: dict[str, Any]
@@ -230,7 +265,6 @@ class AppRuntime:
     tokens: TokenService
     admission: AdmissionService
     metrics: Metrics
-    admin_token: bytes
     operator_sessions: OperatorSessionService
     lifecycle: LifecycleRepository = field(default_factory=NullLifecycleRepository)
     owns_store: bool = True
@@ -254,6 +288,7 @@ class AppRuntime:
     snapshot_capabilities: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     serving_snapshot_bundles: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     request_debug_store: DebugStore | None = None
+    release_identities: ReleaseIdentityVerifier | None = None
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is not None and not await self.route_revalidator.refresh():
@@ -343,8 +378,8 @@ class TrustedEdgeMiddleware:
         await self.app(scope, bounded_receive, send)
 
 
-def _bearer(value: str | None) -> str:
-    if value is None or len(value) > MAX_PAT_LENGTH + 7 or not value.startswith("Bearer ") or not value[7:]:
+def _bearer(value: str | None, *, maximum_length: int = MAX_PAT_LENGTH) -> str:
+    if value is None or len(value) > maximum_length + 7 or not value.startswith("Bearer ") or not value[7:]:
         raise AuthenticationError("bearer token required")
     return value[7:]
 
@@ -557,6 +592,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     app.state.runtime = runtime
     admin_read = runtime.admin_read or AdminReadService(registry=runtime.registry, store=runtime.store)
     admin_access = AdminAccessService(runtime.store, runtime.tokens)
+    admin_client_sources = TrustedClientSource(runtime.settings.admin_session_trusted_proxy_cidrs)
     pool = getattr(runtime.store, "pool", None)
     apps_service = AppsService(
         repository=PostgresAppsRepository(pool) if pool is not None else MemoryAppsRepository(),
@@ -653,43 +689,82 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         request.state.principal = value
         return value
 
-    async def bootstrap_failure() -> None:
+    async def release_identity_failure(reason: str) -> None:
         try:
             await runtime.store.append_audit_event(
                 actor="anonymous",
                 tenant_id=None,
                 token_id=None,
-                action="session.bootstrap",
-                target_type="operator_session",
+                action="release_identity.authenticate",
+                target_type="release_identity_assertion",
                 target_id="unresolved",
                 outcome="failed",
-                detail={"reason": "invalid_bootstrap_credential"},
+                detail={"reason": reason},
             )
         except (OSError, RuntimeError, ValueError):
             pass
 
-    async def admin(request: Request, authorization: Annotated[str | None, Header()] = None) -> str:
+    async def consume_release_identity(
+        authorization: str | None,
+        capability: ReleaseIdentityCapability,
+    ) -> VerifiedReleaseIdentity:
+        if runtime.release_identities is None:
+            raise HTTPException(status_code=503, detail="release identity trust is unavailable")
         try:
-            candidate = _bearer(authorization).encode()
-        except AuthenticationError:
-            if request.url.path.startswith("/admin/api/v1"):
-                await bootstrap_failure()
-                raise AdminProblemError(
-                    401,
-                    "admin_authentication_required",
-                    "admin authentication is required",
-                ) from None
-            raise HTTPException(status_code=401, detail="admin bearer authentication failed") from None
-        if not secrets.compare_digest(candidate, runtime.admin_token):
-            if request.url.path.startswith("/admin/api/v1"):
-                await bootstrap_failure()
-                raise AdminProblemError(
-                    401,
-                    "admin_authentication_required",
-                    "admin authentication is required",
-                )
-            raise HTTPException(status_code=403, detail="admin authorization failed")
-        return "bootstrap-admin"
+            verified = runtime.release_identities.verify(
+                _bearer(authorization, maximum_length=MAX_RELEASE_ASSERTION_LENGTH),
+                capability=capability,
+                purpose=ReleaseIdentityPurpose.ADMIN_AUTOMATION,
+            )
+            await runtime.store.consume_release_identity_assertion(
+                verified.assertion,
+                assertion_fingerprint=verified.fingerprint,
+                capability=str(capability),
+                actor=verified.actor,
+            )
+        except (AuthenticationError, ReleaseIdentityError):
+            await release_identity_failure("invalid_release_identity")
+            raise HTTPException(status_code=401, detail="release identity authentication failed") from None
+        except ConflictError:
+            await release_identity_failure("replayed_release_identity")
+            raise HTTPException(status_code=401, detail="release identity authentication failed") from None
+        return verified
+
+    def release_automation(capability: ReleaseIdentityCapability) -> Callable[..., Awaitable[str]]:
+        async def dependency(authorization: Annotated[str | None, Header()] = None) -> str:
+            return (await consume_release_identity(authorization, capability)).actor
+
+        return dependency
+
+    release_tokens_issue = release_automation(ReleaseIdentityCapability.TOKENS_ISSUE)
+    release_tokens_list = release_automation(ReleaseIdentityCapability.TOKENS_LIST)
+    release_tokens_revoke = release_automation(ReleaseIdentityCapability.TOKENS_REVOKE)
+    release_audit_read = release_automation(ReleaseIdentityCapability.AUDIT_READ)
+
+    async def release_models_bootstrap(
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> VerifiedReleaseIdentity:
+        return await consume_release_identity(
+            authorization,
+            ReleaseIdentityCapability.MODELS_BOOTSTRAP,
+        )
+
+    async def verify_enrollment_identity(authorization: str | None) -> VerifiedReleaseIdentity:
+        if runtime.release_identities is None:
+            raise AdminProblemError(503, "release_identity_unavailable", "release identity trust is unavailable")
+        try:
+            return runtime.release_identities.verify(
+                _bearer(authorization, maximum_length=MAX_RELEASE_ASSERTION_LENGTH),
+                capability=ReleaseIdentityCapability.OPERATOR_ENROLL,
+                purpose=ReleaseIdentityPurpose.OPERATOR_ENROLLMENT,
+            )
+        except (AuthenticationError, ReleaseIdentityError):
+            await release_identity_failure("invalid_operator_enrollment_identity")
+            raise AdminProblemError(
+                401,
+                "release_identity_invalid",
+                "release identity assertion is invalid",
+            ) from None
 
     async def operator_session(
         cookie_value: Annotated[str | None, Cookie(alias=ADMIN_SESSION_COOKIE)] = None,
@@ -770,18 +845,33 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             pass
 
     async def admit_operator_exchange(request: Request) -> None:
-        source = request.client.host if request.client is not None else "unresolved"
-        source_fingerprint = hashlib.sha256(f"network-peer:{source}".encode()).hexdigest()
-        allowed = await runtime.store.consume_operator_session_exchange(
+        try:
+            source = admin_client_sources.resolve(
+                peer=request.client.host if request.client is not None else None,
+                forwarded=request.headers.get(admin_client_sources.header_name),
+            )
+        except ClientSourceError:
+            raise AdminProblemError(
+                503,
+                "operator_source_unavailable",
+                "operator source attribution is unavailable",
+            ) from None
+        source_fingerprint = runtime.operator_sessions.source_fingerprint(source)
+        admission = await runtime.store.consume_operator_session_exchange(
             source_fingerprint,
             attempted_at=datetime.now(UTC),
             window_seconds=runtime.settings.admin_session_exchange_window_seconds,
-            maximum_attempts=runtime.settings.admin_session_exchange_attempts,
+            maximum_source_attempts=runtime.settings.admin_session_exchange_attempts,
+            maximum_aggregate_attempts=runtime.settings.admin_session_exchange_aggregate_attempts,
         )
-        if not allowed:
+        if admission is not SessionExchangeAdmission.ADMITTED:
             raise AdminProblemError(
                 429,
-                "operator_session_exchange_throttled",
+                (
+                    "operator_session_exchange_source_throttled"
+                    if admission is SessionExchangeAdmission.SOURCE_THROTTLED
+                    else "operator_session_exchange_capacity_throttled"
+                ),
                 "operator session exchange is temporarily rate limited",
             )
 
@@ -829,6 +919,14 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     @app.exception_handler(AuthenticationError)
     async def authentication_error(_: Request, __: AuthenticationError) -> JSONResponse:
         return _error(401, "authentication_error", "invalid bearer token")
+
+    @app.exception_handler(PasswordWorkCapacityError)
+    async def password_work_capacity(_: Request, __: PasswordWorkCapacityError) -> JSONResponse:
+        return admin_problem_response(
+            429,
+            "operator_credential_work_capacity_exhausted",
+            "operator credential verification capacity is temporarily exhausted",
+        )
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -1499,6 +1597,63 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     }
 
     @app.post(
+        "/admin/api/v1/operator-enrollment:consume",
+        response_model=AdminEnvelope[OperatorEnrollmentDisclosure],
+        status_code=status.HTTP_201_CREATED,
+        responses=admin_problem_responses,
+    )
+    async def consume_operator_enrollment(
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> AdminEnvelope[OperatorEnrollmentDisclosure]:
+        verified = await verify_enrollment_identity(authorization)
+        try:
+            await runtime.store.consume_release_identity_assertion(
+                verified.assertion,
+                assertion_fingerprint=verified.fingerprint,
+                capability=str(ReleaseIdentityCapability.OPERATOR_ENROLL),
+                actor=verified.actor,
+            )
+        except ConflictError:
+            await release_identity_failure("replayed_operator_enrollment_identity")
+            raise AdminProblemError(
+                409,
+                "operator_enrollment_assertion_consumed",
+                "operator enrollment assertion was already consumed",
+            ) from None
+        try:
+            disclosure = await runtime.operator_sessions.enroll_credential(
+                verified.assertion,
+                assertion_fingerprint=verified.fingerprint,
+                actor=verified.actor,
+            )
+        except (ConflictError, PasswordWorkCapacityError) as error:
+            target = verified.assertion.operator
+            await runtime.store.append_audit_event(
+                actor=verified.actor,
+                tenant_id=target.tenant_id if target is not None else None,
+                token_id=None,
+                action="operator_credential.enroll",
+                target_type="operator_principal",
+                target_id=str(target.principal_id) if target is not None else "unresolved",
+                outcome="failed",
+                detail={
+                    "reason": (
+                        "credential_work_capacity"
+                        if isinstance(error, PasswordWorkCapacityError)
+                        else "signed_target_conflict"
+                    )
+                },
+            )
+            if isinstance(error, PasswordWorkCapacityError):
+                raise
+            raise AdminProblemError(
+                409,
+                "operator_enrollment_conflict",
+                "operator enrollment cannot be applied",
+            ) from None
+        return access_envelope(disclosure)
+
+    @app.post(
         "/admin/api/v1/session",
         response_model=AdminEnvelope[OperatorSession],
         responses=admin_problem_responses,
@@ -1564,26 +1719,129 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                     pass
             raise KeyError(model_id) from None
 
+    @app.post(
+        "/admin/api/v1/release/model-bootstrap",
+        response_model=AdminEnvelope[dict[str, Any]],
+        responses=admin_problem_responses,
+    )
+    async def release_model_bootstrap(
+        payload: ReleaseModelBootstrapRequest,
+        verified: Annotated[VerifiedReleaseIdentity, Depends(release_models_bootstrap)],
+    ) -> AdminEnvelope[dict[str, Any]]:
+        expected_digest = verified.assertion.resource_sha256
+        payload_digest = payload.sha256()
+        if expected_digest is None or expected_digest != payload_digest:
+            raise AdminProblemError(
+                403,
+                "release_model_bootstrap_digest_mismatch",
+                "release assertion is not bound to this model bootstrap payload",
+            )
+        preview_service = runtime.model_deployment_preview
+        mutation_service = runtime.model_deployment_mutation
+        if preview_service is None or mutation_service is None:
+            raise AdminProblemError(
+                503,
+                "release_model_bootstrap_unavailable",
+                "model bootstrap services are unavailable",
+            )
+        observed_at = datetime.now(UTC)
+        actor = OperatorPrincipal(
+            id=uuid5(NAMESPACE_URL, f"{verified.assertion.issuer}\0{verified.assertion.subject}"),
+            subject=verified.actor,
+            display_name="Attested release model bootstrap",
+            kind=PrincipalKind.SERVICE,
+            role=OperatorRole.ADMIN,
+            tenant_id=None,
+            enabled=True,
+            created_at=observed_at,
+            created_by=verified.actor,
+            updated_at=observed_at,
+        )
+        results: list[dict[str, Any]] = []
+        for proposal in payload.proposals:
+            current = await mutation_service.repository.current(
+                namespace=proposal.namespace,
+                name=proposal.name,
+                tenant_id=None,
+            )
+            if current is not None:
+                if (
+                    current.spec.model_ref != proposal.spec.model_ref
+                    or current.tenant_id != proposal.spec.tenant_id
+                ):
+                    raise AdminProblemError(
+                        409,
+                        "release_model_bootstrap_identity_conflict",
+                        "existing model bootstrap identity differs from the signed payload",
+                    )
+                results.append(
+                    {
+                        "name": proposal.name,
+                        "projection": "preserved",
+                        "revision": current.revision,
+                    }
+                )
+                continue
+            try:
+                preview = await preview_service.plan(proposal, actor)
+                if preview.decision.disposition.value != "accepted" or not preview.mutation_supported:
+                    raise AdminProblemError(
+                        409,
+                        "release_model_bootstrap_not_admitted",
+                        "signed model bootstrap payload was not admitted",
+                    )
+                applied = await mutation_service.apply(
+                    ModelDeploymentApplyRequest(
+                        preview_id=preview.preview_id,
+                        proposed_etag=preview.proposed_etag,
+                        proposal=proposal,
+                        idempotency_key=f"release-bootstrap-{preview.proposed_etag.removeprefix('sha256:')}",
+                    ),
+                    actor,
+                )
+            except (ModelDeploymentPreviewProblemError, ModelDeploymentMutationProblemError) as error:
+                raise AdminProblemError(
+                    error.status_code,
+                    error.code,
+                    error.detail,
+                ) from None
+            results.append(
+                {
+                    "name": proposal.name,
+                    "projection": applied.projection,
+                    "revision": applied.revision.revision,
+                }
+            )
+        return access_envelope(
+            {
+                "payload_sha256": payload_digest,
+                "models": results,
+            }
+        )
+
     @app.post("/admin/v1/tokens", response_model=TokenIssued)
-    async def issue_token(payload: TokenCreateRequest, actor: Annotated[str, Depends(admin)]) -> TokenIssued:
+    async def issue_token(
+        payload: TokenCreateRequest,
+        actor: Annotated[str, Depends(release_tokens_issue)],
+    ) -> TokenIssued:
         canonical_models = {access_model_id(model_id) for model_id in payload.models}
         canonical = payload.model_copy(update={"models": canonical_models})
         return await runtime.tokens.issue(TokenCreate.model_validate(canonical.model_dump()), created_by=actor)
 
     @app.get("/admin/v1/tokens", response_model=list[TokenView])
     async def list_tokens(
-        _: Annotated[str, Depends(admin)],
+        _: Annotated[str, Depends(release_tokens_list)],
         tenant_id: str | None = Query(default=None, max_length=120),
     ) -> list[TokenView]:
         return await runtime.tokens.list(tenant_id=tenant_id)
 
     @app.delete("/admin/v1/tokens/{token_id}", response_model=TokenView)
-    async def revoke_token(token_id: UUID, actor: Annotated[str, Depends(admin)]) -> TokenView:
+    async def revoke_token(token_id: UUID, actor: Annotated[str, Depends(release_tokens_revoke)]) -> TokenView:
         return await runtime.tokens.revoke(token_id, actor=actor)
 
     @app.get("/admin/v1/audit")
     async def audit(
-        _: Annotated[str, Depends(admin)],
+        _: Annotated[str, Depends(release_audit_read)],
         tenant_id: str | None = Query(default=None, max_length=120),
         limit: int = Query(default=100, ge=1, le=1000),
     ) -> list[dict[str, Any]]:

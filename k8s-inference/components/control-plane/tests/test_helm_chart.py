@@ -72,6 +72,8 @@ def helm_values() -> list[str]:
         "config.publicAuthorityMode=ip",
         "--set",
         "httpRoute.authorityMode=ip",
+        "--set-json",
+        'config.adminSessionTrustedProxyCidrs=["10.20.0.0/24"]',
     ]
 
 
@@ -781,6 +783,8 @@ def test_workloads_are_nonroot_bounded_and_use_digest_pins_and_secret_references
         "readOnly": True,
     }
     env_names = {item["name"] for item in pod["containers"][0]["env"]}
+    assert "FS2_ADMIN_TOKEN_FILE" not in env_names
+    assert "FS2_RELEASE_IDENTITY_TRUST_FILE" in env_names
     assert "FS2_PAT_RETENTION_SECONDS" not in env_names
     assert "FS2_TOKEN_RETENTION_SECONDS" not in env_names
     assert "FS2_ROUTE_ATTESTORS_FILE" in env_names
@@ -834,6 +838,16 @@ def test_workloads_are_nonroot_bounded_and_use_digest_pins_and_secret_references
         "name": "route-attestors",
         "mountPath": "/var/run/secrets/fs2-serve/attestors",
         "readOnly": True,
+    }
+    release_trust = next(item for item in pod["volumes"] if item["name"] == "release-identity-trust")
+    assert release_trust["configMap"] == {
+        "name": "fs2-serve-release-identity-trust",
+        "defaultMode": 292,
+        "items": [{"key": "trust.json", "path": "trust.json"}],
+    }
+    assert "admin-token" not in {item["name"] for item in pod["volumes"]}
+    assert "admin-token" not in {
+        item["name"] for item in pod["containers"][0]["volumeMounts"]
     }
     rendered = json.dumps(documents)
     assert all(document["kind"] != "Secret" for document in documents)
@@ -2483,6 +2497,7 @@ def test_direct_ip_edge_is_complete_tls_only_and_acme_reachable() -> None:
             }
         ],
         "tls": {"minVersion": "1.2", "maxVersion": "1.3"},
+        "clientIPDetection": {"xForwardedFor": {"numTrustedHops": 0}},
     }
     assert route["spec"]["parentRefs"] == [
         {

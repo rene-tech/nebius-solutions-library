@@ -24,13 +24,13 @@ output "admin_web_interface_url" {
 }
 
 output "admin_token" {
-  description = "Private disposable admin credential used only to mint/revoke scoped PATs through the cluster-internal admin API; it is not valid public /v1 or /mcp authorization."
+  description = "Deprecated rollback-only value retained in protected state; the current control plane does not mount it and no HTTP route accepts it."
   value       = random_password.admin_token.result
   sensitive   = true
 }
 
 output "admin_bootstrap_token" {
-  description = "Bootstrap credential for creating the initial admin browser session; it is not a public inference credential."
+  description = "Deprecated alias retained only for rollback; enrollment and every current admin HTTP route refuse this value."
   value       = random_password.admin_token.result
   sensitive   = true
 }

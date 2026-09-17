@@ -1034,6 +1034,20 @@ variable "model_controller" {
   }
 }
 
+variable "release_identity_model_bootstrap_assertion_secret_name" {
+  description = "External release authority-owned Secret containing one unexpired, payload-bound models.bootstrap assertion. Terraform references only its public object name and never reads its data."
+  type        = string
+  default     = "fs2-release-model-bootstrap-assertion"
+
+  validation {
+    condition = can(regex(
+      "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$",
+      var.release_identity_model_bootstrap_assertion_secret_name,
+    ))
+    error_message = "release_identity_model_bootstrap_assertion_secret_name must be a DNS subdomain."
+  }
+}
+
 variable "model_express" {
   description = "Optional NVIDIA ModelExpress service and exact per-model runtime client declarations. Disabled leaves workloads and infrastructure unchanged."
   type = object({
@@ -1451,6 +1465,23 @@ variable "public_edge_contract" {
       false,
     )
     error_message = "An internal-only public_edge_contract requires three distinct non-privileged loopback ports and origins derived from its operator-proxy port."
+  }
+}
+
+variable "admin_session_trusted_proxy_cidrs" {
+  description = "Exact Envoy backend-peer CIDRs selected by the public-edge NetworkPolicy contract. Do not substitute the whole VPC, node, Pod, or service CIDR. Internal-only mode uses an empty set and keys on the direct peer."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition = (
+      length(var.admin_session_trusted_proxy_cidrs) <= 16 &&
+      alltrue([
+        for cidr in var.admin_session_trusted_proxy_cidrs :
+        can(cidrhost(cidr, 0)) && !endswith(cidr, "/0")
+      ])
+    )
+    error_message = "admin_session_trusted_proxy_cidrs must contain at most 16 exact, non-default-route CIDRs."
   }
 }
 

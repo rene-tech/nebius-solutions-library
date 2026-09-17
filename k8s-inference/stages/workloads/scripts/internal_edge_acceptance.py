@@ -630,9 +630,44 @@ def verify_admin_live_views(cookie: str, deadline: float) -> dict[str, int]:
     raise RuntimeError("admin live-data acceptance did not converge") from last_error
 
 
-def issue_acceptance_pat(admin_token: str, model_id: str) -> tuple[str, str]:
+def operator_session(operator_credential: str, prior_cookie: str | None = None) -> str:
+    headers = {
+        "Authorization": f"Bearer {operator_credential}",
+        "Origin": APPLICATION_ORIGIN,
+    }
+    if prior_cookie is not None:
+        headers["Cookie"] = prior_cookie
+    status, headers, response = request(
+        "/admin/api/v1/session",
+        method="POST",
+        headers=headers,
+        body=b"",
+    )
+    cookie = headers.get("Set-Cookie", "").split(";", 1)[0]
+    if status != 200 or not cookie.startswith("__Host-fs2_admin_session="):
+        raise RuntimeError("admin API did not issue the reviewed operator session")
+    validate_admin_envelope(
+        decoded_json(response, "admin session"),
+        "admin session",
+        required_sources=frozenset({"postgresql"}),
+    )
+    return cookie
+
+
+def close_operator_session(cookie: str) -> None:
+    status, _, _ = request(
+        "/admin/api/v1/session",
+        method="DELETE",
+        headers={"Cookie": cookie, "Origin": APPLICATION_ORIGIN},
+    )
+    if status != 204:
+        raise RuntimeError("admin API did not close the operator session")
+
+
+def issue_acceptance_pat(cookie: str, model_id: str) -> tuple[str, str]:
     payload = json.dumps(
         {
+            "name": "terraform-internal-edge-acceptance",
             "principal_id": "terraform-internal-edge-acceptance",
             "tenant_id": "terraform-acceptance",
             "scopes": [
@@ -652,24 +687,29 @@ def issue_acceptance_pat(admin_token: str, model_id: str) -> tuple[str, str]:
         separators=(",", ":"),
     ).encode()
     status, _, response = request(
-        "/admin/v1/tokens",
+        "/admin/api/v1/keys",
         method="POST",
         headers={
-            "Authorization": f"Bearer {admin_token}",
+            "Cookie": cookie,
             "Content-Type": "application/json",
             "Origin": APPLICATION_ORIGIN,
         },
         body=payload,
     )
-    issued = decoded_json(response, "PAT issuance")
-    token = issued.get("token")
-    token_id = issued.get("id")
+    envelope = validate_admin_envelope(
+        decoded_json(response, "PAT issuance"),
+        "PAT issuance",
+        required_sources=frozenset({"postgresql"}),
+    )
+    token = envelope.get("secret")
+    key = envelope.get("key")
+    token_id = key.get("id") if isinstance(key, dict) else None
     try:
         parsed_id = UUID(str(token_id))
     except ValueError:
         parsed_id = None
     if (
-        status != 200
+        status != 201
         or not isinstance(token, str)
         or not token.startswith("fs2_pat_")
         or not isinstance(token_id, str)
@@ -680,16 +720,20 @@ def issue_acceptance_pat(admin_token: str, model_id: str) -> tuple[str, str]:
     return token, token_id
 
 
-def revoke_acceptance_pat(admin_token: str, token_id: str) -> None:
+def revoke_acceptance_pat(cookie: str, token_id: str) -> None:
     status, _, response = request(
-        f"/admin/v1/tokens/{token_id}",
+        f"/admin/api/v1/keys/{token_id}",
         method="DELETE",
         headers={
-            "Authorization": f"Bearer {admin_token}",
+            "Cookie": cookie,
             "Origin": APPLICATION_ORIGIN,
         },
     )
-    revoked = decoded_json(response, "PAT revocation")
+    revoked = validate_admin_envelope(
+        decoded_json(response, "PAT revocation"),
+        "PAT revocation",
+        required_sources=frozenset({"postgresql"}),
+    )
     if (
         status != 200
         or revoked.get("id") != token_id
@@ -1071,7 +1115,7 @@ def run_semantic(
 
 
 def accept(
-    admin_token: str,
+    operator_credential: str,
     semantic: dict[str, object],
     deadline: float,
 ) -> dict[str, object]:
@@ -1092,8 +1136,11 @@ def accept(
     model_id = semantic["model_id"]
     if not isinstance(model_id, str):
         raise RuntimeError("validated semantic model ID is unavailable")
-    pat, token_id = issue_acceptance_pat(admin_token, model_id)
+    cookie = operator_session(operator_credential)
+    token_id: str | None = None
     try:
+        pat, token_id = issue_acceptance_pat(cookie, model_id)
+        admin_views = verify_admin_live_views(cookie, deadline)
         status, _, models_payload = request(
             "/v1/models",
             headers={
@@ -1112,29 +1159,13 @@ def accept(
             raise RuntimeError("authenticated model catalog lacks the acceptance model")
         mcp_result = mcp_list_tools(pat)
         semantic_result = run_semantic(pat, semantic, deadline)
-
-        session_headers = {
-            "Authorization": f"Bearer {admin_token}",
-            "Origin": APPLICATION_ORIGIN,
-        }
-        status, headers, session_payload = request(
-            "/admin/api/v1/session",
-            method="POST",
-            headers=session_headers,
-            body=b"",
-        )
-        set_cookie = headers.get("Set-Cookie", "")
-        cookie = set_cookie.split(";", 1)[0]
-        if status != 200 or not cookie.startswith("__Host-fs2_admin_session="):
-            raise RuntimeError("admin API did not issue the reviewed operator session")
-        validate_admin_envelope(
-            decoded_json(session_payload, "admin session"),
-            "admin session",
-            required_sources=frozenset({"postgresql"}),
-        )
-        admin_views = verify_admin_live_views(cookie, deadline)
     finally:
-        revoke_acceptance_pat(admin_token, token_id)
+        try:
+            if token_id is not None:
+                cookie = operator_session(operator_credential, cookie)
+                revoke_acceptance_pat(cookie, token_id)
+        finally:
+            close_operator_session(cookie)
     return {
         "schema": "fs2-serve.nebius.ai/internal-edge-acceptance/v1",
         "status": "PASS",
@@ -1159,7 +1190,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kubeconfig", type=Path, required=True)
     parser.add_argument("--context", required=True)
-    parser.add_argument("--admin-token-file", type=Path, required=True)
+    parser.add_argument("--operator-credential-file", type=Path, required=True)
     parser.add_argument("--semantic-request-file", type=Path, required=True)
     parser.add_argument(
         "--control-plane-local-port",
@@ -1195,7 +1226,10 @@ def main() -> None:
         args.operator_proxy_port,
     )
     checked_private_file(args.kubeconfig, "kubeconfig")
-    admin_token = checked_private_file(args.admin_token_file, "admin token file")
+    operator_credential = checked_private_file(
+        args.operator_credential_file,
+        "operator credential file",
+    )
     semantic = semantic_request(
         json.loads(
             checked_private_file(
@@ -1231,7 +1265,7 @@ def main() -> None:
         server = ThreadingHTTPServer((BIND_ADDRESS, PROXY_PORT), SameOriginProxy)
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
-        print(json.dumps(accept(admin_token, semantic, deadline), sort_keys=True))
+        print(json.dumps(accept(operator_credential, semantic, deadline), sort_keys=True))
     finally:
         if server is not None:
             if server_thread is not None:

@@ -314,6 +314,12 @@ secrets:
     name: fs2-serve-artifact-store
     key: credentials.json
 
+releaseIdentity:
+  # Public Ed25519 issuer keys and exact provider-attested workload identity
+  # closure. Release automation owns this pre-created, non-secret ConfigMap.
+  trustConfigMapName: fs2-serve-release-identity-trust
+  trustConfigMapKey: trust.json
+
 config:
   # Required public HTTPS origins; empty defaults fail validation.
   publicBaseUrl: ""
@@ -341,7 +347,12 @@ config:
   adminSessionMaxPerPrincipal: "4"
   # Shared, database-backed exchange throttle per network-peer fingerprint.
   adminSessionExchangeAttempts: "5"
+  adminSessionExchangeAggregateAttempts: "200"
   adminSessionExchangeWindowSeconds: "60"
+  adminSessionCredentialWorkConcurrency: "2"
+  # A public-Gateway release must override this with the exact Envoy data-plane
+  # source CIDR. Direct peers outside this set never influence forwarded source.
+  adminSessionTrustedProxyCidrs: []
   syncWaitSeconds: "2"
   maxSyncWaitSeconds: "30"
   maxSyncWaiters: "32"
@@ -370,11 +381,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 2db60ae50d28edfb6ead9ff5144ecaa1680843c03e155d655a3d5df7a19ef6f9
-    migrationSetSha256: 24f3abc3997de473e1343f9d3467e84babb535cab889369de3620d7fb99c44c3
-    migrationCount: 30
+    contractPayloadSha256: cc6cf95284135b4dd94396f8dc5116756810e00dd894c3a3ddb13e51050a8342
+    migrationSetSha256: 6db59f99747ad837a7b53137d9d1df7983eacc48383b75ba2ecdcf359bff0fc6
+    migrationCount: 31
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0030_operator_credentials.sql
+    lastMigrationVersion: 0031_release_identity_receipts.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:
