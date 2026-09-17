@@ -168,6 +168,8 @@ def _container(
             "allowPrivilegeEscalation": False,
             "readOnlyRootFilesystem": True,
             "runAsNonRoot": True,
+            "runAsUser": 1000,
+            "runAsGroup": 1000,
             "capabilities": {"drop": ["ALL"]},
         },
         "volumeMounts": [
@@ -180,6 +182,8 @@ def _container(
         ],
         "env": [
             {"name": "FS2_MODEL_ID", "value": record.model_id},
+            {"name": "HOME", "value": "/tmp/fs2-home"},
+            {"name": "XDG_CACHE_HOME", "value": "/tmp/fs2-cache/xdg"},
             {
                 "name": "FS2_MODEL_CONTENT_PATH",
                 "value": content_path,

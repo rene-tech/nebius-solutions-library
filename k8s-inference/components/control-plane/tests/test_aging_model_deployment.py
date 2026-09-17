@@ -12,7 +12,12 @@ from conftest import CATALOG_ROOT, REPO_ROOT, SOLUTION_ROOT
 from fs2_serve_catalog.consumer import ServingBindings, bind_gateway_catalog
 from fs2_serve_catalog.loader import load_catalog
 from test_cpu_model_deployment import cpu_pool
-from test_model_deployment import digest, envelope, model_spec
+from test_model_deployment import (
+    digest,
+    envelope,
+    model_spec,
+    runtime_security_compatibility,
+)
 from test_model_deployment_mutation import FakeWriter
 from test_model_deployment_publication import revision, status_view
 
@@ -131,6 +136,22 @@ def test_actual_aging_native_runtime_can_render_and_publish_without_inventing_el
         runtime_container_name="runtime",
         primary_service_name=model_id,
         primary_service_port=8000,
+        runtime_security_compatibilities=[
+            runtime_security_compatibility(
+                model_id=model_id,
+                container_class=container_class,
+                container_name=container["name"],
+                image=(
+                    spec.runtime.image
+                    if container["name"] == "runtime"
+                    else container["image"]
+                ),
+            )
+            for document in resources
+            if document is not None and document.get("kind") == "Deployment"
+            for container_class in ("initContainers", "containers", "ephemeralContainers")
+            for container in document["spec"]["template"]["spec"].get(container_class, [])
+        ],
         resources=resources,
     )
     renderer = LegacyManifestRenderer({(model_id, template_digest): bundle})

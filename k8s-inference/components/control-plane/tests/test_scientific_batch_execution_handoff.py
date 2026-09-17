@@ -279,6 +279,7 @@ def runtime_execution_map(
     omit_file: bool = False,
     runtime_cache: bool = False,
     runtime_cache_claim: str = "fs2-scientific-runtime-cache",
+    runtime_cache_sub_path: str = "protenix-v2",
     second_runtime_cache_identity: tuple[int, int] | None = None,
     include_unused_variant_source: bool = False,
     unused_variant_source: str | None = None,
@@ -373,8 +374,8 @@ def runtime_execution_map(
                             ),
                         ],
                         "service_account_name": "scientific-runner",
-                        "workspace_uid": 10001,
-                        "workspace_gid": 10001,
+                        "workspace_uid": 11003 if runtime_cache else 10001,
+                        "workspace_gid": 11003 if runtime_cache else 10001,
                         "resources": {
                             "requests": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
                             "limits": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
@@ -382,7 +383,9 @@ def runtime_execution_map(
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": (
-                            {"JAX_COMPILATION_CACHE_DIR": "/cache/protenix-v2/jax"} if runtime_cache else {}
+                            {"JAX_COMPILATION_CACHE_DIR": f"/cache/{runtime_cache_sub_path}/jax"}
+                            if runtime_cache
+                            else {}
                         ),
                         "required_node_labels": {},
                     },
@@ -444,7 +447,7 @@ def runtime_execution_map(
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": (
-                            {"JAX_COMPILATION_CACHE_DIR": "/cache/protenix-v2/jax"}
+                            {"JAX_COMPILATION_CACHE_DIR": f"/cache/{runtime_cache_sub_path}/jax"}
                             if second_runtime_cache_identity is not None
                             else {}
                         ),
@@ -709,12 +712,14 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     assert {item["mountPath"] for item in model["volumeMounts"]} == {
         "/mnt/fs2-scientific",
         "/models/protenix-v2/common",
+        "/tmp",
     }
     runtime_mount = next(item for item in model["volumeMounts"] if item["name"] == "model-artifacts")
     assert runtime_mount["subPath"] == "protenix-v2/common"
     assert runtime_mount["readOnly"] is True
     assert pod["securityContext"]["supplementalGroups"] == [10001]
     assert pod["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
+    assert pod["securityContext"]["supplementalGroupsPolicy"] == "Strict"
     assert "fsGroup" not in pod["securityContext"]
     assert "fsGroupChangePolicy" not in pod["securityContext"]
     for container in (*pod["initContainers"], *pod["containers"]):
@@ -739,12 +744,15 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     assert {item["name"] for item in prepare["env"]} == {
         "FS2_RUNTIME_ARTIFACTS_JSON",
         "FS2_STAGE_INVOCATION_JSON",
+        "HOME",
+        "XDG_CACHE_HOME",
     }
     verifier = pod["initContainers"][1]
     assert verifier["name"] == "verify-runtime-artifacts"
     assert {item["mountPath"] for item in verifier["volumeMounts"]} == {
         "/mnt/fs2-scientific",
         "/models/protenix-v2/common",
+        "/tmp",
     }
     collector = next(item for item in pod["containers"] if item["name"] == "artifact-collector")
     collector_environment = {item["name"]: item["value"] for item in collector["env"]}
@@ -801,7 +809,8 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
             "limits": {"cpu": "1", "memory": "1Gi"},
         }
         assert initializer["volumeMounts"] == [
-            {"name": "artifact-workspace", "mountPath": "/mnt/fs2-scientific", "readOnly": False}
+            {"name": "artifact-workspace", "mountPath": "/mnt/fs2-scientific", "readOnly": False},
+            {"name": "runtime-tmp", "mountPath": "/tmp", "readOnly": False},
         ]
         command = initializer["command"]
         if count == 1:
@@ -923,6 +932,7 @@ def test_runtime_cache_is_terraform_owned_model_only_and_never_triggers_recursiv
     assert mounts["runtime-cache"] == {
         "name": "runtime-cache",
         "mountPath": "/cache",
+        "subPath": "protenix-v2",
         "readOnly": False,
     }
     volumes = {item["name"]: item for item in pod["volumes"]}
@@ -936,11 +946,54 @@ def test_runtime_cache_is_terraform_owned_model_only_and_never_triggers_recursiv
     )
     assert "fsGroup" not in pod["securityContext"]
     assert "fsGroupChangePolicy" not in pod["securityContext"]
+    assert pod["volumes"][1] == {
+        "name": "runtime-tmp",
+        "emptyDir": {"sizeLimit": "8Gi"},
+    }
+    for container in (*pod["initContainers"], *pod["containers"]):
+        assert container["securityContext"]["readOnlyRootFilesystem"] is True
+        assert container["securityContext"]["runAsUser"] == 11003
+        assert any(mount["mountPath"] == "/tmp" for mount in container["volumeMounts"])
+    assert pod["securityContext"]["supplementalGroups"] == [10001]
+    assert pod["securityContext"]["supplementalGroupsPolicy"] == "Strict"
+    renderer.tools_image = "foreign.registry.test/control@sha256:" + "9" * 64
+    with pytest.raises(ScientificExecutionMapError, match="same approved private registry"):
+        renderer.render(resource)
+    renderer.tools_image = "registry.test/control@sha256:" + "9" * 64
+    renderer.runtime_cache_gid_owners = {10001: "protenix-v2", 11002: "openfold3-openbind"}  # type: ignore[assignment]
+    foreign_invocation = replace(
+        resource.invocation,
+        runtime_mounts=tuple(
+            replace(mount, supplemental_groups=(11002,))
+            for mount in resource.invocation.runtime_mounts
+        ),
+    )
+    with pytest.raises(ScientificExecutionMapError, match="another model's runtime-cache identity"):
+        renderer.render(replace(resource, invocation=foreign_invocation))
+
+    foreign_legacy_invocation = replace(
+        resource.invocation,
+        runtime_mounts=tuple(
+            replace(mount, supplemental_groups=(1001,))
+            for mount in resource.invocation.runtime_mounts
+        ),
+    )
+    with pytest.raises(ScientificExecutionMapError, match="foreign legacy cache identity"):
+        renderer.render(replace(resource, invocation=foreign_legacy_invocation))
 
 
 def test_runtime_cache_refuses_a_non_terraform_claim(tmp_path: Path) -> None:
-    with pytest.raises(ScientificExecutionMapError, match="Terraform-owned writable claim"):
+    with pytest.raises(ScientificExecutionMapError, match="Terraform-owned claim at /cache"):
         runtime_execution_map(tmp_path, runtime_cache=True, runtime_cache_claim="tenant-supplied-cache")
+
+
+def test_runtime_cache_refuses_an_unsafe_or_cross_model_subpath(tmp_path: Path) -> None:
+    with pytest.raises(ScientificExecutionMapError, match="one safe model directory"):
+        runtime_execution_map(
+            tmp_path,
+            runtime_cache=True,
+            runtime_cache_sub_path="../openfold3",
+        )
 
 
 def test_runtime_cache_refuses_identity_drift_between_stages(tmp_path: Path) -> None:
@@ -969,6 +1022,28 @@ def test_runtime_cache_refuses_cross_model_uid_gid_reuse(tmp_path: Path) -> None
     path.write_text(json.dumps(document), encoding="utf-8")
 
     with pytest.raises(ScientificExecutionMapError, match="unique per model"):
+        FileScientificManifestRenderer(
+            path=path,
+            profiles=ScientificProfileCatalog.load(CATALOG_ROOT),
+        )
+
+
+def test_runtime_cache_refuses_cross_model_directory_reuse(tmp_path: Path) -> None:
+    document = json.loads(
+        (CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    mosaic = next(model for model in document["models"] if model["model_id"] == "mosaic")
+    for stage in mosaic["stages"]:
+        stage["environment"] = {
+            name: value.replace("/cache/mosaic/", "/cache/openfold3/")
+            for name, value in stage["environment"].items()
+        }
+    path = tmp_path / "cross-model-cache-directory-reuse.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ScientificExecutionMapError, match="stable and unique per model"):
         FileScientificManifestRenderer(
             path=path,
             profiles=ScientificProfileCatalog.load(CATALOG_ROOT),
@@ -1866,7 +1941,7 @@ def test_af3_academic_v3_map_binds_exact_params_and_content_addressed_database(t
         assert container["securityContext"]["runAsUser"] == 1001
         assert container["securityContext"]["runAsGroup"] == 1001
     cpu_volumes = {item["name"]: item for item in cpu_pod["volumes"]}
-    assert set(cpu_volumes) == {"artifact-workspace", "alphafold3-databases"}
+    assert set(cpu_volumes) == {"artifact-workspace", "runtime-tmp", "alphafold3-databases"}
     assert cpu_volumes["alphafold3-databases"]["hostPath"] == {
         "path": "/mnt/fs2-reference-data/data",
         "type": "Directory",
@@ -1890,7 +1965,7 @@ def test_af3_academic_v3_map_binds_exact_params_and_content_addressed_database(t
         assert container["securityContext"]["runAsUser"] == 1001
         assert container["securityContext"]["runAsGroup"] == 1001
     gpu_volumes = {item["name"]: item for item in gpu_pod["volumes"]}
-    assert set(gpu_volumes) == {"artifact-workspace", "alphafold3-parameters"}
+    assert set(gpu_volumes) == {"artifact-workspace", "runtime-tmp", "alphafold3-parameters"}
     assert gpu_volumes["alphafold3-parameters"]["persistentVolumeClaim"] == {
         "claimName": "academic-assets-runtime-rwx",
         "readOnly": True,

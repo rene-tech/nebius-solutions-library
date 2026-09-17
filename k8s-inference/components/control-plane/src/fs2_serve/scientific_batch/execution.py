@@ -49,6 +49,14 @@ PACKAGED_TOOLS_CATALOG_DIR = "/opt/fs2/catalog"
 MOUNT_KINDS = {"artifact-workspace", "reference", "private", "runtime-cache"}
 RUNTIME_CACHE_CLAIM_NAME = "fs2-scientific-runtime-cache"
 RUNTIME_CACHE_MOUNT_PATH = "/cache"
+RUNTIME_CACHE_LEGACY_IDENTITIES = MappingProxyType(
+    {
+        "mosaic": (10001, 10001),
+        "openfold3-openbind": (10001, 10001),
+        "protenix-v2": (10001, 10001),
+        "alphafold3": (1001, 1001),
+    }
+)
 REFERENCE_DATASETS_HOST_PATH = "/mnt/fs2-reference-data/data"
 REFERENCE_DATA_STORAGE_LABEL = "storage.fs2.nebius/reference-data"
 REFERENCE_DATA_GID = 1000
@@ -158,6 +166,12 @@ def _quantity_bytes(value: str) -> int:
         if value.endswith(suffix):
             return int(value[: -len(suffix)]) * multiplier
     raise ScientificExecutionMapError("scientific byte quantity is invalid")
+
+
+def _immutable_image_registry(image: str, label: str) -> str:
+    if re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", image) is None or "/" not in image:
+        raise ScientificExecutionMapError(f"{label} must be an immutable registry image")
+    return image.split("/", 1)[0]
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,6 +341,8 @@ class FileScientificManifestRenderer:
         runtime_cache_identities: dict[str, tuple[int, int]] = {}
         runtime_cache_uid_owners: dict[int, str] = {}
         runtime_cache_gid_owners: dict[int, str] = {}
+        runtime_cache_directories: dict[str, str] = {}
+        runtime_cache_directory_owners: dict[str, str] = {}
         for raw_model in models:
             model = _object(raw_model, "scientific execution model")
             model_required = {
@@ -600,7 +616,7 @@ class FileScientificManifestRenderer:
                             or mount_path != RUNTIME_CACHE_MOUNT_PATH
                         ):
                             raise ScientificExecutionMapError(
-                                "scientific runtime cache must use the Terraform-owned writable claim at /cache"
+                                "scientific runtime cache must use the Terraform-owned claim at /cache"
                             )
                     else:
                         if (claim_name is None) == (host_path is None):
@@ -713,6 +729,32 @@ class FileScientificManifestRenderer:
                     raise ScientificExecutionMapError(
                         "scientific runtime cache mount and /cache stage environment must be declared together"
                     )
+                runtime_cache_mount = next((mount for mount in mounts if mount.kind == "runtime-cache"), None)
+                if runtime_cache_mount is not None:
+                    cache_directories = {
+                        value.split("/", 3)[2]
+                        for value in environment.values()
+                        if value.startswith(f"{RUNTIME_CACHE_MOUNT_PATH}/")
+                    }
+                    if (
+                        any(value == RUNTIME_CACHE_MOUNT_PATH for value in environment.values())
+                        or len(cache_directories) != 1
+                        or re.fullmatch(
+                            r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?",
+                            next(iter(cache_directories), ""),
+                        )
+                        is None
+                    ):
+                        raise ScientificExecutionMapError(
+                            "scientific runtime-cache environment must select one safe model directory"
+                        )
+                    cache_directory = next(iter(cache_directories))
+                    prior_model_directory = runtime_cache_directories.setdefault(model_id, cache_directory)
+                    prior_directory_owner = runtime_cache_directory_owners.setdefault(cache_directory, model_id)
+                    if prior_model_directory != cache_directory or prior_directory_owner != model_id:
+                        raise ScientificExecutionMapError(
+                            "scientific runtime-cache directory must be stable and unique per model"
+                        )
                 required_node_labels = _object(stage["required_node_labels"], "scientific required node labels")
                 if len(required_node_labels) > 32 or not all(
                     isinstance(key, str)
@@ -740,6 +782,11 @@ class FileScientificManifestRenderer:
                 )
                 if "runtime-cache" in kinds:
                     identity = (workspace_uid, workspace_gid)
+                    legacy_identity = RUNTIME_CACHE_LEGACY_IDENTITIES.get(model_id)
+                    if legacy_identity is None or legacy_identity == identity:
+                        raise ScientificExecutionMapError(
+                            "scientific runtime-cache model lacks a distinct reviewed legacy identity"
+                        )
                     prior_identity = runtime_cache_identities.setdefault(model_id, identity)
                     if prior_identity != identity:
                         raise ScientificExecutionMapError(
@@ -828,6 +875,11 @@ class FileScientificManifestRenderer:
         self.access_profiles = MappingProxyType(access_profiles)
         self.plan_adapters = MappingProxyType(plan_adapters)
         self.runtime_artifacts = MappingProxyType(runtime_artifacts)
+        self.runtime_cache_identities = MappingProxyType(runtime_cache_identities)
+        self.runtime_cache_gid_owners = MappingProxyType(runtime_cache_gid_owners)
+        self.runtime_cache_directories = MappingProxyType(runtime_cache_directories)
+        self.runtime_cache_directory_owners = MappingProxyType(runtime_cache_directory_owners)
+        self.runtime_cache_legacy_identities = RUNTIME_CACHE_LEGACY_IDENTITIES
         self.tools_image = tools_image
         self.internal_api_url = internal_api_url
         self.capability_authority = capability_authority
@@ -1557,6 +1609,8 @@ class FileScientificManifestRenderer:
             {"name": key, "value": value}
             for key, value in sorted(
                 {
+                    "HOME": "/tmp/fs2-home",
+                    "XDG_CACHE_HOME": "/tmp/fs2-cache/xdg",
                     **execution.environment,
                     **dict(invocation.environment),
                     "FS2_OPERATION_ID": str(resource.operation_id),
@@ -1587,7 +1641,12 @@ class FileScientificManifestRenderer:
         volume_mounts: list[dict[str, Any]] = [
             {"name": workspace.name, "mountPath": workspace.mount_path, "readOnly": False}
         ]
-        volumes: list[dict[str, Any]] = [{"name": workspace.name, "emptyDir": {}}]
+        scratch_mount = {"name": "runtime-tmp", "mountPath": "/tmp", "readOnly": False}
+        volume_mounts.append(scratch_mount)
+        volumes: list[dict[str, Any]] = [
+            {"name": workspace.name, "emptyDir": {}},
+            {"name": "runtime-tmp", "emptyDir": {"sizeLimit": "8Gi"}},
+        ]
         volume_names = {workspace.name}
         used_sources: set[str] = set()
         for binding in invocation.runtime_mounts:
@@ -1672,6 +1731,11 @@ class FileScientificManifestRenderer:
             raise ScientificExecutionMapError("stage declares an unbound broad runtime artifact volume")
         if self.tools_image is None or self.internal_api_url is None or self.capability_authority is None:
             raise ScientificExecutionMapError("scientific artifact companion runtime is not configured")
+        approved_registry = _immutable_image_registry(self.tools_image, "scientific tools image")
+        if _immutable_image_registry(execution.image, "scientific stage image") != approved_registry:
+            raise ScientificExecutionMapError(
+                "scientific stage and companion images must use the same approved private registry"
+            )
         capability = self.capability_authority.issue(resource)
         workspace_mount = next(mount for mount in volume_mounts if mount["mountPath"] == "/mnt/fs2-scientific")
         companion_env = [
@@ -1684,11 +1748,14 @@ class FileScientificManifestRenderer:
             # image. Its Dockerfile publishes the canonical catalog here;
             # workload Pods do not mount the gateway's optional catalog PVC.
             {"name": "FS2_CATALOG_DIR", "value": PACKAGED_TOOLS_CATALOG_DIR},
+            {"name": "HOME", "value": "/tmp/fs2-home"},
+            {"name": "XDG_CACHE_HOME", "value": "/tmp/fs2-cache/xdg"},
         ]
         companion_security = {
             "allowPrivilegeEscalation": False,
             "capabilities": {"drop": ["ALL"]},
             "readOnlyRootFilesystem": True,
+            "runAsNonRoot": True,
             "runAsUser": execution.workspace_uid,
             "runAsGroup": execution.workspace_gid,
         }
@@ -1706,8 +1773,10 @@ class FileScientificManifestRenderer:
                 "env": [
                     {"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": runtime_marker_json},
                     {"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)},
+                    {"name": "HOME", "value": "/tmp/fs2-home"},
+                    {"name": "XDG_CACHE_HOME", "value": "/tmp/fs2-cache/xdg"},
                 ],
-                "volumeMounts": [workspace_mount],
+                "volumeMounts": [workspace_mount, scratch_mount],
                 "resources": {
                     "requests": {"cpu": "50m", "memory": "64Mi"},
                     "limits": {"cpu": "500m", "memory": "256Mi"},
@@ -1722,7 +1791,11 @@ class FileScientificManifestRenderer:
                     "image": self.tools_image,
                     "imagePullPolicy": "IfNotPresent",
                     "command": ["fs2-serve", "scientific-verify-runtime-artifacts"],
-                    "env": [{"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": runtime_marker_json}],
+                    "env": [
+                        {"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": runtime_marker_json},
+                        {"name": "HOME", "value": "/tmp/fs2-home"},
+                        {"name": "XDG_CACHE_HOME", "value": "/tmp/fs2-cache/xdg"},
+                    ],
                     # Freeze the verifier's read-only artifact mounts before a
                     # model-only writable runtime cache is appended below.
                     "volumeMounts": list(volume_mounts),
@@ -1768,7 +1841,7 @@ class FileScientificManifestRenderer:
                     "imagePullPolicy": "IfNotPresent",
                     "command": command,
                     "env": companion_env,
-                    "volumeMounts": [workspace_mount],
+                    "volumeMounts": [workspace_mount, scratch_mount],
                     "resources": {
                         "requests": {"cpu": "100m", "memory": "256Mi"},
                         "limits": {"cpu": "1", "memory": "1Gi"},
@@ -1817,7 +1890,7 @@ class FileScientificManifestRenderer:
                 str(collection_deadline_seconds),
             ],
             "env": companion_env,
-            "volumeMounts": [workspace_mount],
+            "volumeMounts": [workspace_mount, scratch_mount],
             "resources": {
                 "requests": {"cpu": "100m", "memory": "256Mi"},
                 "limits": {"cpu": "2", "memory": "2Gi"},
@@ -1827,10 +1900,14 @@ class FileScientificManifestRenderer:
         runtime_cache = next((mount for mount in execution.mounts if mount.kind == "runtime-cache"), None)
         if runtime_cache is not None:
             assert runtime_cache.claim_name is not None
+            cache_directory = self.runtime_cache_directories.get(resource.model_id)
+            if cache_directory is None:
+                raise ScientificExecutionMapError("scientific runtime-cache directory is not bound to its model")
             volume_mounts.append(
                 {
                     "name": runtime_cache.name,
                     "mountPath": runtime_cache.mount_path,
+                    "subPath": cache_directory,
                     "readOnly": False,
                 }
             )
@@ -1843,18 +1920,49 @@ class FileScientificManifestRenderer:
                     },
                 }
             )
-        supplemental_groups = sorted(
-            {group for mount in invocation.runtime_mounts for group in mount.supplemental_groups}
-        )
+        supplemental_groups = {
+            group for mount in invocation.runtime_mounts for group in mount.supplemental_groups
+        }
+        cache_identity = self.runtime_cache_identities.get(resource.model_id)
+        foreign_cache_groups = {
+            group
+            for group in supplemental_groups
+            if group in self.runtime_cache_gid_owners
+            and (cache_identity is None or group != cache_identity[1])
+        }
+        if foreign_cache_groups:
+            raise ScientificExecutionMapError(
+                "scientific Pod supplemental groups include another model's runtime-cache identity"
+            )
+        if runtime_cache is not None and cache_identity != (execution.workspace_uid, execution.workspace_gid):
+            raise ScientificExecutionMapError("scientific runtime-cache identity differs from its model owner")
+        if runtime_cache is not None:
+            legacy_identity = self.runtime_cache_legacy_identities.get(resource.model_id)
+            if legacy_identity is None:
+                raise ScientificExecutionMapError(
+                    "scientific runtime-cache has no reviewed legacy identity"
+                )
+            known_legacy_groups = {
+                identity[1] for identity in self.runtime_cache_legacy_identities.values()
+            }
+            foreign_legacy_groups = supplemental_groups.intersection(
+                known_legacy_groups - {legacy_identity[1]}
+            )
+            if foreign_legacy_groups:
+                raise ScientificExecutionMapError(
+                    "scientific Pod supplemental groups include a foreign legacy cache identity"
+                )
+            supplemental_groups.add(legacy_identity[1])
         pod_security: dict[str, Any] = {
             "runAsNonRoot": True,
             "seccompProfile": {"type": "RuntimeDefault"},
+            "supplementalGroupsPolicy": "Strict",
         }
         if supplemental_groups:
             # The published immutable trees are pre-owned. Supplemental groups
             # grant read access without fsGroup, so kubelet has no recursive
             # permission rewrite to perform for every scientific attempt.
-            pod_security["supplementalGroups"] = supplemental_groups
+            pod_security["supplementalGroups"] = sorted(supplemental_groups)
         affinity: dict[str, Any] | None = None
         if gpu_count:
             if not resource.scheduling.resolved_pool_preference:

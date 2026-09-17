@@ -1123,6 +1123,8 @@ locals {
     deployment_profile              = local.model_profile
     enabled_model_ids               = local.selected_model_ids
     model_image_overrides           = local.effective_model_images
+    model_image_promotions          = var.deployment.models.image_promotions
+    model_runtime_security_compatibilities = var.deployment.models.runtime_security_compatibilities
     model_pool_overrides            = var.deployment.models.pool_overrides
     model_runtime_overrides         = var.deployment.models.runtime_overrides
     model_scaling_mode              = var.deployment.models.scaling.mode

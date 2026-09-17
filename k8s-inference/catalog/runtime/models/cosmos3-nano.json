@@ -26,7 +26,7 @@
     "kind": "vllm-omni",
     "version": "vllm-omni-0.25.0",
     "image": {
-      "reference": "registry.example.invalid/k8s-inference/models/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+      "reference": "docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
       "digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
       "state": "resolved"
     },

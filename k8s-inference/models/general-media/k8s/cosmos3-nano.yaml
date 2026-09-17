@@ -1383,7 +1383,7 @@ spec:
           value: fs2-inference
       initContainers:
         - name: localize-model
-          image: registry.example.invalid/k8s-inference/models/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
+          image: docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
           imagePullPolicy: IfNotPresent
           command:
             - python3
@@ -1425,7 +1425,7 @@ spec:
               name: tmp
       containers:
         - name: vllm-omni
-          image: registry.example.invalid/k8s-inference/models/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
+          image: docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
           imagePullPolicy: IfNotPresent
           command:
             - vllm
@@ -1516,7 +1516,7 @@ spec:
             - mountPath: /tmp
               name: tmp
         - name: bounded-json-adapter
-          image: registry.example.invalid/k8s-inference/models/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
+          image: docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
           imagePullPolicy: IfNotPresent
           command:
             - python3

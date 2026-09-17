@@ -20,14 +20,21 @@ SPEC.loader.exec_module(BOOTSTRAP)
 
 
 def contract(root: Path, *names: str) -> dict[str, object]:
+    legacy_uid = os.getuid()
+    legacy_gid = os.getgid()
+    current_uid = legacy_uid + 1 if legacy_uid < 2_147_483_647 else legacy_uid - 1
+    current_gid = legacy_gid + 1 if legacy_gid < 2_147_483_647 else legacy_gid - 1
     return {
         "schema": BOOTSTRAP.CONTRACT_SCHEMA,
         "root": root.as_posix(),
         "directories": [
             {
                 "name": name,
-                "uid": os.getuid(),
-                "gid": os.getgid(),
+                "uid": current_uid,
+                "gid": current_gid,
+                "legacy_uid": legacy_uid,
+                "legacy_gid": legacy_gid,
+                "migration_phase": BOOTSTRAP.MIGRATION_PHASE,
                 "mode": "2770",
             }
             for name in names
@@ -56,7 +63,30 @@ def test_prepares_only_exact_model_boundaries_and_preserves_existing_entries(
         assert status.st_gid == os.getgid()
         assert stat.S_IMODE(status.st_mode) == 0o2770
     assert compiled.read_bytes() == b"existing-cache-entry"
-    assert stat.S_IMODE(compiled.stat().st_mode) == 0o600
+    assert compiled.stat().st_uid == os.getuid()
+    assert compiled.stat().st_gid == os.getgid()
+    assert stat.S_IMODE(compiled.stat().st_mode) == 0o660
+
+
+def test_dual_access_migrates_nested_entries_without_changing_bytes_or_owner(
+    tmp_path: Path,
+) -> None:
+    nested = tmp_path / "mosaic" / "jax" / "compiled"
+    nested.mkdir(parents=True, mode=0o700)
+    for directory in (tmp_path / "mosaic", tmp_path / "mosaic" / "jax", nested):
+        directory.chmod(0o700)
+    artifact = nested / "kernel.bin"
+    artifact.write_bytes(b"legacy-kernel")
+    artifact.chmod(0o600)
+    original_uid = artifact.stat().st_uid
+
+    BOOTSTRAP.prepare(contract(tmp_path, "mosaic"), expected_root=tmp_path)
+
+    assert artifact.read_bytes() == b"legacy-kernel"
+    assert artifact.stat().st_uid == original_uid
+    assert artifact.stat().st_gid == os.getgid()
+    assert stat.S_IMODE(artifact.stat().st_mode) == 0o660
+    assert stat.S_IMODE(nested.stat().st_mode) & stat.S_ISGID
 
 
 @pytest.mark.parametrize("name", ["../mosaic", "mosaic/jax", ".", "Mosaic", "mosaic_"])
@@ -104,11 +134,14 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
                 continue
             namespace = model["workload_namespace"]
             namespace_claims = claims_by_namespace.setdefault(namespace, {})
+            cache_mount = next(mount for mount in stage["mounts"] if mount["kind"] == "runtime-cache")
             roots = {
-                value.split("/")[2]
+                value.split("/", 3)[2]
                 for value in stage["environment"].values()
                 if value.startswith("/cache/")
             }
+            assert cache_mount["mount_path"] == "/cache"
+            assert cache_mount["sub_path"] is None
             assert len(roots) == 1
             owner = (stage["workspace_uid"], stage["workspace_gid"])
             for cache_root in roots:
@@ -158,7 +191,15 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
     assert "scientific_runtime_cache_identities_by_model" in cache_source
     assert "scientific_runtime_cache_models_by_uid" in cache_source
     assert "scientific_runtime_cache_models_by_gid" in cache_source
-    assert "never share either identity with another model" in cache_source
+    assert "scientific_runtime_cache_legacy_identities" in cache_source
+    assert 'migration_phase = "dual-access-legacy-group"' in cache_source
+    assert "scientific-runtime-cache-ownership/v2" in cache_source
+    assert cache_source.count('resource "kubernetes_service_account_v1" "scientific_runtime_cache_bootstrap') == 2
+    assert cache_source.count('name      = "fs2-scientific-cache-bootstrap"') == 2
+    assert cache_source.count("service_account_name            = kubernetes_service_account_v1.scientific_runtime_cache_bootstrap") == 2
+    assert "kubernetes_role_binding" not in cache_source
+    assert "mount.mount_path == local.scientific_runtime_cache_mount_path" in cache_source
+    assert "mount.sub_path == null" in cache_source
     assert cache_source.count('mode = "2770"') == 2
     assert cache_source.count('"FSETID",') == 2
     assert '"storage.fs2.nebius/shared-cache" = "true"' in cache_source

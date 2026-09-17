@@ -4036,7 +4036,7 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
     for pod_container in (*pod_spec["initContainers"], *pod_spec["containers"]):
         assert pod_container["securityContext"]["runAsUser"] == 10001
         assert pod_container["securityContext"]["runAsGroup"] == 10001
-    assert {item["name"] for item in container["volumeMounts"]} == {"artifact-workspace"}
+    assert {item["name"] for item in container["volumeMounts"]} == {"artifact-workspace", "runtime-tmp"}
     environment = {item["name"]: item["value"] for item in container["env"]}
     assert environment["FS2_VARIANT_ID"] == "protein-design-h100"
     assert environment["FS2_TENANT_ID"] == "tenant-a"

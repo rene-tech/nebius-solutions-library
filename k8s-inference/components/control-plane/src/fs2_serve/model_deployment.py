@@ -1790,6 +1790,44 @@ class ModelRenderer(Protocol):
     def render(self, spec: ModelDeploymentSpec, context: RenderContext) -> RenderPlan: ...
 
 
+class RuntimeSecurityCompatibility(KubernetesModel):
+    model_id: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
+    container_class: Literal["initContainers", "containers", "ephemeralContainers"]
+    container_name: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
+    image: str = Field(min_length=73, max_length=768, pattern=IMAGE_DIGEST_PATTERN)
+    run_as_user: int = Field(ge=1, le=2_147_483_647)
+    run_as_group: int = Field(ge=1, le=2_147_483_647)
+    tmp_size_limit: str = Field(pattern=r"^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$")
+    writable_paths: dict[str, str]
+    review_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    compatibility_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def exact_compatibility_binding(self) -> RuntimeSecurityCompatibility:
+        if set(self.writable_paths) != set(_WRITABLE_RUNTIME_PATH_ENVIRONMENT):
+            raise ValueError("runtime security compatibility writable-path keys differ")
+        if any(
+            not _absolute_path_is_below(path, ["/tmp"])
+            for path in self.writable_paths.values()
+        ):
+            raise ValueError("runtime security compatibility path is outside /tmp")
+        payload = {
+            "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v1",
+            "model_id": self.model_id,
+            "container_class": self.container_class,
+            "container_name": self.container_name,
+            "image": self.image,
+            "run_as_user": self.run_as_user,
+            "run_as_group": self.run_as_group,
+            "tmp_size_limit": self.tmp_size_limit,
+            "writable_paths": self.writable_paths,
+            "review_sha256": self.review_sha256,
+        }
+        if hashlib.sha256(canonical_json(payload)).hexdigest() != self.compatibility_sha256:
+            raise ValueError("runtime security compatibility digest differs")
+        return self
+
+
 class LegacyTemplateBundle(KubernetesModel):
     model_ref: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
     runtime_profile: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
@@ -1798,6 +1836,10 @@ class LegacyTemplateBundle(KubernetesModel):
     runtime_container_name: str = Field(min_length=1, max_length=253, pattern=DNS_LABEL_PATTERN)
     primary_service_name: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
     primary_service_port: int = Field(ge=1, le=65535)
+    runtime_security_compatibilities: list[RuntimeSecurityCompatibility] = Field(
+        min_length=1,
+        max_length=256,
+    )
     resources: list[dict[str, Any]] = Field(min_length=1, max_length=255)
 
 
@@ -1853,14 +1895,108 @@ def bounded_label_value(value: str) -> str:
     return f"{stem}-{suffix}"
 
 
-def _enforce_restricted_runtime_security(pod_spec: dict[str, Any], runtime_container_name: str) -> None:
-    """Apply the non-negotiable restricted profile to a rendered model Pod.
+_WRITABLE_RUNTIME_PATH_ENVIRONMENT = {
+    "CUDA_CACHE_PATH": "/tmp/fs2-cache/cuda",
+    "HF_HOME": "/tmp/fs2-cache/huggingface",
+    "HOME": "/tmp/fs2-home",
+    "JAX_COMPILATION_CACHE_DIR": "/tmp/fs2-cache/jax",
+    "MPLCONFIGDIR": "/tmp/fs2-cache/matplotlib",
+    "NUMBA_CACHE_DIR": "/tmp/fs2-cache/numba",
+    "PYTHONPYCACHEPREFIX": "/tmp/fs2-cache/python",
+    "TORCH_EXTENSIONS_DIR": "/tmp/fs2-cache/torch-extensions",
+    "TORCHINDUCTOR_CACHE_DIR": "/tmp/fs2-cache/torch-inductor",
+    "TRANSFORMERS_CACHE": "/tmp/fs2-cache/transformers",
+    "TRITON_CACHE_DIR": "/tmp/fs2-cache/triton",
+    "TMPDIR": "/tmp",
+    "VLLM_CACHE_ROOT": "/tmp/fs2-cache/vllm",
+    "XDG_CACHE_HOME": "/tmp/fs2-cache/xdg",
+}
 
-    Legacy bundles are evidence inputs, not security-policy inputs. Applying
-    this envelope after every cache/transport adapter prevents an older bundle
-    (or a capability requested by an adapter) from weakening the final Pod.
-    Writable model data, compiler caches and scratch space remain explicit
-    volume mounts; the image filesystem itself is immutable at runtime.
+
+def _absolute_path_is_below(path: str, roots: Sequence[str]) -> bool:
+    candidate = path.rstrip("/") or "/"
+    candidate_parts = candidate.split("/")[1:]
+    if not path.startswith("/") or any(part in {"", ".", ".."} for part in candidate_parts):
+        return False
+    for raw_root in roots:
+        root = raw_root.rstrip("/") or "/"
+        root_parts = root.split("/")[1:]
+        if root == "/" or any(part in {"", ".", ".."} for part in root_parts):
+            continue
+        if candidate == root or candidate.startswith(f"{root}/"):
+            return True
+    return False
+
+
+def _container_environment(container: dict[str, Any]) -> list[dict[str, Any]]:
+    environment = container.setdefault("env", [])
+    if not isinstance(environment, list) or any(
+        not isinstance(item, dict) for item in environment
+    ):
+        raise ValueError("model Pod container environment is invalid")
+    names = [item.get("name") for item in environment]
+    if any(not isinstance(name, str) or not name for name in names) or len(names) != len(
+        set(names)
+    ):
+        raise ValueError("model Pod container environment names are invalid or duplicated")
+    return environment
+
+
+def _ensure_bounded_container_tmp(
+    pod_spec: dict[str, Any],
+    container: dict[str, Any],
+    *,
+    field: str,
+    ordinal: int,
+    size_limit: str,
+) -> None:
+    mounts = container.setdefault("volumeMounts", [])
+    volumes = pod_spec.setdefault("volumes", [])
+    if (
+        not isinstance(mounts, list)
+        or any(not isinstance(item, dict) for item in mounts)
+        or not isinstance(volumes, list)
+        or any(not isinstance(item, dict) for item in volumes)
+    ):
+        raise ValueError("model Pod volumes or volumeMounts are invalid")
+    tmp_mounts = [item for item in mounts if item.get("mountPath") == "/tmp"]
+    if len(tmp_mounts) > 1:
+        raise ValueError("model Pod container has ambiguous /tmp mounts")
+    if tmp_mounts:
+        mount = tmp_mounts[0]
+        if mount.get("readOnly", False) is not False or not isinstance(mount.get("name"), str):
+            raise ValueError("model Pod /tmp mount must be writable and named")
+        matching_volumes = [
+            item for item in volumes if item.get("name") == mount["name"]
+        ]
+        if len(matching_volumes) != 1 or not isinstance(
+            matching_volumes[0].get("emptyDir"), dict
+        ):
+            raise ValueError("model Pod /tmp must be backed by a bounded emptyDir")
+        if matching_volumes[0]["emptyDir"].get("sizeLimit") != size_limit:
+            raise ValueError("model Pod /tmp emptyDir differs from its compatibility record")
+        return
+    name_seed = f"{field}-{ordinal}-{container.get('name', 'container')}"
+    volume_name = f"fs2-tmp-{hashlib.sha256(name_seed.encode('utf-8')).hexdigest()[:12]}"
+    if any(item.get("name") == volume_name for item in volumes):
+        raise ValueError("model Pod generated /tmp volume name collides")
+    volumes.append({"name": volume_name, "emptyDir": {"sizeLimit": size_limit}})
+    mounts.append({"name": volume_name, "mountPath": "/tmp", "readOnly": False})
+
+
+def _enforce_restricted_runtime_security(
+    pod_spec: dict[str, Any],
+    runtime_container_name: str,
+    *,
+    model_id: str,
+    compatibilities: Sequence[RuntimeSecurityCompatibility],
+) -> None:
+    """Validate and harden every container in the final rendered model Pod.
+
+    The contract runs after all adapters. Every final image must therefore be
+    immutable and use the same Terraform-qualified private registry as the
+    selected runtime. Every container gets an explicit reviewed non-zero UID,
+    a read-only image filesystem, and bounded writable scratch/cache paths.
     """
 
     pod_security = pod_spec.setdefault("securityContext", {})
@@ -1868,23 +2004,99 @@ def _enforce_restricted_runtime_security(pod_spec: dict[str, Any], runtime_conta
         raise ValueError("primary Deployment Pod securityContext is invalid")
     pod_security["runAsNonRoot"] = True
     pod_security["seccompProfile"] = {"type": "RuntimeDefault"}
+    pod_security["supplementalGroupsPolicy"] = "Strict"
+    compatibility_by_key = {
+        (item.container_class, item.container_name, item.image): item
+        for item in compatibilities
+        if item.model_id == model_id
+    }
+    if len(compatibility_by_key) != len(
+        [item for item in compatibilities if item.model_id == model_id]
+    ):
+        raise ValueError("runtime security compatibility records are duplicated")
+
+    application_containers = pod_spec.get("containers", [])
+    if not isinstance(application_containers, list) or any(
+        not isinstance(item, dict) for item in application_containers
+    ):
+        raise ValueError("primary Deployment containers are invalid")
+    runtime_images = [
+        item.get("image")
+        for item in application_containers
+        if item.get("name") == runtime_container_name
+    ]
+    if len(runtime_images) != 1 or not isinstance(runtime_images[0], str):
+        raise ValueError("runtime container identity is ambiguous after security hardening")
+    runtime_image = runtime_images[0]
+    if re.fullmatch(IMAGE_DIGEST_PATTERN, runtime_image) is None or "/" not in runtime_image:
+        raise ValueError("runtime image must be an immutable qualified registry reference")
+    approved_registry = runtime_image.split("/", 1)[0]
 
     runtime_matches = 0
-    for field in ("initContainers", "containers"):
+    for field in ("initContainers", "containers", "ephemeralContainers"):
         containers = pod_spec.get(field, [])
-        if not isinstance(containers, list) or any(not isinstance(item, dict) for item in containers):
+        if not isinstance(containers, list) or any(
+            not isinstance(item, dict) for item in containers
+        ):
             raise ValueError(f"primary Deployment {field} is invalid")
-        for container in containers:
+        for ordinal, container in enumerate(containers):
+            image = container.get("image")
+            if (
+                not isinstance(image, str)
+                or re.fullmatch(IMAGE_DIGEST_PATTERN, image) is None
+                or not image.startswith(f"{approved_registry}/")
+            ):
+                raise ValueError(
+                    "every final model Pod image must be digest-pinned in the approved private registry"
+                )
+            name = container.get("name")
+            compatibility = compatibility_by_key.get((field, name, image))
+            if compatibility is None:
+                raise ValueError(
+                    "final model Pod container lacks an exact runtime security compatibility record"
+                )
             security = container.setdefault("securityContext", {})
             if not isinstance(security, dict):
                 raise ValueError("model Pod container securityContext is invalid")
-            if security.get("privileged") is True or security.get("runAsUser") == 0:
-                raise ValueError("model Pod container conflicts with the restricted security profile")
             security["allowPrivilegeEscalation"] = False
+            security["privileged"] = False
             security["runAsNonRoot"] = True
+            security["runAsUser"] = compatibility.run_as_user
+            security["runAsGroup"] = compatibility.run_as_group
+            security["readOnlyRootFilesystem"] = True
             security["capabilities"] = {"drop": ["ALL"], "add": []}
+            _ensure_bounded_container_tmp(
+                pod_spec,
+                container,
+                field=field,
+                ordinal=ordinal,
+                size_limit=compatibility.tmp_size_limit,
+            )
+            writable_roots = sorted(
+                {
+                    mount["mountPath"].rstrip("/") or "/"
+                    for mount in container["volumeMounts"]
+                    if isinstance(mount.get("mountPath"), str)
+                    and mount.get("readOnly", False) is False
+                }
+            )
+            environment = _container_environment(container)
+            by_name = {item["name"]: item for item in environment}
+            for environment_name, expected_path in compatibility.writable_paths.items():
+                item = by_name.get(environment_name)
+                if item is None:
+                    environment.append(
+                        {"name": environment_name, "value": expected_path}
+                    )
+                    continue
+                value = item.get("value")
+                if value != expected_path or not _absolute_path_is_below(
+                    expected_path, writable_roots
+                ):
+                    raise ValueError(
+                        f"model Pod {environment_name} differs from its reviewed writable path"
+                    )
             if field == "containers" and container.get("name") == runtime_container_name:
-                security["readOnlyRootFilesystem"] = True
                 runtime_matches += 1
     if runtime_matches != 1:
         raise ValueError("runtime container identity is ambiguous after security hardening")
@@ -2850,7 +3062,12 @@ class LegacyManifestRenderer:
                         role="serving" if segment.role == "hot" else "standby",
                         runtime_container_name=bundle.runtime_container_name,
                     )
-            _enforce_restricted_runtime_security(pod_spec, bundle.runtime_container_name)
+            _enforce_restricted_runtime_security(
+                pod_spec,
+                bundle.runtime_container_name,
+                model_id=spec.model_ref,
+                compatibilities=bundle.runtime_security_compatibilities,
+            )
             if spec.placement.cpu_resources is not None:
                 actual = effective_pod_requests(pod_spec)
                 if actual.accelerators:

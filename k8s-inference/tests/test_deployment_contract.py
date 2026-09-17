@@ -2904,12 +2904,14 @@ class DeploymentContractTests(unittest.TestCase):
         exact_image = model["runtime"]["image"]["reference"]
         self.assertTrue(
             exact_image.startswith(
-                "registry.example.invalid/k8s-inference/models/vllm-omni@sha256:"
+                "docker.io/vllm/vllm-omni@sha256:"
             )
         )
-        self.assertNotIn("docker.io/", exact_image)
         self.assertEqual(
-            {container["image"] for container in pod_spec["containers"]},
+            {
+                container["image"]
+                for container in (*pod_spec["initContainers"], *pod_spec["containers"])
+            },
             {exact_image},
         )
         self.assertEqual(
@@ -2929,52 +2931,39 @@ class DeploymentContractTests(unittest.TestCase):
         }
         self.assertIn("/tmp", localizer_mounts)
 
-        mirror = "cr.eu-north1.nebius.cloud/registry/fs2-models/vllm-omni@sha256:" + "1" * 64
+        mirror = (
+            "cr.eu-north1.nebius.cloud/registry/fs2-models/vllm-omni@sha256:"
+            + "1" * 64
+        )
 
         def rewrite(model_id: str, image: str) -> str:
-            runtime_images = {
-                "cosmos3-nano": exact_image,
-                "other-model": "example.invalid/other@sha256:" + "2" * 64,
+            promotions = {
+                ("cosmos3-nano", exact_image): mirror,
             }
-            overrides = {"cosmos3-nano": mirror}
-            is_runtime_image = (
-                image == runtime_images[model_id]
-                or image.startswith(
-                    "registry.example.invalid/k8s-inference/models/"
-                )
-            )
-            return (
-                overrides[model_id]
-                if model_id in overrides and is_runtime_image
-                else image
-            )
+            return promotions.get((model_id, image), image)
 
         self.assertEqual(rewrite("cosmos3-nano", exact_image), mirror)
-        adapter = "registry.example.invalid/k8s-inference/sidecars/adapter@sha256:" + "3" * 64
+        adapter = (
+            "registry.example.invalid/k8s-inference/sidecars/adapter@sha256:"
+            + "3" * 64
+        )
         self.assertEqual(rewrite("cosmos3-nano", adapter), adapter)
         self.assertEqual(rewrite("other-model", exact_image), exact_image)
 
         source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
             encoding="utf-8"
         )
-        self.assertGreaterEqual(
-            source.count(
-                'try(container.image, "") == local.catalog_model_runtime_images[document.model_id]'
-            ),
-            2,
-        )
-        self.assertGreaterEqual(
-            source.count(
-                '"registry.example.invalid/k8s-inference/models/"'
-            ),
-            2,
-        )
+        self.assertIn("model_image_promotion_mirrors_by_source", source)
+        self.assertIn("spec.template.spec.ephemeralContainers", source)
+        self.assertIn("model_final_container_images", source)
+        self.assertIn("model_image_supply_validations", source)
         self.assertNotIn("regexreplace(container.image", source)
 
         qualification_source = (
             DEPLOY_ROOT / "stages" / "workloads" / "model_controller.tf"
         ).read_text(encoding="utf-8")
         self.assertIn("private_runtime_image", qualification_source)
+        self.assertIn("model_image_supply_validations_by_model", qualification_source)
         self.assertIn(
             '"${var.accelerator_pool_contract.artifact_source.registry.fqdn}/"',
             qualification_source,
@@ -3046,12 +3035,13 @@ class DeploymentContractTests(unittest.TestCase):
             + route["runtime_image_digest"]
             for model_id, route in inventory["routes"].items()
         }
-        reserved_prefix = "registry.example.invalid/k8s-inference/models/"
 
         def rewrite(model_id: str, image: str) -> str:
-            if image == runtime_images[model_id] or image.startswith(reserved_prefix):
-                return overrides[model_id]
-            return image
+            promotions = {
+                (candidate, source): overrides[candidate]
+                for candidate, source in runtime_images.items()
+            }
+            return promotions.get((model_id, image), image)
 
         source_models = {
             path: [
@@ -3063,8 +3053,7 @@ class DeploymentContractTests(unittest.TestCase):
             ]
             for path in self.model_profiles["full_catalog"]["manifest_paths"]
         }
-        reserved_placeholders = 0
-        rewritten_images = []
+        primary_images = 0
         for relative_path in self.model_profiles["full_catalog"]["manifest_paths"]:
             for document in yaml.safe_load_all(
                 (DEPLOY_ROOT / relative_path).read_text(encoding="utf-8")
@@ -3090,19 +3079,13 @@ class DeploymentContractTests(unittest.TestCase):
                 ):
                     image = container["image"]
                     rendered = rewrite(model_id, image)
-                    rewritten_images.append(rendered)
-                    if image.startswith(reserved_prefix):
-                        reserved_placeholders += 1
-                        self.assertEqual(rendered, overrides[model_id])
-                    elif image == runtime_images[model_id]:
+                    if image == runtime_images[model_id]:
+                        primary_images += 1
                         self.assertEqual(rendered, overrides[model_id])
                     else:
                         self.assertEqual(rendered, image)
 
-        self.assertGreater(reserved_placeholders, 0)
-        self.assertFalse(
-            any(image.startswith(reserved_prefix) for image in rewritten_images)
-        )
+        self.assertGreater(primary_images, 0)
         unrelated_sidecar = (
             "registry.example.invalid/k8s-inference/sidecars/metrics@sha256:"
             + "4" * 64
@@ -3111,6 +3094,80 @@ class DeploymentContractTests(unittest.TestCase):
             rewrite("cosmos3-nano", unrelated_sidecar),
             unrelated_sidecar,
         )
+
+        workload_variables = (
+            DEPLOY_ROOT / "stages" / "workloads" / "variables.tf"
+        ).read_text(encoding="utf-8")
+        self.assertIn('variable "model_image_promotions"', workload_variables)
+        self.assertIn(
+            'variable "model_runtime_security_compatibilities"',
+            workload_variables,
+        )
+        self.assertIn("provenance_sha256", workload_variables)
+        self.assertIn("binding_sha256", workload_variables)
+        self.assertIn("source_image", workload_variables)
+        self.assertIn("mirror_image", workload_variables)
+
+        workload_locals = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("security_hardened_model_documents", workload_locals)
+        self.assertIn("model_runtime_security_validations", workload_locals)
+        self.assertIn("supplementalGroupsPolicy = \"Strict\"", workload_locals)
+        self.assertIn("keeper_image_supply_validations", workload_locals)
+        self.assertNotIn(
+            'startswith(\n                      try(container.image, ""),\n                      "registry.example.invalid/k8s-inference/models/",',
+            workload_locals,
+        )
+
+        controller_source = (
+            DEPLOY_ROOT / "stages" / "workloads" / "model_controller.tf"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "runtimeSecurityCompatibilities",
+            controller_source,
+        )
+        self.assertIn(
+            "model_runtime_security_validations_by_model",
+            controller_source,
+        )
+
+        scientific_source = (
+            DEPLOY_ROOT / "stages" / "workloads" / "scientific_artifacts.tf"
+        ).read_text(encoding="utf-8")
+        self.assertIn("scientific_final_container_images", scientific_source)
+        self.assertIn("scientific_image_supply_valid", scientific_source)
+        self.assertIn(
+            "accelerator_pool_contract.artifact_source.registry.fqdn",
+            scientific_source,
+        )
+
+    def test_every_legacy_bundle_declares_a_nonzero_effective_container_uid(self) -> None:
+        deployments = 0
+        containers = 0
+        for relative_path in self.model_profiles["full_catalog"]["manifest_paths"]:
+            for document in yaml.safe_load_all(
+                (DEPLOY_ROOT / relative_path).read_text(encoding="utf-8")
+            ):
+                if document is None or document.get("kind") != "Deployment":
+                    continue
+                deployments += 1
+                pod = document["spec"]["template"]["spec"]
+                pod_uid = pod.get("securityContext", {}).get("runAsUser")
+                for container in (
+                    *pod.get("initContainers", []),
+                    *pod.get("containers", []),
+                    *pod.get("ephemeralContainers", []),
+                ):
+                    containers += 1
+                    effective_uid = container.get("securityContext", {}).get(
+                        "runAsUser", pod_uid
+                    )
+                    self.assertIs(type(effective_uid), int, container["name"])
+                    self.assertGreater(effective_uid, 0, container["name"])
+
+        self.assertGreater(deployments, 0)
+        self.assertGreater(containers, deployments)
 
     def test_cosmos_uses_default_placement_or_an_explicit_preemptible_h100_pool(
         self,

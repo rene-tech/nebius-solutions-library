@@ -1220,6 +1220,111 @@ variable "model_image_overrides" {
   }
 }
 
+variable "model_image_promotions" {
+  description = "Externally reviewed immutable source-to-private-mirror image bindings for every final model Pod container."
+  type = map(object({
+    model_id          = string
+    source_image      = string
+    mirror_image      = string
+    provenance_sha256 = string
+    binding_sha256    = string
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([
+      for promotion_id, promotion in var.model_image_promotions :
+      can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", promotion_id)) &&
+      contains(
+        var.enabled_model_ids == null ?
+        toset(try(jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json")).profiles[var.deployment_profile].canonical_routes, [])) :
+        var.enabled_model_ids,
+        promotion.model_id,
+      ) &&
+      can(regex("^[^\\s@]+@sha256:[0-9a-f]{64}$", promotion.source_image)) &&
+      can(regex("^[^\\s@]+@sha256:[0-9a-f]{64}$", promotion.mirror_image)) &&
+      split("@", promotion.source_image)[1] == split("@", promotion.mirror_image)[1] &&
+      can(regex("^[0-9a-f]{64}$", promotion.provenance_sha256)) &&
+      promotion.binding_sha256 == sha256(jsonencode({
+        schema            = "fs2-serve.nebius.ai/model-image-promotion/v1"
+        model_id          = promotion.model_id
+        source_image      = promotion.source_image
+        mirror_image      = promotion.mirror_image
+        provenance_sha256 = promotion.provenance_sha256
+      }))
+    ])
+    error_message = "model_image_promotions must bind an enabled model's immutable source and mirror at the same digest to one SHA-256 provenance receipt."
+  }
+}
+
+variable "model_runtime_security_compatibilities" {
+  description = "Reviewed immutable-image compatibility records required before Terraform enables a restricted, read-only final container."
+  type = map(object({
+    model_id             = string
+    container_class      = string
+    container_name       = string
+    image                = string
+    run_as_user          = number
+    run_as_group         = number
+    tmp_size_limit       = string
+    writable_paths       = map(string)
+    review_sha256        = string
+    compatibility_sha256 = string
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([
+      for compatibility_id, compatibility in var.model_runtime_security_compatibilities :
+      can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", compatibility_id)) &&
+      contains(
+        var.enabled_model_ids == null ?
+        toset(try(jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json")).profiles[var.deployment_profile].canonical_routes, [])) :
+        var.enabled_model_ids,
+        compatibility.model_id,
+      ) &&
+      contains(["initContainers", "containers", "ephemeralContainers"], compatibility.container_class) &&
+      can(regex("^[a-z0-9](?:[-a-z0-9.]{0,61}[a-z0-9])?$", compatibility.container_name)) &&
+      can(regex("^[^\\s@]+@sha256:[0-9a-f]{64}$", compatibility.image)) &&
+      floor(compatibility.run_as_user) == compatibility.run_as_user &&
+      compatibility.run_as_user >= 1 && compatibility.run_as_user <= 2147483647 &&
+      floor(compatibility.run_as_group) == compatibility.run_as_group &&
+      compatibility.run_as_group >= 1 && compatibility.run_as_group <= 2147483647 &&
+      can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", compatibility.tmp_size_limit)) &&
+      toset(keys(compatibility.writable_paths)) == toset([
+        "CUDA_CACHE_PATH", "HF_HOME", "HOME", "JAX_COMPILATION_CACHE_DIR",
+        "MPLCONFIGDIR", "NUMBA_CACHE_DIR", "PYTHONPYCACHEPREFIX", "TMPDIR",
+        "TORCH_EXTENSIONS_DIR", "TORCHINDUCTOR_CACHE_DIR", "TRANSFORMERS_CACHE",
+        "TRITON_CACHE_DIR", "VLLM_CACHE_ROOT", "XDG_CACHE_HOME",
+      ]) &&
+      alltrue([
+        for path in values(compatibility.writable_paths) :
+        (path == "/tmp" || can(regex("^/tmp/[A-Za-z0-9._/-]+$", path))) &&
+        alltrue([
+          for segment in split("/", trimprefix(path, "/")) :
+          !contains(["", ".", ".."], segment)
+        ])
+      ]) &&
+      can(regex("^[0-9a-f]{64}$", compatibility.review_sha256)) &&
+      compatibility.compatibility_sha256 == sha256(jsonencode({
+        schema          = "fs2-serve.nebius.ai/runtime-security-compatibility/v1"
+        model_id        = compatibility.model_id
+        container_class = compatibility.container_class
+        container_name  = compatibility.container_name
+        image           = compatibility.image
+        run_as_user     = compatibility.run_as_user
+        run_as_group    = compatibility.run_as_group
+        tmp_size_limit  = compatibility.tmp_size_limit
+        writable_paths  = compatibility.writable_paths
+        review_sha256   = compatibility.review_sha256
+      }))
+    ])
+    error_message = "model_runtime_security_compatibilities must bind every final immutable image/container to a reviewed non-root identity and bounded /tmp writable-path contract."
+  }
+}
+
 variable "model_pool_overrides" {
   description = "Canonical model ID to exact accelerator pool ID. This tfvars-derived map replaces catalog-specific placement labels without changing model manifests or HCL."
   type        = map(string)

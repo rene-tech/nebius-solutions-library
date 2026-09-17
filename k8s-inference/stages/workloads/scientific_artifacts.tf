@@ -19,6 +19,29 @@ locals {
   scientific_artifacts_secret_key     = "credentials.json"
   scientific_runtime_cache_claim_name = "fs2-scientific-runtime-cache"
   scientific_runtime_cache_mount_path = "/cache"
+  # Dual-access is the only authorized UID/GID transition in this source
+  # candidate. The legacy group remains on every cache entry for rollback;
+  # final Pods receive only their model's legacy group and an isolated subPath.
+  scientific_runtime_cache_legacy_identities = {
+    mosaic                 = { uid = 10001, gid = 10001 }
+    openfold3-openbind     = { uid = 10001, gid = 10001 }
+    protenix-v2            = { uid = 10001, gid = 10001 }
+    alphafold3             = { uid = 1001, gid = 1001 }
+  }
+  scientific_model_runtime_images = sort(distinct(flatten([
+    for model in try(var.scientific_batch.execution_map.models, []) : [
+      for stage in try(model.stages, []) : try(stage.image, "")
+    ]
+  ])))
+  scientific_final_container_images = concat(
+    local.scientific_model_runtime_images,
+    ["${var.control_plane_image.repository}@${var.control_plane_image.digest}"],
+  )
+  scientific_image_supply_valid = alltrue([
+    for image in local.scientific_final_container_images :
+    can(regex("^[^\\s@]+@sha256:[0-9a-f]{64}$", image)) &&
+    startswith(image, "${var.accelerator_pool_contract.artifact_source.registry.fqdn}/")
+  ])
   scientific_runtime_cache_mounts = flatten([
     for model in try(var.scientific_batch.execution_map.models, []) : [
       for stage in try(model.stages, []) : [
@@ -49,6 +72,14 @@ locals {
         workload_namespace = try(model.workload_namespace, "")
         workspace_uid      = try(stage.workspace_uid, null)
         workspace_gid      = try(stage.workspace_gid, null)
+        cache_mount_path = try(one([
+          for mount in try(stage.mounts, []) : mount.mount_path
+          if try(mount.kind, "") == "runtime-cache"
+        ]), null)
+        cache_sub_path = try(one(distinct([
+          for value in values(try(stage.environment, {})) : split("/", value)[2]
+          if try(startswith(value, "${local.scientific_runtime_cache_mount_path}/"), false)
+        ])), null)
         cache_paths = sort(distinct([
           for value in values(try(stage.environment, {})) : value
           if try(startswith(value, "${local.scientific_runtime_cache_mount_path}/"), false)
@@ -73,10 +104,8 @@ locals {
   }
   scientific_runtime_cache_directory_claims = flatten([
     for consumer in local.scientific_runtime_cache_consumers : [
-      for name in distinct([
-        for path in consumer.cache_paths : split("/", path)[2]
-        ]) : {
-        name               = name
+      {
+        name               = consumer.cache_sub_path
         uid                = consumer.workspace_uid
         gid                = consumer.workspace_gid
         model_id           = consumer.model_id
@@ -88,16 +117,23 @@ locals {
   scientific_runtime_cache_directory_claims_by_name = {
     for claim in local.scientific_runtime_cache_directory_claims : claim.name => claim...
   }
+  scientific_runtime_cache_primary_directory_claims_by_name = {
+    for claim in local.scientific_runtime_cache_directory_claims : claim.name => claim...
+    if claim.workload_namespace == var.scientific_batch.namespace
+  }
   scientific_runtime_cache_directories = [
-    for name in sort(keys(local.scientific_runtime_cache_directory_claims_by_name)) : {
-      name = name
-      uid  = local.scientific_runtime_cache_directory_claims_by_name[name][0].uid
-      gid  = local.scientific_runtime_cache_directory_claims_by_name[name][0].gid
-      mode = "2770"
+    for name in sort(keys(local.scientific_runtime_cache_primary_directory_claims_by_name)) : {
+      name            = name
+      uid             = local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].uid
+      gid             = local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].gid
+      legacy_uid      = local.scientific_runtime_cache_legacy_identities[local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].model_id].uid
+      legacy_gid      = local.scientific_runtime_cache_legacy_identities[local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].model_id].gid
+      migration_phase = "dual-access-legacy-group"
+      mode            = "2770"
     }
   ]
   scientific_runtime_cache_ownership_contract = {
-    schema      = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v1"
+    schema      = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v2"
     root        = local.scientific_runtime_cache_mount_path
     directories = local.scientific_runtime_cache_directories
   }
@@ -134,16 +170,19 @@ locals {
   scientific_runtime_cache_additional_directories = {
     for namespace, claims_by_name in local.scientific_runtime_cache_additional_claims_by_name : namespace => [
       for name in sort(keys(claims_by_name)) : {
-        name = name
-        uid  = claims_by_name[name][0].uid
-        gid  = claims_by_name[name][0].gid
-        mode = "2770"
+        name            = name
+        uid             = claims_by_name[name][0].uid
+        gid             = claims_by_name[name][0].gid
+        legacy_uid      = local.scientific_runtime_cache_legacy_identities[claims_by_name[name][0].model_id].uid
+        legacy_gid      = local.scientific_runtime_cache_legacy_identities[claims_by_name[name][0].model_id].gid
+        migration_phase = "dual-access-legacy-group"
+        mode            = "2770"
       }
     ]
   }
   scientific_runtime_cache_additional_ownership_contracts = {
     for namespace, directories in local.scientific_runtime_cache_additional_directories : namespace => {
-      schema      = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v1"
+      schema      = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v2"
       root        = local.scientific_runtime_cache_mount_path
       directories = directories
     }
@@ -405,11 +444,43 @@ resource "kubernetes_persistent_volume_claim_v1" "scientific_runtime_cache_addit
   ]
 }
 
+# Root cache ownership preparation has a dedicated tokenless identity with no
+# RoleBinding. Model runtime service accounts cannot impersonate or invoke it;
+# Terraform is the only owner of the bootstrap Jobs below.
+resource "kubernetes_service_account_v1" "scientific_runtime_cache_bootstrap" {
+  count = var.scientific_batch.runtime_cache.enabled ? 1 : 0
+
+  metadata {
+    name      = "fs2-scientific-cache-bootstrap"
+    namespace = var.scientific_batch.namespace
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "scientific-runtime-cache-bootstrap"
+    })
+  }
+
+  automount_service_account_token = false
+}
+
+resource "kubernetes_service_account_v1" "scientific_runtime_cache_bootstrap_additional" {
+  for_each = var.scientific_batch.runtime_cache.enabled ? local.scientific_runtime_cache_additional_namespaces : toset([])
+
+  metadata {
+    name      = "fs2-scientific-cache-bootstrap"
+    namespace = each.key
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "scientific-runtime-cache-bootstrap"
+    })
+  }
+
+  automount_service_account_token = false
+}
+
 # Prepare only the model-owned boundaries declared above. The root-capable
 # container sees no credential, service-account token, network requirement or
 # other writable volume. Its checked-in program refuses nested/traversing names
-# and applies ownership non-recursively, so existing compiled entries remain
-# untouched across Terraform updates.
+# and uses descriptor-relative, no-follow traversal. The dual-access phase
+# preserves every byte and owning UID while moving the model subtree to its
+# legacy group and mirroring owner permissions to that group for rollback.
 resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap" {
   count = var.scientific_batch.runtime_cache.enabled ? 1 : 0
 
@@ -437,6 +508,7 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap" {
       }
 
       spec {
+        service_account_name            = kubernetes_service_account_v1.scientific_runtime_cache_bootstrap[0].metadata[0].name
         restart_policy                  = "Never"
         automount_service_account_token = false
         enable_service_links            = false
@@ -515,13 +587,14 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap" {
 
   depends_on = [
     kubernetes_persistent_volume_claim_v1.scientific_runtime_cache,
+    kubernetes_service_account_v1.scientific_runtime_cache_bootstrap,
     terraform_data.scientific_artifacts_contract,
   ]
 }
 
-# Additional namespace-local claims receive the same bounded, non-recursive
-# ownership bootstrap as the original claim. Each contract contains only the
-# model-owned first-level boundaries consumed in that namespace.
+# Additional namespace-local claims receive the same bounded dual-access
+# migration as the original claim. Each contract contains only the model-owned
+# first-level boundaries consumed in that namespace.
 resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap_additional" {
   for_each = var.scientific_batch.runtime_cache.enabled ? local.scientific_runtime_cache_additional_namespaces : toset([])
 
@@ -549,6 +622,7 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap_additional" {
       }
 
       spec {
+        service_account_name            = kubernetes_service_account_v1.scientific_runtime_cache_bootstrap_additional[each.key].metadata[0].name
         restart_policy                  = "Never"
         automount_service_account_token = false
         enable_service_links            = false
@@ -626,6 +700,7 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap_additional" {
 
   depends_on = [
     kubernetes_persistent_volume_claim_v1.scientific_runtime_cache_additional,
+    kubernetes_service_account_v1.scientific_runtime_cache_bootstrap_additional,
     terraform_data.scientific_artifacts_contract,
   ]
 }
@@ -678,6 +753,10 @@ resource "terraform_data" "scientific_artifacts_contract" {
       error_message = "staged scientific batch execution requires the dedicated artifact store; a batch cannot commit an immutable result manifest without it."
     }
     precondition {
+      condition     = !var.scientific_batch.enabled || local.scientific_image_supply_valid
+      error_message = "Every scientific stage, init, and companion image must be digest-pinned beneath the accelerator contract's approved private registry."
+    }
+    precondition {
       condition     = !var.scientific_batch.writes_enabled || var.scientific_batch.enabled
       error_message = "scientific batch Kubernetes writes require the batch controller gate."
     }
@@ -696,7 +775,7 @@ resource "terraform_data" "scientific_artifacts_contract" {
           ])
         )
       )
-      error_message = "A scientific runtime cache must be enabled exactly when the execution map consumes it, and every consumer must use the Terraform-owned writable fs2-scientific-runtime-cache claim at /cache."
+      error_message = "A scientific runtime cache must be enabled exactly when the execution map consumes it, and every source binding must use the Terraform-owned claim at /cache."
     }
     precondition {
       condition = (
@@ -705,17 +784,30 @@ resource "terraform_data" "scientific_artifacts_contract" {
           alltrue([
             for consumer in local.scientific_runtime_cache_consumers :
             can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", consumer.workload_namespace)) &&
+            can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", consumer.cache_sub_path)) &&
+            consumer.cache_mount_path == local.scientific_runtime_cache_mount_path &&
             length(consumer.cache_paths) > 0 &&
-            length(distinct([
-              for path in consumer.cache_paths : split("/", path)[2]
-            ])) == 1
+            alltrue([
+              for path in consumer.cache_paths :
+              path == format("%s/%s", consumer.cache_mount_path, consumer.cache_sub_path) ||
+              startswith(path, format("%s/%s/", consumer.cache_mount_path, consumer.cache_sub_path))
+            ])
           ]) &&
           alltrue([
             for claim in local.scientific_runtime_cache_directory_claims :
             can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", claim.name)) &&
             try(claim.uid >= 1 && claim.uid <= 2147483647, false) &&
-            try(claim.gid >= 1 && claim.gid <= 2147483647, false)
+            try(claim.gid >= 1 && claim.gid <= 2147483647, false) &&
+            contains(keys(local.scientific_runtime_cache_legacy_identities), claim.model_id) &&
+            try(local.scientific_runtime_cache_legacy_identities[claim.model_id].uid >= 1, false) &&
+            try(local.scientific_runtime_cache_legacy_identities[claim.model_id].gid >= 1, false) &&
+            try(local.scientific_runtime_cache_legacy_identities[claim.model_id].uid != claim.uid, false) &&
+            try(local.scientific_runtime_cache_legacy_identities[claim.model_id].gid != claim.gid, false)
           ]) &&
+          length(setsubtract(
+            toset(keys(local.scientific_runtime_cache_legacy_identities)),
+            toset([for claim in local.scientific_runtime_cache_directory_claims : claim.model_id]),
+          )) == 0 &&
           alltrue([
             for claims in values(local.scientific_runtime_cache_directory_claims_by_name) :
             length(distinct([for claim in claims : claim.uid])) == 1 &&
@@ -736,7 +828,7 @@ resource "terraform_data" "scientific_artifacts_contract" {
           ])
         )
       )
-      error_message = "Every runtime-cache stage must declare one safe first-level /cache directory, use one stable non-root UID/GID per model, and never share either identity with another model."
+      error_message = "Every runtime-cache stage must derive one safe first-level /cache directory for its final subPath, use one stable unique current UID/GID, and bind the reviewed legacy identity required for non-destructive dual-access migration and rollback."
     }
     precondition {
       condition = (

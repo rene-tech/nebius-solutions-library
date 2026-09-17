@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -55,6 +57,7 @@ from fs2_serve.model_deployment import (
     RenderPlan,
     RolloutSpec,
     RolloutStrategy,
+    RuntimeSecurityCompatibility,
     RuntimeSpec,
     SnapshotPreference,
     TenantPolicySpec,
@@ -89,6 +92,54 @@ QWEN_MANIFEST = SOLUTION_ROOT / "models/general-media/k8s/qwen3-8b.yaml"
 
 def digest(character: str) -> str:
     return f"sha256:{character * 64}"
+
+
+WRITABLE_RUNTIME_PATHS = {
+    "CUDA_CACHE_PATH": "/tmp/fs2-cache/cuda",
+    "HF_HOME": "/tmp/fs2-cache/huggingface",
+    "HOME": "/tmp/fs2-home",
+    "JAX_COMPILATION_CACHE_DIR": "/tmp/fs2-cache/jax",
+    "MPLCONFIGDIR": "/tmp/fs2-cache/matplotlib",
+    "NUMBA_CACHE_DIR": "/tmp/fs2-cache/numba",
+    "PYTHONPYCACHEPREFIX": "/tmp/fs2-cache/python",
+    "TMPDIR": "/tmp",
+    "TORCH_EXTENSIONS_DIR": "/tmp/fs2-cache/torch-extensions",
+    "TORCHINDUCTOR_CACHE_DIR": "/tmp/fs2-cache/torch-inductor",
+    "TRANSFORMERS_CACHE": "/tmp/fs2-cache/transformers",
+    "TRITON_CACHE_DIR": "/tmp/fs2-cache/triton",
+    "VLLM_CACHE_ROOT": "/tmp/fs2-cache/vllm",
+    "XDG_CACHE_HOME": "/tmp/fs2-cache/xdg",
+}
+
+
+def runtime_security_compatibility(
+    *,
+    model_id: str,
+    container_class: str,
+    container_name: str,
+    image: str,
+    uid: int = 1000,
+    gid: int = 1000,
+    tmp_size_limit: str = "8Gi",
+) -> RuntimeSecurityCompatibility:
+    payload = {
+        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v1",
+        "model_id": model_id,
+        "container_class": container_class,
+        "container_name": container_name,
+        "image": image,
+        "run_as_user": uid,
+        "run_as_group": gid,
+        "tmp_size_limit": tmp_size_limit,
+        "writable_paths": WRITABLE_RUNTIME_PATHS,
+        "review_sha256": "f" * 64,
+    }
+    binding = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("ascii")
+    ).hexdigest()
+    return RuntimeSecurityCompatibility.model_validate(
+        {**payload, "compatibility_sha256": binding}
+    )
 
 
 def model_spec(
@@ -229,6 +280,7 @@ def reserved_and_preemptible_envelope() -> InfrastructureEnvelope:
 
 
 def renderer(*, runtime_memory_request: str | None = None) -> LegacyManifestRenderer:
+    final_image = model_spec().runtime.image
     bundle = LegacyTemplateBundle(
         model_ref="qwen.3-8b",
         runtime_profile="vllm",
@@ -237,6 +289,19 @@ def renderer(*, runtime_memory_request: str | None = None) -> LegacyManifestRend
         runtime_container_name="runtime",
         primary_service_name="qwen-runtime",
         primary_service_port=8000,
+        runtime_security_compatibilities=[
+            runtime_security_compatibility(
+                model_id="qwen.3-8b",
+                container_class=container_class,
+                container_name=container_name,
+                image=final_image,
+            )
+            for container_class, container_name in (
+                ("containers", "runtime"),
+                ("initContainers", "fs2-warm-page-cache"),
+                ("initContainers", "fs2-verify-host-memory-residency"),
+            )
+        ],
         resources=[
             {
                 "apiVersion": "apps/v1",
@@ -247,6 +312,7 @@ def renderer(*, runtime_memory_request: str | None = None) -> LegacyManifestRend
                     "template": {
                         "metadata": {"labels": {"app": "qwen"}},
                         "spec": {
+                            "securityContext": {"runAsUser": 1000, "runAsGroup": 1000},
                             "containers": [
                                 {
                                     "name": "runtime",
@@ -722,12 +788,20 @@ def test_renderer_uses_selected_pool_resource_and_safe_derived_metadata() -> Non
     container = pod["containers"][0]
     assert pod["securityContext"]["runAsNonRoot"] is True
     assert pod["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
+    assert pod["securityContext"]["supplementalGroupsPolicy"] == "Strict"
     assert container["securityContext"] == {
         "allowPrivilegeEscalation": False,
         "runAsNonRoot": True,
+        "runAsUser": 1000,
         "readOnlyRootFilesystem": True,
         "capabilities": {"drop": ["ALL"], "add": []},
     }
+    assert next(item for item in container["volumeMounts"] if item["mountPath"] == "/tmp")["readOnly"] is False
+    tmp_name = next(item["name"] for item in container["volumeMounts"] if item["mountPath"] == "/tmp")
+    assert next(item for item in pod["volumes"] if item["name"] == tmp_name)["emptyDir"] == {"sizeLimit": "8Gi"}
+    environment = {item["name"]: item["value"] for item in container["env"]}
+    assert environment["HOME"] == "/tmp/fs2-home"
+    assert environment["XDG_CACHE_HOME"] == "/tmp/fs2-cache/xdg"
     assert container["resources"]["requests"] == {"vendor.example/gpu": "1"}
     assert container["resources"]["limits"] == {"vendor.example/gpu": "1"}
     assert deployment["metadata"]["ownerReferences"][0]["uid"] == "cr-uid-1"
@@ -748,6 +822,100 @@ def test_renderer_uses_selected_pool_resource_and_safe_derived_metadata() -> Non
     assert f'deployment="{deployment["metadata"]["name"]}"' in startup["metadata"]["query"]
     assert "[900s:1s]" in startup["metadata"]["query"]
     assert any(item.manifest["metadata"]["name"].startswith("fs2-model-publication-") for item in first.resources)
+
+
+def test_final_render_rejects_unreviewed_container_identity_image_and_writable_paths() -> None:
+    base_renderer = renderer()
+    source = next(iter(base_renderer._bundles.values())).model_copy(deep=True)  # type: ignore[attr-defined]
+    deployment = next(item for item in source.resources if item["kind"] == "Deployment")
+    pod = deployment["spec"]["template"]["spec"]
+    runtime = pod["containers"][0]
+    approved_image = model_spec().runtime.image
+    pod["initContainers"] = [
+        {
+            "name": "prepare",
+            "image": approved_image,
+            "securityContext": {"runAsUser": 1000},
+        }
+    ]
+    pod["containers"].append(
+        {
+            "name": "metrics",
+            "image": approved_image,
+            "securityContext": {"runAsUser": 1000},
+        }
+    )
+    pod["ephemeralContainers"] = [
+        {
+            "name": "diagnostic",
+            "image": approved_image,
+            "securityContext": {"runAsUser": 1000},
+        }
+    ]
+    source.runtime_security_compatibilities.extend(
+        [
+            runtime_security_compatibility(
+                model_id=source.model_ref,
+                container_class=container_class,
+                container_name=container_name,
+                image=approved_image,
+            )
+            for container_class, container_name in (
+                ("initContainers", "prepare"),
+                ("containers", "metrics"),
+                ("ephemeralContainers", "diagnostic"),
+            )
+        ]
+    )
+    hardened = LegacyManifestRenderer({(source.model_ref, source.template_digest): source})
+    rendered = next(
+        item.manifest
+        for item in hardened.render(model_spec(), render_context()).resources
+        if item.kind == "Deployment"
+    )["spec"]["template"]["spec"]
+    for container in (
+        *rendered["initContainers"],
+        *rendered["containers"],
+        *rendered["ephemeralContainers"],
+    ):
+        assert container["securityContext"]["runAsUser"] == 1000
+        assert container["securityContext"]["readOnlyRootFilesystem"] is True
+        assert container["securityContext"]["capabilities"] == {"drop": ["ALL"], "add": []}
+        assert container["image"].startswith("registry.example/")
+        assert any(mount["mountPath"] == "/tmp" for mount in container["volumeMounts"])
+
+    pod["ephemeralContainers"][0]["image"] = f"docker.io/debug/tool@{digest('d')}"
+    rejected_image = LegacyManifestRenderer({(source.model_ref, source.template_digest): source})
+    with pytest.raises(ValueError, match="approved private registry"):
+        rejected_image.render(model_spec(), render_context())
+
+    pod["ephemeralContainers"][0]["image"] = approved_image
+    source.runtime_security_compatibilities = [
+        item
+        for item in source.runtime_security_compatibilities
+        if item.container_name != "diagnostic"
+    ]
+    rejected_identity = LegacyManifestRenderer({(source.model_ref, source.template_digest): source})
+    with pytest.raises(ValueError, match="lacks an exact runtime security compatibility record"):
+        rejected_identity.render(model_spec(), render_context())
+
+    source.runtime_security_compatibilities.append(
+        runtime_security_compatibility(
+            model_id=source.model_ref,
+            container_class="ephemeralContainers",
+            container_name="diagnostic",
+            image=approved_image,
+        )
+    )
+    runtime["env"] = [{"name": "HOME", "value": "/home/runtime"}]
+    rejected_writable_path = LegacyManifestRenderer({(source.model_ref, source.template_digest): source})
+    with pytest.raises(ValueError, match="HOME differs from its reviewed writable path"):
+        rejected_writable_path.render(model_spec(), render_context())
+
+    runtime["env"] = [{"name": "HOME", "value": "/tmp/../home/runtime"}]
+    rejected_traversal = LegacyManifestRenderer({(source.model_ref, source.template_digest): source})
+    with pytest.raises(ValueError, match="HOME differs from its reviewed writable path"):
+        rejected_traversal.render(model_spec(), render_context())
 
     disabled = spec.model_copy(
         update={
@@ -1007,6 +1175,15 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_https_and_modelexpr
             ("apps/v1", "Deployment"),
         }
     ]
+    # Terraform hands the controller a fully promoted bundle. Exercise the
+    # renderer against that post-promotion shape, not the checked-in source
+    # placeholder used before a private image receipt exists.
+    for document in bundle_resources:
+        if document["kind"] != "Deployment":
+            continue
+        pod_spec = document["spec"]["template"]["spec"]
+        for container in (*pod_spec.get("initContainers", []), *pod_spec.get("containers", [])):
+            container["image"] = model_spec().runtime.image
     qwen_renderer = LegacyManifestRenderer(
         {
             ("qwen3-8b", digest("c")): LegacyTemplateBundle(
@@ -1017,6 +1194,18 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_https_and_modelexpr
                 runtime_container_name="vllm",
                 primary_service_name="qwen3-8b-b300",
                 primary_service_port=8000,
+                runtime_security_compatibilities=[
+                    runtime_security_compatibility(
+                        model_id="qwen3-8b",
+                        container_class=container_class,
+                        container_name=container["name"],
+                        image=container["image"],
+                    )
+                    for document in bundle_resources
+                    if document["kind"] == "Deployment"
+                    for container_class in ("initContainers", "containers", "ephemeralContainers")
+                    for container in document["spec"]["template"]["spec"].get(container_class, [])
+                ],
                 resources=bundle_resources,
             )
         }
@@ -1941,6 +2130,8 @@ def test_the_renderer_configures_the_pinned_regional_cache() -> None:
         security = container["securityContext"]
         assert security["allowPrivilegeEscalation"] is False
         assert security["runAsNonRoot"] is True
+        assert security["runAsUser"] == 1000
+        assert security["readOnlyRootFilesystem"] is True
         assert security["capabilities"] == {"drop": ["ALL"], "add": []}
     runtime = next(item for item in pod["spec"]["containers"] if item["name"] == "runtime")
     assert runtime["securityContext"]["readOnlyRootFilesystem"] is True

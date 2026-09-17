@@ -7,7 +7,13 @@ import copy
 import pytest
 import yaml
 from pydantic import ValidationError
-from test_model_deployment import CRD, digest, envelope, model_spec
+from test_model_deployment import (
+    CRD,
+    digest,
+    envelope,
+    model_spec,
+    runtime_security_compatibility,
+)
 from test_model_deployment_controller import FakeApi, ZeroActiveOperations, fence, model_object
 from test_model_deployment_mutation import FakeWriter
 from test_model_deployment_publication import revision, status_view
@@ -124,6 +130,20 @@ def cpu_renderer(pod_spec=None) -> LegacyManifestRenderer:
         runtime_container_name="runtime",
         primary_service_name="clinical-phenoage",
         primary_service_port=8000,
+        runtime_security_compatibilities=[
+            runtime_security_compatibility(
+                model_id="clinical-phenoage",
+                container_class=container_class,
+                container_name=container["name"],
+                image=(
+                    cpu_spec().runtime.image
+                    if container["name"] == "runtime"
+                    else container["image"]
+                ),
+            )
+            for container_class in ("initContainers", "containers", "ephemeralContainers")
+            for container in pod.get(container_class, [])
+        ],
         resources=[
             {
                 "apiVersion": "apps/v1",
@@ -288,14 +308,25 @@ def test_cpu_renderer_rejects_template_request_mismatch_before_cleanup(requests,
 
 def test_cpu_full_pod_math_includes_native_sidecars_init_limits_and_overhead():
     pod = {
-        "containers": [{"name": "runtime", "image": "image", "resources": {"limits": {"cpu": "1", "memory": "512Mi"}}}],
+        "containers": [
+            {
+                "name": "runtime",
+                "image": f"registry.example/runtime@{digest('b')}",
+                "resources": {"limits": {"cpu": "1", "memory": "512Mi"}},
+            }
+        ],
         "initContainers": [
             {
                 "name": "sidecar",
+                "image": f"registry.example/sidecar@{digest('d')}",
                 "restartPolicy": "Always",
                 "resources": {"requests": {"cpu": "200m", "memory": "64Mi"}},
             },
-            {"name": "init", "resources": {"requests": {"cpu": "2", "memory": "1Gi"}}},
+            {
+                "name": "init",
+                "image": f"registry.example/init@{digest('e')}",
+                "resources": {"requests": {"cpu": "2", "memory": "1Gi"}},
+            },
         ],
         "overhead": {"cpu": "50m", "memory": "32Mi"},
     }

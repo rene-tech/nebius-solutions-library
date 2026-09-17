@@ -596,9 +596,29 @@ locals {
       )
     ]
   }
+  model_controller_runtime_security_compatibilities = {
+    for model_id in local.selected_model_ids : model_id => [
+      for compatibility in values(var.model_runtime_security_compatibilities) : {
+        modelId             = compatibility.model_id
+        containerClass      = compatibility.container_class
+        containerName       = compatibility.container_name
+        image               = compatibility.image
+        runAsUser           = compatibility.run_as_user
+        runAsGroup          = compatibility.run_as_group
+        tmpSizeLimit        = compatibility.tmp_size_limit
+        writablePaths       = compatibility.writable_paths
+        reviewSha256        = compatibility.review_sha256
+        compatibilitySha256 = compatibility.compatibility_sha256
+      }
+      if compatibility.model_id == model_id
+    ]
+  }
   model_controller_candidate_template_digests = {
     for model_id, resources in local.model_controller_candidate_bundle_resources :
-    model_id => "sha256:${sha256(jsonencode(resources))}"
+    model_id => "sha256:${sha256(jsonencode({
+      resources                      = resources
+      runtimeSecurityCompatibilities = local.model_controller_runtime_security_compatibilities[model_id]
+    }))}"
   }
   model_controller_bundle_requires_shared_cache = {
     # Cache PVCs remain Terraform-owned across the explicit serving-resource
@@ -745,7 +765,9 @@ locals {
         startswith(
           var.model_image_overrides[model_id],
           "${var.accelerator_pool_contract.artifact_source.registry.fqdn}/",
-        ),
+        ) &&
+        local.model_image_supply_validations_by_model[model_id] &&
+        local.model_runtime_security_validations_by_model[model_id],
         false,
       )
       retained_runtime = try(
@@ -778,7 +800,14 @@ locals {
           for container in local.model_controller_primary_deployments[model_id].spec.template.spec.containers : container.image
           if container.name == local.model_controller_runtime_container_names[model_id]
         ]) == var.model_image_overrides[model_id] &&
-        length(local.model_controller_candidate_bundle_resources[model_id]) > 0,
+        length(local.model_controller_candidate_bundle_resources[model_id]) > 0 &&
+        length(local.model_controller_runtime_security_compatibilities[model_id]) >= length(flatten([
+          for document in local.model_documents : concat(
+            try(document.manifest.spec.template.spec.initContainers, []),
+            try(document.manifest.spec.template.spec.containers, []),
+            try(document.manifest.spec.template.spec.ephemeralContainers, []),
+          ) if document.model_id == model_id && document.manifest.kind == "Deployment"
+        ])),
         false,
       )
     }
@@ -1087,6 +1116,7 @@ locals {
       runtimeContainerName = local.model_controller_runtime_container_names[model_id]
       primaryServiceName   = local.inventory.routes[model_id].service.name
       primaryServicePort   = local.inventory.routes[model_id].service.port
+      runtimeSecurityCompatibilities = local.model_controller_runtime_security_compatibilities[model_id]
       resources            = local.model_controller_bundle_resources[model_id]
     }
   ]

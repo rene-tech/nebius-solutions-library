@@ -491,10 +491,29 @@ locals {
       ] if document.manifest.kind == "Deployment" && document.manifest.metadata.name == target.deployment
     ]))
   }
+  model_image_promotion_mirrors_by_source = {
+    for promotion in values(var.model_image_promotions) :
+    "${promotion.model_id}|${promotion.source_image}" => promotion.mirror_image
+  }
+  model_image_promotions_by_model = {
+    for model_id in local.selected_model_ids : model_id => [
+      for promotion in values(var.model_image_promotions) : promotion
+      if promotion.model_id == model_id
+    ]
+  }
+  model_runtime_security_compatibilities_by_key = {
+    for compatibility in values(var.model_runtime_security_compatibilities) :
+    join("|", [
+      compatibility.model_id,
+      compatibility.container_class,
+      compatibility.container_name,
+      compatibility.image,
+    ]) => compatibility
+  }
   image_overridden_model_documents = [
     for document in local.raw_model_documents : merge(document, {
       manifest = jsondecode(
-        document.manifest.kind == "Deployment" && contains(keys(var.model_image_overrides), document.model_id) ?
+        document.manifest.kind == "Deployment" ?
         jsonencode(merge(document.manifest, {
           spec = merge(document.manifest.spec, {
             template = merge(document.manifest.spec.template, {
@@ -503,18 +522,18 @@ locals {
                 {
                   containers = [
                     for container in try(document.manifest.spec.template.spec.containers, []) :
-                    jsondecode(
-                      (
-                        try(container.image, "") == local.catalog_model_runtime_images[document.model_id] ||
-                        startswith(
+                    jsondecode(jsonencode(merge(
+                      container,
+                      {
+                        image = lookup(
+                          local.model_image_promotion_mirrors_by_source,
+                          "${document.model_id}|${try(container.image, "")}",
                           try(container.image, ""),
-                          "registry.example.invalid/k8s-inference/models/",
                         )
-                      ) ?
-                      jsonencode(merge(
-                        container,
-                        { image = var.model_image_overrides[document.model_id] },
-                        jsondecode(contains(keys(local.static_cpu_runtime_records), document.model_id) ? jsonencode({
+                      },
+                      jsondecode(
+                        contains(keys(local.static_cpu_runtime_records), document.model_id) &&
+                        try(container.image, "") == local.catalog_model_runtime_images[document.model_id] ? jsonencode({
                           command = local.cpu_deployment_runtime_records[document.model_id].record.runtime.command
                           resources = merge(container.resources, {
                             limits = merge(container.resources.limits, {
@@ -523,23 +542,223 @@ locals {
                             })
                           })
                         }) : jsonencode({})),
-                      )) :
-                      jsonencode(container)
-                    )
+                    )))
                   ]
                 },
                 length(try(document.manifest.spec.template.spec.initContainers, [])) > 0 ? {
                   initContainers = [
                     for container in document.manifest.spec.template.spec.initContainers :
-                    (
-                      try(container.image, "") == local.catalog_model_runtime_images[document.model_id] ||
-                      startswith(
+                    merge(container, {
+                      image = lookup(
+                        local.model_image_promotion_mirrors_by_source,
+                        "${document.model_id}|${try(container.image, "")}",
                         try(container.image, ""),
-                        "registry.example.invalid/k8s-inference/models/",
                       )
-                    ) ?
-                    merge(container, { image = var.model_image_overrides[document.model_id] }) :
-                    container
+                    })
+                  ]
+                } : {},
+                length(try(document.manifest.spec.template.spec.ephemeralContainers, [])) > 0 ? {
+                  ephemeralContainers = [
+                    for container in document.manifest.spec.template.spec.ephemeralContainers :
+                    merge(container, {
+                      image = lookup(
+                        local.model_image_promotion_mirrors_by_source,
+                        "${document.model_id}|${try(container.image, "")}",
+                        try(container.image, ""),
+                      )
+                    })
+                  ]
+                } : {},
+              )
+            })
+          })
+        })) :
+        jsonencode(document.manifest)
+      )
+    })
+  ]
+
+  # Apply the restricted envelope to every Terraform-rendered Deployment,
+  # including static and controller-ineligible manifests. Each exact final
+  # image/name/class needs a separately reviewed writable-path compatibility
+  # record; absence is preserved for the fail-closed precondition below.
+  security_hardened_model_documents = [
+    for document in local.image_overridden_model_documents : merge(document, {
+      manifest = jsondecode(
+        document.manifest.kind == "Deployment" ?
+        jsonencode(merge(document.manifest, {
+          spec = merge(document.manifest.spec, {
+            template = merge(document.manifest.spec.template, {
+              spec = merge(
+                document.manifest.spec.template.spec,
+                {
+                  securityContext = merge(
+                    try(document.manifest.spec.template.spec.securityContext, {}),
+                    {
+                      runAsNonRoot             = true
+                      seccompProfile           = { type = "RuntimeDefault" }
+                      supplementalGroupsPolicy = "Strict"
+                    },
+                  )
+                  containers = [
+                    for index, container in try(document.manifest.spec.template.spec.containers, []) :
+                    merge(
+                      container,
+                      jsondecode(contains(
+                        keys(local.model_runtime_security_compatibilities_by_key),
+                        join("|", [document.model_id, "containers", container.name, container.image]),
+                        ) ? jsonencode({
+                          securityContext = merge(try(container.securityContext, {}), {
+                            allowPrivilegeEscalation = false
+                            capabilities             = { add = [], drop = ["ALL"] }
+                            privileged               = false
+                            readOnlyRootFilesystem   = true
+                            runAsGroup               = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "containers", container.name, container.image])].run_as_group
+                            runAsNonRoot             = true
+                            runAsUser                = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "containers", container.name, container.image])].run_as_user
+                          })
+                          env = concat(
+                            [
+                              for environment in try(container.env, []) : environment
+                              if !contains(
+                                keys(local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "containers", container.name, container.image])].writable_paths),
+                                try(environment.name, ""),
+                              )
+                            ],
+                            [
+                              for name in sort(keys(local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "containers", container.name, container.image])].writable_paths)) : {
+                                name  = name
+                                value = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "containers", container.name, container.image])].writable_paths[name]
+                              }
+                            ],
+                          )
+                          volumeMounts = concat(
+                            [for mount in try(container.volumeMounts, []) : mount if try(mount.mountPath, "") != "/tmp"],
+                            [{
+                              name      = "fs2-runtime-tmp-${substr(sha256("${document.key}|containers|${index}"), 0, 16)}"
+                              mountPath = "/tmp"
+                              readOnly  = false
+                            }],
+                          )
+                        }) : jsonencode({})),
+                    )
+                  ]
+                  volumes = concat(
+                    try(document.manifest.spec.template.spec.volumes, []),
+                    [
+                      for index, container in try(document.manifest.spec.template.spec.containers, []) : {
+                        name = "fs2-runtime-tmp-${substr(sha256("${document.key}|containers|${index}"), 0, 16)}"
+                        emptyDir = {
+                          sizeLimit = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "containers", container.name, container.image])].tmp_size_limit
+                        }
+                      } if contains(keys(local.model_runtime_security_compatibilities_by_key), join("|", [document.model_id, "containers", container.name, container.image]))
+                    ],
+                    [
+                      for index, container in try(document.manifest.spec.template.spec.initContainers, []) : {
+                        name = "fs2-runtime-tmp-${substr(sha256("${document.key}|initContainers|${index}"), 0, 16)}"
+                        emptyDir = {
+                          sizeLimit = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "initContainers", container.name, container.image])].tmp_size_limit
+                        }
+                      } if contains(keys(local.model_runtime_security_compatibilities_by_key), join("|", [document.model_id, "initContainers", container.name, container.image]))
+                    ],
+                    [
+                      for index, container in try(document.manifest.spec.template.spec.ephemeralContainers, []) : {
+                        name = "fs2-runtime-tmp-${substr(sha256("${document.key}|ephemeralContainers|${index}"), 0, 16)}"
+                        emptyDir = {
+                          sizeLimit = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "ephemeralContainers", container.name, container.image])].tmp_size_limit
+                        }
+                      } if contains(keys(local.model_runtime_security_compatibilities_by_key), join("|", [document.model_id, "ephemeralContainers", container.name, container.image]))
+                    ],
+                  )
+                },
+                length(try(document.manifest.spec.template.spec.initContainers, [])) > 0 ? {
+                  initContainers = [
+                    for index, container in try(document.manifest.spec.template.spec.initContainers, []) :
+                    merge(
+                      container,
+                      jsondecode(contains(
+                        keys(local.model_runtime_security_compatibilities_by_key),
+                        join("|", [document.model_id, "initContainers", container.name, container.image]),
+                        ) ? jsonencode({
+                          securityContext = merge(try(container.securityContext, {}), {
+                            allowPrivilegeEscalation = false
+                            capabilities             = { add = [], drop = ["ALL"] }
+                            privileged               = false
+                            readOnlyRootFilesystem   = true
+                            runAsGroup               = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "initContainers", container.name, container.image])].run_as_group
+                            runAsNonRoot             = true
+                            runAsUser                = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "initContainers", container.name, container.image])].run_as_user
+                          })
+                          env = concat(
+                            [
+                              for environment in try(container.env, []) : environment
+                              if !contains(
+                                keys(local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "initContainers", container.name, container.image])].writable_paths),
+                                try(environment.name, ""),
+                              )
+                            ],
+                            [
+                              for name in sort(keys(local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "initContainers", container.name, container.image])].writable_paths)) : {
+                                name  = name
+                                value = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "initContainers", container.name, container.image])].writable_paths[name]
+                              }
+                            ],
+                          )
+                          volumeMounts = concat(
+                            [for mount in try(container.volumeMounts, []) : mount if try(mount.mountPath, "") != "/tmp"],
+                            [{
+                              name      = "fs2-runtime-tmp-${substr(sha256("${document.key}|initContainers|${index}"), 0, 16)}"
+                              mountPath = "/tmp"
+                              readOnly  = false
+                            }],
+                          )
+                        }) : jsonencode({})),
+                    )
+                  ]
+                } : {},
+                length(try(document.manifest.spec.template.spec.ephemeralContainers, [])) > 0 ? {
+                  ephemeralContainers = [
+                    for index, container in try(document.manifest.spec.template.spec.ephemeralContainers, []) :
+                    merge(
+                      container,
+                      jsondecode(contains(
+                        keys(local.model_runtime_security_compatibilities_by_key),
+                        join("|", [document.model_id, "ephemeralContainers", container.name, container.image]),
+                        ) ? jsonencode({
+                          securityContext = merge(try(container.securityContext, {}), {
+                            allowPrivilegeEscalation = false
+                            capabilities             = { add = [], drop = ["ALL"] }
+                            privileged               = false
+                            readOnlyRootFilesystem   = true
+                            runAsGroup               = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "ephemeralContainers", container.name, container.image])].run_as_group
+                            runAsNonRoot             = true
+                            runAsUser                = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "ephemeralContainers", container.name, container.image])].run_as_user
+                          })
+                          env = concat(
+                            [
+                              for environment in try(container.env, []) : environment
+                              if !contains(
+                                keys(local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "ephemeralContainers", container.name, container.image])].writable_paths),
+                                try(environment.name, ""),
+                              )
+                            ],
+                            [
+                              for name in sort(keys(local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "ephemeralContainers", container.name, container.image])].writable_paths)) : {
+                                name  = name
+                                value = local.model_runtime_security_compatibilities_by_key[join("|", [document.model_id, "ephemeralContainers", container.name, container.image])].writable_paths[name]
+                              }
+                            ],
+                          )
+                          volumeMounts = concat(
+                            [for mount in try(container.volumeMounts, []) : mount if try(mount.mountPath, "") != "/tmp"],
+                            [{
+                              name      = "fs2-runtime-tmp-${substr(sha256("${document.key}|ephemeralContainers|${index}"), 0, 16)}"
+                              mountPath = "/tmp"
+                              readOnly  = false
+                            }],
+                          )
+                        }) : jsonencode({})),
+                    )
                   ]
                 } : {},
               )
@@ -552,7 +771,7 @@ locals {
   ]
 
   placement_overridden_model_documents = [
-    for document in local.image_overridden_model_documents : merge(document, {
+    for document in local.security_hardened_model_documents : merge(document, {
       manifest = jsondecode(
         document.manifest.kind == "Deployment" && (
           contains(local.cpu_runtime_model_ids, document.model_id) ||
@@ -672,6 +891,135 @@ locals {
     })
   ]
   model_manifests = { for document in local.model_documents : document.key => document }
+  model_final_container_records = {
+    for document_key, document in local.model_manifests : document_key => (
+      document.manifest.kind == "Deployment" ? concat(
+        [
+          for index, container in try(document.manifest.spec.template.spec.initContainers, []) : {
+            container       = container
+            container_class = "initContainers"
+            index           = index
+            compatibility_key = join("|", [
+              document.model_id,
+              "initContainers",
+              container.name,
+              container.image,
+            ])
+            tmp_volume_name = "fs2-runtime-tmp-${substr(sha256("${document.key}|initContainers|${index}"), 0, 16)}"
+          }
+        ],
+        [
+          for index, container in try(document.manifest.spec.template.spec.containers, []) : {
+            container       = container
+            container_class = "containers"
+            index           = index
+            compatibility_key = join("|", [
+              document.model_id,
+              "containers",
+              container.name,
+              container.image,
+            ])
+            tmp_volume_name = "fs2-runtime-tmp-${substr(sha256("${document.key}|containers|${index}"), 0, 16)}"
+          }
+        ],
+        [
+          for index, container in try(document.manifest.spec.template.spec.ephemeralContainers, []) : {
+            container       = container
+            container_class = "ephemeralContainers"
+            index           = index
+            compatibility_key = join("|", [
+              document.model_id,
+              "ephemeralContainers",
+              container.name,
+              container.image,
+            ])
+            tmp_volume_name = "fs2-runtime-tmp-${substr(sha256("${document.key}|ephemeralContainers|${index}"), 0, 16)}"
+          }
+        ],
+      ) : []
+    )
+  }
+  model_runtime_security_validations = {
+    for document_key, document in local.model_manifests : document_key => (
+      document.manifest.kind != "Deployment" || (
+        length(local.model_final_container_records[document_key]) > 0 &&
+        try(document.manifest.spec.template.spec.securityContext.runAsNonRoot, false) == true &&
+        try(document.manifest.spec.template.spec.securityContext.seccompProfile.type, "") == "RuntimeDefault" &&
+        try(document.manifest.spec.template.spec.securityContext.supplementalGroupsPolicy, "") == "Strict" &&
+        alltrue([
+          for record in local.model_final_container_records[document_key] :
+          contains(keys(local.model_runtime_security_compatibilities_by_key), record.compatibility_key) &&
+          try(record.container.securityContext.allowPrivilegeEscalation, true) == false &&
+          try(record.container.securityContext.privileged, true) == false &&
+          try(record.container.securityContext.readOnlyRootFilesystem, false) == true &&
+          try(record.container.securityContext.runAsNonRoot, false) == true &&
+          try(record.container.securityContext.runAsUser, 0) == try(local.model_runtime_security_compatibilities_by_key[record.compatibility_key].run_as_user, -1) &&
+          try(record.container.securityContext.runAsGroup, 0) == try(local.model_runtime_security_compatibilities_by_key[record.compatibility_key].run_as_group, -1) &&
+          try(toset(record.container.securityContext.capabilities.drop), toset([])) == toset(["ALL"]) &&
+          try(length(record.container.securityContext.capabilities.add), -1) == 0 &&
+          try(length([
+            for mount in record.container.volumeMounts : mount
+            if try(mount.name, "") == record.tmp_volume_name &&
+            try(mount.mountPath, "") == "/tmp" &&
+            try(mount.readOnly, true) == false
+          ]), 0) == 1 &&
+          try(one([
+            for volume in document.manifest.spec.template.spec.volumes : volume.emptyDir.sizeLimit
+            if try(volume.name, "") == record.tmp_volume_name
+          ]), null) == try(local.model_runtime_security_compatibilities_by_key[record.compatibility_key].tmp_size_limit, null) &&
+          try(alltrue([
+            for name, value in local.model_runtime_security_compatibilities_by_key[record.compatibility_key].writable_paths :
+            length([
+              for environment in record.container.env : environment
+              if try(environment.name, "") == name && try(environment.value, null) == value
+            ]) == 1
+          ]), false)
+        ])
+      )
+    )
+  }
+  model_runtime_security_validations_by_model = {
+    for model_id in local.selected_model_ids : model_id => alltrue([
+      for document_key, valid in local.model_runtime_security_validations : valid
+      if local.model_manifests[document_key].model_id == model_id
+    ])
+  }
+  model_final_container_images = {
+    for document_key, document in local.model_manifests : document_key => (
+      document.manifest.kind == "Deployment" ? concat(
+        [for container in try(document.manifest.spec.template.spec.initContainers, []) : try(container.image, "")],
+        [for container in try(document.manifest.spec.template.spec.containers, []) : try(container.image, "")],
+        [for container in try(document.manifest.spec.template.spec.ephemeralContainers, []) : try(container.image, "")],
+      ) : []
+    )
+  }
+  model_image_supply_validations = {
+    for document_key, document in local.model_manifests : document_key => (
+      document.manifest.kind != "Deployment" || (
+        length(local.model_final_container_images[document_key]) > 0 &&
+        alltrue([
+          for image in local.model_final_container_images[document_key] :
+          can(regex("^[^\\s@]+@sha256:[0-9a-f]{64}$", image)) &&
+          startswith(image, "${var.accelerator_pool_contract.artifact_source.registry.fqdn}/") &&
+          contains(
+            [for promotion in local.model_image_promotions_by_model[document.model_id] : promotion.mirror_image],
+            image,
+          )
+        ]) &&
+        anytrue([
+          for promotion in local.model_image_promotions_by_model[document.model_id] :
+          promotion.source_image == local.catalog_model_runtime_images[document.model_id] &&
+          promotion.mirror_image == try(var.model_image_overrides[document.model_id], null)
+        ])
+      )
+    )
+  }
+  model_image_supply_validations_by_model = {
+    for model_id in local.selected_model_ids : model_id => alltrue([
+      for document_key, valid in local.model_image_supply_validations : valid
+      if local.model_manifests[document_key].model_id == model_id
+    ])
+  }
   cpu_runtime_documents = {
     for model_id, candidate in local.cpu_deployment_runtime_records : model_id => {
       deployment = try(one([
@@ -856,35 +1204,58 @@ locals {
   ])
   identified_keeper_documents = [
     for document in local.keeper_documents : merge(document, {
-      model_id = try(
-        trimspace(split(",", document.manifest.metadata.annotations["fs2-serve.nebius.ai/models"])[0]),
-        null,
-      )
+      model_ids = try([
+        for model_id in split(",", document.manifest.metadata.annotations["fs2-serve.nebius.ai/models"]) :
+        trimspace(model_id)
+      ], [])
     })
   ]
   rendered_keeper_documents = [
     for document in local.identified_keeper_documents : merge(document, {
       manifest = jsondecode(
-        document.manifest.kind == "DaemonSet" &&
-        document.model_id != null &&
-        contains(keys(var.model_image_overrides), document.model_id) ?
+        document.manifest.kind == "DaemonSet" ?
         jsonencode(merge(document.manifest, {
           spec = merge(document.manifest.spec, {
             template = merge(document.manifest.spec.template, {
-              spec = merge(document.manifest.spec.template.spec, {
-                containers = [
-                  for container in document.manifest.spec.template.spec.containers :
-                  (
-                    try(container.image, "") == local.catalog_model_runtime_images[document.model_id] ||
-                    startswith(
-                      try(container.image, ""),
-                      "registry.example.invalid/k8s-inference/models/",
-                    )
-                  ) ?
-                  merge(container, { image = var.model_image_overrides[document.model_id] }) :
-                  container
-                ]
-              })
+              spec = merge(
+                document.manifest.spec.template.spec,
+                {
+                  containers = [
+                    for container in try(document.manifest.spec.template.spec.containers, []) :
+                    merge(container, {
+                      image = try(one(distinct([
+                        for promotion in values(var.model_image_promotions) : promotion.mirror_image
+                        if contains(document.model_ids, promotion.model_id) &&
+                        promotion.source_image == try(container.image, "")
+                      ])), try(container.image, ""))
+                    })
+                  ]
+                },
+                length(try(document.manifest.spec.template.spec.initContainers, [])) > 0 ? {
+                  initContainers = [
+                    for container in document.manifest.spec.template.spec.initContainers :
+                    merge(container, {
+                      image = try(one(distinct([
+                        for promotion in values(var.model_image_promotions) : promotion.mirror_image
+                        if contains(document.model_ids, promotion.model_id) &&
+                        promotion.source_image == try(container.image, "")
+                      ])), try(container.image, ""))
+                    })
+                  ]
+                } : {},
+                length(try(document.manifest.spec.template.spec.ephemeralContainers, [])) > 0 ? {
+                  ephemeralContainers = [
+                    for container in document.manifest.spec.template.spec.ephemeralContainers :
+                    merge(container, {
+                      image = try(one(distinct([
+                        for promotion in values(var.model_image_promotions) : promotion.mirror_image
+                        if contains(document.model_ids, promotion.model_id) &&
+                        promotion.source_image == try(container.image, "")
+                      ])), try(container.image, ""))
+                    })
+                  ]
+                } : {},
+              )
             })
           })
         })) :
@@ -893,6 +1264,31 @@ locals {
     })
   ]
   keeper_manifests = { for document in local.rendered_keeper_documents : document.key => document }
+  keeper_final_container_images = {
+    for document_key, document in local.keeper_manifests : document_key => (
+      document.manifest.kind == "DaemonSet" ? concat(
+        [for container in try(document.manifest.spec.template.spec.initContainers, []) : try(container.image, "")],
+        [for container in try(document.manifest.spec.template.spec.containers, []) : try(container.image, "")],
+        [for container in try(document.manifest.spec.template.spec.ephemeralContainers, []) : try(container.image, "")],
+      ) : []
+    )
+  }
+  keeper_image_supply_validations = {
+    for document_key, document in local.keeper_manifests : document_key => (
+      document.manifest.kind != "DaemonSet" || (
+        length(local.keeper_final_container_images[document_key]) > 0 &&
+        alltrue([
+          for image in local.keeper_final_container_images[document_key] :
+          can(regex("^[^\\s@]+@sha256:[0-9a-f]{64}$", image)) &&
+          startswith(image, "${var.accelerator_pool_contract.artifact_source.registry.fqdn}/") &&
+          anytrue([
+            for promotion in values(var.model_image_promotions) :
+            contains(document.model_ids, promotion.model_id) && promotion.mirror_image == image
+          ])
+        ])
+      )
+    )
+  }
 
   selected_routes = { for model_id in local.selected_model_ids : model_id => local.inventory.routes[model_id] }
   selected_runtime_ports = [

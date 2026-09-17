@@ -26,6 +26,16 @@ resource "kubernetes_manifest" "model" {
     }
 
     precondition {
+      condition     = local.model_image_supply_validations[each.key]
+      error_message = "Every final init, application, and ephemeral container image for ${each.value.model_id} must be digest-pinned in the approved private registry and bound to an exact source/digest/provenance promotion receipt."
+    }
+
+    precondition {
+      condition     = local.model_runtime_security_validations[each.key]
+      error_message = "Every final init, application, and ephemeral container for ${each.value.model_id} must be rendered from an exact image compatibility record with explicit non-root identity, RuntimeDefault seccomp, no capabilities or privilege escalation, a read-only root, and bounded writable /tmp paths."
+    }
+
+    precondition {
       condition = (
         !contains(keys(local.static_cpu_runtime_records), each.value.model_id) ||
         try(local.cpu_runtime_manifest_validations[each.value.model_id], true)
@@ -137,6 +147,13 @@ resource "kubernetes_manifest" "cold_start_keeper" {
   field_manager {
     force_conflicts = false
     name            = "fs2-${var.run_id}-cold-start"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = local.keeper_image_supply_validations[each.key]
+      error_message = "Every cold-start keeper image must be digest-pinned in the approved private registry and bound to an exact source/digest/provenance promotion receipt; Terraform ownership is not an image-trust exception."
+    }
   }
 
   depends_on = [terraform_data.cluster_contract]
