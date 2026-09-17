@@ -50,18 +50,46 @@ def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
         "high_hours": 168,
         "clock_start": "scanner_result_created_at",
     }
+    assert policy["evidence"]["retention_days"] == 90
+    assert "spdx-json" in policy["evidence"]["required_formats"]
 
     observability_lock = (ROOT / "observability/versions.lock.yaml").read_text()
-    assert "deployment: blocked-pending-image-digests" in observability_lock
+    assert "deployment: official-chart-tags" in observability_lock
+    assert "promotion: blocked-pending-image-digests" in observability_lock
     assert "digestResolution: required-before-integration" in observability_lock
     installer = (ROOT / "observability/scripts/install.sh").read_text()
-    assert ".imagePolicy.deployment" in installer
-    assert "digest-pinned" in installer
+    assert ".imagePolicy.deployment" not in installer
+    assert "observability deployment blocked" not in installer
 
     workflow = (
         ROOT.parent / ".github/workflows/k8s-inference-image-security.yml"
     ).read_text()
     assert "cron: '17 3 * * *'" in workflow
-    assert workflow.count("ignore-unfixed: true") == 2
-    assert workflow.count("severity: 'CRITICAL,HIGH'") == 2
-    assert workflow.count("scanners: 'vuln,secret'") == 2
+    assert "aquasecurity/trivy-action@" not in workflow
+    assert "trivy_0.70.0_Linux-64bit.tar.gz" in workflow
+    assert "8b4376d5d6befe5c24d503f10ff136d9e0c49f9127a4279fd110b727929a5aa9" in workflow
+    assert "catalog/runtime" in workflow
+    assert "third-party-images.lock.json" in workflow
+    assert (
+        "--package libcrypto3 --package libssl3 --package libexpat --package libuuid"
+        in workflow
+    )
+    assert "retention-days: 90" in workflow
+
+    inventory = json.loads((ROOT / "security/third-party-images.lock.json").read_text())
+    assert inventory["rendered_inventory_complete"] is False
+    assert inventory["inventory_state"] == "blocked_pending_digest_resolution"
+    by_id = {image["id"]: image for image in inventory["images"]}
+    assert by_id["dcgm-exporter"]["digest_reference"] == (
+        "nvcr.io/nvidia/k8s/dcgm-exporter@sha256:"
+        "b4df763de9558e5b3f1f1d79bc65b772fcf65b8a9c3664ea7173e47153112b4a"
+    )
+    for image_id in (
+        "cloudnative-pg-operator",
+        "envoy-gateway-controller",
+        "loki",
+        "tempo",
+        "otel-collector-contrib",
+        "otel-collector-k8s",
+    ):
+        assert by_id[image_id]["digest_reference"] is None

@@ -22,7 +22,7 @@
     "clock_start": "scanner_result_created_at"
   },
   "third_party_images": {
-    "inventory": "observability/versions.lock.yaml",
+    "inventory": "security/third-party-images.lock.json",
     "promotion_status": "blocked_pending_digest_resolution",
     "requirements": [
       "resolve every rendered image to an immutable sha256 digest",
@@ -30,6 +30,23 @@
       "scan the digest with vulnerability and secret scanners",
       "reject any fixable CRITICAL or HIGH finding",
       "apply only the reviewed digest-bound values"
+    ]
+  },
+  "evidence": {
+    "retention_days": 90,
+    "required_formats": [
+      "trivy-json",
+      "spdx-json",
+      "scan-receipt-json"
+    ],
+    "required_bindings": [
+      "source_commit",
+      "source_tree",
+      "subject_digest",
+      "scanner_version",
+      "scanner_archive_sha256",
+      "report_sha256",
+      "sbom_sha256"
     ]
   }
 }

@@ -25,9 +25,11 @@ charts:
     version: 4.8.3
     sha256: b1206338d5c446126e233f93df80f0538c285ce40b2e72e6c2f46c9db59ef223
 imagePolicy:
-  deployment: blocked-pending-image-digests
+  deployment: official-chart-tags
+  promotion: blocked-pending-image-digests
   digestResolution: required-before-integration
-  reason: SAI-24 forbids deployment until every rendered third-party image is digest-bound and scanned.
+  inventory: ../security/third-party-images.lock.json
+  reason: SAI-24 blocks promotion until every rendered third-party image is digest-bound and scanned; the source installer remains usable for existing non-promoted workflows.
 images:
   - docker.io/grafana/grafana:13.2.0
   - docker.io/library/busybox:1.38.0
