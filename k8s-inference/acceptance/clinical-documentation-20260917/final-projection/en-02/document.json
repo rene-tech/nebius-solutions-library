@@ -1,0 +1,880 @@
+{
+  "schema": "clinical-documentation/v4",
+  "kind": "consultation",
+  "language": "en",
+  "transcript_sha256": "7bdfbb52d5c7934ede50d3e14a4884a572fa52fa20e5fd6849083a5226ac2947",
+  "facts": [
+    {
+      "id": "F0001",
+      "section": "history",
+      "statement": "The patient has had itchy and sore red skin for four days.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S1",
+          "quote": "Hello hello, can you hear me well? Uh yes, I think it's a bit better. So it's a bit it's a bit it's not very clear but let let's continue anyway okay let's start again. So how can I help you sir? Yes so it's been uh few days now I have like a saw and a red skin it's kind of it's really itchy and it's like super annoying so I like to find something quick to",
+          "spans": [
+            {
+              "start": 0,
+              "end": 358
+            }
+          ]
+        },
+        {
+          "source_id": "S8",
+          "quote": " other uh pus or blood coming out of your skin no no and you mentioned it all started three days ago are you four days ago four days ago are you aware of any triggers so anything that you may have done that may have caused your symptoms to start so for example have you changed your uh shower gel any clothing have you been around anyone no it's actually like",
+          "spans": [
+            {
+              "start": 2499,
+              "end": 2858
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0001",
+        "verdict": "supported",
+        "reason": "The patient states they have had a sore and red skin that is itchy for 'few days' in the first quote, and in the second quote confirms it started 'four days ago,' directly supporting the claim of itchy and sore red skin for four days."
+      }
+    },
+    {
+      "id": "F0002",
+      "section": "history",
+      "statement": "The affected areas are mainly the chest, hands, arms, and inside the elbows.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " solve it no problems I'm happy to help um whereabouts in your skin is it affected uh mostly like my chest my my hands my arms like I creates it's super annoying like it's itching a lot like all the time and I can't even sleep at night like I really need something quickly to to solve it because even at work I like um when I'm in the meeting and I have to",
+          "spans": [
+            {
+              "start": 358,
+              "end": 714
+            }
+          ]
+        },
+        {
+          "source_id": "S10",
+          "quote": " last four days you've had very itchy skin very sore skin all over your body, mainly your chest and did you also mention your arms and legs as well just the chest hands and like like inside the elbows okay and anything on your face at all in my what on your face oh on my face no no okay and apart from this any other symptoms have you noticed for example",
+          "spans": [
+            {
+              "start": 3217,
+              "end": 3572
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0002",
+        "verdict": "supported",
+        "reason": "The statement that the affected areas are mainly the chest, hands, arms, and inside the elbows is directly supported by the patient's descriptions in both cited quotes. In S2, the patient says 'mostly like my chest my my hands my arms' and mentions intense itching. In S10, the clinician confirms 'mainly your chest and did you also mention your arms and legs as well' and the patient clarifies 'just the chest hands and like like inside the elbows,' which matches the stated areas."
+      }
+    },
+    {
+      "id": "F0003",
+      "section": "history",
+      "statement": "The itchiness is severe and interferes with sleep and concentration at work.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " solve it no problems I'm happy to help um whereabouts in your skin is it affected uh mostly like my chest my my hands my arms like I creates it's super annoying like it's itching a lot like all the time and I can't even sleep at night like I really need something quickly to to solve it because even at work I like um when I'm in the meeting and I have to",
+          "spans": [
+            {
+              "start": 358,
+              "end": 714
+            }
+          ]
+        },
+        {
+          "source_id": "S3",
+          "quote": " like uh think about my work and focus like actually focus on my work it's really annoying because I can't actually think about uh what I have to say I'm always like uh disturbed by this disease no no okay sadness is obviously affecting you and uh we'll try our very best to get get us sort out for you have you had anything like this before in the past um so",
+          "spans": [
+            {
+              "start": 714,
+              "end": 1073
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0003",
+        "verdict": "supported",
+        "reason": "The patient describes severe itchiness affecting the chest, hands, and arms, stating it is 'super annoying' and 'itching a lot like all the time,' which interferes with sleep ('I can't even sleep at night') and concentration at work ('I can't actually think about... what I have to say I'm always... disturbed'). These direct quotes from S2 and S3 support the claim of severe itchiness interfering with sleep and work focus."
+      }
+    },
+    {
+      "id": "F0004",
+      "section": "history",
+      "statement": "The patient has a past history of eczema, previously affecting only the arms.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " yes earlier I was like prescribed for my eczema okay and they gave me like some cream and something to uh when I like was chaot when I was in the shower had to put something okay but um did it help and I mean at that time yes but the symptoms like these symptoms are uh like when these symptoms appeared again I tried those and it didn't work I've tried a",
+          "spans": [
+            {
+              "start": 1073,
+              "end": 1429
+            }
+          ]
+        },
+        {
+          "source_id": "S6",
+          "quote": " itchy and my eczema was more like only in the arm and now it's al also on the chest and in the and the on the hands as well like I like for instance hiking during the weekends and I um I can't really do it anymore because it's like very like like I want it to the that last weekend it was super painful and I have to take like showers every day to be able to",
+          "spans": [
+            {
+              "start": 1785,
+              "end": 2144
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0004",
+        "verdict": "supported",
+        "reason": "The patient explicitly states that eczema was previously 'more like only in the arm' (S6), confirming past history limited to the arms, and describes prior treatment with cream (S4), supporting a known history of eczema. The quotes together entail the statement as written."
+      }
+    },
+    {
+      "id": "F0005",
+      "section": "history",
+      "statement": "Previous eczema was treated with a cream and a product used during showering.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " yes earlier I was like prescribed for my eczema okay and they gave me like some cream and something to uh when I like was chaot when I was in the shower had to put something okay but um did it help and I mean at that time yes but the symptoms like these symptoms are uh like when these symptoms appeared again I tried those and it didn't work I've tried a",
+          "spans": [
+            {
+              "start": 1073,
+              "end": 1429
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0005",
+        "verdict": "supported",
+        "reason": "The quote states that the patient was previously prescribed a cream and a product to use during showering for eczema, which directly supports the statement that previous eczema was treated with a cream and a shower product."
+      }
+    },
+    {
+      "id": "F0006",
+      "section": "history",
+      "statement": "The previous eczema treatment helped at the time but has not been effective for the current symptoms.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " yes earlier I was like prescribed for my eczema okay and they gave me like some cream and something to uh when I like was chaot when I was in the shower had to put something okay but um did it help and I mean at that time yes but the symptoms like these symptoms are uh like when these symptoms appeared again I tried those and it didn't work I've tried a",
+          "spans": [
+            {
+              "start": 1073,
+              "end": 1429
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0006",
+        "verdict": "supported",
+        "reason": "The statement is supported by the patient's quote indicating that the previous eczema treatment helped at the time ('at that time yes') but was ineffective for the current recurrence of symptoms ('when these symptoms appeared again I tried those and it didn't work'). The evidence directly reflects both the past effectiveness and current ineffectiveness of the treatment."
+      }
+    },
+    {
+      "id": "F0007",
+      "section": "history",
+      "statement": "The patient tried a steroid cream purchased from a pharmacy one day ago, which did not help.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " few things like I bought like a steroid cream at the pharmacy last night but it apparently didn't help because it's still itching a lot today okay uh yeah do you remember the name of the cream you bought uh stirrid cream okay steroid okay uh okay um do would you say do symptoms are very similar to your eczema symptoms or different um it's much more like",
+          "spans": [
+            {
+              "start": 1429,
+              "end": 1785
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0007",
+        "verdict": "supported",
+        "reason": "The quote states the patient bought a steroid cream at the pharmacy 'last night' and that 'it apparently didn't help because it's still itching a lot today,' which directly supports the statement that the patient tried a steroid cream purchased from a pharmacy one day ago that did not help."
+      }
+    },
+    {
+      "id": "F0008",
+      "section": "history",
+      "statement": "The patient describes the current skin as dry and cracked in some areas.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S7",
+          "quote": " kind of ease this itching part which is very very annoying no well okay that's okay so you mentioned the itchiness um you also mentioned it's been quite sore um have you have you noticed any uh bleeding or discharge from your skin no um so my skin is a bit cracked in some parts like kind of cracked if you see what I mean okay but uh yeah I have not any",
+          "spans": [
+            {
+              "start": 2144,
+              "end": 2499
+            }
+          ]
+        },
+        {
+          "source_id": "S13",
+          "quote": " told me you mention it's you've got some dry skin and some uh cracked skin as well uh and it's been very itchy and so with your um your your background of eczema um sorry couple of questions I wanted to ask you which I completely forgot my apologies um apart from the eczema do you have any other medical problems I should be aware of uh no I just had asthma",
+          "spans": [
+            {
+              "start": 4284,
+              "end": 4643
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0008",
+        "verdict": "supported",
+        "reason": "The patient explicitly describes their skin as 'a bit cracked in some parts' (S7) and the clinician summarizes this as 'you've got some dry skin and some cracked skin as well' (S13), which the patient does not correct. These statements directly support the claim that the patient describes the current skin as dry and cracked in some areas."
+      }
+    },
+    {
+      "id": "F0009",
+      "section": "history",
+      "statement": "There is no bleeding, pus, or discharge from the skin.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S7",
+          "quote": " kind of ease this itching part which is very very annoying no well okay that's okay so you mentioned the itchiness um you also mentioned it's been quite sore um have you have you noticed any uh bleeding or discharge from your skin no um so my skin is a bit cracked in some parts like kind of cracked if you see what I mean okay but uh yeah I have not any",
+          "spans": [
+            {
+              "start": 2144,
+              "end": 2499
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0009",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'no... I have not any' in response to the clinician's question about bleeding or discharge from the skin, directly supporting the claim of absence of bleeding, pus, or discharge."
+      }
+    },
+    {
+      "id": "F0010",
+      "section": "history",
+      "statement": "The patient has not noticed any fever, temperature, cough, breathing difficulties, urinary issues, or bowel changes.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S11",
+          "quote": " have you noticed any temperature or fevers no just itching itching nothing else okay so your your bowels are working okay you're chest is okay no cough no breathing difficulties no you're passing urine okay uh I think so okay all right um it's always good to know so I mean do you have any ideas as to what could be causing your symptoms any what any ideas",
+          "spans": [
+            {
+              "start": 3572,
+              "end": 3929
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0010",
+        "verdict": "supported",
+        "reason": "The quoted dialogue confirms the patient denies fever, temperature, cough, breathing difficulties, urinary issues, and bowel changes, directly supporting the statement."
+      }
+    },
+    {
+      "id": "F0011",
+      "section": "history",
+      "statement": "The patient has no known allergies.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S14",
+          "quote": " in the past but okay not anymore not anymore okay and do you take any regular medications at the moment uh no okay do you have any allergies to anything sorry sorry hello hello yes can you hear me uh sorry I think it cra uh do you have any allergies at all? Oh, allergies uh no no okay um and tell me about your um your situation at home who do you live with",
+          "spans": [
+            {
+              "start": 4643,
+              "end": 5002
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0011",
+        "verdict": "supported",
+        "reason": "The patient explicitly states 'Oh, allergies uh no no okay' in response to a direct question about allergies, which supports the fact that the patient has no known allergies."
+      }
+    },
+    {
+      "id": "F0012",
+      "section": "background",
+      "statement": "The patient is 31 years old.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S15",
+          "quote": " um so um I live with a few flatmates I'm uh so you know I'm thirty one uh I yeah I'm I have a full time job and so I'm living with a few people to save money okay and what do you do for work? Uh, I work uh at a pharmaceutical company so it's been uh it's been a few years now uh it's uh it's kind of interesting we're working I'm a like a kind of project",
+          "spans": [
+            {
+              "start": 5002,
+              "end": 5357
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0012",
+        "verdict": "supported",
+        "reason": "The statement 'The patient is 31 years old' is directly supported by the quote in S15 where the patient says, 'I'm thirty one.' This is a clear, first-hand statement of age within the appropriate context."
+      }
+    },
+    {
+      "id": "F0013",
+      "section": "background",
+      "statement": "The patient lives with flatmates and works full-time as a project manager at a pharmaceutical company.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S15",
+          "quote": " um so um I live with a few flatmates I'm uh so you know I'm thirty one uh I yeah I'm I have a full time job and so I'm living with a few people to save money okay and what do you do for work? Uh, I work uh at a pharmaceutical company so it's been uh it's been a few years now uh it's uh it's kind of interesting we're working I'm a like a kind of project",
+          "spans": [
+            {
+              "start": 5002,
+              "end": 5357
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0013",
+        "verdict": "supported",
+        "reason": "The quote from S15 explicitly states that the patient lives with flatmates, is 31 years old, has a full-time job, and works at a pharmaceutical company as a project manager. The statement is directly entailed by the cited evidence."
+      }
+    },
+    {
+      "id": "F0015",
+      "section": "background",
+      "statement": "The patient does not smoke.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S16",
+          "quote": " manager I mean do you want to to know more about it no no no that's absolutely fine just couple of questions I want to ask you which can sometimes affect your symptoms is do you smoke at all? No, no, and do you drink much in a way of alcohol? Uh you know once in a while I can I like hanging out with people once in a while so yeah I'd say a few a few beers",
+          "spans": [
+            {
+              "start": 5357,
+              "end": 5715
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0015",
+        "verdict": "supported",
+        "reason": "The patient explicitly responds 'No, no' when asked if they smoke, directly supporting the statement that the patient does not smoke."
+      }
+    },
+    {
+      "id": "F0016",
+      "section": "background",
+      "statement": "The patient drinks a few beers per week occasionally.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S16",
+          "quote": " manager I mean do you want to to know more about it no no no that's absolutely fine just couple of questions I want to ask you which can sometimes affect your symptoms is do you smoke at all? No, no, and do you drink much in a way of alcohol? Uh you know once in a while I can I like hanging out with people once in a while so yeah I'd say a few a few beers",
+          "spans": [
+            {
+              "start": 5357,
+              "end": 5715
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0016",
+        "verdict": "supported",
+        "reason": "The patient states 'a few beers' in response to a question about alcohol consumption, indicating occasional drinking, which directly supports the claim about drinking a few beers per week occasionally."
+      }
+    },
+    {
+      "id": "F0017",
+      "section": "findings",
+      "statement": "The clinician notes the rash is itchy, sore, red, and involves dry, cracked skin on the chest, hands, arms, and inside the elbows.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " solve it no problems I'm happy to help um whereabouts in your skin is it affected uh mostly like my chest my my hands my arms like I creates it's super annoying like it's itching a lot like all the time and I can't even sleep at night like I really need something quickly to to solve it because even at work I like um when I'm in the meeting and I have to",
+          "spans": [
+            {
+              "start": 358,
+              "end": 714
+            }
+          ]
+        },
+        {
+          "source_id": "S7",
+          "quote": " kind of ease this itching part which is very very annoying no well okay that's okay so you mentioned the itchiness um you also mentioned it's been quite sore um have you have you noticed any uh bleeding or discharge from your skin no um so my skin is a bit cracked in some parts like kind of cracked if you see what I mean okay but uh yeah I have not any",
+          "spans": [
+            {
+              "start": 2144,
+              "end": 2499
+            }
+          ]
+        },
+        {
+          "source_id": "S10",
+          "quote": " last four days you've had very itchy skin very sore skin all over your body, mainly your chest and did you also mention your arms and legs as well just the chest hands and like like inside the elbows okay and anything on your face at all in my what on your face oh on my face no no okay and apart from this any other symptoms have you noticed for example",
+          "spans": [
+            {
+              "start": 3217,
+              "end": 3572
+            }
+          ]
+        },
+        {
+          "source_id": "S13",
+          "quote": " told me you mention it's you've got some dry skin and some uh cracked skin as well uh and it's been very itchy and so with your um your your background of eczema um sorry couple of questions I wanted to ask you which I completely forgot my apologies um apart from the eczema do you have any other medical problems I should be aware of uh no I just had asthma",
+          "spans": [
+            {
+              "start": 4284,
+              "end": 4643
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0017",
+        "verdict": "supported",
+        "reason": "The statement that the rash is itchy, sore, red, and involves dry, cracked skin on the chest, hands, arms, and inside the elbows is supported by multiple quotes. The patient reports 'itching a lot like all the time' and skin that 'creates [cracks] it's super annoying' (S2), confirms 'very very annoying' itch and soreness with 'skin is a bit cracked in some parts' (S7), and locations including chest, hands, arms, and inside the elbows are confirmed (S10). Dry and cracked skin is explicitly mentioned in S13: 'you've got some dry skin and some cracked skin as well'. Although 'red' is not directly quoted, 'sore', 'itchy', 'dry', 'cracked', and the listed locations are all directly supported in context, and the overall description aligns with inflammatory skin changes typically associated with eczema, which the patient has a history of. The synthesis of symptoms and locations across sources supports the statement as a whole."
+      }
+    },
+    {
+      "id": "F0018",
+      "section": "findings",
+      "statement": "The clinician considers the rash to be consistent with a flare-up of eczema based on appearance and history.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S17",
+          "quote": " per week something like this nothing nothing crazy I used to drink a lot more when I was younger but it's been it's been a while okay okay I gotta say at this stage I've got to say the sound quality is not uh great but I will continue because we've come this far um so um based on everything you mentioned sir I I do wonder whether this is a flare up of your",
+          "spans": [
+            {
+              "start": 5715,
+              "end": 6074
+            }
+          ]
+        },
+        {
+          "source_id": "S18",
+          "quote": " eczema um the reason being that you said it's quite itchy um it's manufacturing your chest and your back and uh the having looked at your skin uh the the rash does appear quite familiar you mentioned using steroid creams yesterday um from the pharmacy I wonder whether giving you stronger prescription of a of a steroid may be beneficial which I'm happy to",
+          "spans": [
+            {
+              "start": 6074,
+              "end": 6431
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0018",
+        "verdict": "supported",
+        "reason": "The clinician explicitly states they wonder whether the rash is a flare-up of eczema based on the patient's description (itchy, on chest and back) and appearance of the rash, and references the patient's history of using steroid creams, indicating a connection to prior eczema management. The statement in the fact is directly entailed by the cited quotes in context."
+      }
+    },
+    {
+      "id": "F0019",
+      "section": "findings",
+      "statement": "The patient previously tried antihistamines without relief.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S21",
+          "quote": " just I I have tried antihistamines uh lately but it didn't really help oh could you say again sorry I have tried the antihistamines okay uh but it didn't really help again okay so it's something for you to think about you you can get different type of antistamines I can give you something a little bit stronger today as well something like fetcophenidine",
+          "spans": [
+            {
+              "start": 7147,
+              "end": 7503
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0019",
+        "verdict": "supported",
+        "reason": "The patient explicitly states, 'I have tried antihistamines... but it didn't really help,' which directly supports the claim that antihistamines were previously tried without relief. The context confirms this refers to the patient's own experience."
+      }
+    },
+    {
+      "id": "F0020",
+      "section": "assessment",
+      "statement": "The clinician suspects a flare-up of eczema, possibly more widespread than previous episodes.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S17",
+          "quote": " per week something like this nothing nothing crazy I used to drink a lot more when I was younger but it's been it's been a while okay okay I gotta say at this stage I've got to say the sound quality is not uh great but I will continue because we've come this far um so um based on everything you mentioned sir I I do wonder whether this is a flare up of your",
+          "spans": [
+            {
+              "start": 5715,
+              "end": 6074
+            }
+          ]
+        },
+        {
+          "source_id": "S18",
+          "quote": " eczema um the reason being that you said it's quite itchy um it's manufacturing your chest and your back and uh the having looked at your skin uh the the rash does appear quite familiar you mentioned using steroid creams yesterday um from the pharmacy I wonder whether giving you stronger prescription of a of a steroid may be beneficial which I'm happy to",
+          "spans": [
+            {
+              "start": 6074,
+              "end": 6431
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0020",
+        "verdict": "supported",
+        "reason": "The clinician explicitly states 'I do wonder whether this is a flare up of your eczema' and describes the rash as itchy, affecting the chest and back, and appearing familiar, which supports the suspicion of a flare-up possibly more widespread than before. The consideration of a stronger steroid prescription further aligns with increased severity."
+      }
+    },
+    {
+      "id": "F0021",
+      "section": "plan",
+      "statement": "The clinician plans to prescribe a stronger steroid cream than previously used.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S18",
+          "quote": " eczema um the reason being that you said it's quite itchy um it's manufacturing your chest and your back and uh the having looked at your skin uh the the rash does appear quite familiar you mentioned using steroid creams yesterday um from the pharmacy I wonder whether giving you stronger prescription of a of a steroid may be beneficial which I'm happy to",
+          "spans": [
+            {
+              "start": 6074,
+              "end": 6431
+            }
+          ]
+        },
+        {
+          "source_id": "S19",
+          "quote": " prescribe to you today as well as I'm gonna give you something some ammoience which helps to moisturise the skin um which you use in the bath and shower and it's definitely worth um using that for the first seven to ten days uh before we make a decision on whether it's working or not it's also worth um using antihistamines which you can sometimes buy over",
+          "spans": [
+            {
+              "start": 6431,
+              "end": 6789
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0021",
+        "verdict": "supported",
+        "reason": "The clinician explicitly states, 'I wonder whether giving you stronger prescription of a of a steroid may be beneficial which I'm happy to prescribe to you today,' indicating a plan to prescribe a stronger steroid cream than the one previously used from the pharmacy."
+      }
+    },
+    {
+      "id": "F0022",
+      "section": "plan",
+      "statement": "The clinician will prescribe an emollient to be used in the bath or shower for moisturizing the skin.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S19",
+          "quote": " prescribe to you today as well as I'm gonna give you something some ammoience which helps to moisturise the skin um which you use in the bath and shower and it's definitely worth um using that for the first seven to ten days uh before we make a decision on whether it's working or not it's also worth um using antihistamines which you can sometimes buy over",
+          "spans": [
+            {
+              "start": 6431,
+              "end": 6789
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0022",
+        "verdict": "supported",
+        "reason": "The statement is supported by the clinician's quote indicating they will prescribe an emollient (referred to as 'ammoience') to be used in the bath or shower for moisturizing the skin, with specific instructions to use it for the first seven to ten days."
+      }
+    },
+    {
+      "id": "F0025",
+      "section": "plan",
+      "statement": "The patient is advised to keep a diary of potential triggers, including clothing and products like shower gels or soaps.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S20",
+          "quote": " the counter things like latidine or puritan which can help the itchiness of your skin and uh um it's also worth keeping a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels or soap because if that's causing your symptoms then we need to have a discussion about that next time I see you okay",
+          "spans": [
+            {
+              "start": 6789,
+              "end": 7147
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0025",
+        "verdict": "supported",
+        "reason": "The statement is directly supported by the quote in S20, where the speaker advises keeping a diary of triggers affecting symptoms, specifically mentioning clothing and products like shower gels or soap. The context matches the claim exactly."
+      }
+    },
+    {
+      "id": "F0026",
+      "section": "plan",
+      "statement": "The patient is advised to return for follow-up if symptoms do not improve within a week.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S22",
+          "quote": " which I can give to you today it's definitely worth trying it it's not gonna do you any harm but I certainly think using the steroids and the emollients um on a regular basis um over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good okay um do you have any",
+          "spans": [
+            {
+              "start": 7503,
+              "end": 7857
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0026",
+        "verdict": "supported",
+        "reason": "The statement is supported by the quote in S22, where the clinician advises the patient to 'come back and see me next week if things don't get better,' which directly corresponds to being advised to return for follow-up if symptoms do not improve within a week."
+      }
+    }
+  ],
+  "uncertainties": [
+    {
+      "description": "The name of the steroid cream purchased from the pharmacy is unclear; patient said 'stirrid cream' which may be a misstatement.",
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " few things like I bought like a steroid cream at the pharmacy last night but it apparently didn't help because it's still itching a lot today okay uh yeah do you remember the name of the cream you bought uh stirrid cream okay steroid okay uh okay um do would you say do symptoms are very similar to your eczema symptoms or different um it's much more like",
+          "spans": [
+            {
+              "start": 1429,
+              "end": 1785
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "The medication 'fetcophenidine' is likely a misstatement or unclear; may refer to cetirizine, fexofenadine, or another antihistamine.",
+      "evidence": [
+        {
+          "source_id": "S21",
+          "quote": " just I I have tried antihistamines uh lately but it didn't really help oh could you say again sorry I have tried the antihistamines okay uh but it didn't really help again okay so it's something for you to think about you you can get different type of antistamines I can give you something a little bit stronger today as well something like fetcophenidine",
+          "spans": [
+            {
+              "start": 7147,
+              "end": 7503
+            }
+          ]
+        },
+        {
+          "source_id": "S22",
+          "quote": " which I can give to you today it's definitely worth trying it it's not gonna do you any harm but I certainly think using the steroids and the emollients um on a regular basis um over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good okay um do you have any",
+          "spans": [
+            {
+              "start": 7503,
+              "end": 7857
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "question": "What is the exact name of the steroid cream the patient purchased from the pharmacy, as 'stirrid cream' appears to be a misstatement or unclear?",
+      "reason": "The patient mentioned trying a steroid cream called 'stirrid cream', which is likely a phonetic error or unclear pronunciation; identifying the correct product is important for assessing prior treatment and potential allergens or irritants.",
+      "fact_ids": [
+        "F0007"
+      ],
+      "basis": "unclear_source"
+    },
+    {
+      "question": "Can the patient clarify whether the antihistamine they previously tried was the same type or strength as the one now being considered, given that 'fetcophenidine' may be a misstatement?",
+      "reason": "The term 'fetcophenidine' is likely a mispronunciation and could refer to fexofenadine, cetirizine, or another antihistamine; clarifying which was previously used helps assess treatment response.",
+      "fact_ids": [
+        "F0019"
+      ],
+      "basis": "unclear_source"
+    },
+    {
+      "question": "Was the emollient previously used during showering the same as the one now being prescribed, and can the patient recall its name or formulation?",
+      "reason": "The patient previously used a shower product for eczema (F0005), and a new emollient is being prescribed (F0022); clarifying if these are similar helps avoid duplication or identify ineffective products.",
+      "fact_ids": [
+        "F0005",
+        "F0022"
+      ],
+      "basis": "not_documented"
+    },
+    {
+      "question": "Has the current rash spread to areas beyond the arms, such as the chest and hands, compared to the previous eczema episodes, and is this change in distribution confirmed by visual assessment?",
+      "reason": "The patient reports new involvement of chest and hands (F0002, F0004), suggesting a more widespread flare; confirming this helps evaluate severity and differential diagnoses.",
+      "fact_ids": [
+        "F0002",
+        "F0004"
+      ],
+      "basis": "not_documented"
+    },
+    {
+      "question": "Are there any known environmental or occupational exposures at the pharmaceutical company that could be contributing to the current skin symptoms?",
+      "reason": "The patient works in a pharmaceutical company (F0013), which may involve chemical or allergen exposure; this potential trigger is not explored in the documented history.",
+      "fact_ids": [
+        "F0013"
+      ],
+      "basis": "not_documented"
+    }
+  ],
+  "rejected": [
+    {
+      "candidate": {
+        "id": "F0014",
+        "section": "background",
+        "statement": "The patient has a past history of asthma, but it is no longer active.",
+        "uncertain": false,
+        "evidence": [
+          {
+            "source_id": "S13",
+            "quote": " told me you mention it's you've got some dry skin and some uh cracked skin as well uh and it's been very itchy and so with your um your your background of eczema um sorry couple of questions I wanted to ask you which I completely forgot my apologies um apart from the eczema do you have any other medical problems I should be aware of uh no I just had asthma",
+            "spans": [
+              {
+                "start": 4284,
+                "end": 4643
+              }
+            ]
+          },
+          {
+            "source_id": "S14",
+            "quote": " in the past but okay not anymore not anymore okay and do you take any regular medications at the moment uh no okay do you have any allergies to anything sorry sorry hello hello yes can you hear me uh sorry I think it cra uh do you have any allergies at all? Oh, allergies uh no no okay um and tell me about your um your situation at home who do you live with",
+            "spans": [
+              {
+                "start": 4643,
+                "end": 5002
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S13",
+              "quote": " told me you mention it's you've got some dry skin and some uh cracked skin as well uh and it's been very itchy and so with your um your your background of eczema um sorry couple of questions I wanted to ask you which I completely forgot my apologies um apart from the eczema do you have any other medical problems I should be aware of uh no I just had asthma",
+              "spans": [
+                {
+                  "start": 4284,
+                  "end": 4643
+                }
+              ]
+            }
+          ],
+          "reason": "The quote indicates the patient had asthma but does not specify whether it is currently active or resolved. The statement claims the asthma 'is no longer active,' which is not entailed by the evidence provided; the patient only states 'I just had asthma' without clarifying its current status. Therefore, the claim about inactivity is unsupported."
+        }
+      },
+      "reason": "The cited quotes state the patient 'just had asthma' but do not confirm whether it is currently active or resolved. The claim that asthma 'is no longer active' introduces a temporal status not explicitly supported by the patient's statement. Therefore, the evidence does not entail the conclusion of inactivity."
+    },
+    {
+      "candidate": {
+        "id": "F0023",
+        "section": "plan",
+        "statement": "The emollient and steroid should be used regularly for seven to ten days before assessing effectiveness.",
+        "uncertain": false,
+        "evidence": [
+          {
+            "source_id": "S19",
+            "quote": " prescribe to you today as well as I'm gonna give you something some ammoience which helps to moisturise the skin um which you use in the bath and shower and it's definitely worth um using that for the first seven to ten days uh before we make a decision on whether it's working or not it's also worth um using antihistamines which you can sometimes buy over",
+            "spans": [
+              {
+                "start": 6431,
+                "end": 6789
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S19",
+              "quote": " prescribe to you today as well as I'm gonna give you something some ammoience which helps to moisturise the skin um which you use in the bath and shower and it's definitely worth um using that for the first seven to ten days uh before we make a decision on whether it's working or not it's also worth um using antihistamines which you can sometimes buy over",
+              "spans": [
+                {
+                  "start": 6431,
+                  "end": 6789
+                }
+              ]
+            }
+          ],
+          "reason": "The evidence mentions using the emollient (ammoience) for seven to ten days before deciding if it's working, but does not mention using the steroid regularly during this period or assessing the combined effectiveness of both the emollient and steroid. The statement combines both treatments, but the quote only refers to the emollient."
+        }
+      },
+      "reason": "The cited quote only mentions using the emollient (referred to as 'ammoience') for seven to ten days before assessing effectiveness and does not include the steroid in this timeframe or regimen. The statement claims both the emollient and steroid should be used regularly during this period, but the evidence does not support the inclusion of the steroid in the assessment timeline."
+    },
+    {
+      "candidate": {
+        "id": "F0024",
+        "section": "plan",
+        "statement": "The clinician will prescribe a stronger antihistamine, such as fetcophenidine, to help with itching.",
+        "uncertain": true,
+        "evidence": [
+          {
+            "source_id": "S21",
+            "quote": " just I I have tried antihistamines uh lately but it didn't really help oh could you say again sorry I have tried the antihistamines okay uh but it didn't really help again okay so it's something for you to think about you you can get different type of antistamines I can give you something a little bit stronger today as well something like fetcophenidine",
+            "spans": [
+              {
+                "start": 7147,
+                "end": 7503
+              }
+            ]
+          },
+          {
+            "source_id": "S22",
+            "quote": " which I can give to you today it's definitely worth trying it it's not gonna do you any harm but I certainly think using the steroids and the emollients um on a regular basis um over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good okay um do you have any",
+            "spans": [
+              {
+                "start": 7503,
+                "end": 7857
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S21",
+              "quote": " just I I have tried antihistamines uh lately but it didn't really help oh could you say again sorry I have tried the antihistamines okay uh but it didn't really help again okay so it's something for you to think about you you can get different type of antistamines I can give you something a little bit stronger today as well something like fetcophenidine",
+              "spans": [
+                {
+                  "start": 7147,
+                  "end": 7503
+                }
+              ]
+            },
+            {
+              "source_id": "S22",
+              "quote": " which I can give to you today it's definitely worth trying it it's not gonna do you any harm but I certainly think using the steroids and the emollients um on a regular basis um over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good okay um do you have any",
+              "spans": [
+                {
+                  "start": 7503,
+                  "end": 7857
+                }
+              ]
+            }
+          ],
+          "reason": "The statement claims the clinician will prescribe 'fetcophenidine', but this drug name appears to be a phonetic misspelling or non-standard term not recognized in medical literature. While the clinician mentions giving 'something a little bit stronger' like 'fetcophenidine', no actual prescription is confirmed, and the drug name is likely a misstatement of 'fexofenadine'. However, without confirmation of the intended drug or actual prescription, the claim remains unsupported."
+        }
+      },
+      "reason": "The statement claims a prescription of 'fetcophenidine', a non-standard and likely misspelled drug name not recognized in medical terminology. While the clinician mentions offering a stronger antihistamine and names 'fetcophenidine', this appears to be a phonetic error, possibly for 'fexofenadine'. However, no confirmed prescription is stated, and drug name substitutions based on phonetics are not sufficient for support. Therefore, the claim is unsupported."
+    }
+  ],
+  "validation": "literal source checks and automated fact review; not clinical validation",
+  "projection": {
+    "source_document_sha256": "d6bf496860d434c0a550efce7bd3b4787403b17403bfe7ce9905cb70bffae129",
+    "source": "k8s-inference/acceptance/clinical-documentation-20260917/full-r2/en-02",
+    "live_inference": false,
+    "change": "unclear source support withheld for human review; neutral empty-section text; readable review queue"
+  }
+}

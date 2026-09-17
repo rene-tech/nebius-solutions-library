@@ -1,0 +1,140 @@
+{
+  "case": "de-0902",
+  "language": "de",
+  "audio_seconds": 19.5,
+  "source_sha256": "e5a35a5822e5ada96d273bd99e3cc2d6944331da446c4be4aa73b4376ac35b11",
+  "reference": "dank dann kommen wir zur eigentlichen prüfung zu teil 1 a herr gül fangen sie bitte an hier sind zwei themen zur auswahl suchen sie sich ein thema aus und sprechen sie darüber er danke [Musik] ich",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 902
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:52.293309+00:00",
+  "submit_status": 202,
+  "operation_id": "be1bafe9-981a-4af4-a3d1-6afc6aeb528b",
+  "operation": {
+    "id": "be1bafe9-981a-4af4-a3d1-6afc6aeb528b",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-f14f0e90a73b4f698797d88fce3bda4f",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:52.741904Z",
+    "available_at": "2026-09-16T21:46:52.741904Z",
+    "deadline_at": "2026-09-16T23:46:52.735018Z",
+    "activation_started_at": "2026-09-16T21:46:52.755316Z",
+    "ready_at": "2026-09-16T21:46:52.980986Z",
+    "started_at": "2026-09-16T21:46:52.984707Z",
+    "completed_at": "2026-09-16T21:46:54.262583Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:52.741904Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.239082,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 19.5
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.329151068814099,
+  "text": "dann kommen wir zur eigentlichen Prüfung zu Teil eins A Herr Gühl, fangen Sie bitte an. Hier sind zwei Themen zur Auswahl suchen Sie sich ein Thema aus und sprechen Sie darüberJa, danke",
+  "result_audio_seconds": 19.5,
+  "processing_seconds": 1.0522687110000106,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "9c32a3b4db3964497a23c7615054f567687efa25ef06fa983233b4920b95f685",
+  "quality": {
+    "reference_words": 37,
+    "hypothesis_words": 33,
+    "wer": 0.1891891891891892,
+    "substitutions": 3,
+    "deletions": 4,
+    "insertions": 0,
+    "correct": 30,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 0,
+        "reference": "dank"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 9,
+        "reference": "1",
+        "recognized": "eins"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 12,
+        "reference": "gül",
+        "recognized": "gühl"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 32,
+        "reference": "darüber"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 33,
+        "reference": "er",
+        "recognized": "darüberja"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 35,
+        "reference": "musik"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 36,
+        "reference": "ich"
+      }
+    ],
+    "reference_characters": 158,
+    "character_errors": 19,
+    "cer": 0.12025316455696203
+  },
+  "finished_at": "2026-09-16T21:46:54.623540+00:00"
+}
