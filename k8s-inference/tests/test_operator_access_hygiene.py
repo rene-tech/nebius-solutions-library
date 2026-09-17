@@ -1678,9 +1678,13 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             inventory_response = {
                 "items": items,
                 "required_classes": registry["credential_presence"]["required"],
+                "feature_gated_classes": sorted(
+                    registry["credential_presence"]["feature_gated"]
+                ),
                 "enabled_classes": sorted(
                     item["id"] for item in registry["credentials"]
                 ),
+                "absent_feature_classes": [],
                 "absent_optional_classes": [],
                 "externalEvidence": {},
                 "authorityObservation": {},

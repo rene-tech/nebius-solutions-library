@@ -108,7 +108,7 @@ def load_registry(path: Path) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
         raise RotationError("durable credential registry is absent or unsafe")
     document = json.loads(path.read_text(encoding="utf-8"))
-    if document.get("schema") != "fs2-serve.nebius.ai/durable-credential-registry/v2":
+    if document.get("schema") != "fs2-serve.nebius.ai/durable-credential-registry/v3":
         raise RotationError("durable credential registry has the wrong schema")
     credentials = document.get("credentials")
     if not isinstance(credentials, list):
@@ -1135,25 +1135,41 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
         )
         raw_items = response.get("items")
         enabled_classes = response.get("enabled_classes")
+        feature_gated_classes = response.get("feature_gated_classes")
+        absent_feature_classes = response.get("absent_feature_classes")
         absent_optional_classes = response.get("absent_optional_classes")
         required_classes = response.get("required_classes")
         presence = registry.get("credential_presence")
         if (
             not isinstance(raw_items, list)
             or not isinstance(enabled_classes, list)
+            or not isinstance(feature_gated_classes, list)
+            or not isinstance(absent_feature_classes, list)
             or not isinstance(absent_optional_classes, list)
             or not isinstance(required_classes, list)
             or not all(
                 isinstance(value, str) and value
                 for value in (
-                    required_classes + enabled_classes + absent_optional_classes
+                    required_classes
+                    + feature_gated_classes
+                    + enabled_classes
+                    + absent_feature_classes
+                    + absent_optional_classes
                 )
             )
             or not isinstance(presence, dict)
             or set(required_classes) != set(presence.get("required", []))
-            or set(enabled_classes) | set(absent_optional_classes)
+            or set(feature_gated_classes)
+            != set(presence.get("feature_gated", {}))
+            or set(enabled_classes)
+            | set(absent_feature_classes)
+            | set(absent_optional_classes)
             != {item["id"] for item in registry["credentials"]}
+            or set(enabled_classes) & set(absent_feature_classes)
             or set(enabled_classes) & set(absent_optional_classes)
+            or set(absent_feature_classes) & set(absent_optional_classes)
+            or not set(absent_feature_classes)
+            <= set(presence.get("feature_gated", {}))
             or not set(absent_optional_classes)
             <= set(presence.get("optional", {}))
         ):
@@ -1174,10 +1190,12 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
             matches = [
                 item for item in items if item["credential_class"] == credential_class
             ]
-            if credential_class in absent_optional_classes:
+            if credential_class in (
+                set(absent_feature_classes) | set(absent_optional_classes)
+            ):
                 if matches:
                     raise RotationError(
-                        f"disabled optional class has observed identities: {credential_class}"
+                        f"disabled credential class has observed identities: {credential_class}"
                     )
                 classes[credential_class] = []
                 continue
@@ -1221,6 +1239,8 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
             "authority_observation": response["authorityObservation"],
             "audited_at": utc_timestamp(),
             "enabled_classes": sorted(enabled_classes),
+            "feature_gated_classes": sorted(feature_gated_classes),
+            "absent_feature_classes": sorted(absent_feature_classes),
             "absent_optional_classes": sorted(absent_optional_classes),
             "classes": dict(sorted(classes.items())),
         }

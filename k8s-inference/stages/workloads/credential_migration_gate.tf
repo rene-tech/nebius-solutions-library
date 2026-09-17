@@ -94,3 +94,36 @@ resource "terraform_data" "credential_apply_gate_generation" {
     }
   }
 }
+
+# This value-free state marker is the only authority for feature-gated
+# credential presence.  It keeps disabled minimal deployments valid without
+# treating a missing Secret as evidence that its feature is disabled.
+resource "terraform_data" "credential_feature_activation" {
+  input = {
+    schema = "fs2-serve.nebius.ai/credential-feature-activation/v1"
+    activations = {
+      "pat-scientific" = {
+        "academic-assets" = local.scientific_access_enabled
+      }
+      "pat-website" = {
+        "academic-assets" = local.website_access_enabled
+      }
+      "reference-data-s3-secret" = {
+        "reference-data" = var.reference_data.enabled
+      }
+      "scientific-artifact-s3-secret" = {
+        "scientific-artifacts" = local.scientific_artifacts_enabled
+      }
+      "registry-credentials" = {
+        "ngc-api-key"       = local.ngc_api_key_required
+        "model-nvcr"        = local.model_nvcr_credentials_required
+        "dcgm-nvcr"         = local.dcgm_nvcr_credentials_required
+        "modelexpress-nvcr" = local.modelexpress_nvcr_required
+      }
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}

@@ -1,5 +1,9 @@
 # Authoritative predecessor adoption and backend isolation v7
 
+> Superseded by [v8](OPERATOR_ACCESS_HYGIENE_V8.md), which derives
+> feature-gated credential presence from exact authoritative Terraform state
+> markers rather than treating every supported feature as unconditional.
+
 This source-only successor preserves v6 and supersedes its custody contract. It
 does not authorize integration or deployment. Production trust and provider
 adapters remain unconfigured, accepted SAI-08/SAI-09 integration remains

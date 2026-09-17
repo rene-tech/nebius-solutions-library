@@ -86,3 +86,24 @@ resource "terraform_data" "credential_apply_gate_generation" {
     }
   }
 }
+
+# Non-secret, authoritative feature activation.  Credential custody reads this
+# exact state address instead of inferring enablement from a missing key.  The
+# marker is permanent; toggling a feature updates only its boolean value.
+resource "terraform_data" "credential_feature_activation" {
+  input = {
+    schema = "fs2-serve.nebius.ai/credential-feature-activation/v1"
+    activations = {
+      "reference-data-s3" = {
+        "reference-data" = var.reference_data.enabled
+      }
+      "scientific-artifact-s3" = {
+        "scientific-artifacts" = var.scientific_artifacts.enabled
+      }
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}

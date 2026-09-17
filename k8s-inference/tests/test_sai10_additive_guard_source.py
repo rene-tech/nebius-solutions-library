@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 import pytest
 
-from scripts.credential_authority_provider import generation_from_address
+from scripts.credential_authority_provider import (
+    ProviderError,
+    credential_presence_sets,
+    generation_from_address,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +27,10 @@ def configured_plan(registry: dict, root: str) -> dict:
     addresses = [
         item["address"]
         for item in registry["terraform_resource_addresses"]
+        if item["root"] == root
+    ] + [
+        item["address"]
+        for item in registry["credential_activation_resource_addresses"]
         if item["root"] == root
     ]
     return {
@@ -324,7 +333,7 @@ def test_authority_requires_source_trust_and_exact_automation_identity() -> None
     assert 'policy["profile"]' not in provider
 
 
-def test_optional_addresses_gen1_and_composite_generations_fail_closed() -> None:
+def test_feature_activation_gen1_and_composite_generations_fail_closed() -> None:
     provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
     guard_source = (ROOT / "scripts/secret_migration_guard.py").read_text()
     assert 'key.partition(":")[0]' in provider
@@ -332,6 +341,9 @@ def test_optional_addresses_gen1_and_composite_generations_fail_closed() -> None
     assert '"availability": "disabled-absent"' in provider
     assert "def credential_presence_sets(" in provider
     assert "optional credential class is only partially enabled" in provider
+    assert "enabled credential feature is only partially present" in provider
+    assert "disabled credential feature retains managed resources" in provider
+    assert "authoritative credential feature marker set is incomplete" in provider
     assert "def legacy_v1_adoption_classes(" in provider
     assert "def legacy_v1_adoption_classes(" in guard_source
     assert "not legacy_adoption and binding.get(\"immutable\") is not True" in provider
@@ -421,12 +433,42 @@ def test_exact_mutable_legacy_predecessor_is_adopted_without_weakening_successor
         )
 
 
-def test_presence_policy_is_exhaustive_and_optional_absence_is_explicit() -> None:
+def test_presence_policy_is_exhaustive_and_feature_activation_is_authoritative() -> None:
     registry = GUARD.load_registry()
     identifiers = {item["id"] for item in registry["credentials"]}
     presence = registry["credential_presence"]
     assert set(presence["required"]).isdisjoint(presence["optional"])
-    assert set(presence["required"]) | set(presence["optional"]) == identifiers
+    assert set(presence["required"]).isdisjoint(presence["feature_gated"])
+    assert set(presence["feature_gated"]).isdisjoint(presence["optional"])
+    assert (
+        set(presence["required"])
+        | set(presence["feature_gated"])
+        | set(presence["optional"])
+        == identifiers
+    )
+    assert set(presence["required"]) == {
+        "operator-handoff",
+        "database-logins",
+        "pat-bootstrap",
+        "admin-token",
+        "payload-keyring",
+        "ledger-keyring",
+        "customer-storage-cipher-keyring",
+        "customer-storage-name-keyring",
+        "pat-pepper-keyring",
+        "route-attestors",
+        "grafana-admin",
+        "grafana-datasource",
+    }
+    assert set(presence["feature_gated"]) == {
+        "pat-scientific",
+        "pat-website",
+        "registry-credentials",
+        "reference-data-s3",
+        "reference-data-s3-secret",
+        "scientific-artifact-s3",
+        "scientific-artifact-s3-secret",
+    }
     assert set(presence["optional"]) == {
         "postgresql-backup-s3",
         "postgresql-backup-s3-secret",
@@ -434,6 +476,132 @@ def test_presence_policy_is_exhaustive_and_optional_absence_is_explicit() -> Non
     for policy in presence["optional"].values():
         assert policy["activation"] == "all-authoritative-addresses-observed"
         assert policy["required_addresses"]
+    for policy in presence["feature_gated"].values():
+        assert policy["activation"] == "authoritative-state-marker-groups"
+        assert policy["groups"]
+        for group in policy["groups"].values():
+            assert group["source"] in registry[
+                "credential_activation_resource_addresses"
+            ]
+            assert {
+                (item["root"], item["address"])
+                for item in group["required_addresses"]
+            } <= {
+                (item["root"], item["address"])
+                for item in group["managed_addresses"]
+            }
+
+    infrastructure = (
+        ROOT / "stages/infrastructure/credential_migration_gate.tf"
+    ).read_text()
+    workloads = (ROOT / "stages/workloads/credential_migration_gate.tf").read_text()
+    for source in (infrastructure, workloads):
+        assert 'resource "terraform_data" "credential_feature_activation"' in source
+        assert "prevent_destroy = true" in source
+        assert "credential-feature-activation/v1" in source
+
+
+def test_feature_gated_presence_requires_exact_authoritative_marker() -> None:
+    registry = GUARD.load_registry()
+    policies = {item["id"]: item for item in registry["credentials"]}
+    declared = registry["terraform_resource_addresses"]
+
+    grouped = {}
+    for credential_class in registry["credential_presence"]["required"]:
+        policy = policies[credential_class]
+        address = next(
+            item
+            for item in declared
+            if item["root"] == policy["terraform_root"]
+            and any(
+                re.fullmatch(pattern, item["address"])
+                for pattern in policy["address_regexes"]
+            )
+        )
+        grouped[(credential_class, 1)] = [
+            {
+                "terraform_root": address["root"],
+                "terraform_address": address["address"],
+            }
+        ]
+
+    marker_activations = {
+        (item["root"], item["address"]): {}
+        for item in registry["credential_activation_resource_addresses"]
+    }
+    for credential_class, policy in registry["credential_presence"][
+        "feature_gated"
+    ].items():
+        for group_name, group in policy["groups"].items():
+            source = (group["source"]["root"], group["source"]["address"])
+            marker_activations[source].setdefault(credential_class, {})[
+                group_name
+            ] = False
+
+    def states() -> list[dict]:
+        return [
+            {
+                "root": root,
+                "resources": [
+                    {
+                        "address": address,
+                        "credential_activation": {
+                            "schema": "fs2-serve.nebius.ai/credential-feature-activation/v1",
+                            "activations": activations,
+                        },
+                    }
+                ],
+            }
+            for (root, address), activations in marker_activations.items()
+        ]
+
+    required, enabled, absent_feature, absent_optional = credential_presence_sets(
+        registry, grouped, states()
+    )
+    assert required == frozenset(registry["credential_presence"]["required"])
+    assert enabled == required
+    assert absent_feature == frozenset(
+        registry["credential_presence"]["feature_gated"]
+    )
+    assert absent_optional == frozenset(registry["credential_presence"]["optional"])
+
+    for credential_class, feature in registry["credential_presence"][
+        "feature_gated"
+    ].items():
+        for group_name, group in feature["groups"].items():
+            source = group["source"]
+            activation = marker_activations[(source["root"], source["address"])][
+                credential_class
+            ]
+            activation[group_name] = True
+            with pytest.raises(ProviderError, match="only partially present"):
+                credential_presence_sets(registry, grouped, states())
+
+            candidate = dict(grouped)
+            candidate[(credential_class, 1)] = [
+                {
+                    "terraform_root": item["root"],
+                    "terraform_address": item["address"],
+                }
+                for item in group["required_addresses"]
+            ]
+            (
+                _required,
+                enabled,
+                absent_feature,
+                _absent_optional,
+            ) = credential_presence_sets(registry, candidate, states())
+            assert credential_class in enabled
+            assert credential_class not in absent_feature
+
+            activation[group_name] = False
+            with pytest.raises(
+                ProviderError, match="disabled credential feature retains"
+            ):
+                credential_presence_sets(registry, candidate, states())
+
+    with pytest.raises(ProviderError, match="marker set is incomplete"):
+        credential_presence_sets(registry, grouped, states()[1:])
 
     adoptions = registry["legacy_v1_secret_adoptions"]
     assert all("_versioned" not in item["address"] for item in adoptions)

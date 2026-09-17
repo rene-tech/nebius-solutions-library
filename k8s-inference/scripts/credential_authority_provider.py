@@ -365,6 +365,51 @@ def state_provider_binding(terraform_type: Any, attributes: dict[str, Any]) -> d
     return None
 
 
+def credential_activation_binding(
+    terraform_type: Any, resource_name: Any, attributes: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Return the exact non-secret feature marker stored by Terraform."""
+
+    if (
+        terraform_type != "terraform_data"
+        or resource_name != "credential_feature_activation"
+    ):
+        return None
+    marker = attributes.get("input")
+    output = attributes.get("output")
+    activations = marker.get("activations") if isinstance(marker, dict) else None
+    if (
+        not isinstance(marker, dict)
+        or set(marker) != {"schema", "activations"}
+        or marker.get("schema")
+        != "fs2-serve.nebius.ai/credential-feature-activation/v1"
+        or not isinstance(activations, dict)
+        or not activations
+        or output != marker
+        or any(
+            not isinstance(credential_class, str)
+            or not credential_class
+            or not isinstance(groups, dict)
+            or not groups
+            or any(
+                not isinstance(group, str)
+                or not group
+                or not isinstance(enabled, bool)
+                for group, enabled in groups.items()
+            )
+            for credential_class, groups in activations.items()
+        )
+    ):
+        raise ProviderError("Terraform credential feature marker is malformed")
+    return {
+        "schema": marker["schema"],
+        "activations": {
+            credential_class: dict(sorted(groups.items()))
+            for credential_class, groups in sorted(activations.items())
+        },
+    }
+
+
 def state_addresses(state: dict[str, Any]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for resource in state.get("resources", []):
@@ -397,6 +442,11 @@ def state_addresses(state: dict[str, Any]) -> list[dict[str, Any]]:
             binding = state_provider_binding(resource.get("type"), attributes)
             if binding is not None:
                 item["provider_binding"] = binding
+            activation = credential_activation_binding(
+                resource.get("type"), resource.get("name"), attributes
+            )
+            if activation is not None:
+                item["credential_activation"] = activation
             result.append(item)
     return sorted(result, key=lambda item: item["address"])
 
@@ -1601,11 +1651,12 @@ def load_registry(policy: dict[str, Any]) -> dict[str, Any]:
     registry = stable_json(
         Path(policy["credential_registry_path"]), label="durable credential registry"
     )
-    if registry.get("schema") != "fs2-serve.nebius.ai/durable-credential-registry/v2":
+    if registry.get("schema") != "fs2-serve.nebius.ai/durable-credential-registry/v3":
         raise ProviderError("durable credential registry schema is unsupported")
     credentials = registry.get("credentials")
     presence = registry.get("credential_presence")
     resources = registry.get("terraform_resource_addresses")
+    activation_resources = registry.get("credential_activation_resource_addresses")
     adoptions = registry.get("legacy_v1_secret_adoptions")
     if (
         not isinstance(credentials, list)
@@ -1622,23 +1673,44 @@ def load_registry(policy: dict[str, Any]) -> dict[str, Any]:
             for item in resources
         )
         or not isinstance(presence, dict)
-        or set(presence) != {"required", "optional"}
+        or set(presence) != {"required", "feature_gated", "optional"}
         or not isinstance(presence.get("required"), list)
         or not all(
             isinstance(value, str) and value for value in presence["required"]
         )
         or len(presence["required"]) != len(set(presence["required"]))
+        or not isinstance(presence.get("feature_gated"), dict)
         or not isinstance(presence.get("optional"), dict)
         or not all(
             isinstance(value, str) and value for value in presence["optional"]
         )
+        or not isinstance(activation_resources, list)
+        or not activation_resources
+        or not all(
+            isinstance(item, dict)
+            and set(item) == {"root", "address"}
+            and item.get("root") in {"infrastructure", "workloads"}
+            and item.get("address")
+            == "terraform_data.credential_feature_activation"
+            for item in activation_resources
+        )
+        or len(
+            {(item["root"], item["address"]) for item in activation_resources}
+        )
+        != len(activation_resources)
         or not isinstance(adoptions, list)
     ):
         raise ProviderError("durable credential registry custody policy is malformed")
     identifiers = {item["id"] for item in credentials}
     required = set(presence["required"])
+    feature_gated = set(presence["feature_gated"])
     optional = set(presence["optional"])
-    if required & optional or required | optional != identifiers:
+    if (
+        required & feature_gated
+        or required & optional
+        or feature_gated & optional
+        or required | feature_gated | optional != identifiers
+    ):
         raise ProviderError("durable credential class presence is not exhaustive")
     declared = {(item["root"], item["address"]) for item in resources}
     for credential_class, activation in presence["optional"].items():
@@ -1668,6 +1740,105 @@ def load_registry(policy: dict[str, Any]) -> dict[str, Any]:
             raise ProviderError(
                 f"optional credential activation is malformed: {credential_class}"
             )
+    declared_activation_resources = {
+        (item["root"], item["address"]) for item in activation_resources
+    }
+    used_activation_resources: set[tuple[str, str]] = set()
+    for credential_class, activation in presence["feature_gated"].items():
+        groups = activation.get("groups") if isinstance(activation, dict) else None
+        if (
+            not isinstance(activation, dict)
+            or set(activation) != {"activation", "groups"}
+            or activation.get("activation")
+            != "authoritative-state-marker-groups"
+            or not isinstance(groups, dict)
+            or not groups
+        ):
+            raise ProviderError(
+                f"feature credential activation is malformed: {credential_class}"
+            )
+        managed_union: set[tuple[str, str]] = set()
+        for group_name, group in groups.items():
+            source = group.get("source") if isinstance(group, dict) else None
+            required_addresses = (
+                group.get("required_addresses") if isinstance(group, dict) else None
+            )
+            managed_addresses = (
+                group.get("managed_addresses") if isinstance(group, dict) else None
+            )
+            if (
+                not isinstance(group_name, str)
+                or not group_name
+                or not isinstance(group, dict)
+                or set(group)
+                != {"source", "required_addresses", "managed_addresses"}
+                or not isinstance(source, dict)
+                or set(source) != {"root", "address"}
+                or (source.get("root"), source.get("address"))
+                not in declared_activation_resources
+                or not isinstance(required_addresses, list)
+                or not required_addresses
+                or not isinstance(managed_addresses, list)
+                or not managed_addresses
+            ):
+                raise ProviderError(
+                    f"feature credential activation group is malformed: {credential_class}:{group_name}"
+                )
+            required_keys = {
+                (item.get("root"), item.get("address"))
+                for item in required_addresses
+                if isinstance(item, dict) and set(item) == {"root", "address"}
+            }
+            managed_keys = {
+                (item.get("root"), item.get("address"))
+                for item in managed_addresses
+                if isinstance(item, dict) and set(item) == {"root", "address"}
+            }
+            if (
+                len(required_keys) != len(required_addresses)
+                or len(managed_keys) != len(managed_addresses)
+                or not required_keys <= managed_keys
+                or managed_keys & managed_union
+                or any(key not in declared for key in managed_keys)
+                or any(
+                    not any(
+                        entry["id"] == credential_class
+                        and entry["terraform_root"] == root
+                        and any(
+                            re.fullmatch(pattern, address)
+                            for pattern in entry.get("address_regexes", [])
+                        )
+                        for entry in credentials
+                    )
+                    for root, address in managed_keys
+                )
+            ):
+                raise ProviderError(
+                    f"feature credential address set is malformed: {credential_class}:{group_name}"
+                )
+            managed_union.update(managed_keys)
+            used_activation_resources.add((source["root"], source["address"]))
+        declared_for_class = {
+            (root, address)
+            for root, address in declared
+            if any(
+                entry["id"] == credential_class
+                and entry["terraform_root"] == root
+                and any(
+                    re.fullmatch(pattern, address)
+                    for pattern in entry.get("address_regexes", [])
+                )
+                for entry in credentials
+            )
+        }
+        if managed_union != declared_for_class:
+            raise ProviderError(
+                f"feature credential groups do not cover exact class addresses: {credential_class}"
+            )
+    if used_activation_resources != declared_activation_resources:
+        raise ProviderError(
+            "credential activation state addresses are not exactly consumed"
+        )
     adoption_keys: set[tuple[str, str, str]] = set()
     for adoption in adoptions:
         if (
@@ -1725,11 +1896,19 @@ def legacy_v1_adoption_classes(
 
 
 def credential_presence_sets(
-    registry: dict[str, Any], grouped: dict[tuple[str, int], list[dict[str, Any]]]
-) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
-    """Resolve required, enabled, and source-proven disabled optional classes."""
+    registry: dict[str, Any],
+    grouped: dict[tuple[str, int], list[dict[str, Any]]],
+    states: list[dict[str, Any]],
+) -> tuple[
+    frozenset[str],
+    frozenset[str],
+    frozenset[str],
+    frozenset[str],
+]:
+    """Resolve unconditional, feature-enabled, and proven-disabled classes."""
 
     required = frozenset(registry["credential_presence"]["required"])
+    feature_policies = registry["credential_presence"]["feature_gated"]
     optional_policies = registry["credential_presence"]["optional"]
     observed_by_class: dict[str, set[tuple[str, str]]] = {}
     for (credential_class, _generation), resources in grouped.items():
@@ -1743,6 +1922,82 @@ def credential_presence_sets(
             "required credential classes are absent from authoritative state: "
             + ", ".join(absent_required)
         )
+    marker_index: dict[tuple[str, str], dict[str, Any]] = {}
+    for state in states:
+        for resource in state["resources"]:
+            key = (state["root"], base_address(resource["address"]))
+            if key not in {
+                (item["root"], item["address"])
+                for item in registry["credential_activation_resource_addresses"]
+            }:
+                continue
+            marker = resource.get("credential_activation")
+            if not isinstance(marker, dict) or key in marker_index:
+                raise ProviderError(
+                    f"credential feature marker is absent or duplicated: {key[0]}:{key[1]}"
+                )
+            marker_index[key] = marker
+    expected_marker_keys = {
+        (item["root"], item["address"])
+        for item in registry["credential_activation_resource_addresses"]
+    }
+    if set(marker_index) != expected_marker_keys:
+        raise ProviderError("authoritative credential feature marker set is incomplete")
+    expected_marker_activations: dict[
+        tuple[str, str], dict[str, set[str]]
+    ] = {key: {} for key in expected_marker_keys}
+    for credential_class, policy in feature_policies.items():
+        for group_name, group in policy["groups"].items():
+            source_key = (group["source"]["root"], group["source"]["address"])
+            expected_marker_activations[source_key].setdefault(
+                credential_class, set()
+            ).add(group_name)
+    for source_key, expected in expected_marker_activations.items():
+        observed = marker_index[source_key]["activations"]
+        if set(observed) != set(expected) or any(
+            set(observed[credential_class]) != group_names
+            for credential_class, group_names in expected.items()
+        ):
+            raise ProviderError(
+                f"credential feature marker differs from the registry: {source_key[0]}:{source_key[1]}"
+            )
+    enabled_feature: set[str] = set()
+    absent_feature: set[str] = set()
+    for credential_class, policy in feature_policies.items():
+        observed_addresses = observed_by_class.get(credential_class, set())
+        any_enabled = False
+        for group_name, group in policy["groups"].items():
+            source_key = (group["source"]["root"], group["source"]["address"])
+            group_enabled = marker_index[source_key]["activations"][
+                credential_class
+            ][group_name]
+            required_addresses = {
+                (item["root"], item["address"])
+                for item in group["required_addresses"]
+            }
+            managed_addresses = {
+                (item["root"], item["address"])
+                for item in group["managed_addresses"]
+            }
+            present = observed_addresses & managed_addresses
+            if group_enabled:
+                any_enabled = True
+                if not required_addresses <= observed_addresses:
+                    raise ProviderError(
+                        f"enabled credential feature is only partially present: {credential_class}:{group_name}"
+                    )
+            elif present:
+                raise ProviderError(
+                    f"disabled credential feature retains managed resources: {credential_class}:{group_name}"
+                )
+        if any_enabled:
+            enabled_feature.add(credential_class)
+        elif observed_addresses:
+            raise ProviderError(
+                f"disabled credential class retains managed resources: {credential_class}"
+            )
+        else:
+            absent_feature.add(credential_class)
     enabled_optional: set[str] = set()
     absent_optional: set[str] = set()
     for credential_class, policy in optional_policies.items():
@@ -1760,8 +2015,13 @@ def credential_presence_sets(
             )
         else:
             enabled_optional.add(credential_class)
-    enabled = required | frozenset(enabled_optional)
-    return required, enabled, frozenset(absent_optional)
+    enabled = required | frozenset(enabled_feature) | frozenset(enabled_optional)
+    return (
+        required,
+        enabled,
+        frozenset(absent_feature),
+        frozenset(absent_optional),
+    )
 
 
 def classes_for_address(
@@ -2339,9 +2599,12 @@ def credential_inventory(
         for item in registry["credentials"]
         if item["id"] not in pending
     }
-    required_classes, enabled_classes, absent_optional_classes = (
-        credential_presence_sets(registry, grouped)
-    )
+    (
+        required_classes,
+        enabled_classes,
+        absent_feature_classes,
+        absent_optional_classes,
+    ) = credential_presence_sets(registry, grouped, states)
     items: list[dict[str, Any]] = []
     for (credential_class, generation), resources in sorted(grouped.items()):
         resources = sorted(resources, key=lambda item: (item["terraform_root"], item["terraform_address"]))
@@ -2399,13 +2662,19 @@ def credential_inventory(
     for policy_entry in policies.values():
         matches = [item for item in items if item["credential_class"] == policy_entry["id"]]
         if not matches:
-            if policy_entry["id"] not in absent_optional_classes:
+            if policy_entry["id"] not in (
+                absent_feature_classes | absent_optional_classes
+            ):
                 raise ProviderError(
                     f"required credential class is absent: {policy_entry['id']}"
                 )
             classes[policy_entry["id"]] = {
                 "availability": "disabled-absent",
-                "presence": "optional",
+                "presence": (
+                    "feature-gated"
+                    if policy_entry["id"] in absent_feature_classes
+                    else "optional"
+                ),
                 "current_generation": None,
                 "retained_generations": [],
                 "identities_sha256": canonical_sha256([]),
@@ -2453,7 +2722,12 @@ def credential_inventory(
             "presence": (
                 "required"
                 if policy_entry["id"] in required_classes
-                else "optional-enabled"
+                else (
+                    "feature-enabled"
+                    if policy_entry["id"]
+                    in registry["credential_presence"]["feature_gated"]
+                    else "optional-enabled"
+                )
             ),
             "current_generation": max(generations),
             "retained_generations": generations,
@@ -2469,7 +2743,11 @@ def credential_inventory(
         "items": items,
         "classes": classes,
         "required_classes": sorted(required_classes),
+        "feature_gated_classes": sorted(
+            registry["credential_presence"]["feature_gated"]
+        ),
         "enabled_classes": sorted(enabled_classes),
+        "absent_feature_classes": sorted(absent_feature_classes),
         "absent_optional_classes": sorted(absent_optional_classes),
     }
 
