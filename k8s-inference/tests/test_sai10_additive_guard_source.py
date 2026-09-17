@@ -52,7 +52,8 @@ def configured_plan(registry: dict, root: str) -> dict:
         module_calls["reference_data"] = {
             "module": {
                 "resources": [
-                    {"address": address} for address in module_addresses
+                    {"address": address, "mode": "managed"}
+                    for address in module_addresses
                 ],
                 "module_calls": {},
             }
@@ -60,7 +61,10 @@ def configured_plan(registry: dict, root: str) -> dict:
     return {
         "configuration": {
             "root_module": {
-                "resources": [{"address": address} for address in root_addresses],
+                "resources": [
+                    {"address": address, "mode": "managed"}
+                    for address in root_addresses
+                ],
                 "module_calls": module_calls,
             }
         },
@@ -253,6 +257,129 @@ def test_nested_module_plan_is_required_and_local_alias_is_rejected() -> None:
     with pytest.raises(GUARD.GuardError, match="configuration module path"):
         GUARD.enforce_registry_resource_inventory(
             flattened, registry=registry, terraform_root="workloads"
+        )
+
+
+def test_real_shaped_secret_data_source_is_not_a_managed_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = GUARD.load_registry()
+    assert 'data "kubernetes_secret_v1" "database_ca"' in (
+        ROOT / "stages/workloads/database.tf"
+    ).read_text()
+    plan = configured_plan(registry, "workloads")
+    data_address = "data.kubernetes_secret_v1.database_ca"
+    plan["configuration"]["root_module"]["resources"].append(
+        {
+            "address": data_address,
+            "mode": "data",
+            "type": "kubernetes_secret_v1",
+            "name": "database_ca",
+            "provider_config_key": "kubernetes",
+            "expressions": {
+                "metadata": {
+                    "constant_value": {
+                        "name": "database-ca",
+                        "namespace": "fs2-system",
+                    }
+                }
+            },
+            "schema_version": 0,
+        }
+    )
+    plan["resource_changes"] = [
+        {
+            "address": data_address,
+            "mode": "data",
+            "type": "kubernetes_secret_v1",
+            "name": "database_ca",
+            "provider_name": "registry.terraform.io/hashicorp/kubernetes",
+            "change": {
+                "actions": ["read"],
+                "before": None,
+                "after": {"metadata": [{"name": "database-ca"}]},
+                "after_unknown": {},
+            },
+        }
+    ]
+    assert GUARD.credential_resource_type(data_address) == "kubernetes_secret_v1"
+    assert data_address not in GUARD.configuration_resource_addresses(
+        plan["configuration"]
+    )
+    assert GUARD.enforce_registry_resource_inventory(
+        plan, registry=registry, terraform_root="workloads"
+    ) == GUARD.registry_resource_addresses(registry, terraform_root="workloads")
+    monkeypatch.setattr(GUARD, "require_staged_secret_plan", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        GUARD, "require_consumer_rollout_binding", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        GUARD, "require_additive_apply_gate_generation", lambda *_a, **_k: None
+    )
+    result = GUARD.inspect_plan(
+        plan, registry=registry, terraform_root="workloads"
+    )
+    assert result["protected_changes"] == 0
+
+    forged = json.loads(json.dumps(plan))
+    forged["configuration"]["root_module"]["resources"][-1]["mode"] = "managed"
+    with pytest.raises(GUARD.GuardError, match="mode differs from its address"):
+        GUARD.configuration_resource_addresses(forged["configuration"])
+
+    forged = json.loads(json.dumps(plan))
+    forged["resource_changes"][0]["mode"] = "managed"
+    with pytest.raises(GUARD.GuardError, match="mode differs from its address"):
+        GUARD.inspect_plan(forged, registry=registry, terraform_root="workloads")
+
+
+def test_greenfield_fixed_v1_create_requires_distinct_empty_bootstrap_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = GUARD.load_registry()
+    plan = configured_plan(registry, "workloads")
+    fixed = "random_password.bootstrap_access_token_secret"
+    plan["resource_changes"] = [
+        {
+            "address": fixed,
+            "mode": "managed",
+            "type": "random_password",
+            "name": "bootstrap_access_token_secret",
+            "change": {"actions": ["create"], "before": None, "after": {}},
+        }
+    ]
+    monkeypatch.setattr(GUARD, "require_staged_secret_plan", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        GUARD, "require_consumer_rollout_binding", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        GUARD, "require_additive_apply_gate_generation", lambda *_a, **_k: None
+    )
+    with pytest.raises(GUARD.GuardError, match="fixed address create refused"):
+        GUARD.inspect_plan(plan, registry=registry, terraform_root="workloads")
+    result = GUARD.inspect_plan(
+        plan,
+        registry=registry,
+        terraform_root="workloads",
+        greenfield_bootstrap=True,
+    )
+    assert result["protected_changes"] == 1
+
+    occupied = json.loads(json.dumps(plan))
+    occupied["prior_state"]["values"]["root_module"]["resources"] = [
+        {
+            "address": "terraform_data.preexisting",
+            "mode": "managed",
+            "type": "terraform_data",
+            "name": "preexisting",
+            "values": {"id": "already-present"},
+        }
+    ]
+    with pytest.raises(GUARD.GuardError, match="empty managed Terraform prior state"):
+        GUARD.inspect_plan(
+            occupied,
+            registry=registry,
+            terraform_root="workloads",
+            greenfield_bootstrap=True,
         )
 
 
@@ -952,9 +1079,67 @@ def test_every_remote_init_requires_verified_additive_state_copy() -> None:
         )
     ]
     migration_gate = init.index('"state-migration-readiness"')
+    bootstrap_gate = init.index('"greenfield-bootstrap-readiness"')
     terraform_init = init.index('"init",')
     assert migration_gate < terraform_init
+    assert bootstrap_gate < terraform_init
     assert 'migration.get("status") != "copy-verified-source-retained"' in init
     assert 'migration.get("source_retained") is not True' in init
     assert 'migration.get("overwrite_performed") is not False' in init
     assert 'migration.get("destination_canonical_state_sha256")' in init
+
+
+def test_greenfield_bootstrap_is_distinct_provider_attested_and_reobserved() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    guard = (ROOT / "scripts/secret_migration_guard.py").read_text()
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    service = (ROOT / "scripts/credential_authority_service.py").read_text()
+    client = (ROOT / "scripts/credential_provider_adapter.py").read_text()
+    anchor = (ROOT / "scripts/credential_external_anchor_client.py").read_text()
+    schema = json.loads(
+        (ROOT / "security/credential-authority-config.schema.json").read_text()
+    )
+    contract = json.loads(
+        (ROOT / "security/credential-authority-deployment-contract.json").read_text()
+    )
+    assert "greenfield-bootstrap-readiness" in schema["properties"]["operations"][
+        "required"
+    ]
+    assert "greenfield_bootstrap_adapter" in schema["$defs"]["policy"][
+        "required"
+    ]
+    root_schema = schema["$defs"]["terraform_root"]
+    assert "initialization_mode" in root_schema["required"]
+    assert set(root_schema["properties"]["initialization_mode"]["enum"]) == {
+        "legacy-copy",
+        "greenfield-empty",
+        "remote-established",
+    }
+    assert "def greenfield_bootstrap_readiness_result(" in provider
+    assert 'root["legacy_state_source"] is not None' in provider
+    assert 'response.get("backend_object_present") is not False' in provider
+    assert 'response.get("kubernetes_secret_identities") != []' in provider
+    assert 'response.get("nebius_credential_identities") != []' in provider
+    assert '"greenfield-bootstrap-readiness": {"release-automation"}' in provider
+    assert '"greenfield-bootstrap-readiness"' in service
+    assert '"greenfield-bootstrap-readiness"' in client
+    assert '"greenfield-bootstrap-readiness"' in anchor
+    assert "def greenfield_bootstrap_identity(" in guard
+    assert 'authority_json(\n        {\n            "operation": "greenfield-bootstrap-readiness"' in guard
+    assert "require_empty_greenfield_state" in guard
+    assert "greenfield_bootstrap=greenfield_bootstrap" in guard
+    assert "if greenfield" in wrapper
+    assert "else json.loads(authoritative_state_json" in wrapper
+    assert contract["greenfield_bootstrap"] == {
+        "initialization_mode": "greenfield-empty",
+        "legacy_state_or_adoption_evidence_allowed": False,
+        "backend_object_and_versions_must_be_absent": True,
+        "backend_lock_must_be_absent": True,
+        "provider_attested_all_project_iam_inventory_required": True,
+        "provider_attested_all_cluster_secret_inventory_required": True,
+        "managed_prior_state_must_be_empty": True,
+        "fixed_generation_one_create_requires_this_contract": True,
+        "fresh_reobservation_required_at_plan_and_apply": True,
+        "post_first_apply_mode": "remote-established",
+        "execution_authorized": False,
+    }

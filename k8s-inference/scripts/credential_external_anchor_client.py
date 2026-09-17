@@ -32,6 +32,8 @@ READ_ONLY_OPERATIONS = frozenset(
         "authentication-continuity",
         "release-identity",
         "backend-custody",
+        "state-migration-readiness",
+        "greenfield-bootstrap-readiness",
     }
 )
 

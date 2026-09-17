@@ -64,6 +64,7 @@ ACTIVE_RELEASE_IDENTITY: dict[str, Any] | None = None
 ACTIVE_OPERATOR_IDENTITY: dict[str, Any] | None = None
 ACTIVE_CREDENTIAL_DELIVERY_IDENTITY: dict[str, Any] | None = None
 ACTIVE_BACKEND_IDENTITY: dict[str, Any] | None = None
+ACTIVE_TERRAFORM_INITIALIZATIONS: dict[str, dict[str, Any]] = {}
 FIXED_EXECUTABLES = {
     "terraform": "/snap/bin/terraform",
     "kubectl": "/snap/bin/kubectl",
@@ -736,35 +737,6 @@ def terraform_init(
         raise DeploymentError(
             "remote backend must declare encryption, locking, bucket and object key"
         )
-    migration = authority_observation(
-        "state-migration-readiness", terraform_root_name=root_name
-    )
-    if (
-        migration.get("terraform_root_name") != root_name
-        or migration.get("authorizedCallerPurpose")
-        != ACTIVE_BACKEND_IDENTITY.get("purpose")
-        or migration.get("status") != "copy-verified-source-retained"
-        or migration.get("destination_object_present") is not True
-        or not isinstance(migration.get("destination_object_version_id"), str)
-        or not migration["destination_object_version_id"]
-        or migration.get("source_retained") is not True
-        or migration.get("overwrite_performed") is not False
-        or migration.get("backend_access_identity", {}).get("purpose")
-        != ACTIVE_BACKEND_IDENTITY.get("purpose")
-        or migration.get("backend_access_identity", {}).get(
-            "binding_sha256"
-        )
-        != ACTIVE_BACKEND_IDENTITY.get("binding_sha256")
-        or migration.get("destination_canonical_state_sha256")
-        != migration.get("source_canonical_state_sha256")
-        or not isinstance(migration.get("source_lineage"), str)
-        or not migration["source_lineage"]
-        or not isinstance(migration.get("source_serial"), int)
-        or migration["source_serial"] < 1
-    ):
-        raise DeploymentError(
-            "remote backend initialization is blocked until an externally anchored exact-copy observation preserves the legacy source"
-        )
     custody = run(
         [sys.executable, str(CREDENTIAL_PROVIDER_ADAPTER)],
         env=clean_environment(),
@@ -800,10 +772,88 @@ def terraform_init(
         != ACTIVE_BACKEND_IDENTITY.get("binding_sha256")
         or observation.get("versioning_enabled") is not True
         or not str(observation.get("endpoint", "")).startswith("https://")
+        or observation.get("initialization_mode")
+        not in {"legacy-copy", "greenfield-empty", "remote-established"}
     ):
         raise DeploymentError(
             "provider-attested backend encryption, logging, versioning or endpoint is incomplete"
         )
+    initialization_mode = observation["initialization_mode"]
+    initialization: dict[str, Any]
+    if initialization_mode == "legacy-copy":
+        migration = authority_observation(
+            "state-migration-readiness", terraform_root_name=root_name
+        )
+        if (
+            migration.get("terraform_root_name") != root_name
+            or migration.get("authorizedCallerPurpose")
+            != ACTIVE_BACKEND_IDENTITY.get("purpose")
+            or migration.get("status") != "copy-verified-source-retained"
+            or migration.get("destination_object_present") is not True
+            or not isinstance(migration.get("destination_object_version_id"), str)
+            or not migration["destination_object_version_id"]
+            or migration.get("source_retained") is not True
+            or migration.get("overwrite_performed") is not False
+            or migration.get("backend_access_identity", {}).get("purpose")
+            != ACTIVE_BACKEND_IDENTITY.get("purpose")
+            or migration.get("backend_access_identity", {}).get(
+                "binding_sha256"
+            )
+            != ACTIVE_BACKEND_IDENTITY.get("binding_sha256")
+            or migration.get("destination_canonical_state_sha256")
+            != migration.get("source_canonical_state_sha256")
+            or not isinstance(migration.get("source_lineage"), str)
+            or not migration["source_lineage"]
+            or not isinstance(migration.get("source_serial"), int)
+            or migration["source_serial"] < 1
+        ):
+            raise DeploymentError(
+                "remote backend initialization is blocked until an externally anchored exact-copy observation preserves the legacy source"
+            )
+        initialization = migration
+    elif initialization_mode == "greenfield-empty":
+        bootstrap = authority_observation(
+            "greenfield-bootstrap-readiness", terraform_root_name=root_name
+        )
+        if (
+            bootstrap.get("terraform_root_name") != root_name
+            or bootstrap.get("authorizedCallerPurpose") != "release-automation"
+            or ACTIVE_BACKEND_IDENTITY.get("purpose") != "release-automation"
+            or bootstrap.get("status")
+            != "greenfield-empty-provider-attested"
+            or bootstrap.get("initialization_mode") != "greenfield-empty"
+            or bootstrap.get("backend_object_present") is not False
+            or bootstrap.get("backend_object_version_ids") != []
+            or bootstrap.get("backend_lock_present") is not False
+            or bootstrap.get("terraform_managed_credential_addresses") != []
+            or bootstrap.get("kubernetes_secret_identities") != []
+            or bootstrap.get("nebius_credential_identities") != []
+            or not isinstance(bootstrap.get("bootstrap_evidence_id"), str)
+            or not bootstrap["bootstrap_evidence_id"]
+            or bootstrap.get("backend_access_identity", {}).get("binding_sha256")
+            != ACTIVE_BACKEND_IDENTITY.get("binding_sha256")
+        ):
+            raise DeploymentError(
+                "greenfield initialization requires provider-attested empty backend and live credential inventories"
+            )
+        initialization = bootstrap
+    else:
+        initialization = {
+            "initialization_mode": "remote-established",
+            "terraform_root_name": root_name,
+            "backend_binding_sha256": hashlib.sha256(
+                json.dumps(
+                    {
+                        "bucket_id": observation["bucket_id"],
+                        "object_key": observation["object_key"],
+                        "endpoint": observation["endpoint"],
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+        }
+    ACTIVE_TERRAFORM_INITIALIZATIONS[root_name] = initialization
     run(
         [
             terraform,
@@ -1004,6 +1054,30 @@ def authoritative_state_json(
     return result.stdout
 
 
+def terraform_initialization(root: Path) -> dict[str, Any]:
+    """Return the authority-selected initialization contract for one root."""
+
+    root_name = TERRAFORM_ROOT_NAMES.get(root.resolve())
+    initialization = ACTIVE_TERRAFORM_INITIALIZATIONS.get(str(root_name))
+    if (
+        root_name is None
+        or not isinstance(initialization, dict)
+        or initialization.get("terraform_root_name") != root_name
+        or initialization.get("initialization_mode")
+        not in {"legacy-copy", "greenfield-empty", "remote-established"}
+    ):
+        raise DeploymentError(
+            "Terraform root has no provider-attested initialization contract"
+        )
+    return initialization
+
+
+def greenfield_empty_state() -> dict[str, Any]:
+    """Return the value shape for an authority-attested absent remote state."""
+
+    return {"values": {"root_module": {"resources": [], "child_modules": []}}}
+
+
 def normalized_remote_state(document: Mapping[str, Any]) -> dict[str, Any]:
     """Convert `state pull` JSON into the value shape used by the guard."""
 
@@ -1061,9 +1135,18 @@ def prepare_credential_migration_gate(
     gate_receipt = (
         run_root / f"{stage}-credential-migration-gate-{uuid4().hex}.receipt.json"
     )
-    raw_state = authoritative_state_json(terraform, root, environment)
-    raw_state_document = json.loads(raw_state)
-    state_document = normalized_remote_state(raw_state_document)
+    initialization = terraform_initialization(root)
+    greenfield = initialization["initialization_mode"] == "greenfield-empty"
+    raw_state_document = (
+        None
+        if greenfield
+        else json.loads(authoritative_state_json(terraform, root, environment))
+    )
+    state_document = (
+        greenfield_empty_state()
+        if greenfield
+        else normalized_remote_state(raw_state_document)
+    )
     command = [
         sys.executable,
         str(SECRET_MIGRATION_GUARD),
@@ -1081,6 +1164,8 @@ def prepare_credential_migration_gate(
     ]
     if identity_receipt.exists():
         command.extend(["--identity-receipt", str(identity_receipt)])
+    if greenfield:
+        command.append("--greenfield-bootstrap")
     run(
         command,
         input_text=json.dumps(
@@ -1095,11 +1180,15 @@ def prepare_credential_migration_gate(
     environment["TF_VAR_credential_migration_gate_receipt_path"] = str(gate_receipt)
     environment["TF_VAR_credential_migration_gate_source_commit"] = source_commit()
     gate_sha256 = hashlib.sha256(gate_receipt.read_bytes()).hexdigest()
-    state_list = run(
-        [terraform, f"-chdir={root}", "state", "list"],
-        env=environment,
-        capture=True,
-    ).stdout.splitlines()
+    state_list = (
+        []
+        if greenfield
+        else run(
+            [terraform, f"-chdir={root}", "state", "list"],
+            env=environment,
+            capture=True,
+        ).stdout.splitlines()
+    )
     gate_pattern = re.compile(
         r'^terraform_data\.credential_apply_gate_generation\["([0-9a-f]{64})"\]$'
     )
@@ -1140,7 +1229,13 @@ def seal_saved_plan_gate(
     if not identity_receipt.exists():
         identity_receipt = None
     receipt = run_root / f"{stage}-saved-plan-gate-{uuid4().hex}.receipt.json"
-    raw_state = authoritative_state_json(terraform, root, environment)
+    initialization = terraform_initialization(root)
+    greenfield = initialization["initialization_mode"] == "greenfield-empty"
+    raw_state_document = (
+        None
+        if greenfield
+        else json.loads(authoritative_state_json(terraform, root, environment))
+    )
     command = [
         sys.executable,
         str(SECRET_MIGRATION_GUARD),
@@ -1161,12 +1256,14 @@ def seal_saved_plan_gate(
     ]
     if identity_receipt is not None:
         command.extend(["--identity-receipt", str(identity_receipt)])
+    if greenfield:
+        command.append("--greenfield-bootstrap")
     run(
         command,
         input_text=json.dumps(
             {
                 "plan_document": json.loads(encoded_plan),
-                "raw_state_document": json.loads(raw_state),
+                "raw_state_document": raw_state_document,
             },
             separators=(",", ":"),
         ),

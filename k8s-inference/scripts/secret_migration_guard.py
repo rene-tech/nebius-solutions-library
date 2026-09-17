@@ -263,10 +263,112 @@ def reject_protected_moved_blocks(
                 )
 
 
+def greenfield_bootstrap_identity(
+    *, terraform_root: str, registry: dict[str, Any]
+) -> dict[str, Any]:
+    """Re-observe a distinct externally anchored empty-install contract."""
+
+    observation = authority_json(
+        {
+            "operation": "greenfield-bootstrap-readiness",
+            "terraform_root_name": terraform_root,
+        }
+    )
+    verify_external_evidence(observation)
+    scope = observation.get("live_inventory_scope")
+    expected_addresses = sorted(
+        registry_resource_addresses(registry, terraform_root=terraform_root)
+    )
+    expected_classes = sorted(
+        item["id"]
+        for item in registry["credentials"]
+        if item["terraform_root"] == terraform_root
+    )
+    inventory_sources = observation.get("inventory_sources")
+    evidence = observation.get("externalEvidence")
+    claim = evidence.get("claim") if isinstance(evidence, dict) else None
+    if (
+        observation.get("authorizedCallerPurpose") != "release-automation"
+        or observation.get("terraform_root_name") != terraform_root
+        or observation.get("status") != "greenfield-empty-provider-attested"
+        or observation.get("initialization_mode") != "greenfield-empty"
+        or observation.get("registry_sha256") != registry_sha256(registry)
+        or observation.get("backend_object_present") is not False
+        or observation.get("backend_object_version_ids") != []
+        or observation.get("backend_lock_present") is not False
+        or observation.get("terraform_managed_credential_addresses") != []
+        or observation.get("kubernetes_secret_identities") != []
+        or observation.get("nebius_credential_identities") != []
+        or not isinstance(scope, dict)
+        or scope.get("terraform_root_name") != terraform_root
+        or scope.get("registry_sha256") != registry_sha256(registry)
+        or scope.get("registered_credential_addresses") != expected_addresses
+        or scope.get("registered_credential_classes") != expected_classes
+        or scope.get("all_project_iam_credentials") is not True
+        or scope.get("all_cluster_secrets") is not True
+        or not isinstance(scope.get("project_id"), str)
+        or not scope["project_id"]
+        or not isinstance(scope.get("cluster_id"), str)
+        or not scope["cluster_id"]
+        or not isinstance(scope.get("namespaces"), list)
+        or not scope["namespaces"]
+        or scope["namespaces"] != sorted(set(scope["namespaces"]))
+        or observation.get("live_inventory_scope_sha256")
+        != canonical_sha256(scope)
+        or not isinstance(inventory_sources, dict)
+        or set(inventory_sources) != {"backend", "kubernetes", "nebius"}
+        or not all(
+            isinstance(value, str) and value for value in inventory_sources.values()
+        )
+        or not isinstance(observation.get("backend_binding_sha256"), str)
+        or re.fullmatch(
+            r"[0-9a-f]{64}", observation["backend_binding_sha256"]
+        )
+        is None
+        or not isinstance(observation.get("bootstrap_evidence_id"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", observation["bootstrap_evidence_id"])
+        is None
+        or not isinstance(claim, dict)
+        or claim.get("operation") != "greenfield-bootstrap-readiness"
+        or not isinstance(claim.get("evidence_id"), str)
+        or not claim["evidence_id"]
+    ):
+        raise GuardError(
+            "greenfield bootstrap lacks exact empty backend and live inventory evidence"
+        )
+    observed = parse_timestamp(observation.get("observed_at"))
+    now = utc_now()
+    if observed > now or now - observed > timedelta(minutes=5):
+        raise GuardError("greenfield bootstrap observation is stale")
+    return {
+        "terraform_root": terraform_root,
+        "registry_sha256": registry_sha256(registry),
+        "backend_binding_sha256": observation["backend_binding_sha256"],
+        "live_inventory_scope_sha256": observation[
+            "live_inventory_scope_sha256"
+        ],
+        "bootstrap_evidence_id": observation["bootstrap_evidence_id"],
+        "external_evidence_id": claim["evidence_id"],
+        "inventory_sources": inventory_sources,
+    }
+
+
+def require_empty_greenfield_state(document: Any) -> None:
+    """Reject bootstrap when any managed state resource already exists."""
+
+    if not isinstance(document, dict) or any(
+        resource.get("mode", "managed") == "managed"
+        for resource in state_resources(document)
+    ):
+        raise GuardError(
+            "greenfield bootstrap requires an empty managed Terraform prior state"
+        )
+
+
 def write_apply_gate_receipt(
     *,
     state_document: dict[str, Any],
-    raw_state_document: dict[str, Any],
+    raw_state_document: dict[str, Any] | None,
     identity_receipt: dict[str, Any] | None,
     terraform_configuration: Path,
     terraform_root: str,
@@ -274,6 +376,7 @@ def write_apply_gate_receipt(
     path: Path,
     ttl_seconds: int = 900,
     registry: dict[str, Any] | None = None,
+    greenfield_bootstrap: bool = False,
 ) -> dict[str, Any]:
     registry = registry or load_registry()
     if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
@@ -288,29 +391,51 @@ def write_apply_gate_receipt(
     fingerprints = protected_state_fingerprints(
         state_document, registry=registry, terraform_root=terraform_root
     )
-    state_identity = terraform_state_identity(raw_state_document)
-    custody = authority_json({"operation": "custody-snapshot"})
-    verify_external_evidence(custody)
-    if custody.get("registry_sha256") != registry_sha256(registry):
-        raise GuardError("local durable registry differs from root authority policy")
-    authority_states = custody.get("terraform_states")
-    if not isinstance(authority_states, list):
-        raise GuardError("credential authority omitted Terraform custody")
-    matching_states = [
-        item
-        for item in authority_states
-        if isinstance(item, dict)
-        and item.get("root") == terraform_root
-        and item.get("lineage") == state_identity["lineage"]
-        and item.get("serial") == state_identity["serial"]
-        and item.get("state_json_sha256") == state_identity["raw_state_sha256"]
-        and item.get("configuration_sha256")
-        == configuration_sha256(terraform_configuration)
-    ]
-    if len(matching_states) != 1:
-        raise GuardError(
-            "local Terraform state does not match the authority-owned state lineage"
+    bootstrap_identity: dict[str, Any] | None = None
+    custody_evidence_sha256: str | None = None
+    custody_evidence_id: str | None = None
+    authority_state: dict[str, Any] | None = None
+    if greenfield_bootstrap:
+        require_empty_greenfield_state(state_document)
+        if raw_state_document is not None or fingerprints or identity_receipt is not None:
+            raise GuardError(
+                "greenfield bootstrap cannot carry state or an adoption receipt"
+            )
+        bootstrap_identity = greenfield_bootstrap_identity(
+            terraform_root=terraform_root, registry=registry
         )
+        state_identity = None
+        initialization_mode = "greenfield-empty"
+    else:
+        if not isinstance(raw_state_document, dict):
+            raise GuardError("established Terraform state is absent")
+        state_identity = terraform_state_identity(raw_state_document)
+        custody = authority_json({"operation": "custody-snapshot"})
+        verify_external_evidence(custody)
+        if custody.get("registry_sha256") != registry_sha256(registry):
+            raise GuardError("local durable registry differs from root authority policy")
+        authority_states = custody.get("terraform_states")
+        if not isinstance(authority_states, list):
+            raise GuardError("credential authority omitted Terraform custody")
+        matching_states = [
+            item
+            for item in authority_states
+            if isinstance(item, dict)
+            and item.get("root") == terraform_root
+            and item.get("lineage") == state_identity["lineage"]
+            and item.get("serial") == state_identity["serial"]
+            and item.get("state_json_sha256") == state_identity["raw_state_sha256"]
+            and item.get("configuration_sha256")
+            == configuration_sha256(terraform_configuration)
+        ]
+        if len(matching_states) != 1:
+            raise GuardError(
+                "local Terraform state does not match the authority-owned state lineage"
+            )
+        authority_state = matching_states[0]
+        custody_evidence_sha256 = canonical_sha256(custody["externalEvidence"])
+        custody_evidence_id = custody["externalEvidence"]["claim"]["evidence_id"]
+        initialization_mode = "remote-established"
     if fingerprints:
         if identity_receipt is None:
             raise GuardError("durable state requires an exact identity receipt")
@@ -318,16 +443,18 @@ def write_apply_gate_receipt(
             raise GuardError("durable state differs from its identity receipt")
     now = utc_now()
     receipt = {
-        "schema": "fs2-serve.nebius.ai/terraform-plan-gate/v3",
+        "schema": "fs2-serve.nebius.ai/terraform-plan-gate/v4",
         "terraform_root": terraform_root,
         "source_commit": source_commit,
         "registry_sha256": registry_sha256(registry),
         "configuration_sha256": configuration_sha256(terraform_configuration),
         "state_fingerprints_sha256": canonical_sha256(fingerprints),
+        "state_initialization": initialization_mode,
         "state_identity": state_identity,
-        "authority_state": matching_states[0],
-        "custody_evidence_sha256": canonical_sha256(custody["externalEvidence"]),
-        "custody_evidence_id": custody["externalEvidence"]["claim"]["evidence_id"],
+        "authority_state": authority_state,
+        "bootstrap_identity": bootstrap_identity,
+        "custody_evidence_sha256": custody_evidence_sha256,
+        "custody_evidence_id": custody_evidence_id,
         "issued_at": now.isoformat().replace("+00:00", "Z"),
         "expires_at": (now.replace(microsecond=0) + timedelta(seconds=ttl_seconds))
         .isoformat()
@@ -340,7 +467,7 @@ def write_apply_gate_receipt(
 def validate_native_gate(
     query: dict[str, Any],
     *,
-    authoritative_state_document: dict[str, Any],
+    authoritative_state_document: dict[str, Any] | None,
     registry: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     registry = registry or load_registry()
@@ -358,7 +485,7 @@ def validate_native_gate(
         raise GuardError("native Terraform gate query is incomplete")
     receipt_path = Path(query["receipt_path"])
     receipt = load_private_document(receipt_path, label="Terraform gate receipt")
-    if receipt.get("schema") != "fs2-serve.nebius.ai/terraform-plan-gate/v3":
+    if receipt.get("schema") != "fs2-serve.nebius.ai/terraform-plan-gate/v4":
         raise GuardError("Terraform gate receipt has the wrong schema")
     root = Path(query["terraform_configuration"])
     expected = {
@@ -371,48 +498,88 @@ def validate_native_gate(
         raise GuardError(
             "Terraform gate receipt does not bind this source and registry"
         )
-    state_identity = receipt.get("state_identity")
-    if (
-        not isinstance(state_identity, dict)
-        or set(state_identity)
-        != {"lineage", "serial", "terraform_version", "raw_state_sha256"}
-        or not isinstance(state_identity.get("lineage"), str)
-        or not isinstance(state_identity.get("serial"), int)
-        or state_identity["serial"] < 1
-        or not isinstance(state_identity.get("terraform_version"), str)
-        or not isinstance(state_identity.get("raw_state_sha256"), str)
-        or len(state_identity["raw_state_sha256"]) != 64
-    ):
-        raise GuardError("Terraform gate receipt has no exact state lineage")
-    if state_identity != terraform_state_identity(authoritative_state_document):
-        raise GuardError(
-            "Terraform gate receipt differs from the authoritative backend state"
+    initialization_mode = receipt.get("state_initialization")
+    if initialization_mode == "greenfield-empty":
+        if (
+            authoritative_state_document is not None
+            or receipt.get("state_identity") is not None
+            or receipt.get("authority_state") is not None
+            or receipt.get("custody_evidence_sha256") is not None
+            or receipt.get("custody_evidence_id") is not None
+            or not isinstance(receipt.get("bootstrap_identity"), dict)
+        ):
+            raise GuardError(
+                "greenfield gate is mixed with established-state or migration evidence"
+            )
+        current_bootstrap = greenfield_bootstrap_identity(
+            terraform_root=query["terraform_root"], registry=registry
         )
-    authority_state = receipt.get("authority_state")
-    if (
-        not isinstance(authority_state, dict)
-        or re.fullmatch(r"[0-9a-f]{64}", receipt.get("custody_evidence_sha256", ""))
-        is None
-        or not isinstance(receipt.get("custody_evidence_id"), str)
-        or not receipt["custody_evidence_id"]
-    ):
-        raise GuardError("Terraform gate receipt lacks authority-owned custody")
-    custody = authority_json({"operation": "custody-snapshot"})
-    verify_external_evidence(custody)
-    if custody.get("registry_sha256") != registry_sha256(registry):
-        raise GuardError("local durable registry differs from root authority policy")
-    current_matches = [
-        item
-        for item in custody.get("terraform_states", [])
-        if isinstance(item, dict)
-        and item.get("root") == query["terraform_root"]
-        and item.get("lineage") == state_identity["lineage"]
-        and item.get("serial") == state_identity["serial"]
-        and item.get("state_json_sha256") == state_identity["raw_state_sha256"]
-        and item.get("configuration_sha256") == expected["configuration_sha256"]
-    ]
-    if current_matches != [authority_state]:
-        raise GuardError("authority-owned Terraform state changed after gate issuance")
+        stable_bootstrap_fields = {
+            "terraform_root",
+            "registry_sha256",
+            "backend_binding_sha256",
+            "live_inventory_scope_sha256",
+        }
+        if any(
+            current_bootstrap.get(field)
+            != receipt["bootstrap_identity"].get(field)
+            for field in stable_bootstrap_fields
+        ):
+            raise GuardError(
+                "greenfield backend or live inventory changed after gate issuance"
+            )
+    elif initialization_mode == "remote-established":
+        state_identity = receipt.get("state_identity")
+        if (
+            not isinstance(authoritative_state_document, dict)
+            or not isinstance(state_identity, dict)
+            or set(state_identity)
+            != {"lineage", "serial", "terraform_version", "raw_state_sha256"}
+            or not isinstance(state_identity.get("lineage"), str)
+            or not isinstance(state_identity.get("serial"), int)
+            or state_identity["serial"] < 1
+            or not isinstance(state_identity.get("terraform_version"), str)
+            or not isinstance(state_identity.get("raw_state_sha256"), str)
+            or len(state_identity["raw_state_sha256"]) != 64
+            or receipt.get("bootstrap_identity") is not None
+        ):
+            raise GuardError("Terraform gate receipt has no exact state lineage")
+        if state_identity != terraform_state_identity(authoritative_state_document):
+            raise GuardError(
+                "Terraform gate receipt differs from the authoritative backend state"
+            )
+        authority_state = receipt.get("authority_state")
+        if (
+            not isinstance(authority_state, dict)
+            or re.fullmatch(
+                r"[0-9a-f]{64}", receipt.get("custody_evidence_sha256", "")
+            )
+            is None
+            or not isinstance(receipt.get("custody_evidence_id"), str)
+            or not receipt["custody_evidence_id"]
+        ):
+            raise GuardError("Terraform gate receipt lacks authority-owned custody")
+        custody = authority_json({"operation": "custody-snapshot"})
+        verify_external_evidence(custody)
+        if custody.get("registry_sha256") != registry_sha256(registry):
+            raise GuardError("local durable registry differs from root authority policy")
+        current_matches = [
+            item
+            for item in custody.get("terraform_states", [])
+            if isinstance(item, dict)
+            and item.get("root") == query["terraform_root"]
+            and item.get("lineage") == state_identity["lineage"]
+            and item.get("serial") == state_identity["serial"]
+            and item.get("state_json_sha256") == state_identity["raw_state_sha256"]
+            and item.get("configuration_sha256")
+            == expected["configuration_sha256"]
+        ]
+        if current_matches != [authority_state]:
+            raise GuardError(
+                "authority-owned Terraform state changed after gate issuance"
+            )
+    else:
+        raise GuardError("Terraform gate receipt has an unknown initialization mode")
     issued_at = parse_timestamp(receipt.get("issued_at"))
     expires_at = parse_timestamp(receipt.get("expires_at"))
     now = utc_now()
@@ -451,7 +618,7 @@ def saved_plan_identity(path: Path) -> dict[str, Any]:
 def write_saved_plan_gate_receipt(
     *,
     plan_document: dict[str, Any],
-    raw_state_document: dict[str, Any],
+    raw_state_document: dict[str, Any] | None,
     saved_plan: Path,
     planning_receipt_path: Path,
     identity_receipt: dict[str, Any] | None,
@@ -462,6 +629,7 @@ def write_saved_plan_gate_receipt(
     path: Path,
     ttl_seconds: int = 300,
     registry: dict[str, Any] | None = None,
+    greenfield_bootstrap: bool = False,
 ) -> dict[str, Any]:
     """Seal the exact saved plan and live credential identities for apply."""
 
@@ -475,6 +643,12 @@ def write_saved_plan_gate_receipt(
     planning_receipt = load_private_document(
         planning_receipt_path, label="Terraform planning gate receipt"
     )
+    if (
+        planning_receipt.get("state_initialization") == "greenfield-empty"
+    ) != greenfield_bootstrap:
+        raise GuardError(
+            "saved-plan bootstrap mode differs from its planning receipt"
+        )
     validate_native_gate(
         {
             "receipt_path": str(planning_receipt_path),
@@ -488,6 +662,8 @@ def write_saved_plan_gate_receipt(
     prior_state = plan_document.get("prior_state")
     if not isinstance(prior_state, dict):
         raise GuardError("saved plan has no authoritative prior state")
+    if greenfield_bootstrap:
+        require_empty_greenfield_state(prior_state)
     fingerprints = protected_state_fingerprints(
         prior_state, registry=registry, terraform_root=terraform_root
     )
@@ -495,9 +671,14 @@ def write_saved_plan_gate_receipt(
         "state_fingerprints_sha256"
     ):
         raise GuardError("saved plan prior state differs from the planning gate")
-    if planning_receipt.get("state_identity") != terraform_state_identity(
-        raw_state_document
-    ):
+    if greenfield_bootstrap:
+        if raw_state_document is not None or planning_receipt.get("state_identity") is not None:
+            raise GuardError(
+                "greenfield saved plan unexpectedly carries established state"
+            )
+    elif not isinstance(raw_state_document, dict) or planning_receipt.get(
+        "state_identity"
+    ) != terraform_state_identity(raw_state_document):
         raise GuardError("saved plan was not sealed against the current backend state")
     if fingerprints:
         if identity_receipt is None:
@@ -509,6 +690,7 @@ def write_saved_plan_gate_receipt(
         identity_receipt=identity_receipt,
         registry=registry,
         terraform_root=terraform_root,
+        greenfield_bootstrap=greenfield_bootstrap,
     )
     bindings = live_secret_bindings(
         prior_state,
@@ -525,19 +707,33 @@ def write_saved_plan_gate_receipt(
             "live Secret identity/content differs from its custody receipt"
         )
     commitments = planned_secret_commitments(
-        plan_document, registry=registry, terraform_root=terraform_root
+        plan_document,
+        registry=registry,
+        terraform_root=terraform_root,
+        greenfield_bootstrap=greenfield_bootstrap,
     )
-    require_staged_secret_plan(plan_document, commitments=commitments)
+    if greenfield_bootstrap:
+        require_greenfield_additive_plan(plan_document, commitments=commitments)
+    else:
+        require_staged_secret_plan(plan_document, commitments=commitments)
     phase = plan_variable(plan_document, "credential_migration_phase")
+    admission_phase = "greenfield-bootstrap" if greenfield_bootstrap else phase
     admission: dict[str, Any] | None = None
-    if phase in {"secret-stage", "consumer-rollout"}:
+    if admission_phase in {
+        "greenfield-bootstrap",
+        "secret-stage",
+        "consumer-rollout",
+    }:
         admission = authority_json(
-            {"operation": "planned-generation-admission", "phase": phase}
+            {
+                "operation": "planned-generation-admission",
+                "phase": admission_phase,
+            }
         )
         verify_external_evidence(admission)
         authority_plans = admission.get("plans")
         if (
-            admission.get("phase") != phase
+            admission.get("phase") != admission_phase
             or admission.get("registry_sha256") != registry_sha256(registry)
             or not isinstance(authority_plans, list)
             or saved_plan_identity(saved_plan)["sha256"]
@@ -548,7 +744,7 @@ def write_saved_plan_gate_receipt(
             }
         ):
             raise GuardError("authority did not bind the exact staged saved plan")
-        if phase == "consumer-rollout" and not admission.get(
+        if admission_phase == "consumer-rollout" and not admission.get(
             "post_create_secret_bindings"
         ):
             raise GuardError(
@@ -556,12 +752,14 @@ def write_saved_plan_gate_receipt(
             )
     now = utc_now()
     receipt = {
-        "schema": "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v4",
+        "schema": "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v5",
         "terraform_root": terraform_root,
         "source_commit": source_commit,
         "registry_sha256": registry_sha256(registry),
         "configuration_sha256": configuration_sha256(terraform_configuration),
+        "state_initialization": planning_receipt["state_initialization"],
         "state_identity": planning_receipt["state_identity"],
+        "bootstrap_identity": planning_receipt["bootstrap_identity"],
         "address_fingerprints": fingerprints,
         "live_secret_bindings": bindings,
         "planned_secret_commitments": commitments,
@@ -584,7 +782,7 @@ def validate_saved_plan_gate(
     plan_document: dict[str, Any],
     saved_plan: Path,
     live_secret_document: dict[str, Any] | None,
-    raw_state_document: dict[str, Any],
+    raw_state_document: dict[str, Any] | None,
     terraform_configuration: Path,
     terraform_root: str,
     source_commit: str,
@@ -596,7 +794,7 @@ def validate_saved_plan_gate(
     receipt = load_private_document(receipt_path, label="saved-plan apply receipt")
     if (
         receipt.get("schema")
-        != "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v4"
+        != "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v5"
     ):
         raise GuardError("saved-plan apply receipt has the wrong schema")
     expected = {
@@ -611,24 +809,61 @@ def validate_saved_plan_gate(
         raise GuardError(
             "saved-plan apply receipt differs from the exact execution input"
         )
-    if receipt.get("state_identity") != terraform_state_identity(raw_state_document):
-        raise GuardError(
-            "saved-plan apply receipt differs from the authoritative backend state"
+    greenfield_bootstrap = receipt.get("state_initialization") == "greenfield-empty"
+    if greenfield_bootstrap:
+        if (
+            raw_state_document is not None
+            or receipt.get("state_identity") is not None
+            or not isinstance(receipt.get("bootstrap_identity"), dict)
+        ):
+            raise GuardError(
+                "greenfield saved-plan receipt is mixed with established state"
+            )
+        require_empty_greenfield_state(plan_document.get("prior_state"))
+        fresh_bootstrap = greenfield_bootstrap_identity(
+            terraform_root=terraform_root, registry=registry
         )
+        for field in (
+            "terraform_root",
+            "registry_sha256",
+            "backend_binding_sha256",
+            "live_inventory_scope_sha256",
+        ):
+            if fresh_bootstrap.get(field) != receipt["bootstrap_identity"].get(field):
+                raise GuardError(
+                    "greenfield backend or live inventory changed before apply"
+                )
+    elif receipt.get("state_initialization") == "remote-established":
+        if not isinstance(raw_state_document, dict) or receipt.get(
+            "state_identity"
+        ) != terraform_state_identity(raw_state_document):
+            raise GuardError(
+                "saved-plan apply receipt differs from the authoritative backend state"
+            )
+    else:
+        raise GuardError("saved-plan receipt has an unknown initialization mode")
     phase = plan_variable(plan_document, "credential_migration_phase")
+    admission_phase = "greenfield-bootstrap" if greenfield_bootstrap else phase
     stored_admission = receipt.get("planned_generation_admission")
-    if phase in {"secret-stage", "consumer-rollout"}:
+    if admission_phase in {
+        "greenfield-bootstrap",
+        "secret-stage",
+        "consumer-rollout",
+    }:
         if not isinstance(stored_admission, dict):
             raise GuardError("saved-plan receipt lacks staged provider admission")
         verify_external_evidence(stored_admission)
         fresh_admission = authority_json(
-            {"operation": "planned-generation-admission", "phase": phase}
+            {
+                "operation": "planned-generation-admission",
+                "phase": admission_phase,
+            }
         )
         verify_external_evidence(fresh_admission)
         plan_sha256 = saved_plan_identity(saved_plan)["sha256"]
         for admission in (stored_admission, fresh_admission):
             if (
-                admission.get("phase") != phase
+                admission.get("phase") != admission_phase
                 or admission.get("registry_sha256") != registry_sha256(registry)
                 or plan_sha256
                 not in {
@@ -638,7 +873,7 @@ def validate_saved_plan_gate(
                 }
             ):
                 raise GuardError("staged provider admission differs from the saved plan")
-        if phase == "consumer-rollout" and not fresh_admission.get(
+        if admission_phase == "consumer-rollout" and not fresh_admission.get(
             "post_create_secret_bindings"
         ):
             raise GuardError(
@@ -657,16 +892,21 @@ def validate_saved_plan_gate(
         raise GuardError(
             "saved-plan apply receipt is expired or has an invalid lifetime"
         )
-    identity_receipt = {
-        "registry_sha256": receipt["registry_sha256"],
-        "address_fingerprints": receipt.get("address_fingerprints"),
-        "live_secret_bindings": receipt.get("live_secret_bindings"),
-    }
+    identity_receipt = (
+        None
+        if greenfield_bootstrap
+        else {
+            "registry_sha256": receipt["registry_sha256"],
+            "address_fingerprints": receipt.get("address_fingerprints"),
+            "live_secret_bindings": receipt.get("live_secret_bindings"),
+        }
+    )
     inspect_plan(
         plan_document,
         identity_receipt=identity_receipt,
         registry=registry,
         terraform_root=terraform_root,
+        greenfield_bootstrap=greenfield_bootstrap,
     )
     bindings = live_secret_bindings(
         plan_document["prior_state"],
@@ -679,11 +919,17 @@ def validate_saved_plan_gate(
             "live Secret identity/content changed after plan authorization"
         )
     commitments = planned_secret_commitments(
-        plan_document, registry=registry, terraform_root=terraform_root
+        plan_document,
+        registry=registry,
+        terraform_root=terraform_root,
+        greenfield_bootstrap=greenfield_bootstrap,
     )
     if commitments != receipt.get("planned_secret_commitments"):
         raise GuardError("planned Secret commitments changed after plan authorization")
-    require_staged_secret_plan(plan_document, commitments=commitments)
+    if greenfield_bootstrap:
+        require_greenfield_additive_plan(plan_document, commitments=commitments)
+    else:
+        require_staged_secret_plan(plan_document, commitments=commitments)
     return {
         "status": "pass",
         "receipt_sha256": file_sha256(receipt_path),
@@ -888,9 +1134,13 @@ def validate_saved_plan_gate_from_environment(
         ],
         label="saved Terraform plan inspection",
     )
-    raw_state_document = command_json(
-        [terraform, f"-chdir={terraform_configuration}", "state", "pull"],
-        label="authoritative Terraform state inspection",
+    raw_state_document = (
+        None
+        if receipt.get("state_initialization") == "greenfield-empty"
+        else command_json(
+            [terraform, f"-chdir={terraform_configuration}", "state", "pull"],
+            label="authoritative Terraform state inspection",
+        )
     )
     live_document = live_secret_inventory_for_receipt(receipt)
     return validate_saved_plan_gate(
@@ -1307,8 +1557,29 @@ def credential_resource_type(address: Any) -> str | None:
     return resource[0]
 
 
+def terraform_address_is_data_source(address: Any) -> bool:
+    """Return whether an address has Terraform's data-source address shape."""
+
+    base = base_resource_address(address)
+    if base is None:
+        return False
+    parts = base.split(".")
+    offset = 0
+    while offset + 1 < len(parts) and parts[offset] == "module":
+        offset += 2
+    return offset < len(parts) and parts[offset] == "data"
+
+
 def configuration_resource_addresses(document: Any) -> frozenset[str]:
-    """Collect declared addresses from the exact configuration embedded in a plan."""
+    """Collect managed addresses from the exact configuration embedded in a plan.
+
+    Terraform places managed resources and read-only data sources in the same
+    ``configuration.*.resources`` arrays.  A data source can therefore have the
+    same terminal type as a durable resource (for example
+    ``data.kubernetes_secret_v1.database_ca``).  Only ``mode=managed`` entries
+    are part of the durable-resource registry; data sources remain visible to
+    Terraform but can never be treated as managed credential custody.
+    """
 
     if not isinstance(document, dict):
         raise GuardError("Terraform plan has no embedded configuration")
@@ -1316,6 +1587,7 @@ def configuration_resource_addresses(document: Any) -> frozenset[str]:
     if not isinstance(root, dict):
         raise GuardError("Terraform plan has no embedded root configuration")
     addresses: set[str] = set()
+    observed_addresses: set[str] = set()
     pending = [(root, "")]
     while pending:
         module, module_prefix = pending.pop()
@@ -1330,8 +1602,14 @@ def configuration_resource_addresses(document: Any) -> frozenset[str]:
                     "Terraform plan configuration has a malformed resource"
                 )
             address = base_resource_address(resource["address"])
-            if address is None or address in addresses:
+            if address is None or address in observed_addresses:
                 raise GuardError("Terraform plan configuration duplicates a resource")
+            observed_addresses.add(address)
+            mode = resource.get("mode", "managed")
+            if mode not in {"managed", "data"}:
+                raise GuardError(
+                    "Terraform plan configuration has an unknown resource mode"
+                )
             if (
                 (module_prefix and not address.startswith(module_prefix))
                 or (not module_prefix and address.startswith("module."))
@@ -1339,6 +1617,12 @@ def configuration_resource_addresses(document: Any) -> frozenset[str]:
                 raise GuardError(
                     "Terraform resource address differs from its configuration module path"
                 )
+            if (mode == "data") != terraform_address_is_data_source(address):
+                raise GuardError(
+                    "Terraform plan configuration resource mode differs from its address"
+                )
+            if mode == "data":
+                continue
             addresses.add(address)
         calls = module.get("module_calls", {})
         if not isinstance(calls, dict):
@@ -1718,7 +2002,9 @@ def live_secret_bindings(
     return dict(sorted(bindings.items()))
 
 
-def _planned_secret_metadata(after: Any, *, address: str) -> dict[str, Any]:
+def _planned_secret_metadata(
+    after: Any, *, address: str, minimum_generation: int = 2
+) -> dict[str, Any]:
     if not isinstance(after, dict):
         raise GuardError(f"planned Secret has no after-state: {address}")
     metadata = after.get("metadata")
@@ -1741,7 +2027,7 @@ def _planned_secret_metadata(after: Any, *, address: str) -> dict[str, Any]:
     if (
         not isinstance(generation, str)
         or not generation.isdigit()
-        or int(generation) < 2
+        or int(generation) < minimum_generation
         or not isinstance(content_sha256, str)
         or re.fullmatch(r"[0-9a-f]{64}", content_sha256) is None
         or not isinstance(credential_class, str)
@@ -1765,7 +2051,11 @@ def _planned_secret_metadata(after: Any, *, address: str) -> dict[str, Any]:
 
 
 def planned_secret_commitments(
-    document: dict[str, Any], *, registry: dict[str, Any], terraform_root: str
+    document: dict[str, Any],
+    *,
+    registry: dict[str, Any],
+    terraform_root: str,
+    greenfield_bootstrap: bool = False,
 ) -> dict[str, dict[str, Any]]:
     """Bind every new immutable Secret before a Secret-only phase-one apply."""
 
@@ -1784,7 +2074,9 @@ def planned_secret_commitments(
             )
         ):
             commitments[address] = _planned_secret_metadata(
-                change.get("change", {}).get("after"), address=address
+                change.get("change", {}).get("after"),
+                address=address,
+                minimum_generation=1 if greenfield_bootstrap else 2,
             )
     return dict(sorted(commitments.items()))
 
@@ -1827,6 +2119,35 @@ def require_staged_secret_plan(
         ):
             raise GuardError(
                 "Secret staging plan must contain only reviewed immutable Secret creates"
+            )
+
+
+def require_greenfield_additive_plan(
+    document: dict[str, Any], *, commitments: dict[str, dict[str, Any]]
+) -> None:
+    """Permit a complete first install while forbidding all mutation semantics."""
+
+    for change in document.get("resource_changes", []):
+        if not isinstance(change, dict):
+            raise GuardError("greenfield plan contains a malformed change")
+        mode = change.get("mode", "managed")
+        actions = change.get("change", {}).get("actions")
+        address = change.get("address")
+        if mode == "data":
+            if actions not in (["read"], ["no-op"]):
+                raise GuardError("greenfield data source has a mutating action")
+            continue
+        if actions not in (["create"], ["read"], ["no-op"]):
+            raise GuardError("greenfield plan contains a non-additive action")
+        if change.get("previous_address") is not None:
+            raise GuardError("greenfield plan may not move an existing address")
+        if (
+            actions == ["create"]
+            and credential_resource_type(address) == "kubernetes_secret_v1"
+            and address not in commitments
+        ):
+            raise GuardError(
+                "greenfield credential Secret lacks an immutable write-only commitment"
             )
 
 
@@ -2653,6 +2974,7 @@ def inspect_plan(
     identity_receipt: dict[str, Any] | None = None,
     registry: dict[str, Any] | None = None,
     terraform_root: str | None = None,
+    greenfield_bootstrap: bool = False,
 ) -> dict[str, int]:
     registry = registry or load_registry()
     if terraform_root is None:
@@ -2663,6 +2985,12 @@ def inspect_plan(
     prior_fingerprints = plan_prior_fingerprints(
         document, registry=registry, terraform_root=terraform_root
     )
+    if greenfield_bootstrap:
+        require_empty_greenfield_state(document.get("prior_state"))
+        if prior_fingerprints or identity_receipt is not None:
+            raise GuardError(
+                "greenfield bootstrap cannot use prior credential state or adoption evidence"
+            )
     if prior_fingerprints:
         if identity_receipt is None:
             raise GuardError(
@@ -2691,8 +3019,19 @@ def inspect_plan(
         if not isinstance(address, str) or address in seen_addresses:
             raise GuardError("Terraform plan contains a missing or duplicate address")
         seen_addresses.add(address)
+        mode = change.get("mode", "managed")
+        if mode not in {"managed", "data"}:
+            raise GuardError("Terraform plan contains an unknown resource mode")
+        if (mode == "data") != terraform_address_is_data_source(address):
+            raise GuardError("Terraform plan resource mode differs from its address")
         if previous_address is not None and not isinstance(previous_address, str):
             raise GuardError("Terraform plan contains a malformed previous_address")
+        if mode == "data":
+            if previous_address is not None or actions not in (["read"], ["no-op"]):
+                raise GuardError(
+                    "Terraform data source has a managed-resource change shape"
+                )
+            continue
         protected = is_protected_address(
             address, registry=registry, terraform_root=terraform_root
         )
@@ -2742,6 +3081,7 @@ def inspect_plan(
         if (
             protected
             and actions == ["create"]
+            and not greenfield_bootstrap
             and not (
                 isinstance(base, str)
                 and base.endswith("_versioned")
@@ -2761,9 +3101,15 @@ def inspect_plan(
             + ", ".join(sorted(omitted))
         )
     commitments = planned_secret_commitments(
-        document, registry=registry, terraform_root=terraform_root
+        document,
+        registry=registry,
+        terraform_root=terraform_root,
+        greenfield_bootstrap=greenfield_bootstrap,
     )
-    require_staged_secret_plan(document, commitments=commitments)
+    if greenfield_bootstrap:
+        require_greenfield_additive_plan(document, commitments=commitments)
+    else:
+        require_staged_secret_plan(document, commitments=commitments)
     require_consumer_rollout_binding(
         document,
         identity_receipt=identity_receipt,
@@ -3661,10 +4007,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     plan = subparsers.add_parser("plan")
     plan.add_argument("plan_json", type=Path)
     plan.add_argument("--identity-receipt", type=Path)
+    plan.add_argument("--greenfield-bootstrap", action="store_true")
     plan.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     plan.add_argument(
         "--terraform-root",
         choices=("infrastructure", "foundation", "workloads", "reference-data"),
+        required=True,
     )
     capture = subparsers.add_parser("capture-state")
     capture.add_argument("state_json", type=Path)
@@ -3685,6 +4033,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Legacy owner-only input; omit to send state_document/raw_state_document as one stdin envelope.",
     )
     apply_gate.add_argument("--identity-receipt", type=Path)
+    apply_gate.add_argument("--greenfield-bootstrap", action="store_true")
     apply_gate.add_argument("--terraform-configuration", type=Path, required=True)
     apply_gate.add_argument(
         "--terraform-root",
@@ -3707,6 +4056,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Legacy owner-only input; omit to send plan_document/raw_state_document as one stdin envelope.",
     )
     saved_gate.add_argument("--identity-receipt", type=Path)
+    saved_gate.add_argument("--greenfield-bootstrap", action="store_true")
     saved_gate.add_argument("--terraform-configuration", type=Path, required=True)
     saved_gate.add_argument(
         "--terraform-root",
@@ -3746,16 +4096,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "native-gate":
         query = json.loads(os.sys.stdin.read())
         terraform_configuration = Path(query.get("terraform_configuration", ""))
+        gate_receipt = load_private_document(
+            Path(query.get("receipt_path", "")), label="Terraform gate receipt"
+        )
         result = validate_native_gate(
             query,
-            authoritative_state_document=command_json(
-                [
-                    PRODUCTION_TERRAFORM_COMMAND,
-                    f"-chdir={terraform_configuration}",
-                    "state",
-                    "pull",
-                ],
-                label="authoritative Terraform state inspection",
+            authoritative_state_document=(
+                None
+                if gate_receipt.get("state_initialization") == "greenfield-empty"
+                else command_json(
+                    [
+                        PRODUCTION_TERRAFORM_COMMAND,
+                        f"-chdir={terraform_configuration}",
+                        "state",
+                        "pull",
+                    ],
+                    label="authoritative Terraform state inspection",
+                )
             ),
             registry=load_registry(args.registry),
         )
@@ -3789,8 +4146,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             raw_state_document = load_private_document(
                 args.raw_state, label="raw Terraform state"
             )
-        if not isinstance(plan_document, dict) or not isinstance(
-            raw_state_document, dict
+        if not isinstance(plan_document, dict) or not (
+            isinstance(raw_state_document, dict)
+            or (args.greenfield_bootstrap and raw_state_document is None)
         ):
             raise GuardError("saved-plan gate documents must be JSON objects")
         receipt = write_saved_plan_gate_receipt(
@@ -3810,6 +4168,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             path=args.receipt,
             ttl_seconds=args.ttl_seconds,
             registry=registry,
+            greenfield_bootstrap=args.greenfield_bootstrap,
         )
         result = {
             "receipt": str(args.receipt.absolute()),
@@ -3845,6 +4204,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise GuardError("guard input document must be a JSON object")
         if args.command == "plan":
             registry = load_registry(args.registry)
+            if args.greenfield_bootstrap:
+                greenfield_bootstrap_identity(
+                    terraform_root=args.terraform_root, registry=registry
+                )
             result = inspect_plan(
                 document,
                 identity_receipt=load_identity_receipt(
@@ -3854,6 +4217,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ),
                 registry=registry,
                 terraform_root=args.terraform_root,
+                greenfield_bootstrap=args.greenfield_bootstrap,
             )
         elif args.command == "capture-state":
             registry = load_registry(args.registry)
@@ -3886,6 +4250,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 path=args.receipt,
                 ttl_seconds=args.ttl_seconds,
                 registry=registry,
+                greenfield_bootstrap=args.greenfield_bootstrap,
             )
             result = {
                 "receipt": str(args.receipt.absolute()),

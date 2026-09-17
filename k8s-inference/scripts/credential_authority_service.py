@@ -56,6 +56,7 @@ READ_ONLY_OPERATIONS = frozenset(
         "scoped-credential-context",
         "backend-custody",
         "state-migration-readiness",
+        "greenfield-bootstrap-readiness",
     }
 )
 CALLER_PURPOSES = frozenset(
@@ -131,6 +132,7 @@ CLIENT_FIELDS: dict[str, frozenset[str]] = {
     "scoped-credential-context": frozenset({"credential_kind"}),
     "backend-custody": frozenset({"terraform_root_name"}),
     "state-migration-readiness": frozenset({"terraform_root_name"}),
+    "greenfield-bootstrap-readiness": frozenset({"terraform_root_name"}),
 }
 FORBIDDEN_CLIENT_FIELDS = frozenset(
     {
@@ -544,6 +546,7 @@ def _validate_policy(policy: Any) -> None:
         "backend_access_identities",
         "backend_access_identity_adapter",
         "backend_custody_adapter",
+        "greenfield_bootstrap_adapter",
         "release_identity_adapter",
         "authorization_closure_adapter",
         "cluster_authorization_adapter",
@@ -556,7 +559,7 @@ def _validate_policy(policy: Any) -> None:
         not isinstance(policy, dict)
         or set(policy) != required
         or policy.get("schema")
-        != "fs2-serve.nebius.ai/credential-authority-policy/v2"
+        != "fs2-serve.nebius.ai/credential-authority-policy/v3"
         or not all(
             isinstance(policy.get(field), str) and policy[field]
             for field in ("project_id", "cluster_id")
@@ -925,6 +928,7 @@ def _validate_policy(policy: Any) -> None:
                 "backend_type",
                 "backend_config_path",
                 "backend_expectation",
+                "initialization_mode",
                 "legacy_state_source",
                 "terraform_data_dir",
                 "workspace",
@@ -934,6 +938,8 @@ def _validate_policy(policy: Any) -> None:
             or not isinstance(root.get("configuration_dir"), str)
             or not Path(root["configuration_dir"]).is_absolute()
             or root.get("backend_type") not in {"remote", "s3"}
+            or root.get("initialization_mode")
+            not in {"legacy-copy", "greenfield-empty", "remote-established"}
             or not isinstance(root.get("backend_config_path"), str)
             or not Path(root["backend_config_path"]).is_absolute()
             or not isinstance(root.get("terraform_data_dir"), str)
@@ -947,8 +953,13 @@ def _validate_policy(policy: Any) -> None:
                 for value in root["saved_plan_paths"]
             )
             or len(root["saved_plan_paths"]) != len(set(root["saved_plan_paths"]))
-            or not isinstance(root.get("lineage_id"), str)
-            or not root["lineage_id"]
+            or not (
+                root.get("lineage_id") is None
+                or (
+                    isinstance(root.get("lineage_id"), str)
+                    and root["lineage_id"]
+                )
+            )
             or not isinstance(root.get("backend_expectation"), dict)
             or set(root["backend_expectation"])
             != {
@@ -985,34 +996,53 @@ def _validate_policy(policy: Any) -> None:
                 root["backend_expectation"].get("object_lock_retention_days"), int
             )
             or root["backend_expectation"]["object_lock_retention_days"] < 1
-            or not isinstance(root.get("legacy_state_source"), dict)
-            or set(root["legacy_state_source"])
-            != {
-                "path",
-                "sha256",
-                "canonical_state_sha256",
-                "lineage",
-                "serial",
-                "retained_reason",
-                "retention_expires_at",
-            }
-            or not isinstance(root["legacy_state_source"].get("path"), str)
-            or not Path(root["legacy_state_source"]["path"]).is_absolute()
-            or not all(
-                isinstance(root["legacy_state_source"].get(field), str)
-                and root["legacy_state_source"][field]
-                for field in (
+        ):
+            raise AuthorityServiceError(f"authority Terraform root is malformed: {name}")
+        initialization_mode = root["initialization_mode"]
+        legacy = root["legacy_state_source"]
+        if initialization_mode == "legacy-copy":
+            if (
+                not isinstance(root["lineage_id"], str)
+                or not isinstance(legacy, dict)
+                or set(legacy)
+                != {
+                    "path",
                     "sha256",
                     "canonical_state_sha256",
                     "lineage",
+                    "serial",
                     "retained_reason",
                     "retention_expires_at",
+                }
+                or not isinstance(legacy.get("path"), str)
+                or not Path(legacy["path"]).is_absolute()
+                or not all(
+                    isinstance(legacy.get(field), str) and legacy[field]
+                    for field in (
+                        "sha256",
+                        "canonical_state_sha256",
+                        "lineage",
+                        "retained_reason",
+                        "retention_expires_at",
+                    )
                 )
-            )
-            or not isinstance(root["legacy_state_source"].get("serial"), int)
-            or root["legacy_state_source"]["serial"] < 1
+                or not isinstance(legacy.get("serial"), int)
+                or legacy["serial"] < 1
+                or legacy["lineage"] != root["lineage_id"]
+            ):
+                raise AuthorityServiceError(
+                    f"authority legacy Terraform root is malformed: {name}"
+                )
+        elif legacy is not None or (
+            initialization_mode == "greenfield-empty"
+            and root["lineage_id"] is not None
+        ) or (
+            initialization_mode == "remote-established"
+            and not isinstance(root["lineage_id"], str)
         ):
-            raise AuthorityServiceError(f"authority Terraform root is malformed: {name}")
+            raise AuthorityServiceError(
+                f"authority Terraform initialization mode is inconsistent: {name}"
+            )
         backend_config = Path(root["backend_config_path"])
         terraform_data_dir = Path(root["terraform_data_dir"])
         backend_metadata = backend_config.stat()
@@ -1146,6 +1176,10 @@ def _validate_policy(policy: Any) -> None:
     )
     _validate_adapter(
         policy.get("backend_custody_adapter"), label="Terraform backend custody"
+    )
+    _validate_adapter(
+        policy.get("greenfield_bootstrap_adapter"),
+        label="Terraform greenfield empty-backend and live-inventory custody",
     )
     _validate_adapter(
         policy.get("release_identity_adapter"), label="release workload identity"
@@ -1356,7 +1390,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
         not isinstance(document, dict)
         or set(document) != required
         or document.get("schema")
-        != "fs2-serve.nebius.ai/credential-authority-config/v3"
+        != "fs2-serve.nebius.ai/credential-authority-config/v4"
         or not isinstance(document.get("configuration_id"), str)
         or not document["configuration_id"]
         or not isinstance(policy, dict)
@@ -1464,6 +1498,7 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
     ):
         raise AuthorityServiceError("credential generation is invalid")
     if operation == "planned-generation-admission" and parameters["phase"] not in {
+        "greenfield-bootstrap",
         "secret-stage",
         "consumer-rollout",
     }:
@@ -1606,7 +1641,11 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
             raise AuthorityServiceError(
                 "credential class has no contract for this authority operation"
             )
-    if operation in {"backend-custody", "state-migration-readiness"} and parameters["terraform_root_name"] not in config[
+    if operation in {
+        "backend-custody",
+        "state-migration-readiness",
+        "greenfield-bootstrap-readiness",
+    } and parameters["terraform_root_name"] not in config[
         "policy"
     ]["terraform_roots"]:
         raise AuthorityServiceError("Terraform backend custody root is not registered")

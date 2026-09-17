@@ -488,6 +488,31 @@ def terraform_inventory(policy: dict[str, Any]) -> list[dict[str, Any]]:
             raise ProviderError(
                 f"{root_name} Terraform backend differs from root policy"
             )
+        if root["initialization_mode"] == "greenfield-empty":
+            bootstrap = greenfield_bootstrap_readiness_result(
+                policy, root_name, "authority"
+            )
+            inventory.append(
+                {
+                    "root": root_name,
+                    "configuration_sha256": canonical_sha256(
+                        {
+                            path.name: file_sha256(path)
+                            for path in sorted(configuration.glob("*.tf"))
+                            if path.is_file() and not path.is_symlink()
+                        }
+                    ),
+                    "backend_type": root["backend_type"],
+                    "workspace": root["workspace"],
+                    "lineage": None,
+                    "serial": 0,
+                    "state_json_sha256": None,
+                    "resources": [],
+                    "initialization_mode": "greenfield-empty",
+                    "bootstrap_evidence_id": bootstrap["bootstrap_evidence_id"],
+                }
+            )
+            continue
         terraform_environment = {
             "TF_DATA_DIR": root["terraform_data_dir"],
             "TF_WORKSPACE": root["workspace"],
@@ -544,6 +569,8 @@ def terraform_inventory(policy: dict[str, Any]) -> list[dict[str, Any]]:
                 "serial": serial,
                 "state_json_sha256": canonical_sha256(state),
                 "resources": state_addresses(state),
+                "initialization_mode": "remote-established",
+                "bootstrap_evidence_id": None,
             }
         )
     return inventory
@@ -3590,7 +3617,11 @@ def backend_custody_result(
         raise ProviderError(
             "Terraform backend custody differs from the exact source-approved binding"
         )
-    return {**response, "backend_access_identity": backend_identity}
+    return {
+        **response,
+        "initialization_mode": root["initialization_mode"],
+        "backend_access_identity": backend_identity,
+    }
 
 
 def state_migration_readiness_result(
@@ -3599,6 +3630,10 @@ def state_migration_readiness_result(
     """Attest an additive legacy-state copy without moving, deleting or overwriting it."""
 
     root = policy["terraform_roots"][root_name]
+    if root["initialization_mode"] != "legacy-copy":
+        raise ProviderError(
+            "state migration readiness is valid only for a declared legacy-copy root"
+        )
     legacy = root["legacy_state_source"]
     legacy_path = Path(legacy["path"])
     digest = root_private_file(
@@ -3694,6 +3729,128 @@ def state_migration_readiness_result(
     return {
         **response,
         "status": status,
+        "initialization_mode": "legacy-copy",
+        "backend_access_identity": backend_identity,
+    }
+
+
+def greenfield_bootstrap_readiness_result(
+    policy: dict[str, Any], root_name: str, caller_purpose: str
+) -> dict[str, Any]:
+    """Attest a genuinely empty backend and live credential scope.
+
+    This is intentionally independent from legacy state migration and fixed-v1
+    adoption.  No local state document, caller-selected inventory, or missing
+    migration file can select this path.  A digest-pinned provider adapter must
+    observe the exact backend object and the complete project/cluster scope.
+    """
+
+    root = policy["terraform_roots"][root_name]
+    if (
+        root["initialization_mode"] != "greenfield-empty"
+        or root["legacy_state_source"] is not None
+        or root["lineage_id"] is not None
+    ):
+        raise ProviderError(
+            "greenfield bootstrap readiness is valid only for a lineageless greenfield root"
+        )
+    registry = load_registry(policy)
+    registered_addresses = sorted(
+        item["address"]
+        for item in registry["terraform_resource_addresses"]
+        if item["root"] == root_name
+    )
+    registered_classes = sorted(
+        {
+            item["id"]
+            for item in registry["credentials"]
+            if item["terraform_root"] == root_name
+        }
+    )
+    live_scope = {
+        "project_id": policy["project_id"],
+        "cluster_id": policy["cluster_id"],
+        "namespaces": sorted(policy["namespaces"]),
+        "terraform_root_name": root_name,
+        "registry_sha256": canonical_sha256(registry),
+        "registered_credential_addresses": registered_addresses,
+        "registered_credential_classes": registered_classes,
+        "all_project_iam_credentials": True,
+        "all_cluster_secrets": True,
+    }
+    backend_identity = backend_access_identity_proof(policy, caller_purpose)
+    adapter = policy["greenfield_bootstrap_adapter"]
+    response = command_json_input(
+        verified_adapter_command(
+            adapter,
+            label="Terraform greenfield empty-backend and live-inventory custody",
+        ),
+        label=f"{root_name} Terraform greenfield bootstrap custody",
+        payload={
+            "schema": "fs2-serve.nebius.ai/greenfield-bootstrap-readiness-request/v1",
+            "terraform_root_name": root_name,
+            "backend": root["backend_expectation"],
+            "live_inventory_scope": live_scope,
+            "caller_backend_identity_sha256": backend_identity["binding_sha256"],
+        },
+        timeout=adapter["timeout_seconds"],
+    )
+    fields = {
+        "schema",
+        "terraform_root_name",
+        "backend_binding_sha256",
+        "backend_object_present",
+        "backend_object_version_ids",
+        "backend_lock_present",
+        "live_inventory_scope_sha256",
+        "terraform_managed_credential_addresses",
+        "kubernetes_secret_identities",
+        "nebius_credential_identities",
+        "inventory_sources",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+        "caller_backend_identity_sha256",
+    }
+    inventory_sources = (
+        response.get("inventory_sources") if isinstance(response, dict) else None
+    )
+    if (
+        not isinstance(response, dict)
+        or set(response) != fields
+        or response.get("schema")
+        != "fs2-serve.nebius.ai/greenfield-bootstrap-readiness/v1"
+        or response.get("terraform_root_name") != root_name
+        or response.get("backend_binding_sha256")
+        != canonical_sha256(root["backend_expectation"])
+        or response.get("backend_object_present") is not False
+        or response.get("backend_object_version_ids") != []
+        or response.get("backend_lock_present") is not False
+        or response.get("live_inventory_scope_sha256")
+        != canonical_sha256(live_scope)
+        or response.get("terraform_managed_credential_addresses") != []
+        or response.get("kubernetes_secret_identities") != []
+        or response.get("nebius_credential_identities") != []
+        or not isinstance(inventory_sources, dict)
+        or set(inventory_sources) != {"backend", "kubernetes", "nebius"}
+        or not all(
+            isinstance(value, str) and value for value in inventory_sources.values()
+        )
+        or response.get("complete") is not True
+        or response.get("data_fields_returned") != 0
+        or response.get("caller_backend_identity_sha256")
+        != backend_identity["binding_sha256"]
+    ):
+        raise ProviderError(
+            "greenfield backend or complete live credential inventory is not empty"
+        )
+    return {
+        **response,
+        "status": "greenfield-empty-provider-attested",
+        "initialization_mode": "greenfield-empty",
+        "registry_sha256": canonical_sha256(registry),
+        "live_inventory_scope": live_scope,
+        "bootstrap_evidence_id": canonical_sha256(response),
         "backend_access_identity": backend_identity,
     }
 
@@ -3709,6 +3866,10 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
         )
     if operation == "state-migration-readiness":
         return state_migration_readiness_result(
+            policy, str(parameters["terraform_root_name"]), caller_purpose
+        )
+    if operation == "greenfield-bootstrap-readiness":
+        return greenfield_bootstrap_readiness_result(
             policy, str(parameters["terraform_root_name"]), caller_purpose
         )
     if operation == "release-identity":
@@ -3957,6 +4118,7 @@ def main() -> int:
         },
         "backend-custody": all_purposes,
         "state-migration-readiness": all_purposes,
+        "greenfield-bootstrap-readiness": {"release-automation"},
     }
     if (
         not isinstance(request, dict)

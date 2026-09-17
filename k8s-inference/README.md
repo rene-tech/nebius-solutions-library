@@ -137,6 +137,8 @@ Prerequisites are Terraform 1.11 or newer (but older than 2.0), `kubectl`,
 [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane),
 Git, and the root-installed credential authority described in
 [`docs/OPERATOR_ACCESS_HYGIENE_V9.md`](docs/OPERATOR_ACCESS_HYGIENE_V9.md).
+The managed/data-mode and distinct greenfield bootstrap refinement is in
+[`docs/OPERATOR_ACCESS_HYGIENE_V10.md`](docs/OPERATOR_ACCESS_HYGIENE_V10.md).
 The optional
 local Kueue and JobSet server tests additionally need
 [`kind`](https://kind.sigs.k8s.io/). Authentication is

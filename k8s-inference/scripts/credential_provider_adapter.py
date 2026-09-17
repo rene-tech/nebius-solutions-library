@@ -51,6 +51,7 @@ READ_ONLY_OPERATIONS = frozenset(
         "scoped-credential-context",
         "backend-custody",
         "state-migration-readiness",
+        "greenfield-bootstrap-readiness",
     }
 )
 CALLER_PURPOSES = frozenset(
