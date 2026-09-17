@@ -349,6 +349,12 @@ def test_isolated_uv_run_installs_the_cli_and_catalog_package() -> None:
     assert '"postgresql-release-contract"' in inspect.getsource(cli.main)
 
 
+def test_container_migration_gate_tracks_the_release_contract() -> None:
+    dockerfile = (CONTROL_ROOT / "Dockerfile").read_text()
+    assert "from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS" in dockerfile
+    assert "== len(EXPECTED_MIGRATIONS)" in dockerfile
+
+
 def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Path) -> None:
     uv = shutil.which("uv")
     assert uv is not None, "uv is required for the clean-wheel packaging gate"
