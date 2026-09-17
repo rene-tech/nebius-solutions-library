@@ -24,6 +24,17 @@ the exact offline reproduction. Further admissions stopped at that failure.
 The video cohort does not qualify the failing image tool or the full customer
 workflow, and no LeRobot route was activated.
 
+Release145 corrected typed and generic T2I contracts. The four cases in
+`public-compatibility-release145.json` passed, including whole-JSON/base64 PNG,
+legacy HTTP T2V, typed T2V and typed I2V using the generated PNG upload.
+`public-media-release145-cohort1.json` records a subsequent complete eight-case
+video matrix, all first attempts, with continuous runtime/adapter logs.
+The second matrix's cold guard stopped before generation: its finalized input
+upload was briefly counted as GPU demand and reactivated Cosmos. Exact evidence
+is in `public-cold-guard-negative-release145.json`. The release owner is fixing
+that classification; these twelve generation passes are intermediate evidence,
+not a final unchanged-release pair, and must be rerun on the next digest.
+
 `public_compatibility.py` prepares four small supplemental cases: typed MCP T2I,
 legacy HTTP T2V without a delivery override, typed MCP T2V, and typed MCP I2V
 using the exact generated PNG through the existing tenant upload path. It

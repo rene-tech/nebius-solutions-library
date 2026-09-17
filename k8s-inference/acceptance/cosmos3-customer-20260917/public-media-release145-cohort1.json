@@ -1,0 +1,474 @@
+{
+  "schema": "fs2-cosmos-public-video-cohort/v1",
+  "outcome": "bounded-video-cohort-passed",
+  "customer_ready": false,
+  "release145_cohort": 1,
+  "completed_at": "2026-09-17T15:41:36.787899+00:00",
+  "release": {
+    "adapter": "cbdea972edc77cc9735eea0d30dfc70d733464fb39f8cdc7889c12c8a435363e",
+    "config": {
+      "/etc/fs2-scientific-batch/execution-map.json": "sha256:88c83daa474b2b66976c2d286cee863e21b0de7e8b1e08796515fb37852c3040",
+      "/etc/fs2-scientific-batch/kueue-scheduling.json": "sha256:e7bb83c3bbd78646367df71b2fbac86afcf145b713b71194c057e20a13ad3e14",
+      "/etc/fs2-serve/admin-observability/..2026_09_17_15_28_05.2452082886/config.json": "sha256:5f9787f4b4f74d2903c562a6933fa987d99e7650d474f3869a38b9d51cb41549",
+      "/etc/fs2-serve/admin-observability/config.json": "sha256:5f9787f4b4f74d2903c562a6933fa987d99e7650d474f3869a38b9d51cb41549",
+      "/etc/fs2-serve/admin/admin-configuration.json": "sha256:fe0354706ca1c699e468d15f05084551ff3d41086851ac3e97d12ff7915e8e6e",
+      "/etc/fs2-serve/bindings/model-variant-promotions.json": "sha256:a1f4c5a2e76e1f7e98770fc64a16dc79a354e84011f9fc5360cc0ee072931a97",
+      "/etc/fs2-serve/bindings/serving-bindings.json": "sha256:c0ac8754f75d649c697a19cda3b755cd9a887cd50660864f6f8fc56c1899ad76",
+      "/etc/fs2-serve/lean-routes/..2026_09_17_15_28_05.2175928827/deployment-runtimes.json": "sha256:07234652c31a51dcb413da7cabdac1f8c369185cc8e44ea9ae77faaeb2554efa",
+      "/etc/fs2-serve/lean-routes/..2026_09_17_15_28_05.2175928827/lean-routes.json": "sha256:d080ad486f9e7e5766436d0613dcec55a4e124d2f81dd698f46ffda21c9b9dff",
+      "/etc/fs2-serve/lean-routes/deployment-runtimes.json": "sha256:07234652c31a51dcb413da7cabdac1f8c369185cc8e44ea9ae77faaeb2554efa",
+      "/etc/fs2-serve/lean-routes/lean-routes.json": "sha256:d080ad486f9e7e5766436d0613dcec55a4e124d2f81dd698f46ffda21c9b9dff",
+      "/etc/fs2-serve/model-controller/infrastructure-envelope.json": "sha256:03bda7e70440bc4ef1d6db6ea13b6b39b0539e51b18372c3bc8afd044d1f3076",
+      "/etc/fs2-serve/model-controller/renderer-bundles.json": "sha256:b28e336b8c935720552f11b4280783a9318e33d5cd16bf14df2eacfa57a0f8ee"
+    },
+    "image": {
+      "control-plane": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:849020eabbcf07d07112bcebae4032639e8e995a9eda078410ccf4879a188ee8"
+    },
+    "policy": {
+      "gpu_seconds_budget": null,
+      "max_concurrency": 1,
+      "models": [
+        "cosmos3-nano"
+      ],
+      "rate_limit_requests": null,
+      "rate_window_seconds": null,
+      "request_budget": null,
+      "scopes": [
+        "catalog.read",
+        "inference.invoke",
+        "mcp.invoke",
+        "operations.acknowledge",
+        "operations.cancel",
+        "operations.read",
+        "operations.result"
+      ],
+      "tenant_id": "robotics"
+    },
+    "serving": [
+      {
+        "name": "cosmos3-nano-burst-h100-1x",
+        "runtime_images": [
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587"
+        ],
+        "snapshot": "cosmos3-nano-h100-cuda-criu-20260907-r7",
+        "spec_digest": "sha256:96bacd2bcce5f6061f71c70613c4ee1d0fa9cb359cf5e00caf992779f6cc7b15"
+      }
+    ]
+  },
+  "source": {
+    "codec": "h264",
+    "decoded_rgb_sha256": "2c18954da66a86814f00af97a3424eab7bd1a302780e9a8604b0f4f524c2120d",
+    "duration_seconds": 1.65,
+    "fps": 20,
+    "frames": 33,
+    "height": 256,
+    "sha256": "9880133da0e4da3411e38a38069686b187a7bbb1893513f7d0b523accf5ddce4",
+    "size_bytes": 25013,
+    "width": 256
+  },
+  "calls": [
+    {
+      "case": "cold-mcp-https-video-to-video",
+      "operation_id": "0893b9be-6b18-46f5-b42e-557404bfa412",
+      "state": "passed",
+      "observed_start_state": "cold",
+      "artifact": {
+        "artifact_id": "150c6501-1769-4ec0-a17b-dee98f444966",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "692d75643a74b22620fd04497f7829dfa3bfbc5be0c85dbff24ea46f1a11823b",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "0893b9be-6b18-46f5-b42e-557404bfa412",
+      "terminal_replay_operation_id": "0893b9be-6b18-46f5-b42e-557404bfa412",
+      "operation": {
+        "accepted_at": "2026-09-17T15:34:16.798593Z",
+        "started_at": "2026-09-17T15:39:06.924426Z",
+        "completed_at": "2026-09-17T15:39:11.162001Z",
+        "cold_start_seconds": 290.032357,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-fac6c204-95eb-ad0d-90b3-304e055496d0"
+          ],
+          "node_uid": "61258753-47b4-4ce3-8015-9c857ac09a84",
+          "pod_uid": "6be544d0-8a07-4cae-b799-fb0396b92456",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-mcp-https-transfer-video",
+      "operation_id": "cd6d19d2-75f9-4884-bb9d-3d0ec21461e1",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "110bdbda-8ac0-446d-91be-e4d843bc2ccd",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "b8563f07c13a6dfb628963b4c848607b7f61d2cf45aaa167c7fa818f6fb18ce6",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "cd6d19d2-75f9-4884-bb9d-3d0ec21461e1",
+      "terminal_replay_operation_id": "cd6d19d2-75f9-4884-bb9d-3d0ec21461e1",
+      "operation": {
+        "accepted_at": "2026-09-17T15:39:26.448783Z",
+        "started_at": "2026-09-17T15:39:27.185346Z",
+        "completed_at": "2026-09-17T15:39:32.849693Z",
+        "cold_start_seconds": 0.684245,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-fac6c204-95eb-ad0d-90b3-304e055496d0"
+          ],
+          "node_uid": "61258753-47b4-4ce3-8015-9c857ac09a84",
+          "pod_uid": "6be544d0-8a07-4cae-b799-fb0396b92456",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-mcp-upload-video-to-video",
+      "operation_id": "8125e65a-5148-4e4b-adeb-417c492a5b59",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "6983358e-6fda-47da-9c73-20389a03c5d2",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "692d75643a74b22620fd04497f7829dfa3bfbc5be0c85dbff24ea46f1a11823b",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "8125e65a-5148-4e4b-adeb-417c492a5b59",
+      "terminal_replay_operation_id": "8125e65a-5148-4e4b-adeb-417c492a5b59",
+      "operation": {
+        "accepted_at": "2026-09-17T15:39:47.166397Z",
+        "started_at": "2026-09-17T15:39:47.483922Z",
+        "completed_at": "2026-09-17T15:39:50.730550Z",
+        "cold_start_seconds": 0.276097,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-fac6c204-95eb-ad0d-90b3-304e055496d0"
+          ],
+          "node_uid": "61258753-47b4-4ce3-8015-9c857ac09a84",
+          "pod_uid": "6be544d0-8a07-4cae-b799-fb0396b92456",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-mcp-upload-transfer-video",
+      "operation_id": "bb93b03b-b5ef-420f-827e-a61fbd3e2536",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "c4958d6e-e5e1-4b37-9da2-ea0fdbf8fb2c",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "b8563f07c13a6dfb628963b4c848607b7f61d2cf45aaa167c7fa818f6fb18ce6",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "bb93b03b-b5ef-420f-827e-a61fbd3e2536",
+      "terminal_replay_operation_id": "bb93b03b-b5ef-420f-827e-a61fbd3e2536",
+      "operation": {
+        "accepted_at": "2026-09-17T15:40:07.403379Z",
+        "started_at": "2026-09-17T15:40:07.799231Z",
+        "completed_at": "2026-09-17T15:40:13.301581Z",
+        "cold_start_seconds": 0.389562,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-fac6c204-95eb-ad0d-90b3-304e055496d0"
+          ],
+          "node_uid": "61258753-47b4-4ce3-8015-9c857ac09a84",
+          "pod_uid": "6be544d0-8a07-4cae-b799-fb0396b92456",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-http-https-video-to-video",
+      "operation_id": "bc0841c0-ff21-48f4-9814-071e57ee73be",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "4f6a3b19-795c-4573-ac67-e6baf369a355",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "692d75643a74b22620fd04497f7829dfa3bfbc5be0c85dbff24ea46f1a11823b",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "bc0841c0-ff21-48f4-9814-071e57ee73be",
+      "terminal_replay_operation_id": "bc0841c0-ff21-48f4-9814-071e57ee73be",
+      "operation": {
+        "accepted_at": "2026-09-17T15:40:29.397731Z",
+        "started_at": "2026-09-17T15:40:29.668221Z",
+        "completed_at": "2026-09-17T15:40:32.726874Z",
+        "cold_start_seconds": 0.260207,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-fac6c204-95eb-ad0d-90b3-304e055496d0"
+          ],
+          "node_uid": "61258753-47b4-4ce3-8015-9c857ac09a84",
+          "pod_uid": "6be544d0-8a07-4cae-b799-fb0396b92456",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-http-https-transfer-video",
+      "operation_id": "9b2cabe9-fb18-4cd2-8aa6-117333b56324",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "966e67f5-7679-4cd4-be1c-64752b1fa692",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "b8563f07c13a6dfb628963b4c848607b7f61d2cf45aaa167c7fa818f6fb18ce6",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "9b2cabe9-fb18-4cd2-8aa6-117333b56324",
+      "terminal_replay_operation_id": "9b2cabe9-fb18-4cd2-8aa6-117333b56324",
+      "operation": {
+        "accepted_at": "2026-09-17T15:40:45.548260Z",
+        "started_at": "2026-09-17T15:40:45.837155Z",
+        "completed_at": "2026-09-17T15:40:51.423283Z",
+        "cold_start_seconds": 0.285727,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-fac6c204-95eb-ad0d-90b3-304e055496d0"
+          ],
+          "node_uid": "61258753-47b4-4ce3-8015-9c857ac09a84",
+          "pod_uid": "6be544d0-8a07-4cae-b799-fb0396b92456",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-http-upload-video-to-video",
+      "operation_id": "b7fa4c28-c497-49c0-bceb-0bad4a627fa3",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "fb5e4a08-57f6-48bd-a36c-8bdc387cb4a6",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "692d75643a74b22620fd04497f7829dfa3bfbc5be0c85dbff24ea46f1a11823b",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "b7fa4c28-c497-49c0-bceb-0bad4a627fa3",
+      "terminal_replay_operation_id": "b7fa4c28-c497-49c0-bceb-0bad4a627fa3",
+      "operation": {
+        "accepted_at": "2026-09-17T15:41:03.335011Z",
+        "started_at": "2026-09-17T15:41:03.649682Z",
+        "completed_at": "2026-09-17T15:41:06.595858Z",
+        "cold_start_seconds": 0.281401,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-fac6c204-95eb-ad0d-90b3-304e055496d0"
+          ],
+          "node_uid": "61258753-47b4-4ce3-8015-9c857ac09a84",
+          "pod_uid": "6be544d0-8a07-4cae-b799-fb0396b92456",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-http-upload-transfer-video",
+      "operation_id": "bb414176-e5bf-45d5-b092-e3ac3681f9e6",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "01beaac4-0f24-4acd-9a10-59fe369fdb1e",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "b8563f07c13a6dfb628963b4c848607b7f61d2cf45aaa167c7fa818f6fb18ce6",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "bb414176-e5bf-45d5-b092-e3ac3681f9e6",
+      "terminal_replay_operation_id": "bb414176-e5bf-45d5-b092-e3ac3681f9e6",
+      "operation": {
+        "accepted_at": "2026-09-17T15:41:18.310111Z",
+        "started_at": "2026-09-17T15:41:18.655241Z",
+        "completed_at": "2026-09-17T15:41:24.159618Z",
+        "cold_start_seconds": 0.282542,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-fac6c204-95eb-ad0d-90b3-304e055496d0"
+          ],
+          "node_uid": "61258753-47b4-4ce3-8015-9c857ac09a84",
+          "pod_uid": "6be544d0-8a07-4cae-b799-fb0396b92456",
+          "preemptible": true
+        }
+      }
+    }
+  ],
+  "serving_pods_after": [
+    {
+      "containers": [
+        {
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "name": "bounded-json-adapter",
+          "ready": true,
+          "restarts": 0
+        },
+        {
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "name": "vllm-omni",
+          "ready": true,
+          "restarts": 0
+        }
+      ],
+      "name": "cosmos3-nano-burst-h100-1x-db6b8d998-wjxnp",
+      "node": "computeinstance-e00xjw1nfcbqs4geg5",
+      "phase": "Running",
+      "uid": "6be544d0-8a07-4cae-b799-fb0396b92456"
+    },
+    {
+      "containers": [
+        {
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "name": "bounded-json-adapter",
+          "ready": true,
+          "restarts": 0
+        },
+        {
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "name": "vllm-omni",
+          "ready": false,
+          "restarts": 0
+        }
+      ],
+      "name": "cosmos3-nano-burst-h100-1x-db6b8d998-xdhbh",
+      "node": "computeinstance-e00z1ze11kq6qm7se7",
+      "phase": "Running",
+      "uid": "f7a94bee-eb96-4711-bee5-21c1878fae73"
+    }
+  ],
+  "first_cold_timing": {
+    "cold_start_seconds": 290.032357,
+    "accepted_to_completed_seconds": 294.363408,
+    "processing_seconds": 4.237575,
+    "image_pull_seconds": 170.519,
+    "capacity": "Immediate scheduling on available preemptible node xjw1; uncached runtime image/cache initialization. Does not measure new-node provisioning."
+  },
+  "runtime_log_capture": {
+    "pod": "cosmos3-nano-burst-h100-1x-db6b8d998-wjxnp",
+    "runtime_sha256": "a04cbc7cf551b664415fa4b3b57387304a34a53328d0c9f4d0ef8c2e783f0977",
+    "adapter_sha256": "f4cf4cd866774adb7560acac0954318601610b6a17442f98e688f1bf5145cce3",
+    "both_streams_exit_code": 0,
+    "generation_http200_count": 8,
+    "snapshot_marker": "cuda-criu-restored",
+    "warning_error_traceback_lines": 0
+  },
+  "autoscaling_note": "A second replica xdhbh was created near cohort end and served none of the eight recorded operations. Both replicas terminated naturally. Subsequent brief zero then startup-trigger reactivation blocked the next preflight and is retained separately, not hidden.",
+  "private_evidence_directory": "/home/tux/secure-handoff/cosmos-public-media-20260917-aiumy1sU/cohort4-release145",
+  "scope_limits": [
+    "No installed LibreChat/skills or exact Timothy video",
+    "No public LeRobot parent-child dataset acceptance",
+    "No physical action alignment/training utility claim",
+    "No concurrent inference or load-balancing qualification"
+  ]
+}
