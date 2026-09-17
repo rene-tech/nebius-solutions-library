@@ -57,6 +57,7 @@ READ_ONLY_OPERATIONS = frozenset(
         "backend-custody",
         "state-migration-readiness",
         "greenfield-bootstrap-readiness",
+        "greenfield-lineage-transition-readiness",
     }
 )
 CALLER_PURPOSES = frozenset(
@@ -133,6 +134,14 @@ CLIENT_FIELDS: dict[str, frozenset[str]] = {
     "backend-custody": frozenset({"terraform_root_name"}),
     "state-migration-readiness": frozenset({"terraform_root_name"}),
     "greenfield-bootstrap-readiness": frozenset({"terraform_root_name"}),
+    "greenfield-lineage-transition-readiness": frozenset(
+        {
+            "terraform_root_name",
+            "saved_plan_sha256",
+            "apply_receipt_sha256",
+            "bootstrap_evidence_id",
+        }
+    ),
 }
 FORBIDDEN_CLIENT_FIELDS = frozenset(
     {
@@ -521,6 +530,49 @@ def _validate_adapter(adapter: Any, *, label: str) -> None:
             )
 
 
+def valid_greenfield_transition(
+    value: Any, *, lineage_id: str, backend_expectation: dict[str, Any]
+) -> bool:
+    fields = {
+        "transition_evidence_id",
+        "bootstrap_evidence_id",
+        "saved_plan_sha256",
+        "apply_receipt_sha256",
+        "backend_binding_sha256",
+        "backend_object_version_id",
+        "lineage",
+        "serial",
+        "terraform_version",
+        "state_json_sha256",
+        "managed_resource_addresses_sha256",
+        "credential_bindings_sha256",
+    }
+    digests = fields - {
+        "backend_object_version_id",
+        "lineage",
+        "serial",
+        "terraform_version",
+    }
+    return bool(
+        isinstance(value, dict)
+        and set(value) == fields
+        and value.get("lineage") == lineage_id
+        and isinstance(value.get("serial"), int)
+        and value["serial"] >= 1
+        and all(
+            isinstance(value.get(field), str)
+            and re.fullmatch(r"[0-9a-f]{64}", value[field]) is not None
+            for field in digests
+        )
+        and value.get("backend_binding_sha256")
+        == canonical_sha256(backend_expectation)
+        and all(
+            isinstance(value.get(field), str) and value[field]
+            for field in ("backend_object_version_id", "terraform_version")
+        )
+    )
+
+
 def _validate_policy(policy: Any) -> None:
     required = {
         "schema",
@@ -545,10 +597,13 @@ def _validate_policy(policy: Any) -> None:
         "class_adapters",
         "backend_access_identities",
         "backend_access_identity_adapter",
+        "backend_authorization_adapter",
         "backend_custody_adapter",
         "greenfield_bootstrap_adapter",
+        "greenfield_transition_adapter",
         "release_identity_adapter",
         "authorization_closure_adapter",
+        "iam_inventory_adapter",
         "cluster_authorization_adapter",
         "operator_proxy_authorization_adapter",
         "credential_delivery_authorization_adapter",
@@ -559,7 +614,7 @@ def _validate_policy(policy: Any) -> None:
         not isinstance(policy, dict)
         or set(policy) != required
         or policy.get("schema")
-        != "fs2-serve.nebius.ai/credential-authority-policy/v3"
+        != "fs2-serve.nebius.ai/credential-authority-policy/v4"
         or not all(
             isinstance(policy.get(field), str) and policy[field]
             for field in ("project_id", "cluster_id")
@@ -929,6 +984,8 @@ def _validate_policy(policy: Any) -> None:
                 "backend_config_path",
                 "backend_expectation",
                 "initialization_mode",
+                "lineage_origin",
+                "greenfield_transition",
                 "legacy_state_source",
                 "terraform_data_dir",
                 "workspace",
@@ -940,6 +997,8 @@ def _validate_policy(policy: Any) -> None:
             or root.get("backend_type") not in {"remote", "s3"}
             or root.get("initialization_mode")
             not in {"legacy-copy", "greenfield-empty", "remote-established"}
+            or root.get("lineage_origin")
+            not in {"legacy-copy", "greenfield-bootstrap", "preexisting-remote"}
             or not isinstance(root.get("backend_config_path"), str)
             or not Path(root["backend_config_path"]).is_absolute()
             or not isinstance(root.get("terraform_data_dir"), str)
@@ -999,10 +1058,14 @@ def _validate_policy(policy: Any) -> None:
         ):
             raise AuthorityServiceError(f"authority Terraform root is malformed: {name}")
         initialization_mode = root["initialization_mode"]
+        lineage_origin = root["lineage_origin"]
+        transition = root["greenfield_transition"]
         legacy = root["legacy_state_source"]
         if initialization_mode == "legacy-copy":
             if (
-                not isinstance(root["lineage_id"], str)
+                lineage_origin != "legacy-copy"
+                or transition is not None
+                or not isinstance(root["lineage_id"], str)
                 or not isinstance(legacy, dict)
                 or set(legacy)
                 != {
@@ -1033,12 +1096,34 @@ def _validate_policy(policy: Any) -> None:
                 raise AuthorityServiceError(
                     f"authority legacy Terraform root is malformed: {name}"
                 )
-        elif legacy is not None or (
-            initialization_mode == "greenfield-empty"
-            and root["lineage_id"] is not None
-        ) or (
-            initialization_mode == "remote-established"
-            and not isinstance(root["lineage_id"], str)
+        elif (
+            legacy is not None
+            or (
+                initialization_mode == "greenfield-empty"
+                and (
+                    lineage_origin != "greenfield-bootstrap"
+                    or transition is not None
+                    or root["lineage_id"] is not None
+                )
+            )
+            or (
+                initialization_mode == "remote-established"
+                and (
+                    not isinstance(root["lineage_id"], str)
+                    or (
+                        lineage_origin == "greenfield-bootstrap"
+                        and not valid_greenfield_transition(
+                            transition,
+                            lineage_id=root["lineage_id"],
+                            backend_expectation=root["backend_expectation"],
+                        )
+                    )
+                    or (
+                        lineage_origin != "greenfield-bootstrap"
+                        and transition is not None
+                    )
+                )
+            )
         ):
             raise AuthorityServiceError(
                 f"authority Terraform initialization mode is inconsistent: {name}"
@@ -1175,6 +1260,10 @@ def _validate_policy(policy: Any) -> None:
         label="purpose-bound backend workload identity",
     )
     _validate_adapter(
+        policy.get("backend_authorization_adapter"),
+        label="provider-effective backend authorization closure",
+    )
+    _validate_adapter(
         policy.get("backend_custody_adapter"), label="Terraform backend custody"
     )
     _validate_adapter(
@@ -1182,11 +1271,19 @@ def _validate_policy(policy: Any) -> None:
         label="Terraform greenfield empty-backend and live-inventory custody",
     )
     _validate_adapter(
+        policy.get("greenfield_transition_adapter"),
+        label="Terraform greenfield established-lineage transition custody",
+    )
+    _validate_adapter(
         policy.get("release_identity_adapter"), label="release workload identity"
     )
     _validate_adapter(
         policy.get("authorization_closure_adapter"),
         label="provider authorization closure",
+    )
+    _validate_adapter(
+        policy.get("iam_inventory_adapter"),
+        label="secret-free provider IAM metadata inventory",
     )
     _validate_adapter(
         policy.get("cluster_authorization_adapter"),
@@ -1390,7 +1487,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
         not isinstance(document, dict)
         or set(document) != required
         or document.get("schema")
-        != "fs2-serve.nebius.ai/credential-authority-config/v4"
+        != "fs2-serve.nebius.ai/credential-authority-config/v5"
         or not isinstance(document.get("configuration_id"), str)
         or not document["configuration_id"]
         or not isinstance(policy, dict)
@@ -1503,6 +1600,18 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
         "consumer-rollout",
     }:
         raise AuthorityServiceError("credential admission phase is invalid")
+    if operation == "greenfield-lineage-transition-readiness" and any(
+        not isinstance(parameters.get(field), str)
+        or re.fullmatch(r"[0-9a-f]{64}", parameters[field]) is None
+        for field in (
+            "saved_plan_sha256",
+            "apply_receipt_sha256",
+            "bootstrap_evidence_id",
+        )
+    ):
+        raise AuthorityServiceError(
+            "greenfield lineage transition identities are malformed"
+        )
     if operation == "scoped-credential-context" and parameters["credential_kind"] not in {
         "general-access",
         "scientific-access",
@@ -1645,6 +1754,7 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
         "backend-custody",
         "state-migration-readiness",
         "greenfield-bootstrap-readiness",
+        "greenfield-lineage-transition-readiness",
     } and parameters["terraform_root_name"] not in config[
         "policy"
     ]["terraform_roots"]:

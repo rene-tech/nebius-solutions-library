@@ -1141,5 +1141,104 @@ def test_greenfield_bootstrap_is_distinct_provider_attested_and_reobserved() -> 
         "fixed_generation_one_create_requires_this_contract": True,
         "fresh_reobservation_required_at_plan_and_apply": True,
         "post_first_apply_mode": "remote-established",
+        "post_first_apply_transition": "provider-observed-plan-and-apply-receipt-bound-lineage-version-state-and-credential-genesis",
+        "post_apply_crash_recovery": "reconcile-immutable-saved-plan-gate-receipts-with-provider-observed-applied-plan",
+        "policy_promotion_required_before_next_root_command": True,
         "execution_authorized": False,
     }
+
+
+def test_wrapper_uses_registered_roots_bootstrap_mode_and_every_identity_receipt() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    plan = wrapper[
+        wrapper.index("def plan_json(") : wrapper.index(
+            "\ndef authoritative_state_json", wrapper.index("def plan_json(")
+        )
+    ]
+    assert "def terraform_root_name(" in wrapper
+    assert 'DEPLOY_ROOT.resolve(): "configuration"' in wrapper
+    assert "terraform_root=root.name" not in plan
+    assert "terraform_root_name(root)" in plan
+    assert "durable_identity_receipt(plan_path.parent, root)" in plan
+    assert "greenfield_bootstrap=greenfield" in plan
+    assert 'arguments.append("--greenfield-bootstrap")' in plan
+    assert 'if root_name == "workloads"' in wrapper
+    assert 'f"{root_name}-durable-identity.receipt.json"' in wrapper
+
+
+def test_configuration_root_has_an_explicit_zero_credential_plan_guard() -> None:
+    guard = (ROOT / "scripts/secret_migration_guard.py").read_text()
+    assert 'if terraform_root == "configuration":' in guard
+    assert "def inspect_configuration_plan(" in guard
+    assert "configuration root contains a durable credential resource" in guard
+    assert "configuration plan may not move a resource address" in guard
+    assert "configuration data source has a mutating action" in guard
+    assert '"configuration",\n            "infrastructure"' in guard
+
+
+def test_backend_sessions_require_exact_provider_permission_closure() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    schema = json.loads(
+        (ROOT / "security/credential-authority-config.schema.json").read_text()
+    )
+    assert "backend_authorization_adapter" in schema["$defs"]["policy"]["required"]
+    assert "def backend_authorization_closure_proof(" in provider
+    assert '"scope") != "project-and-bound-backend-objects"' in provider
+    assert 'response.get("direct_grants") != []' in provider
+    assert 'response.get("cross_project_grants") != []' in provider
+    assert 'response.get("impersonation_grants") != []' in provider
+    assert 'response.get("unscoped_actions") != []' in provider
+    assert "backend authorization closure is stale" in provider
+    assert 'purpose != "release-automation"' in wrapper
+    assert '"s3:DeleteObject", "s3:PutObject"' in wrapper
+
+
+def test_iam_inventory_is_projected_before_access_key_serialization() -> None:
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    inventory = provider[
+        provider.index("IAM_PROJECTED_FIELDS =") : provider.index(
+            "\ndef authorization_closure_proof", provider.index("IAM_PROJECTED_FIELDS =")
+        )
+    ]
+    assert '"projection_boundary": "provider-before-serialization"' in inventory
+    assert 'response.get("secret_fields_observed") != 0' in inventory
+    assert 'response.get("data_fields_returned") != 0' in inventory
+    assert "Nebius IAM metadata projection is stale" in inventory
+    assert '"iam", "access-key", "list"' not in provider
+    assert '"status", "secret"' not in inventory
+
+
+def test_greenfield_transition_is_write_once_recoverable_and_policy_bound() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    service = (ROOT / "scripts/credential_authority_service.py").read_text()
+    schema = json.loads(
+        (ROOT / "security/credential-authority-config.schema.json").read_text()
+    )
+    assert "greenfield-lineage-transition-readiness" in schema["properties"][
+        "operations"
+    ]["required"]
+    assert "greenfield_transition_adapter" in schema["$defs"]["policy"]["required"]
+    root = schema["$defs"]["terraform_root"]
+    assert "lineage_origin" in root["required"]
+    assert "greenfield_transition" in root["required"]
+    assert "def greenfield_lineage_transition_readiness_result(" in provider
+    assert 'response.get("mutation_performed") is not False' in provider
+    assert 'response.get("pre_apply_object_version_ids") != []' in provider
+    assert "def write_once_private_json(" in wrapper
+    assert "def recover_greenfield_transition(" in wrapper
+    assert "saved-plan-gate-*.receipt.json" in wrapper
+    assert "publish an additive root-owned" in wrapper
+    assert "valid_greenfield_transition(" in service
+
+
+def test_external_anchor_accepts_every_purpose_scoped_read_operation() -> None:
+    anchor = (ROOT / "scripts/credential_external_anchor_client.py").read_text()
+    for operation in (
+        "operator-read-context",
+        "operator-proxy-context",
+        "scoped-credential-context",
+        "greenfield-lineage-transition-readiness",
+    ):
+        assert f'"{operation}"' in anchor

@@ -139,6 +139,9 @@ Git, and the root-installed credential authority described in
 [`docs/OPERATOR_ACCESS_HYGIENE_V9.md`](docs/OPERATOR_ACCESS_HYGIENE_V9.md).
 The managed/data-mode and distinct greenfield bootstrap refinement is in
 [`docs/OPERATOR_ACCESS_HYGIENE_V10.md`](docs/OPERATOR_ACCESS_HYGIENE_V10.md).
+The executable root, backend-permission, IAM-projection and greenfield-lineage
+successor is documented in
+[`docs/OPERATOR_ACCESS_HYGIENE_V11.md`](docs/OPERATOR_ACCESS_HYGIENE_V11.md).
 The optional
 local Kueue and JobSet server tests additionally need
 [`kind`](https://kind.sigs.k8s.io/). Authentication is

@@ -172,6 +172,33 @@ def private_text(path: Path, value: str) -> None:
             temporary.unlink()
 
 
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise DeploymentError(f"not a regular file: {path}")
+        while chunk := os.read(descriptor, 1024 * 1024):
+            digest.update(chunk)
+    finally:
+        os.close(descriptor)
+    return digest.hexdigest()
+
+
+def write_once_private_json(path: Path, value: Any) -> None:
+    """Create one owner-only receipt without replace, unlink, or overwrite."""
+
+    if path.exists() or path.is_symlink():
+        raise DeploymentError(f"write-once receipt already exists: {path}")
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(value, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
 def clean_environment() -> dict[str, str]:
     # Stage inputs are generated explicitly. Inherited TF_VAR values could
     # otherwise make the same customer file produce a different deployment.
@@ -292,6 +319,7 @@ def attested_backend_identity(
     except (KeyError, TypeError, ValueError) as error:
         raise DeploymentError("backend workload identity evidence is malformed") from error
     now = datetime.now(UTC)
+    authorization = identity.get("authorization_closure")
     if (
         not isinstance(identity, dict)
         or identity.get("purpose") != purpose
@@ -316,8 +344,27 @@ def attested_backend_identity(
         or not identity["profile"]
         or not isinstance(identity.get("binding_sha256"), str)
         or len(identity["binding_sha256"]) != 64
+        or not isinstance(authorization, dict)
+        or authorization.get("purpose") != purpose
+        or authorization.get("scope") != "project-and-bound-backend-objects"
+        or not isinstance(authorization.get("effective_grants"), list)
+        or not authorization["effective_grants"]
+        or not isinstance(authorization.get("denied_actions"), list)
+        or not authorization["denied_actions"]
+        or not isinstance(authorization.get("closure_sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", authorization["closure_sha256"])
+        is None
     ):
         raise DeploymentError("backend access is not a current purpose-bound session")
+    if purpose != "release-automation" and any(
+        action in {"s3:DeleteObject", "s3:PutObject"}
+        for grant in authorization["effective_grants"]
+        if isinstance(grant, dict)
+        for action in grant.get("actions", [])
+    ):
+        raise DeploymentError(
+            "read/proxy/delivery backend identity retains state mutation access"
+        )
     result = dict(identity)
     result["config_path"] = attested_file(
         identity.get("config_path"),
@@ -812,6 +859,18 @@ def terraform_init(
             )
         initialization = migration
     elif initialization_mode == "greenfield-empty":
+        transition = load_greenfield_transition(environment, root_name)
+        if transition is not None:
+            verified_transition = reobserve_greenfield_transition(
+                transition, root_name=root_name
+            )
+            raise DeploymentError(
+                "greenfield lineage is sealed but authority policy still declares "
+                f"greenfield-empty for {root_name}; publish an additive root-owned "
+                "remote-established policy revision bound to transition "
+                f"{verified_transition['transition_evidence_id']} and lineage "
+                f"{verified_transition['lineage']} before any later Terraform command"
+            )
         bootstrap = authority_observation(
             "greenfield-bootstrap-readiness", terraform_root_name=root_name
         )
@@ -864,6 +923,263 @@ def terraform_init(
             f"-backend-config={backend_config}",
         ],
         env=environment,
+    )
+
+
+def greenfield_transition_run_root(environment: Mapping[str, str]) -> Path:
+    data_directory = Path(environment.get("TF_DATA_DIR", ""))
+    if (
+        not data_directory.is_absolute()
+        or data_directory.parent.name != "terraform-data"
+    ):
+        raise DeploymentError(
+            "Terraform data directory is not bound to a private inference run root"
+        )
+    return data_directory.parent.parent
+
+
+def load_greenfield_transition(
+    environment: Mapping[str, str], root_name: str
+) -> dict[str, Any] | None:
+    """Load one write-once transition selector; authority re-observes all facts."""
+
+    run_root = greenfield_transition_run_root(environment)
+    candidates = sorted(
+        run_root.glob(f"{root_name}-greenfield-transition-*.receipt.json")
+    )
+    if not candidates:
+        return recover_greenfield_transition(run_root, root_name)
+    if len(candidates) != 1:
+        raise DeploymentError(
+            f"{root_name} has an ambiguous greenfield lineage transition history"
+        )
+    path = candidates[0]
+    metadata = path.stat()
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or metadata.st_uid != os.geteuid()
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+    ):
+        raise DeploymentError("greenfield transition receipt custody is unsafe")
+    try:
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise DeploymentError("greenfield transition receipt is invalid JSON") from error
+    if (
+        not isinstance(receipt, dict)
+        or receipt.get("schema")
+        != "fs2-serve.nebius.ai/greenfield-lineage-transition-receipt/v1"
+        or receipt.get("terraform_root_name") != root_name
+    ):
+        raise DeploymentError("greenfield transition receipt is bound to another root")
+    return receipt
+
+
+def recover_greenfield_transition(
+    run_root: Path, root_name: str
+) -> dict[str, Any] | None:
+    """Reconcile a post-apply crash from immutable pre-apply gate receipts."""
+
+    recovered: list[dict[str, Any]] = []
+    for gate_path in sorted(
+        run_root.glob(f"{root_name}-saved-plan-gate-*.receipt.json")
+    ):
+        metadata = gate_path.stat()
+        if (
+            gate_path.is_symlink()
+            or not gate_path.is_file()
+            or metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+        ):
+            raise DeploymentError("saved-plan recovery receipt custody is unsafe")
+        try:
+            gate = json.loads(gate_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as error:
+            raise DeploymentError("saved-plan recovery receipt is invalid JSON") from error
+        bootstrap = gate.get("bootstrap_identity") if isinstance(gate, dict) else None
+        saved_plan = gate.get("saved_plan") if isinstance(gate, dict) else None
+        if (
+            gate.get("schema")
+            != "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v5"
+            or gate.get("terraform_root") != root_name
+            or gate.get("state_initialization") != "greenfield-empty"
+            or not isinstance(bootstrap, dict)
+            or not isinstance(saved_plan, dict)
+            or re.fullmatch(
+                r"[0-9a-f]{64}", str(bootstrap.get("bootstrap_evidence_id", ""))
+            )
+            is None
+            or re.fullmatch(r"[0-9a-f]{64}", str(saved_plan.get("sha256", "")))
+            is None
+        ):
+            continue
+        try:
+            transition = authority_observation(
+                "greenfield-lineage-transition-readiness",
+                terraform_root_name=root_name,
+                saved_plan_sha256=saved_plan["sha256"],
+                apply_receipt_sha256=file_sha256(gate_path),
+                bootstrap_evidence_id=bootstrap["bootstrap_evidence_id"],
+            )
+        except DeploymentError:
+            continue
+        if (
+            transition.get("status")
+            == "greenfield-lineage-established-provider-attested"
+            and transition.get("initialization_mode") == "remote-established"
+            and transition.get("terraform_root_name") == root_name
+            and transition.get("saved_plan_sha256") == saved_plan["sha256"]
+            and transition.get("apply_receipt_sha256") == file_sha256(gate_path)
+            and transition.get("bootstrap_evidence_id")
+            == bootstrap["bootstrap_evidence_id"]
+            and transition.get("backend_access_identity", {}).get("binding_sha256")
+            == ACTIVE_BACKEND_IDENTITY.get("binding_sha256")
+        ):
+            recovered.append(transition)
+    if not recovered:
+        return None
+    identities = {item.get("transition_evidence_id") for item in recovered}
+    if len(recovered) != 1 or len(identities) != 1:
+        raise DeploymentError(
+            f"{root_name} has ambiguous provider-confirmed greenfield transitions"
+        )
+    transition = recovered[0]
+    evidence_id = transition.get("transition_evidence_id")
+    if not isinstance(evidence_id, str) or re.fullmatch(r"[0-9a-f]{64}", evidence_id) is None:
+        raise DeploymentError("recovered greenfield transition identity is malformed")
+    receipt_path = (
+        run_root
+        / f"{root_name}-greenfield-transition-{evidence_id}.receipt.json"
+    )
+    write_once_private_json(receipt_path, transition)
+    return transition
+
+
+def reobserve_greenfield_transition(
+    receipt: Mapping[str, Any], *, root_name: str
+) -> dict[str, Any]:
+    required_hashes = (
+        "saved_plan_sha256",
+        "apply_receipt_sha256",
+        "bootstrap_evidence_id",
+        "transition_evidence_id",
+    )
+    if any(
+        not isinstance(receipt.get(field), str)
+        or re.fullmatch(r"[0-9a-f]{64}", str(receipt[field])) is None
+        for field in required_hashes
+    ):
+        raise DeploymentError("greenfield transition receipt identities are malformed")
+    fresh = authority_observation(
+        "greenfield-lineage-transition-readiness",
+        terraform_root_name=root_name,
+        saved_plan_sha256=receipt["saved_plan_sha256"],
+        apply_receipt_sha256=receipt["apply_receipt_sha256"],
+        bootstrap_evidence_id=receipt["bootstrap_evidence_id"],
+    )
+    stable_fields = {
+        "schema",
+        "terraform_root_name",
+        "initialization_mode",
+        "bootstrap_evidence_id",
+        "saved_plan_sha256",
+        "apply_receipt_sha256",
+        "backend_binding_sha256",
+        "backend_object_version_id",
+        "lineage",
+        "serial",
+        "terraform_version",
+        "state_json_sha256",
+        "managed_resource_addresses_sha256",
+        "credential_bindings_sha256",
+        "transition_evidence_id",
+    }
+    if (
+        fresh.get("status")
+        != "greenfield-lineage-established-provider-attested"
+        or fresh.get("initialization_mode") != "remote-established"
+        or any(fresh.get(field) != receipt.get(field) for field in stable_fields)
+        or fresh.get("backend_access_identity", {}).get("binding_sha256")
+        != ACTIVE_BACKEND_IDENTITY.get("binding_sha256")
+    ):
+        raise DeploymentError(
+            "greenfield lineage transition differs from fresh provider evidence"
+        )
+    return dict(fresh)
+
+
+def capture_greenfield_transition(
+    root: Path,
+    plan_path: Path,
+    environment: Mapping[str, str],
+    initialization: Mapping[str, Any],
+) -> None:
+    """Seal a crash-recoverable, read-only genesis observation after first apply."""
+
+    root_name = terraform_root_name(root)
+    apply_receipt_value = environment.get("FS2_TERRAFORM_APPLY_GATE_RECEIPT", "")
+    apply_receipt = Path(apply_receipt_value)
+    if (
+        initialization.get("initialization_mode") != "greenfield-empty"
+        or not isinstance(initialization.get("bootstrap_evidence_id"), str)
+        or not initialization["bootstrap_evidence_id"]
+        or not apply_receipt.is_absolute()
+        or apply_receipt.is_symlink()
+        or not apply_receipt.is_file()
+    ):
+        raise DeploymentError(
+            "greenfield apply cannot transition without its exact bootstrap and apply receipts"
+        )
+    transition = authority_observation(
+        "greenfield-lineage-transition-readiness",
+        terraform_root_name=root_name,
+        saved_plan_sha256=file_sha256(plan_path),
+        apply_receipt_sha256=file_sha256(apply_receipt),
+        bootstrap_evidence_id=initialization["bootstrap_evidence_id"],
+    )
+    if (
+        transition.get("status")
+        != "greenfield-lineage-established-provider-attested"
+        or transition.get("initialization_mode") != "remote-established"
+        or transition.get("terraform_root_name") != root_name
+        or transition.get("saved_plan_sha256") != file_sha256(plan_path)
+        or transition.get("apply_receipt_sha256") != file_sha256(apply_receipt)
+        or transition.get("bootstrap_evidence_id")
+        != initialization["bootstrap_evidence_id"]
+        or transition.get("backend_access_identity", {}).get("binding_sha256")
+        != ACTIVE_BACKEND_IDENTITY.get("binding_sha256")
+        or not isinstance(transition.get("transition_evidence_id"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", transition["transition_evidence_id"])
+        is None
+    ):
+        raise DeploymentError("provider did not attest the greenfield remote lineage")
+    run_root = greenfield_transition_run_root(environment)
+    receipt_path = run_root / (
+        f"{root_name}-greenfield-transition-"
+        f"{transition['transition_evidence_id']}.receipt.json"
+    )
+    write_once_private_json(receipt_path, transition)
+    ACTIVE_TERRAFORM_INITIALIZATIONS[root_name] = dict(transition)
+
+
+def terraform_root_name(root: Path) -> str:
+    """Return the authority/registry identity for an exact Terraform root."""
+
+    root_name = TERRAFORM_ROOT_NAMES.get(root.resolve())
+    if root_name is None:
+        raise DeploymentError(f"Terraform root is not registered: {root}")
+    return root_name
+
+
+def durable_identity_receipt(run_root: Path, root: Path) -> Path:
+    """Return the root-specific, value-free durable identity receipt path."""
+
+    root_name = terraform_root_name(root)
+    return (
+        run_root / "fixed-v1-identity.receipt.json"
+        if root_name == "workloads"
+        else run_root / f"{root_name}-durable-identity.receipt.json"
     )
 
 
@@ -969,14 +1285,17 @@ def plan_json(
         env=environment,
         capture=True,
     )
+    root_name = terraform_root_name(root)
+    initialization = terraform_initialization(root)
+    greenfield = initialization["initialization_mode"] == "greenfield-empty"
+    identity_receipt = durable_identity_receipt(plan_path.parent, root)
+    if greenfield or not identity_receipt.exists():
+        identity_receipt = None
     guard_secret_migration_plan(
         result.stdout,
-        identity_receipt=(
-            plan_path.parent / "fixed-v1-identity.receipt.json"
-            if root == WORKLOADS_ROOT
-            else None
-        ),
-        terraform_root=root.name,
+        identity_receipt=identity_receipt,
+        terraform_root=root_name,
+        greenfield_bootstrap=greenfield,
     )
     private_text(json_path, result.stdout)
     return json.loads(result.stdout)
@@ -987,6 +1306,7 @@ def guard_secret_migration_plan(
     *,
     identity_receipt: Path | None = None,
     terraform_root: str | None = None,
+    greenfield_bootstrap: bool = False,
 ) -> None:
     """Apply the fail-closed legacy-generation guard without writing more JSON."""
 
@@ -998,6 +1318,8 @@ def guard_secret_migration_plan(
     arguments.extend(["--registry", str(DURABLE_CREDENTIAL_REGISTRY)])
     if terraform_root is not None:
         arguments.extend(["--terraform-root", terraform_root])
+    if greenfield_bootstrap:
+        arguments.append("--greenfield-bootstrap")
     run(
         arguments,
         capture=True,
@@ -1020,14 +1342,17 @@ def guard_saved_plan(
         env=environment,
         capture=True,
     )
+    root_name = terraform_root_name(root)
+    initialization = terraform_initialization(root)
+    greenfield = initialization["initialization_mode"] == "greenfield-empty"
+    identity_receipt = durable_identity_receipt(plan_path.parent, root)
+    if greenfield or not identity_receipt.exists():
+        identity_receipt = None
     guard_secret_migration_plan(
         result.stdout,
-        identity_receipt=(
-            plan_path.parent / "fixed-v1-identity.receipt.json"
-            if root == WORKLOADS_ROOT
-            else None
-        ),
-        terraform_root=root.name,
+        identity_receipt=identity_receipt,
+        terraform_root=root_name,
+        greenfield_bootstrap=greenfield,
     )
 
 
@@ -1126,12 +1451,8 @@ def prepare_credential_migration_gate(
 ) -> Path:
     """Create the short-lived receipt consumed by Terraform's native gate."""
 
-    stage = root.name
-    identity_receipt = (
-        run_root / "fixed-v1-identity.receipt.json"
-        if stage == "workloads"
-        else run_root / f"{stage}-durable-identity.receipt.json"
-    )
+    stage = terraform_root_name(root)
+    identity_receipt = durable_identity_receipt(run_root, root)
     gate_receipt = (
         run_root / f"{stage}-credential-migration-gate-{uuid4().hex}.receipt.json"
     )
@@ -1220,12 +1541,8 @@ def seal_saved_plan_gate(
 ) -> Path:
     """Bind an apply receipt to current state, plan bytes and live Secrets."""
 
-    stage = root.name
-    identity_receipt = (
-        run_root / "fixed-v1-identity.receipt.json"
-        if stage == "workloads"
-        else run_root / f"{stage}-durable-identity.receipt.json"
-    )
+    stage = terraform_root_name(root)
+    identity_receipt = durable_identity_receipt(run_root, root)
     if not identity_receipt.exists():
         identity_receipt = None
     receipt = run_root / f"{stage}-saved-plan-gate-{uuid4().hex}.receipt.json"
@@ -1282,7 +1599,7 @@ def validate_credential_migration_gate(
             "TF_VAR_credential_migration_gate_receipt_path", ""
         ),
         "terraform_configuration": str(root),
-        "terraform_root": root.name,
+        "terraform_root": terraform_root_name(root),
         "source_commit": environment.get(
             "TF_VAR_credential_migration_gate_source_commit", ""
         ),
@@ -1309,7 +1626,7 @@ def validate_saved_plan_apply_gate(root: Path, environment: Mapping[str, str]) -
             "--terraform-configuration",
             str(root),
             "--terraform-root",
-            root.name,
+            terraform_root_name(root),
             "--source-commit",
             environment.get("TF_VAR_credential_migration_gate_source_commit", ""),
             "--registry",
@@ -1375,13 +1692,29 @@ def validate_configuration(
 ) -> tuple[dict[str, Any], dict[str, str]]:
     environment = terraform_environment(run_root, "configuration")
     terraform_init(terraform, DEPLOY_ROOT, environment)
+    planning_receipt = prepare_credential_migration_gate(
+        terraform,
+        run_root=run_root,
+        root=DEPLOY_ROOT,
+        environment=environment,
+    )
+    plan_path = run_root / "configuration.tfplan"
     document = plan_json(
         terraform,
         root=DEPLOY_ROOT,
         environment=environment,
         variable_file=variable_file,
-        plan_path=run_root / "configuration.tfplan",
+        plan_path=plan_path,
         json_path=run_root / "configuration.plan.json",
+    )
+    seal_saved_plan_gate(
+        terraform,
+        run_root=run_root,
+        root=DEPLOY_ROOT,
+        plan_path=plan_path,
+        encoded_plan=json.dumps(document, separators=(",", ":")),
+        planning_receipt=planning_receipt,
+        environment=environment,
     )
     contract = planned_output(document, "deployment_contract")
     private_json(run_root / "deployment-contract.json", contract)
@@ -3294,8 +3627,9 @@ def apply_plan(
     root: Path,
     plan_path: Path,
     environment: Mapping[str, str],
-) -> None:
-    if (root / "credential_migration_gate.tf").is_file():
+) -> bool:
+    initialization = terraform_initialization(root)
+    if (root / "credential_migration_gate.tf").is_file() or root == DEPLOY_ROOT:
         validate_credential_migration_gate(root, environment)
         validate_saved_plan_apply_gate(root, environment)
         guard_saved_plan(terraform, root, plan_path, environment)
@@ -3303,6 +3637,10 @@ def apply_plan(
         [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)],
         env=environment,
     )
+    if initialization["initialization_mode"] == "greenfield-empty":
+        capture_greenfield_transition(root, plan_path, environment, initialization)
+        return True
+    return False
 
 
 def workload_endpoint_outputs(
@@ -3675,7 +4013,18 @@ def apply_stack(
         contract=contract,
         variable_file=infrastructure_variables,
     )
-    apply_plan(args.terraform, INFRA_ROOT, plan_path, environment)
+    if apply_plan(args.terraform, INFRA_ROOT, plan_path, environment):
+        print(
+            json.dumps(
+                {
+                    "status": "greenfield-lineage-sealed",
+                    "terraform_root": "infrastructure",
+                    "next_step": "publish the exact remote-established authority policy revision, then rerun apply",
+                },
+                indent=2,
+            )
+        )
+        return
 
     dynamic = infrastructure_outputs(
         args.terraform,
@@ -3698,7 +4047,18 @@ def apply_stack(
         contract=contract,
         variable_file=foundation_variables,
     )
-    apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
+    if apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment):
+        print(
+            json.dumps(
+                {
+                    "status": "greenfield-lineage-sealed",
+                    "terraform_root": "foundation",
+                    "next_step": "publish the exact remote-established authority policy revision, then rerun apply",
+                },
+                indent=2,
+            )
+        )
+        return
 
     plan_path, _, environment = plan_stage(
         args.terraform,
@@ -3707,15 +4067,38 @@ def apply_stack(
         contract=contract,
         variable_file=workloads_variables,
     )
-    apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
+    if apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment):
+        print(
+            json.dumps(
+                {
+                    "status": "greenfield-lineage-sealed",
+                    "terraform_root": "workloads",
+                    "next_step": "publish the exact remote-established authority policy revision, then rerun apply",
+                },
+                indent=2,
+            )
+        )
+        return
 
     # Record the accepted root contract after all of its staged consumers converge.
-    apply_plan(
+    configuration_transitioned = apply_plan(
         args.terraform,
         DEPLOY_ROOT,
         run_root / "configuration.tfplan",
         configuration_environment,
     )
+    if configuration_transitioned:
+        print(
+            json.dumps(
+                {
+                    "status": "greenfield-lineage-sealed",
+                    "terraform_root": "configuration",
+                    "next_step": "publish the exact remote-established authority policy revision before later Terraform commands",
+                },
+                indent=2,
+            )
+        )
+        return
 
     endpoints = workload_endpoint_outputs(args.terraform, run_root, contract)
     print(json.dumps({"status": "applied", **endpoints}, indent=2))

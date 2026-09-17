@@ -716,8 +716,16 @@ def write_saved_plan_gate_receipt(
         require_greenfield_additive_plan(plan_document, commitments=commitments)
     else:
         require_staged_secret_plan(plan_document, commitments=commitments)
-    phase = plan_variable(plan_document, "credential_migration_phase")
-    admission_phase = "greenfield-bootstrap" if greenfield_bootstrap else phase
+    phase = (
+        None
+        if terraform_root == "configuration"
+        else plan_variable(plan_document, "credential_migration_phase")
+    )
+    admission_phase = (
+        "greenfield-bootstrap"
+        if greenfield_bootstrap and terraform_root != "configuration"
+        else phase
+    )
     admission: dict[str, Any] | None = None
     if admission_phase in {
         "greenfield-bootstrap",
@@ -842,8 +850,16 @@ def validate_saved_plan_gate(
             )
     else:
         raise GuardError("saved-plan receipt has an unknown initialization mode")
-    phase = plan_variable(plan_document, "credential_migration_phase")
-    admission_phase = "greenfield-bootstrap" if greenfield_bootstrap else phase
+    phase = (
+        None
+        if terraform_root == "configuration"
+        else plan_variable(plan_document, "credential_migration_phase")
+    )
+    admission_phase = (
+        "greenfield-bootstrap"
+        if greenfield_bootstrap and terraform_root != "configuration"
+        else phase
+    )
     stored_admission = receipt.get("planned_generation_admission")
     if admission_phase in {
         "greenfield-bootstrap",
@@ -2979,6 +2995,14 @@ def inspect_plan(
     registry = registry or load_registry()
     if terraform_root is None:
         raise GuardError("Terraform root is required for credential plan inspection")
+    if terraform_root == "configuration":
+        if identity_receipt is not None:
+            raise GuardError(
+                "credential-free configuration root cannot consume a durable identity receipt"
+            )
+        return inspect_configuration_plan(
+            document, greenfield_bootstrap=greenfield_bootstrap
+        )
     required_addresses = enforce_registry_resource_inventory(
         document, registry=registry, terraform_root=terraform_root
     )
@@ -3121,6 +3145,67 @@ def inspect_plan(
         "verified_identities": len(prior_fingerprints),
         "protected_changes": protected_changes,
         "planned_secret_commitments": len(commitments),
+    }
+
+
+def inspect_configuration_plan(
+    document: dict[str, Any], *, greenfield_bootstrap: bool
+) -> dict[str, int]:
+    """Prove the deployment-contract root cannot carry durable credentials.
+
+    The top-level configuration root intentionally has no credential registry
+    or native credential apply-gate variables. It is still inspected instead
+    of bypassed: any managed credential-shaped address, moved address, unknown
+    mode, or data-source mutation fails closed.
+    """
+
+    configured = configuration_resource_addresses(document.get("configuration"))
+    credential_addresses = sorted(
+        address
+        for address in configured
+        if credential_resource_type(address) is not None
+    )
+    if credential_addresses:
+        raise GuardError(
+            "configuration root contains a durable credential resource: "
+            + ",".join(credential_addresses)
+        )
+    if greenfield_bootstrap:
+        require_empty_greenfield_state(document.get("prior_state"))
+    changes = document.get("resource_changes", [])
+    if not isinstance(changes, list):
+        raise GuardError("configuration plan contains no resource change inventory")
+    for change in changes:
+        if not isinstance(change, dict):
+            raise GuardError("configuration plan contains a malformed change")
+        address = change.get("address")
+        mode = change.get("mode", "managed")
+        actions = change.get("change", {}).get("actions", [])
+        if not isinstance(address, str) or mode not in {"managed", "data"}:
+            raise GuardError("configuration plan resource identity is malformed")
+        if (mode == "data") != terraform_address_is_data_source(address):
+            raise GuardError(
+                "configuration plan resource mode differs from its address"
+            )
+        if credential_resource_type(address) is not None:
+            raise GuardError(
+                f"configuration plan contains a credential-shaped change: {address}"
+            )
+        if change.get("previous_address") is not None:
+            raise GuardError("configuration plan may not move a resource address")
+        if mode == "data" and actions not in (["read"], ["no-op"]):
+            raise GuardError("configuration data source has a mutating action")
+        if greenfield_bootstrap and mode == "managed" and actions not in (
+            ["create"],
+            ["read"],
+            ["no-op"],
+        ):
+            raise GuardError("greenfield configuration plan is not additive")
+    return {
+        "protected_addresses": 0,
+        "verified_identities": 0,
+        "protected_changes": 0,
+        "planned_secret_commitments": 0,
     }
 
 
@@ -4011,7 +4096,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     plan.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     plan.add_argument(
         "--terraform-root",
-        choices=("infrastructure", "foundation", "workloads", "reference-data"),
+        choices=(
+            "configuration",
+            "infrastructure",
+            "foundation",
+            "workloads",
+            "reference-data",
+        ),
         required=True,
     )
     capture = subparsers.add_parser("capture-state")
@@ -4021,7 +4112,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     capture.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     capture.add_argument(
         "--terraform-root",
-        choices=("infrastructure", "foundation", "workloads", "reference-data"),
+        choices=("configuration", "infrastructure", "foundation", "workloads", "reference-data"),
         required=True,
     )
     apply_gate = subparsers.add_parser("capture-apply-gate")
@@ -4037,7 +4128,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     apply_gate.add_argument("--terraform-configuration", type=Path, required=True)
     apply_gate.add_argument(
         "--terraform-root",
-        choices=("infrastructure", "foundation", "workloads", "reference-data"),
+        choices=("configuration", "infrastructure", "foundation", "workloads", "reference-data"),
         required=True,
     )
     apply_gate.add_argument("--source-commit", required=True)
@@ -4060,7 +4151,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     saved_gate.add_argument("--terraform-configuration", type=Path, required=True)
     saved_gate.add_argument(
         "--terraform-root",
-        choices=("infrastructure", "foundation", "workloads", "reference-data"),
+        choices=("configuration", "infrastructure", "foundation", "workloads", "reference-data"),
         required=True,
     )
     saved_gate.add_argument("--source-commit", required=True)
@@ -4070,7 +4161,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     execution_gate.add_argument("--terraform-configuration", type=Path, required=True)
     execution_gate.add_argument(
         "--terraform-root",
-        choices=("infrastructure", "foundation", "workloads", "reference-data"),
+        choices=("configuration", "infrastructure", "foundation", "workloads", "reference-data"),
         required=True,
     )
     execution_gate.add_argument("--source-commit", required=True)

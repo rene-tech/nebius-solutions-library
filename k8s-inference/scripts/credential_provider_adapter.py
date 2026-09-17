@@ -52,6 +52,7 @@ READ_ONLY_OPERATIONS = frozenset(
         "backend-custody",
         "state-migration-readiness",
         "greenfield-bootstrap-readiness",
+        "greenfield-lineage-transition-readiness",
     }
 )
 CALLER_PURPOSES = frozenset(

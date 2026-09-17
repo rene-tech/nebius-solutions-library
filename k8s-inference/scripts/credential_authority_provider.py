@@ -510,6 +510,8 @@ def terraform_inventory(policy: dict[str, Any]) -> list[dict[str, Any]]:
                     "resources": [],
                     "initialization_mode": "greenfield-empty",
                     "bootstrap_evidence_id": bootstrap["bootstrap_evidence_id"],
+                    "lineage_origin": root["lineage_origin"],
+                    "greenfield_transition_evidence_id": None,
                 }
             )
             continue
@@ -553,6 +555,28 @@ def terraform_inventory(policy: dict[str, Any]) -> list[dict[str, Any]]:
             or serial < 1
         ):
             raise ProviderError(f"{root_name} Terraform lineage or serial is invalid")
+        transition = root.get("greenfield_transition")
+        if root.get("lineage_origin") == "greenfield-bootstrap":
+            if (
+                not isinstance(transition, dict)
+                or transition.get("lineage") != lineage
+                or not isinstance(transition.get("serial"), int)
+                or serial < transition["serial"]
+                or transition.get("backend_binding_sha256")
+                != canonical_sha256(root["backend_expectation"])
+                or (
+                    serial == transition["serial"]
+                    and canonical_sha256(state)
+                    != transition.get("state_json_sha256")
+                )
+            ):
+                raise ProviderError(
+                    f"{root_name} greenfield lineage differs from its source-approved genesis"
+                )
+        elif transition is not None:
+            raise ProviderError(
+                f"{root_name} non-greenfield lineage carries a greenfield transition"
+            )
         inventory.append(
             {
                 "root": root_name,
@@ -571,6 +595,12 @@ def terraform_inventory(policy: dict[str, Any]) -> list[dict[str, Any]]:
                 "resources": state_addresses(state),
                 "initialization_mode": "remote-established",
                 "bootstrap_evidence_id": None,
+                "lineage_origin": root["lineage_origin"],
+                "greenfield_transition_evidence_id": (
+                    transition["transition_evidence_id"]
+                    if isinstance(transition, dict)
+                    else None
+                ),
             }
         )
     return inventory
@@ -1044,84 +1074,151 @@ def resource_metadata(item: dict[str, Any], *, label: str) -> tuple[dict[str, An
     return metadata, spec
 
 
-def normalize_nebius_items(document: Any, *, kind: str) -> list[dict[str, Any]]:
+IAM_PROJECTED_FIELDS = {
+    "service_accounts": ["id", "parent_id", "name", "labels"],
+    "access_keys": [
+        "id",
+        "parent_id",
+        "name",
+        "labels",
+        "service_account_id",
+        "expires_at",
+        "secret_reference_id_sha256",
+    ],
+    "auth_public_keys": [
+        "id",
+        "parent_id",
+        "name",
+        "labels",
+        "service_account_id",
+        "expires_at",
+        "public_key_sha256",
+    ],
+    "groups": ["id", "parent_id", "name", "labels"],
+    "group_memberships": [
+        "id",
+        "parent_id",
+        "name",
+        "labels",
+        "group_id",
+        "member_id",
+    ],
+    "access_permits": [
+        "id",
+        "parent_id",
+        "name",
+        "labels",
+        "group_id",
+        "resource_id",
+        "role",
+    ],
+}
+
+
+def projected_nebius_items(document: Any, *, kind: str) -> list[dict[str, Any]]:
+    """Validate metadata-only IAM projections produced before serialization."""
+
+    if kind not in IAM_PROJECTED_FIELDS or not isinstance(document, list):
+        raise ProviderError(f"Nebius {kind} metadata projection is malformed")
+    required = {*IAM_PROJECTED_FIELDS[kind], "provider_metadata_sha256"}
     result: list[dict[str, Any]] = []
-    for item in list_items(document, label=kind):
-        metadata, spec = resource_metadata(item, label=kind)
-        normalized: dict[str, Any] = {
-            "id": metadata["id"],
-            "parent_id": metadata.get("parent_id"),
-            "name": metadata.get("name"),
-            "labels": safe_labels(metadata.get("labels")),
-            "provider_object_sha256": canonical_sha256(item),
-        }
-        if kind in {"access_keys", "auth_public_keys"}:
-            normalized["service_account_id"] = nested_id(
-                spec, "account", "service_account", "id"
+    identities: set[str] = set()
+    for item in document:
+        if (
+            not isinstance(item, dict)
+            or set(item) != required
+            or not isinstance(item.get("id"), str)
+            or not item["id"]
+            or item["id"] in identities
+            or not isinstance(item.get("labels"), dict)
+            or safe_labels(item["labels"]) != item["labels"]
+            or not isinstance(item.get("provider_metadata_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", item["provider_metadata_sha256"])
+            is None
+            or any(
+                item.get(field) is not None
+                and (not isinstance(item[field], str) or not item[field])
+                for field in required - {"id", "labels", "provider_metadata_sha256"}
             )
-            normalized["expires_at"] = spec.get("expires_at")
-        if kind == "access_keys":
-            reference = spec.get("secret_reference_id") or nested_id(
-                item, "status", "secret_reference_id"
-            )
-            normalized["secret_reference_id_sha256"] = (
-                hashlib.sha256(reference.encode()).hexdigest()
-                if isinstance(reference, str) and reference
-                else None
-            )
-        elif kind == "auth_public_keys":
-            public = spec.get("data")
-            normalized["public_key_sha256"] = (
-                hashlib.sha256(public.encode()).hexdigest()
-                if isinstance(public, str) and public
-                else None
-            )
-        elif kind == "group_memberships":
-            normalized["group_id"] = (
-                spec.get("group_id") or metadata.get("parent_id")
-            )
-            normalized["member_id"] = spec.get("member_id") or item.get("member_id")
-        elif kind == "access_permits":
-            normalized["group_id"] = metadata.get("parent_id")
-            normalized["resource_id"] = spec.get("resource_id") or item.get(
-                "resource_id"
-            )
-            normalized["role"] = spec.get("role") or item.get("role")
-        result.append(normalized)
+        ):
+            raise ProviderError(f"Nebius {kind} projection contains unsafe fields")
+        for digest_field in {
+            "secret_reference_id_sha256",
+            "public_key_sha256",
+        }.intersection(item):
+            if item[digest_field] is not None and re.fullmatch(
+                r"[0-9a-f]{64}", item[digest_field]
+            ) is None:
+                raise ProviderError(f"Nebius {kind} projection digest is malformed")
+        identities.add(item["id"])
+        result.append(dict(item))
     return sorted(result, key=lambda value: value["id"])
 
 
 def nebius_inventory(policy: dict[str, Any]) -> dict[str, Any]:
+    """Read only provider-projected IAM metadata; never deserialize key objects."""
+
     automation = policy["evidence_identity"]
-    root_private_file(
+    config_sha256 = root_private_file(
         Path(automation["config_path"]),
         label="read-only evidence identity configuration",
         expected_sha256=automation["config_sha256"],
     )
-    common = [
-        "--profile",
-        automation["profile"],
-        "--parent-id",
-        policy["project_id"],
-        "--all",
-        "--format",
-        "json",
-    ]
-    binary = executable(policy, "nebius")
-    prefix = [binary, "--config", automation["config_path"]]
-    commands = {
-        "service_accounts": [*prefix, "iam", "service-account", "list", *common],
-        "access_keys": [*prefix, "iam", "access-key", "list", *common],
-        "auth_public_keys": [*prefix, "iam", "auth-public-key", "list", *common],
-        "groups": [*prefix, "iam", "group", "list", *common],
-        "group_memberships": [*prefix, "iam", "group-membership", "list", *common],
-        "access_permits": [*prefix, "iam", "access-permit", "list", *common],
+    adapter = policy["iam_inventory_adapter"]
+    response = command_json_input(
+        verified_adapter_command(adapter, label="Nebius IAM metadata projection"),
+        label="Nebius IAM metadata projection",
+        payload={
+            "schema": "fs2-serve.nebius.ai/iam-metadata-inventory-request/v1",
+            "project_id": policy["project_id"],
+            "service_account_id": automation["service_account_id"],
+            "credential_id": automation["credential_id"],
+            "credential_kind": automation["credential_kind"],
+            "config_sha256": config_sha256,
+            "projection_fields": IAM_PROJECTED_FIELDS,
+            "projection_boundary": "provider-before-serialization",
+        },
+        timeout=adapter["timeout_seconds"],
+    )
+    fields = {
+        "schema",
+        "project_id",
+        "projection_fields",
+        "projection_boundary",
+        "inventory",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+        "secret_fields_observed",
     }
-    return {
-        kind: normalize_nebius_items(
-            command_json(command, label=f"Nebius {kind} inventory"), kind=kind
+    inventory = response.get("inventory") if isinstance(response, dict) else None
+    if (
+        not isinstance(response, dict)
+        or set(response) != fields
+        or response.get("schema")
+        != "fs2-serve.nebius.ai/iam-metadata-inventory/v1"
+        or response.get("project_id") != policy["project_id"]
+        or response.get("projection_fields") != IAM_PROJECTED_FIELDS
+        or response.get("projection_boundary")
+        != "provider-before-serialization"
+        or response.get("complete") is not True
+        or response.get("data_fields_returned") != 0
+        or response.get("secret_fields_observed") != 0
+        or not isinstance(inventory, dict)
+        or set(inventory) != set(IAM_PROJECTED_FIELDS)
+    ):
+        raise ProviderError(
+            "Nebius IAM inventory was not projected before AccessKey serialization"
         )
-        for kind, command in commands.items()
+    observation_time = provider_time(
+        response["observed_at"], label="Nebius IAM metadata observation time"
+    )
+    now = datetime.now(UTC)
+    if observation_time > now or now - observation_time > timedelta(minutes=5):
+        raise ProviderError("Nebius IAM metadata projection is stale")
+    return {
+        kind: projected_nebius_items(inventory[kind], kind=kind)
+        for kind in sorted(IAM_PROJECTED_FIELDS)
     }
 
 
@@ -1564,6 +1661,12 @@ def backend_access_identity_proof(
         seconds=configured["maximum_lifetime_seconds"]
     ):
         raise ProviderError("backend workload identity lifetime is invalid")
+    authorization_closure = backend_authorization_closure_proof(
+        policy,
+        purpose=purpose,
+        service_account_id=response["service_account_id"],
+        provider_session_id=response["provider_session_id"],
+    )
     stable_binding = {
         "purpose": purpose,
         "project_id": response["project_id"],
@@ -1576,6 +1679,7 @@ def backend_access_identity_proof(
         "credential_source": response["credential_source"],
         "credential_identity_sha256": response["credential_identity_sha256"],
         "shared_credentials_file_sha256": shared_credentials_file_sha256,
+        "authorization_closure_sha256": authorization_closure["closure_sha256"],
     }
     return {
         "purpose": purpose,
@@ -1600,8 +1704,164 @@ def backend_access_identity_proof(
         "reader_gid": configured["reader_gid"],
         "human_principal_allowed": False,
         "impersonation_allowed": False,
+        "authorization_closure": authorization_closure,
         "binding_sha256": canonical_sha256(stable_binding),
         "provider_identity_sha256": canonical_sha256(response),
+    }
+
+
+def backend_authorization_grants(
+    policy: dict[str, Any], purpose: str
+) -> list[dict[str, Any]]:
+    """Derive the only accepted backend grants from exact root bindings."""
+
+    read_actions = ["s3:GetObject", "s3:GetObjectVersion"]
+    release = purpose == "release-automation"
+    grants: list[dict[str, Any]] = []
+    for root_name, root in sorted(policy["terraform_roots"].items()):
+        backend = root["backend_expectation"]
+        state_key = backend["object_key"]
+        lock_key = f"{state_key}.tflock"
+        grants.append(
+            {
+                "root": root_name,
+                "bucket_id": backend["bucket_id"],
+                "object_keys": [state_key, lock_key],
+                "actions": ["s3:ListBucket"],
+            }
+        )
+        grants.append(
+            {
+                "root": root_name,
+                "bucket_id": backend["bucket_id"],
+                "object_keys": [state_key],
+                "actions": sorted(
+                    [*read_actions, *(["s3:PutObject"] if release else [])]
+                ),
+            }
+        )
+        grants.append(
+            {
+                "root": root_name,
+                "bucket_id": backend["bucket_id"],
+                "object_keys": [lock_key],
+                "actions": sorted(
+                    [
+                        *read_actions,
+                        *(
+                            ["s3:DeleteObject", "s3:PutObject"]
+                            if release
+                            else []
+                        ),
+                    ]
+                ),
+            }
+        )
+    return sorted(grants, key=canonical_sha256)
+
+
+def backend_authorization_closure_proof(
+    policy: dict[str, Any],
+    *,
+    purpose: str,
+    service_account_id: str,
+    provider_session_id: str,
+) -> dict[str, Any]:
+    """Prove exact provider-effective backend permissions for one session.
+
+    Identity and expiry are insufficient: this independent adapter must expand
+    inherited, direct, cross-project and impersonation grants and return the
+    exact object-scoped effective set. Read/proxy/delivery sessions can never
+    write or delete state; release automation can update state and its lock but
+    cannot delete state objects or versions.
+    """
+
+    expected_grants = backend_authorization_grants(policy, purpose)
+    denied_actions = sorted(
+        {
+            "s3:DeleteBucket",
+            "s3:DeleteObjectVersion",
+            "s3:PutBucketAcl",
+            "s3:PutBucketPolicy",
+            "s3:PutObjectAcl",
+            *(
+                set()
+                if purpose == "release-automation"
+                else {"s3:AbortMultipartUpload", "s3:DeleteObject", "s3:PutObject"}
+            ),
+        }
+    )
+    adapter = policy["backend_authorization_adapter"]
+    response = command_json_input(
+        verified_adapter_command(
+            adapter, label=f"{purpose} backend authorization closure"
+        ),
+        label=f"{purpose} backend authorization closure",
+        payload={
+            "schema": "fs2-serve.nebius.ai/backend-authorization-request/v1",
+            "purpose": purpose,
+            "project_id": policy["project_id"],
+            "service_account_id": service_account_id,
+            "provider_session_id": provider_session_id,
+            "expected_grants": expected_grants,
+            "required_denied_actions": denied_actions,
+        },
+        timeout=adapter["timeout_seconds"],
+    )
+    fields = {
+        "schema",
+        "purpose",
+        "project_id",
+        "service_account_id",
+        "provider_session_id",
+        "scope",
+        "effective_grants",
+        "denied_actions",
+        "direct_grants",
+        "cross_project_grants",
+        "impersonation_grants",
+        "unscoped_actions",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+    }
+    if (
+        not isinstance(response, dict)
+        or set(response) != fields
+        or response.get("schema")
+        != "fs2-serve.nebius.ai/backend-authorization/v1"
+        or response.get("purpose") != purpose
+        or response.get("project_id") != policy["project_id"]
+        or response.get("service_account_id") != service_account_id
+        or response.get("provider_session_id") != provider_session_id
+        or response.get("scope") != "project-and-bound-backend-objects"
+        or sorted(response.get("effective_grants", []), key=canonical_sha256)
+        != expected_grants
+        or response.get("denied_actions") != denied_actions
+        or response.get("direct_grants") != []
+        or response.get("cross_project_grants") != []
+        or response.get("impersonation_grants") != []
+        or response.get("unscoped_actions") != []
+        or response.get("complete") is not True
+        or response.get("data_fields_returned") != 0
+    ):
+        raise ProviderError(
+            f"{purpose} backend permissions are not an exact provider-observed closure"
+        )
+    observation_time = provider_time(
+        response["observed_at"],
+        label=f"{purpose} backend authorization observation time",
+    )
+    now = datetime.now(UTC)
+    if observation_time > now or now - observation_time > timedelta(minutes=5):
+        raise ProviderError(f"{purpose} backend authorization closure is stale")
+    return {
+        "scope": response["scope"],
+        "purpose": purpose,
+        "effective_grants": expected_grants,
+        "denied_actions": denied_actions,
+        "observed_at": response["observed_at"],
+        "closure_sha256": canonical_sha256(response),
     }
 
 
@@ -3855,6 +4115,197 @@ def greenfield_bootstrap_readiness_result(
     }
 
 
+def greenfield_lineage_transition_readiness_result(
+    policy: dict[str, Any],
+    root_name: str,
+    caller_purpose: str,
+    *,
+    saved_plan_sha256: str,
+    apply_receipt_sha256: str,
+    bootstrap_evidence_id: str,
+) -> dict[str, Any]:
+    """Attest the first immutable remote lineage after a greenfield apply."""
+
+    root = policy["terraform_roots"][root_name]
+    supplied_hashes = {
+        "saved plan": saved_plan_sha256,
+        "apply receipt": apply_receipt_sha256,
+        "bootstrap evidence": bootstrap_evidence_id,
+    }
+    if (
+        root["initialization_mode"] != "greenfield-empty"
+        or root["legacy_state_source"] is not None
+        or root["lineage_id"] is not None
+        or caller_purpose != "release-automation"
+        or any(re.fullmatch(r"[0-9a-f]{64}", value) is None for value in supplied_hashes.values())
+    ):
+        raise ProviderError(
+            "greenfield lineage transition requires exact bootstrap and apply identities"
+        )
+    backend_identity = backend_access_identity_proof(policy, caller_purpose)
+    registry = load_registry(policy)
+    adapter = policy["greenfield_transition_adapter"]
+    response = command_json_input(
+        verified_adapter_command(
+            adapter, label="Terraform greenfield lineage transition custody"
+        ),
+        label=f"{root_name} Terraform greenfield lineage transition custody",
+        payload={
+            "schema": "fs2-serve.nebius.ai/greenfield-lineage-transition-request/v1",
+            "terraform_root_name": root_name,
+            "backend": root["backend_expectation"],
+            "registry_sha256": canonical_sha256(registry),
+            "bootstrap_evidence_id": bootstrap_evidence_id,
+            "saved_plan_sha256": saved_plan_sha256,
+            "apply_receipt_sha256": apply_receipt_sha256,
+            "caller_backend_identity_sha256": backend_identity["binding_sha256"],
+        },
+        timeout=adapter["timeout_seconds"],
+    )
+    fields = {
+        "schema",
+        "terraform_root_name",
+        "backend_binding_sha256",
+        "bootstrap_evidence_id",
+        "bootstrap_evidence_verified",
+        "saved_plan_sha256",
+        "apply_receipt_sha256",
+        "applied_saved_plan_sha256",
+        "backend_object_present",
+        "pre_apply_object_version_ids",
+        "backend_object_version_id",
+        "backend_lock_present",
+        "lineage",
+        "serial",
+        "terraform_version",
+        "state_json_sha256",
+        "managed_resource_addresses",
+        "credential_bindings",
+        "unmatched_plan_credentials",
+        "unmanaged_live_credentials",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+        "mutation_performed",
+        "caller_backend_identity_sha256",
+    }
+    bindings = response.get("credential_bindings") if isinstance(response, dict) else None
+    managed_addresses = (
+        response.get("managed_resource_addresses")
+        if isinstance(response, dict)
+        else None
+    )
+    if (
+        not isinstance(response, dict)
+        or set(response) != fields
+        or response.get("schema")
+        != "fs2-serve.nebius.ai/greenfield-lineage-transition/v1"
+        or response.get("terraform_root_name") != root_name
+        or response.get("backend_binding_sha256")
+        != canonical_sha256(root["backend_expectation"])
+        or response.get("bootstrap_evidence_id") != bootstrap_evidence_id
+        or response.get("bootstrap_evidence_verified") is not True
+        or response.get("saved_plan_sha256") != saved_plan_sha256
+        or response.get("apply_receipt_sha256") != apply_receipt_sha256
+        or response.get("applied_saved_plan_sha256") != saved_plan_sha256
+        or response.get("backend_object_present") is not True
+        or response.get("pre_apply_object_version_ids") != []
+        or not isinstance(response.get("backend_object_version_id"), str)
+        or not response["backend_object_version_id"]
+        or response.get("backend_lock_present") is not False
+        or not isinstance(response.get("lineage"), str)
+        or re.fullmatch(r"[0-9a-fA-F-]{16,64}", response["lineage"]) is None
+        or not isinstance(response.get("serial"), int)
+        or response["serial"] < 1
+        or not isinstance(response.get("terraform_version"), str)
+        or not response["terraform_version"]
+        or not isinstance(response.get("state_json_sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", response["state_json_sha256"]) is None
+        or not isinstance(managed_addresses, list)
+        or managed_addresses != sorted(set(managed_addresses))
+        or not isinstance(bindings, list)
+        or response.get("unmatched_plan_credentials") != []
+        or response.get("unmanaged_live_credentials") != []
+        or response.get("complete") is not True
+        or response.get("data_fields_returned") != 0
+        or response.get("mutation_performed") is not False
+        or response.get("caller_backend_identity_sha256")
+        != backend_identity["binding_sha256"]
+    ):
+        raise ProviderError(
+            "greenfield apply did not produce one exact provider-observed remote lineage"
+        )
+    registered = {
+        item["address"]
+        for item in registry["terraform_resource_addresses"]
+        if item["root"] == root_name
+    }
+    observed_credential_addresses = {
+        address
+        for address in managed_addresses
+        if classes_for_address(registry, root_name, address)
+    }
+    binding_addresses: set[str] = set()
+    for binding in bindings:
+        address = binding.get("terraform_address") if isinstance(binding, dict) else None
+        classes = classes_for_address(registry, root_name, str(address))
+        if (
+            not isinstance(binding, dict)
+            or set(binding)
+            != {
+                "terraform_address",
+                "credential_class",
+                "generation",
+                "provider_id",
+                "identity_sha256",
+            }
+            or address not in registered
+            or len(classes) != 1
+            or binding.get("credential_class") != classes[0]["id"]
+            or binding.get("generation") != generation_from_address(address)
+            or not isinstance(binding.get("provider_id"), str)
+            or not binding["provider_id"]
+            or not isinstance(binding.get("identity_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", binding["identity_sha256"]) is None
+            or address in binding_addresses
+        ):
+            raise ProviderError("greenfield transition credential binding is malformed")
+        binding_addresses.add(address)
+    if binding_addresses != observed_credential_addresses:
+        raise ProviderError(
+            "greenfield transition does not bind every managed credential address"
+        )
+    observation_time = provider_time(
+        response["observed_at"], label="greenfield lineage observation time"
+    )
+    now = datetime.now(UTC)
+    if observation_time > now or now - observation_time > timedelta(minutes=5):
+        raise ProviderError("greenfield lineage transition observation is stale")
+    transition = {
+        "schema": "fs2-serve.nebius.ai/greenfield-lineage-transition-receipt/v1",
+        "terraform_root_name": root_name,
+        "initialization_mode": "remote-established",
+        "bootstrap_evidence_id": bootstrap_evidence_id,
+        "saved_plan_sha256": saved_plan_sha256,
+        "apply_receipt_sha256": apply_receipt_sha256,
+        "backend_binding_sha256": response["backend_binding_sha256"],
+        "backend_object_version_id": response["backend_object_version_id"],
+        "lineage": response["lineage"],
+        "serial": response["serial"],
+        "terraform_version": response["terraform_version"],
+        "state_json_sha256": response["state_json_sha256"],
+        "managed_resource_addresses_sha256": canonical_sha256(managed_addresses),
+        "credential_bindings_sha256": canonical_sha256(bindings),
+        "observed_at": response["observed_at"],
+        "backend_access_identity": backend_identity,
+    }
+    return {
+        **transition,
+        "status": "greenfield-lineage-established-provider-attested",
+        "transition_evidence_id": canonical_sha256(transition),
+    }
+
+
 def operation_result(request: dict[str, Any]) -> dict[str, Any]:
     policy = request["policy"]
     operation = request["operation"]
@@ -3871,6 +4322,15 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
     if operation == "greenfield-bootstrap-readiness":
         return greenfield_bootstrap_readiness_result(
             policy, str(parameters["terraform_root_name"]), caller_purpose
+        )
+    if operation == "greenfield-lineage-transition-readiness":
+        return greenfield_lineage_transition_readiness_result(
+            policy,
+            str(parameters["terraform_root_name"]),
+            caller_purpose,
+            saved_plan_sha256=str(parameters["saved_plan_sha256"]),
+            apply_receipt_sha256=str(parameters["apply_receipt_sha256"]),
+            bootstrap_evidence_id=str(parameters["bootstrap_evidence_id"]),
         )
     if operation == "release-identity":
         provider_inventory = nebius_inventory(policy)
