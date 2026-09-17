@@ -1069,7 +1069,10 @@ locals {
       retention_days = var.deployment.storage.scientific_artifacts.retention_days
       tenant_quota_bytes = var.deployment.storage.scientific_artifacts.tenant_quota_bytes
       tenant_quota_objects = var.deployment.storage.scientific_artifacts.tenant_quota_objects
+      multipart_writes_enabled = var.deployment.storage.scientific_artifacts.multipart_writes_enabled
       upload_reservation_ttl_seconds = var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds
+      upload_completion_grace_seconds = var.deployment.storage.scientific_artifacts.upload_completion_grace_seconds
+      provider_stability_grace_seconds = var.deployment.storage.scientific_artifacts.provider_stability_grace_seconds
     }
     public_edge_mode         = var.deployment.edge.mode
     public_edge_source_cidrs = sort(tolist(var.deployment.edge.source_cidrs))
@@ -1196,7 +1199,10 @@ locals {
       max_artifact_bytes    = var.deployment.storage.scientific_artifacts.max_artifact_bytes
       tenant_quota_bytes    = var.deployment.storage.scientific_artifacts.tenant_quota_bytes
       tenant_quota_objects  = var.deployment.storage.scientific_artifacts.tenant_quota_objects
+      multipart_writes_enabled = var.deployment.storage.scientific_artifacts.multipart_writes_enabled
       upload_reservation_ttl_seconds = var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds
+      upload_completion_grace_seconds = var.deployment.storage.scientific_artifacts.upload_completion_grace_seconds
+      provider_stability_grace_seconds = var.deployment.storage.scientific_artifacts.provider_stability_grace_seconds
       retention_days        = var.deployment.storage.scientific_artifacts.retention_days
       egress_cidrs          = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
       media_types           = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))

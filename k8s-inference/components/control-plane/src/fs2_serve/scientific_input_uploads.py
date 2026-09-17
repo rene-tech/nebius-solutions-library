@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .auth import require_operation_access
 from .models import AdmissionRequest, ModelId, Principal, Scope, StrictModel
@@ -25,9 +25,11 @@ from .scientific_artifacts import (
     ArtifactCompression,
     ArtifactDirection,
     AttemptStatus,
+    AuthorizeArtifactUploadPart,
     BeginArtifactUpload,
     CloseStageAttempt,
     FinalizeArtifactUpload,
+    MULTIPART_FIRST_PART_DESCRIPTION,
     OpenStageAttempt,
     ScientificArtifactControllerPort,
 )
@@ -50,10 +52,27 @@ class ScientificInputUploadRequest(StrictModel):
     size_bytes: int = Field(ge=0)
     media_type: str = Field(min_length=3, max_length=128)
     compression: CompressionInput | None = None
+    upload_protocol: Literal["single-put-v1", "multipart-v2"] = "single-put-v1"
+    first_part_sha256: Annotated[str, Field(pattern=RAW_SHA256)] | None = Field(
+        default=None,
+        description=MULTIPART_FIRST_PART_DESCRIPTION,
+    )
+
+    @model_validator(mode="after")
+    def protocol_fields_match(self) -> "ScientificInputUploadRequest":
+        if self.upload_protocol == "multipart-v2" and self.first_part_sha256 is None:
+            raise ValueError("multipart-v2 requires first_part_sha256")
+        if self.upload_protocol == "single-put-v1" and self.first_part_sha256 is not None:
+            raise ValueError("single-put-v1 does not accept first_part_sha256")
+        return self
 
     def canonical_bytes(self) -> bytes:
+        value = self.model_dump(mode="json")
+        if self.upload_protocol == "single-put-v1":
+            value.pop("upload_protocol")
+            value.pop("first_part_sha256")
         return json.dumps(
-            self.model_dump(mode="json"),
+            value,
             sort_keys=True,
             separators=(",", ":"),
             allow_nan=False,
@@ -64,6 +83,9 @@ class UploadHandle(StrictModel):
     method: Literal["PUT"]
     url: str
     expires_at: datetime
+    # Wire compatibility: the immutable content identity remains write-once
+    # even when a grandfathered v1 URL can create more than one byte-identical
+    # provider version. Internal EphemeralHandle records provider replayability.
     write_once: Literal[True]
     headers: dict[str, str]
 
@@ -78,13 +100,25 @@ class ScientificInputUpload(StrictModel):
 
     operation_id: UUID
     upload_id: UUID
+    upload_protocol: Literal["single-put-v1", "multipart-v2"]
     handle: UploadHandle
+    session_generation: int = Field(ge=1)
+    part_size_bytes: int = Field(ge=5 * 1024 * 1024)
+    part_count: int = Field(ge=1, le=10_000)
+    part_path_template: str
     content_path: str
     max_content_bytes: int
 
 
 class ScientificInputUploadFinalizeRequest(StrictModel):
     operation_id: UUID
+
+
+class ScientificInputUploadPartRequest(StrictModel):
+    operation_id: UUID
+    session_generation: int = Field(ge=1, le=1_000_000)
+    size_bytes: int = Field(ge=0, le=5 * 1024 * 1024 * 1024)
+    sha256: Annotated[str, Field(pattern=RAW_SHA256)]
 
 
 class ScientificInputUploadReceipt(StrictModel):
@@ -106,6 +140,13 @@ def content_path(operation_id: UUID, upload_id: UUID) -> str:
     """The one public path that accepts the bytes for a reserved upload."""
 
     return f"/v1/scientific-artifacts/uploads/{upload_id}/content?operation_id={operation_id}"
+
+
+def part_path_template(operation_id: UUID, upload_id: UUID) -> str:
+    return (
+        f"/v1/scientific-artifacts/uploads/{upload_id}/parts/{{part_number}}:authorize"
+        f"?operation_id={operation_id}"
+    )
 
 
 class ScientificInputUploadService:
@@ -188,6 +229,12 @@ class ScientificInputUploadService:
                         request.compression if isinstance(request.compression, ArtifactCompression) else None
                     ),
                     access=ArtifactAccess(),
+                    upload_protocol=request.upload_protocol,
+                    first_part_checksum=(
+                        f"sha256:{request.first_part_sha256}"
+                        if request.first_part_sha256 is not None
+                        else None
+                    ),
                 )
             )
         except Exception:
@@ -195,7 +242,10 @@ class ScientificInputUploadService:
             # idempotency key has a durable identity. If reservation fails,
             # release that admission immediately: a rejected file must never
             # strand a queued operation or consume the principal's concurrency.
-            if attempt_opened:
+            # A replay is different: its retained operation and attempt predate
+            # this request, so a transient signing/DB failure must not destroy
+            # the original customer's resumable state.
+            if attempt_opened and not operation.reused:
                 try:
                     await self.artifacts.close_attempt(
                         CloseStageAttempt(
@@ -208,20 +258,26 @@ class ScientificInputUploadService:
                     )
                 except Exception:
                     LOGGER.exception("failed to close rejected input-upload attempt operation_id=%s", operation.id)
-            try:
-                await self.store.cancel_operation(
-                    operation.id,
-                    tenant_id=principal.tenant_id,
-                    actor=principal.principal_id,
-                )
-            except Exception:
-                LOGGER.exception("failed to cancel rejected input-upload operation_id=%s", operation.id)
+            if not operation.reused:
+                try:
+                    await self.store.cancel_operation(
+                        operation.id,
+                        tenant_id=principal.tenant_id,
+                        actor=principal.principal_id,
+                    )
+                except Exception:
+                    LOGGER.exception("failed to cancel rejected input-upload operation_id=%s", operation.id)
             raise
         return ScientificInputUpload(
             operation_id=operation.id,
             upload_id=upload_id,
+            upload_protocol=request.upload_protocol,
             content_path=content_path(operation.id, upload_id),
+            part_path_template=part_path_template(operation.id, upload_id),
             max_content_bytes=self.max_content_bytes,
+            session_generation=result.session.session_generation,
+            part_size_bytes=result.session.part_size_bytes,
+            part_count=result.session.part_count,
             handle=UploadHandle(
                 method="PUT",
                 url=result.handle.url,
@@ -229,6 +285,35 @@ class ScientificInputUploadService:
                 write_once=True,
                 headers=dict(result.handle.headers),
             ),
+        )
+
+    async def authorize_part(
+        self,
+        *,
+        principal: Principal,
+        operation_id: UUID,
+        upload_id: UUID,
+        part_number: int,
+        request: ScientificInputUploadPartRequest,
+    ) -> UploadHandle:
+        resolved = await self._authorize(principal, operation_id, upload_id)
+        result = await self.artifacts.authorize_upload_part(
+            AuthorizeArtifactUploadPart(
+                upload_id=upload_id,
+                operation_id=resolved,
+                tenant_id=principal.tenant_id,
+                session_generation=request.session_generation,
+                part_number=part_number,
+                size_bytes=request.size_bytes,
+                checksum=f"sha256:{request.sha256}",
+            )
+        )
+        return UploadHandle(
+            method="PUT",
+            url=result.handle.url,
+            expires_at=result.handle.expires_at,
+            write_once=True,
+            headers=dict(result.handle.headers),
         )
 
     async def _authorize(self, principal: Principal, operation_id: UUID, upload_id: UUID) -> UUID:
@@ -305,8 +390,10 @@ class ScientificInputUploadService:
 
 __all__ = [
     "content_path",
+    "part_path_template",
     "ScientificInputUpload",
     "ScientificInputUploadFinalizeRequest",
+    "ScientificInputUploadPartRequest",
     "ScientificInputUploadReceipt",
     "ScientificInputUploadRequest",
     "ScientificInputUploadService",

@@ -1,0 +1,47 @@
+{{- if .Release.IsUpgrade }}
+{{- $candidateReceipt := dict
+    "schema" "fs2-serve.nebius.ai/postgresql-schema-rollout-prepare/v1"
+    "image_ref" (include "fs2-serve.schemaRolloutImage" .)
+    "postgresql_contract_payload_sha256" .Values.migration.releaseContract.contractPayloadSha256
+    "migration_set_sha256" .Values.migration.releaseContract.migrationSetSha256
+    "migration_count" (.Values.migration.releaseContract.migrationCount | int)
+    "last_migration_version" .Values.migration.releaseContract.lastMigrationVersion
+    "new_multipart_sessions_gate_supported" true
+-}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fs2-serve.schemaRolloutPrepareReceiptName" . }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: schema-rollout-prepare
+  annotations:
+    fs2.nebius.ai/schema-rollout-image: {{ include "fs2-serve.schemaRolloutImage" . | quote }}
+    fs2.nebius.ai/postgresql-contract-payload-sha256: {{ .Values.migration.releaseContract.contractPayloadSha256 | quote }}
+immutable: true
+data:
+  prepare-receipt.json: {{ $candidateReceipt | toJson | quote }}
+---
+{{- $rollbackReceipt := dict
+    "schema" "fs2-serve.nebius.ai/postgresql-schema-rollout-prepare/v1"
+    "image_ref" (include "fs2-serve.schemaRollbackImage" .)
+    "postgresql_contract_payload_sha256" .Values.migration.releaseContract.contractPayloadSha256
+    "migration_set_sha256" .Values.migration.releaseContract.migrationSetSha256
+    "migration_count" (.Values.migration.releaseContract.migrationCount | int)
+    "last_migration_version" .Values.migration.releaseContract.lastMigrationVersion
+    "new_multipart_sessions_gate_supported" true
+-}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fs2-serve.schemaRollbackPrepareReceiptName" . }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: schema-rollout-prepare
+  annotations:
+    fs2.nebius.ai/schema-rollout-image: {{ include "fs2-serve.schemaRollbackImage" . | quote }}
+    fs2.nebius.ai/postgresql-contract-payload-sha256: {{ .Values.migration.releaseContract.contractPayloadSha256 | quote }}
+immutable: true
+data:
+  prepare-receipt.json: {{ $rollbackReceipt | toJson | quote }}
+{{- end }}

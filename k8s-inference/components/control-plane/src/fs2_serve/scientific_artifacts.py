@@ -63,6 +63,14 @@ from .scientific_run_result import (
 ARTIFACT_RECORD_SCHEMA: Final = "fs2-serve.nebius.ai/scientific-artifact-record/v1"
 SCIENTIFIC_ARTIFACT_MIGRATION = "0014_scientific_artifact_results.sql"
 MAX_ARTIFACT_BYTES = 1 << 40
+MULTIPART_PART_BYTES = 128 * 1024 * 1024
+MIN_MULTIPART_PART_BYTES = 5 * 1024 * 1024
+MULTIPART_FIRST_PART_DESCRIPTION = (
+    "multipart-v2 only: lowercase SHA-256 of bytes "
+    "[0:min(size_bytes,134217728)); the protocol part size is exactly 134217728 bytes"
+)
+MAX_SINGLE_PART_BYTES = 5 * 1024 * 1024 * 1024
+MAX_MULTIPART_PARTS = 10_000
 DEFAULT_TENANT_QUOTA_BYTES = 1 << 40
 MAX_TENANT_QUOTA_BYTES = 1 << 40
 DEFAULT_TENANT_QUOTA_OBJECTS = 4096
@@ -76,10 +84,16 @@ DEFAULT_RETENTION = timedelta(days=90)
 MAX_RETENTION = timedelta(days=3650)
 DEFAULT_UPLOAD_RESERVATION_TTL = timedelta(hours=24)
 MAX_UPLOAD_RESERVATION_TTL = timedelta(days=7)
+DEFAULT_UPLOAD_COMPLETION_GRACE = timedelta(minutes=15)
+MAX_UPLOAD_COMPLETION_GRACE = timedelta(hours=1)
+DEFAULT_PROVIDER_STABILITY_GRACE = timedelta(minutes=5)
+MAX_PROVIDER_STABILITY_GRACE = timedelta(hours=1)
+ARTIFACT_JANITOR_CONCURRENCY: Final = 4
 NO_SHARD = "-"
 """Stored sentinel for a gang-scheduled stage that has no shard identity."""
 
 SHA256_PATTERN = r"^sha256:[a-f0-9]{64}$"
+EMPTY_VERSION_SET_DIGEST: Final = "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
 TENANT_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"
 STAGE_PATTERN = r"^[a-z][a-z0-9-]*$"
 SHARD_PATTERN = r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
@@ -127,6 +141,12 @@ class ArtifactVerificationError(ArtifactServiceError):
 
 class ArtifactPolicyError(ArtifactServiceError):
     code = "artifact_policy_rejected"
+
+
+class ArtifactWritesDisabledError(ArtifactServiceError):
+    """Forward-compatible application rollback has paused new object writes."""
+
+    code = "artifact_writes_disabled"
 
 
 class ArtifactQuotaExceededError(ArtifactServiceError):
@@ -363,6 +383,19 @@ class BeginArtifactUpload(ScientificArtifactModel):
     media_type: MediaType
     compression: ArtifactCompression | None = None
     access: ArtifactAccess = Field(default_factory=ArtifactAccess)
+    upload_protocol: Literal["single-put-v1", "multipart-v2"] = "single-put-v1"
+    first_part_checksum: Sha256Digest | None = Field(
+        default=None,
+        description=MULTIPART_FIRST_PART_DESCRIPTION,
+    )
+
+    @model_validator(mode="after")
+    def multipart_protocol_has_an_exact_first_part(self) -> BeginArtifactUpload:
+        if self.upload_protocol == "multipart-v2" and self.first_part_checksum is None:
+            raise ValueError("multipart-v2 requires the first part SHA-256")
+        if self.upload_protocol == "single-put-v1" and self.first_part_checksum is not None:
+            raise ValueError("single-put-v1 derives its only part checksum from the object digest")
+        return self
 
 
 class FinalizeArtifactUpload(ScientificArtifactModel):
@@ -375,6 +408,8 @@ class VerifiedStoredObject(ScientificArtifactModel):
     """Metadata independently measured by the trusted object-store adapter."""
 
     storage_key: str = Field(min_length=1, max_length=1024)
+    provider_version_id: str = Field(min_length=1, max_length=1024)
+    provider_request_id: str = Field(min_length=1, max_length=512)
     digest: Sha256Digest
     size_bytes: int = Field(ge=0, le=MAX_ARTIFACT_BYTES)
     media_type: MediaType
@@ -397,6 +432,10 @@ class ArtifactRecord(ScientificArtifactModel):
     media_type: MediaType
     compression: ArtifactCompression | None = None
     storage_key: str = Field(min_length=1, max_length=1024)
+    # Nullable only while the expand-phase bridge resolves retained pre-0031
+    # metadata. Byte-serving paths independently select and verify an exact
+    # immutable provider version before issuing a handle or stream.
+    provider_version_id: str | None = Field(default=None, min_length=1, max_length=1024)
     access: ArtifactAccess
     retention_expires_at: AwareDatetime
     created_at: AwareDatetime
@@ -478,6 +517,9 @@ class ArtifactQuotaReservation(ScientificArtifactModel):
     state: ArtifactQuotaReservationState
     reserved_at: AwareDatetime
     expires_at: AwareDatetime
+    latest_upload_capability_expires_at: AwareDatetime | None = None
+    upload_completion_grace_seconds: int = Field(default=900, ge=60, le=3600)
+    provider_stability_grace_seconds: int = Field(default=300, ge=30, le=3600)
     released_at: AwareDatetime | None = None
     release_reason: ArtifactQuotaReleaseReason | None = None
 
@@ -490,6 +532,11 @@ class ArtifactQuotaReservation(ScientificArtifactModel):
             raise ValueError("artifact quota release state is incomplete")
         if self.released_at is not None and self.released_at < self.reserved_at:
             raise ValueError("artifact quota cannot release before it was reserved")
+        if (
+            self.latest_upload_capability_expires_at is not None
+            and self.latest_upload_capability_expires_at < self.reserved_at
+        ):
+            raise ValueError("upload capability expiry cannot precede the reservation")
         return self
 
 
@@ -523,21 +570,61 @@ class ArtifactRemovalEvidenceKind(StrEnum):
     ALL_VERSIONS_REMOVED = "all_versions_removed"
 
 
-class ArtifactRemovalEvidence(ScientificArtifactModel):
-    """Payload-free proof that no provider object version remains at one key."""
+class ArtifactDeletionEvidence(ScientificArtifactModel):
+    """Provider-bound result of one exact-key remover attempt."""
 
     storage_key: str = Field(min_length=1, max_length=1024)
     kind: ArtifactRemovalEvidenceKind
     provider_request_id: str = Field(min_length=1, max_length=512)
-    removed_version_count: int = Field(ge=0, le=10000)
+    removed_version_count: int = Field(ge=0)
+    aborted_upload_count: int = Field(ge=0)
+    multipart_list_request_id: str = Field(min_length=1, max_length=512)
+    multipart_session_set_digest: Sha256Digest
     observed_at: AwareDatetime
 
     @model_validator(mode="after")
-    def count_matches_kind(self) -> ArtifactRemovalEvidence:
+    def count_matches_kind(self) -> ArtifactDeletionEvidence:
         if self.kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED and self.removed_version_count != 0:
             raise ValueError("absence evidence cannot report removed versions")
         if self.kind is ArtifactRemovalEvidenceKind.ALL_VERSIONS_REMOVED and self.removed_version_count < 1:
             raise ValueError("version-removal evidence requires at least one removed version")
+        return self
+
+
+class ArtifactRemovalEvidence(ScientificArtifactModel):
+    """Stable double-snapshot absence proof bound to one database claim."""
+
+    storage_key: str = Field(min_length=1, max_length=1024)
+    kind: Literal[ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED]
+    provider_request_id: str = Field(min_length=1, max_length=512)
+    removed_version_count: Literal[0] = 0
+    observed_at: AwareDatetime
+    latest_upload_capability_expires_at: AwareDatetime
+    removal_generation: int = Field(ge=1)
+    verification_generation: int = Field(ge=1)
+    first_list_request_id: str = Field(min_length=1, max_length=512)
+    head_request_id: str = Field(min_length=1, max_length=512)
+    second_list_request_id: str = Field(min_length=1, max_length=512)
+    first_version_set_digest: Sha256Digest
+    second_version_set_digest: Sha256Digest
+    first_multipart_list_request_id: str = Field(min_length=1, max_length=512)
+    second_multipart_list_request_id: str = Field(min_length=1, max_length=512)
+    first_multipart_session_set_digest: Sha256Digest
+    second_multipart_session_set_digest: Sha256Digest
+    claim_digest: Sha256Digest
+
+    @model_validator(mode="after")
+    def snapshots_are_stable(self) -> ArtifactRemovalEvidence:
+        if self.first_version_set_digest != self.second_version_set_digest:
+            raise ValueError("provider version snapshots are not stable")
+        if self.first_version_set_digest != EMPTY_VERSION_SET_DIGEST:
+            raise ValueError("absence evidence must contain the exact empty version set")
+        if self.first_multipart_session_set_digest != self.second_multipart_session_set_digest:
+            raise ValueError("provider multipart-session snapshots are not stable")
+        if self.first_multipart_session_set_digest != EMPTY_VERSION_SET_DIGEST:
+            raise ValueError("absence evidence must contain the exact empty multipart-session set")
+        if self.observed_at < self.latest_upload_capability_expires_at:
+            raise ValueError("absence cannot predate the latest upload capability")
         return self
 
 
@@ -549,7 +636,158 @@ class ArtifactRemovalTarget(ScientificArtifactModel):
     attempt_id: UUID
     tenant_id: TenantId
     storage_key: str = Field(min_length=1, max_length=1024)
+    provider_upload_id: str | None = Field(default=None, min_length=1, max_length=1024)
+    upload_session_generation: int = Field(default=0, ge=0, le=1_000_000)
+    latest_upload_capability_expires_at: AwareDatetime
+    removal_generation: int = Field(ge=1)
+    verification_generation: int = Field(ge=0)
+    removal_claimed_at: AwareDatetime
+    verification_claimed_at: AwareDatetime | None = None
     eligible_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def claim_is_time_ordered(self) -> ArtifactRemovalTarget:
+        if self.removal_claimed_at < self.eligible_at:
+            raise ValueError("artifact removal claim predates its write fence")
+        if self.verification_generation == 0 and self.verification_claimed_at is not None:
+            raise ValueError("unverified removal target cannot carry a verification claim")
+        if self.verification_generation > 0 and self.verification_claimed_at is None:
+            raise ValueError("verification claim timestamp is required")
+        if (
+            self.verification_claimed_at is not None
+            and self.verification_claimed_at < self.removal_claimed_at
+        ):
+            raise ValueError("verification claim cannot predate removal")
+        return self
+
+
+class LegacyArtifactVersionTarget(ScientificArtifactModel):
+    """Retained pre-0031 artifact that needs one immutable provider version pin."""
+
+    artifact_id: UUID
+    upload_id: UUID
+    tenant_id: TenantId
+    storage_key: str = Field(min_length=1, max_length=1024)
+    expected_digest: Sha256Digest
+    expected_size_bytes: int = Field(ge=0, le=MAX_ARTIFACT_BYTES)
+    expected_media_type: MediaType
+    expected_compression: ArtifactCompression | None = None
+    claim_generation: int = Field(ge=1, le=1_000_000)
+    claimed_at: AwareDatetime
+    eligible_at: AwareDatetime
+    list_key_marker: str | None = Field(default=None, min_length=1, max_length=1024)
+    list_version_id_marker: str | None = Field(default=None, min_length=1, max_length=1024)
+
+    @model_validator(mode="after")
+    def provider_cursor_is_complete(self) -> LegacyArtifactVersionTarget:
+        if (self.list_key_marker is None) != (self.list_version_id_marker is None):
+            raise ValueError("legacy version cursor markers must travel together")
+        return self
+
+
+class LegacyArtifactVersionScan(ScientificArtifactModel):
+    """One bounded, provider-observed page in a retained exact-key inventory."""
+
+    provider_request_id: str = Field(min_length=1, max_length=512)
+    observed_at: AwareDatetime
+    verified: VerifiedStoredObject | None = None
+    next_key_marker: str | None = Field(default=None, min_length=1, max_length=1024)
+    next_version_id_marker: str | None = Field(default=None, min_length=1, max_length=1024)
+
+    @model_validator(mode="after")
+    def result_or_cursor_is_unambiguous(self) -> LegacyArtifactVersionScan:
+        if (self.next_key_marker is None) != (self.next_version_id_marker is None):
+            raise ValueError("legacy version next-page markers must travel together")
+        if self.verified is not None and self.next_key_marker is not None:
+            raise ValueError("a matched immutable version cannot also request another page")
+        return self
+
+
+class LegacyArtifactRolloutStatus(ScientificArtifactModel):
+    """Aggregate-only expansion gate; no tenant or object identity is exposed."""
+
+    pending: int = Field(ge=0)
+    bound: int = Field(ge=0)
+    unresolved: int = Field(ge=0)
+    unbound_artifacts: int = Field(ge=0)
+    missing_unfinished_upload_sessions: int = Field(ge=0)
+
+
+class SchemaBridgeDrainEvidence(ScientificArtifactModel):
+    """Kubernetes API evidence that the exact predecessor no longer serves."""
+
+    deployment_namespace: str = Field(min_length=1, max_length=63)
+    deployment_name: str = Field(min_length=1, max_length=253)
+    deployment_uid: str = Field(min_length=1, max_length=128)
+    deployment_generation: int = Field(ge=1)
+    deployment_observed_generation: int = Field(ge=1)
+    deployment_desired_replicas: int = Field(ge=1)
+    deployment_updated_replicas: int = Field(ge=1)
+    deployment_ready_replicas: int = Field(ge=1)
+    deployment_available_replicas: int = Field(ge=1)
+    runtime_pod_count: int = Field(ge=1)
+    runtime_pod_set_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    kubernetes_audit_id: str = Field(min_length=1, max_length=200)
+    kubernetes_observed_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def exact_rollout_is_complete(self) -> SchemaBridgeDrainEvidence:
+        desired = self.deployment_desired_replicas
+        if self.deployment_observed_generation != self.deployment_generation:
+            raise ValueError("deployment generation is not observed")
+        if any(
+            count != desired
+            for count in (
+                self.deployment_updated_replicas,
+                self.deployment_ready_replicas,
+                self.deployment_available_replicas,
+                self.runtime_pod_count,
+            )
+        ):
+            raise ValueError("deployment rollout is incomplete")
+        return self
+
+
+def artifact_absence_claim_digest(
+    target: ArtifactRemovalTarget,
+    *,
+    observed_at: datetime,
+    first_list_request_id: str,
+    head_request_id: str,
+    second_list_request_id: str,
+    first_version_set_digest: str,
+    second_version_set_digest: str,
+    first_multipart_list_request_id: str,
+    second_multipart_list_request_id: str,
+    first_multipart_session_set_digest: str,
+    second_multipart_session_set_digest: str,
+) -> str:
+    """Bind provider observations to the exact claimed fencing generations."""
+
+    payload = {
+        "attempt_id": str(target.attempt_id),
+        "first_list_request_id": first_list_request_id,
+        "first_version_set_digest": first_version_set_digest,
+        "first_multipart_list_request_id": first_multipart_list_request_id,
+        "first_multipart_session_set_digest": first_multipart_session_set_digest,
+        "head_request_id": head_request_id,
+        "latest_upload_capability_expires_at": target.latest_upload_capability_expires_at.isoformat(),
+        "observed_at": observed_at.isoformat(),
+        "operation_id": str(target.operation_id),
+        "removal_generation": target.removal_generation,
+        "provider_upload_id": target.provider_upload_id,
+        "second_list_request_id": second_list_request_id,
+        "second_version_set_digest": second_version_set_digest,
+        "second_multipart_list_request_id": second_multipart_list_request_id,
+        "second_multipart_session_set_digest": second_multipart_session_set_digest,
+        "storage_key": target.storage_key,
+        "tenant_id": target.tenant_id,
+        "upload_id": str(target.upload_id),
+        "upload_session_generation": target.upload_session_generation,
+        "verification_generation": target.verification_generation,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
 class ManifestEntryDraft(ScientificArtifactModel):
@@ -712,9 +950,141 @@ class EphemeralHandle:
         object.__setattr__(self, "headers", MappingProxyType(dict(self.headers)))
 
 
+class ArtifactUploadSession(ScientificArtifactModel):
+    """Server-owned multipart generation; clients can upload parts but cannot complete it."""
+
+    upload_id: UUID
+    tenant_id: TenantId
+    storage_key: str = Field(min_length=1, max_length=1024)
+    provider_upload_id: str = Field(min_length=1, max_length=1024)
+    session_generation: int = Field(ge=1, le=1_000_000)
+    part_size_bytes: int = Field(ge=5 * 1024 * 1024, le=5 * 1024 * 1024 * 1024)
+    part_count: int = Field(ge=1, le=MAX_MULTIPART_PARTS)
+    provider_stability_grace_seconds: int = Field(default=300, ge=30, le=3600)
+    initiated_at: AwareDatetime
+    state: Literal["active", "legacy", "completed", "aborted"] = "active"
+    provider_version_id: str | None = Field(default=None, min_length=1, max_length=1024)
+
+    @model_validator(mode="after")
+    def completion_version_matches_state(self) -> ArtifactUploadSession:
+        if (self.state == "completed") != (self.provider_version_id is not None):
+            raise ValueError("completed upload session requires exactly one provider version")
+        return self
+
+
+class ArtifactUploadSessionCreationClaim(ScientificArtifactModel):
+    """Durable ownership installed before any provider session is created."""
+
+    upload_id: UUID
+    tenant_id: TenantId
+    storage_key: str = Field(min_length=1, max_length=1024)
+    claim_id: UUID
+    claim_generation: int = Field(ge=1, le=1_000_000)
+    part_size_bytes: int = Field(ge=5 * 1024 * 1024, le=5 * 1024 * 1024 * 1024)
+    part_count: int = Field(ge=1, le=MAX_MULTIPART_PARTS)
+    provider_stability_grace_seconds: int = Field(default=300, ge=30, le=3600)
+    state: Literal["creating", "bound", "reconciling", "reconciled"]
+    claimed_at: AwareDatetime
+    reconcile_after: AwareDatetime
+    provider_upload_id: str | None = Field(default=None, min_length=1, max_length=1024)
+
+
+class ArtifactUploadSessionCreationTarget(ScientificArtifactModel):
+    """Remover-owned claim for bounded reconciliation of a crashed create."""
+
+    upload_id: UUID
+    tenant_id: TenantId
+    storage_key: str = Field(min_length=1, max_length=1024)
+    claim_id: UUID
+    claim_generation: int = Field(ge=1, le=1_000_000)
+    claimed_at: AwareDatetime
+
+
+class ArtifactUploadSessionReconciliationEvidence(ScientificArtifactModel):
+    """Provider-bound proof that an abandoned exact-key session set is empty."""
+
+    storage_key: str = Field(min_length=1, max_length=1024)
+    provider_request_id: str = Field(min_length=1, max_length=512)
+    aborted_upload_count: int = Field(ge=0, le=MAX_MULTIPART_PARTS)
+    multipart_session_set_digest: Sha256Digest
+    observed_at: AwareDatetime
+
+
+class ArtifactFinalizationLease(ScientificArtifactModel):
+    """Bounded provider-mutation fence retained for autonomous reconciliation."""
+
+    lease_id: UUID
+    upload_id: UUID
+    tenant_id: TenantId
+    lease_generation: int = Field(ge=1, le=1_000_000)
+    session_generation: int = Field(ge=1, le=1_000_000)
+    acquired_at: AwareDatetime
+    expires_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def expiry_follows_acquisition(self) -> ArtifactFinalizationLease:
+        if self.expires_at <= self.acquired_at:
+            raise ValueError("artifact finalization lease must have a positive lifetime")
+        return self
+
+
+class ArtifactFinalizationRecoveryTarget(ScientificArtifactModel):
+    """Renewed controller-owned lease for autonomous completion recovery."""
+
+    request: FinalizeArtifactUpload
+    session: ArtifactUploadSession
+    lease: ArtifactFinalizationLease
+
+
+class ArtifactFinalizationFailureEvidence(ScientificArtifactModel):
+    """Retained exact-version evidence for a completed but invalid upload."""
+
+    upload_id: UUID
+    tenant_id: TenantId
+    lease_id: UUID
+    lease_generation: int = Field(ge=1, le=1_000_000)
+    session_generation: int = Field(ge=1, le=1_000_000)
+    provider_upload_id: str = Field(min_length=1, max_length=1024)
+    provider_version_id: str = Field(min_length=1, max_length=1024)
+    provider_request_id: str = Field(min_length=1, max_length=512)
+    failure_code: Literal["content_verification_failed", "artifact_policy_failed"]
+    observed_at: AwareDatetime
+
+
+class StagedUploadPart(ScientificArtifactModel):
+    """Server-uploaded bytes still confined to an uncompleted multipart session."""
+
+    storage_key: str = Field(min_length=1, max_length=1024)
+    digest: Sha256Digest
+    size_bytes: int = Field(ge=0, le=MAX_ARTIFACT_BYTES)
+    media_type: MediaType
+    compression: ArtifactCompression | None = None
+    provider_request_id: str = Field(min_length=1, max_length=512)
+
+
+class AuthorizeArtifactUploadPart(ScientificArtifactModel):
+    """One checksum- and length-bound part capability for an exact session."""
+
+    upload_id: UUID
+    operation_id: UUID
+    tenant_id: TenantId
+    session_generation: int = Field(ge=1, le=1_000_000)
+    part_number: int = Field(ge=1, le=MAX_MULTIPART_PARTS)
+    size_bytes: int = Field(ge=0, le=5 * 1024 * 1024 * 1024)
+    checksum: Sha256Digest
+
+
 @dataclass(frozen=True, slots=True)
 class BeginUploadResult:
     upload: UploadIntent
+    session: ArtifactUploadSession
+    handle: EphemeralHandle = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class UploadPartHandleResult:
+    session: ArtifactUploadSession
+    part_number: int
     handle: EphemeralHandle = field(repr=False)
 
 
@@ -729,7 +1099,7 @@ class InlineUploadReceipt:
     """Evidence that the stored object equals the immutable upload intent."""
 
     upload: UploadIntent
-    stored: VerifiedStoredObject
+    stored: StagedUploadPart
 
 
 @dataclass(frozen=True, slots=True)
@@ -807,6 +1177,7 @@ def _validate_handle(
     now: datetime,
     ttl: timedelta,
     require_tls: bool,
+    expected_write_once: bool | None = None,
 ) -> None:
     """Reject any handle that is long-lived, reusable, or not bearer-safe.
 
@@ -817,9 +1188,10 @@ def _validate_handle(
     deadline = now + ttl + HANDLE_CLOCK_SKEW
     parsed = urlsplit(handle.url)
     allowed_schemes = ("https",) if require_tls else ("https", "http")
+    write_once = method == "PUT" if expected_write_once is None else expected_write_once
     if (
         handle.method != method
-        or (method == "PUT") != handle.write_once
+        or handle.write_once != write_once
         or handle.expires_at.tzinfo is None
         or not now < handle.expires_at <= deadline
         or parsed.scheme not in allowed_schemes
@@ -867,16 +1239,57 @@ def _verify_object(intent: UploadIntent, verified: VerifiedStoredObject) -> None
 class ArtifactObjectStorePort(Protocol):
     """Trusted adapter that owns bytes, signatures and independent measurement."""
 
-    async def presign_upload(
+    async def create_upload_session(
         self,
         *,
         storage_key: str,
         media_type: str,
         compression: ArtifactCompression | None,
+    ) -> tuple[str, datetime]: ...
+
+    async def presign_upload_part(
+        self,
+        *,
+        session: ArtifactUploadSession,
+        part_number: int,
+        size_bytes: int,
+        checksum: str,
         ttl: timedelta,
     ) -> EphemeralHandle: ...
 
-    async def presign_download(self, *, storage_key: str, ttl: timedelta) -> EphemeralHandle: ...
+    async def presign_legacy_upload(
+        self, *, intent: UploadIntent, ttl: timedelta
+    ) -> EphemeralHandle: ...
+
+    async def complete_upload_session(
+        self, *, session: ArtifactUploadSession, intent: UploadIntent
+    ) -> VerifiedStoredObject: ...
+
+    async def validate_upload_session(
+        self, *, session: ArtifactUploadSession, intent: UploadIntent
+    ) -> None: ...
+
+    async def stage_inline_upload(
+        self, *, session: ArtifactUploadSession, intent: UploadIntent, payload: bytes
+    ) -> StagedUploadPart: ...
+
+    async def recover_completed_upload(self, *, intent: UploadIntent) -> VerifiedStoredObject: ...
+
+    async def recover_legacy_upload(self, *, intent: UploadIntent) -> VerifiedStoredObject: ...
+
+    async def recover_legacy_artifact(
+        self, *, artifact: ArtifactRecord
+    ) -> VerifiedStoredObject: ...
+
+    async def abort_upload_session(self, *, session: ArtifactUploadSession) -> str: ...
+
+    async def reconcile_orphan_upload_sessions(
+        self, target: ArtifactUploadSessionCreationTarget
+    ) -> ArtifactUploadSessionReconciliationEvidence: ...
+
+    async def presign_download(
+        self, *, storage_key: str, provider_version_id: str, ttl: timedelta
+    ) -> EphemeralHandle: ...
 
     async def put_object(
         self,
@@ -887,13 +1300,28 @@ class ArtifactObjectStorePort(Protocol):
         compression: ArtifactCompression | None,
     ) -> VerifiedStoredObject: ...
 
-    def stream_object(self, storage_key: str, *, max_bytes: int | None = None) -> AsyncIterator[bytes]: ...
+    async def put_legacy_object(
+        self,
+        *,
+        storage_key: str,
+        payload: bytes,
+        media_type: str,
+        compression: ArtifactCompression | None,
+    ) -> VerifiedStoredObject: ...
 
-    async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject: ...
+    def stream_object(
+        self, storage_key: str, *, provider_version_id: str, max_bytes: int | None = None
+    ) -> AsyncIterator[bytes]: ...
 
-    async def delete(self, storage_key: str) -> ArtifactRemovalEvidence: ...
+    async def inspect(
+        self, storage_key: str, *, provider_version_id: str, max_bytes: int | None = None
+    ) -> VerifiedStoredObject: ...
 
-    async def verify_absent(self, storage_key: str) -> ArtifactRemovalEvidence: ...
+    async def delete(self, target: ArtifactRemovalTarget) -> ArtifactDeletionEvidence: ...
+
+    async def verify_absent(self, target: ArtifactRemovalTarget) -> ArtifactRemovalEvidence: ...
+
+    async def scan_legacy_version(self, target: LegacyArtifactVersionTarget) -> LegacyArtifactVersionScan: ...
 
 
 class ArtifactRepository(Protocol):
@@ -916,7 +1344,95 @@ class ArtifactRepository(Protocol):
         tenant_quota_bytes: int,
         tenant_quota_objects: int,
         reservation_ttl: timedelta,
+        upload_completion_grace: timedelta,
+        provider_stability_grace: timedelta,
     ) -> UploadIntent: ...
+
+    async def claim_upload_session_creation(
+        self,
+        upload_id: UUID,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        claim_id: UUID,
+        part_size_bytes: int,
+        part_count: int,
+    ) -> ArtifactUploadSessionCreationClaim: ...
+
+    async def bind_upload_session(
+        self,
+        upload_id: UUID,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        claim_id: UUID,
+        provider_upload_id: str,
+        part_size_bytes: int,
+        part_count: int,
+        initiated_at: datetime,
+    ) -> ArtifactUploadSession: ...
+
+    async def claim_stale_upload_session_creations(
+        self, *, limit: int
+    ) -> list[ArtifactUploadSessionCreationTarget]: ...
+
+    async def record_upload_session_creation_reconciled(
+        self,
+        target: ArtifactUploadSessionCreationTarget,
+        evidence: ArtifactUploadSessionReconciliationEvidence,
+    ) -> None: ...
+
+    async def get_upload_session(
+        self, upload_id: UUID, *, tenant_id: str
+    ) -> ArtifactUploadSession: ...
+
+    async def record_upload_session_aborted(
+        self, session: ArtifactUploadSession, *, provider_request_id: str, observed_at: datetime
+    ) -> ArtifactUploadSession: ...
+
+    async def acquire_finalization_lease(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        session_generation: int,
+        lease_id: UUID,
+    ) -> ArtifactFinalizationLease: ...
+
+    async def get_finalization_lease(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        session_generation: int,
+    ) -> ArtifactFinalizationLease | None: ...
+
+    async def claim_expired_finalization_leases(
+        self, *, limit: int
+    ) -> list[ArtifactFinalizationRecoveryTarget]: ...
+
+    async def record_finalization_failure(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        session: ArtifactUploadSession,
+        lease: ArtifactFinalizationLease,
+        verified: VerifiedStoredObject,
+        failure_code: Literal["content_verification_failed", "artifact_policy_failed"],
+    ) -> ArtifactFinalizationFailureEvidence: ...
+
+    async def record_upload_capability(
+        self,
+        upload_id: UUID,
+        *,
+        tenant_id: str,
+        capability_id: UUID,
+        session_generation: int,
+        part_number: int,
+        size_bytes: int,
+        checksum: str,
+        media_type: str,
+        compression: ArtifactCompression | None,
+        expires_at: datetime,
+    ) -> ArtifactQuotaReservation: ...
 
     async def quota_reservation(self, upload_id: UUID, *, tenant_id: str) -> ArtifactQuotaReservation: ...
 
@@ -932,14 +1448,57 @@ class ArtifactRepository(Protocol):
         self, *, now: datetime, limit: int
     ) -> list[ArtifactRemovalTarget]: ...
 
+    async def record_quota_removal_completion(
+        self, target: ArtifactRemovalTarget, evidence: ArtifactDeletionEvidence
+    ) -> None: ...
+
+    async def record_quota_verification_failure(self, target: ArtifactRemovalTarget) -> None: ...
+
     async def record_quota_removal(
         self, target: ArtifactRemovalTarget, evidence: ArtifactRemovalEvidence
     ) -> ArtifactQuotaReservation: ...
 
+    async def claim_legacy_version_pins(self, *, limit: int) -> list[LegacyArtifactVersionTarget]: ...
+
+    async def record_legacy_version_pin(
+        self,
+        target: LegacyArtifactVersionTarget,
+        verified: VerifiedStoredObject,
+        *,
+        observed_at: datetime,
+    ) -> None: ...
+
+    async def record_legacy_version_scan(
+        self, target: LegacyArtifactVersionTarget, scan: LegacyArtifactVersionScan
+    ) -> None: ...
+
+    async def legacy_version_rollout_status(self) -> LegacyArtifactRolloutStatus: ...
+
+    async def mark_schema_bridge_ready(
+        self,
+        *,
+        bridge_image_ref: str,
+        bridge_release_revision: int,
+        predecessor_image_ref: str,
+        evidence: SchemaBridgeDrainEvidence,
+    ) -> None: ...
+
     async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent: ...
 
+    async def get_upload_status(self, request: FinalizeArtifactUpload) -> UploadIntent: ...
+
+    async def get_leased_upload(
+        self, request: FinalizeArtifactUpload, *, lease: ArtifactFinalizationLease
+    ) -> UploadIntent: ...
+
     async def finalize_upload(
-        self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
+        self,
+        request: FinalizeArtifactUpload,
+        verified: VerifiedStoredObject,
+        *,
+        artifact_id: UUID,
+        session: ArtifactUploadSession | None,
+        lease: ArtifactFinalizationLease,
     ) -> ArtifactRecord: ...
 
     async def get_artifact(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactRecord: ...
@@ -984,6 +1543,10 @@ class ScientificArtifactControllerPort(Protocol):
     async def begin_upload(
         self, request: BeginArtifactUpload, *, handle_ttl: timedelta | None = None
     ) -> BeginUploadResult: ...
+
+    async def authorize_upload_part(
+        self, request: AuthorizeArtifactUploadPart, *, handle_ttl: timedelta | None = None
+    ) -> UploadPartHandleResult: ...
 
     async def store_upload_content(
         self,
@@ -1085,6 +1648,10 @@ class ScientificArtifactService:
         tenant_quota_bytes: int = DEFAULT_TENANT_QUOTA_BYTES,
         tenant_quota_objects: int = DEFAULT_TENANT_QUOTA_OBJECTS,
         upload_reservation_ttl: timedelta = DEFAULT_UPLOAD_RESERVATION_TTL,
+        upload_completion_grace: timedelta = DEFAULT_UPLOAD_COMPLETION_GRACE,
+        provider_stability_grace: timedelta = DEFAULT_PROVIDER_STABILITY_GRACE,
+        multipart_writes_enabled: bool = True,
+        writes_enabled: bool | None = None,
         max_inline_content_bytes: int = DEFAULT_INLINE_CONTENT_BYTES,
         max_handle_ttl: timedelta = MAX_HANDLE_TTL,
         default_handle_ttl: timedelta = DEFAULT_HANDLE_TTL,
@@ -1109,7 +1676,13 @@ class ScientificArtifactService:
             raise ValueError("the default handle lifetime must not exceed the maximum")
         if not timedelta(0) < retention <= MAX_RETENTION:
             raise ValueError("artifact retention is outside the supported range")
-        if not default_handle_ttl <= upload_reservation_ttl <= min(MAX_UPLOAD_RESERVATION_TTL, retention):
+        if not timedelta(0) < upload_completion_grace <= MAX_UPLOAD_COMPLETION_GRACE:
+            raise ValueError("upload completion grace is outside the supported range")
+        if not timedelta(0) < provider_stability_grace <= MAX_PROVIDER_STABILITY_GRACE:
+            raise ValueError("provider stability grace is outside the supported range")
+        if not max_handle_ttl <= upload_reservation_ttl <= min(
+            MAX_UPLOAD_RESERVATION_TTL, retention
+        ):
             raise ValueError("upload reservation lifetime is outside the supported range")
         self._repository = repository
         self._store = object_store
@@ -1118,6 +1691,16 @@ class ScientificArtifactService:
         self._tenant_quota_bytes = tenant_quota_bytes
         self._tenant_quota_objects = tenant_quota_objects
         self._upload_reservation_ttl = upload_reservation_ttl
+        self._upload_completion_grace = upload_completion_grace
+        self._provider_stability_grace = provider_stability_grace
+        # ``writes_enabled`` is retained as a source-compatible constructor
+        # alias for older embeddings.  It now controls only admission of a new
+        # multipart-v2 generation; disabling that rollout gate must never stop
+        # single-put-v1, inline/trusted result publication, or continuation of
+        # an upload session that was already durably admitted.
+        self._multipart_writes_enabled = (
+            multipart_writes_enabled if writes_enabled is None else writes_enabled
+        )
         self._max_inline_content_bytes = min(max_inline_content_bytes, max_artifact_bytes)
         self._max_handle_ttl = max_handle_ttl
         self._default_handle_ttl = default_handle_ttl
@@ -1156,8 +1739,23 @@ class ScientificArtifactService:
     async def begin_upload(
         self, request: BeginArtifactUpload, *, handle_ttl: timedelta | None = None
     ) -> BeginUploadResult:
-        """Reserve one content address and issue a write-once upload handle."""
+        """Reserve one content address and open a server-completed upload session."""
 
+        if request.upload_protocol == "multipart-v2" and not self._multipart_writes_enabled:
+            try:
+                existing = await self._repository.get_upload_status(
+                    FinalizeArtifactUpload(
+                        upload_id=request.upload_id,
+                        operation_id=request.operation_id,
+                        tenant_id=request.tenant_id,
+                    )
+                )
+            except ArtifactNotFoundError:
+                raise ArtifactWritesDisabledError(
+                    "new multipart-v2 artifact sessions are temporarily paused"
+                ) from None
+            if existing.artifact_id is not None:
+                raise ArtifactConflictError("a finalized upload cannot issue new write capabilities")
         self._check_policy(request.media_type, request.expected_size_bytes)
         attempt = await self._repository.get_attempt(request.attempt_id, tenant_id=request.tenant_id)
         if attempt.operation_id != request.operation_id:
@@ -1181,17 +1779,153 @@ class ScientificArtifactService:
             tenant_quota_bytes=self._tenant_quota_bytes,
             tenant_quota_objects=self._tenant_quota_objects,
             reservation_ttl=self._upload_reservation_ttl,
+            upload_completion_grace=self._upload_completion_grace,
+            provider_stability_grace=self._provider_stability_grace,
         )
         if not _same_upload_request(intent, request, storage_key):
             raise ArtifactConflictError("upload identity is already bound to different content")
-        handle = await self._store.presign_upload(
-            storage_key=storage_key,
-            media_type=request.media_type,
-            compression=request.compression,
+        if intent.artifact_id is not None:
+            raise ArtifactConflictError("a finalized upload cannot issue new write capabilities")
+        if request.upload_protocol == "single-put-v1":
+            if request.expected_size_bytes > MAX_SINGLE_PART_BYTES:
+                raise ArtifactContentTooLargeError(
+                    "single-put-v1 accepts at most 5 GiB; use multipart-v2 for larger artifacts"
+                )
+            part_size_bytes = max(MIN_MULTIPART_PART_BYTES, request.expected_size_bytes)
+            part_count = 1
+            first_part_checksum = request.expected_digest
+        else:
+            part_size_bytes = MULTIPART_PART_BYTES
+            part_count = max(
+                1,
+                (request.expected_size_bytes + part_size_bytes - 1) // part_size_bytes,
+            )
+            assert request.first_part_checksum is not None
+            first_part_checksum = request.first_part_checksum
+        if part_count > MAX_MULTIPART_PARTS:
+            raise ArtifactPolicyError("artifact requires too many bounded upload parts")
+        try:
+            session = await self._repository.get_upload_session(intent.upload_id, tenant_id=intent.tenant_id)
+        except ArtifactNotFoundError:
+            claim_id = uuid4()
+            claim = await self._repository.claim_upload_session_creation(
+                intent.upload_id,
+                tenant_id=intent.tenant_id,
+                storage_key=storage_key,
+                claim_id=claim_id,
+                part_size_bytes=part_size_bytes,
+                part_count=part_count,
+            )
+            if claim.claim_id != claim_id or claim.state != "creating":
+                raise ArtifactConflictError("upload-session creation is owned or being reconciled")
+            provider_upload_id, initiated_at = await self._store.create_upload_session(
+                storage_key=storage_key,
+                media_type=request.media_type,
+                compression=request.compression,
+            )
+            session = await self._repository.bind_upload_session(
+                intent.upload_id,
+                tenant_id=intent.tenant_id,
+                storage_key=storage_key,
+                claim_id=claim_id,
+                provider_upload_id=provider_upload_id,
+                part_size_bytes=part_size_bytes,
+                part_count=part_count,
+                initiated_at=initiated_at,
+            )
+        if session.state == "legacy":
+            if request.upload_protocol != "single-put-v1":
+                raise ArtifactConflictError("legacy upload is bound to single-put-v1")
+            handle = await self._store.presign_legacy_upload(intent=intent, ttl=lifetime)
+            _validate_handle(
+                handle,
+                method="PUT",
+                now=self._clock(),
+                ttl=lifetime,
+                require_tls=self._require_tls,
+                expected_write_once=False,
+            )
+            await self._repository.record_upload_capability(
+                intent.upload_id,
+                tenant_id=intent.tenant_id,
+                capability_id=uuid4(),
+                session_generation=session.session_generation,
+                part_number=1,
+                size_bytes=intent.expected_size_bytes,
+                checksum=intent.expected_digest,
+                media_type=intent.media_type,
+                compression=intent.compression,
+                expires_at=handle.expires_at,
+            )
+            return BeginUploadResult(upload=intent, session=session, handle=handle)
+        if session.state != "active":
+            raise ArtifactConflictError("upload session is no longer writable")
+        if session.part_count != part_count or session.part_size_bytes != part_size_bytes:
+            raise ArtifactConflictError("upload session is bound to a different protocol version")
+        first_part_size = min(intent.expected_size_bytes, session.part_size_bytes)
+        result = await self.authorize_upload_part(
+            AuthorizeArtifactUploadPart(
+                upload_id=intent.upload_id,
+                operation_id=intent.operation_id,
+                tenant_id=intent.tenant_id,
+                session_generation=session.session_generation,
+                part_number=1,
+                size_bytes=first_part_size,
+                checksum=first_part_checksum,
+            ),
+            handle_ttl=lifetime,
+        )
+        return BeginUploadResult(upload=intent, session=session, handle=result.handle)
+
+    def _expected_part_size(self, intent: UploadIntent, session: ArtifactUploadSession, part_number: int) -> int:
+        if part_number > session.part_count:
+            raise ArtifactPolicyError("upload part number exceeds the reserved session")
+        if part_number < session.part_count:
+            return session.part_size_bytes
+        return intent.expected_size_bytes - session.part_size_bytes * (session.part_count - 1)
+
+    async def authorize_upload_part(
+        self, request: AuthorizeArtifactUploadPart, *, handle_ttl: timedelta | None = None
+    ) -> UploadPartHandleResult:
+        """Issue one exact-session part capability bound to length and checksum."""
+
+        lifetime = self._ttl(handle_ttl)
+        intent = await self._repository.get_upload(
+            FinalizeArtifactUpload(
+                upload_id=request.upload_id,
+                operation_id=request.operation_id,
+                tenant_id=request.tenant_id,
+            )
+        )
+        if intent.artifact_id is not None:
+            raise ArtifactConflictError("a finalized upload cannot issue new write capabilities")
+        session = await self._repository.get_upload_session(request.upload_id, tenant_id=request.tenant_id)
+        if session.state != "active" or session.session_generation != request.session_generation:
+            raise ArtifactConflictError("upload session generation is not writable")
+        expected_size = self._expected_part_size(intent, session, request.part_number)
+        if request.size_bytes != expected_size:
+            raise ArtifactVerificationError("upload part size differs from the reserved object shape")
+        handle = await self._store.presign_upload_part(
+            session=session,
+            part_number=request.part_number,
+            size_bytes=request.size_bytes,
+            checksum=request.checksum,
             ttl=lifetime,
         )
         _validate_handle(handle, method="PUT", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
-        return BeginUploadResult(upload=intent, handle=handle)
+        await self._repository.record_upload_capability(
+            intent.upload_id,
+            tenant_id=intent.tenant_id,
+            capability_id=uuid4(),
+            session_generation=session.session_generation,
+            part_number=request.part_number,
+            size_bytes=request.size_bytes,
+            checksum=request.checksum,
+            media_type=intent.media_type,
+            compression=intent.compression,
+            expires_at=handle.expires_at,
+        )
+        return UploadPartHandleResult(session=session, part_number=request.part_number, handle=handle)
 
     async def store_upload_content(
         self,
@@ -1259,25 +1993,55 @@ class ScientificArtifactService:
                 raise ArtifactVerificationError("declared media type differs from the upload intent")
         if declared_size_bytes is not None and declared_size_bytes != intent.expected_size_bytes:
             raise ArtifactVerificationError("declared size differs from the upload intent")
-        measured = VerifiedStoredObject(
-            storage_key=intent.storage_key,
-            digest=f"sha256:{hashlib.sha256(content).hexdigest()}",
-            size_bytes=len(content),
-            media_type=intent.media_type,
-            compression=intent.compression,
-        )
-        _verify_object(intent, measured)
-        self._check_policy(intent.media_type, measured.size_bytes)
-        stored = await self._store.put_object(
-            storage_key=intent.storage_key,
-            payload=content,
-            media_type=intent.media_type,
-            compression=intent.compression,
-        )
-        # The adapter measures the object it actually persisted. A store that
-        # rewrote, truncated or re-typed the body is caught here rather than
-        # surfacing later as an unexplained finalization failure.
-        _verify_object(intent, stored)
+        measured_digest = f"sha256:{hashlib.sha256(content).hexdigest()}"
+        if measured_digest != intent.expected_digest or len(content) != intent.expected_size_bytes:
+            raise ArtifactVerificationError("inline bytes differ from the immutable upload intent")
+        self._check_policy(intent.media_type, len(content))
+        session = await self._repository.get_upload_session(intent.upload_id, tenant_id=intent.tenant_id)
+        if session.state == "legacy":
+            mutation_fence = self._clock() + self._max_handle_ttl
+            await self._repository.record_upload_capability(
+                intent.upload_id,
+                tenant_id=intent.tenant_id,
+                capability_id=uuid4(),
+                session_generation=session.session_generation,
+                part_number=1,
+                size_bytes=intent.expected_size_bytes,
+                checksum=intent.expected_digest,
+                media_type=intent.media_type,
+                compression=intent.compression,
+                expires_at=mutation_fence,
+            )
+            verified = await self._store.put_legacy_object(
+                storage_key=intent.storage_key,
+                payload=content,
+                media_type=intent.media_type,
+                compression=intent.compression,
+            )
+            stored = StagedUploadPart(
+                storage_key=verified.storage_key,
+                digest=verified.digest,
+                size_bytes=verified.size_bytes,
+                media_type=verified.media_type,
+                compression=verified.compression,
+                provider_request_id=verified.provider_request_id,
+            )
+        elif session.state == "active":
+            stored = await self._store.stage_inline_upload(
+                session=session,
+                intent=intent,
+                payload=content,
+            )
+        else:
+            raise ArtifactConflictError("upload session is no longer writable")
+        if (
+            stored.storage_key != intent.storage_key
+            or stored.digest != intent.expected_digest
+            or stored.size_bytes != intent.expected_size_bytes
+            or stored.media_type != intent.media_type
+            or stored.compression != intent.compression
+        ):
+            raise ArtifactVerificationError("staged inline upload differs from its immutable intent")
         return InlineUploadReceipt(upload=intent, stored=stored)
 
     async def open_content(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactContentStream:
@@ -1289,30 +2053,107 @@ class ScientificArtifactService:
         """
 
         record = await self._repository.get_artifact(artifact_id, tenant_id=tenant_id)
+        if record.provider_version_id is None:
+            verified = await self._store.recover_legacy_artifact(artifact=record)
+            record = record.model_copy(update={"provider_version_id": verified.provider_version_id})
         return ArtifactContentStream(
             artifact=record,
-            chunks=self._store.stream_object(record.storage_key, max_bytes=record.size_bytes),
+            chunks=self._store.stream_object(
+                record.storage_key,
+                provider_version_id=record.provider_version_id,
+                max_bytes=record.size_bytes,
+            ),
         )
 
     async def finalize_upload(self, request: FinalizeArtifactUpload) -> ArtifactRecord:
         """Verify the stored bytes independently, then publish the content address."""
 
-        intent = await self._repository.get_upload(request)
+        # This status read grants no write authority.  A finalized retry may
+        # return its immutable artifact even after the original write fence.
+        intent = await self._repository.get_upload_status(request)
         if intent.artifact_id is not None:
             return await self._repository.get_artifact(intent.artifact_id, tenant_id=intent.tenant_id)
-        verified = await self._store.inspect(
-            intent.storage_key, max_bytes=min(self._max_artifact_bytes, intent.expected_size_bytes)
+        try:
+            session = await self._repository.get_upload_session(intent.upload_id, tenant_id=intent.tenant_id)
+        except ArtifactNotFoundError:
+            raise ArtifactConflictError("upload has no server-owned provider session") from None
+        if session.state not in {"active", "legacy", "completed"}:
+            raise ArtifactConflictError("upload session cannot be finalized")
+        lease = await self._repository.get_finalization_lease(
+            request,
+            session_generation=session.session_generation,
         )
-        _verify_object(intent, verified)
-        self._check_policy(verified.media_type, verified.size_bytes)
-        return await self._repository.finalize_upload(request, verified, artifact_id=uuid4())
+        if lease is None:
+            # A malformed part set cannot install the cleanup-excluding ambiguity
+            # fence.  Existing leases skip this preflight because provider
+            # completion may already have happened before its DB response.
+            if session.state == "active":
+                await self._store.validate_upload_session(session=session, intent=intent)
+            lease = await self._repository.acquire_finalization_lease(
+                request,
+                session_generation=session.session_generation,
+                lease_id=uuid4(),
+            )
+        # Only the exact active lease can cross the capability deadline during
+        # the configured completion grace.  Shared upload reads used by part
+        # authorization and inline writes remain closed at the raw deadline.
+        intent = await self._repository.get_leased_upload(request, lease=lease)
+        if session.state == "legacy":
+            verified = await self._store.recover_legacy_upload(intent=intent)
+        elif session.state == "active":
+            try:
+                verified = await self._store.complete_upload_session(session=session, intent=intent)
+            except ArtifactNotFoundError:
+                verified = await self._store.recover_completed_upload(intent=intent)
+        else:
+            verified = await self._store.recover_completed_upload(intent=intent)
+        return await self._verify_and_publish(request, intent, session, lease, verified)
+
+    async def _verify_and_publish(
+        self,
+        request: FinalizeArtifactUpload,
+        intent: UploadIntent,
+        session: ArtifactUploadSession,
+        lease: ArtifactFinalizationLease,
+        verified: VerifiedStoredObject,
+    ) -> ArtifactRecord:
+        try:
+            _verify_object(intent, verified)
+            self._check_policy(verified.media_type, verified.size_bytes)
+        except (ArtifactVerificationError, ArtifactPolicyError) as error:
+            await self._repository.record_finalization_failure(
+                request,
+                session=session,
+                lease=lease,
+                verified=verified,
+                failure_code=(
+                    "content_verification_failed"
+                    if isinstance(error, ArtifactVerificationError)
+                    else "artifact_policy_failed"
+                ),
+            )
+            raise
+        return await self._repository.finalize_upload(
+            request,
+            verified,
+            artifact_id=uuid4(),
+            session=session,
+            lease=lease,
+        )
 
     async def download(
         self, artifact_id: UUID, *, tenant_id: str, handle_ttl: timedelta | None = None
     ) -> ArtifactDownload:
         record = await self._repository.get_artifact(artifact_id, tenant_id=tenant_id)
+        if record.provider_version_id is None:
+            verified = await self._store.recover_legacy_artifact(artifact=record)
+            record = record.model_copy(update={"provider_version_id": verified.provider_version_id})
         lifetime = self._ttl(handle_ttl)
-        handle = await self._store.presign_download(storage_key=record.storage_key, ttl=lifetime)
+        handle = await self._store.presign_download(
+            storage_key=record.storage_key,
+            provider_version_id=record.provider_version_id,
+            ttl=lifetime,
+        )
         _validate_handle(handle, method="GET", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
         return ArtifactDownload(artifact=record, handle=handle)
 
@@ -1447,38 +2288,183 @@ class ScientificArtifactService:
                 continue
         return purges
 
-    async def remove_expired_quota_objects(self, *, limit: int = 50) -> list[ArtifactRemovalEvidence]:
+    async def remove_expired_quota_objects(self, *, limit: int = 50) -> list[ArtifactDeletionEvidence]:
         """Delete tenant-fair, backoff-fenced targets without releasing quota."""
 
         now = self._clock()
-        removals: list[ArtifactRemovalEvidence] = []
         targets = await self._repository.claim_expired_quota_removals(now=now, limit=limit)
-        for target in targets:
-            try:
-                removals.append(await self._store.delete(target.storage_key))
-            except ArtifactServiceError:
-                # The durable retry timestamp prevents a poison key from
-                # monopolising the next bounded pass. Continue other tenants.
-                continue
-        return removals
+        semaphore = asyncio.Semaphore(ARTIFACT_JANITOR_CONCURRENCY)
+
+        async def remove_one(target: ArtifactRemovalTarget) -> ArtifactDeletionEvidence | None:
+            async with semaphore:
+                try:
+                    evidence = await self._store.delete(target)
+                    await self._repository.record_quota_removal_completion(target, evidence)
+                    return evidence
+                except ArtifactServiceError:
+                    # Provider work is bounded per target; the durable retry
+                    # timestamp resumes incomplete keys without holding later
+                    # tenants behind a poisoned or high-cardinality key.
+                    return None
+
+        return [
+            evidence
+            for evidence in await asyncio.gather(*(remove_one(target) for target in targets))
+            if evidence is not None
+        ]
+
+    async def record_finalization_failure(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        session: ArtifactUploadSession,
+        lease: ArtifactFinalizationLease,
+        verified: VerifiedStoredObject,
+        failure_code: Literal["content_verification_failed", "artifact_policy_failed"],
+    ) -> ArtifactFinalizationFailureEvidence:
+        return await self._repository.record_finalization_failure(
+            request,
+            session=session,
+            lease=lease,
+            verified=verified,
+            failure_code=failure_code,
+        )
+
+    async def reconcile_stale_upload_session_creations(
+        self, *, limit: int = 50
+    ) -> list[ArtifactUploadSessionReconciliationEvidence]:
+        """Abort provider sessions whose durable pre-create owner disappeared."""
+
+        targets = await self._repository.claim_stale_upload_session_creations(limit=limit)
+        semaphore = asyncio.Semaphore(ARTIFACT_JANITOR_CONCURRENCY)
+
+        async def reconcile_one(
+            target: ArtifactUploadSessionCreationTarget,
+        ) -> ArtifactUploadSessionReconciliationEvidence | None:
+            async with semaphore:
+                try:
+                    evidence = await self._store.reconcile_orphan_upload_sessions(target)
+                    await self._repository.record_upload_session_creation_reconciled(target, evidence)
+                    return evidence
+                except ArtifactServiceError:
+                    return None
+
+        return [
+            evidence
+            for evidence in await asyncio.gather(*(reconcile_one(target) for target in targets))
+            if evidence is not None
+        ]
+
+    async def recover_expired_finalizations(self, *, limit: int = 50) -> list[ArtifactRecord]:
+        """Autonomously complete or recover every expired mutation fence.
+
+        Expiry transfers ownership to this controller path; it never
+        authorizes object cleanup or quota release.  A provider timeout keeps
+        the renewed lease and is retried after its bounded recovery window.
+        """
+
+        targets = await self._repository.claim_expired_finalization_leases(limit=limit)
+        semaphore = asyncio.Semaphore(ARTIFACT_JANITOR_CONCURRENCY)
+
+        async def recover_one(target: ArtifactFinalizationRecoveryTarget) -> ArtifactRecord | None:
+            async with semaphore:
+                try:
+                    intent = await self._repository.get_leased_upload(
+                        target.request, lease=target.lease
+                    )
+                    if target.session.state == "legacy":
+                        verified = await self._store.recover_legacy_upload(intent=intent)
+                    elif target.session.state == "active":
+                        try:
+                            verified = await self._store.complete_upload_session(
+                                session=target.session, intent=intent
+                            )
+                        except ArtifactNotFoundError:
+                            verified = await self._store.recover_completed_upload(intent=intent)
+                    else:
+                        verified = await self._store.recover_completed_upload(intent=intent)
+                    return await self._verify_and_publish(
+                        target.request,
+                        intent,
+                        target.session,
+                        target.lease,
+                        verified,
+                    )
+                except ArtifactServiceError:
+                    return None
+
+        return [
+            record
+            for record in await asyncio.gather(*(recover_one(target) for target in targets))
+            if record is not None
+        ]
 
     async def verify_expired_quota_absence(self, *, limit: int = 50) -> list[ArtifactRemovalEvidence]:
         """Independently re-fetch absence and only then release retained quota."""
 
         now = self._clock()
-        verified: list[ArtifactRemovalEvidence] = []
         targets = await self._repository.claim_quota_verifications(now=now, limit=limit)
-        for target in targets:
-            try:
-                evidence = await self._store.verify_absent(target.storage_key)
-                await self._repository.record_quota_removal(target, evidence)
-            except ArtifactServiceError:
-                # Provider and database evidence failures are scoped to this
-                # claimed key. Its durable backoff prevents it from blocking
-                # later tenants or later ranks in the same bounded pass.
-                continue
-            verified.append(evidence)
-        return verified
+        semaphore = asyncio.Semaphore(ARTIFACT_JANITOR_CONCURRENCY)
+
+        async def verify_one(target: ArtifactRemovalTarget) -> ArtifactRemovalEvidence | None:
+            async with semaphore:
+                try:
+                    evidence = await self._store.verify_absent(target)
+                    await self._repository.record_quota_removal(target, evidence)
+                    return evidence
+                except ArtifactServiceError:
+                    try:
+                        await self._repository.record_quota_verification_failure(target)
+                    except ArtifactServiceError:
+                        # A stale generation or unavailable database cannot
+                        # make failed evidence authoritative; quota stays held.
+                        pass
+                    return None
+
+        return [
+            evidence
+            for evidence in await asyncio.gather(*(verify_one(target) for target in targets))
+            if evidence is not None
+        ]
+
+    async def pin_legacy_provider_versions(self, *, limit: int = 50) -> list[VerifiedStoredObject]:
+        """Bind retained pre-0031 metadata to immutable read-only provider versions."""
+
+        targets = await self._repository.claim_legacy_version_pins(limit=limit)
+        semaphore = asyncio.Semaphore(ARTIFACT_JANITOR_CONCURRENCY)
+
+        async def pin_one(target: LegacyArtifactVersionTarget) -> VerifiedStoredObject | None:
+            async with semaphore:
+                try:
+                    scan = await self._store.scan_legacy_version(target)
+                    verified = scan.verified
+                    if verified is None:
+                        await self._repository.record_legacy_version_scan(target, scan)
+                        return None
+                    if (
+                        verified.storage_key != target.storage_key
+                        or verified.digest != target.expected_digest
+                        or verified.size_bytes != target.expected_size_bytes
+                        or verified.media_type != target.expected_media_type
+                        or verified.compression != target.expected_compression
+                    ):
+                        raise ArtifactVerificationError(
+                            "legacy provider version differs from retained metadata"
+                        )
+                    await self._repository.record_legacy_version_pin(
+                        target,
+                        verified,
+                        observed_at=scan.observed_at,
+                    )
+                    return verified
+                except ArtifactServiceError:
+                    return None
+
+        return [
+            verified
+            for verified in await asyncio.gather(*(pin_one(target) for target in targets))
+            if verified is not None
+        ]
 
 
 @dataclass
@@ -1499,14 +2485,31 @@ class MemoryArtifactRepository:
         self._operations: dict[UUID, _MemoryOperation] = {}
         self._attempts: dict[UUID, StageAttemptRecord] = {}
         self._uploads: dict[UUID, UploadIntent] = {}
+        self._upload_sessions: dict[UUID, ArtifactUploadSession] = {}
+        self._upload_session_creation_claims: dict[UUID, ArtifactUploadSessionCreationClaim] = {}
+        self._upload_session_reconciliation_empty_at: dict[UUID, datetime] = {}
+        self._finalization_leases: dict[UUID, ArtifactFinalizationLease] = {}
+        self._completed_finalization_leases: set[UUID] = set()
+        self._failed_finalization_leases: set[UUID] = set()
+        self._finalization_failures: dict[UUID, ArtifactFinalizationFailureEvidence] = {}
         self._quota_reservations: dict[UUID, ArtifactQuotaReservation] = {}
         self._quota_events: list[ArtifactQuotaEvent] = []
+        self._upload_capabilities: dict[
+            UUID,
+            dict[
+                UUID,
+                tuple[int, int, int, str, str, ArtifactCompression | None, datetime],
+            ],
+        ] = {}
         self._removal_evidence: dict[UUID, ArtifactRemovalEvidence] = {}
+        self._deletion_evidence: dict[tuple[UUID, int], ArtifactDeletionEvidence] = {}
         self._removal_attempts: dict[UUID, int] = {}
+        self._removal_claimed_at: dict[UUID, datetime] = {}
         self._removal_retry_at: dict[UUID, datetime] = {}
         self._verification_attempts: dict[UUID, int] = {}
         self._verification_claimed_at: dict[UUID, datetime] = {}
         self._verification_retry_at: dict[UUID, datetime] = {}
+        self._verification_failures: set[tuple[UUID, int, int]] = set()
         self._artifacts: dict[UUID, ArtifactRecord] = {}
         self._stage_commits: dict[tuple[UUID, str], StageCommitRecord] = {}
         self._run_results: dict[UUID, RunResultRecord] = {}
@@ -1737,6 +2740,8 @@ class MemoryArtifactRepository:
         tenant_quota_bytes: int,
         tenant_quota_objects: int,
         reservation_ttl: timedelta,
+        upload_completion_grace: timedelta,
+        provider_stability_grace: timedelta,
     ) -> UploadIntent:
         del retention
         async with self._lock:
@@ -1754,8 +2759,12 @@ class MemoryArtifactRepository:
             if existing is not None:
                 if not _same_upload_request(existing, request, storage_key):
                     return existing
+                if existing.artifact_id is not None:
+                    raise ArtifactConflictError("a finalized upload cannot issue new write capabilities")
                 reservation = self._quota_reservations[request.upload_id]
                 if reservation.state is ArtifactQuotaReservationState.ACTIVE:
+                    if reservation.expires_at <= now:
+                        raise ArtifactConflictError("upload reservation has passed its issuance deadline")
                     return existing
                 raise ArtifactConflictError("upload is fenced for or has completed provider removal")
             active = [
@@ -1801,6 +2810,9 @@ class MemoryArtifactRepository:
                 state=ArtifactQuotaReservationState.ACTIVE,
                 reserved_at=now,
                 expires_at=now + reservation_ttl,
+                latest_upload_capability_expires_at=now,
+                upload_completion_grace_seconds=int(upload_completion_grace.total_seconds()),
+                provider_stability_grace_seconds=int(provider_stability_grace.total_seconds()),
             )
             self._quota_reservations[intent.upload_id] = reservation
             self._append_quota_event(
@@ -1819,6 +2831,427 @@ class MemoryArtifactRepository:
             )
             return intent
 
+    async def claim_upload_session_creation(
+        self,
+        upload_id: UUID,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        claim_id: UUID,
+        part_size_bytes: int,
+        part_count: int,
+    ) -> ArtifactUploadSessionCreationClaim:
+        async with self._lock:
+            intent = self._uploads.get(upload_id)
+            reservation = self._quota_reservations.get(upload_id)
+            if (
+                intent is None
+                or intent.tenant_id != tenant_id
+                or intent.storage_key != storage_key
+                or intent.artifact_id is not None
+                or reservation is None
+                or reservation.state is not ArtifactQuotaReservationState.ACTIVE
+                or reservation.expires_at <= self._clock()
+            ):
+                raise ArtifactConflictError("upload-session creation fence has closed")
+            existing = self._upload_session_creation_claims.get(upload_id)
+            if existing is not None and existing.state != "reconciled":
+                if (
+                    existing.storage_key != storage_key
+                    or existing.part_size_bytes != part_size_bytes
+                    or existing.part_count != part_count
+                ):
+                    raise ArtifactConflictError("upload-session creation already differs")
+                return existing
+            generation = 1 if existing is None else existing.claim_generation + 1
+            claimed_at = self._clock()
+            claim = ArtifactUploadSessionCreationClaim(
+                upload_id=upload_id,
+                tenant_id=tenant_id,
+                storage_key=storage_key,
+                claim_id=claim_id,
+                claim_generation=generation,
+                part_size_bytes=part_size_bytes,
+                part_count=part_count,
+                provider_stability_grace_seconds=reservation.provider_stability_grace_seconds,
+                state="creating",
+                claimed_at=claimed_at,
+                reconcile_after=claimed_at
+                + timedelta(seconds=reservation.upload_completion_grace_seconds),
+            )
+            self._upload_session_creation_claims[upload_id] = claim
+            return claim
+
+    async def bind_upload_session(
+        self,
+        upload_id: UUID,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        claim_id: UUID,
+        provider_upload_id: str,
+        part_size_bytes: int,
+        part_count: int,
+        initiated_at: datetime,
+    ) -> ArtifactUploadSession:
+        async with self._lock:
+            intent = self._uploads.get(upload_id)
+            claim = self._upload_session_creation_claims.get(upload_id)
+            if (
+                intent is None
+                or intent.tenant_id != tenant_id
+                or intent.storage_key != storage_key
+                or intent.artifact_id is not None
+                or claim is None
+                or claim.claim_id != claim_id
+                or claim.state != "creating"
+            ):
+                raise ArtifactConflictError("upload cannot bind a provider session")
+            existing = self._upload_sessions.get(upload_id)
+            if existing is not None:
+                if (
+                    existing.storage_key != storage_key
+                    or existing.part_size_bytes != part_size_bytes
+                    or existing.part_count != part_count
+                    or existing.provider_stability_grace_seconds
+                    != claim.provider_stability_grace_seconds
+                ):
+                    raise ArtifactConflictError("upload session already differs")
+                return existing
+            session = ArtifactUploadSession(
+                upload_id=upload_id,
+                tenant_id=tenant_id,
+                storage_key=storage_key,
+                provider_upload_id=provider_upload_id,
+                session_generation=1,
+                part_size_bytes=part_size_bytes,
+                part_count=part_count,
+                provider_stability_grace_seconds=claim.provider_stability_grace_seconds,
+                initiated_at=initiated_at,
+            )
+            self._upload_sessions[upload_id] = session
+            self._upload_session_creation_claims[upload_id] = claim.model_copy(
+                update={"state": "bound", "provider_upload_id": provider_upload_id}
+            )
+            return session
+
+    async def claim_stale_upload_session_creations(
+        self, *, limit: int
+    ) -> list[ArtifactUploadSessionCreationTarget]:
+        async with self._lock:
+            targets: list[ArtifactUploadSessionCreationTarget] = []
+            for upload_id, claim in sorted(
+                self._upload_session_creation_claims.items(), key=lambda item: item[1].reconcile_after
+            ):
+                if len(targets) >= limit or claim.state != "creating" or claim.reconcile_after > self._clock():
+                    continue
+                claimed_at = self._clock()
+                reconciling = claim.model_copy(
+                    update={"state": "reconciling", "reconcile_after": claimed_at + timedelta(minutes=5)}
+                )
+                self._upload_session_creation_claims[upload_id] = reconciling
+                targets.append(
+                    ArtifactUploadSessionCreationTarget(
+                        upload_id=upload_id,
+                        tenant_id=claim.tenant_id,
+                        storage_key=claim.storage_key,
+                        claim_id=claim.claim_id,
+                        claim_generation=claim.claim_generation,
+                        claimed_at=claimed_at,
+                    )
+                )
+            return targets
+
+    async def record_upload_session_creation_reconciled(
+        self,
+        target: ArtifactUploadSessionCreationTarget,
+        evidence: ArtifactUploadSessionReconciliationEvidence,
+    ) -> None:
+        async with self._lock:
+            claim = self._upload_session_creation_claims.get(target.upload_id)
+            if (
+                claim is None
+                or claim.state != "reconciling"
+                or claim.claim_id != target.claim_id
+                or claim.claim_generation != target.claim_generation
+                or claim.storage_key != evidence.storage_key
+                or evidence.multipart_session_set_digest != EMPTY_VERSION_SET_DIGEST
+            ):
+                raise ArtifactConflictError("upload-session reconciliation evidence is stale")
+            reservation = self._quota_reservations[target.upload_id]
+            prior_empty = self._upload_session_reconciliation_empty_at.get(target.upload_id)
+            if evidence.aborted_upload_count > 0 or prior_empty is None:
+                self._upload_session_reconciliation_empty_at[target.upload_id] = evidence.observed_at
+                self._upload_session_creation_claims[target.upload_id] = claim.model_copy(
+                    update={
+                        "state": "reconciling",
+                        "reconcile_after": evidence.observed_at
+                        + timedelta(seconds=reservation.provider_stability_grace_seconds),
+                    }
+                )
+                return
+            if evidence.observed_at < prior_empty + timedelta(
+                seconds=reservation.provider_stability_grace_seconds
+            ):
+                raise ArtifactConflictError("upload-session provider quiet interval is incomplete")
+            self._upload_session_creation_claims[target.upload_id] = claim.model_copy(
+                update={"state": "reconciled"}
+            )
+
+    async def get_upload_session(
+        self, upload_id: UUID, *, tenant_id: str
+    ) -> ArtifactUploadSession:
+        async with self._lock:
+            session = self._upload_sessions.get(upload_id)
+            if session is None or session.tenant_id != tenant_id:
+                raise ArtifactNotFoundError("upload session not found")
+            return session
+
+    async def record_upload_session_aborted(
+        self, session: ArtifactUploadSession, *, provider_request_id: str, observed_at: datetime
+    ) -> ArtifactUploadSession:
+        del provider_request_id, observed_at
+        async with self._lock:
+            current = self._upload_sessions.get(session.upload_id)
+            if current != session or current.state != "active":
+                raise ArtifactConflictError("upload-session abort is stale")
+            current = current.model_copy(update={"state": "aborted"})
+            ArtifactUploadSession.model_validate(current.model_dump())
+            self._upload_sessions[session.upload_id] = current
+            return current
+
+    async def acquire_finalization_lease(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        session_generation: int,
+        lease_id: UUID,
+    ) -> ArtifactFinalizationLease:
+        async with self._lock:
+            intent = self._uploads.get(request.upload_id)
+            reservation = self._quota_reservations.get(request.upload_id)
+            session = self._upload_sessions.get(request.upload_id)
+            now = self._clock()
+            existing = self._finalization_leases.get(request.upload_id)
+            if (
+                intent is None
+                or intent.operation_id != request.operation_id
+                or intent.tenant_id != request.tenant_id
+                or intent.artifact_id is not None
+                or reservation is None
+                or reservation.state is not ArtifactQuotaReservationState.ACTIVE
+                or session is None
+                or session.session_generation != session_generation
+                or session.state not in {"active", "legacy", "completed"}
+            ):
+                raise ArtifactConflictError("artifact finalization fence has closed")
+            if existing is not None:
+                if existing.session_generation != session_generation or existing.expires_at <= now:
+                    raise ArtifactConflictError("artifact finalization lease already differs")
+                return existing
+            if (
+                max(
+                    reservation.expires_at,
+                    reservation.latest_upload_capability_expires_at or reservation.reserved_at,
+                )
+                + timedelta(seconds=reservation.upload_completion_grace_seconds)
+                <= now
+            ):
+                raise ArtifactConflictError("artifact finalization fence has closed")
+            lease = ArtifactFinalizationLease(
+                lease_id=lease_id,
+                upload_id=request.upload_id,
+                tenant_id=request.tenant_id,
+                lease_generation=1,
+                session_generation=session_generation,
+                acquired_at=now,
+                expires_at=now
+                + timedelta(seconds=reservation.upload_completion_grace_seconds),
+            )
+            self._finalization_leases[request.upload_id] = lease
+            return lease
+
+    async def claim_expired_finalization_leases(
+        self, *, limit: int
+    ) -> list[ArtifactFinalizationRecoveryTarget]:
+        async with self._lock:
+            targets: list[ArtifactFinalizationRecoveryTarget] = []
+            now = self._clock()
+            for upload_id, lease in sorted(
+                self._finalization_leases.items(), key=lambda item: item[1].expires_at
+            ):
+                if (
+                    len(targets) >= limit
+                    or lease.expires_at > now
+                    or upload_id in self._completed_finalization_leases
+                    or upload_id in self._failed_finalization_leases
+                ):
+                    continue
+                intent = self._uploads.get(upload_id)
+                session = self._upload_sessions.get(upload_id)
+                reservation = self._quota_reservations.get(upload_id)
+                if intent is None or session is None or reservation is None:
+                    continue
+                renewed = lease.model_copy(
+                    update={
+                        "lease_generation": lease.lease_generation + 1,
+                        "acquired_at": now,
+                        "expires_at": now
+                        + timedelta(seconds=reservation.upload_completion_grace_seconds),
+                    }
+                )
+                self._finalization_leases[upload_id] = renewed
+                targets.append(
+                    ArtifactFinalizationRecoveryTarget(
+                        request=FinalizeArtifactUpload(
+                            upload_id=upload_id,
+                            operation_id=intent.operation_id,
+                            tenant_id=intent.tenant_id,
+                        ),
+                        session=session,
+                        lease=renewed,
+                    )
+                )
+            return targets
+
+    async def record_finalization_failure(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        session: ArtifactUploadSession,
+        lease: ArtifactFinalizationLease,
+        verified: VerifiedStoredObject,
+        failure_code: Literal["content_verification_failed", "artifact_policy_failed"],
+    ) -> ArtifactFinalizationFailureEvidence:
+        async with self._lock:
+            current = self._finalization_leases.get(request.upload_id)
+            current_session = self._upload_sessions.get(request.upload_id)
+            if current != lease or current_session != session:
+                raise ArtifactConflictError("artifact finalization failure fence is stale")
+            evidence = ArtifactFinalizationFailureEvidence(
+                upload_id=request.upload_id,
+                tenant_id=request.tenant_id,
+                lease_id=lease.lease_id,
+                lease_generation=lease.lease_generation,
+                session_generation=session.session_generation,
+                provider_upload_id=session.provider_upload_id,
+                provider_version_id=verified.provider_version_id,
+                provider_request_id=verified.provider_request_id,
+                failure_code=failure_code,
+                observed_at=self._clock(),
+            )
+            existing = self._finalization_failures.get(request.upload_id)
+            if existing is not None and existing != evidence:
+                raise ArtifactConflictError("artifact finalization failure already differs")
+            self._finalization_failures[request.upload_id] = evidence
+            self._failed_finalization_leases.add(request.upload_id)
+            completed = session.model_copy(
+                update={"state": "completed", "provider_version_id": verified.provider_version_id}
+            )
+            self._upload_sessions[request.upload_id] = completed
+            return evidence
+
+    async def get_finalization_lease(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        session_generation: int,
+    ) -> ArtifactFinalizationLease | None:
+        async with self._lock:
+            lease = self._finalization_leases.get(request.upload_id)
+            if lease is None:
+                return None
+            if (
+                lease.tenant_id != request.tenant_id
+                or lease.session_generation != session_generation
+                or request.upload_id in self._completed_finalization_leases
+                or request.upload_id in self._failed_finalization_leases
+                or lease.expires_at <= self._clock()
+            ):
+                raise ArtifactConflictError("artifact finalization lease already differs")
+            return lease
+
+    async def record_upload_capability(
+        self,
+        upload_id: UUID,
+        *,
+        tenant_id: str,
+        capability_id: UUID,
+        session_generation: int,
+        part_number: int,
+        size_bytes: int,
+        checksum: str,
+        media_type: str,
+        compression: ArtifactCompression | None,
+        expires_at: datetime,
+    ) -> ArtifactQuotaReservation:
+        async with self._lock:
+            reservation = self._quota_reservations.get(upload_id)
+            if reservation is None or reservation.tenant_id != tenant_id:
+                raise ArtifactNotFoundError("upload quota reservation not found")
+            if reservation.state is not ArtifactQuotaReservationState.ACTIVE:
+                raise ArtifactConflictError("upload capability cannot extend a fenced reservation")
+            if reservation.expires_at <= self._clock():
+                raise ArtifactConflictError("upload capability cannot extend a passed issuance deadline")
+            session = self._upload_sessions.get(upload_id)
+            if (
+                session is None
+                or session.state not in {"active", "legacy"}
+                or session.session_generation != session_generation
+                or (session.state == "legacy" and (part_number != 1 or session.part_count != 1))
+            ):
+                raise ArtifactConflictError("upload capability is outside the active session generation")
+            intent = self._uploads[upload_id]
+            if intent.media_type != media_type or intent.compression != compression:
+                raise ArtifactConflictError("upload capability media identity differs")
+            if session.state == "legacy" and (
+                size_bytes != intent.expected_size_bytes or checksum != intent.expected_digest
+            ):
+                raise ArtifactConflictError("legacy upload capability content identity differs")
+            expected_size = (
+                session.part_size_bytes
+                if part_number < session.part_count
+                else intent.expected_size_bytes - session.part_size_bytes * (session.part_count - 1)
+            )
+            if not 1 <= part_number <= session.part_count or size_bytes != expected_size:
+                raise ArtifactConflictError("upload capability part shape differs")
+            capabilities = self._upload_capabilities.setdefault(upload_id, {})
+            existing = capabilities.get(capability_id)
+            capability = (
+                session_generation,
+                part_number,
+                size_bytes,
+                checksum,
+                media_type,
+                compression,
+                expires_at,
+            )
+            if existing is not None and existing != capability:
+                raise ArtifactConflictError("upload capability identity is already bound")
+            if any(
+                value[0] == session_generation
+                and value[1] == part_number
+                and (
+                    value[2] != size_bytes
+                    or value[3] != checksum
+                    or value[4] != media_type
+                    or value[5] != compression
+                )
+                for value in capabilities.values()
+            ):
+                raise ArtifactConflictError("upload part checksum is already bound")
+            capabilities[capability_id] = capability
+            latest = max(
+                expires_at,
+                reservation.latest_upload_capability_expires_at or reservation.reserved_at,
+            )
+            reservation = reservation.model_copy(
+                update={"latest_upload_capability_expires_at": latest}
+            )
+            ArtifactQuotaReservation.model_validate(reservation.model_dump())
+            self._quota_reservations[upload_id] = reservation
+            return reservation
+
     async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent:
         async with self._lock:
             intent = self._uploads.get(request.upload_id)
@@ -1827,6 +3260,39 @@ class MemoryArtifactRepository:
             reservation = self._quota_reservations.get(request.upload_id)
             if reservation is None or reservation.state is not ArtifactQuotaReservationState.ACTIVE:
                 raise ArtifactConflictError("upload is fenced for or has completed provider removal")
+            if reservation.expires_at <= self._clock():
+                raise ArtifactConflictError("upload reservation has passed its issuance deadline")
+            return intent
+
+    async def get_upload_status(self, request: FinalizeArtifactUpload) -> UploadIntent:
+        async with self._lock:
+            intent = self._uploads.get(request.upload_id)
+            if (
+                intent is None
+                or intent.operation_id != request.operation_id
+                or intent.tenant_id != request.tenant_id
+            ):
+                raise ArtifactNotFoundError("upload not found")
+            return intent
+
+    async def get_leased_upload(
+        self, request: FinalizeArtifactUpload, *, lease: ArtifactFinalizationLease
+    ) -> UploadIntent:
+        async with self._lock:
+            intent = self._uploads.get(request.upload_id)
+            reservation = self._quota_reservations.get(request.upload_id)
+            current = self._finalization_leases.get(request.upload_id)
+            if (
+                intent is None
+                or intent.operation_id != request.operation_id
+                or intent.tenant_id != request.tenant_id
+                or intent.artifact_id is not None
+                or reservation is None
+                or reservation.state is not ArtifactQuotaReservationState.ACTIVE
+                or current != lease
+                or request.upload_id in self._completed_finalization_leases
+            ):
+                raise ArtifactConflictError("artifact finalization lease is stale")
             return intent
 
     async def quota_reservation(self, upload_id: UUID, *, tenant_id: str) -> ArtifactQuotaReservation:
@@ -1855,12 +3321,33 @@ class MemoryArtifactRepository:
             for reservation in self._quota_reservations.values():
                 if reservation.state is ArtifactQuotaReservationState.RELEASED:
                     continue
-                if reservation.state is ArtifactQuotaReservationState.ACTIVE and reservation.expires_at > now:
+                if (
+                    reservation.upload_id in self._finalization_leases
+                    and reservation.upload_id not in self._completed_finalization_leases
+                    and reservation.upload_id not in self._failed_finalization_leases
+                ):
                     continue
-                if reservation.state is ArtifactQuotaReservationState.REMOVING and self._removal_retry_at.get(
-                    reservation.upload_id, now
-                ) > now:
-                    continue
+                capability_expires_at = (
+                    reservation.latest_upload_capability_expires_at or reservation.reserved_at
+                )
+                eligible_at = max(reservation.expires_at, capability_expires_at) + timedelta(
+                    seconds=reservation.upload_completion_grace_seconds
+                )
+                if reservation.state is ArtifactQuotaReservationState.ACTIVE:
+                    if eligible_at > now:
+                        continue
+                else:
+                    generation = self._removal_attempts.get(reservation.upload_id, 0)
+                    completed = (reservation.upload_id, generation) in self._deletion_evidence
+                    failed = any(
+                        upload_id == reservation.upload_id and removal_generation == generation
+                        for upload_id, removal_generation, _verification_generation in self._verification_failures
+                    )
+                    if (
+                        self._removal_retry_at.get(reservation.upload_id, now) > now
+                        or (completed and not failed)
+                    ):
+                        continue
                 by_tenant.setdefault(reservation.tenant_id, []).append(reservation)
             fair = sorted(
                 (
@@ -1882,7 +3369,6 @@ class MemoryArtifactRepository:
                 if reservation.state is ArtifactQuotaReservationState.ACTIVE:
                     reservation = reservation.model_copy(update={"state": ArtifactQuotaReservationState.REMOVING})
                     self._quota_reservations[reservation.upload_id] = reservation
-                    self._verification_retry_at[reservation.upload_id] = now
                     self._append_quota_event(
                         reservation,
                         ArtifactQuotaEventType.REMOVAL_CLAIMED,
@@ -1890,10 +3376,18 @@ class MemoryArtifactRepository:
                     )
                 attempts = self._removal_attempts.get(reservation.upload_id, 0)
                 self._removal_attempts[reservation.upload_id] = attempts + 1
+                self._removal_claimed_at[reservation.upload_id] = now
                 self._removal_retry_at[reservation.upload_id] = now + timedelta(
                     seconds=min(3600, 30 * 2 ** min(attempts, 6))
                 )
                 intent = self._uploads[reservation.upload_id]
+                session = self._upload_sessions.get(reservation.upload_id)
+                capability_expires_at = (
+                    reservation.latest_upload_capability_expires_at or reservation.reserved_at
+                )
+                eligible_at = max(reservation.expires_at, capability_expires_at) + timedelta(
+                    seconds=reservation.upload_completion_grace_seconds
+                )
                 targets.append(
                     ArtifactRemovalTarget(
                         upload_id=reservation.upload_id,
@@ -1901,7 +3395,13 @@ class MemoryArtifactRepository:
                         attempt_id=reservation.attempt_id,
                         tenant_id=reservation.tenant_id,
                         storage_key=intent.storage_key,
-                        eligible_at=reservation.expires_at,
+                        provider_upload_id=session.provider_upload_id if session else None,
+                        upload_session_generation=session.session_generation if session else 0,
+                        latest_upload_capability_expires_at=capability_expires_at,
+                        removal_generation=attempts + 1,
+                        verification_generation=0,
+                        removal_claimed_at=now,
+                        eligible_at=eligible_at,
                     )
                 )
             return targets
@@ -1914,6 +3414,20 @@ class MemoryArtifactRepository:
             by_tenant: dict[str, list[ArtifactQuotaReservation]] = {}
             for reservation in self._quota_reservations.values():
                 if reservation.state is not ArtifactQuotaReservationState.REMOVING:
+                    continue
+                removal_generation = self._removal_attempts.get(reservation.upload_id, 0)
+                completion = self._deletion_evidence.get((reservation.upload_id, removal_generation))
+                if completion is None:
+                    continue
+                if any(
+                    upload_id == reservation.upload_id and failed_generation == removal_generation
+                    for upload_id, failed_generation, _verification_generation in self._verification_failures
+                ):
+                    continue
+                stable_at = completion.observed_at + timedelta(
+                    seconds=reservation.provider_stability_grace_seconds
+                )
+                if stable_at > now:
                     continue
                 if self._verification_retry_at.get(reservation.upload_id, now) > now:
                     continue
@@ -1942,6 +3456,13 @@ class MemoryArtifactRepository:
                     seconds=min(3600, 30 * 2 ** min(attempts, 6))
                 )
                 intent = self._uploads[reservation.upload_id]
+                session = self._upload_sessions.get(reservation.upload_id)
+                capability_expires_at = (
+                    reservation.latest_upload_capability_expires_at or reservation.reserved_at
+                )
+                eligible_at = max(reservation.expires_at, capability_expires_at) + timedelta(
+                    seconds=reservation.upload_completion_grace_seconds
+                )
                 targets.append(
                     ArtifactRemovalTarget(
                         upload_id=reservation.upload_id,
@@ -1949,10 +3470,107 @@ class MemoryArtifactRepository:
                         attempt_id=reservation.attempt_id,
                         tenant_id=reservation.tenant_id,
                         storage_key=intent.storage_key,
-                        eligible_at=reservation.expires_at,
+                        provider_upload_id=session.provider_upload_id if session else None,
+                        upload_session_generation=session.session_generation if session else 0,
+                        latest_upload_capability_expires_at=capability_expires_at,
+                        removal_generation=removal_generation,
+                        verification_generation=attempts + 1,
+                        removal_claimed_at=self._removal_claimed_at[reservation.upload_id],
+                        verification_claimed_at=now,
+                        eligible_at=eligible_at,
                     )
                 )
             return targets
+
+    async def record_quota_removal_completion(
+        self, target: ArtifactRemovalTarget, evidence: ArtifactDeletionEvidence
+    ) -> None:
+        async with self._lock:
+            reservation = self._quota_reservations.get(target.upload_id)
+            if reservation is None or reservation.tenant_id != target.tenant_id:
+                raise ArtifactNotFoundError("upload quota reservation not found")
+            if (
+                reservation.state is not ArtifactQuotaReservationState.REMOVING
+                or self._removal_attempts.get(target.upload_id) != target.removal_generation
+                or self._removal_claimed_at.get(target.upload_id) != target.removal_claimed_at
+                or evidence.storage_key != target.storage_key
+                or evidence.observed_at < target.removal_claimed_at
+            ):
+                raise ArtifactConflictError("provider deletion result does not match the current removal claim")
+            key = (target.upload_id, target.removal_generation)
+            existing = self._deletion_evidence.get(key)
+            if existing is not None and existing != evidence:
+                raise ArtifactConflictError("provider deletion result already differs")
+            self._deletion_evidence[key] = evidence
+            session = self._upload_sessions.get(target.upload_id)
+            if session is not None and session.state == "active":
+                session = session.model_copy(update={"state": "aborted"})
+                ArtifactUploadSession.model_validate(session.model_dump())
+                self._upload_sessions[target.upload_id] = session
+            self._verification_retry_at[target.upload_id] = evidence.observed_at + timedelta(
+                seconds=reservation.provider_stability_grace_seconds
+            )
+
+    async def record_quota_verification_failure(self, target: ArtifactRemovalTarget) -> None:
+        async with self._lock:
+            reservation = self._quota_reservations.get(target.upload_id)
+            if reservation is None or reservation.tenant_id != target.tenant_id:
+                raise ArtifactNotFoundError("upload quota reservation not found")
+            if (
+                reservation.state is not ArtifactQuotaReservationState.REMOVING
+                or self._removal_attempts.get(target.upload_id) != target.removal_generation
+                or self._verification_attempts.get(target.upload_id) != target.verification_generation
+                or self._verification_claimed_at.get(target.upload_id) != target.verification_claimed_at
+            ):
+                raise ArtifactConflictError("artifact verification failure is stale")
+            self._verification_failures.add(
+                (target.upload_id, target.removal_generation, target.verification_generation)
+            )
+            self._removal_retry_at[target.upload_id] = self._clock()
+
+    async def claim_legacy_version_pins(self, *, limit: int) -> list[LegacyArtifactVersionTarget]:
+        del limit
+        return []
+
+    async def record_legacy_version_pin(
+        self,
+        target: LegacyArtifactVersionTarget,
+        verified: VerifiedStoredObject,
+        *,
+        observed_at: datetime,
+    ) -> None:
+        del target, verified, observed_at
+        raise ArtifactConflictError("in-memory artifacts are created with provider version pins")
+
+    async def record_legacy_version_scan(
+        self, target: LegacyArtifactVersionTarget, scan: LegacyArtifactVersionScan
+    ) -> None:
+        del target, scan
+        raise ArtifactConflictError("in-memory artifacts never require legacy version scans")
+
+    async def legacy_version_rollout_status(self) -> LegacyArtifactRolloutStatus:
+        return LegacyArtifactRolloutStatus(
+            pending=0,
+            bound=0,
+            unresolved=0,
+            unbound_artifacts=0,
+            missing_unfinished_upload_sessions=0,
+        )
+
+    async def mark_schema_bridge_ready(
+        self,
+        *,
+        bridge_image_ref: str,
+        bridge_release_revision: int,
+        predecessor_image_ref: str,
+        evidence: SchemaBridgeDrainEvidence,
+    ) -> None:
+        del (
+            bridge_image_ref,
+            bridge_release_revision,
+            predecessor_image_ref,
+            evidence,
+        )
 
     async def record_quota_removal(
         self, target: ArtifactRemovalTarget, evidence: ArtifactRemovalEvidence
@@ -1964,9 +3582,42 @@ class MemoryArtifactRepository:
             ):
                 raise ArtifactConflictError("quota release requires independent absence evidence")
             claimed_at = self._verification_claimed_at.get(target.upload_id)
-            if claimed_at is None or evidence.observed_at < claimed_at:
-                raise ArtifactConflictError("quota release lacks a current verification claim")
             reservation = self._quota_reservations.get(target.upload_id)
+            completion = self._deletion_evidence.get(
+                (target.upload_id, target.removal_generation)
+            )
+            if (
+                claimed_at is None
+                or claimed_at != target.verification_claimed_at
+                or reservation is None
+                or self._removal_attempts.get(target.upload_id) != target.removal_generation
+                or self._verification_attempts.get(target.upload_id)
+                != target.verification_generation
+                or completion is None
+                or claimed_at
+                < completion.observed_at
+                + timedelta(seconds=reservation.provider_stability_grace_seconds)
+                or evidence.observed_at < claimed_at
+                or evidence.latest_upload_capability_expires_at
+                != target.latest_upload_capability_expires_at
+                or evidence.removal_generation != target.removal_generation
+                or evidence.verification_generation != target.verification_generation
+                or evidence.claim_digest
+                != artifact_absence_claim_digest(
+                    target,
+                    observed_at=evidence.observed_at,
+                    first_list_request_id=evidence.first_list_request_id,
+                    head_request_id=evidence.head_request_id,
+                    second_list_request_id=evidence.second_list_request_id,
+                    first_version_set_digest=evidence.first_version_set_digest,
+                    second_version_set_digest=evidence.second_version_set_digest,
+                    first_multipart_list_request_id=evidence.first_multipart_list_request_id,
+                    second_multipart_list_request_id=evidence.second_multipart_list_request_id,
+                    first_multipart_session_set_digest=evidence.first_multipart_session_set_digest,
+                    second_multipart_session_set_digest=evidence.second_multipart_session_set_digest,
+                )
+            ):
+                raise ArtifactConflictError("quota release lacks a current verification claim")
             if reservation is None or reservation.tenant_id != target.tenant_id:
                 raise ArtifactNotFoundError("upload quota reservation not found")
             existing = self._removal_evidence.get(target.upload_id)
@@ -1978,7 +3629,13 @@ class MemoryArtifactRepository:
             return self._quota_reservations[target.upload_id]
 
     async def finalize_upload(
-        self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
+        self,
+        request: FinalizeArtifactUpload,
+        verified: VerifiedStoredObject,
+        *,
+        artifact_id: UUID,
+        session: ArtifactUploadSession | None,
+        lease: ArtifactFinalizationLease,
     ) -> ArtifactRecord:
         async with self._lock:
             self._assert_writable(request.operation_id, request.tenant_id)
@@ -1991,6 +3648,8 @@ class MemoryArtifactRepository:
             reservation = self._quota_reservations.get(request.upload_id)
             if reservation is None or reservation.state is not ArtifactQuotaReservationState.ACTIVE:
                 raise ArtifactConflictError("upload is fenced for or has completed provider removal")
+            if self._finalization_leases.get(request.upload_id) != lease:
+                raise ArtifactConflictError("artifact finalization lease is stale")
             attempt = self._attempts[intent.attempt_id]
             self._assert_live_attempt(attempt)
             _verify_object(intent, verified)
@@ -2007,17 +3666,36 @@ class MemoryArtifactRepository:
                 media_type=verified.media_type,
                 compression=verified.compression,
                 storage_key=verified.storage_key,
+                provider_version_id=verified.provider_version_id,
                 access=intent.access,
                 retention_expires_at=now + (attempt.retention_expires_at - attempt.started_at),
                 created_at=now,
             )
             self._artifacts[record.artifact_id] = record
+            if session is not None:
+                current_session = self._upload_sessions.get(intent.upload_id)
+                if current_session != session:
+                    raise ArtifactConflictError("upload session changed before finalization")
+                if current_session.state == "active":
+                    completed_session = current_session.model_copy(
+                        update={
+                            "state": "completed",
+                            "provider_version_id": verified.provider_version_id,
+                        }
+                    )
+                    ArtifactUploadSession.model_validate(completed_session.model_dump())
+                    self._upload_sessions[intent.upload_id] = completed_session
+                elif current_session.state == "completed" and (
+                    current_session.provider_version_id != verified.provider_version_id
+                ):
+                    raise ArtifactConflictError("upload session is bound to another provider version")
             self._uploads[intent.upload_id] = intent.model_copy(
                 update={"artifact_id": record.artifact_id, "finalized_at": now}
             )
             extended = reservation.model_copy(update={"expires_at": record.retention_expires_at})
             ArtifactQuotaReservation.model_validate(extended.model_dump())
             self._quota_reservations[intent.upload_id] = extended
+            self._completed_finalization_leases.add(intent.upload_id)
             self._append_quota_event(
                 extended,
                 ArtifactQuotaEventType.RETENTION_EXTENDED,
@@ -2195,6 +3873,14 @@ class MemoryArtifactRepository:
                     or reservation.state is ArtifactQuotaReservationState.RELEASED
                 ):
                     continue
+                capability_expires_at = (
+                    reservation.latest_upload_capability_expires_at or reservation.reserved_at
+                )
+                eligible_at = max(reservation.expires_at, capability_expires_at) + timedelta(
+                    seconds=reservation.upload_completion_grace_seconds
+                )
+                if eligible_at > now:
+                    continue
                 if reservation.state is ArtifactQuotaReservationState.ACTIVE:
                     reservation = reservation.model_copy(update={"state": ArtifactQuotaReservationState.REMOVING})
                     self._quota_reservations[reservation.upload_id] = reservation
@@ -2203,6 +3889,10 @@ class MemoryArtifactRepository:
                         ArtifactQuotaEventType.REMOVAL_CLAIMED,
                         occurred_at=now,
                     )
+                attempts = self._removal_attempts.get(reservation.upload_id, 0)
+                self._removal_attempts[reservation.upload_id] = attempts + 1
+                self._removal_claimed_at[reservation.upload_id] = now
+                self._removal_retry_at[reservation.upload_id] = now + timedelta(seconds=30)
                 targets.append(
                     ArtifactRemovalTarget(
                         upload_id=reservation.upload_id,
@@ -2210,7 +3900,11 @@ class MemoryArtifactRepository:
                         attempt_id=reservation.attempt_id,
                         tenant_id=reservation.tenant_id,
                         storage_key=self._uploads[reservation.upload_id].storage_key,
-                        eligible_at=reservation.expires_at,
+                        latest_upload_capability_expires_at=capability_expires_at,
+                        removal_generation=attempts + 1,
+                        verification_generation=0,
+                        removal_claimed_at=now,
+                        eligible_at=eligible_at,
                     )
                 )
             return targets
@@ -2335,6 +4029,7 @@ def _artifact_from_row(row: Mapping[str, Any]) -> ArtifactRecord:
         media_type=row["media_type"],
         compression=ArtifactCompression(row["compression"]) if row["compression"] else None,
         storage_key=row["storage_key"],
+        provider_version_id=row["provider_version_id"],
         access=_access_from_row(row),
         retention_expires_at=row["retention_expires_at"],
         created_at=row["created_at"],
@@ -2359,6 +4054,53 @@ def _upload_from_row(row: Mapping[str, Any]) -> UploadIntent:
         begun_at=row["begun_at"],
         finalized_at=row["finalized_at"],
         artifact_id=row["artifact_id"],
+    )
+
+
+def _upload_session_from_row(row: Mapping[str, Any]) -> ArtifactUploadSession:
+    return ArtifactUploadSession(
+        upload_id=row["upload_id"],
+        tenant_id=row["tenant_id"],
+        storage_key=row["storage_key"],
+        provider_upload_id=row["provider_upload_id"],
+        session_generation=row["session_generation"],
+        part_size_bytes=row["part_size_bytes"],
+        part_count=row["part_count"],
+        provider_stability_grace_seconds=row["provider_stability_grace_seconds"],
+        initiated_at=row["initiated_at"],
+        state=row["state"],
+        provider_version_id=row["provider_version_id"],
+    )
+
+
+def _upload_session_creation_claim_from_row(
+    row: Mapping[str, Any],
+) -> ArtifactUploadSessionCreationClaim:
+    return ArtifactUploadSessionCreationClaim(
+        upload_id=row["upload_id"],
+        tenant_id=row["tenant_id"],
+        storage_key=row["storage_key"],
+        claim_id=row["claim_id"],
+        claim_generation=row["claim_generation"],
+        part_size_bytes=row["part_size_bytes"],
+        part_count=row["part_count"],
+        provider_stability_grace_seconds=row["provider_stability_grace_seconds"],
+        state=row["state"],
+        claimed_at=row["claimed_at"],
+        reconcile_after=row["reconcile_after"],
+        provider_upload_id=row["provider_upload_id"],
+    )
+
+
+def _finalization_lease_from_row(row: Mapping[str, Any]) -> ArtifactFinalizationLease:
+    return ArtifactFinalizationLease(
+        lease_id=row["lease_id"],
+        upload_id=row["upload_id"],
+        tenant_id=row["tenant_id"],
+        lease_generation=row["lease_generation"],
+        session_generation=row["session_generation"],
+        acquired_at=row["acquired_at"],
+        expires_at=row["expires_at"],
     )
 
 
@@ -2388,6 +4130,9 @@ def _quota_reservation_from_row(row: Mapping[str, Any]) -> ArtifactQuotaReservat
         state=ArtifactQuotaReservationState(row["state"]),
         reserved_at=row["reserved_at"],
         expires_at=row["expires_at"],
+        latest_upload_capability_expires_at=row["latest_upload_capability_expires_at"],
+        upload_completion_grace_seconds=row["upload_completion_grace_seconds"],
+        provider_stability_grace_seconds=row["provider_stability_grace_seconds"],
         released_at=row["released_at"],
         release_reason=(
             ArtifactQuotaReleaseReason(row["release_reason"])
@@ -2425,18 +4170,22 @@ _ATTEMPT_COLUMNS = """attempt_id,operation_id,tenant_id,stage_id,shard_id,attemp
     kueue_workload_uid,k8s_job_uid,pod_uids,node_uids,gpu_uuids,started_at,completed_at,
     retention_expires_at"""
 _ARTIFACT_COLUMNS = """id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
-    media_type,compression,storage_key,access_profile,access_receipt_digest,retention_expires_at,created_at"""
+    media_type,compression,storage_key,provider_version_id,access_profile,access_receipt_digest,
+    retention_expires_at,created_at"""
 _UPLOAD_COLUMNS = """id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,expected_digest,
     expected_size_bytes,media_type,compression,storage_key,access_profile,access_receipt_digest,
-    artifact_id,begun_at,finalized_at"""
+    artifact_id,begun_at,finalized_at,provider_version_id"""
+_UPLOAD_SESSION_COLUMNS = """upload_id,tenant_id,storage_key,provider_upload_id,session_generation,
+    part_size_bytes,part_count,provider_stability_grace_seconds,initiated_at,state,provider_version_id"""
 _QUOTA_RESERVATION_COLUMNS = """upload_id,operation_id,attempt_id,tenant_id,reserved_bytes,
-    reserved_objects,state,reserved_at,expires_at,released_at,release_reason"""
+    reserved_objects,state,reserved_at,expires_at,latest_upload_capability_expires_at,
+    upload_completion_grace_seconds,provider_stability_grace_seconds,released_at,release_reason"""
 _QUOTA_EVENT_COLUMNS = """id,upload_id,operation_id,attempt_id,tenant_id,event_type,reserved_bytes,
     reserved_objects,expires_at,release_reason,occurred_at"""
 
 
 _SELECT_ARTIFACT_SQL = f"""
-    SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts WHERE id=$1 AND tenant_id=$2
+    SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts_versioned WHERE id=$1 AND tenant_id=$2
 """  # noqa: S608
 
 
@@ -2632,6 +4381,8 @@ class PostgresArtifactRepository:
         tenant_quota_bytes: int,
         tenant_quota_objects: int,
         reservation_ttl: timedelta,
+        upload_completion_grace: timedelta,
+        provider_stability_grace: timedelta,
     ) -> UploadIntent:
         del retention
         try:
@@ -2647,6 +4398,8 @@ class PostgresArtifactRepository:
                         raise ArtifactNotFoundError("upload not found")
                     if not _same_upload_request(intent, request, storage_key):
                         return intent
+                    if intent.artifact_id is not None:
+                        raise ArtifactConflictError("a finalized upload cannot issue new write capabilities")
                     reservation_row = await connection.fetchrow(
                         f"SELECT {_QUOTA_RESERVATION_COLUMNS} "  # noqa: S608
                         "FROM fs2_scientific_artifact_quota_reservations WHERE upload_id=$1 FOR UPDATE",
@@ -2656,6 +4409,13 @@ class PostgresArtifactRepository:
                         raise ArtifactConflictError("upload quota reservation is absent")
                     reservation = _quota_reservation_from_row(reservation_row)
                     if reservation.state is ArtifactQuotaReservationState.ACTIVE:
+                        issuance_open = await connection.fetchval(
+                            "SELECT expires_at>clock_timestamp() "
+                            "FROM fs2_scientific_artifact_quota_reservations WHERE upload_id=$1",
+                            request.upload_id,
+                        )
+                        if issuance_open is not True:
+                            raise ArtifactConflictError("upload reservation has passed its issuance deadline")
                         return intent
                     raise ArtifactConflictError("upload is fenced for or has completed provider removal")
                 attempt = await connection.fetchrow(
@@ -2712,8 +4472,9 @@ class PostgresArtifactRepository:
                         f"""
                         INSERT INTO fs2_scientific_artifact_quota_reservations(
                             upload_id,operation_id,attempt_id,tenant_id,reserved_bytes,reserved_objects,
-                            state,reserved_at,expires_at
-                        ) VALUES($1,$2,$3,$4,$5,1,'active',$6,$6+$7)
+                            state,reserved_at,expires_at,latest_upload_capability_expires_at,
+                            upload_completion_grace_seconds,provider_stability_grace_seconds
+                        ) VALUES($1,$2,$3,$4,$5,1,'active',$6,$6+$7,$6,$8,$9)
                         RETURNING {_QUOTA_RESERVATION_COLUMNS}
                         """,  # noqa: S608
                         request.upload_id,
@@ -2723,6 +4484,8 @@ class PostgresArtifactRepository:
                         request.expected_size_bytes,
                         row["begun_at"],
                         reservation_ttl,
+                        int(upload_completion_grace.total_seconds()),
+                        int(provider_stability_grace.total_seconds()),
                     )
                     assert reservation is not None
                     await connection.execute(
@@ -2761,6 +4524,310 @@ class PostgresArtifactRepository:
             )
         )
 
+    async def claim_upload_session_creation(
+        self,
+        upload_id: UUID,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        claim_id: UUID,
+        part_size_bytes: int,
+        part_count: int,
+    ) -> ArtifactUploadSessionCreationClaim:
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT * FROM fs2_scientific_claim_upload_session_creation_v2($1,$2,$3,$4,$5,$6)",
+                upload_id,
+                tenant_id,
+                storage_key,
+                claim_id,
+                part_size_bytes,
+                part_count,
+            )
+            if row is None:
+                raise ArtifactConflictError("upload-session creation returned no claim")
+            return _upload_session_creation_claim_from_row(row)
+        except asyncpg.PostgresError as error:
+            raise (
+                self._translate(error)
+                or ArtifactConflictError("upload-session creation could not be claimed")
+            ) from None
+
+    async def bind_upload_session(
+        self,
+        upload_id: UUID,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        claim_id: UUID,
+        provider_upload_id: str,
+        part_size_bytes: int,
+        part_count: int,
+        initiated_at: datetime,
+    ) -> ArtifactUploadSession:
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT * FROM fs2_scientific_bind_upload_session_v2($1,$2,$3,$4,$5,$6,$7,$8)",
+                upload_id,
+                tenant_id,
+                storage_key,
+                claim_id,
+                provider_upload_id,
+                part_size_bytes,
+                part_count,
+                initiated_at,
+            )
+            if row is None:
+                raise ArtifactConflictError("upload-session routine returned no row")
+            return _upload_session_from_row(row)
+        except asyncpg.PostgresError as error:
+            raise (self._translate(error) or ArtifactConflictError("upload session could not be bound")) from None
+
+    async def claim_stale_upload_session_creations(
+        self, *, limit: int
+    ) -> list[ArtifactUploadSessionCreationTarget]:
+        rows = await self.pool.fetch(
+            "SELECT * FROM fs2_scientific_claim_stale_upload_session_creations_v2($1)",
+            min(max(1, limit), 500),
+        )
+        return [
+            ArtifactUploadSessionCreationTarget(
+                upload_id=row["upload_id"],
+                tenant_id=row["tenant_id"],
+                storage_key=row["storage_key"],
+                claim_id=row["claim_id"],
+                claim_generation=row["claim_generation"],
+                claimed_at=row["claimed_at"],
+            )
+            for row in rows
+        ]
+
+    async def record_finalization_failure(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        session: ArtifactUploadSession,
+        lease: ArtifactFinalizationLease,
+        verified: VerifiedStoredObject,
+        failure_code: Literal["content_verification_failed", "artifact_policy_failed"],
+    ) -> ArtifactFinalizationFailureEvidence:
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT * FROM fs2_scientific_record_finalization_failure_v2("
+                "$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+                request.upload_id,
+                request.operation_id,
+                request.tenant_id,
+                lease.lease_id,
+                lease.lease_generation,
+                session.session_generation,
+                session.provider_upload_id,
+                verified.provider_version_id,
+                verified.provider_request_id,
+                failure_code,
+                verified.digest,
+                verified.size_bytes,
+                verified.media_type,
+                verified.compression.value if verified.compression else None,
+                _utc_now(),
+            )
+            if row is None:
+                raise ArtifactConflictError("finalization-failure routine returned no evidence")
+            return ArtifactFinalizationFailureEvidence(
+                upload_id=row["upload_id"],
+                tenant_id=row["tenant_id"],
+                lease_id=row["lease_id"],
+                lease_generation=row["lease_generation"],
+                session_generation=row["session_generation"],
+                provider_upload_id=row["provider_upload_id"],
+                provider_version_id=row["provider_version_id"],
+                provider_request_id=row["provider_request_id"],
+                failure_code=row["failure_code"],
+                observed_at=row["observed_at"],
+            )
+        except asyncpg.PostgresError as error:
+            raise (
+                self._translate(error)
+                or ArtifactConflictError("artifact finalization failure was rejected")
+            ) from None
+
+    async def record_upload_session_creation_reconciled(
+        self,
+        target: ArtifactUploadSessionCreationTarget,
+        evidence: ArtifactUploadSessionReconciliationEvidence,
+    ) -> None:
+        try:
+            await self.pool.execute(
+                "SELECT fs2_scientific_record_upload_session_creation_reconciled_v2("
+                "$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+                target.upload_id,
+                target.tenant_id,
+                target.storage_key,
+                target.claim_id,
+                target.claim_generation,
+                target.claimed_at,
+                evidence.provider_request_id,
+                evidence.aborted_upload_count,
+                evidence.multipart_session_set_digest,
+                evidence.observed_at,
+            )
+        except asyncpg.PostgresError as error:
+            raise (
+                self._translate(error)
+                or ArtifactConflictError("upload-session reconciliation was rejected")
+            ) from None
+
+    async def get_upload_session(
+        self, upload_id: UUID, *, tenant_id: str
+    ) -> ArtifactUploadSession:
+        row = await self.pool.fetchrow(
+            f"SELECT {_UPLOAD_SESSION_COLUMNS} FROM fs2_scientific_artifact_upload_sessions "  # noqa: S608
+            "WHERE upload_id=$1 AND tenant_id=$2",
+            upload_id,
+            tenant_id,
+        )
+        if row is None:
+            raise ArtifactNotFoundError("upload session not found")
+        return _upload_session_from_row(row)
+
+    async def record_upload_session_aborted(
+        self, session: ArtifactUploadSession, *, provider_request_id: str, observed_at: datetime
+    ) -> ArtifactUploadSession:
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT * FROM fs2_scientific_record_upload_session_aborted_v2($1,$2,$3,$4,$5,$6)",
+                session.upload_id,
+                session.tenant_id,
+                session.session_generation,
+                session.provider_upload_id,
+                provider_request_id,
+                observed_at,
+            )
+            if row is None:
+                raise ArtifactConflictError("upload-session abort routine returned no row")
+            return _upload_session_from_row(row)
+        except asyncpg.PostgresError as error:
+            raise (self._translate(error) or ArtifactConflictError("upload-session abort was rejected")) from None
+
+    async def acquire_finalization_lease(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        session_generation: int,
+        lease_id: UUID,
+    ) -> ArtifactFinalizationLease:
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT * FROM fs2_scientific_acquire_artifact_finalization_lease_v2($1,$2,$3,$4,$5)",
+                request.upload_id,
+                request.operation_id,
+                request.tenant_id,
+                session_generation,
+                lease_id,
+            )
+            if row is None:
+                raise ArtifactConflictError("finalization-lease routine returned no row")
+            return _finalization_lease_from_row(row)
+        except asyncpg.PostgresError as error:
+            raise (self._translate(error) or ArtifactConflictError("finalization fence is closed")) from None
+
+    async def get_finalization_lease(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        session_generation: int,
+    ) -> ArtifactFinalizationLease | None:
+        row = await self.pool.fetchrow(
+            "SELECT lease_id,upload_id,tenant_id,lease_generation,session_generation,acquired_at,expires_at "
+            "FROM fs2_scientific_artifact_finalization_leases "
+            "WHERE upload_id=$1 AND tenant_id=$2 AND session_generation=$3 "
+            "AND state='active' AND expires_at>clock_timestamp()",
+            request.upload_id,
+            request.tenant_id,
+            session_generation,
+        )
+        return None if row is None else _finalization_lease_from_row(row)
+
+    async def claim_expired_finalization_leases(
+        self, *, limit: int
+    ) -> list[ArtifactFinalizationRecoveryTarget]:
+        rows = await self.pool.fetch(
+            "SELECT * FROM fs2_scientific_claim_expired_finalization_leases_v2($1)",
+            min(max(1, limit), 500),
+        )
+        return [
+            ArtifactFinalizationRecoveryTarget(
+                request=FinalizeArtifactUpload(
+                    upload_id=row["upload_id"],
+                    operation_id=row["operation_id"],
+                    tenant_id=row["tenant_id"],
+                ),
+                session=ArtifactUploadSession(
+                    upload_id=row["upload_id"],
+                    tenant_id=row["tenant_id"],
+                    storage_key=row["storage_key"],
+                    provider_upload_id=row["provider_upload_id"],
+                    session_generation=row["session_generation"],
+                    part_size_bytes=row["part_size_bytes"],
+                    part_count=row["part_count"],
+                    provider_stability_grace_seconds=row[
+                        "provider_stability_grace_seconds"
+                    ],
+                    initiated_at=row["initiated_at"],
+                    state=row["session_state"],
+                    provider_version_id=row["session_provider_version_id"],
+                ),
+                lease=ArtifactFinalizationLease(
+                    lease_id=row["lease_id"],
+                    upload_id=row["upload_id"],
+                    tenant_id=row["tenant_id"],
+                    lease_generation=row["lease_generation"],
+                    session_generation=row["session_generation"],
+                    acquired_at=row["acquired_at"],
+                    expires_at=row["expires_at"],
+                ),
+            )
+            for row in rows
+        ]
+
+    async def record_upload_capability(
+        self,
+        upload_id: UUID,
+        *,
+        tenant_id: str,
+        capability_id: UUID,
+        session_generation: int,
+        part_number: int,
+        size_bytes: int,
+        checksum: str,
+        media_type: str,
+        compression: ArtifactCompression | None,
+        expires_at: datetime,
+    ) -> ArtifactQuotaReservation:
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT * FROM fs2_scientific_record_upload_capability_v2("
+                "$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+                upload_id,
+                tenant_id,
+                capability_id,
+                session_generation,
+                part_number,
+                size_bytes,
+                checksum,
+                media_type,
+                compression.value if compression is not None else None,
+                expires_at,
+            )
+            if row is None:
+                raise ArtifactConflictError("upload capability routine returned no reservation")
+            return _quota_reservation_from_row(row)
+        except asyncpg.PostgresError as error:
+            raise (
+                self._translate(error)
+                or ArtifactConflictError("upload capability could not be durably fenced")
+            ) from None
+
     async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent:
         async with self.pool.acquire() as connection, connection.transaction():
             await self._tenant_quota_lock(connection, request.tenant_id)
@@ -2769,7 +4836,8 @@ class PostgresArtifactRepository:
                 "JOIN fs2_scientific_artifact_quota_reservations reservation "
                 "ON reservation.upload_id=upload.id "
                 "WHERE upload.id=$1 AND upload.operation_id=$2 AND upload.tenant_id=$3 "
-                "AND reservation.state='active'",
+                "AND reservation.state='active' "
+                "AND reservation.expires_at>clock_timestamp()",
                 request.upload_id,
                 request.operation_id,
                 request.tenant_id,
@@ -2785,6 +4853,41 @@ class PostgresArtifactRepository:
                     raise ArtifactConflictError("upload is fenced for or has completed provider removal")
                 raise ArtifactNotFoundError("upload not found")
             return _upload_from_row(row)
+
+    async def get_upload_status(self, request: FinalizeArtifactUpload) -> UploadIntent:
+        row = await self.pool.fetchrow(
+            f"SELECT {_UPLOAD_COLUMNS} FROM fs2_scientific_uploads "  # noqa: S608
+            "WHERE id=$1 AND operation_id=$2 AND tenant_id=$3",
+            request.upload_id,
+            request.operation_id,
+            request.tenant_id,
+        )
+        if row is None:
+            raise ArtifactNotFoundError("upload not found")
+        return _upload_from_row(row)
+
+    async def get_leased_upload(
+        self, request: FinalizeArtifactUpload, *, lease: ArtifactFinalizationLease
+    ) -> UploadIntent:
+        row = await self.pool.fetchrow(
+            "SELECT upload.* FROM fs2_scientific_uploads upload "
+            "JOIN fs2_scientific_artifact_quota_reservations reservation "
+            "ON reservation.upload_id=upload.id "
+            "JOIN fs2_scientific_artifact_finalization_leases lease ON lease.upload_id=upload.id "
+            "WHERE upload.id=$1 AND upload.operation_id=$2 AND upload.tenant_id=$3 "
+            "AND upload.artifact_id IS NULL AND reservation.state='active' "
+            "AND lease.lease_id=$4 AND lease.lease_generation=$5 "
+            "AND lease.session_generation=$6 AND lease.state='active'",
+            request.upload_id,
+            request.operation_id,
+            request.tenant_id,
+            lease.lease_id,
+            lease.lease_generation,
+            lease.session_generation,
+        )
+        if row is None:
+            raise ArtifactConflictError("artifact finalization lease is stale")
+        return _upload_from_row(row)
 
     async def quota_reservation(self, upload_id: UUID, *, tenant_id: str) -> ArtifactQuotaReservation:
         async with self.pool.acquire() as connection, connection.transaction():
@@ -2819,7 +4922,7 @@ class PostgresArtifactRepository:
         del now  # PostgreSQL is the eligibility clock authority.
         rows = await self.pool.fetch(
             """
-            SELECT * FROM fs2_scientific_claim_artifact_removals($1,NULL,NULL)
+            SELECT * FROM fs2_scientific_claim_artifact_removals_v2($1,NULL,NULL)
             """,
             min(max(1, limit), 500),
         )
@@ -2830,6 +4933,12 @@ class PostgresArtifactRepository:
                 attempt_id=row["attempt_id"],
                 tenant_id=row["tenant_id"],
                 storage_key=row["storage_key"],
+                provider_upload_id=row["provider_upload_id"],
+                upload_session_generation=row["upload_session_generation"],
+                latest_upload_capability_expires_at=row["latest_upload_capability_expires_at"],
+                removal_generation=row["removal_generation"],
+                verification_generation=0,
+                removal_claimed_at=row["removal_claimed_at"],
                 eligible_at=row["eligible_at"],
             )
             for row in rows
@@ -2840,7 +4949,7 @@ class PostgresArtifactRepository:
     ) -> list[ArtifactRemovalTarget]:
         del now  # PostgreSQL is the eligibility and retry clock authority.
         rows = await self.pool.fetch(
-            "SELECT * FROM fs2_scientific_claim_artifact_verifications($1)",
+            "SELECT * FROM fs2_scientific_claim_artifact_verifications_v2($1)",
             min(max(1, limit), 500),
         )
         return [
@@ -2850,10 +4959,70 @@ class PostgresArtifactRepository:
                 attempt_id=row["attempt_id"],
                 tenant_id=row["tenant_id"],
                 storage_key=row["storage_key"],
+                provider_upload_id=row["provider_upload_id"],
+                upload_session_generation=row["upload_session_generation"],
+                latest_upload_capability_expires_at=row["latest_upload_capability_expires_at"],
+                removal_generation=row["removal_generation"],
+                verification_generation=row["verification_generation"],
+                removal_claimed_at=row["removal_claimed_at"],
+                verification_claimed_at=row["verification_claimed_at"],
                 eligible_at=row["eligible_at"],
             )
             for row in rows
         ]
+
+    async def record_quota_removal_completion(
+        self, target: ArtifactRemovalTarget, evidence: ArtifactDeletionEvidence
+    ) -> None:
+        if target.storage_key != evidence.storage_key:
+            raise ArtifactConflictError("provider deletion result addresses another key")
+        try:
+            await self.pool.execute(
+                """
+                SELECT fs2_scientific_record_artifact_removal_completion_v2(
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+                )
+                """,
+                target.upload_id,
+                target.operation_id,
+                target.attempt_id,
+                target.tenant_id,
+                target.storage_key,
+                target.removal_generation,
+                target.removal_claimed_at,
+                evidence.kind.value,
+                evidence.provider_request_id,
+                evidence.removed_version_count,
+                evidence.aborted_upload_count,
+                evidence.multipart_list_request_id,
+                evidence.multipart_session_set_digest,
+                evidence.observed_at,
+            )
+        except asyncpg.PostgresError as error:
+            raise (
+                self._translate(error)
+                or ArtifactConflictError("provider deletion result was rejected")
+            ) from None
+
+    async def record_quota_verification_failure(self, target: ArtifactRemovalTarget) -> None:
+        try:
+            await self.pool.execute(
+                """
+                SELECT fs2_scientific_record_artifact_verification_failure_v2(
+                    $1,$2,$3,$4,$5
+                )
+                """,
+                target.upload_id,
+                target.tenant_id,
+                target.removal_generation,
+                target.verification_generation,
+                target.verification_claimed_at,
+            )
+        except asyncpg.PostgresError as error:
+            raise (
+                self._translate(error)
+                or ArtifactConflictError("provider verification failure was rejected")
+            ) from None
 
     async def record_quota_removal(
         self, target: ArtifactRemovalTarget, evidence: ArtifactRemovalEvidence
@@ -2863,8 +5032,9 @@ class PostgresArtifactRepository:
         try:
             row = await self.pool.fetchrow(
                 """
-                SELECT * FROM fs2_scientific_record_artifact_removal(
-                    $1,$2,$3,$4,$5,$6,$7,$8,$9
+                SELECT * FROM fs2_scientific_record_artifact_removal_v2(
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+                    $19,$20,$21,$22
                 )
                 """,
                 target.upload_id,
@@ -2876,6 +5046,19 @@ class PostgresArtifactRepository:
                 evidence.provider_request_id,
                 evidence.removed_version_count,
                 evidence.observed_at,
+                evidence.latest_upload_capability_expires_at,
+                evidence.removal_generation,
+                evidence.verification_generation,
+                evidence.first_list_request_id,
+                evidence.head_request_id,
+                evidence.second_list_request_id,
+                evidence.first_version_set_digest,
+                evidence.second_version_set_digest,
+                evidence.first_multipart_list_request_id,
+                evidence.second_multipart_list_request_id,
+                evidence.first_multipart_session_set_digest,
+                evidence.second_multipart_session_set_digest,
+                evidence.claim_digest,
             )
             if row is None:
                 raise ArtifactConflictError("quota removal routine returned no reservation")
@@ -2883,124 +5066,190 @@ class PostgresArtifactRepository:
         except asyncpg.PostgresError as error:
             raise (self._translate(error) or ArtifactConflictError("quota removal evidence was rejected")) from None
 
-    async def finalize_upload(
-        self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
-    ) -> ArtifactRecord:
+    async def claim_legacy_version_pins(self, *, limit: int) -> list[LegacyArtifactVersionTarget]:
         try:
-            async with self.pool.acquire() as connection, connection.transaction():
-                await self._tenant_quota_lock(connection, request.tenant_id)
-                intent_row = await connection.fetchrow(
-                    f"SELECT {_UPLOAD_COLUMNS} FROM fs2_scientific_uploads "  # noqa: S608
-                    "WHERE id=$1 AND operation_id=$2 AND tenant_id=$3 FOR UPDATE",
-                    request.upload_id,
-                    request.operation_id,
-                    request.tenant_id,
-                )
-                if intent_row is None:
-                    raise ArtifactNotFoundError("upload not found")
-                intent = _upload_from_row(intent_row)
-                if intent.artifact_id is not None:
-                    # Read on the locked connection rather than borrowing a
-                    # second one from the pool while this row lock is held.
-                    existing = await connection.fetchrow(_SELECT_ARTIFACT_SQL, intent.artifact_id, intent.tenant_id)
-                    if existing is None:
-                        raise ArtifactNotFoundError("artifact not found")
-                    return _artifact_from_row(existing)
-                reservation = await connection.fetchrow(
-                    f"SELECT {_QUOTA_RESERVATION_COLUMNS} "  # noqa: S608
-                    "FROM fs2_scientific_artifact_quota_reservations "
-                    "WHERE upload_id=$1 AND tenant_id=$2 AND state='active' FOR UPDATE",
-                    request.upload_id,
-                    request.tenant_id,
-                )
-                if reservation is None:
-                    raise ArtifactConflictError("upload is fenced for or has completed provider removal")
-                _verify_object(intent, verified)
-                retention_row = await connection.fetchrow(
-                    "SELECT retention_expires_at,started_at FROM fs2_scientific_stage_attempts WHERE attempt_id=$1",
-                    intent.attempt_id,
-                )
-                if retention_row is None:
-                    raise ArtifactNotFoundError("attempt not found")
-                window = retention_row["retention_expires_at"] - retention_row["started_at"]
-                row = await connection.fetchrow(
-                    f"""
-                    INSERT INTO fs2_scientific_artifacts
-                        (id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
-                         media_type,compression,storage_key,access_profile,access_receipt_digest,
-                         retention_expires_at,created_at)
-                    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,clock_timestamp()+$15,
-                           clock_timestamp())
-                    RETURNING {_ARTIFACT_COLUMNS}
-                    """,
-                    artifact_id,
-                    intent.attempt_id,
-                    intent.operation_id,
-                    intent.tenant_id,
-                    intent.stage_id,
-                    intent.shard_id or NO_SHARD,
-                    intent.direction.value,
-                    verified.digest,
-                    verified.size_bytes,
-                    verified.media_type,
-                    verified.compression.value if verified.compression else None,
-                    verified.storage_key,
-                    intent.access.profile.value,
-                    intent.access.receipt_digest,
-                    window,
-                )
-                assert row is not None
-                await connection.execute(
-                    "UPDATE fs2_scientific_uploads SET artifact_id=$2,finalized_at=clock_timestamp() WHERE id=$1",
-                    request.upload_id,
-                    artifact_id,
-                )
-                extended = await connection.fetchrow(
-                    f"""
-                    UPDATE fs2_scientific_artifact_quota_reservations
-                    SET expires_at=$2
-                    WHERE upload_id=$1 AND state='active'
-                    RETURNING {_QUOTA_RESERVATION_COLUMNS}
-                    """,  # noqa: S608
-                    request.upload_id,
-                    row["retention_expires_at"],
-                )
-                if extended is None:
-                    raise ArtifactConflictError("upload quota reservation changed")
-                await connection.execute(
-                    """
-                    INSERT INTO fs2_scientific_artifact_quota_events(
-                        upload_id,operation_id,attempt_id,tenant_id,event_type,reserved_bytes,
-                        reserved_objects,expires_at,occurred_at
-                    ) VALUES($1,$2,$3,$4,'retention_extended',$5,$6,$7,$8)
-                    """,
-                    extended["upload_id"],
-                    extended["operation_id"],
-                    extended["attempt_id"],
-                    extended["tenant_id"],
-                    extended["reserved_bytes"],
-                    extended["reserved_objects"],
-                    extended["expires_at"],
-                    row["created_at"],
-                )
-                await self._append_event(
-                    connection,
-                    ArtifactEventType.ARTIFACT_FINALIZED,
-                    operation_id=intent.operation_id,
-                    tenant_id=intent.tenant_id,
-                    stage_id=intent.stage_id,
-                    attempt_id=intent.attempt_id,
-                    upload_id=request.upload_id,
-                    artifact_id=artifact_id,
-                    occurred_at=row["created_at"],
-                )
-                return _artifact_from_row(row)
+            rows = await self.pool.fetch(
+                "SELECT * FROM fs2_scientific_claim_legacy_artifact_versions_v2($1)",
+                min(max(1, limit), 500),
+            )
+        except asyncpg.PostgresError as error:
+            raise (
+                self._translate(error)
+                or ArtifactConflictError("legacy artifact version claims were rejected")
+            ) from None
+        return [
+            LegacyArtifactVersionTarget(
+                artifact_id=row["artifact_id"],
+                upload_id=row["upload_id"],
+                tenant_id=row["tenant_id"],
+                storage_key=row["storage_key"],
+                expected_digest=row["expected_digest"],
+                expected_size_bytes=row["expected_size_bytes"],
+                expected_media_type=row["expected_media_type"],
+                expected_compression=(
+                    ArtifactCompression(row["expected_compression"])
+                    if row["expected_compression"]
+                    else None
+                ),
+                claim_generation=row["claim_generation"],
+                claimed_at=row["claimed_at"],
+                eligible_at=row["eligible_at"],
+                list_key_marker=row["list_key_marker"],
+                list_version_id_marker=row["list_version_id_marker"],
+            )
+            for row in rows
+        ]
+
+    async def record_legacy_version_pin(
+        self,
+        target: LegacyArtifactVersionTarget,
+        verified: VerifiedStoredObject,
+        *,
+        observed_at: datetime,
+    ) -> None:
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT * FROM fs2_scientific_record_legacy_artifact_version_v2("
+                "$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+                target.artifact_id,
+                target.upload_id,
+                target.tenant_id,
+                target.storage_key,
+                target.claim_generation,
+                target.claimed_at,
+                verified.provider_version_id,
+                verified.provider_request_id,
+                verified.digest,
+                verified.size_bytes,
+                verified.media_type,
+                verified.compression.value if verified.compression else None,
+                observed_at,
+            )
+            if row is None:
+                raise ArtifactConflictError("legacy artifact version routine returned no row")
+        except asyncpg.PostgresError as error:
+            raise (
+                self._translate(error)
+                or ArtifactConflictError("legacy artifact version evidence was rejected")
+            ) from None
+
+    async def record_legacy_version_scan(
+        self, target: LegacyArtifactVersionTarget, scan: LegacyArtifactVersionScan
+    ) -> None:
+        if scan.verified is not None:
+            raise ArtifactConflictError("a matched legacy version cannot be recorded as scan progress")
+        try:
+            await self.pool.execute(
+                "SELECT fs2_scientific_record_legacy_artifact_version_scan_v2("
+                "$1,$2,$3,$4,$5,$6,$7,$8,$9)",
+                target.artifact_id,
+                target.claim_generation,
+                target.claimed_at,
+                target.list_key_marker,
+                target.list_version_id_marker,
+                scan.next_key_marker,
+                scan.next_version_id_marker,
+                scan.provider_request_id,
+                scan.observed_at,
+            )
+        except asyncpg.PostgresError as error:
+            raise (
+                self._translate(error)
+                or ArtifactConflictError("legacy artifact version scan evidence was rejected")
+            ) from None
+
+    async def legacy_version_rollout_status(self) -> LegacyArtifactRolloutStatus:
+        row = await self.pool.fetchrow(
+            "SELECT * FROM fs2_scientific_legacy_version_rollout_status_v2()"
+        )
+        if row is None:
+            raise ArtifactConflictError("legacy artifact rollout status returned no row")
+        return LegacyArtifactRolloutStatus(
+            pending=row["pending"],
+            bound=row["bound"],
+            unresolved=row["unresolved"],
+            unbound_artifacts=row["unbound_artifacts"],
+            missing_unfinished_upload_sessions=row["missing_unfinished_upload_sessions"],
+        )
+
+    async def mark_schema_bridge_ready(
+        self,
+        *,
+        bridge_image_ref: str,
+        bridge_release_revision: int,
+        predecessor_image_ref: str,
+        evidence: SchemaBridgeDrainEvidence,
+    ) -> None:
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT * FROM fs2_scientific_mark_schema_bridge_ready_v2("
+                "$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
+                bridge_image_ref,
+                bridge_release_revision,
+                predecessor_image_ref,
+                evidence.deployment_namespace,
+                evidence.deployment_name,
+                evidence.deployment_uid,
+                evidence.deployment_generation,
+                evidence.deployment_observed_generation,
+                evidence.deployment_desired_replicas,
+                evidence.deployment_updated_replicas,
+                evidence.deployment_ready_replicas,
+                evidence.deployment_available_replicas,
+                evidence.runtime_pod_count,
+                evidence.runtime_pod_set_digest,
+                evidence.kubernetes_audit_id,
+                evidence.kubernetes_observed_at,
+            )
+            if row is None:
+                raise ArtifactConflictError("schema bridge receipt returned no row")
+        except asyncpg.PostgresError as error:
+            raise (
+                self._translate(error)
+                or ArtifactConflictError("schema bridge readiness was rejected")
+            ) from None
+
+    async def finalize_upload(
+        self,
+        request: FinalizeArtifactUpload,
+        verified: VerifiedStoredObject,
+        *,
+        artifact_id: UUID,
+        session: ArtifactUploadSession | None,
+        lease: ArtifactFinalizationLease,
+    ) -> ArtifactRecord:
+        if session is None:
+            raise ArtifactConflictError("artifact publication requires a provider session")
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT * FROM fs2_scientific_publish_artifact_v2("
+                "$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+                request.upload_id,
+                request.operation_id,
+                request.tenant_id,
+                artifact_id,
+                lease.lease_id,
+                lease.lease_generation,
+                session.session_generation,
+                session.provider_upload_id,
+                verified.provider_version_id,
+                verified.provider_request_id,
+                verified.digest,
+                verified.size_bytes,
+                verified.media_type,
+                verified.compression.value if verified.compression else None,
+                self._clock(),
+            )
+            if row is None:
+                raise ArtifactConflictError("artifact publication routine returned no row")
+            return _artifact_from_row(row)
         except asyncpg.PostgresError as error:
             raise (self._translate(error) or ArtifactConflictError("artifact could not be published")) from None
 
     async def get_artifact(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactRecord:
         row = await self.pool.fetchrow(
-            f"SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts WHERE id=$1 AND tenant_id=$2",  # noqa: S608
+            f"SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts_versioned "  # noqa: S608
+            "WHERE id=$1 AND tenant_id=$2",
             artifact_id,
             tenant_id,
         )
@@ -3018,7 +5267,7 @@ class PostgresArtifactRepository:
     ) -> list[ArtifactRecord]:
         rows = await self.pool.fetch(
             f"""
-            SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts
+            SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts_versioned
             WHERE operation_id=$1 AND tenant_id=$2
               AND ($3::text IS NULL OR stage_id=$3)
               AND ($4::uuid IS NULL OR attempt_id=$4)
@@ -3048,7 +5297,7 @@ class PostgresArtifactRepository:
                 pairs: list[tuple[ManifestEntryDraft, ArtifactRecord]] = []
                 for entry in request.entries:
                     row = await connection.fetchrow(
-                        f"SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts "  # noqa: S608
+                        f"SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts_versioned "  # noqa: S608
                         "WHERE id=$1 AND tenant_id=$2 AND operation_id=$3 AND stage_id=$4",
                         entry.artifact_id,
                         request.tenant_id,
@@ -3265,11 +5514,17 @@ class PostgresArtifactRepository:
         return [(row["operation_id"], row["tenant_id"], row["retention_expires_at"]) for row in rows]
 
     async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[ArtifactRemovalTarget]:
-        rows = await self.pool.fetch(
-            "SELECT * FROM fs2_scientific_claim_artifact_removals(500,$1,$2)",
-            operation_id,
-            tenant_id,
-        )
+        rows: list[Mapping[str, Any]] = []
+        while len(rows) < 500:
+            claimed = await self.pool.fetch(
+                "SELECT * FROM fs2_scientific_claim_artifact_removals_v2($1,$2,$3)",
+                500 - len(rows),
+                operation_id,
+                tenant_id,
+            )
+            if not claimed:
+                break
+            rows.extend(claimed)
         return [
             ArtifactRemovalTarget(
                 upload_id=row["upload_id"],
@@ -3277,6 +5532,10 @@ class PostgresArtifactRepository:
                 attempt_id=row["attempt_id"],
                 tenant_id=row["tenant_id"],
                 storage_key=row["storage_key"],
+                latest_upload_capability_expires_at=row["latest_upload_capability_expires_at"],
+                removal_generation=row["removal_generation"],
+                verification_generation=0,
+                removal_claimed_at=row["removal_claimed_at"],
                 eligible_at=row["eligible_at"],
             )
             for row in rows

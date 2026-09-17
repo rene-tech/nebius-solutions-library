@@ -507,18 +507,26 @@ async def test_artifact_remover_and_verifier_roles_have_disjoint_routines(
     async with store.pool.acquire() as connection:
         async with connection.transaction():
             await connection.execute("SET LOCAL ROLE fs2_serve_artifact_remover")
-            assert await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_removals(1,NULL,NULL)") == []
+            assert await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_removals_v2(1,NULL,NULL)") == []
             with pytest.raises(asyncpg.InsufficientPrivilegeError):
-                await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_verifications(1)")
+                await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_verifications_v2(1)")
         async with connection.transaction():
             await connection.execute("SET LOCAL ROLE fs2_serve_artifact_verifier")
-            assert await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_verifications(1)") == []
+            assert await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_verifications_v2(1)") == []
             with pytest.raises(asyncpg.InsufficientPrivilegeError):
                 await connection.fetch(
-                    "SELECT * FROM fs2_scientific_claim_artifact_removals(1,NULL,NULL)"
+                    "SELECT * FROM fs2_scientific_claim_artifact_removals_v2(1,NULL,NULL)"
                 )
         async with connection.transaction():
             await connection.execute("SET LOCAL ROLE fs2_serve_runtime")
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_verifications_v2(1)")
+        async with connection.transaction():
+            await connection.execute("SET LOCAL ROLE fs2_serve_artifact_remover")
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_removals(1,NULL,NULL)")
+        async with connection.transaction():
+            await connection.execute("SET LOCAL ROLE fs2_serve_artifact_verifier")
             with pytest.raises(asyncpg.InsufficientPrivilegeError):
                 await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_verifications(1)")
 

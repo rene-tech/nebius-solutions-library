@@ -469,6 +469,90 @@ def test_workload_upload_does_not_retry_auth_or_content_failures(
     assert sleeps == []
 
 
+def test_workload_upload_explicitly_negotiates_and_authorizes_every_multipart_part(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = b"ten-bytes!"
+    digest = hashlib.sha256(content).hexdigest()
+    identity = "run.test.prepare.main:multipart-handoff"
+    upload_id = str(uuid5(NAMESPACE_URL, f"fs2-scientific-upload:{identity}:{digest}"))
+    begun: list[dict[str, object]] = []
+    authorized: list[tuple[int, dict[str, object]]] = []
+    uploaded: list[tuple[int, bytes]] = []
+
+    monkeypatch.setattr(companion, "_ARTIFACT_SINGLE_PART_MAX_BYTES", 4)
+    monkeypatch.setattr(companion, "_ARTIFACT_MULTIPART_PART_BYTES", 3)
+
+    def handle(part_number: int) -> dict[str, object]:
+        return {
+            "method": "PUT",
+            "url": f"https://objects.test/part-{part_number}",
+            "headers": {"x-fs2-part": str(part_number)},
+        }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/internal/scientific-workloads/uploads":
+            begun.append(json.loads(request.content))
+            return httpx.Response(
+                201,
+                json={
+                    "upload_id": upload_id,
+                    "upload_protocol": "multipart-v2",
+                    "session_generation": 1,
+                    "part_size_bytes": 3,
+                    "part_count": 4,
+                    "handle": handle(1),
+                },
+            )
+        if request.url.host == "objects.test":
+            part_number = int(request.headers["x-fs2-part"])
+            uploaded.append((part_number, request.content))
+            return httpx.Response(200)
+        if request.url.path.endswith(":authorize"):
+            part_number = int(request.url.path.split("/")[-1].split(":", 1)[0])
+            authorized.append((part_number, json.loads(request.content)))
+            return httpx.Response(200, json=handle(part_number))
+        assert request.url.path == f"/internal/scientific-workloads/uploads/{upload_id}:finalize"
+        return httpx.Response(
+            200,
+            json={
+                "artifact_id": "00000000-0000-4000-8000-000000000021",
+                "sha256": digest,
+                "size_bytes": len(content),
+                "media_type": "application/octet-stream",
+                "compression": "none",
+            },
+        )
+
+    client = companion.WorkloadArtifactHttpClient(
+        base_url="https://artifacts.internal",
+        capability="test-capability",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    result = client.upload(
+        identity=identity,
+        content=content,
+        media_type="application/octet-stream",
+        compression=None,
+    )
+
+    assert result["sha256"] == digest
+    assert begun == [
+        {
+            "upload_id": upload_id,
+            "sha256": digest,
+            "size_bytes": len(content),
+            "media_type": "application/octet-stream",
+            "compression": None,
+            "upload_protocol": "multipart-v2",
+            "first_part_sha256": hashlib.sha256(content[:3]).hexdigest(),
+        }
+    ]
+    assert [item[0] for item in authorized] == [2, 3, 4]
+    assert [item[1]["size_bytes"] for item in authorized] == [3, 3, 1]
+    assert uploaded == [(1, b"ten"), (2, b"-by"), (3, b"tes"), (4, b"!")]
+
+
 def test_workload_upload_stops_after_transient_retry_bound(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

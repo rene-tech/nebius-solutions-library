@@ -1074,7 +1074,7 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
             "resources": ["jobsets"],
             "verbs": ["get", "create", "delete"],
         },
-        {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]},
+        {"apiGroups": [""], "resources": ["pods"], "verbs": ["list"]},
         {"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]},
         {"apiGroups": ["kueue.x-k8s.io"], "resources": ["workloads"], "verbs": ["get", "list"]},
     ]
@@ -1659,15 +1659,48 @@ def test_migration_job_is_the_only_ddl_credential_consumer_and_has_no_runtime_se
     )
     assert migration_account_index < migration_index
 
-    upgrade_documents = render("--is-upgrade")
-    upgrade_migration = next(document for document in upgrade_documents if document["kind"] == "Job")
+    upgrade_documents = render(
+        "--is-upgrade",
+        "--set",
+        "migration.rolloutPhase=expand",
+        "--set",
+        f"migration.targetImage.repository={TEST_REPOSITORY}",
+        "--set",
+        f"migration.targetImage.digest={'sha256:' + '9' * 64}",
+        "--set",
+        f"migration.rollbackImage.repository={TEST_REPOSITORY}",
+        "--set",
+        f"migration.rollbackImage.digest={'sha256:' + '8' * 64}",
+        "--set",
+        f"migration.predecessorImage.repository={TEST_REPOSITORY}",
+        "--set",
+        f"migration.predecessorImage.digest={TEST_DIGEST}",
+        "--set",
+        f"image.digest={'sha256:' + '8' * 64}",
+        "--set",
+        "scientificArtifacts.multipartWritesEnabled=false",
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.10/32",
+        "--set",
+        "artifactMaintenance.enabled=true",
+        "--set",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.11/32",
+    )
+    upgrade_migration = next(
+        document
+        for document in upgrade_documents
+        if document["kind"] == "Job"
+        and document["metadata"]["labels"]["app.kubernetes.io/component"] == "migration"
+    )
     assert upgrade_migration["metadata"]["annotations"] == POSTGRESQL_ANNOTATIONS | {
         "helm.sh/hook": "pre-upgrade",
         "helm.sh/hook-weight": "-5",
         "helm.sh/hook-delete-policy": "before-hook-creation,hook-succeeded",
     }
     assert gateway_deployment(upgrade_documents)["spec"]["template"]["spec"]["initContainers"][0]["args"] == [
-        "wait-schema"
+        "wait-schema-expanded"
     ]
     migration_pod = migration["spec"]["template"]["spec"]
     container = migration_pod["containers"][0]
@@ -1678,6 +1711,10 @@ def test_migration_job_is_the_only_ddl_credential_consumer_and_has_no_runtime_se
         "FS2_RUNTIME_DATABASE_ROLE",
         "FS2_MAINTENANCE_DATABASE_ROLE",
         "FS2_ACTIVATION_DATABASE_ROLE",
+        "FS2_ARTIFACT_REMOVER_DATABASE_ROLE",
+        "FS2_ARTIFACT_VERIFIER_DATABASE_ROLE",
+        "FS2_SCHEMA_ROLLOUT_PREPARE_RECEIPT_FILE",
+        "FS2_SCHEMA_ROLLOUT_EXPECTED_IMAGE_REF",
     }
     assert container["env"][0]["valueFrom"]["secretKeyRef"] == {
         "name": "fs2-serve-database-migrations",
@@ -1694,6 +1731,15 @@ def test_migration_job_is_the_only_ddl_credential_consumer_and_has_no_runtime_se
             },
         }
     ]
+    upgrade_pod = upgrade_migration["spec"]["template"]["spec"]
+    assert {item["name"] for item in upgrade_pod["containers"][0]["volumeMounts"]} == {
+        "database-ca",
+        "schema-rollout-prepare-receipt",
+    }
+    assert {item["name"] for item in upgrade_pod["volumes"]} == {
+        "database-ca",
+        "schema-rollout-prepare-receipt",
+    }
 
     other_workloads = [
         next(document for document in documents if document["kind"] == "Deployment")["spec"]["template"]["spec"],
@@ -1702,6 +1748,231 @@ def test_migration_job_is_the_only_ddl_credential_consumer_and_has_no_runtime_se
         ]["spec"],
     ]
     assert "fs2-serve-database-migrations" not in json.dumps(other_workloads)
+
+
+def test_postgresql_rollout_is_prepare_expand_contract_activate_and_never_old_image_rollback() -> None:
+    candidate_digest = "sha256:" + "9" * 64
+    rollback_digest = "sha256:" + "8" * 64
+    staged = [
+        "--set",
+        f"migration.targetImage.repository={TEST_REPOSITORY}",
+        "--set",
+        f"migration.targetImage.digest={candidate_digest}",
+        "--set",
+        f"migration.rollbackImage.repository={TEST_REPOSITORY}",
+        "--set",
+        f"migration.rollbackImage.digest={rollback_digest}",
+        "--set",
+        f"migration.predecessorImage.repository={TEST_REPOSITORY}",
+        "--set",
+        f"migration.predecessorImage.digest={TEST_DIGEST}",
+        "--set",
+        "scientificArtifacts.multipartWritesEnabled=false",
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.10/32",
+        "--set",
+        "artifactMaintenance.enabled=true",
+        "--set",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.11/32",
+    ]
+    prepared = render("--is-upgrade", "--set", "migration.rolloutPhase=prepare", *staged)
+    prepare_jobs = [item for item in prepared if item["kind"] == "Job"]
+    assert len(prepare_jobs) == 2
+    assert {
+        item["spec"]["template"]["spec"]["containers"][0]["image"] for item in prepare_jobs
+    } == {
+        f"{TEST_REPOSITORY}@{candidate_digest}",
+        f"{TEST_REPOSITORY}@{rollback_digest}",
+    }
+    assert all(
+        item["spec"]["template"]["spec"]["containers"][0]["args"]
+        == ["validate-schema-rollout-image"]
+        for item in prepare_jobs
+    )
+    assert gateway_deployment(prepared)["spec"]["template"]["spec"]["containers"][0]["image"] == (
+        f"{TEST_REPOSITORY}@{TEST_DIGEST}"
+    )
+
+    for phase, image_digest, command, waiter in (
+        ("expand", rollback_digest, "migrate-expand", "wait-schema-expanded"),
+        ("contract", candidate_digest, "migrate-contract", "wait-schema"),
+    ):
+        documents = render(
+            "--is-upgrade",
+            "--set",
+            f"image.digest={image_digest}",
+            "--set",
+            f"migration.rolloutPhase={phase}",
+            *staged,
+        )
+        migration = next(
+            item
+            for item in documents
+            if item["kind"] == "Job"
+            and item["metadata"]["labels"]["app.kubernetes.io/component"] == "migration"
+        )
+        assert migration["spec"]["template"]["spec"]["containers"][0]["args"] == [command]
+        assert gateway_deployment(documents)["spec"]["template"]["spec"]["initContainers"][0]["args"] == [waiter]
+
+    activated = render(
+        "--is-upgrade",
+        "--set",
+        f"image.digest={candidate_digest}",
+        "--set",
+        "migration.rolloutPhase=activate",
+        "--set",
+        f"migration.targetImage.repository={TEST_REPOSITORY}",
+        "--set",
+        f"migration.targetImage.digest={candidate_digest}",
+        "--set",
+        f"migration.rollbackImage.repository={TEST_REPOSITORY}",
+        "--set",
+        f"migration.rollbackImage.digest={rollback_digest}",
+    )
+    assert not [item for item in activated if item["kind"] == "Job"]
+    assert gateway_deployment(activated)["spec"]["template"]["spec"]["initContainers"][0]["args"] == [
+        "wait-schema-expanded"
+    ]
+    rolled_back = render(
+        "--is-upgrade",
+        "--set",
+        f"image.digest={rollback_digest}",
+        "--set",
+        "migration.rolloutPhase=rollback",
+        *staged,
+    )
+    assert gateway_deployment(rolled_back)["spec"]["template"]["spec"]["containers"][0]["image"] == (
+        f"{TEST_REPOSITORY}@{rollback_digest}"
+    )
+    assert any(
+        item["kind"] == "Job"
+        and item["metadata"]["labels"]["app.kubernetes.io/component"] == "schema-bridge-ready"
+        for item in rolled_back
+    )
+
+    terraform = (SOLUTION_ROOT / "stages/workloads/control_plane.tf").read_text(encoding="utf-8")
+    assert '"expand",\n    "rollback",' in terraform
+    assert "atomic = !contains" in terraform
+    assert "cleanup_on_fail = !contains" in terraform
+    assert "control_plane_serving_image" in terraform
+    assert "var.control_plane_predecessor_image" in terraform
+    assert "var.control_plane_rollback_image" in terraform
+
+
+def test_expand_bridge_writer_is_authoritative_least_privilege_and_phase_gated() -> None:
+    candidate_digest = "sha256:" + "9" * 64
+    bridge_digest = "sha256:" + "8" * 64
+    documents = render(
+        "--is-upgrade",
+        "--set",
+        "migration.rolloutPhase=expand",
+        "--set",
+        f"image.digest={bridge_digest}",
+        "--set",
+        f"migration.targetImage.repository={TEST_REPOSITORY}",
+        "--set",
+        f"migration.targetImage.digest={candidate_digest}",
+        "--set",
+        f"migration.rollbackImage.repository={TEST_REPOSITORY}",
+        "--set",
+        f"migration.rollbackImage.digest={bridge_digest}",
+        "--set",
+        f"migration.predecessorImage.repository={TEST_REPOSITORY}",
+        "--set",
+        f"migration.predecessorImage.digest={TEST_DIGEST}",
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set",
+        "scientificArtifacts.multipartWritesEnabled=true",
+        "--set",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.10/32",
+        "--set",
+        "artifactMaintenance.enabled=true",
+        "--set",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.11/32",
+    )
+    job = next(
+        item
+        for item in documents
+        if item["kind"] == "Job"
+        and item["metadata"]["labels"]["app.kubernetes.io/component"] == "schema-bridge-ready"
+    )
+    assert job["metadata"]["annotations"] == {
+        "helm.sh/hook": "post-upgrade",
+        "helm.sh/hook-weight": "10",
+    }
+    pod = job["spec"]["template"]["spec"]
+    assert pod["automountServiceAccountToken"] is False
+    assert pod["serviceAccountName"].endswith("-artifact-verifier")
+    assert pod["containers"][0]["image"] == f"{TEST_REPOSITORY}@{bridge_digest}"
+    assert pod["containers"][0]["args"] == ["artifact-bridge-ready"]
+    environment = {item["name"]: item.get("value") for item in pod["containers"][0]["env"]}
+    assert environment["FS2_ARTIFACT_MULTIPART_WRITES_ENABLED"] == "false"
+    assert environment["FS2_SCHEMA_ROLLOUT_BRIDGE_IMAGE_REF"] == f"{TEST_REPOSITORY}@{bridge_digest}"
+    assert environment["FS2_SCHEMA_ROLLOUT_PREDECESSOR_IMAGE_REF"] == (
+        f"{TEST_REPOSITORY}@{TEST_DIGEST}"
+    )
+    projected = next(item for item in pod["volumes"] if item["name"] == "schema-bridge-kubernetes")
+    assert projected["projected"]["sources"][0]["serviceAccountToken"] == {
+        "audience": "https://kubernetes.default.svc",
+        "expirationSeconds": 600,
+        "path": "token",
+    }
+    role = next(
+        item
+        for item in documents
+        if item["kind"] == "Role" and item["metadata"]["name"].endswith("-schema-bridge-reader")
+    )
+    assert role["rules"] == [
+        {
+            "apiGroups": ["apps"],
+            "resources": ["deployments"],
+            "resourceNames": ["fs2-serve-control-plane"],
+            "verbs": ["get"],
+        },
+        {"apiGroups": [""], "resources": ["pods"], "verbs": ["list"]},
+    ]
+    policy = next(
+        item
+        for item in documents
+        if item["kind"] == "NetworkPolicy"
+        and item["metadata"]["name"].endswith("-schema-bridge-ready")
+    )
+    assert policy["spec"]["ingress"] == []
+    assert sorted(
+        port["port"] for rule in policy["spec"]["egress"] for port in rule.get("ports", [])
+    ) == [53, 53, 443, 443, 5432]
+
+
+def test_expand_rejects_absent_bridge_readiness_controllers() -> None:
+    result = subprocess.run(
+        render_command(
+            "--is-upgrade",
+            "--set",
+            "migration.rolloutPhase=expand",
+            "--set",
+            f"image.digest={'sha256:' + '8' * 64}",
+            "--set",
+            f"migration.targetImage.repository={TEST_REPOSITORY}",
+            "--set",
+            f"migration.targetImage.digest={'sha256:' + '9' * 64}",
+            "--set",
+            f"migration.rollbackImage.repository={TEST_REPOSITORY}",
+            "--set",
+            f"migration.rollbackImage.digest={'sha256:' + '8' * 64}",
+            "--set",
+            f"migration.predecessorImage.repository={TEST_REPOSITORY}",
+            "--set",
+            f"migration.predecessorImage.digest={TEST_DIGEST}",
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "require scientificArtifacts and artifactMaintenance" in result.stderr
 
 
 def test_exact_helm4_lifecycle_uses_digest_registry_and_typed_release_values() -> None:
@@ -1801,10 +2072,33 @@ def test_artifact_removal_and_absence_verification_use_disjoint_identities() -> 
     verifier = jobs["fs2-serve-control-plane-artifact-verifier"]["spec"]["jobTemplate"]["spec"]["template"][
         "spec"
     ]
+    finalizer = jobs["fs2-serve-control-plane-artifact-finalizer"]["spec"]["jobTemplate"]["spec"]["template"][
+        "spec"
+    ]
     assert remover["serviceAccountName"].endswith("-artifact-remover")
     assert verifier["serviceAccountName"].endswith("-artifact-verifier")
     assert remover["containers"][0]["args"] == ["artifact-removal"]
     assert verifier["containers"][0]["args"] == ["artifact-verification"]
+    assert finalizer["containers"][0]["args"] == ["artifact-finalization"]
+    assert finalizer["containers"][0]["env"][0]["valueFrom"]["secretKeyRef"]["name"] == (
+        "fs2-serve-database"
+    )
+    assert finalizer["volumes"][1]["secret"]["secretName"] == "fs2-serve-artifact-store"
+    finalizer_policy = next(
+        document
+        for document in documents
+        if document["kind"] == "NetworkPolicy"
+        and document["metadata"]["name"].endswith("-artifact-finalizer")
+    )
+    assert finalizer_policy["spec"]["podSelector"]["matchLabels"][
+        "app.kubernetes.io/component"
+    ] == "artifact-finalizer"
+    assert finalizer_policy["spec"]["ingress"] == []
+    assert sorted(
+        port["port"]
+        for rule in finalizer_policy["spec"]["egress"]
+        for port in rule.get("ports", [])
+    ) == [53, 53, 443, 5432]
     assert remover["containers"][0]["env"][0]["valueFrom"]["secretKeyRef"]["name"] == (
         "fs2-serve-database-artifact-remover"
     )
@@ -1821,6 +2115,30 @@ def test_artifact_removal_and_absence_verification_use_disjoint_identities() -> 
     policies = {document["metadata"]["name"] for document in documents if document["kind"] == "NetworkPolicy"}
     assert "fs2-serve-control-plane-artifact-remover" in policies
     assert "fs2-serve-control-plane-artifact-verifier" in policies
+
+
+def test_artifact_verification_deadline_covers_the_configured_object_ceiling() -> None:
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        render_command(
+            "--set",
+            "scientificArtifacts.enabled=true",
+            "--set-string",
+            "scientificArtifacts.endpoint=https://storage.unit.test",
+            "--set-string",
+            "scientificArtifacts.bucket=scientific-unit",
+            "--set-string",
+            "scientificArtifacts.region=unit-1",
+            "--set",
+            "artifactMaintenance.enabled=true",
+            "--set",
+            "artifactMaintenance.activeDeadlineSeconds=600",
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "must cover maxBytes" in result.stderr
 
 
 def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -> None:
@@ -3489,7 +3807,10 @@ def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> N
     assert environment["FS2_ARTIFACT_MAX_BYTES"] == "1099511627776"
     assert environment["FS2_ARTIFACT_TENANT_QUOTA_BYTES"] == "1099511627776"
     assert environment["FS2_ARTIFACT_TENANT_QUOTA_OBJECTS"] == "4096"
+    assert environment["FS2_ARTIFACT_MULTIPART_WRITES_ENABLED"] == "true"
     assert environment["FS2_ARTIFACT_UPLOAD_RESERVATION_TTL_SECONDS"] == "86400"
+    assert environment["FS2_ARTIFACT_UPLOAD_COMPLETION_GRACE_SECONDS"] == "900"
+    assert environment["FS2_ARTIFACT_PROVIDER_STABILITY_GRACE_SECONDS"] == "300"
     assert environment["FS2_ARTIFACT_RETENTION_SECONDS"] == "7776000"
     assert environment["FS2_ARTIFACT_HANDLE_TTL_SECONDS"] == "600"
     assert "e+" not in "".join(value or "" for value in environment.values())
@@ -3506,6 +3827,24 @@ def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> N
     assert mount["readOnly"] is True
     assert mount["mountPath"] == "/var/run/secrets/fs2-serve/artifact-store"
 
+
+def test_artifact_store_contract_inventories_every_quota_fence_and_rollback_setting() -> None:
+    contract = json.loads(
+        (SOLUTION_ROOT / "scientific-artifacts" / "artifact-store-contract.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert {
+        "multipartWritesEnabled",
+        "uploadCompletionGraceSeconds",
+        "providerStabilityGraceSeconds",
+    } <= set(contract["chart"]["scientificArtifacts"])
+    assert {
+        "FS2_ARTIFACT_MULTIPART_WRITES_ENABLED",
+        "FS2_ARTIFACT_UPLOAD_COMPLETION_GRACE_SECONDS",
+        "FS2_ARTIFACT_PROVIDER_STABILITY_GRACE_SECONDS",
+    } <= set(contract["control_plane_environment"])
+
     # The rendered environment must construct the real Settings object.
     from fs2_serve.settings import Settings
 
@@ -3519,6 +3858,8 @@ def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> N
     assert settings.scientific_artifacts_enabled is True
     assert settings.artifact_max_bytes == 1099511627776
     assert settings.artifact_tenant_quota_bytes == 1099511627776
+    assert settings.artifact_upload_completion_grace_seconds == 900
+    assert settings.artifact_provider_stability_grace_seconds == 300
     assert "chemical/x-pdb" in settings.artifact_media_types_set()
     assert {
         "application/x-tar",

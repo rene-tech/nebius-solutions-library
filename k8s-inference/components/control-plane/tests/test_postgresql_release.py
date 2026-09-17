@@ -18,9 +18,11 @@ from fs2_serve.postgres import SCIENTIFIC_RUNTIME_UPDATE_COLUMNS, PostgresStore
 from fs2_serve.postgresql_release import (
     EXPECTED_MIGRATIONS,
     build_postgresql_release_contract,
+    build_schema_rollout_prepare_receipt,
     render_postgresql_release_contract,
     validate_migration_set,
     validate_postgresql_release_contract,
+    validate_schema_rollout_prepare_receipt,
 )
 from fs2_serve.scientific_batch.postgres_repository import PostgresScientificBatchRepository
 
@@ -38,9 +40,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0030_scientific_quota_settlement.sql",
-        "migration_count": 30,
-        "migration_set_sha256": "714d1456b60c8ccc74b0dca40d1f486bd116a85f586a258c386e5d9d5aae4c22",
+        "last_migration_version": "0031_scientific_quota_fencing.sql",
+        "migration_count": 31,
+        "migration_set_sha256": "1bc495f57002004a6032b8a9b209c4563b2e9e788698f21c60550cded947a7bd",
         "namespace_role_ownership_sha256": "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -48,6 +50,35 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     assert migrations[0]["version"] == receipt["first_migration_version"]
     assert migrations[-1]["version"] == receipt["last_migration_version"]
     assert [migration["ordinal"] for migration in migrations] == list(range(1, receipt["migration_count"] + 1))
+
+
+def test_schema_rollout_receipt_binds_the_prepared_image_and_one_way_contract_phase() -> None:
+    image = "registry.nebius.cloud/unit/control-plane@sha256:" + "7" * 64
+    receipt = build_schema_rollout_prepare_receipt(MIGRATIONS, image)
+    assert validate_schema_rollout_prepare_receipt(receipt, MIGRATIONS, image) == receipt
+    assert receipt["new_multipart_sessions_gate_supported"] is True
+    assert receipt["migration_set_sha256"] == build_postgresql_release_contract(MIGRATIONS)["migration_set"][
+        "sha256"
+    ]
+
+    changed = copy.deepcopy(receipt)
+    changed["image_ref"] = "registry.nebius.cloud/unit/control-plane@sha256:" + "8" * 64
+    with pytest.raises(RuntimeError, match="prepare receipt"):
+        validate_schema_rollout_prepare_receipt(changed, MIGRATIONS, image)
+
+    migration_source = inspect.getsource(PostgresStore._apply_migrations)
+    contract_preflight_source = inspect.getsource(PostgresStore._assert_contract_schema_preapplied)
+    assert "preserve_predecessor_artifact_authority" in migration_source
+    assert "the PostgreSQL contract phase cannot return to expanded" in migration_source
+    assert "GRANT UPDATE (artifact_id,finalized_at)" in migration_source
+    assert "SET phase='contracted'" in migration_source
+    assert migration_source.index("await cls._assert_contract_schema_preapplied") < migration_source.index(
+        "CREATE TABLE IF NOT EXISTS fs2_schema_migrations"
+    )
+    assert "applied != expected" in contract_preflight_source
+    assert "recorded_steps" in contract_preflight_source
+    assert "every expand migration step" in contract_preflight_source
+    assert "missing_unfinished_upload_sessions=0" in contract_preflight_source
 
 
 def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -> None:
@@ -74,6 +105,7 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
     assert wait_source.count("fs2_scientific_artifact_quota_reservations','SELECT'") == 2
     assert wait_source.count("fs2_scientific_artifact_quota_reservations','INSERT'") == 2
+    assert wait_source.count("fs2_scientific_artifact_quota_reservations','expires_at','UPDATE'") == 2
     assert wait_source.count("fs2_scientific_artifact_quota_reservations','state','UPDATE'") == 2
     assert wait_source.count("fs2_scientific_artifact_quota_events','INSERT'") == 2
     assert wait_source.count("fs2_scientific_artifact_removal_evidence','SELECT'") == 2
@@ -82,7 +114,13 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     assert wait_source.count("fs2_scientific_gpu_settlements','INSERT'") == 2
     assert "GRANT SELECT,INSERT ON fs2_scientific_gpu_settlements" not in wait_source
     assert "fs2_serve_artifact_verifier" in wait_source
-    assert "fs2_scientific_claim_artifact_verifications(integer)" in wait_source
+    assert "fs2_scientific_claim_artifact_verifications_v2(integer)" in wait_source
+    assert "fs2_scientific_claim_artifact_removals_v2(integer,uuid,text)" in wait_source
+    assert "fs2_scientific_record_upload_capability_v2" in wait_source
+    assert "fs2_scientific_record_artifact_removal_v2" in wait_source
+    assert "fs2_scientific_record_legacy_artifact_version_scan_v2" in wait_source
+    assert "fs2_scientific_record_upload_session_aborted_v2" in wait_source
+    assert "NOT has_function_privilege('fs2_serve_runtime'" in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
 
 
@@ -120,6 +158,64 @@ def test_scientific_quota_migration_retains_provenance_and_bounds_settlement() -
     assert "operation_id uuid PRIMARY KEY REFERENCES" not in normalized
     assert "token_id uuid NOT NULL REFERENCES" not in normalized
 
+    fencing_sql = (MIGRATIONS / "0031_scientific_quota_fencing.sql").read_text(encoding="utf-8")
+    fencing = " ".join(fencing_sql.split())
+    assert "latest_upload_capability_expires_at" in fencing
+    assert "fs2_scientific_artifact_upload_capabilities" in fencing
+    assert "fs2_scientific_artifact_deletion_evidence_v2" in fencing
+    assert "fs2_scientific_artifact_removal_evidence_v2" in fencing
+    assert "fs2_scientific_publish_artifact_v2" in fencing
+    assert "fs2_scientific_record_legacy_artifact_version_scan_v2" in fencing
+    assert "fs2_scientific_artifact_legacy_version_scan_events" in fencing
+    assert fencing.count("FOR UPDATE OF janitor_cursor SKIP LOCKED") == 2
+    assert fencing.count("FOR UPDATE OF reservation SKIP LOCKED") == 2
+    assert fencing.count("WHILE claimed<p_limit LOOP") == 2
+    assert "pg_advisory_xact_lock" not in fencing
+    assert "REFERENCES fs2_scientific_uploads" not in fencing
+    assert "REFERENCES fs2_scientific_artifacts" not in fencing
+    assert "DEFAULT (CURRENT_TIMESTAMP+interval '15 minutes')" in fencing
+    assert "SET DEFAULT (statement_timestamp()+interval '15 minutes')" in fencing
+    assert "UPDATE fs2_scientific_artifact_quota_reservations SET latest_upload" not in fencing
+    assert "p_second_version_set_digest<>p_first_version_set_digest" in fencing
+    assert "reservation.latest_upload_capability_expires_at<>p_latest_upload_capability_expires_at" in fencing
+
+
+def test_schema_bridge_receipt_has_authoritative_drain_catchups_and_retry_contract() -> None:
+    sql = (MIGRATIONS / "0031_scientific_quota_fencing.sql").read_text(encoding="utf-8")
+    normalized = " ".join(sql.split())
+    postgres_source = inspect.getsource(PostgresStore._apply_migrations)
+
+    assert "missing_unfinished_upload_sessions bigint" in sql
+    assert sql.count(
+        "INSERT INTO fs2_scientific_artifact_upload_sessions("
+    ) >= 2
+    assert sql.count(
+        "INSERT INTO fs2_scientific_artifact_legacy_version_claims(artifact_id)"
+    ) >= 2
+    assert sql.index("CREATE TRIGGER fs2_scientific_quota_queue_legacy_upload_session") < sql.index(
+        "-- fs2-migration-transaction-boundary",
+        sql.index("CREATE TRIGGER fs2_scientific_quota_queue_legacy_upload_session"),
+    ) < sql.index(
+        "-- CREATE TRIGGER waits for predecessor writers",
+    )
+    assert sql.index("CREATE TRIGGER fs2_scientific_artifacts_queue_legacy_version") < sql.index(
+        "-- fs2-migration-transaction-boundary",
+        sql.index("CREATE TRIGGER fs2_scientific_artifacts_queue_legacy_version"),
+    ) < sql.index("-- Close the analogous predecessor INSERT window")
+    assert "fs2_schema_bridge_rollout_attempts" in sql
+    assert "deployment_uid text NOT NULL" in sql
+    assert "runtime_pod_set_digest char(64) NOT NULL" in sql
+    assert "kubernetes_audit_id text NOT NULL" in sql
+    assert "missing_unfinished_upload_sessions bigint NOT NULL CHECK" in normalized
+    assert "p_deployment_observed_generation<>p_deployment_generation" in normalized
+    assert "p_runtime_pod_count<>p_deployment_desired_replicas" in normalized
+    assert "rollout.predecessor_image_ref IS NOT NULL" in normalized
+    assert "rollout.phase<>'contracted'" in normalized
+    assert "rollout.phase IN ('expanded','contracted')" in postgres_source
+    assert "JOIN fs2_schema_bridge_rollout_attempts attempt" in postgres_source
+    assert "bridge_release_revision=COALESCE(bridge_release_revision,$2)" in postgres_source
+    assert "GREATEST(COALESCE(bridge_release_revision" not in postgres_source
+
 
 def _updated_columns(source: str, table: str) -> set[str]:
     statements = re.findall(
@@ -149,13 +245,13 @@ def test_scientific_runtime_update_grants_cover_every_repository_statement() -> 
     batch_source = inspect.getsource(PostgresScientificBatchRepository)
     settlement_source = inspect.getsource(scientific_postgres_accounting)
     artifact_source = inspect.getsource(scientific_artifacts)
+    # Provider version publication is confined to the checked SECURITY
+    # DEFINER CAS; the runtime repository must never regain a direct upload
+    # row update merely to make finalization work.
+    assert _updated_columns(artifact_source, "fs2_scientific_uploads") == set()
+    assert _updated_columns(artifact_source, "fs2_scientific_artifact_quota_reservations") == set()
     actual = {
         "fs2_scientific_stage_attempts": _updated_columns(artifact_source, "fs2_scientific_stage_attempts"),
-        "fs2_scientific_uploads": _updated_columns(artifact_source, "fs2_scientific_uploads"),
-        "fs2_scientific_artifact_quota_reservations": _updated_columns(
-            artifact_source,
-            "fs2_scientific_artifact_quota_reservations",
-        ),
         "fs2_scientific_batches": (
             _updated_columns(batch_source, "fs2_scientific_batches")
             | _updated_columns(settlement_source, "fs2_scientific_batches")

@@ -6,7 +6,7 @@ from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Path, status
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ..models import StrictModel
 from ..scientific_artifact_routes import EphemeralHandleResponse
@@ -15,8 +15,10 @@ from ..scientific_artifacts import (
     ArtifactAccessProfile,
     ArtifactCompression,
     ArtifactDirection,
+    AuthorizeArtifactUploadPart,
     BeginArtifactUpload,
     FinalizeArtifactUpload,
+    MULTIPART_FIRST_PART_DESCRIPTION,
     OpenStageAttempt,
     ScientificArtifactControllerPort,
 )
@@ -35,11 +37,35 @@ class WorkloadUploadRequest(StrictModel):
     size_bytes: int = Field(ge=0)
     media_type: str = Field(min_length=3, max_length=128)
     compression: ArtifactCompression | Literal["none"] | None = None
+    upload_protocol: Literal["single-put-v1", "multipart-v2"] = "single-put-v1"
+    first_part_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+        description=MULTIPART_FIRST_PART_DESCRIPTION,
+    )
+
+    @model_validator(mode="after")
+    def protocol_fields_match(self) -> "WorkloadUploadRequest":
+        if self.upload_protocol == "multipart-v2" and self.first_part_sha256 is None:
+            raise ValueError("multipart-v2 requires first_part_sha256")
+        if self.upload_protocol == "single-put-v1" and self.first_part_sha256 is not None:
+            raise ValueError("single-put-v1 does not accept first_part_sha256")
+        return self
 
 
 class WorkloadUploadResponse(StrictModel):
     upload_id: UUID
+    upload_protocol: Literal["single-put-v1", "multipart-v2"]
+    session_generation: int
+    part_size_bytes: int
+    part_count: int
     handle: EphemeralHandleResponse
+
+
+class WorkloadUploadPartRequest(StrictModel):
+    session_generation: int = Field(ge=1, le=1_000_000)
+    size_bytes: int = Field(ge=0, le=5 * 1024 * 1024 * 1024)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class WorkloadDownloadResponse(StrictModel):
@@ -157,12 +183,46 @@ def scientific_workload_artifact_router(
                     profile=ArtifactAccessProfile(capability.access_profile),
                     receipt_digest=capability.access_receipt_digest,
                 ),
+                upload_protocol=request.upload_protocol,
+                first_part_checksum=(
+                    f"sha256:{request.first_part_sha256}"
+                    if request.first_part_sha256 is not None
+                    else None
+                ),
             )
         )
         return WorkloadUploadResponse(
             upload_id=result.upload.upload_id,
+            upload_protocol=request.upload_protocol,
+            session_generation=result.session.session_generation,
+            part_size_bytes=result.session.part_size_bytes,
+            part_count=result.session.part_count,
             handle=EphemeralHandleResponse.of(result.handle),
         )
+
+    @router.post(
+        "/uploads/{upload_id}/parts/{part_number}:authorize",
+        response_model=EphemeralHandleResponse,
+    )
+    async def authorize_upload_part(
+        request: WorkloadUploadPartRequest,
+        upload_id: Annotated[UUID, Path()],
+        part_number: Annotated[int, Path(ge=1, le=10_000)],
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> EphemeralHandleResponse:
+        capability, _, _ = await authorized(authorization)
+        result = await artifacts.authorize_upload_part(
+            AuthorizeArtifactUploadPart(
+                upload_id=upload_id,
+                operation_id=capability.operation_id,
+                tenant_id=capability.tenant_id,
+                session_generation=request.session_generation,
+                part_number=part_number,
+                size_bytes=request.size_bytes,
+                checksum=f"sha256:{request.sha256}",
+            )
+        )
+        return EphemeralHandleResponse.of(result.handle)
 
     @router.post("/uploads/{upload_id}:finalize", response_model=ArtifactRef)
     async def finalize_upload(

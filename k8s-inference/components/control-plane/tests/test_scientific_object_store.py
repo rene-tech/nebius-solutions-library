@@ -12,7 +12,7 @@ import asyncio
 import hashlib
 import os
 import urllib.parse
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import httpx
@@ -20,11 +20,20 @@ import pytest
 from botocore.exceptions import ClientError
 
 from fs2_serve.scientific_artifacts import (
+    MULTIPART_PART_BYTES,
+    ArtifactAccess,
     ArtifactCompression,
+    ArtifactDirection,
     ArtifactNotFoundError,
     ArtifactPolicyError,
     ArtifactRemovalEvidenceKind,
+    ArtifactRemovalTarget,
+    ArtifactUploadSession,
     ArtifactVerificationError,
+    EphemeralHandle,
+    LegacyArtifactVersionTarget,
+    UploadIntent,
+    artifact_storage_key,
 )
 from fs2_serve.scientific_object_store import ObjectStoreConfig, S3ArtifactObjectStore
 
@@ -32,6 +41,23 @@ pytestmark = pytest.mark.objectstore
 
 BUCKET = "fs2-scientific-artifacts-test"
 KEY_PREFIX = "scientific/v1/tenants/tenant-a/operations"
+
+
+def removal_target(storage_key: str) -> ArtifactRemovalTarget:
+    now = datetime.now(UTC)
+    return ArtifactRemovalTarget(
+        upload_id=uuid4(),
+        operation_id=uuid4(),
+        attempt_id=uuid4(),
+        tenant_id="tenant-a",
+        storage_key=storage_key,
+        latest_upload_capability_expires_at=now - timedelta(hours=2),
+        removal_generation=1,
+        verification_generation=1,
+        removal_claimed_at=now - timedelta(hours=1),
+        verification_claimed_at=now - timedelta(minutes=30),
+        eligible_at=now - timedelta(hours=2),
+    )
 
 
 def store_config(**overrides: object) -> ObjectStoreConfig:
@@ -60,6 +86,11 @@ async def object_store():
         code = str((error.response.get("Error") or {}).get("Code", ""))
         if code not in {"BucketAlreadyOwnedByYou", "BucketAlreadyExists"}:
             raise
+    await asyncio.to_thread(
+        store._client.put_bucket_versioning,
+        Bucket=BUCKET,
+        VersioningConfiguration={"Status": "Enabled"},
+    )
     try:
         yield store
     finally:
@@ -70,12 +101,132 @@ def key_for(digest: str, *, direction: str = "output") -> str:
     return f"{KEY_PREFIX}/{uuid4()}/stages/design/shards/-/attempts/{uuid4()}/{direction}/sha256/{digest[7:]}"
 
 
+async def multipart_upload(
+    object_store: S3ArtifactObjectStore,
+    payload: bytes,
+    *,
+    media_type: str,
+    compression: ArtifactCompression | None = None,
+    ttl: timedelta = timedelta(minutes=5),
+) -> tuple[UploadIntent, ArtifactUploadSession, EphemeralHandle]:
+    operation_id = uuid4()
+    attempt_id = uuid4()
+    upload_id = uuid4()
+    expected_digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    storage_key = artifact_storage_key(
+        tenant_id="tenant-a",
+        operation_id=operation_id,
+        stage_id="design",
+        shard_id=None,
+        attempt_id=attempt_id,
+        direction=ArtifactDirection.OUTPUT,
+        digest=expected_digest,
+    )
+    provider_upload_id, initiated_at = await object_store.create_upload_session(
+        storage_key=storage_key,
+        media_type=media_type,
+        compression=compression,
+    )
+    session = ArtifactUploadSession(
+        upload_id=upload_id,
+        tenant_id="tenant-a",
+        storage_key=storage_key,
+        provider_upload_id=provider_upload_id,
+        session_generation=1,
+        part_size_bytes=MULTIPART_PART_BYTES,
+        part_count=1,
+        initiated_at=initiated_at,
+    )
+    intent = UploadIntent(
+        upload_id=upload_id,
+        attempt_id=attempt_id,
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        stage_id="design",
+        direction=ArtifactDirection.OUTPUT,
+        expected_digest=expected_digest,
+        expected_size_bytes=len(payload),
+        media_type=media_type,
+        compression=compression,
+        storage_key=storage_key,
+        access=ArtifactAccess(),
+        begun_at=initiated_at,
+    )
+    handle = await object_store.presign_upload_part(
+        session=session,
+        part_number=1,
+        size_bytes=len(payload),
+        checksum=expected_digest,
+        ttl=ttl,
+    )
+    return intent, session, handle
+
+
+def test_legacy_version_inventory_persists_a_bounded_exact_key_cursor() -> None:
+    storage_key = key_for("sha256:" + "7" * 64)
+
+    class CursorClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def list_object_versions(self, **params: object) -> dict[str, object]:
+            self.calls.append(params)
+            if "VersionIdMarker" not in params:
+                return {
+                    "Versions": [{"Key": storage_key, "VersionId": "v2", "IsLatest": True}],
+                    "IsTruncated": True,
+                    "NextKeyMarker": storage_key,
+                    "NextVersionIdMarker": "v2",
+                    "ResponseMetadata": {"RequestId": "list-page-1"},
+                }
+            return {
+                "Versions": [{"Key": storage_key, "VersionId": "v1", "IsLatest": False}],
+                "IsTruncated": False,
+                "ResponseMetadata": {"RequestId": "list-page-2"},
+            }
+
+    store = object.__new__(S3ArtifactObjectStore)
+    store._config = ObjectStoreConfig(
+        endpoint_url="https://storage.invalid",
+        bucket="legacy-version-test",
+        region="eu-north1",
+        access_key="access",
+        secret_key="secret",
+    )
+    store._client = CursorClient()
+    target = LegacyArtifactVersionTarget(
+        artifact_id=uuid4(),
+        upload_id=uuid4(),
+        tenant_id="tenant-a",
+        storage_key=storage_key,
+        expected_digest="sha256:" + "7" * 64,
+        expected_size_bytes=7,
+        expected_media_type="application/json",
+        claim_generation=1,
+        claimed_at=datetime.now(UTC),
+        eligible_at=datetime.now(UTC),
+    )
+
+    first, first_request, next_key, next_version = store._legacy_versions_page(target)
+    assert first[0][0] == "v2"
+    assert (first_request, next_key, next_version) == ("list-page-1", storage_key, "v2")
+    second_target = target.model_copy(
+        update={"list_key_marker": next_key, "list_version_id_marker": next_version}
+    )
+    second, second_request, final_key, final_version = store._legacy_versions_page(second_target)
+    assert second[0][0] == "v1"
+    assert (second_request, final_key, final_version) == ("list-page-2", None, None)
+    assert store._client.calls[1]["KeyMarker"] == storage_key
+    assert store._client.calls[1]["VersionIdMarker"] == "v2"
+
+
 async def test_presigned_upload_carries_a_real_signature_and_no_secret(object_store) -> None:
     payload = b"ATOM  CA  ALA A   1\n" * 2000
-    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
-    key = key_for(digest)
-    handle = await object_store.presign_upload(
-        storage_key=key, media_type="chemical/x-pdb", compression=None, ttl=timedelta(minutes=10)
+    intent, session, handle = await multipart_upload(
+        object_store,
+        payload,
+        media_type="chemical/x-pdb",
+        ttl=timedelta(minutes=10),
     )
     query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(handle.url).query))
     assert query["X-Amz-Algorithm"] == "AWS4-HMAC-SHA256"
@@ -84,67 +235,83 @@ async def test_presigned_upload_carries_a_real_signature_and_no_secret(object_st
     assert "X-Amz-Date" in query and "X-Amz-SignedHeaders" in query
     assert os.environ["FS2_TEST_S3_SECRET_KEY"] not in handle.url
     assert handle.write_once is True
-    assert handle.headers["content-type"] == "chemical/x-pdb"
+    assert handle.headers["content-length"] == str(len(payload))
+    assert handle.headers["x-amz-checksum-sha256"]
 
     async with httpx.AsyncClient(timeout=30) as client:
         accepted = await client.put(handle.url, content=payload, headers=dict(handle.headers))
         assert accepted.status_code == 200, accepted.text[:300]
 
-    verified = await object_store.inspect(key)
-    assert verified.digest == digest
+    verified = await object_store.complete_upload_session(session=session, intent=intent)
+    assert verified.digest == intent.expected_digest
     assert verified.size_bytes == len(payload)
     assert verified.media_type == "chemical/x-pdb"
-    assert verified.storage_key == key
-    await object_store.delete(key)
+    assert verified.storage_key == intent.storage_key
+    assert verified.provider_version_id
+    await object_store.delete(removal_target(intent.storage_key))
 
 
-async def test_the_signature_binds_the_declared_media_type(object_store) -> None:
+async def test_the_signature_binds_the_declared_part_length_and_checksum(object_store) -> None:
     payload = b"ATOM  CA"
-    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
-    key = key_for(digest)
-    handle = await object_store.presign_upload(
-        storage_key=key, media_type="chemical/x-pdb", compression=None, ttl=timedelta(minutes=5)
+    _intent, session, handle = await multipart_upload(
+        object_store,
+        payload,
+        media_type="chemical/x-pdb",
     )
     async with httpx.AsyncClient(timeout=30) as client:
-        refused = await client.put(handle.url, content=payload, headers={"content-type": "text/plain"})
-    assert refused.status_code == 403
+        refused = await client.put(handle.url, content=b"ATOM  CB", headers=dict(handle.headers))
+    assert refused.status_code >= 400
+    await object_store.abort_upload_session(session=session)
 
 
 async def test_download_handles_round_trip_and_expire(object_store) -> None:
     payload = b"MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ"
     digest = "sha256:" + hashlib.sha256(payload).hexdigest()
     key = key_for(digest, direction="input")
-    upload = await object_store.presign_upload(
-        storage_key=key, media_type="text/x-fasta", compression=None, ttl=timedelta(minutes=5)
+    stored = await object_store.put_object(
+        storage_key=key,
+        payload=payload,
+        media_type="text/x-fasta",
+        compression=None,
     )
     async with httpx.AsyncClient(timeout=30) as client:
-        assert (await client.put(upload.url, content=payload, headers=dict(upload.headers))).status_code == 200
-        download = await object_store.presign_download(storage_key=key, ttl=timedelta(minutes=5))
+        download = await object_store.presign_download(
+            storage_key=key,
+            provider_version_id=stored.provider_version_id,
+            ttl=timedelta(minutes=5),
+        )
         assert download.write_once is False
         fetched = await client.get(download.url)
         assert fetched.status_code == 200
         assert fetched.content == payload
 
-        brief = await object_store.presign_download(storage_key=key, ttl=timedelta(seconds=1))
+        brief = await object_store.presign_download(
+            storage_key=key,
+            provider_version_id=stored.provider_version_id,
+            ttl=timedelta(seconds=1),
+        )
         await asyncio.sleep(2.5)
         expired = await client.get(brief.url)
         assert expired.status_code == 403
-    await object_store.delete(key)
+    await object_store.delete(removal_target(key))
 
 
 async def test_streaming_verification_refuses_an_object_over_the_ceiling(object_store) -> None:
     payload = b"x" * (256 * 1024)
     digest = "sha256:" + hashlib.sha256(payload).hexdigest()
     key = key_for(digest)
-    upload = await object_store.presign_upload(
-        storage_key=key, media_type="application/json", compression=None, ttl=timedelta(minutes=5)
+    stored = await object_store.put_object(
+        storage_key=key,
+        payload=payload,
+        media_type="application/json",
+        compression=None,
     )
-    async with httpx.AsyncClient(timeout=30) as client:
-        assert (await client.put(upload.url, content=payload, headers=dict(upload.headers))).status_code == 200
     with pytest.raises(ArtifactVerificationError, match="ceiling"):
-        await object_store.inspect(key, max_bytes=1024)
-    assert (await object_store.inspect(key)).size_bytes == len(payload)
-    await object_store.delete(key)
+        await object_store.inspect(key, provider_version_id=stored.provider_version_id, max_bytes=1024)
+    assert (
+        await object_store.inspect(key, provider_version_id=stored.provider_version_id)
+    ).size_bytes == len(payload)
+    await object_store.delete(removal_target(key))
 
 
 async def test_inline_write_and_stream_round_trip_on_a_real_gateway(object_store) -> None:
@@ -166,12 +333,19 @@ async def test_inline_write_and_stream_round_trip_on_a_real_gateway(object_store
     assert stored.media_type == "chemical/x-pdb"
     assert stored.storage_key == key
 
-    chunks = [chunk async for chunk in object_store.stream_object(key, max_bytes=len(payload))]
+    chunks = [
+        chunk
+        async for chunk in object_store.stream_object(
+            key,
+            provider_version_id=stored.provider_version_id,
+            max_bytes=len(payload),
+        )
+    ]
     assert b"".join(chunks) == payload
     # A 64 KiB chunk size against a 640 KB object must really be chunked.
     assert len(chunks) > 1
     assert all(chunk for chunk in chunks)
-    await object_store.delete(key)
+    await object_store.delete(removal_target(key))
 
 
 async def test_inline_write_reports_the_encoding_it_persisted(object_store) -> None:
@@ -185,8 +359,16 @@ async def test_inline_write_reports_the_encoding_it_persisted(object_store) -> N
         compression=ArtifactCompression.GZIP,
     )
     assert stored.compression is ArtifactCompression.GZIP
-    assert b"".join([chunk async for chunk in object_store.stream_object(key)]) == payload
-    await object_store.delete(key)
+    assert b"".join(
+        [
+            chunk
+            async for chunk in object_store.stream_object(
+                key,
+                provider_version_id=stored.provider_version_id,
+            )
+        ]
+    ) == payload
+    await object_store.delete(removal_target(key))
 
 
 async def test_inline_write_refuses_an_object_over_the_ceiling(object_store) -> None:
@@ -205,47 +387,63 @@ async def test_inline_write_refuses_an_object_over_the_ceiling(object_store) -> 
 
 async def test_streaming_an_absent_object_is_not_found(object_store) -> None:
     with pytest.raises(ArtifactNotFoundError):
-        [chunk async for chunk in object_store.stream_object(key_for("sha256:" + "1" * 64))]
+        [
+            chunk
+            async for chunk in object_store.stream_object(
+                key_for("sha256:" + "1" * 64),
+                provider_version_id="absent-version",
+            )
+        ]
 
 
 async def test_streaming_stops_at_the_requested_bound(object_store) -> None:
     payload = b"z" * (192 * 1024)
     key = key_for("sha256:" + hashlib.sha256(payload).hexdigest())
-    await object_store.put_object(storage_key=key, payload=payload, media_type="application/json", compression=None)
+    stored = await object_store.put_object(
+        storage_key=key,
+        payload=payload,
+        media_type="application/json",
+        compression=None,
+    )
     with pytest.raises(ArtifactVerificationError):
-        [chunk async for chunk in object_store.stream_object(key, max_bytes=len(payload) - 1)]
-    await object_store.delete(key)
+        [
+            chunk
+            async for chunk in object_store.stream_object(
+                key,
+                provider_version_id=stored.provider_version_id,
+                max_bytes=len(payload) - 1,
+            )
+        ]
+    await object_store.delete(removal_target(key))
 
 
 async def test_compression_is_signed_and_reported(object_store) -> None:
     payload = b"\x1f\x8b" + b"compressed-body"
-    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
-    key = key_for(digest)
-    handle = await object_store.presign_upload(
-        storage_key=key,
+    intent, session, handle = await multipart_upload(
+        object_store,
+        payload,
         media_type="application/json",
         compression=ArtifactCompression.GZIP,
-        ttl=timedelta(minutes=5),
     )
-    assert handle.headers["content-encoding"] == "gzip"
     async with httpx.AsyncClient(timeout=30) as client:
         stored = await client.put(handle.url, content=payload, headers=dict(handle.headers))
         assert stored.status_code == 200
-    verified = await object_store.inspect(key)
+    verified = await object_store.complete_upload_session(session=session, intent=intent)
     assert verified.compression is ArtifactCompression.GZIP
-    await object_store.delete(key)
+    await object_store.delete(removal_target(intent.storage_key))
 
 
 async def test_absent_and_repeated_deletes_are_reported_faithfully(object_store) -> None:
     key = key_for("sha256:" + "0" * 64)
     with pytest.raises(ArtifactNotFoundError):
-        await object_store.inspect(key)
-    first = await object_store.delete(key)
-    second = await object_store.delete(key)
+        await object_store.inspect(key, provider_version_id="absent-version")
+    target = removal_target(key)
+    first = await object_store.delete(target)
+    second = await object_store.delete(target)
     assert first.kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
     assert second.kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
     assert first.removed_version_count == second.removed_version_count == 0
-    independently_verified = await object_store.verify_absent(key)
+    independently_verified = await object_store.verify_absent(target)
     assert independently_verified.kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
     assert independently_verified.removed_version_count == 0
 
@@ -258,28 +456,35 @@ async def test_delete_evidence_requires_every_exact_key_version_to_be_absent(obj
     )
     key = key_for("sha256:" + "3" * 64)
     for payload in (b"first-version", b"second-version"):
-        await object_store.put_object(
-            storage_key=key,
-            payload=payload,
-            media_type="application/json",
-            compression=None,
+        await asyncio.to_thread(
+            object_store._client.put_object,
+            Bucket=BUCKET,
+            Key=key,
+            Body=payload,
+            ContentType="application/json",
+            ContentLength=len(payload),
         )
 
-    evidence = await object_store.delete(key)
+    target = removal_target(key)
+    evidence = await object_store.delete(target)
     assert evidence.kind is ArtifactRemovalEvidenceKind.ALL_VERSIONS_REMOVED
     assert evidence.removed_version_count >= 2
     with pytest.raises(ArtifactNotFoundError):
-        await object_store.inspect(key)
+        await object_store.inspect(key, provider_version_id="removed-version")
     remaining, _request_id = await asyncio.to_thread(object_store._exact_versions, key)
     assert remaining == []
-    independently_verified = await object_store.verify_absent(key)
+    independently_verified = await object_store.verify_absent(target)
     assert independently_verified.kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
     assert independently_verified.removed_version_count == 0
 
 
 async def test_a_non_positive_lifetime_is_refused(object_store) -> None:
     with pytest.raises(ArtifactPolicyError, match="lifetime"):
-        await object_store.presign_download(storage_key=key_for("sha256:" + "1" * 64), ttl=timedelta(0))
+        await object_store.presign_download(
+            storage_key=key_for("sha256:" + "1" * 64),
+            provider_version_id="unused-version",
+            ttl=timedelta(0),
+        )
 
 
 def test_config_refuses_anonymous_or_plaintext_credentials() -> None:
@@ -530,6 +735,6 @@ async def test_the_production_wiring_runs_the_whole_lifecycle_on_real_infrastruc
                 )
             ]
         ):
-            await service._store.delete(key)
+            await service._store.delete(removal_target(key))
         await service._store.close()
     assert isinstance(store.pool, asyncpg.Pool)

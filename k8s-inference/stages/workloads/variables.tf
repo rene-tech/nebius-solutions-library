@@ -228,7 +228,10 @@ variable "scientific_artifacts" {
     max_artifact_bytes    = number
     tenant_quota_bytes    = optional(number, 1099511627776)
     tenant_quota_objects  = optional(number, 4096)
+    multipart_writes_enabled = optional(bool, true)
     upload_reservation_ttl_seconds = optional(number, 86400)
+    upload_completion_grace_seconds = optional(number, 900)
+    provider_stability_grace_seconds = optional(number, 300)
     retention_days        = number
     egress_cidrs          = list(string)
     media_types           = list(string)
@@ -321,7 +324,10 @@ variable "scientific_artifacts" {
     max_artifact_bytes    = 1099511627776
     tenant_quota_bytes    = 1099511627776
     tenant_quota_objects  = 4096
+    multipart_writes_enabled = true
     upload_reservation_ttl_seconds = 86400
+    upload_completion_grace_seconds = 900
+    provider_stability_grace_seconds = 300
     retention_days        = 90
     egress_cidrs          = []
     media_types           = []
@@ -358,7 +364,7 @@ variable "scientific_artifacts" {
         var.scientific_artifacts.storage_contract.layout.root == "scientific/v1" &&
         var.scientific_artifacts.storage_contract.retention.current_object_expiration == "application-owned" &&
         var.scientific_artifacts.storage_contract.retention.abort_incomplete_multipart_upload_days == 1 &&
-        var.scientific_artifacts.storage_contract.retention.noncurrent_version_expiration_days == 1 &&
+        var.scientific_artifacts.storage_contract.retention.noncurrent_version_expiration_days == var.scientific_artifacts.retention_days &&
         var.scientific_artifacts.storage_contract.retention.expired_object_delete_marker
       ),
       false,
@@ -414,6 +420,12 @@ variable "scientific_artifacts" {
         var.scientific_artifacts.tenant_quota_objects >= 1 &&
         var.scientific_artifacts.tenant_quota_objects <= 1000000 &&
         floor(var.scientific_artifacts.upload_reservation_ttl_seconds) == var.scientific_artifacts.upload_reservation_ttl_seconds &&
+        floor(var.scientific_artifacts.upload_completion_grace_seconds) == var.scientific_artifacts.upload_completion_grace_seconds &&
+        var.scientific_artifacts.upload_completion_grace_seconds >= 60 &&
+        var.scientific_artifacts.upload_completion_grace_seconds <= 3600 &&
+        floor(var.scientific_artifacts.provider_stability_grace_seconds) == var.scientific_artifacts.provider_stability_grace_seconds &&
+        var.scientific_artifacts.provider_stability_grace_seconds >= 30 &&
+        var.scientific_artifacts.provider_stability_grace_seconds <= 3600 &&
         var.scientific_artifacts.upload_reservation_ttl_seconds >= var.scientific_artifacts.handle_ttl_seconds &&
         var.scientific_artifacts.upload_reservation_ttl_seconds <= 604800 &&
         var.scientific_artifacts.upload_reservation_ttl_seconds <= var.scientific_artifacts.retention_days * 86400 &&
@@ -1572,6 +1584,72 @@ variable "control_plane_image" {
   validation {
     condition     = can(regex("^sha256:[a-f0-9]{64}$", var.control_plane_image.digest))
     error_message = "control_plane_image.digest must be immutable."
+  }
+}
+
+variable "control_plane_schema_rollout_phase" {
+  description = "Explicit PostgreSQL 0031 rollout phase. Existing releases advance prepare -> expand on the bridge -> contract/activate on the target; rollback returns to the 0031-aware bridge with multipart writes disabled."
+  type        = string
+  default     = "prepare"
+
+  validation {
+    condition = contains([
+      "prepare",
+      "expand",
+      "contract",
+      "activate",
+      "rollback",
+    ], var.control_plane_schema_rollout_phase)
+    error_message = "control_plane_schema_rollout_phase must be prepare, expand, contract, activate, or rollback."
+  }
+}
+
+variable "control_plane_schema_bridge_readiness_deadline_seconds" {
+  description = "Bounded expand/rollback window for predecessor drain proof and retained legacy VersionId binding."
+  type        = number
+  default     = 86400
+
+  validation {
+    condition = (
+      floor(var.control_plane_schema_bridge_readiness_deadline_seconds) == var.control_plane_schema_bridge_readiness_deadline_seconds &&
+      var.control_plane_schema_bridge_readiness_deadline_seconds >= 600 &&
+      var.control_plane_schema_bridge_readiness_deadline_seconds <= 172800
+    )
+    error_message = "control_plane_schema_bridge_readiness_deadline_seconds must be an integer from 600 through 172800."
+  }
+}
+
+variable "control_plane_predecessor_image" {
+  description = "Exact currently serving pre-0031 image retained only during prepare. It is never a post-0031 rollback target."
+  type = object({
+    repository = string
+    digest     = string
+  })
+  default = {
+    repository = "registry.example.invalid/k8s-inference/control-plane"
+    digest     = "sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
+  }
+
+  validation {
+    condition     = can(regex("^sha256:[a-f0-9]{64}$", var.control_plane_predecessor_image.digest))
+    error_message = "control_plane_predecessor_image.digest must be immutable."
+  }
+}
+
+variable "control_plane_rollback_image" {
+  description = "Immutable 0031-aware bridge image used for expand and every post-migration application rollback. It must carry the same exact migration contract while keeping multipart writes disabled."
+  type = object({
+    repository = string
+    digest     = string
+  })
+  default = {
+    repository = "registry.example.invalid/k8s-inference/control-plane-rollback"
+    digest     = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+  }
+
+  validation {
+    condition     = can(regex("^sha256:[a-f0-9]{64}$", var.control_plane_rollback_image.digest))
+    error_message = "control_plane_rollback_image.digest must be immutable."
   }
 }
 

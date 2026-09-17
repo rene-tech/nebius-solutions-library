@@ -10,7 +10,7 @@ import logging
 import math
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
@@ -67,7 +67,7 @@ from .runtime import RuntimeOperationError
 from .scientific_artifacts import ArtifactNotFoundError, ArtifactServiceError
 from .scientific_batch.profile_catalog import ScientificProfileError
 from .scientific_batch.service import ScientificProfileDiscovery
-from .scientific_input_uploads import ScientificInputUploadRequest
+from .scientific_input_uploads import ScientificInputUploadPartRequest, ScientificInputUploadRequest
 from .scientific_run_result import ScientificArtifactManifest
 from .store import (
     BudgetExceededError,
@@ -93,9 +93,11 @@ CORE_TOOLS = {
     "get_scientific_artifact",
     "get_scientific_result",
     "begin_scientific_artifact_upload",
+    "authorize_scientific_artifact_upload_part",
     "put_scientific_artifact_bytes",
     "finalize_scientific_artifact_upload",
     "begin_model_artifact_upload",
+    "authorize_model_artifact_upload_part",
     "put_model_artifact_bytes",
     "finalize_model_artifact_upload",
     "download_scientific_artifact",
@@ -127,9 +129,15 @@ CORE_PARAMETER_DESCRIPTIONS = {
     "operation_id": "UUID returned by submission. Reuse it for status, result and cancellation; never invent an ID.",
     "artifact_id": "UUID of an authorized finalized input or published result artifact, not a filename or storage URL.",
     "upload_id": "UUID returned by an artifact-upload begin tool, paired with that reservation's operation_id.",
+    "session_generation": "Exact multipart generation returned by the corresponding begin-upload tool.",
+    "part_number": "One-based multipart index within the part_count returned by begin upload.",
     "idempotency_key": "Reuse the same key when retrying the same submission/upload to avoid duplicate work.",
     "wait_seconds": "Seconds to wait after admission (0 returns immediately); poll the returned operation thereafter.",
     "sha256": "Lowercase hexadecimal SHA-256 of the exact prepared upload bytes, including compression if present.",
+    "first_part_sha256": (
+        "multipart-v2 only: lowercase SHA-256 of bytes "
+        "[0:min(size_bytes,134217728)); the protocol part size is exactly 134217728 bytes."
+    ),
     "size_bytes": "Exact size in bytes of the prepared upload, not the base64 string length or uncompressed size.",
     "media_type": "MIME type of the input artifact (for example application/json for a manifest).",
     "compression": "Compression of the uploaded bytes; use the supported upload format or null for uncompressed input.",
@@ -991,13 +999,17 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         media_type: str,
         compression: str | None = None,
         idempotency_key: str | None = None,
+        upload_protocol: Literal["single-put-v1", "multipart-v2"] = "single-put-v1",
+        first_part_sha256: str | None = None,
     ) -> dict[str, Any]:
         """Reserve a caller-owned, write-once input upload for a model.
 
         Supply the SHA-256, exact byte size, MIME type and optional compression
-        of bytes you already prepared. Returns operation_id/upload_id and an
-        upload handle. Write those same bytes, then finalize before referencing
-        the artifact from a manifest or model submission. This does not run a model.
+        of bytes you already prepared. For multipart-v2, first_part_sha256 is
+        the hash of bytes [0:min(size_bytes,134217728)); the fixed protocol part
+        size is 134217728 bytes. Returns operation_id/upload_id and an upload
+        handle. Write those same bytes, then finalize before referencing the
+        artifact from a manifest or model submission. This does not run a model.
         """
 
         if runtime.scientific_input_uploads is None:
@@ -1013,6 +1025,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                 "size_bytes": size_bytes,
                 "media_type": media_type,
                 "compression": compression,
+                "upload_protocol": upload_protocol,
+                "first_part_sha256": first_part_sha256,
             }
         )
         result = await runtime.scientific_input_uploads.begin(
@@ -1029,6 +1043,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         media_type: str,
         compression: str | None = None,
         idempotency_key: str | None = None,
+        upload_protocol: Literal["single-put-v1", "multipart-v2"] = "single-put-v1",
+        first_part_sha256: str | None = None,
     ) -> dict[str, Any]:
         """Reserve immutable input bytes for any authorized serving or batch App.
 
@@ -1038,7 +1054,66 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         """
 
         return await begin_scientific_artifact_upload(
-            model_id, sha256, size_bytes, media_type, compression, idempotency_key
+            model_id,
+            sha256,
+            size_bytes,
+            media_type,
+            compression,
+            idempotency_key,
+            upload_protocol,
+            first_part_sha256,
+        )
+
+    async def authorize_scientific_artifact_upload_part(
+        operation_id: UUID,
+        upload_id: UUID,
+        session_generation: int,
+        part_number: int,
+        size_bytes: int,
+        sha256: str,
+    ) -> dict[str, Any]:
+        """Authorize one exact multipart body after an upload reservation.
+
+        Use the session generation, part shape and part SHA-256 calculated by
+        the trusted client from the begin result.  The returned URL cannot
+        complete the multipart object and is bound to that exact part number,
+        byte length and checksum.  Finalize only after every part is present.
+        """
+
+        if runtime.scientific_input_uploads is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific input upload is unavailable")
+        request = ScientificInputUploadPartRequest(
+            operation_id=operation_id,
+            session_generation=session_generation,
+            size_bytes=size_bytes,
+            sha256=sha256,
+        )
+        result = await runtime.scientific_input_uploads.authorize_part(
+            principal=_principal(),
+            operation_id=operation_id,
+            upload_id=upload_id,
+            part_number=part_number,
+            request=request,
+        )
+        return result.model_dump(mode="json")
+
+    async def authorize_model_artifact_upload_part(
+        operation_id: UUID,
+        upload_id: UUID,
+        session_generation: int,
+        part_number: int,
+        size_bytes: int,
+        sha256: str,
+    ) -> dict[str, Any]:
+        """Authorize one checksum-bound part for a serving or batch input."""
+
+        return await authorize_scientific_artifact_upload_part(
+            operation_id,
+            upload_id,
+            session_generation,
+            part_number,
+            size_bytes,
+            sha256,
         )
 
     async def put_scientific_artifact_bytes(
@@ -1243,9 +1318,11 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         get_scientific_artifact,
         get_scientific_result,
         begin_scientific_artifact_upload,
+        authorize_scientific_artifact_upload_part,
         put_scientific_artifact_bytes,
         finalize_scientific_artifact_upload,
         begin_model_artifact_upload,
+        authorize_model_artifact_upload_part,
         put_model_artifact_bytes,
         finalize_model_artifact_upload,
         download_scientific_artifact,
@@ -1260,8 +1337,10 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         descriptions = CORE_PARAMETER_DESCRIPTIONS
         if function.__name__ in {
             "put_scientific_artifact_bytes",
+            "authorize_scientific_artifact_upload_part",
             "finalize_scientific_artifact_upload",
             "put_model_artifact_bytes",
+            "authorize_model_artifact_upload_part",
             "finalize_model_artifact_upload",
         }:
             descriptions = {

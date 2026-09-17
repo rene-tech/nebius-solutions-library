@@ -544,9 +544,16 @@ variable "deployment" {
         tenant_quota_bytes = optional(number, 1099511627776)
         # Zero-byte intents still consume one retained object slot.
         tenant_quota_objects = optional(number, 4096)
+        multipart_writes_enabled = optional(bool, true)
         # Unfinalized reservations expire here; finalized ones extend only to
         # artifact retention. Neither transition deletes quota provenance.
         upload_reservation_ttl_seconds = optional(number, 86400)
+        # A signed part PUT may finish after URL expiry. Cleanup waits through
+        # this interval, then aborts the server-owned multipart generation.
+        upload_completion_grace_seconds = optional(number, 900)
+        # A distinct verifier waits this long after remover completion before
+        # taking stable provider version snapshots around an absent HEAD.
+        provider_stability_grace_seconds = optional(number, 300)
         # Exact object-storage addresses, /32 or /128 only, that the control
         # plane may reach on 443 to issue handles and stream a stored object
         # back for digest verification.
@@ -1250,13 +1257,19 @@ variable "deployment" {
         var.deployment.storage.scientific_artifacts.tenant_quota_objects >= 1 &&
         var.deployment.storage.scientific_artifacts.tenant_quota_objects <= 1000000 &&
         floor(var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds) == var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds &&
+        floor(var.deployment.storage.scientific_artifacts.upload_completion_grace_seconds) == var.deployment.storage.scientific_artifacts.upload_completion_grace_seconds &&
+        var.deployment.storage.scientific_artifacts.upload_completion_grace_seconds >= 60 &&
+        var.deployment.storage.scientific_artifacts.upload_completion_grace_seconds <= 3600 &&
+        floor(var.deployment.storage.scientific_artifacts.provider_stability_grace_seconds) == var.deployment.storage.scientific_artifacts.provider_stability_grace_seconds &&
+        var.deployment.storage.scientific_artifacts.provider_stability_grace_seconds >= 30 &&
+        var.deployment.storage.scientific_artifacts.provider_stability_grace_seconds <= 3600 &&
         var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds >= var.deployment.storage.scientific_artifacts.handle_ttl_seconds &&
         var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds <= 604800 &&
         var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds <= var.deployment.storage.scientific_artifacts.retention_days * 86400
       ),
       false,
     )
-    error_message = "enabled storage.scientific_artifacts requires bounded retention and handles, a 1 KiB-1 TiB object ceiling, tenant byte and 1-1000000 object quotas, and a handle-through-7-day upload reservation TTL no longer than retention."
+    error_message = "enabled storage.scientific_artifacts requires bounded retention, handles, completion/stability grace, a 1 KiB-1 TiB object ceiling, tenant byte and 1-1000000 object quotas, and a configured-handle through 7-day upload reservation TTL no longer than retention."
   }
 
   validation {

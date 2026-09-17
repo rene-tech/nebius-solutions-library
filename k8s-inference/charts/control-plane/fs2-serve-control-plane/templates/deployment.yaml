@@ -57,8 +57,33 @@
 {{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.artifactRemoverDatabaseRole "fs2_serve_artifact_remover") (ne .Values.migration.artifactVerifierDatabaseRole "fs2_serve_artifact_verifier") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "df94dc4d76eb783d618aaecc1b9767a3896dc4bb93353cb0d786fa41f7312185") (ne .Values.migration.releaseContract.migrationSetSha256 "714d1456b60c8ccc74b0dca40d1f486bd116a85f586a258c386e5d9d5aae4c22") (ne (int .Values.migration.releaseContract.migrationCount) 30) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0030_scientific_quota_settlement.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "b28f0f1e6e6e749e2e1c5d1c205e393a2f11f019a2d65219636e11872492bbb3") (ne .Values.migration.releaseContract.migrationSetSha256 "1bc495f57002004a6032b8a9b209c4563b2e9e788698f21c60550cded947a7bd") (ne (int .Values.migration.releaseContract.migrationCount) 31) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0031_scientific_quota_fencing.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
+{{- end }}
+{{- $rolloutPhase := .Values.migration.rolloutPhase -}}
+{{- $rolloutImage := include "fs2-serve.schemaRolloutImage" . -}}
+{{- $rollbackImage := include "fs2-serve.schemaRollbackImage" . -}}
+{{- $runtimeImage := include "fs2-serve.image" . -}}
+{{- $targetImageExplicit := and .Values.migration.targetImage.repository .Values.migration.targetImage.digest -}}
+{{- $rollbackImageExplicit := and .Values.migration.rollbackImage.repository .Values.migration.rollbackImage.digest -}}
+{{- $predecessorImageExplicit := and .Values.migration.predecessorImage.repository .Values.migration.predecessorImage.digest -}}
+{{- if and .Release.IsInstall (ne $rolloutPhase "activate") }}
+{{- fail "a fresh install must use migration.rolloutPhase=activate" }}
+{{- end }}
+{{- if and .Release.IsUpgrade (or (not $targetImageExplicit) (not $rollbackImageExplicit) (not $predecessorImageExplicit)) }}
+{{- fail "staged schema upgrades require explicit immutable targetImage, rollbackImage, and predecessorImage digests" }}
+{{- end }}
+{{- if and .Release.IsUpgrade (eq $rolloutImage $rollbackImage) }}
+{{- fail "the candidate targetImage and 0031-aware rollbackImage must differ" }}
+{{- end }}
+{{- if and (eq $rolloutPhase "prepare") (or (eq $rolloutImage $runtimeImage) (eq $rollbackImage $runtimeImage)) }}
+{{- fail "prepare must keep a distinct pre-0031 predecessor serving while both 0031-aware images are preflighted" }}
+{{- end }}
+{{- if and (has $rolloutPhase (list "expand" "rollback")) (ne $rollbackImage $runtimeImage) }}
+{{- fail "expand and rollback must serve the exact prepared 0031-aware rollbackImage" }}
+{{- end }}
+{{- if and (has $rolloutPhase (list "contract" "activate")) (ne $rolloutImage $runtimeImage) }}
+{{- fail "contract and activate must serve the exact prepared targetImage" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}
 {{- fail "httpRoute.authorityMode must equal config.publicAuthorityMode" }}
@@ -136,6 +161,23 @@
 {{- end }}
 {{- if and .Values.artifactMaintenance.enabled (not .Values.scientificArtifacts.enabled) }}
 {{- fail "artifactMaintenance requires scientificArtifacts.enabled" }}
+{{- end }}
+{{- if and .Release.IsUpgrade (has .Values.migration.rolloutPhase (list "expand" "rollback")) (or (not .Values.scientificArtifacts.enabled) (not .Values.artifactMaintenance.enabled)) }}
+{{- fail "expand and rollback require scientificArtifacts and artifactMaintenance for the bridge-ready writer" }}
+{{- end }}
+{{- if and .Release.IsUpgrade .Values.artifactMaintenance.enabled .Values.scientificArtifacts.enabled (has .Values.migration.rolloutPhase (list "expand" "rollback")) (eq (len .Values.networkPolicy.kubernetesApiCidrs) 0) }}
+{{- fail "schema bridge readiness requires at least one bounded networkPolicy.kubernetesApiCidrs destination" }}
+{{- end }}
+{{- if .Values.artifactMaintenance.enabled }}
+{{- if ne (.Values.artifactMaintenance.verificationConcurrency | int) 4 }}
+{{- fail "artifactMaintenance.verificationConcurrency must equal the controller's bounded concurrency of 4" }}
+{{- end }}
+{{- $artifactBytes := .Values.scientificArtifacts.maxBytes | int64 }}
+{{- $verificationBytesPerSecond := .Values.artifactMaintenance.verificationMinimumBytesPerSecond | int64 }}
+{{- $minimumVerificationSeconds := add (div (add $artifactBytes (sub $verificationBytesPerSecond 1)) $verificationBytesPerSecond) 300 }}
+{{- if lt (.Values.artifactMaintenance.activeDeadlineSeconds | int64) $minimumVerificationSeconds }}
+{{- fail "artifactMaintenance.activeDeadlineSeconds must cover maxBytes at verificationMinimumBytesPerSecond plus 300 seconds" }}
+{{- end }}
 {{- end }}
 {{- if .Values.scientificBatch.enabled }}
 {{- if not .Values.scientificArtifacts.enabled }}
@@ -284,7 +326,7 @@ spec:
         - name: wait-schema
           image: {{ include "fs2-serve.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: ["wait-schema"]
+          args: [{{ ternary "wait-schema-expanded" "wait-schema" (has .Values.migration.rolloutPhase (list "expand" "rollback")) | quote }}]
           env:
             {{- include "fs2-serve.schemaWaitEnv" . | nindent 12 }}
           volumeMounts:

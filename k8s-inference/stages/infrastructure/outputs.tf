@@ -400,7 +400,7 @@ output "scientific_artifacts_storage_contract" {
       # Storage-side hygiene only; deleting a current object stays an
       # application decision made against the durable result record.
       abort_incomplete_multipart_upload_days = 1
-      noncurrent_version_expiration_days     = 1
+      noncurrent_version_expiration_days     = var.scientific_artifacts.retention_days
       expired_object_delete_marker           = true
       current_object_expiration              = "application-owned"
       lifecycle_rule_ids                     = [for rule in local.scientific_artifacts_lifecycle_rules : rule.id]

@@ -7,6 +7,7 @@ import base64
 import copy
 import hashlib
 import json
+import re
 import secrets
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
@@ -113,10 +114,6 @@ SCIENTIFIC_RUNTIME_UPDATE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "pod_uids",
         "node_uids",
         "gpu_uuids",
-    ),
-    "fs2_scientific_uploads": ("artifact_id", "finalized_at"),
-    "fs2_scientific_artifact_quota_reservations": (
-        "expires_at",
     ),
     "fs2_scientific_batches": (
         "status",
@@ -405,6 +402,93 @@ class PostgresStore:
     def _migration_manifest(migrations_dir: Path) -> list[tuple[Path, str]]:
         return validate_migration_set(migrations_dir)
 
+    @staticmethod
+    def _migration_steps(path: Path) -> list[bytes]:
+        """Split only explicit reviewed boundaries; SQL syntax is never guessed."""
+
+        marker = b"\n-- fs2-migration-transaction-boundary\n"
+        payload = path.read_bytes()
+        steps = payload.split(marker)
+        if any(not step.strip() for step in steps):
+            raise RuntimeError(f"migration contains an empty transaction step: {path.name}")
+        return steps
+
+    @classmethod
+    async def _assert_contract_schema_preapplied(
+        cls,
+        connection: asyncpg.Connection[Any],
+        manifest: list[tuple[Path, str]],
+        *,
+        rollout_bridge_image_ref: str,
+        rollout_predecessor_image_ref: str,
+    ) -> None:
+        """Fail before DDL unless expand and bridge readiness are already durable."""
+
+        ledgers_ready = await connection.fetchval(
+            "SELECT "
+            "to_regclass('public.fs2_schema_migrations') IS NOT NULL AND "
+            "to_regclass('public.fs2_schema_migration_steps') IS NOT NULL AND "
+            "to_regclass('public.fs2_schema_rollout_state') IS NOT NULL AND "
+            "to_regclass('public.fs2_schema_bridge_rollout_attempts') IS NOT NULL AND "
+            "to_regclass('public.fs2_schema_bridge_ready_receipts') IS NOT NULL"
+        )
+        if not ledgers_ready:
+            raise RuntimeError(
+                "the PostgreSQL contract phase requires a fully applied expand schema"
+            )
+
+        applied_rows = await connection.fetch(
+            "SELECT version,sha256 FROM fs2_schema_migrations ORDER BY applied_at,version"
+        )
+        applied = [(str(row["version"]), str(row["sha256"])) for row in applied_rows]
+        expected = [(path.name, digest) for path, digest in manifest]
+        if applied != expected:
+            raise RuntimeError(
+                "the PostgreSQL contract phase cannot apply or complete missing migrations"
+            )
+
+        fencing_path, _ = manifest[-1]
+        fencing_steps = cls._migration_steps(fencing_path)
+        recorded_steps = await connection.fetch(
+            "SELECT step,sha256 FROM fs2_schema_migration_steps "
+            "WHERE version=$1 ORDER BY step",
+            fencing_path.name,
+        )
+        expected_steps = [
+            (number, hashlib.sha256(payload).hexdigest())
+            for number, payload in enumerate(fencing_steps, start=1)
+        ]
+        if [(int(row["step"]), str(row["sha256"])) for row in recorded_steps] != expected_steps:
+            raise RuntimeError(
+                "the PostgreSQL contract phase requires every expand migration step"
+            )
+
+        receipt_ready = await connection.fetchval(
+            "SELECT EXISTS("
+            "SELECT 1 FROM fs2_schema_bridge_ready_receipts receipt "
+            "JOIN fs2_schema_rollout_state rollout ON rollout.singleton "
+            "JOIN fs2_schema_bridge_rollout_attempts attempt "
+            "ON attempt.bridge_image_ref=receipt.bridge_image_ref "
+            "AND attempt.predecessor_image_ref=receipt.predecessor_image_ref "
+            "AND attempt.bridge_release_revision=receipt.bridge_release_revision "
+            "WHERE receipt.migration_version=$1 "
+            "AND rollout.phase IN ('expanded','contracted') "
+            "AND rollout.bridge_image_ref=$2 "
+            "AND rollout.predecessor_image_ref=$3 "
+            "AND receipt.bridge_image_ref=rollout.bridge_image_ref "
+            "AND receipt.predecessor_image_ref=rollout.predecessor_image_ref "
+            "AND receipt.pending_legacy_artifacts=0 "
+            "AND receipt.unresolved_legacy_artifacts=0 "
+            "AND receipt.missing_unfinished_upload_sessions=0)",
+            fencing_path.name,
+            rollout_bridge_image_ref,
+            rollout_predecessor_image_ref,
+        )
+        if not receipt_ready:
+            raise RuntimeError(
+                "the PostgreSQL contract phase requires an exact bridge-ready receipt"
+            )
+
     @classmethod
     async def _apply_migrations(
         cls,
@@ -416,6 +500,11 @@ class PostgresStore:
         activation_role: str = "fs2_serve_activation",
         artifact_remover_role: str = "fs2_serve_artifact_remover",
         artifact_verifier_role: str = "fs2_serve_artifact_verifier",
+        preserve_predecessor_artifact_authority: bool = False,
+        require_bridge_ready_receipt: bool = False,
+        rollout_bridge_image_ref: str = "",
+        rollout_predecessor_image_ref: str = "",
+        rollout_release_revision: int = 0,
     ) -> None:
         for label, role in (
             ("reporting", reporting_role),
@@ -442,17 +531,35 @@ class PostgresStore:
                 "database roles must differ"
             )
         manifest = cls._migration_manifest(migrations_dir)
-        async with pool.acquire() as connection, connection.transaction():
-            await connection.execute("SELECT pg_advisory_xact_lock(727201920001)")
-            await connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS fs2_schema_migrations (
-                    version text PRIMARY KEY,
-                    sha256 char(64) NOT NULL,
-                    applied_at timestamptz NOT NULL DEFAULT clock_timestamp()
+        async with pool.acquire() as connection:
+            if require_bridge_ready_receipt:
+                await cls._assert_contract_schema_preapplied(
+                    connection,
+                    manifest,
+                    rollout_bridge_image_ref=rollout_bridge_image_ref,
+                    rollout_predecessor_image_ref=rollout_predecessor_image_ref,
                 )
-                """
-            )
+            else:
+                await connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS fs2_schema_migrations (
+                        version text PRIMARY KEY,
+                        sha256 char(64) NOT NULL,
+                        applied_at timestamptz NOT NULL DEFAULT clock_timestamp()
+                    )
+                    """
+                )
+                await connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS fs2_schema_migration_steps (
+                        version text NOT NULL,
+                        step integer NOT NULL CHECK (step>=1),
+                        sha256 char(64) NOT NULL,
+                        applied_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+                        PRIMARY KEY (version,step)
+                    )
+                    """
+                )
             applied_rows = await connection.fetch(
                 "SELECT version,sha256 FROM fs2_schema_migrations ORDER BY applied_at,version"
             )
@@ -464,7 +571,6 @@ class PostgresStore:
                 if digest != expected_digest:
                     raise RuntimeError(f"applied migration changed: {version}")
             for path, digest in manifest:
-                payload = path.read_bytes()
                 existing = await connection.fetchval(
                     "SELECT sha256 FROM fs2_schema_migrations WHERE version=$1", path.name
                 )
@@ -472,12 +578,64 @@ class PostgresStore:
                     if existing != digest:
                         raise RuntimeError(f"applied migration changed: {path.name}")
                     continue
-                await connection.execute(payload.decode("utf-8"))
-                await connection.execute(
-                    "INSERT INTO fs2_schema_migrations(version,sha256) VALUES($1,$2)",
-                    path.name,
-                    digest,
-                )
+                steps = cls._migration_steps(path)
+                for step_number, payload in enumerate(steps, start=1):
+                    step_digest = hashlib.sha256(payload).hexdigest()
+                    transaction = connection.transaction()
+                    await transaction.start()
+                    try:
+                        await connection.execute("SELECT pg_advisory_xact_lock(727201920001)")
+                        recorded = await connection.fetchval(
+                            "SELECT sha256 FROM fs2_schema_migration_steps "
+                            "WHERE version=$1 AND step=$2 FOR UPDATE",
+                            path.name,
+                            step_number,
+                        )
+                        if recorded is None:
+                            await connection.execute(payload.decode("utf-8"))
+                            await connection.execute(
+                                "INSERT INTO fs2_schema_migration_steps(version,step,sha256) "
+                                "VALUES($1,$2,$3)",
+                                path.name,
+                                step_number,
+                                step_digest,
+                            )
+                        elif recorded != step_digest:
+                            raise RuntimeError(
+                                f"applied migration step changed: {path.name}#{step_number}"
+                            )
+                        await transaction.commit()
+                    except BaseException:
+                        await transaction.rollback()
+                        raise
+                transaction = connection.transaction()
+                await transaction.start()
+                try:
+                    await connection.execute("SELECT pg_advisory_xact_lock(727201920001)")
+                    recorded_steps = await connection.fetch(
+                        "SELECT step,sha256 FROM fs2_schema_migration_steps "
+                        "WHERE version=$1 ORDER BY step",
+                        path.name,
+                    )
+                    expected_steps = [
+                        (number, hashlib.sha256(payload).hexdigest())
+                        for number, payload in enumerate(steps, start=1)
+                    ]
+                    if [(row["step"], str(row["sha256"])) for row in recorded_steps] != expected_steps:
+                        raise RuntimeError(f"migration step ledger is incomplete: {path.name}")
+                    await connection.execute(
+                        "INSERT INTO fs2_schema_migrations(version,sha256) VALUES($1,$2) "
+                        "ON CONFLICT (version) DO NOTHING",
+                        path.name,
+                        digest,
+                    )
+                    await transaction.commit()
+                except BaseException:
+                    await transaction.rollback()
+                    raise
+            privilege_transaction = connection.transaction()
+            await privilege_transaction.start()
+            await connection.execute("SELECT pg_advisory_xact_lock(727201920001)")
             # A role-specific REVOKE does not cancel privileges inherited from
             # PUBLIC on databases created with older PostgreSQL defaults.
             # The service owns this dedicated schema, so close that inherited
@@ -514,7 +672,9 @@ class PostgresStore:
             )
             for role in all_roles:
                 await connection.execute(
-                    f"REVOKE ALL ON fs2_schema_migrations,fs2_tokens,fs2_operations,"
+                    f"REVOKE ALL ON fs2_schema_migrations,fs2_schema_migration_steps,"
+                    f"fs2_schema_rollout_state,fs2_schema_bridge_ready_receipts,"
+                    f"fs2_schema_bridge_rollout_attempts,fs2_tokens,fs2_operations,"
                     f"fs2_operation_events,fs2_audit_events,fs2_usage_facts,"
                     f"fs2_operator_principals,fs2_operator_sessions,"
                     f"fs2_configuration_revisions,fs2_configuration_plans,"
@@ -528,6 +688,20 @@ class PostgresStore:
                     f"fs2_scientific_artifact_quota_reservations,"
                     f"fs2_scientific_artifact_quota_events,"
                     f"fs2_scientific_artifact_removal_evidence,fs2_scientific_gpu_settlements,"
+                    f"fs2_scientific_artifact_upload_sessions,"
+                    f"fs2_scientific_artifact_upload_session_creation_claims,"
+                    f"fs2_scientific_artifact_upload_session_reconciliation_events,"
+                    f"fs2_scientific_artifact_finalization_leases,"
+                    f"fs2_scientific_artifact_finalization_failures,"
+                    f"fs2_scientific_artifact_legacy_version_claims,"
+                    f"fs2_scientific_artifact_legacy_version_scan_events,"
+                    f"fs2_scientific_artifact_legacy_version_bindings,"
+                    f"fs2_scientific_artifacts_versioned,"
+                    f"fs2_scientific_artifact_upload_capabilities,"
+                    f"fs2_scientific_artifact_deletion_evidence_v2,"
+                    f"fs2_scientific_artifact_verification_failures_v2,"
+                    f"fs2_scientific_artifact_removal_evidence_v2,"
+                    f"fs2_scientific_artifact_janitor_tenant_cursors,"
                     f"fs2_scientific_interruption_requests,"
                     f"fs2_scientific_batches,"
                     f"fs2_scientific_batch_events,fs2_scientific_admission_outbox,"
@@ -562,6 +736,40 @@ class PostgresStore:
                     f"fs2_scientific_claim_artifact_removals(integer,uuid,text),"
                     f"fs2_scientific_claim_artifact_verifications(integer),"
                     f"fs2_scientific_record_artifact_removal(uuid,uuid,uuid,text,text,text,text,integer,timestamptz),"
+                    f"fs2_scientific_claim_upload_session_creation_v2(uuid,text,text,uuid,bigint,integer),"
+                    f"fs2_scientific_bind_upload_session_v2(uuid,text,text,uuid,text,bigint,integer,timestamptz),"
+                    f"fs2_scientific_claim_stale_upload_session_creations_v2(integer),"
+                    f"fs2_scientific_record_upload_session_creation_reconciled_v2("
+                    f"uuid,text,text,uuid,integer,timestamptz,text,integer,text,timestamptz),"
+                    f"fs2_scientific_record_upload_session_aborted_v2(uuid,text,integer,text,text,timestamptz),"
+                    f"fs2_scientific_mark_upload_session_completed_v2(uuid,text,integer,text,text,text,timestamptz),"
+                    f"fs2_scientific_acquire_artifact_finalization_lease_v2(uuid,uuid,text,integer,uuid),"
+                    f"fs2_scientific_claim_expired_finalization_leases_v2(integer),"
+                    f"fs2_scientific_record_finalization_failure_v2("
+                    f"uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz),"
+                    f"fs2_scientific_record_upload_capability_v2("
+                    f"uuid,text,uuid,integer,integer,bigint,text,text,text,timestamptz),"
+                    f"fs2_scientific_publish_artifact_v2("
+                    f"uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz),"
+                    f"fs2_scientific_claim_legacy_artifact_versions_v2(integer),"
+                    f"fs2_scientific_record_legacy_artifact_version_scan_v2("
+                    f"uuid,integer,timestamptz,text,text,text,text,text,timestamptz),"
+                    f"fs2_scientific_record_legacy_artifact_version_v2("
+                    f"uuid,uuid,text,text,integer,timestamptz,text,text,text,bigint,text,text,timestamptz),"
+                    f"fs2_scientific_legacy_version_rollout_status_v2(),"
+                    f"fs2_scientific_mark_schema_bridge_ready_v2("
+                    f"text,bigint,text,text,text,text,bigint,bigint,integer,integer,integer,"
+                    f"integer,integer,text,text,timestamptz),"
+                    f"fs2_scientific_ensure_artifact_janitor_tenant_cursor(),"
+                    f"fs2_scientific_claim_artifact_removals_v2(integer,uuid,text),"
+                    f"fs2_scientific_record_artifact_removal_completion_v2("
+                    f"uuid,uuid,uuid,text,text,integer,timestamptz,text,text,bigint,bigint,text,text,timestamptz),"
+                    f"fs2_scientific_claim_artifact_verifications_v2(integer),"
+                    f"fs2_scientific_record_artifact_verification_failure_v2("
+                    f"uuid,text,integer,integer,timestamptz),"
+                    f"fs2_scientific_record_artifact_removal_v2("
+                    f"uuid,uuid,uuid,text,text,text,text,bigint,timestamptz,timestamptz,"
+                    f"integer,integer,text,text,text,text,text,text,text,text,text,text),"
                     f"fs2_scientific_settle_terminal_operation(uuid),"
                     f"fs2_maintenance_stage_payload_expiry(integer),"
                     f"fs2_maintenance_purge_expired_payloads(integer),"
@@ -615,20 +823,56 @@ class PostgresStore:
             # one-way transitions, and DELETE is additionally gated in SQL by
             # the retention trigger, so the privilege alone cannot erase data.
             await connection.execute(
-                f"GRANT SELECT,INSERT ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
-                f"fs2_scientific_uploads,fs2_scientific_stage_commits,"
+                f"GRANT SELECT,INSERT ON fs2_scientific_stage_attempts,fs2_scientific_uploads,"
+                f"fs2_scientific_stage_commits,"
                 f"fs2_scientific_stage_commit_attempts,fs2_scientific_run_results,"
                 f"fs2_scientific_artifact_events,fs2_scientific_retention_ledger,"
                 f"fs2_scientific_artifact_quota_reservations,"
                 f"fs2_scientific_artifact_quota_events TO {quoted_runtime}"
             )
             await connection.execute(
-                f"GRANT SELECT ON fs2_scientific_artifact_removal_evidence,"
+                f"GRANT SELECT ON fs2_schema_rollout_state,fs2_scientific_artifacts,"
+                f"fs2_scientific_artifacts_versioned,"
+                f"fs2_scientific_artifact_legacy_version_bindings,"
+                f"fs2_scientific_artifact_removal_evidence,"
+                f"fs2_scientific_artifact_upload_sessions,"
+                f"fs2_scientific_artifact_upload_session_creation_claims,"
+                f"fs2_scientific_artifact_finalization_leases,"
+                f"fs2_scientific_artifact_finalization_failures,"
+                f"fs2_scientific_artifact_upload_capabilities,"
+                f"fs2_scientific_artifact_removal_evidence_v2,"
                 f"fs2_scientific_gpu_settlements TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT ON fs2_scientific_interruption_requests TO {quoted_runtime}")
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_scientific_settle_terminal_operation(uuid) TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_claim_upload_session_creation_v2("
+                f"uuid,text,text,uuid,bigint,integer),"
+                f"fs2_scientific_bind_upload_session_v2("
+                f"uuid,text,text,uuid,text,bigint,integer,timestamptz),"
+                f"fs2_scientific_acquire_artifact_finalization_lease_v2("
+                f"uuid,uuid,text,integer,uuid),"
+                f"fs2_scientific_claim_expired_finalization_leases_v2(integer) TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_record_finalization_failure_v2("
+                f"uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz) "
+                f"TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_record_upload_capability_v2("
+                f"uuid,text,uuid,integer,integer,bigint,text,text,text,timestamptz),"
+                f"fs2_scientific_publish_artifact_v2("
+                f"uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz) "
+                f"TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_claim_stale_upload_session_creations_v2("
+                f"integer),fs2_scientific_record_upload_session_creation_reconciled_v2("
+                f"uuid,text,text,uuid,integer,timestamptz,text,integer,text,timestamptz) "
+                f"TO {quoted_artifact_remover}"
             )
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batches TO {quoted_runtime}")
             for table, columns in SCIENTIFIC_RUNTIME_UPDATE_COLUMNS.items():
@@ -690,13 +934,32 @@ class PostgresStore:
                 f"TO {quoted_maintenance}"
             )
             await connection.execute(
-                f"GRANT EXECUTE ON FUNCTION fs2_scientific_claim_artifact_removals(integer,uuid,text) "
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_claim_artifact_removals_v2(integer,uuid,text),"
+                f"fs2_scientific_record_artifact_removal_completion_v2("
+                f"uuid,uuid,uuid,text,text,integer,timestamptz,text,text,bigint,bigint,text,text,timestamptz) "
                 f"TO {quoted_artifact_remover}"
             )
             await connection.execute(
-                f"GRANT EXECUTE ON FUNCTION fs2_scientific_claim_artifact_verifications(integer),"
-                f"fs2_scientific_record_artifact_removal("
-                f"uuid,uuid,uuid,text,text,text,text,integer,timestamptz) TO {quoted_artifact_verifier}"
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_claim_artifact_verifications_v2(integer),"
+                f"fs2_scientific_record_artifact_verification_failure_v2("
+                f"uuid,text,integer,integer,timestamptz),"
+                f"fs2_scientific_record_artifact_removal_v2("
+                f"uuid,uuid,uuid,text,text,text,text,bigint,timestamptz,timestamptz,"
+                f"integer,integer,text,text,text,text,text,text,text,text,text,text),"
+                f"fs2_scientific_claim_legacy_artifact_versions_v2(integer),"
+                f"fs2_scientific_record_legacy_artifact_version_scan_v2("
+                f"uuid,integer,timestamptz,text,text,text,text,text,timestamptz),"
+                f"fs2_scientific_record_legacy_artifact_version_v2("
+                f"uuid,uuid,text,text,integer,timestamptz,text,text,text,bigint,text,text,timestamptz),"
+                f"fs2_scientific_legacy_version_rollout_status_v2(),"
+                f"fs2_scientific_mark_schema_bridge_ready_v2("
+                f"text,bigint,text,text,text,text,bigint,bigint,integer,integer,integer,"
+                f"integer,integer,text,text,timestamptz) "
+                f"TO {quoted_artifact_verifier}"
+            )
+            await connection.execute(
+                f"GRANT SELECT ON fs2_schema_rollout_state,fs2_schema_bridge_ready_receipts "
+                f"TO {quoted_artifact_verifier}"
             )
             await connection.execute(
                 f"GRANT SELECT (id,model_id,model_revision,status,attempt,lease_expires_at,deadline_at) "
@@ -711,6 +974,88 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_activation_model_lock_key(text) TO {quoted_activation}"
             )
+            if preserve_predecessor_artifact_authority:
+                rollout_phase = await connection.fetchval(
+                    "SELECT phase FROM fs2_schema_rollout_state WHERE singleton FOR UPDATE"
+                )
+                if rollout_phase != "expanded":
+                    raise RuntimeError("the PostgreSQL contract phase cannot return to expanded")
+                if (
+                    re.fullmatch(r"[^@\s]+@sha256:[a-f0-9]{64}", rollout_bridge_image_ref) is None
+                    or re.fullmatch(
+                        r"[^@\s]+@sha256:[a-f0-9]{64}", rollout_predecessor_image_ref
+                    )
+                    is None
+                    or rollout_release_revision < 1
+                ):
+                    raise RuntimeError("the expanded bridge identity is incomplete")
+                changed = await connection.execute(
+                    "UPDATE fs2_schema_rollout_state SET "
+                    "bridge_image_ref=COALESCE(bridge_image_ref,$1),"
+                    "bridge_release_revision=COALESCE(bridge_release_revision,$2),"
+                    "predecessor_image_ref=COALESCE(predecessor_image_ref,$3),"
+                    "bridge_registered_at=COALESCE(bridge_registered_at,clock_timestamp()) "
+                    "WHERE singleton AND phase='expanded' "
+                    "AND (bridge_image_ref IS NULL OR bridge_image_ref=$1) "
+                    "AND (predecessor_image_ref IS NULL OR predecessor_image_ref=$3)",
+                    rollout_bridge_image_ref,
+                    rollout_release_revision,
+                    rollout_predecessor_image_ref,
+                )
+                if changed != "UPDATE 1":
+                    raise RuntimeError("the expanded bridge identity differs from its durable registration")
+                await connection.execute(
+                    "INSERT INTO fs2_schema_bridge_rollout_attempts("
+                    "bridge_image_ref,predecessor_image_ref,bridge_release_revision) "
+                    "VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+                    rollout_bridge_image_ref,
+                    rollout_predecessor_image_ref,
+                    rollout_release_revision,
+                )
+                # The predecessor image is allowed to finish only the exact
+                # artifact transitions it already owned.  This compatibility
+                # grant is committed atomically with 0031, so running N-1 Pods
+                # never observe a half-contracted schema.  No new v2 ledger or
+                # settlement authority is broadened.
+                await connection.execute(
+                    f"GRANT INSERT ON fs2_scientific_artifacts TO {quoted_runtime}"
+                )
+                await connection.execute(
+                    f"GRANT UPDATE (artifact_id,finalized_at) ON fs2_scientific_uploads TO {quoted_runtime}"
+                )
+                await connection.execute(
+                    f"GRANT UPDATE (expires_at) ON fs2_scientific_artifact_quota_reservations "
+                    f"TO {quoted_runtime}"
+                )
+            else:
+                if require_bridge_ready_receipt:
+                    receipt_ready = await connection.fetchval(
+                        "SELECT EXISTS("
+                        "SELECT 1 FROM fs2_schema_bridge_ready_receipts receipt "
+                        "JOIN fs2_schema_rollout_state rollout ON rollout.singleton "
+                        "JOIN fs2_schema_bridge_rollout_attempts attempt "
+                        "ON attempt.bridge_image_ref=receipt.bridge_image_ref "
+                        "AND attempt.predecessor_image_ref=receipt.predecessor_image_ref "
+                        "AND attempt.bridge_release_revision=receipt.bridge_release_revision "
+                        "WHERE receipt.migration_version='0031_scientific_quota_fencing.sql' "
+                        "AND rollout.phase IN ('expanded','contracted') "
+                        "AND receipt.bridge_image_ref=rollout.bridge_image_ref "
+                        "AND receipt.predecessor_image_ref=rollout.predecessor_image_ref "
+                        "AND receipt.pending_legacy_artifacts=0 "
+                        "AND receipt.unresolved_legacy_artifacts=0)"
+                    )
+                    if not receipt_ready:
+                        raise RuntimeError(
+                            "the PostgreSQL contract phase requires an exact bridge-ready receipt"
+                        )
+                changed = await connection.execute(
+                    "UPDATE fs2_schema_rollout_state "
+                    "SET phase='contracted',contracted_at=COALESCE(contracted_at,clock_timestamp()) "
+                    "WHERE singleton AND phase IN ('expanded','contracted')"
+                )
+                if changed != "UPDATE 1":
+                    raise RuntimeError("the PostgreSQL contract phase row is absent")
+            await privilege_transaction.commit()
 
     async def migrate(self) -> None:
         await self._apply_migrations(self.pool, self.migrations_dir)
@@ -726,6 +1071,11 @@ class PostgresStore:
         activation_role: str = "fs2_serve_activation",
         artifact_remover_role: str = "fs2_serve_artifact_remover",
         artifact_verifier_role: str = "fs2_serve_artifact_verifier",
+        preserve_predecessor_artifact_authority: bool = False,
+        require_bridge_ready_receipt: bool = False,
+        rollout_bridge_image_ref: str = "",
+        rollout_predecessor_image_ref: str = "",
+        rollout_release_revision: int = 0,
     ) -> None:
         """Apply serialized DDL without loading any runtime cryptographic material."""
 
@@ -745,12 +1095,24 @@ class PostgresStore:
                 activation_role,
                 artifact_remover_role,
                 artifact_verifier_role,
+                preserve_predecessor_artifact_authority,
+                require_bridge_ready_receipt,
+                rollout_bridge_image_ref,
+                rollout_predecessor_image_ref,
+                rollout_release_revision,
             )
         finally:
             await pool.close()
 
     @classmethod
-    async def wait_for_schema(cls, database_url: str, migrations_dir: Path, timeout_seconds: float) -> None:
+    async def wait_for_schema(
+        cls,
+        database_url: str,
+        migrations_dir: Path,
+        timeout_seconds: float,
+        *,
+        allow_expanded_contract: bool = False,
+    ) -> None:
         """Wait for the exact packaged migration set using only the runtime DML credential."""
 
         expected = [(path.name, digest) for path, digest in cls._migration_manifest(migrations_dir)]
@@ -784,6 +1146,13 @@ class PostgresStore:
                     raise RuntimeError("an applied migration does not match this immutable image")
                 if applied == expected:
                     async with pool.acquire() as connection:
+                        rollout_phase = await connection.fetchval(
+                            "SELECT phase FROM fs2_schema_rollout_state WHERE singleton"
+                        )
+                        if allow_expanded_contract and rollout_phase == "expanded":
+                            return
+                        if rollout_phase != "contracted":
+                            raise RuntimeError("database schema contract phase is not ready")
                         runtime_privileges_ready = await connection.fetchval(
                             "SELECT "
                             "has_table_privilege('fs2_serve_runtime',"
@@ -826,7 +1195,7 @@ class PostgresStore:
                             "'public.fs2_scientific_artifact_quota_reservations','SELECT')"
                             " AND has_table_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_artifact_quota_reservations','INSERT')"
-                            " AND has_column_privilege('fs2_serve_runtime',"
+                            " AND NOT has_column_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_artifact_quota_reservations','expires_at','UPDATE')"
                             " AND NOT has_column_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_artifact_quota_reservations','state','UPDATE')"
@@ -842,23 +1211,101 @@ class PostgresStore:
                             "'public.fs2_scientific_gpu_settlements','INSERT')"
                             " AND has_function_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_settle_terminal_operation(uuid)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_record_upload_capability_v2("
+                            "uuid,text,uuid,integer,integer,bigint,text,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_claim_upload_session_creation_v2("
+                            "uuid,text,text,uuid,bigint,integer)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_bind_upload_session_v2("
+                            "uuid,text,text,uuid,text,bigint,integer,timestamp with time zone)','EXECUTE')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_upload_session_creation_claims','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_upload_session_creation_claims','INSERT')"
+                            " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_acquire_artifact_finalization_lease_v2("
+                            "uuid,uuid,text,integer,uuid)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_claim_expired_finalization_leases_v2(integer)',"
+                            "'EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_record_finalization_failure_v2("
+                            "uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_finalization_failures','INSERT')"
+                            " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_publish_artifact_v2("
+                            "uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_record_upload_session_aborted_v2("
+                            "uuid,text,integer,text,text,timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_mark_upload_session_completed_v2("
+                            "uuid,text,integer,text,text,text,timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_finalization_leases','INSERT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifacts','INSERT')"
+                            " AND NOT has_column_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_uploads','provider_version_id','UPDATE')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifacts_versioned','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_upload_capabilities','INSERT')"
                             " AND has_function_privilege('fs2_serve_artifact_remover',"
-                            "'public.fs2_scientific_claim_artifact_removals(integer,uuid,text)','EXECUTE')"
+                            "'public.fs2_scientific_claim_stale_upload_session_creations_v2(integer)',"
+                            "'EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_remover',"
+                            "'public.fs2_scientific_record_upload_session_creation_reconciled_v2("
+                            "uuid,text,text,uuid,integer,timestamp with time zone,text,integer,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_remover',"
+                            "'public.fs2_scientific_claim_artifact_removals_v2(integer,uuid,text)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_remover',"
+                            "'public.fs2_scientific_record_artifact_removal_completion_v2("
+                            "uuid,uuid,uuid,text,text,integer,timestamp with time zone,text,text,bigint,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
                             " AND NOT has_function_privilege('fs2_serve_artifact_remover',"
-                            "'public.fs2_scientific_record_artifact_removal("
-                            "uuid,uuid,uuid,text,text,text,text,integer,timestamptz)','EXECUTE')"
+                            "'public.fs2_scientific_record_artifact_removal_v2("
+                            "uuid,uuid,uuid,text,text,text,text,bigint,timestamp with time zone,"
+                            "timestamp with time zone,integer,integer,text,text,text,text,text,text,text,text,text,text)',"
+                            "'EXECUTE')"
                             " AND has_function_privilege('fs2_serve_artifact_verifier',"
-                            "'public.fs2_scientific_claim_artifact_verifications(integer)','EXECUTE')"
+                            "'public.fs2_scientific_claim_artifact_verifications_v2(integer)','EXECUTE')"
                             " AND has_function_privilege('fs2_serve_artifact_verifier',"
-                            "'public.fs2_scientific_record_artifact_removal("
-                            "uuid,uuid,uuid,text,text,text,text,integer,timestamptz)','EXECUTE')"
+                            "'public.fs2_scientific_record_artifact_verification_failure_v2("
+                            "uuid,text,integer,integer,timestamp with time zone)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_verifier',"
+                            "'public.fs2_scientific_record_artifact_removal_v2("
+                            "uuid,uuid,uuid,text,text,text,text,bigint,timestamp with time zone,"
+                            "timestamp with time zone,integer,integer,text,text,text,text,text,text,text,text,text,text)',"
+                            "'EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_verifier',"
+                            "'public.fs2_scientific_claim_legacy_artifact_versions_v2(integer)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_verifier',"
+                            "'public.fs2_scientific_record_legacy_artifact_version_scan_v2("
+                            "uuid,integer,timestamp with time zone,text,text,text,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_verifier',"
+                            "'public.fs2_scientific_record_legacy_artifact_version_v2("
+                            "uuid,uuid,text,text,integer,timestamp with time zone,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
                             " AND NOT has_function_privilege('fs2_serve_artifact_verifier',"
+                            "'public.fs2_scientific_claim_artifact_removals_v2(integer,uuid,text)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_artifact_remover',"
                             "'public.fs2_scientific_claim_artifact_removals(integer,uuid,text)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_artifact_verifier',"
+                            "'public.fs2_scientific_claim_artifact_verifications(integer)','EXECUTE')"
                             " AND has_table_privilege(current_user,"
                             "'public.fs2_scientific_artifact_quota_reservations','SELECT')"
                             " AND has_table_privilege(current_user,"
                             "'public.fs2_scientific_artifact_quota_reservations','INSERT')"
-                            " AND has_column_privilege(current_user,"
+                            " AND NOT has_column_privilege(current_user,"
                             "'public.fs2_scientific_artifact_quota_reservations','expires_at','UPDATE')"
                             " AND NOT has_column_privilege(current_user,"
                             "'public.fs2_scientific_artifact_quota_reservations','state','UPDATE')"

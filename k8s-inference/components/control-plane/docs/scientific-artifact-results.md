@@ -45,10 +45,16 @@ are what the canonical result reports per attempt.
 
 1. **Open the attempt.** The controller registers the attempt before anything
    can be written under it.
-2. **Begin an upload.** The service reserves the content address and returns a
-   short-lived write-once handle. Reusing the same `upload_id` returns the same
-   reservation, so a client that timed out can retry safely.
-3. **Finalize.** The service streams the stored object back from the gateway,
+2. **Begin an upload.** The service reserves tenant bytes and one object,
+   durably claims a server-owned provider multipart session, and always returns
+   the first exact part handle. The default `single-put-v1` is a one-part,
+   at-most-5-GiB compatibility protocol. `multipart-v2` explicitly adds exact
+   part authorization for larger objects. Its wire-level part size is exactly
+   `134217728` bytes (128 MiB): `first_part_sha256` hashes bytes
+   `[0:min(size_bytes,134217728))`, before the begin response exists. Reusing the
+   same `upload_id` returns the same reservation and protocol shape.
+3. **Finalize.** The server—not the caller—completes the provider session,
+   pins the returned VersionId, streams that exact version back from the gateway,
    recomputes its digest, and refuses to publish unless digest, size, media type
    and compression all match the declared intent. Finalize is idempotent:
    concurrent callers get one artifact and one durable event.
@@ -80,10 +86,11 @@ the trigger is even reached.
 ## Handles
 
 Handles are presigned by the AWS SDK, so they carry a real SigV4 signature that
-an unmodified S3-compatible gateway accepts. The upload signature binds the
-object key **and** the declared content type, so a client that uploads different
-bytes under a different media type is rejected by the gateway rather than only
-by finalize.
+an unmodified S3-compatible gateway accepts. Upload handles authorize only one
+server-owned multipart generation, exact part number, exact content length and
+exact SHA-256 checksum. They cannot call CompleteMultipartUpload, create
+versions, choose another key, or fan out replay into noncurrent object versions.
+Reissuing one part is bound to the same size and checksum.
 
 Handles live at most fifteen minutes, default to ten, and are never persisted.
 The deadline is stamped from the same wall clock the SDK signs with, because
@@ -157,6 +164,12 @@ absent credentials.
 | `scientificArtifacts.addressingStyle` | `FS2_ARTIFACT_STORE_ADDRESSING_STYLE` | `path` or `virtual` |
 | `scientificArtifacts.handleTtlSeconds` | `FS2_ARTIFACT_HANDLE_TTL_SECONDS` | 30 to 900 |
 | `scientificArtifacts.maxBytes` | `FS2_ARTIFACT_MAX_BYTES` | |
+| `scientificArtifacts.tenantQuotaBytes` | `FS2_ARTIFACT_TENANT_QUOTA_BYTES` | Per-tenant retained byte reservation ceiling |
+| `scientificArtifacts.tenantQuotaObjects` | `FS2_ARTIFACT_TENANT_QUOTA_OBJECTS` | Includes zero-byte intents |
+| `scientificArtifacts.uploadReservationTtlSeconds` | `FS2_ARTIFACT_UPLOAD_RESERVATION_TTL_SECONDS` | At least the configured handle TTL; completion/stability grace is added separately |
+| `scientificArtifacts.uploadCompletionGraceSeconds` | `FS2_ARTIFACT_UPLOAD_COMPLETION_GRACE_SECONDS` | Fences a PUT begun before capability expiry |
+| `scientificArtifacts.providerStabilityGraceSeconds` | `FS2_ARTIFACT_PROVIDER_STABILITY_GRACE_SECONDS` | Quiet interval before stable double-snapshot verification |
+| `scientificArtifacts.multipartWritesEnabled` | `FS2_ARTIFACT_MULTIPART_WRITES_ENABLED` | Forward-compatible rollback gate for new begin/part/inline writes |
 | `scientificArtifacts.inlineContentMaxBytes` | `FS2_ARTIFACT_INLINE_CONTENT_MAX_BYTES` | Gateway byte ceiling; at most `max_request_bytes` |
 | `scientificArtifacts.retentionSeconds` | `FS2_ARTIFACT_RETENTION_SECONDS` | |
 | `scientificArtifacts.mediaTypes` | `FS2_ARTIFACT_MEDIA_TYPES` | Exact allowlist |
@@ -176,7 +189,9 @@ stage, attempt, or upload identity. `POST /v1/scientific-artifacts/uploads`
 requires `inference.invoke`, a permitted target model, and an
 `Idempotency-Key`. It creates an isolated
 `scientific-artifact-upload-v1` Operation plus deterministic attempt/upload
-identities, then returns the write-once handle. Generic inference workers
+identities, then returns the required first-part handle and explicit
+`upload_protocol`. Omitting the protocol selects the backward-compatible
+`single-put-v1` response and idempotency bytes. Generic inference workers
 explicitly exclude this protocol. Finalization independently verifies the
 stored bytes and terminalizes the upload Operation as `artifact_uploaded`.
 
@@ -202,6 +217,7 @@ object-store access either:
 | MCP tool | HTTP equivalent |
 | --- | --- |
 | `begin_scientific_artifact_upload` | `POST /v1/scientific-artifacts/uploads` |
+| `authorize_scientific_artifact_upload_part` | `POST /v1/scientific-artifacts/uploads/{id}/parts/{part}:authorize` |
 | trusted-client upload handle/content path | `PUT /v1/scientific-artifacts/uploads/{id}/content` |
 | `finalize_scientific_artifact_upload` | `POST /v1/scientific-artifacts/uploads/{id}:finalize` |
 | `submit_scientific_run` | `POST /v1/models/{model_id}:submit` |

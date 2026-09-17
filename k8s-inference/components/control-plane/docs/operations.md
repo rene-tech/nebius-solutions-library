@@ -352,7 +352,7 @@ fs2-serve postgresql-release-contract
 ```
 
 The emitter verifies that the migration directory contains exactly the ordered
-`0001` through `0030` set, no missing/extra/renamed/symlinked file, and the
+`0001` through `0031` set, no missing/extra/renamed/symlinked file, and the
 contracted SHA-256 for every file. The migrator and `wait-schema` use the same
 validator. They also require the applied migration ledger to be an exact
 ordered prefix while an upgrade is running and the exact full set before a
@@ -360,17 +360,41 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`714d1456b60c8ccc74b0dca40d1f486bd116a85f586a258c386e5d9d5aae4c22`,
-count `30`, first version `0001_initial.sql`, last version
-`0030_scientific_quota_settlement.sql`,
+`1bc495f57002004a6032b8a9b209c4563b2e9e788698f21c60550cded947a7bd`,
+count `31`, first version `0001_initial.sql`, last version
+`0031_scientific_quota_fencing.sql`,
 and namespace/role ownership SHA-256
 `cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580`.
 The whole logical contract payload is SHA-256
-`df94dc4d76eb783d618aaecc1b9767a3896dc4bb93353cb0d786fa41f7312185`.
+`b28f0f1e6e6e749e2e1c5d1c205e393a2f11f019a2d65219636e11872492bbb3`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not
 special-case an individual migration number.
+
+An existing installation uses the explicit PostgreSQL sequence
+`prepare -> expand -> contract -> activate`. Prepare keeps the pre-0031 image
+serving and binds both a distinct 0031-aware bridge image and the feature image
+to immutable, credential-free migration receipts. Expand applies 0031 and
+serves the bridge with new multipart writes disabled; it deliberately disables
+automatic Helm rollback because the previous image cannot parse a 31-entry
+ledger. Contract removes the temporary predecessor artifact grants and rolls
+to the feature image. From that point Helm rollback and the explicit
+`rollback` phase target the already prepared 0031-aware bridge, never the
+pre-0031 image. Expand and rollback also run the verifier-owned bridge-readiness
+Job after the Deployment is Ready. The Job binds Kubernetes API server time,
+audit identity, Deployment UID/generation and the exact Ready Pod-set digest to
+an append-only database receipt, after zero unresolved legacy artifact pins and
+zero unfinished uploads without sessions. Contract refuses to run without that
+receipt and verifies the complete exact migration and 0031 step ledgers before
+the generic migrator reaches any DDL path; `migrate-contract` therefore cannot
+perform expansion. Retry revisions append attempts without invalidating an
+earlier valid receipt. The Job can `get` only its resource-name-bound Deployment
+and can only `list` Pods, has denied ingress, and permits only
+DNS/database/object-store/bounded-API egress. Fresh installs carry no
+predecessor registration and therefore use per-reservation cleanup fences
+without an upgrade receipt. Activate alone enables new multipart writes. Exact image and
+contract hashes are updated together only after the migration bytes are sealed.
 
 The namespace split is deliberate and must not be collapsed: CloudNativePG
 Cluster `fs2-control-db`, its `fs2-control-db-rw` Service, database `fs2serve`,

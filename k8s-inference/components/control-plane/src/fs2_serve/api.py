@@ -14,7 +14,7 @@ from typing import Annotated, Any
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
-from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Path, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry import trace
@@ -128,6 +128,7 @@ from .scientific_artifacts import (
     ArtifactPolicyError,
     ArtifactQuotaExceededError,
     ArtifactVerificationError,
+    ArtifactWritesDisabledError,
     ScientificArtifactControllerPort,
 )
 from .scientific_batch.artifact_bridge import SignedArtifactContentReader
@@ -145,9 +146,11 @@ from .scientific_batch.workload_routes import WorkloadBatchRepository, scientifi
 from .scientific_input_uploads import (
     ScientificInputUpload,
     ScientificInputUploadFinalizeRequest,
+    ScientificInputUploadPartRequest,
     ScientificInputUploadReceipt,
     ScientificInputUploadRequest,
     ScientificInputUploadService,
+    UploadHandle,
 )
 from .scientific_run_result import ArtifactRef
 from .settings import Settings
@@ -866,6 +869,10 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     async def artifact_policy(_: Request, __: ArtifactPolicyError) -> JSONResponse:
         return _error(422, "artifact_policy_rejected", "scientific artifact policy rejected the request")
 
+    @app.exception_handler(ArtifactWritesDisabledError)
+    async def artifact_writes_disabled(_: Request, __: ArtifactWritesDisabledError) -> JSONResponse:
+        return _error(503, "artifact_writes_disabled", "new scientific artifact writes are temporarily paused")
+
     @app.exception_handler(ArtifactQuotaExceededError)
     async def artifact_quota_exceeded(_: Request, __: ArtifactQuotaExceededError) -> JSONResponse:
         return _error(429, "artifact_quota_exceeded", "tenant artifact byte or object quota is exhausted")
@@ -1284,6 +1291,30 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 "x-fs2-artifact-sha256": receipt.sha256,
             },
         )
+
+    @app.post(
+        "/v1/scientific-artifacts/uploads/{upload_id}/parts/{part_number}:authorize",
+        response_model=UploadHandle,
+    )
+    async def scientific_input_upload_part(
+        upload_id: UUID,
+        part_number: Annotated[int, Path(ge=1, le=10_000)],
+        request: ScientificInputUploadPartRequest,
+        identity: Annotated[Principal, Depends(principal)],
+        operation_id: Annotated[UUID, Query()],
+    ) -> Response:
+        if runtime.scientific_input_uploads is None:
+            return _error(503, "scientific_artifact_upload_unavailable", "scientific input upload is disabled")
+        if request.operation_id != operation_id:
+            raise HTTPException(status_code=409, detail="upload operation identity differs")
+        result = await runtime.scientific_input_uploads.authorize_part(
+            principal=identity,
+            operation_id=operation_id,
+            upload_id=upload_id,
+            part_number=part_number,
+            request=request,
+        )
+        return JSONResponse(result.model_dump(mode="json"), headers={"cache-control": "no-store"})
 
     @app.post("/v1/scientific-artifacts/uploads/{upload_id}:finalize", response_model=ArtifactRef)
     async def scientific_input_upload_finalize(

@@ -463,7 +463,7 @@ def smoke(arguments: argparse.Namespace) -> dict[str, Any]:
         "required_probes": list(REQUIRED_ABSENCE_PROBES),
         "verified_absent": verified,
         # Anything the object-scoped role could not remove is reclaimed by the
-        # bucket's one-day noncurrent-version and delete-marker rules.
+        # bucket's application-retention noncurrent-version and delete-marker rules.
         "residual_reclaimed_by": "expire-noncurrent-versions,remove-expired-delete-markers",
     }
 

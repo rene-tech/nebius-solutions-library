@@ -62,7 +62,10 @@ output "effective_configuration" {
       max_artifact_bytes      = var.deployment.storage.scientific_artifacts.max_artifact_bytes
       tenant_quota_bytes      = var.deployment.storage.scientific_artifacts.tenant_quota_bytes
       tenant_quota_objects    = var.deployment.storage.scientific_artifacts.tenant_quota_objects
+      multipart_writes_enabled = var.deployment.storage.scientific_artifacts.multipart_writes_enabled
       upload_reservation_ttl_seconds = var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds
+      upload_completion_grace_seconds = var.deployment.storage.scientific_artifacts.upload_completion_grace_seconds
+      provider_stability_grace_seconds = var.deployment.storage.scientific_artifacts.provider_stability_grace_seconds
       media_types             = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
       egress_cidrs            = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
       secret_delivery         = "MYSTERY_BOX"

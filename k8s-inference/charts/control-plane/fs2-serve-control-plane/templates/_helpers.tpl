@@ -60,6 +60,16 @@ app.kubernetes.io/component: artifact-remover
 app.kubernetes.io/component: artifact-verifier
 {{- end -}}
 
+{{- define "fs2-serve.schemaBridgeSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: schema-bridge-ready
+{{- end -}}
+
+{{- define "fs2-serve.artifactFinalizerSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: artifact-finalizer
+{{- end -}}
+
 {{- define "fs2-serve.migrationSelectorLabels" -}}
 {{ include "fs2-serve.selectorLabels" . }}
 app.kubernetes.io/component: migration
@@ -93,6 +103,42 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.image" -}}
 {{- printf "%s@%s" .Values.image.repository .Values.image.digest -}}
+{{- end -}}
+
+{{- define "fs2-serve.schemaRolloutImage" -}}
+{{- $repository := default .Values.image.repository .Values.migration.targetImage.repository -}}
+{{- $digest := default .Values.image.digest .Values.migration.targetImage.digest -}}
+{{- printf "%s@%s" $repository $digest -}}
+{{- end -}}
+
+{{- define "fs2-serve.schemaRollbackImage" -}}
+{{- printf "%s@%s" .Values.migration.rollbackImage.repository .Values.migration.rollbackImage.digest -}}
+{{- end -}}
+
+{{- define "fs2-serve.schemaMigrationImage" -}}
+{{- if has .Values.migration.rolloutPhase (list "expand" "rollback") -}}
+{{- include "fs2-serve.schemaRollbackImage" . -}}
+{{- else -}}
+{{- include "fs2-serve.schemaRolloutImage" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "fs2-serve.schemaRolloutPrepareReceiptName" -}}
+{{- $digest := default .Values.image.digest .Values.migration.targetImage.digest | trimPrefix "sha256:" -}}
+{{- printf "%s-schema-prepare-%s" (include "fs2-serve.fullname" .) ($digest | trunc 12) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fs2-serve.schemaRollbackPrepareReceiptName" -}}
+{{- $digest := .Values.migration.rollbackImage.digest | trimPrefix "sha256:" -}}
+{{- printf "%s-schema-rollback-%s" (include "fs2-serve.fullname" .) ($digest | trunc 12) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "fs2-serve.schemaMigrationPrepareReceiptName" -}}
+{{- if has .Values.migration.rolloutPhase (list "expand" "rollback") -}}
+{{- include "fs2-serve.schemaRollbackPrepareReceiptName" . -}}
+{{- else -}}
+{{- include "fs2-serve.schemaRolloutPrepareReceiptName" . -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "fs2-serve.adminConsoleImage" -}}
@@ -143,6 +189,8 @@ app.kubernetes.io/component: model-controller
 {{- if .Values.scientificArtifacts.enabled }}
 - name: FS2_SCIENTIFIC_ARTIFACTS_ENABLED
   value: "true"
+- name: FS2_ARTIFACT_MULTIPART_WRITES_ENABLED
+  value: {{ and (eq .Values.migration.rolloutPhase "activate") .Values.scientificArtifacts.multipartWritesEnabled | quote }}
 - name: FS2_ARTIFACT_STORE_ENDPOINT
   value: {{ required "scientificArtifacts.endpoint is required" .Values.scientificArtifacts.endpoint | quote }}
 - name: FS2_ARTIFACT_STORE_BUCKET
@@ -165,6 +213,10 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.scientificArtifacts.tenantQuotaObjects | int64 | quote }}
 - name: FS2_ARTIFACT_UPLOAD_RESERVATION_TTL_SECONDS
   value: {{ .Values.scientificArtifacts.uploadReservationTtlSeconds | int64 | quote }}
+- name: FS2_ARTIFACT_UPLOAD_COMPLETION_GRACE_SECONDS
+  value: {{ .Values.scientificArtifacts.uploadCompletionGraceSeconds | int64 | quote }}
+- name: FS2_ARTIFACT_PROVIDER_STABILITY_GRACE_SECONDS
+  value: {{ .Values.scientificArtifacts.providerStabilityGraceSeconds | int64 | quote }}
 - name: FS2_ARTIFACT_INLINE_CONTENT_MAX_BYTES
   value: {{ .Values.scientificArtifacts.inlineContentMaxBytes | int64 | quote }}
 - name: FS2_ARTIFACT_RETENTION_SECONDS
@@ -434,6 +486,16 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.migration.artifactVerifierDatabaseRole | quote }}
 - name: FS2_ACTIVATION_DATABASE_ROLE
   value: {{ .Values.migration.activationDatabaseRole | quote }}
+- name: FS2_SCHEMA_ROLLOUT_PREPARE_RECEIPT_FILE
+  value: /etc/fs2-serve/schema-rollout/prepare-receipt.json
+- name: FS2_SCHEMA_ROLLOUT_EXPECTED_IMAGE_REF
+  value: {{ include "fs2-serve.schemaMigrationImage" . | quote }}
+- name: FS2_SCHEMA_ROLLOUT_BRIDGE_IMAGE_REF
+  value: {{ include "fs2-serve.schemaRollbackImage" . | quote }}
+- name: FS2_SCHEMA_ROLLOUT_PREDECESSOR_IMAGE_REF
+  value: {{ printf "%s@%s" .Values.migration.predecessorImage.repository .Values.migration.predecessorImage.digest | quote }}
+- name: FS2_SCHEMA_ROLLOUT_RELEASE_REVISION
+  value: {{ .Release.Revision | quote }}
 {{- end -}}
 
 {{- define "fs2-serve.schemaWaitEnv" -}}
@@ -452,9 +514,38 @@ app.kubernetes.io/component: model-controller
 {{ include "fs2-serve.scientificArtifactsEnv" . }}
 {{- end -}}
 
+{{- define "fs2-serve.artifactFinalizationEnv" -}}
+{{ include "fs2-serve.databaseEnv" . }}
+{{ include "fs2-serve.scientificArtifactsEnv" . }}
+{{- end -}}
+
 {{- define "fs2-serve.artifactVerificationEnv" -}}
 {{ include "fs2-serve.artifactVerificationDatabaseEnv" . }}
 {{ include "fs2-serve.scientificArtifactsEnv" . }}
+{{- end -}}
+
+{{- define "fs2-serve.schemaBridgeEnv" -}}
+{{ include "fs2-serve.artifactVerificationEnv" . }}
+- name: FS2_SCHEMA_ROLLOUT_BRIDGE_IMAGE_REF
+  value: {{ include "fs2-serve.schemaRollbackImage" . | quote }}
+- name: FS2_SCHEMA_ROLLOUT_PREDECESSOR_IMAGE_REF
+  value: {{ printf "%s@%s" .Values.migration.predecessorImage.repository .Values.migration.predecessorImage.digest | quote }}
+- name: FS2_SCHEMA_ROLLOUT_RELEASE_REVISION
+  value: {{ .Release.Revision | quote }}
+- name: FS2_SCHEMA_BRIDGE_READINESS_DEADLINE_SECONDS
+  value: {{ .Values.migration.bridgeReadinessDeadlineSeconds | quote }}
+- name: FS2_SCHEMA_BRIDGE_KUBERNETES_API_URL
+  value: https://kubernetes.default.svc
+- name: FS2_SCHEMA_BRIDGE_KUBERNETES_TOKEN_FILE
+  value: /var/run/secrets/fs2-serve/schema-bridge-kubernetes/token
+- name: FS2_SCHEMA_BRIDGE_KUBERNETES_CA_FILE
+  value: /var/run/secrets/fs2-serve/schema-bridge-kubernetes/ca.crt
+- name: FS2_SCHEMA_BRIDGE_NAMESPACE
+  value: {{ .Release.Namespace | quote }}
+- name: FS2_SCHEMA_BRIDGE_DEPLOYMENT_NAME
+  value: {{ include "fs2-serve.fullname" . | quote }}
+- name: FS2_SCHEMA_BRIDGE_RELEASE_NAME
+  value: {{ .Release.Name | quote }}
 {{- end -}}
 
 {{- define "fs2-serve.cryptoVolumeMounts" -}}

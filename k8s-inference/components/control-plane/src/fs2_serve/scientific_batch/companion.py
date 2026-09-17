@@ -45,6 +45,8 @@ _ARTIFACT_DOWNLOAD_MAX_ATTEMPTS = 5
 _ARTIFACT_DOWNLOAD_BASE_BACKOFF_SECONDS = 0.5
 _ARTIFACT_UPLOAD_MAX_ATTEMPTS = 5
 _ARTIFACT_UPLOAD_BASE_BACKOFF_SECONDS = 0.5
+_ARTIFACT_SINGLE_PART_MAX_BYTES = 5 * 1024 * 1024 * 1024
+_ARTIFACT_MULTIPART_PART_BYTES = 128 * 1024 * 1024
 RUNTIME_LOCALIZATION_SCHEMA = "fs2-serve.nebius.ai/runtime-localization-marker/v1"
 RUNTIME_TREE_IDENTITY_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
 RUNTIME_TREE_IDENTITY_FILE = ".fs2-runtime-tree.json"
@@ -753,21 +755,60 @@ class WorkloadArtifactHttpClient:
             "media_type": media_type,
             "compression": compression,
         }
+        multipart = len(content) > _ARTIFACT_SINGLE_PART_MAX_BYTES
+        first_part = content[:_ARTIFACT_MULTIPART_PART_BYTES] if multipart else content
+        if multipart:
+            request["upload_protocol"] = "multipart-v2"
+            request["first_part_sha256"] = hashlib.sha256(first_part).hexdigest()
         begun = self._upload_request(
             "POST",
             f"{self.base_url}/internal/scientific-workloads/uploads",
             headers=self.headers,
             json_body=request,
         )
-        handle = begun.json()["handle"]
-        if handle.get("method") != "PUT":
-            raise ValueError("artifact service returned a non-upload handle")
-        self._upload_request(
-            "PUT",
-            handle["url"],
-            headers=handle.get("headers", {}),
-            content=content,
-        )
+        pointer = cast(dict[str, Any], begun.json())
+        if multipart:
+            if pointer.get("upload_protocol") != "multipart-v2":
+                raise ValueError("artifact service did not accept the requested multipart protocol")
+            part_size = pointer.get("part_size_bytes")
+            part_count = pointer.get("part_count")
+            session_generation = pointer.get("session_generation")
+            if (
+                part_size != _ARTIFACT_MULTIPART_PART_BYTES
+                or not isinstance(part_count, int)
+                or part_count != (len(content) + part_size - 1) // part_size
+                or not isinstance(session_generation, int)
+            ):
+                raise ValueError("artifact service returned a different multipart shape")
+        else:
+            part_size = len(content)
+            part_count = 1
+            session_generation = None
+        for part_number in range(1, part_count + 1):
+            part = content[(part_number - 1) * part_size : part_number * part_size]
+            if part_number == 1:
+                handle = cast(dict[str, Any], pointer["handle"])
+            else:
+                authorized = self._upload_request(
+                    "POST",
+                    f"{self.base_url}/internal/scientific-workloads/uploads/"
+                    f"{upload_id}/parts/{part_number}:authorize",
+                    headers=self.headers,
+                    json_body={
+                        "session_generation": session_generation,
+                        "size_bytes": len(part),
+                        "sha256": hashlib.sha256(part).hexdigest(),
+                    },
+                )
+                handle = cast(dict[str, Any], authorized.json())
+            if handle.get("method") != "PUT":
+                raise ValueError("artifact service returned a non-upload handle")
+            self._upload_request(
+                "PUT",
+                handle["url"],
+                headers=handle.get("headers", {}),
+                content=part,
+            )
         finalized = self._upload_request(
             "POST",
             f"{self.base_url}/internal/scientific-workloads/uploads/{upload_id}:finalize",

@@ -69,6 +69,41 @@ class Settings(BaseSettings):
     federation_secret_dir: Path = Path("/var/run/secrets/fs2-serve/federation")
     repo_root: Path | None = None
     migrations_dir: Path = _default_migrations_dir()
+    schema_rollout_prepare_receipt_file: Path = Path(
+        "/etc/fs2-serve/schema-rollout/prepare-receipt.json"
+    )
+    schema_rollout_expected_image_ref: str = ""
+    schema_rollout_bridge_image_ref: str = ""
+    schema_rollout_predecessor_image_ref: str = ""
+    schema_rollout_release_revision: int = Field(default=0, ge=0)
+    schema_bridge_readiness_deadline_seconds: int = Field(default=86400, ge=600, le=172800)
+    schema_bridge_kubernetes_api_url: str = Field(
+        default="https://kubernetes.default.svc", min_length=1, max_length=2048
+    )
+    schema_bridge_kubernetes_token_file: Path = Path(
+        "/var/run/secrets/fs2-serve/schema-bridge-kubernetes/token"
+    )
+    schema_bridge_kubernetes_ca_file: Path = Path(
+        "/var/run/secrets/fs2-serve/schema-bridge-kubernetes/ca.crt"
+    )
+    schema_bridge_namespace: str = Field(
+        default="fs2-system",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+    )
+    schema_bridge_deployment_name: str = Field(
+        default="fs2-serve-control-plane",
+        min_length=1,
+        max_length=253,
+        pattern=r"^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?$",
+    )
+    schema_bridge_release_name: str = Field(
+        default="fs2-serve-control-plane",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+    )
     token_pepper_file: Path = Path("/var/run/secrets/fs2-serve/token-pepper")
     payload_keyring_file: Path = Path("/var/run/secrets/fs2-serve/payload-keyring.json")
     ledger_hmac_keyring_file: Path = Path("/var/run/secrets/fs2-serve/ledger-hmac-keyring.json")
@@ -272,6 +307,9 @@ class Settings(BaseSettings):
     artifact_tenant_quota_bytes: int = Field(default=1 << 40, ge=1024, le=1 << 40)
     artifact_tenant_quota_objects: int = Field(default=4096, ge=1, le=1_000_000)
     artifact_upload_reservation_ttl_seconds: int = Field(default=86400, ge=30, le=604800)
+    artifact_upload_completion_grace_seconds: int = Field(default=900, ge=60, le=3600)
+    artifact_provider_stability_grace_seconds: int = Field(default=300, ge=30, le=3600)
+    artifact_multipart_writes_enabled: bool = True
     # The exact ceiling for artifact bytes carried through the public gateway
     # itself. A larger object remains reachable only through a presigned
     # handle, so this bound must never exceed what the edge will accept.
@@ -399,7 +437,7 @@ class Settings(BaseSettings):
             if self.artifact_tenant_quota_bytes < self.artifact_max_bytes:
                 raise ValueError("artifact_tenant_quota_bytes cannot be smaller than artifact_max_bytes")
             if self.artifact_upload_reservation_ttl_seconds < self.artifact_handle_ttl_seconds:
-                raise ValueError("artifact upload reservation cannot expire before its handle")
+                raise ValueError("artifact upload reservation must cover the configured handle lifetime")
             if self.artifact_upload_reservation_ttl_seconds > self.artifact_retention_seconds:
                 raise ValueError("artifact upload reservation cannot exceed artifact retention")
         database_roles = {

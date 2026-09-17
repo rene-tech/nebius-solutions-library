@@ -1,0 +1,121 @@
+{{- if and .Release.IsUpgrade (eq .Values.migration.rolloutPhase "prepare") }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-schema-prepare-candidate
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: schema-rollout-prepare
+  annotations:
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.migrationSelectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "migration") }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: validate
+          image: {{ include "fs2-serve.schemaRolloutImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["validate-schema-rollout-image"]
+          env:
+            - name: FS2_SCHEMA_ROLLOUT_PREPARE_RECEIPT_FILE
+              value: /etc/fs2-serve/schema-rollout/prepare-receipt.json
+            - name: FS2_SCHEMA_ROLLOUT_EXPECTED_IMAGE_REF
+              value: {{ include "fs2-serve.schemaRolloutImage" . | quote }}
+          volumeMounts:
+            - name: schema-rollout-prepare-receipt
+              mountPath: /etc/fs2-serve/schema-rollout
+              readOnly: true
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: schema-rollout-prepare-receipt
+          configMap:
+            name: {{ include "fs2-serve.schemaRolloutPrepareReceiptName" . }}
+            items:
+              - key: prepare-receipt.json
+                path: prepare-receipt.json
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-schema-prepare-rollback
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: schema-rollout-prepare
+  annotations:
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.migrationSelectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "migration") }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: validate
+          image: {{ include "fs2-serve.schemaRollbackImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["validate-schema-rollout-image"]
+          env:
+            - name: FS2_SCHEMA_ROLLOUT_PREPARE_RECEIPT_FILE
+              value: /etc/fs2-serve/schema-rollout/prepare-receipt.json
+            - name: FS2_SCHEMA_ROLLOUT_EXPECTED_IMAGE_REF
+              value: {{ include "fs2-serve.schemaRollbackImage" . | quote }}
+          volumeMounts:
+            - name: schema-rollout-prepare-receipt
+              mountPath: /etc/fs2-serve/schema-rollout
+              readOnly: true
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: schema-rollout-prepare-receipt
+          configMap:
+            name: {{ include "fs2-serve.schemaRollbackPrepareReceiptName" . }}
+            items:
+              - key: prepare-receipt.json
+                path: prepare-receipt.json
+{{- end }}

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Final
 
 SCHEMA: Final = "fs2-serve.nebius.ai/postgresql-release-contract/v1"
+SCHEMA_ROLLOUT_PREPARE_SCHEMA: Final = "fs2-serve.nebius.ai/postgresql-schema-rollout-prepare/v1"
 CANONICALIZATION: Final = "utf8-json-sort-keys-no-whitespace"
 
 EXPECTED_MIGRATIONS: Final = (
@@ -100,6 +102,10 @@ EXPECTED_MIGRATIONS: Final = (
     (
         "0030_scientific_quota_settlement.sql",
         "66d7c443254945b82b1c8f36c32953292b5e5c7f5f1c7c70ee05dbb88040356b",
+    ),
+    (
+        "0031_scientific_quota_fencing.sql",
+        "f512ef0808cbe3f1bb273aef61b7c6dc531e2a7c5a8afe5fdba739ee8590578d",
     ),
 )
 
@@ -307,3 +313,30 @@ def render_postgresql_release_contract(migrations_dir: Path) -> bytes:
     """Emit stable non-secret JSON for the final PostgreSQL release receipt."""
 
     return (json.dumps(build_postgresql_release_contract(migrations_dir), indent=2, sort_keys=True) + "\n").encode()
+
+
+def build_schema_rollout_prepare_receipt(migrations_dir: Path, image_ref: str) -> dict[str, Any]:
+    """Bind a pre-pulled rollback-compatible image to the exact schema contract."""
+
+    if re.fullmatch(r"[^@\s]+@sha256:[a-f0-9]{64}", image_ref) is None:
+        raise RuntimeError("schema-rollout image must use an immutable SHA-256 digest")
+    contract = build_postgresql_release_contract(migrations_dir)
+    required = contract["required_release_receipt_inputs"]
+    return {
+        "schema": SCHEMA_ROLLOUT_PREPARE_SCHEMA,
+        "image_ref": image_ref,
+        "postgresql_contract_payload_sha256": contract["contract_payload_sha256"],
+        "migration_set_sha256": required["migration_set_sha256"],
+        "migration_count": required["migration_count"],
+        "last_migration_version": required["last_migration_version"],
+        "new_multipart_sessions_gate_supported": True,
+    }
+
+
+def validate_schema_rollout_prepare_receipt(
+    value: object, migrations_dir: Path, image_ref: str
+) -> dict[str, Any]:
+    expected = build_schema_rollout_prepare_receipt(migrations_dir, image_ref)
+    if value != expected:
+        raise RuntimeError("schema-rollout prepare receipt differs from this exact image and migration set")
+    return expected

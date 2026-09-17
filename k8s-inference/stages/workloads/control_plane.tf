@@ -21,6 +21,13 @@ locals {
     [local.admin_model_namespace],
     local.admin_scientific_namespaces,
   )))
+  control_plane_serving_image = (
+    var.control_plane_schema_rollout_phase == "prepare"
+    ? var.control_plane_predecessor_image
+    : contains(["expand", "rollback"], var.control_plane_schema_rollout_phase)
+    ? var.control_plane_rollback_image
+    : var.control_plane_image
+  )
   control_plane_overrides = {
     replicaCount = 2
     autoscaling = {
@@ -34,9 +41,25 @@ locals {
       maxSurge       = var.control_plane_rollout.max_surge
     }
     image = {
-      repository = var.control_plane_image.repository
-      digest     = var.control_plane_image.digest
+      repository = local.control_plane_serving_image.repository
+      digest     = local.control_plane_serving_image.digest
       pullPolicy = "IfNotPresent"
+    }
+    migration = {
+      rolloutPhase = var.control_plane_schema_rollout_phase
+      bridgeReadinessDeadlineSeconds = var.control_plane_schema_bridge_readiness_deadline_seconds
+      targetImage = {
+        repository = var.control_plane_image.repository
+        digest     = var.control_plane_image.digest
+      }
+      rollbackImage = {
+        repository = var.control_plane_rollback_image.repository
+        digest     = var.control_plane_rollback_image.digest
+      }
+      predecessorImage = {
+        repository = var.control_plane_predecessor_image.repository
+        digest     = var.control_plane_predecessor_image.digest
+      }
     }
     # Publish the tenant-private academic delivery contract to the chart so a model
     # runtime learns which claim to mount, where, and which group grants read
@@ -227,11 +250,20 @@ resource "helm_release" "control_plane" {
   namespace        = "fs2-system"
   chart            = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
   create_namespace = false
-  atomic           = true
-  cleanup_on_fail  = true
+  atomic = !contains([
+    "expand",
+    "rollback",
+  ], var.control_plane_schema_rollout_phase)
+  cleanup_on_fail = !contains([
+    "expand",
+    "rollback",
+  ], var.control_plane_schema_rollout_phase)
   wait             = true
   wait_for_jobs    = true
-  timeout          = 1800
+  timeout = contains([
+    "expand",
+    "rollback",
+  ], var.control_plane_schema_rollout_phase) ? var.control_plane_schema_bridge_readiness_deadline_seconds + 1800 : 1800
 
   values = [
     file("${local.fs2_root}/charts/control-plane/control-plane.values.yaml"),
@@ -243,6 +275,17 @@ resource "helm_release" "control_plane" {
   ]
 
   lifecycle {
+    precondition {
+      condition = (
+        var.control_plane_schema_rollout_phase != "prepare" ||
+        (
+          var.control_plane_predecessor_image != var.control_plane_image &&
+          var.control_plane_predecessor_image != var.control_plane_rollback_image &&
+          var.control_plane_image != var.control_plane_rollback_image
+        )
+      )
+      error_message = "Prepare must keep the predecessor serving while preflighting distinct 0031-aware target and rollback images."
+    }
     precondition {
       condition = (
         local.observability_operator.schema == "fs2-serve.nebius.ai/observability-operator/v1" &&

@@ -46,7 +46,7 @@ locals {
       status                            = "ENABLED"
       abort_incomplete_multipart_upload = null
       expiration                        = null
-      noncurrent_version_expiration     = { noncurrent_days = 1, newer_noncurrent_versions = null }
+      noncurrent_version_expiration     = { noncurrent_days = var.scientific_artifacts.retention_days, newer_noncurrent_versions = null }
       noncurrent_version_transition     = null
       transition                        = null
     },

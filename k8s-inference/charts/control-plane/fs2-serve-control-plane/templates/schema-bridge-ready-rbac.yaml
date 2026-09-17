@@ -1,0 +1,33 @@
+{{- if and .Release.IsUpgrade .Values.artifactMaintenance.enabled .Values.scientificArtifacts.enabled (has .Values.migration.rolloutPhase (list "expand" "rollback")) }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-schema-bridge-reader
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: schema-bridge-ready
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: [{{ include "fs2-serve.fullname" . | quote }}]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-schema-bridge-reader
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: schema-bridge-ready
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "artifact-verifier") }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fs2-serve.fullname" . }}-schema-bridge-reader
+{{- end }}

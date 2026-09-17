@@ -34,12 +34,15 @@ from fs2_serve.models import OperationStatus, OperationView, Principal, Scope, T
 from fs2_serve.runtime import StubRuntimeClient
 from fs2_serve.scientific_artifacts import (
     ArtifactAccess,
+    ArtifactDeletionEvidence,
     ArtifactDirection,
     ArtifactDownload,
     ArtifactRecord,
     ArtifactRemovalEvidence,
     ArtifactRemovalEvidenceKind,
+    ArtifactRemovalTarget,
     ArtifactServiceError,
+    ArtifactUploadSession,
     AttemptStatus,
     BeginArtifactUpload,
     BeginUploadResult,
@@ -53,6 +56,7 @@ from fs2_serve.scientific_artifacts import (
     UploadIntent,
     VerifiedStoredObject,
     artifact_storage_key,
+    artifact_absence_claim_digest,
 )
 from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge
 from fs2_serve.scientific_batch.capability import ScientificWorkloadCapabilityAuthority
@@ -3894,6 +3898,16 @@ async def test_workload_capability_materializes_and_commits_through_single_artif
             self.uploads[request.upload_id] = intent
             return BeginUploadResult(
                 upload=intent,
+                session=ArtifactUploadSession(
+                    upload_id=request.upload_id,
+                    tenant_id=request.tenant_id,
+                    storage_key=intent.storage_key,
+                    provider_upload_id=f"test-{request.upload_id}",
+                    session_generation=1,
+                    part_size_bytes=5 * 1024 * 1024,
+                    part_count=1,
+                    initiated_at=now,
+                ),
                 handle=EphemeralHandle(
                     method="PUT",
                     url=f"https://objects.test/{request.upload_id}",
@@ -3955,6 +3969,8 @@ async def test_workload_capability_materializes_and_commits_through_single_artif
                 },
             )
             assert begun.status_code == 201
+            assert begun.json()["upload_protocol"] == "single-put-v1"
+            assert begun.json()["handle"]["method"] == "PUT"
             finalized = await client.post(f"/internal/scientific-workloads/uploads/{upload_id}:finalize")
             assert finalized.status_code == 200
             refs.append(finalized.json())
@@ -4417,10 +4433,10 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
                 media_type=media_type,
             )
 
-        async def delete(self, storage_key):
-            existed = self.objects.pop(storage_key, None) is not None
-            return ArtifactRemovalEvidence(
-                storage_key=storage_key,
+        async def delete(self, target: ArtifactRemovalTarget):
+            existed = self.objects.pop(target.storage_key, None) is not None
+            return ArtifactDeletionEvidence(
+                storage_key=target.storage_key,
                 kind=(
                     ArtifactRemovalEvidenceKind.ALL_VERSIONS_REMOVED
                     if existed
@@ -4431,15 +4447,34 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
                 observed_at=now,
             )
 
-        async def verify_absent(self, storage_key):
-            if storage_key in self.objects:
+        async def verify_absent(self, target: ArtifactRemovalTarget):
+            if target.storage_key in self.objects:
                 raise ArtifactServiceError("provider still reports stored-object versions")
+            empty_digest = "sha256:" + hashlib.sha256(b"[]").hexdigest()
+            claim_digest = artifact_absence_claim_digest(
+                target,
+                observed_at=now,
+                first_list_request_id="test-list-before",
+                head_request_id="test-provider-head",
+                second_list_request_id="test-list-after",
+                first_version_set_digest=empty_digest,
+                second_version_set_digest=empty_digest,
+            )
             return ArtifactRemovalEvidence(
-                storage_key=storage_key,
+                storage_key=target.storage_key,
                 kind=ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED,
-                provider_request_id="test-provider-absence",
+                provider_request_id="test-list-after",
                 removed_version_count=0,
                 observed_at=now,
+                latest_upload_capability_expires_at=target.latest_upload_capability_expires_at,
+                removal_generation=target.removal_generation,
+                verification_generation=target.verification_generation,
+                first_list_request_id="test-list-before",
+                head_request_id="test-provider-head",
+                second_list_request_id="test-list-after",
+                first_version_set_digest=empty_digest,
+                second_version_set_digest=empty_digest,
+                claim_digest=claim_digest,
             )
 
     class ContentReader:

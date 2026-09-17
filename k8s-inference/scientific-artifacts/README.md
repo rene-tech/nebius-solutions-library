@@ -92,7 +92,7 @@ Three rules, all enabled, none of which touches a current object:
 | Rule | Effect |
 | --- | --- |
 | `abort-incomplete-multipart-uploads` | Aborts parts 1 day after initiation |
-| `expire-noncurrent-versions` | Expires superseded versions after 1 day |
+| `expire-noncurrent-versions` | Expires superseded versions after the configured application-retention period |
 | `remove-expired-delete-markers` | Removes tombstones with no versions left |
 
 Deleting a live result is an application decision made against the durable
@@ -108,11 +108,18 @@ references, separate maintenance schedules, `networkPolicy.artifactStoreCidrs`
 and the rotation pod annotation. The obsolete `artifactService` wiring is not
 revived.
 
-The chart's own declarations for `scientificArtifacts` and `scientificBatch`
-belong to the batch-controller workstream. Until they merge, Helm ignores the
-projected values and the store is provisioned but unconsumed, which is the
-intended independently-deployable state. `tests/test_scientific_artifact_store_wiring.py`
-asserts agreement as soon as the chart declares them.
+The chart declares the exact `scientificArtifacts` and `scientificBatch`
+projection, including tenant byte/object ceilings, upload completion/provider
+stability grace, maintenance throughput/deadline bounds, and distinct runtime,
+remover, verifier, and finalizer identities. The static wiring contract covers
+those names so a Terraform/chart drift fails before rollout.
+
+Customer begin-upload remains backward shaped: no protocol field means
+`single-put-v1` and still returns a required handle. The handle now targets one
+exact server-owned multipart part rather than replayable PutObject. Objects
+above 5 GiB explicitly select `multipart-v2`; each subsequent part requires a
+tenant-authorized length/checksum-bound handle, and only the control plane can
+complete the session and pin the provider VersionId.
 
 ## Checks
 
@@ -150,8 +157,10 @@ read from a file, so it cannot appear in a process listing or a shell history.
 
 The writer holds `storage.object-editor`, which is object scoped and therefore
 cannot list the bucket. That is deliberate, and it is why cleanup deletes the
-exact versions the store reported rather than enumerating a prefix, and why the
-one-day noncurrent-version and delete-marker rules exist.
+exact versions the store reported rather than enumerating a prefix. Noncurrent
+versions remain available for the same interval as application metadata so an
+immutable VersionId pin cannot be invalidated before normal retention cleanup;
+the delete-marker rule then reclaims empty tombstones.
 
 ## Evidence
 

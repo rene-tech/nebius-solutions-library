@@ -40,7 +40,11 @@ from fs2_serve.scientific_artifacts import (
     MemoryArtifactRepository,
     ScientificArtifactService,
 )
-from fs2_serve.scientific_input_uploads import ScientificInputUploadService, content_path
+from fs2_serve.scientific_input_uploads import (
+    ScientificInputUploadRequest,
+    ScientificInputUploadService,
+    content_path,
+)
 
 PAYLOAD = b">target\nMKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ\n"
 MEDIA_TYPE = "text/x-fasta"
@@ -143,6 +147,7 @@ async def test_gateway_only_client_uploads_finalizes_and_reads_exact_bytes(regis
         assert reservation["max_content_bytes"] > len(PAYLOAD)
         # The presigned handle is advertised too, but is never used here.
         assert reservation["handle"]["method"] == "PUT"
+        assert reservation["upload_protocol"] == "single-put-v1"
 
         written = await _put(client, reservation, PAYLOAD)
         assert written.status_code == 200, written.text
@@ -179,6 +184,53 @@ async def test_gateway_only_client_uploads_finalizes_and_reads_exact_bytes(regis
 
     # Exactly one object was written, at the reserved content address.
     assert len(object_store.written) == 1
+
+
+@pytest.mark.asyncio
+async def test_upload_protocol_is_versioned_without_weakening_the_v1_handle_contract(
+    registry, cipher, hasher
+) -> None:
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    _artifact_plane(runtime)
+    token = await _token(runtime, principal_id="scientist-a", tenant_id="tenant-a")
+    app = create_app(runtime)
+    async with app.router.lifespan_context(app), _client(app, token) as client:
+        v1 = await _begin(client, key="upload-protocol-v1-0001", request=_upload_request())
+        assert v1["upload_protocol"] == "single-put-v1"
+        assert v1["handle"]["write_once"] is True
+
+        v2 = await _begin(
+            client,
+            key="upload-protocol-v2-0001",
+            request=_upload_request(
+                upload_protocol="multipart-v2",
+                first_part_sha256=digest(PAYLOAD).removeprefix("sha256:"),
+            ),
+        )
+        assert v2["upload_protocol"] == "multipart-v2"
+        assert v2["handle"]["write_once"] is True
+        assert v2["part_size_bytes"] == 134217728
+        assert "{part_number}" in v2["part_path_template"]
+
+        missing_version_field = await client.post(
+            "/v1/scientific-artifacts/uploads",
+            headers={"idempotency-key": "upload-protocol-v2-invalid-0001"},
+            json=_upload_request(upload_protocol="multipart-v2"),
+        )
+        assert missing_version_field.status_code == 422
+
+
+def test_v1_upload_idempotency_bytes_remain_pre_versioning_compatible() -> None:
+    request = ScientificInputUploadRequest.model_validate(_upload_request())
+    canonical = json.loads(request.canonical_bytes())
+    assert "upload_protocol" not in canonical
+    assert "first_part_sha256" not in canonical
+
+
+def test_multipart_first_part_boundary_is_normative_in_the_public_schema() -> None:
+    field = ScientificInputUploadRequest.model_json_schema()["properties"]["first_part_sha256"]
+    assert "134217728" in field["description"]
+    assert "[0:min(size_bytes,134217728))" in field["description"]
 
 
 @pytest.mark.asyncio
@@ -482,6 +534,7 @@ async def test_mcp_offers_the_same_upload_submit_status_result_operations(regist
 
     parity = {
         "begin_scientific_artifact_upload",
+        "authorize_scientific_artifact_upload_part",
         "put_scientific_artifact_bytes",
         "finalize_scientific_artifact_upload",
         "submit_scientific_run",
@@ -493,6 +546,19 @@ async def test_mcp_offers_the_same_upload_submit_status_result_operations(regist
     }
     listed = {tool.name for tool in server._tool_manager.list_tools()}  # type: ignore[attr-defined]
     assert parity <= listed
+    authorize_part = next(
+        tool
+        for tool in server._tool_manager.list_tools()  # type: ignore[attr-defined]
+        if tool.name == "authorize_scientific_artifact_upload_part"
+    )
+    assert {
+        "operation_id",
+        "upload_id",
+        "session_generation",
+        "part_number",
+        "size_bytes",
+        "sha256",
+    } <= set(authorize_part.parameters["properties"])
     assert parity - CLIENT_ONLY_TOOLS <= CORE_TOOLS
     assert parity & CLIENT_ONLY_TOOLS == {
         "put_scientific_artifact_bytes",

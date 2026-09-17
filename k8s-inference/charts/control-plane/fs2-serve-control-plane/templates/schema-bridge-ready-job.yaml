@@ -1,0 +1,81 @@
+{{- if and .Release.IsUpgrade .Values.artifactMaintenance.enabled .Values.scientificArtifacts.enabled (has .Values.migration.rolloutPhase (list "expand" "rollback")) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-schema-bridge-ready-%d" (include "fs2-serve.fullname" .) .Release.Revision | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: schema-bridge-ready
+  annotations:
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "10"
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: {{ .Values.migration.bridgeReadinessDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.schemaBridgeSelectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "artifact-verifier") }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: schema-bridge-ready
+          image: {{ include "fs2-serve.schemaRollbackImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["artifact-bridge-ready"]
+          env:
+            {{- include "fs2-serve.schemaBridgeEnv" . | nindent 12 }}
+          volumeMounts:
+            {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 12 }}
+            - name: artifact-verifier-store
+              mountPath: /var/run/secrets/fs2-serve/artifact-store
+              readOnly: true
+            - name: schema-bridge-kubernetes
+              mountPath: /var/run/secrets/fs2-serve/schema-bridge-kubernetes
+              readOnly: true
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.artifactVerificationDatabase) | nindent 8 }}
+        - name: artifact-verifier-store
+          secret:
+            secretName: {{ .Values.secrets.artifactVerifierStore.name }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.secrets.artifactVerifierStore.key }}
+                path: credentials.json
+        - name: schema-bridge-kubernetes
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken:
+                  audience: https://kubernetes.default.svc
+                  expirationSeconds: 600
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+{{- end }}

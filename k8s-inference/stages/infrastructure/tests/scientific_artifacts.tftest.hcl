@@ -264,10 +264,10 @@ run "storage_lifecycle_reclaims_waste_but_never_a_live_result" {
   assert {
     condition = (
       nebius_storage_v1_bucket.scientific_artifacts_disposable[0].lifecycle_configuration.rules[0].abort_incomplete_multipart_upload.days_after_initiation == 1 &&
-      nebius_storage_v1_bucket.scientific_artifacts_disposable[0].lifecycle_configuration.rules[1].noncurrent_version_expiration.noncurrent_days == 1 &&
+      nebius_storage_v1_bucket.scientific_artifacts_disposable[0].lifecycle_configuration.rules[1].noncurrent_version_expiration.noncurrent_days == 90 &&
       nebius_storage_v1_bucket.scientific_artifacts_disposable[0].lifecycle_configuration.rules[2].expiration.expired_object_delete_marker
     )
-    error_message = "Incomplete uploads and noncurrent versions must expire after one day and expired delete markers must be removed."
+    error_message = "Incomplete uploads expire after one day, noncurrent versions remain through application retention, and expired delete markers are removed."
   }
 
   assert {

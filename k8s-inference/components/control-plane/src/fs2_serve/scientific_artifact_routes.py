@@ -13,7 +13,7 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .models import Principal, Scope, StrictModel
 from .scientific_artifacts import (
@@ -28,7 +28,9 @@ from .scientific_artifacts import (
     ArtifactQuotaExceededError,
     ArtifactServiceError,
     ArtifactVerificationError,
+    ArtifactWritesDisabledError,
     AttemptStatus,
+    AuthorizeArtifactUploadPart,
     BeginArtifactUpload,
     CloseStageAttempt,
     CommitStageResult,
@@ -36,6 +38,7 @@ from .scientific_artifacts import (
     FinalizeArtifactUpload,
     KueueAdmission,
     ManifestEntryDraft,
+    MULTIPART_FIRST_PART_DESCRIPTION,
     OpenStageAttempt,
     ResultAlreadyTerminalError,
     RunResultDraft,
@@ -50,6 +53,7 @@ RawSha256 = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 CompressionInput = ArtifactCompression | Literal["none"]
 
 _ERROR_STATUS: tuple[tuple[type[ArtifactServiceError], int], ...] = (
+    (ArtifactWritesDisabledError, status.HTTP_503_SERVICE_UNAVAILABLE),
     (ArtifactNotFoundError, status.HTTP_404_NOT_FOUND),
     (StaleArtifactAttemptError, status.HTTP_409_CONFLICT),
     (ResultAlreadyTerminalError, status.HTTP_409_CONFLICT),
@@ -180,6 +184,19 @@ class ArtifactUploadBeginRequest(StrictModel):
     media_type: str = Field(min_length=3, max_length=128)
     compression: CompressionInput | None = None
     access: ArtifactAccess = Field(default_factory=ArtifactAccess)
+    upload_protocol: Literal["single-put-v1", "multipart-v2"] = "single-put-v1"
+    first_part_sha256: RawSha256 | None = Field(
+        default=None,
+        description=MULTIPART_FIRST_PART_DESCRIPTION,
+    )
+
+    @model_validator(mode="after")
+    def protocol_fields_match(self) -> "ArtifactUploadBeginRequest":
+        if self.upload_protocol == "multipart-v2" and self.first_part_sha256 is None:
+            raise ValueError("multipart-v2 requires first_part_sha256")
+        if self.upload_protocol == "single-put-v1" and self.first_part_sha256 is not None:
+            raise ValueError("single-put-v1 does not accept first_part_sha256")
+        return self
 
     def to_internal(self, principal: Principal) -> BeginArtifactUpload:
         return BeginArtifactUpload(
@@ -193,11 +210,22 @@ class ArtifactUploadBeginRequest(StrictModel):
             media_type=self.media_type.lower(),
             compression=_compression(self.compression),
             access=self.access,
+            upload_protocol=self.upload_protocol,
+            first_part_checksum=(
+                f"sha256:{self.first_part_sha256}" if self.first_part_sha256 is not None else None
+            ),
         )
 
 
 class ArtifactUploadFinalizeRequest(StrictModel):
     operation_id: UUID
+
+
+class ArtifactUploadPartRequest(StrictModel):
+    operation_id: UUID
+    session_generation: int = Field(ge=1, le=1_000_000)
+    size_bytes: int = Field(ge=0, le=5 * 1024 * 1024 * 1024)
+    sha256: RawSha256
 
 
 class EphemeralHandleResponse(StrictModel):
@@ -222,6 +250,10 @@ class EphemeralHandleResponse(StrictModel):
 
 class ArtifactUploadBeginResponse(StrictModel):
     upload_id: UUID
+    upload_protocol: Literal["single-put-v1", "multipart-v2"]
+    session_generation: int
+    part_size_bytes: int
+    part_count: int
     handle: EphemeralHandleResponse
 
 
@@ -418,8 +450,40 @@ def scientific_artifact_router(
         except ArtifactServiceError as error:
             raise _http_error(error) from None
         return ArtifactUploadBeginResponse(
-            upload_id=result.upload.upload_id, handle=EphemeralHandleResponse.of(result.handle)
+            upload_id=result.upload.upload_id,
+            upload_protocol=request.upload_protocol,
+            session_generation=result.session.session_generation,
+            part_size_bytes=result.session.part_size_bytes,
+            part_count=result.session.part_count,
+            handle=EphemeralHandleResponse.of(result.handle),
         )
+
+    @router.post(
+        "/uploads/{upload_id}/parts/{part_number}:authorize",
+        response_model=EphemeralHandleResponse,
+    )
+    async def authorize_upload_part(
+        request: ArtifactUploadPartRequest,
+        upload_id: Annotated[UUID, Path()],
+        part_number: Annotated[int, Path(ge=1, le=10_000)],
+        principal: Annotated[Principal, Depends(principal_dependency)],
+    ) -> EphemeralHandleResponse:
+        principal.require(Scope.ARTIFACTS_WRITE)
+        try:
+            result = await service.authorize_upload_part(
+                AuthorizeArtifactUploadPart(
+                    upload_id=upload_id,
+                    operation_id=request.operation_id,
+                    tenant_id=principal.tenant_id,
+                    session_generation=request.session_generation,
+                    part_number=part_number,
+                    size_bytes=request.size_bytes,
+                    checksum=f"sha256:{request.sha256}",
+                )
+            )
+        except ArtifactServiceError as error:
+            raise _http_error(error) from None
+        return EphemeralHandleResponse.of(result.handle)
 
     @router.post("/uploads/{upload_id}:finalize", response_model=ArtifactRef)
     async def finalize_upload(

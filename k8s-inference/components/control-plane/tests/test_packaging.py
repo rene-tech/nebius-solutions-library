@@ -273,6 +273,7 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
         "0028_request_telemetry.sql",
         "0029_request_debug.sql",
         "0030_scientific_quota_settlement.sql",
+        "0031_scientific_quota_fencing.sql",
     ]
     assert hashlib.sha256((migration_dir / "0005_terminal_accounting.sql").read_bytes()).hexdigest() == (
         "fedb6789a4839d42645c5ffb6905ce46525c213d81f15d9d987eacc109614197"
@@ -406,6 +407,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
             "fs2_serve/migrations/0028_request_telemetry.sql",
             "fs2_serve/migrations/0029_request_debug.sql",
             "fs2_serve/migrations/0030_scientific_quota_settlement.sql",
+            "fs2_serve/migrations/0031_scientific_quota_fencing.sql",
         ]
         entry_point_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         assert len(entry_point_files) == 1

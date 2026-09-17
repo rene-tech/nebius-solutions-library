@@ -1551,6 +1551,11 @@
       "type": "object",
       "required": [
         "activeDeadlineSeconds",
+        "bridgeReadinessDeadlineSeconds",
+        "rolloutPhase",
+        "targetImage",
+        "rollbackImage",
+        "predecessorImage",
         "reportingDatabaseRole",
         "runtimeDatabaseRole",
         "maintenanceDatabaseRole",
@@ -1565,6 +1570,74 @@
           "type": "integer",
           "minimum": 30,
           "maximum": 3600
+        },
+        "bridgeReadinessDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 600,
+          "maximum": 172800
+        },
+        "rolloutPhase": {
+          "enum": [
+            "prepare",
+            "expand",
+            "contract",
+            "activate",
+            "rollback"
+          ]
+        },
+        "targetImage": {
+          "type": "object",
+          "required": [
+            "repository",
+            "digest"
+          ],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^(|sha256:[a-f0-9]{64})$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "rollbackImage": {
+          "type": "object",
+          "required": [
+            "repository",
+            "digest"
+          ],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^(|sha256:[a-f0-9]{64})$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "predecessorImage": {
+          "type": "object",
+          "required": [
+            "repository",
+            "digest"
+          ],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^(|sha256:[a-f0-9]{64})$"
+            }
+          },
+          "additionalProperties": false
         },
         "reportingDatabaseRole": {
           "type": "string",
@@ -1615,11 +1688,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "df94dc4d76eb783d618aaecc1b9767a3896dc4bb93353cb0d786fa41f7312185"},
-            "migrationSetSha256": {"const": "714d1456b60c8ccc74b0dca40d1f486bd116a85f586a258c386e5d9d5aae4c22"},
-            "migrationCount": {"const": 30},
+            "contractPayloadSha256": {"const": "b28f0f1e6e6e749e2e1c5d1c205e393a2f11f019a2d65219636e11872492bbb3"},
+            "migrationSetSha256": {"const": "1bc495f57002004a6032b8a9b209c4563b2e9e788698f21c60550cded947a7bd"},
+            "migrationCount": {"const": 31},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0030_scientific_quota_settlement.sql"},
+            "lastMigrationVersion": {"const": "0031_scientific_quota_fencing.sql"},
             "namespaceRoleOwnershipSha256": {"const": "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580"}
           },
           "additionalProperties": false
@@ -2471,10 +2544,14 @@
     "artifactMaintenance": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "removalSchedule", "verificationSchedule"],
+      "required": ["enabled", "activeDeadlineSeconds", "finalizationSchedule", "removalSchedule", "verificationConcurrency", "verificationMinimumBytesPerSecond", "verificationSchedule"],
       "properties": {
         "enabled": {"type": "boolean"},
+        "activeDeadlineSeconds": {"type": "integer", "minimum": 600, "maximum": 86400},
+        "finalizationSchedule": {"type": "string", "minLength": 9, "maxLength": 100},
         "removalSchedule": {"type": "string", "minLength": 9, "maxLength": 100},
+        "verificationConcurrency": {"type": "integer", "minimum": 1, "maximum": 32},
+        "verificationMinimumBytesPerSecond": {"type": "integer", "minimum": 1048576, "maximum": 10737418240},
         "verificationSchedule": {"type": "string", "minLength": 9, "maxLength": 100}
       }
     },
@@ -2483,6 +2560,7 @@
       "additionalProperties": false,
       "required": [
         "enabled",
+        "multipartWritesEnabled",
         "endpoint",
         "bucket",
         "region",
@@ -2493,6 +2571,8 @@
         "tenantQuotaBytes",
         "tenantQuotaObjects",
         "uploadReservationTtlSeconds",
+        "uploadCompletionGraceSeconds",
+        "providerStabilityGraceSeconds",
         "inlineContentMaxBytes",
         "retentionSeconds",
         "mediaTypes",
@@ -2500,6 +2580,9 @@
       ],
       "properties": {
         "enabled": {
+          "type": "boolean"
+        },
+        "multipartWritesEnabled": {
           "type": "boolean"
         },
         "endpoint": {
@@ -2549,6 +2632,16 @@
           "type": "integer",
           "minimum": 30,
           "maximum": 604800
+        },
+        "uploadCompletionGraceSeconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 3600
+        },
+        "providerStabilityGraceSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 3600
         },
         "inlineContentMaxBytes": {
           "type": "integer",

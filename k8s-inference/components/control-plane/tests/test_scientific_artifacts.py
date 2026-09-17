@@ -36,6 +36,7 @@ from fs2_serve.scientific_artifacts import (
     ArtifactAccessProfile,
     ArtifactCompression,
     ArtifactConflictError,
+    ArtifactDeletionEvidence,
     ArtifactDirection,
     ArtifactEventType,
     ArtifactNotFoundError,
@@ -49,14 +50,21 @@ from fs2_serve.scientific_artifacts import (
     ArtifactRemovalEvidenceKind,
     ArtifactRemovalTarget,
     ArtifactServiceError,
+    ArtifactUploadSession,
+    ArtifactUploadSessionCreationTarget,
+    ArtifactUploadSessionReconciliationEvidence,
     ArtifactVerificationError,
+    ArtifactWritesDisabledError,
     AttemptStatus,
+    AuthorizeArtifactUploadPart,
     BeginArtifactUpload,
     CloseStageAttempt,
     CommitStageResult,
     EphemeralHandle,
     FinalizeArtifactUpload,
     KueueAdmission,
+    LegacyArtifactVersionScan,
+    LegacyArtifactVersionTarget,
     ManifestEntryDraft,
     MemoryArtifactRepository,
     OpenStageAttempt,
@@ -65,7 +73,10 @@ from fs2_serve.scientific_artifacts import (
     RunResultDraft,
     ScientificArtifactService,
     StaleArtifactAttemptError,
+    StagedUploadPart,
+    UploadIntent,
     VerifiedStoredObject,
+    artifact_absence_claim_digest,
     artifact_storage_key,
 )
 
@@ -112,6 +123,9 @@ class FakeObjectStore:
         self.rewrite: bytes | None = None
         self.override: VerifiedStoredObject | None = None
         self.issued: list[EphemeralHandle] = []
+        self.sessions: dict[str, ArtifactUploadSession] = {}
+        self.session_payloads: dict[str, bytes] = {}
+        self.versions: dict[str, str] = {}
         self._clock = clock
 
     def put(
@@ -122,6 +136,9 @@ class FakeObjectStore:
         compression: ArtifactCompression | None = None,
     ) -> None:
         self.objects[storage_key] = (value, media_type, compression)
+        for session in self.sessions.values():
+            if session.storage_key == storage_key and session.state == "active":
+                self.session_payloads[session.provider_upload_id] = value
 
     def _handle(self, method: str, storage_key: str, ttl: timedelta, headers: dict[str, str]) -> EphemeralHandle:
         handle = EphemeralHandle(
@@ -134,20 +151,103 @@ class FakeObjectStore:
         self.issued.append(handle)
         return handle
 
-    async def presign_upload(
+    async def create_upload_session(
         self,
         *,
         storage_key: str,
         media_type: str,
         compression: ArtifactCompression | None,
+    ) -> tuple[str, datetime]:
+        del media_type, compression
+        provider_upload_id = f"fake-upload-{len(self.sessions) + 1}"
+        return provider_upload_id, self._clock()
+
+    async def presign_upload_part(
+        self,
+        *,
+        session: ArtifactUploadSession,
+        part_number: int,
+        size_bytes: int,
+        checksum: str,
         ttl: timedelta,
     ) -> EphemeralHandle:
-        headers = {"content-type": media_type}
-        if compression is not None:
-            headers["content-encoding"] = compression.value
-        return self._handle("PUT", storage_key, ttl, headers)
+        del part_number
+        self.sessions[session.provider_upload_id] = session
+        return self._handle(
+            "PUT",
+            session.storage_key,
+            ttl,
+            {"content-length": str(size_bytes), "x-amz-checksum-sha256": checksum},
+        )
 
-    async def presign_download(self, *, storage_key: str, ttl: timedelta) -> EphemeralHandle:
+    async def stage_inline_upload(
+        self, *, session: ArtifactUploadSession, intent: UploadIntent, payload: bytes
+    ) -> StagedUploadPart:
+        self.session_payloads[session.provider_upload_id] = payload
+        return StagedUploadPart(
+            storage_key=session.storage_key,
+            digest=digest(payload),
+            size_bytes=len(payload),
+            media_type=intent.media_type,
+            compression=intent.compression,
+            provider_request_id="fake-stage",
+        )
+
+    async def complete_upload_session(
+        self, *, session: ArtifactUploadSession, intent: UploadIntent
+    ) -> VerifiedStoredObject:
+        payload = self.session_payloads.get(session.provider_upload_id)
+        if payload is None and session.storage_key in self.objects:
+            payload = self.objects[session.storage_key][0]
+        if payload is None:
+            raise ArtifactNotFoundError("multipart upload session is absent")
+        self.objects[session.storage_key] = (payload, intent.media_type, intent.compression)
+        version_id = f"fake-version-{len(self.versions) + 1}"
+        self.versions[session.storage_key] = version_id
+        return await self.inspect(session.storage_key, provider_version_id=version_id)
+
+    async def validate_upload_session(
+        self, *, session: ArtifactUploadSession, intent: UploadIntent
+    ) -> None:
+        payload = self.session_payloads.get(session.provider_upload_id)
+        if payload is None and session.storage_key in self.objects:
+            payload = self.objects[session.storage_key][0]
+        if payload is None:
+            raise ArtifactNotFoundError("multipart upload session is absent")
+        if len(payload) != intent.expected_size_bytes or digest(payload) != intent.expected_digest:
+            raise ArtifactVerificationError("multipart upload parts differ from the reservation")
+
+    async def recover_completed_upload(self, *, intent: UploadIntent) -> VerifiedStoredObject:
+        version_id = self.versions.get(intent.storage_key)
+        if version_id is None:
+            raise ArtifactNotFoundError("stored object is absent")
+        return await self.inspect(intent.storage_key, provider_version_id=version_id)
+
+    async def abort_upload_session(self, *, session: ArtifactUploadSession) -> str:
+        self.session_payloads.pop(session.provider_upload_id, None)
+        return "fake-abort"
+
+    async def reconcile_orphan_upload_sessions(
+        self, target: ArtifactUploadSessionCreationTarget
+    ) -> ArtifactUploadSessionReconciliationEvidence:
+        aborted = 0
+        for provider_upload_id, session in list(self.sessions.items()):
+            if session.storage_key == target.storage_key:
+                self.session_payloads.pop(provider_upload_id, None)
+                self.sessions.pop(provider_upload_id, None)
+                aborted += 1
+        return ArtifactUploadSessionReconciliationEvidence(
+            storage_key=target.storage_key,
+            provider_request_id="fake-orphan-reconcile",
+            aborted_upload_count=aborted,
+            multipart_session_set_digest=digest(b"[]"),
+            observed_at=max(self._clock(), target.claimed_at),
+        )
+
+    async def presign_download(
+        self, *, storage_key: str, provider_version_id: str, ttl: timedelta
+    ) -> EphemeralHandle:
+        assert self.versions.get(storage_key) == provider_version_id
         return self._handle("GET", storage_key, ttl, {})
 
     async def put_object(
@@ -162,9 +262,14 @@ class FakeObjectStore:
         if self.rewrite is not None:
             payload = self.rewrite
         self.objects[storage_key] = (payload, media_type, compression)
-        return await self.inspect(storage_key, max_bytes=len(payload))
+        version_id = f"fake-version-{len(self.versions) + 1}"
+        self.versions[storage_key] = version_id
+        return await self.inspect(storage_key, provider_version_id=version_id, max_bytes=len(payload))
 
-    async def stream_object(self, storage_key: str, *, max_bytes: int | None = None):
+    async def stream_object(
+        self, storage_key: str, *, provider_version_id: str, max_bytes: int | None = None
+    ):
+        assert self.versions.get(storage_key) == provider_version_id
         if storage_key not in self.objects:
             raise ArtifactNotFoundError("stored object is absent")
         value = self.objects[storage_key][0]
@@ -173,7 +278,13 @@ class FakeObjectStore:
             if chunk:
                 yield chunk
 
-    async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject:
+    async def inspect(
+        self,
+        storage_key: str,
+        *,
+        provider_version_id: str | None = None,
+        max_bytes: int | None = None,
+    ) -> VerifiedStoredObject:
         if self.override is not None:
             return self.override
         if storage_key not in self.objects:
@@ -181,17 +292,26 @@ class FakeObjectStore:
         value, media_type, compression = self.objects[storage_key]
         return VerifiedStoredObject(
             storage_key=storage_key,
+            provider_version_id=provider_version_id or self.versions.get(storage_key, "fake-version"),
+            provider_request_id="fake-inspect",
             digest=digest(value),
             size_bytes=len(value),
             media_type=media_type,
             compression=compression,
         )
 
-    async def delete(self, storage_key: str) -> ArtifactRemovalEvidence:
-        self.deleted.append(storage_key)
-        existed = self.objects.pop(storage_key, None) is not None
-        return ArtifactRemovalEvidence(
-            storage_key=storage_key,
+    async def delete(self, target: ArtifactRemovalTarget) -> ArtifactDeletionEvidence:
+        self.deleted.append(target.storage_key)
+        existed = self.objects.pop(target.storage_key, None) is not None
+        aborted = 0
+        for provider_upload_id, session in list(self.sessions.items()):
+            if session.storage_key == target.storage_key:
+                self.session_payloads.pop(provider_upload_id, None)
+                self.sessions.pop(provider_upload_id, None)
+                aborted += 1
+        observed_at = max(self._clock(), target.removal_claimed_at)
+        return ArtifactDeletionEvidence(
+            storage_key=target.storage_key,
             kind=(
                 ArtifactRemovalEvidenceKind.ALL_VERSIONS_REMOVED
                 if existed
@@ -199,27 +319,85 @@ class FakeObjectStore:
             ),
             provider_request_id=f"fake-removal-{len(self.deleted)}",
             removed_version_count=1 if existed else 0,
-            observed_at=self._clock(),
+            aborted_upload_count=aborted,
+            multipart_list_request_id=f"fake-multipart-removal-{len(self.deleted)}",
+            multipart_session_set_digest=digest(b"[]"),
+            observed_at=observed_at,
         )
 
-    async def verify_absent(self, storage_key: str) -> ArtifactRemovalEvidence:
-        if storage_key in self.objects:
+    async def verify_absent(self, target: ArtifactRemovalTarget) -> ArtifactRemovalEvidence:
+        if target.storage_key in self.objects:
             raise ArtifactServiceError("provider still reports stored-object versions")
+        if any(session.storage_key == target.storage_key for session in self.sessions.values()):
+            raise ArtifactServiceError("provider still reports multipart sessions")
+        assert target.verification_claimed_at is not None
+        observed_at = max(self._clock(), target.verification_claimed_at)
+        empty_digest = digest(b"[]")
+        first_request_id = f"fake-list-before-{len(self.deleted)}"
+        head_request_id = f"fake-head-{len(self.deleted)}"
+        second_request_id = f"fake-list-after-{len(self.deleted)}"
+        first_multipart_request_id = f"fake-multipart-before-{len(self.deleted)}"
+        second_multipart_request_id = f"fake-multipart-after-{len(self.deleted)}"
         return ArtifactRemovalEvidence(
-            storage_key=storage_key,
+            storage_key=target.storage_key,
             kind=ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED,
-            provider_request_id=f"fake-absence-{len(self.deleted)}",
+            provider_request_id=second_request_id,
             removed_version_count=0,
+            observed_at=observed_at,
+            latest_upload_capability_expires_at=target.latest_upload_capability_expires_at,
+            removal_generation=target.removal_generation,
+            verification_generation=target.verification_generation,
+            first_list_request_id=first_request_id,
+            head_request_id=head_request_id,
+            second_list_request_id=second_request_id,
+            first_version_set_digest=empty_digest,
+            second_version_set_digest=empty_digest,
+            first_multipart_list_request_id=first_multipart_request_id,
+            second_multipart_list_request_id=second_multipart_request_id,
+            first_multipart_session_set_digest=empty_digest,
+            second_multipart_session_set_digest=empty_digest,
+            claim_digest=artifact_absence_claim_digest(
+                target,
+                observed_at=observed_at,
+                first_list_request_id=first_request_id,
+                head_request_id=head_request_id,
+                second_list_request_id=second_request_id,
+                first_version_set_digest=empty_digest,
+                second_version_set_digest=empty_digest,
+                first_multipart_list_request_id=first_multipart_request_id,
+                second_multipart_list_request_id=second_multipart_request_id,
+                first_multipart_session_set_digest=empty_digest,
+                second_multipart_session_set_digest=empty_digest,
+            ),
+        )
+
+    async def scan_legacy_version(
+        self, target: LegacyArtifactVersionTarget
+    ) -> LegacyArtifactVersionScan:
+        version_id = self.versions.get(target.storage_key)
+        if version_id is None:
+            return LegacyArtifactVersionScan(
+                provider_request_id="fake-legacy-list",
+                observed_at=self._clock(),
+            )
+        return LegacyArtifactVersionScan(
+            provider_request_id="fake-legacy-list",
             observed_at=self._clock(),
+            verified=await self.inspect(
+                target.storage_key,
+                provider_version_id=version_id,
+                max_bytes=target.expected_size_bytes,
+            ),
         )
 
 
 def build_service(repository: Any, object_store: FakeObjectStore, **kwargs: Any) -> ScientificArtifactService:
+    clock = kwargs.pop("clock", lambda: NOW)
     return ScientificArtifactService(
         repository=repository,
         object_store=object_store,
         allowed_media_types=ALLOWED_MEDIA_TYPES,
-        clock=lambda: NOW,
+        clock=clock,
         **kwargs,
     )
 
@@ -708,16 +886,73 @@ async def test_finalize_rejects_an_object_that_differs_from_its_intent(mutation:
     )
     measured = {
         "storage_key": begun.upload.storage_key,
+        "provider_version_id": "fake-mismatch-version",
+        "provider_request_id": "fake-mismatch-request",
         "digest": digest(payload),
         "size_bytes": len(payload),
         "media_type": "chemical/x-pdb",
         "compression": None,
     }
+    store.put(begun.upload.storage_key, payload, "chemical/x-pdb")
     store.override = VerifiedStoredObject(**{**measured, **mutation})
     with pytest.raises(ArtifactVerificationError, match=message):
         await service.finalize_upload(
             FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id=TENANT)
         )
+    assert upload_id in repository._finalization_failures
+    assert repository._finalization_leases[upload_id].state == "failed"
+
+
+async def test_failed_finalization_evidence_allows_fenced_cleanup_without_erasing_the_receipt() -> None:
+    current = [NOW]
+    clock = lambda: current[0]
+    repository = MemoryArtifactRepository(clock=clock)
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore(clock=clock)
+    service = build_service(
+        repository,
+        store,
+        clock=clock,
+        upload_reservation_ttl=timedelta(minutes=15),
+        upload_completion_grace=timedelta(minutes=1),
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    payload = b"ATOM  CA  ALA A   1"
+    begun = await service.begin_upload(
+        BeginArtifactUpload(
+            upload_id=uuid4(),
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(payload),
+            expected_size_bytes=len(payload),
+            media_type="chemical/x-pdb",
+        )
+    )
+    store.put(begun.upload.storage_key, payload, "chemical/x-pdb")
+    store.override = VerifiedStoredObject(
+        storage_key=begun.upload.storage_key,
+        provider_version_id="failed-finalization-version",
+        provider_request_id="failed-finalization-request",
+        digest=digest(b"different"),
+        size_bytes=len(payload),
+        media_type="chemical/x-pdb",
+    )
+    with pytest.raises(ArtifactVerificationError):
+        await service.finalize_upload(
+            FinalizeArtifactUpload(
+                upload_id=begun.upload.upload_id,
+                operation_id=operation_id,
+                tenant_id=TENANT,
+            )
+        )
+    retained = repository._finalization_failures[begun.upload.upload_id]
+
+    current[0] += timedelta(minutes=17)
+    assert len(await service.remove_expired_quota_objects()) == 1
+    assert repository._finalization_failures[begun.upload.upload_id] == retained
 
 
 async def test_media_type_allowlist_and_size_ceiling_are_enforced() -> None:
@@ -817,6 +1052,63 @@ async def test_zero_byte_uploads_consume_the_atomic_tenant_object_quota() -> Non
         await service.begin_upload(empty_upload())
 
 
+async def test_forward_rollback_pauses_new_writes_but_preserves_leased_finalization_and_reads() -> None:
+    repository = MemoryArtifactRepository()
+    store = FakeObjectStore()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    enabled = build_service(repository, store)
+    attempt_id = await open_attempt(enabled, operation_id=operation_id)
+    payload = b"rollback-compatible"
+    request = BeginArtifactUpload(
+        upload_id=uuid4(),
+        attempt_id=attempt_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        direction=ArtifactDirection.OUTPUT,
+        expected_digest=digest(payload),
+        expected_size_bytes=len(payload),
+        media_type="chemical/x-pdb",
+    )
+    begun = await enabled.begin_upload(request)
+    store.put(begun.upload.storage_key, payload, media_type=request.media_type)
+    rollback = build_service(repository, store, writes_enabled=False)
+
+    with pytest.raises(ArtifactWritesDisabledError):
+        await rollback.begin_upload(request)
+    with pytest.raises(ArtifactWritesDisabledError):
+        await rollback.authorize_upload_part(
+            AuthorizeArtifactUploadPart(
+                upload_id=request.upload_id,
+                operation_id=operation_id,
+                tenant_id=TENANT,
+                session_generation=begun.session.session_generation,
+                part_number=1,
+                size_bytes=len(payload),
+                checksum=digest(payload),
+            )
+        )
+    with pytest.raises(ArtifactWritesDisabledError):
+        await rollback.store_upload_content(
+            FinalizeArtifactUpload(
+                upload_id=request.upload_id,
+                operation_id=operation_id,
+                tenant_id=TENANT,
+            ),
+            content=payload,
+        )
+
+    finalized = await rollback.finalize_upload(
+        FinalizeArtifactUpload(
+            upload_id=request.upload_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+        )
+    )
+    assert finalized.provider_version_id
+    assert (await rollback.download(finalized.artifact_id, tenant_id=TENANT)).artifact == finalized
+
+
 async def test_abandoned_upload_remains_counted_until_provider_absence_evidence() -> None:
     current = [NOW]
     clock = lambda: current[0]
@@ -866,6 +1158,7 @@ async def test_abandoned_upload_remains_counted_until_provider_absence_evidence(
     assert reservation.state is ArtifactQuotaReservationState.REMOVING
     with pytest.raises(ArtifactQuotaExceededError, match="quota"):
         await service.begin_upload(successor)
+    current[0] += timedelta(minutes=6)
     evidence = await service.verify_expired_quota_absence()
     assert len(evidence) == 1
     assert evidence[0].kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
@@ -890,6 +1183,185 @@ async def test_abandoned_upload_remains_counted_until_provider_absence_evidence(
         ArtifactQuotaEventType.RESERVED,
     ]
     assert events[2].release_reason is ArtifactQuotaReleaseReason.PROVIDER_REMOVED
+
+
+async def test_late_presigned_put_stays_charged_until_refenced_stable_absence() -> None:
+    """A reissued max-TTL capability and a late PUT must both delay release."""
+
+    current = [NOW]
+    clock = lambda: current[0]
+    repository = MemoryArtifactRepository(clock=clock)
+    store = FakeObjectStore(clock=clock)
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    service = ScientificArtifactService(
+        repository=repository,
+        object_store=store,
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        max_artifact_bytes=8,
+        tenant_quota_bytes=8,
+        tenant_quota_objects=1,
+        max_handle_ttl=timedelta(minutes=15),
+        default_handle_ttl=timedelta(minutes=1),
+        upload_reservation_ttl=timedelta(minutes=16),
+        upload_completion_grace=timedelta(minutes=1),
+        provider_stability_grace=timedelta(seconds=30),
+        clock=clock,
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    request = BeginArtifactUpload(
+        upload_id=uuid4(),
+        attempt_id=attempt_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        direction=ArtifactDirection.OUTPUT,
+        expected_digest=digest(b"late-put"),
+        expected_size_bytes=len(b"late-put"),
+        media_type="chemical/x-pdb",
+    )
+    first = await service.begin_upload(request)
+    current[0] += timedelta(minutes=10)
+    reissued = await service.begin_upload(request, handle_ttl=timedelta(minutes=15))
+    assert reissued.handle.expires_at > first.handle.expires_at
+
+    current[0] = NOW + timedelta(minutes=17)
+    with pytest.raises(ArtifactConflictError, match="issuance deadline"):
+        await service.begin_upload(request, handle_ttl=timedelta(minutes=15))
+    assert await service.remove_expired_quota_objects() == []
+    reservation = await repository.quota_reservation(request.upload_id, tenant_id=TENANT)
+    assert reservation.latest_upload_capability_expires_at == reissued.handle.expires_at
+
+    current[0] = reissued.handle.expires_at + timedelta(minutes=1)
+    assert len(await service.remove_expired_quota_objects()) == 1
+    # A PUT that was accepted before capability expiry is allowed to surface
+    # during the bounded completion/consistency window. Its presence must
+    # invalidate this verification generation, not release quota.
+    store.objects[reissued.upload.storage_key] = (b"late-put", "chemical/x-pdb", None)
+    current[0] += timedelta(seconds=31)
+    assert await service.verify_expired_quota_absence() == []
+    assert (
+        await repository.quota_reservation(request.upload_id, tenant_id=TENANT)
+    ).state is ArtifactQuotaReservationState.REMOVING
+
+    assert len(await service.remove_expired_quota_objects()) == 1
+    current[0] += timedelta(seconds=31)
+    assert len(await service.verify_expired_quota_absence()) == 1
+    assert (
+        await repository.quota_reservation(request.upload_id, tenant_id=TENANT)
+    ).state is ArtifactQuotaReservationState.RELEASED
+
+
+async def test_malformed_finalize_never_installs_an_ambiguity_lease() -> None:
+    repository = MemoryArtifactRepository()
+    store = FakeObjectStore()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    begun = await service.begin_upload(
+        BeginArtifactUpload(
+            upload_id=uuid4(),
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(b"missing-part"),
+            expected_size_bytes=len(b"missing-part"),
+            media_type="chemical/x-pdb",
+        )
+    )
+    request = FinalizeArtifactUpload(
+        upload_id=begun.upload.upload_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+    )
+    with pytest.raises(ArtifactNotFoundError, match="multipart upload session"):
+        await service.finalize_upload(request)
+    assert (
+        await repository.get_finalization_lease(
+            request,
+            session_generation=begun.session.session_generation,
+        )
+        is None
+    )
+
+
+async def test_expired_finalization_lease_is_recovered_not_cleaned_up() -> None:
+    current = [NOW]
+    clock = lambda: current[0]
+    repository = MemoryArtifactRepository(clock=clock)
+    store = FakeObjectStore(clock=clock)
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    service = build_service(
+        repository,
+        store,
+        clock=clock,
+        upload_completion_grace=timedelta(minutes=1),
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    value = b"recover-me"
+    begun = await service.begin_upload(
+        BeginArtifactUpload(
+            upload_id=uuid4(),
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(value),
+            expected_size_bytes=len(value),
+            media_type="chemical/x-pdb",
+        )
+    )
+    store.put(begun.upload.storage_key, value, "chemical/x-pdb")
+    request = FinalizeArtifactUpload(
+        upload_id=begun.upload.upload_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+    )
+    await repository.acquire_finalization_lease(
+        request,
+        session_generation=begun.session.session_generation,
+        lease_id=uuid4(),
+    )
+    current[0] += timedelta(minutes=2)
+    assert await service.remove_expired_quota_objects() == []
+    recovered = await service.recover_expired_finalizations()
+    assert len(recovered) == 1
+    assert recovered[0].digest == digest(value)
+
+
+def test_quota_fencing_migration_uses_nonblocking_fair_v2_claims() -> None:
+    sql = (CONTROL_ROOT / "migrations" / "0031_scientific_quota_fencing.sql").read_text(encoding="utf-8")
+    normalized = " ".join(sql.split())
+    assert "FOR UPDATE OF janitor_cursor SKIP LOCKED" in sql
+    assert "FOR UPDATE OF reservation SKIP LOCKED" in sql
+    assert "fs2_scientific_artifact_janitor_tenant_cursors" in sql
+    assert sql.count("WHILE claimed<p_limit LOOP") == 2
+    assert "fs2_scientific_artifact_legacy_version_scan_events" in sql
+    assert "fs2_scientific_record_legacy_artifact_version_scan_v2" in sql
+    assert "REFERENCES fs2_scientific_uploads" not in sql
+    assert "REFERENCES fs2_scientific_artifacts" not in sql
+    assert "pg_advisory_xact_lock" not in sql
+    assert "latest_upload_capability_expires_at" in sql
+    assert "first_version_set_digest=second_version_set_digest" in sql
+    assert "fs2_scientific_claim_upload_session_creation_v2" in sql
+    assert "fs2_scientific_claim_stale_upload_session_creations_v2" in sql
+    assert "fs2_scientific_record_upload_session_creation_reconciled_v2" in sql
+    assert "fs2_scientific_claim_expired_finalization_leases_v2" in sql
+    assert "fs2_scientific_record_finalization_failure_v2" in sql
+    assert "fs2_scientific_artifact_finalization_failures" in sql
+    assert "'legacy-single-put-v1:'||upload.id::text" in sql
+    assert "state IN ('active','legacy','completed')" in sql
+    assert "fs2_schema_rollout_state" in sql
+    assert "provider_stability_grace_seconds" in sql
+    assert (
+        "part_count integer NOT NULL CHECK (part_count BETWEEN 1 AND 10000), "
+        "provider_stability_grace_seconds integer NOT NULL DEFAULT 300 CHECK"
+    ) in normalized
+    assert "part_size_bytes,part_count,provider_stability_grace_seconds" in normalized
+    assert "claim.provider_stability_grace_seconds" in normalized
+    assert "record_finalization_failure" in PostgresArtifactRepository.__dict__
 
 
 async def test_closing_an_attempt_does_not_release_unverified_object_quota() -> None:
@@ -990,6 +1462,7 @@ async def test_finalized_standalone_object_releases_only_after_verified_provider
     assert finalized.storage_key in store.deleted
     with pytest.raises(ArtifactQuotaExceededError, match="quota"):
         await service.begin_upload(candidate)
+    current[0] += timedelta(minutes=6)
     evidence = await service.verify_expired_quota_absence()
     assert len(evidence) == 1
     assert evidence[0].kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
@@ -1009,7 +1482,8 @@ async def test_provider_removal_failure_keeps_expired_bytes_and_objects_counted(
     current = [NOW]
 
     class UnavailableRemovalStore(FakeObjectStore):
-        async def delete(self, storage_key: str) -> ArtifactRemovalEvidence:
+        async def delete(self, target: ArtifactRemovalTarget) -> ArtifactDeletionEvidence:
+            del target
             raise ArtifactServiceError("provider removal unavailable")
 
     repository = MemoryArtifactRepository(clock=lambda: current[0])
@@ -1054,10 +1528,10 @@ async def test_poisoned_removal_target_does_not_block_later_targets_and_is_backe
     class SelectiveRemovalStore(FakeObjectStore):
         failed_key: str | None = None
 
-        async def delete(self, storage_key: str) -> ArtifactRemovalEvidence:
-            if storage_key == self.failed_key:
+        async def delete(self, target: ArtifactRemovalTarget) -> ArtifactDeletionEvidence:
+            if target.storage_key == self.failed_key:
                 raise ArtifactServiceError("provider removal unavailable")
-            return await super().delete(storage_key)
+            return await super().delete(target)
 
     repository = MemoryArtifactRepository(clock=lambda: current[0])
     operation_id = uuid4()
@@ -1146,6 +1620,7 @@ async def test_poisoned_verification_write_does_not_block_later_targets() -> Non
     await service.begin_upload(requests[1])
     current[0] += timedelta(hours=2)
     assert len(await service.remove_expired_quota_objects(limit=2)) == 2
+    current[0] += timedelta(minutes=6)
 
     verified = await service.verify_expired_quota_absence(limit=2)
 
@@ -1523,13 +1998,22 @@ def test_settings_bound_object_quota_and_upload_reservation_lifetime() -> None:
 
     with pytest.raises(ValidationError, match="artifact_tenant_quota_objects"):
         Settings(artifact_tenant_quota_objects=0)
-    with pytest.raises(ValidationError, match="cannot expire before its handle"):
+    with pytest.raises(ValidationError, match="configured handle lifetime"):
         Settings(
+            scientific_artifacts_enabled=True,
             artifact_handle_ttl_seconds=900,
             artifact_upload_reservation_ttl_seconds=899,
         )
+    compatible = Settings(
+        scientific_artifacts_enabled=True,
+        artifact_handle_ttl_seconds=30,
+        artifact_upload_completion_grace_seconds=900,
+        artifact_upload_reservation_ttl_seconds=30,
+    )
+    assert compatible.artifact_upload_reservation_ttl_seconds == 30
     with pytest.raises(ValidationError, match="cannot exceed artifact retention"):
         Settings(
+            scientific_artifacts_enabled=True,
             artifact_retention_seconds=3600,
             artifact_upload_reservation_ttl_seconds=7200,
         )
@@ -1593,15 +2077,17 @@ async def test_retention_deletes_objects_then_metadata_and_records_evidence() ->
     )
     assert await service.purge_expired() == []
 
+    expired_now = [NOW + timedelta(days=2)]
     expired = ScientificArtifactService(
         repository=repository,
         object_store=store,
         allowed_media_types=ALLOWED_MEDIA_TYPES,
-        clock=lambda: NOW + timedelta(days=2),
+        clock=lambda: expired_now[0],
     )
     assert await expired.purge_expired() == []
     assert len(await expired.remove_expired_quota_objects()) == 1
     assert await expired.purge_expired() == []
+    expired_now[0] += timedelta(minutes=6)
     assert len(await expired.verify_expired_quota_absence()) == 1
     purges = await expired.purge_expired()
     assert len(purges) == 1
@@ -1618,7 +2104,12 @@ async def test_retention_deletes_objects_then_metadata_and_records_evidence() ->
 # --------------------------------------------------------------------------
 
 TRUNCATE = """
-TRUNCATE fs2_scientific_artifact_quota_events,fs2_scientific_artifact_removal_evidence,
+TRUNCATE fs2_scientific_artifact_verification_failures_v2,
+    fs2_scientific_artifact_deletion_evidence_v2,
+    fs2_scientific_artifact_removal_evidence_v2,
+    fs2_scientific_artifact_upload_capabilities,
+    fs2_scientific_artifact_janitor_tenant_cursors,
+    fs2_scientific_artifact_quota_events,fs2_scientific_artifact_removal_evidence,
     fs2_scientific_artifact_quota_reservations,
     fs2_scientific_retention_ledger,fs2_scientific_artifact_events,
     fs2_scientific_stage_commit_attempts,fs2_scientific_stage_commits,

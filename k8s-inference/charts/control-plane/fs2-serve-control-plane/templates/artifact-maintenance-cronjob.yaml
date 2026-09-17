@@ -14,7 +14,7 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
-      activeDeadlineSeconds: 300
+      activeDeadlineSeconds: {{ .Values.artifactMaintenance.activeDeadlineSeconds }}
       ttlSecondsAfterFinished: 600
       template:
         metadata:
@@ -65,6 +65,75 @@ spec:
                 items:
                   - key: {{ .Values.secrets.artifactRemoverStore.key }}
                     path: credentials.json
+{{- if ne .Values.migration.rolloutPhase "prepare" }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-artifact-finalizer
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: artifact-finalizer
+spec:
+  schedule: {{ .Values.artifactMaintenance.finalizationSchedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: {{ .Values.artifactMaintenance.activeDeadlineSeconds }}
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            {{- include "fs2-serve.artifactFinalizerSelectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "control-plane") }}
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: artifact-finalizer
+              image: {{ include "fs2-serve.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              args: ["artifact-finalization"]
+              env:
+                {{- include "fs2-serve.artifactFinalizationEnv" . | nindent 16 }}
+              volumeMounts:
+                {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 16 }}
+                - name: artifact-store
+                  mountPath: /var/run/secrets/fs2-serve/artifact-store
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) | nindent 12 }}
+            - name: artifact-store
+              secret:
+                secretName: {{ .Values.secrets.artifactStore.name }}
+                defaultMode: 0400
+                items:
+                  - key: {{ .Values.secrets.artifactStore.key }}
+                    path: credentials.json
+{{- end }}
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -81,7 +150,7 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
-      activeDeadlineSeconds: 300
+      activeDeadlineSeconds: {{ .Values.artifactMaintenance.activeDeadlineSeconds }}
       ttlSecondsAfterFinished: 600
       template:
         metadata:

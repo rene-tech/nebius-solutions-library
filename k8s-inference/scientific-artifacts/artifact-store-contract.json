@@ -38,7 +38,7 @@
       "remove-expired-delete-markers"
     ],
     "abort_incomplete_multipart_upload_days": 1,
-    "noncurrent_version_expiration_days": 1,
+    "noncurrent_version_expiration_days": "application_retention_days",
     "expired_object_delete_marker": true,
     "current_object_expiration": "application-owned"
   },
@@ -104,10 +104,13 @@
       "handleTtlSeconds",
       "maxBytes",
       "mediaTypes",
+      "multipartWritesEnabled",
+      "providerStabilityGraceSeconds",
       "region",
       "retentionSeconds",
       "tenantQuotaBytes",
       "tenantQuotaObjects",
+      "uploadCompletionGraceSeconds",
       "uploadReservationTtlSeconds",
       "verifyTls"
     ],
@@ -143,8 +146,12 @@
       "name"
     ],
     "artifactMaintenance": [
+      "activeDeadlineSeconds",
       "enabled",
+      "finalizationSchedule",
       "removalSchedule",
+      "verificationConcurrency",
+      "verificationMinimumBytesPerSecond",
       "verificationSchedule"
     ],
     "networkPolicy": [
@@ -161,9 +168,12 @@
     "FS2_ARTIFACT_HANDLE_TTL_SECONDS",
     "FS2_ARTIFACT_MAX_BYTES",
     "FS2_ARTIFACT_MEDIA_TYPES",
+    "FS2_ARTIFACT_MULTIPART_WRITES_ENABLED",
+    "FS2_ARTIFACT_PROVIDER_STABILITY_GRACE_SECONDS",
     "FS2_ARTIFACT_RETENTION_SECONDS",
     "FS2_ARTIFACT_TENANT_QUOTA_BYTES",
     "FS2_ARTIFACT_TENANT_QUOTA_OBJECTS",
+    "FS2_ARTIFACT_UPLOAD_COMPLETION_GRACE_SECONDS",
     "FS2_ARTIFACT_UPLOAD_RESERVATION_TTL_SECONDS",
     "FS2_ARTIFACT_STORE_ADDRESSING_STYLE",
     "FS2_ARTIFACT_STORE_BUCKET",

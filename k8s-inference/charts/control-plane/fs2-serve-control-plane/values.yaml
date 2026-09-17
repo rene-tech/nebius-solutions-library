@@ -379,6 +379,28 @@ config:
 
 migration:
   activeDeadlineSeconds: 300
+  bridgeReadinessDeadlineSeconds: 86400
+  # Existing releases must move prepare -> expand -> contract -> activate.
+  # Fresh installs use activate. Only expand temporarily preserves the exact
+  # predecessor artifact grants, and Terraform disables automatic rollback for
+  # expand/rollback because a pre-0031 image is no longer a valid target.
+  rolloutPhase: activate
+  targetImage:
+    # Exact candidate image. Empty fields resolve to image.* only for a fresh
+    # activate install; every upgrade phase requires an explicit digest.
+    repository: ""
+    digest: ""
+  rollbackImage:
+    # Exact 0031-aware bridge image used by expand and rollback. It must differ
+    # from both the pre-0031 predecessor and the candidate so an application
+    # regression never requires an incompatible database downgrade.
+    repository: ""
+    digest: ""
+  predecessorImage:
+    # Exact N-1 image serving before expansion. It is never selected after the
+    # expand hook; its identity is retained in the durable bridge receipt.
+    repository: ""
+    digest: ""
   reportingDatabaseRole: fs2_serve_reporting
   runtimeDatabaseRole: fs2_serve_runtime
   maintenanceDatabaseRole: fs2_serve_maintenance
@@ -390,11 +412,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: df94dc4d76eb783d618aaecc1b9767a3896dc4bb93353cb0d786fa41f7312185
-    migrationSetSha256: 714d1456b60c8ccc74b0dca40d1f486bd116a85f586a258c386e5d9d5aae4c22
-    migrationCount: 30
+    contractPayloadSha256: b28f0f1e6e6e749e2e1c5d1c205e393a2f11f019a2d65219636e11872492bbb3
+    migrationSetSha256: 1bc495f57002004a6032b8a9b209c4563b2e9e788698f21c60550cded947a7bd
+    migrationCount: 31
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0030_scientific_quota_settlement.sql
+    lastMigrationVersion: 0031_scientific_quota_fencing.sql
     namespaceRoleOwnershipSha256: cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580
   resources:
     requests:
@@ -609,7 +631,11 @@ maintenance:
 
 artifactMaintenance:
   enabled: false
+  activeDeadlineSeconds: 18000
+  finalizationSchedule: "1-59/5 * * * *"
   removalSchedule: "*/5 * * * *"
+  verificationConcurrency: 4
+  verificationMinimumBytesPerSecond: 67108864
   verificationSchedule: "2-59/5 * * * *"
 
 httpRoute:
@@ -739,6 +765,10 @@ academicAssets:
 # unconfigured cluster never exposes an endpoint backed by absent credentials.
 scientificArtifacts:
   enabled: false
+  # Forward-compatible application rollback: false pauses only admission of a
+  # brand-new multipart-v2 generation. Single-put-v1, inline/trusted output
+  # publication, retries, and already-admitted multipart sessions continue.
+  multipartWritesEnabled: true
   endpoint: https://storage.eu-north1.nebius.cloud
   bucket: fs2-scientific-artifacts
   region: eu-north1
@@ -755,6 +785,13 @@ scientificArtifacts:
   # object slot remain charged until the independent verifier confirms exact
   # provider-side absence. Finalization extends eligibility through retention.
   uploadReservationTtlSeconds: 86400
+  # A part PUT accepted before handle expiry may finish after the signed
+  # deadline. Removal waits through this interval, then definitively aborts
+  # the server-owned multipart generation before any quota can be released.
+  uploadCompletionGraceSeconds: 900
+  # After remover completion, the independent verifier waits through this
+  # provider consistency window before taking its double version snapshot.
+  providerStabilityGraceSeconds: 300
   # Ceiling for artifact bytes carried through the public gateway itself, so a
   # customer that can reach only the API can still complete an upload. Must not
   # exceed maxRequestBytes; anything larger has to use a presigned handle.

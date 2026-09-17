@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import sys
 from datetime import timedelta
@@ -101,6 +102,7 @@ from .scientific_batch.service import ScientificBatchService
 from .scientific_batch.worker import ScientificBatchWorker
 from .scientific_input_uploads import ScientificInputUploadService
 from .scientific_object_store import ObjectStoreConfig, S3ArtifactObjectStore
+from .schema_bridge_readiness import KubernetesSchemaBridgeReader
 from .settings import Settings
 from .store import ConflictError
 from .telemetry import Metrics, configure_tracing
@@ -274,7 +276,11 @@ def _artifact_service(
         tenant_quota_bytes=settings.artifact_tenant_quota_bytes,
         tenant_quota_objects=settings.artifact_tenant_quota_objects,
         upload_reservation_ttl=timedelta(seconds=settings.artifact_upload_reservation_ttl_seconds),
+        upload_completion_grace=timedelta(seconds=settings.artifact_upload_completion_grace_seconds),
+        provider_stability_grace=timedelta(seconds=settings.artifact_provider_stability_grace_seconds),
+        multipart_writes_enabled=settings.artifact_multipart_writes_enabled,
         max_inline_content_bytes=settings.artifact_inline_content_max_bytes,
+        max_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
         default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
         retention=timedelta(seconds=settings.artifact_retention_seconds),
         require_tls_handles=settings.artifact_store_verify_tls,
@@ -701,12 +707,54 @@ async def maintain_artifact_removal(settings: Settings) -> None:
             tenant_quota_bytes=settings.artifact_tenant_quota_bytes,
             tenant_quota_objects=settings.artifact_tenant_quota_objects,
             upload_reservation_ttl=timedelta(seconds=settings.artifact_upload_reservation_ttl_seconds),
+            upload_completion_grace=timedelta(seconds=settings.artifact_upload_completion_grace_seconds),
+            provider_stability_grace=timedelta(seconds=settings.artifact_provider_stability_grace_seconds),
             max_inline_content_bytes=settings.artifact_inline_content_max_bytes,
+            max_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
             default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
             retention=timedelta(seconds=settings.artifact_retention_seconds),
             require_tls_handles=settings.artifact_store_verify_tls,
         )
+        # Reconcile crashed provider-session creation before ordinary expiry
+        # cleanup so empty multipart sessions cannot accumulate outside the
+        # quota ledger for an entire reservation lifetime.
+        await service.reconcile_stale_upload_session_creations(limit=50)
         await service.remove_expired_quota_objects(limit=50)
+    finally:
+        await object_store.close()
+        await pool.close()
+
+
+async def maintain_artifact_finalization(settings: Settings) -> None:
+    """Controller-owned recovery for expired provider-mutation leases."""
+
+    if not settings.scientific_artifacts_enabled:
+        raise RuntimeError("artifact finalization recovery requires scientific artifacts")
+    pool = await PostgresStore._connect_pool(
+        settings.database_url,
+        min_size=1,
+        max_size=2,
+        application_name="fs2-serve-artifact-finalizer",
+    )
+    object_store = _artifact_object_store(settings)
+    try:
+        service = ScientificArtifactService(
+            repository=PostgresArtifactRepository(pool),
+            object_store=object_store,
+            allowed_media_types=settings.artifact_media_types_set(),
+            max_artifact_bytes=settings.artifact_max_bytes,
+            tenant_quota_bytes=settings.artifact_tenant_quota_bytes,
+            tenant_quota_objects=settings.artifact_tenant_quota_objects,
+            upload_reservation_ttl=timedelta(seconds=settings.artifact_upload_reservation_ttl_seconds),
+            upload_completion_grace=timedelta(seconds=settings.artifact_upload_completion_grace_seconds),
+            provider_stability_grace=timedelta(seconds=settings.artifact_provider_stability_grace_seconds),
+            max_inline_content_bytes=settings.artifact_inline_content_max_bytes,
+            max_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
+            default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
+            retention=timedelta(seconds=settings.artifact_retention_seconds),
+            require_tls_handles=settings.artifact_store_verify_tls,
+        )
+        await service.recover_expired_finalizations(limit=50)
     finally:
         await object_store.close()
         await pool.close()
@@ -733,12 +781,92 @@ async def maintain_artifact_verification(settings: Settings) -> None:
             tenant_quota_bytes=settings.artifact_tenant_quota_bytes,
             tenant_quota_objects=settings.artifact_tenant_quota_objects,
             upload_reservation_ttl=timedelta(seconds=settings.artifact_upload_reservation_ttl_seconds),
+            upload_completion_grace=timedelta(seconds=settings.artifact_upload_completion_grace_seconds),
+            provider_stability_grace=timedelta(seconds=settings.artifact_provider_stability_grace_seconds),
             max_inline_content_bytes=settings.artifact_inline_content_max_bytes,
+            max_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
             default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
             retention=timedelta(seconds=settings.artifact_retention_seconds),
             require_tls_handles=settings.artifact_store_verify_tls,
         )
+        # Upgrade readiness remains closed until the independent verifier has
+        # pinned every pre-0031 retained artifact to one immutable provider
+        # VersionId.  The same read-only provider identity then verifies quota
+        # removal; it never receives deletion authority.
+        await service.pin_legacy_provider_versions(limit=50)
         await service.verify_expired_quota_absence(limit=50)
+    finally:
+        await object_store.close()
+        await pool.close()
+
+
+async def mark_artifact_schema_bridge_ready(settings: Settings) -> None:
+    """Seal bridge readiness only after API-proven drain and exhaustive pinning."""
+
+    if not settings.scientific_artifacts_enabled:
+        raise RuntimeError("schema bridge readiness requires scientific artifacts")
+    if settings.schema_rollout_release_revision < 1:
+        raise RuntimeError("schema bridge readiness requires an exact Helm release revision")
+    reader = KubernetesSchemaBridgeReader(
+        base_url=settings.schema_bridge_kubernetes_api_url,
+        token_file=settings.schema_bridge_kubernetes_token_file,
+        ca_file=settings.schema_bridge_kubernetes_ca_file,
+        namespace=settings.schema_bridge_namespace,
+        deployment_name=settings.schema_bridge_deployment_name,
+        release_name=settings.schema_bridge_release_name,
+        bridge_image_ref=settings.schema_rollout_bridge_image_ref,
+        predecessor_image_ref=settings.schema_rollout_predecessor_image_ref,
+    )
+    # Establish the predecessor-drained fact before any provider inventory.
+    # A second proof immediately before the receipt detects any intervening
+    # Deployment change and supplies the authoritative API-server timestamp.
+    await reader.verify()
+    pool = await PostgresStore._connect_pool(
+        settings.database_url,
+        min_size=1,
+        max_size=2,
+        application_name="fs2-serve-schema-bridge-ready",
+    )
+    object_store = _artifact_object_store(settings)
+    repository = PostgresArtifactRepository(pool)
+    service = ScientificArtifactService(
+        repository=repository,
+        object_store=object_store,
+        allowed_media_types=settings.artifact_media_types_set(),
+        max_artifact_bytes=settings.artifact_max_bytes,
+        tenant_quota_bytes=settings.artifact_tenant_quota_bytes,
+        tenant_quota_objects=settings.artifact_tenant_quota_objects,
+        upload_reservation_ttl=timedelta(seconds=settings.artifact_upload_reservation_ttl_seconds),
+        upload_completion_grace=timedelta(seconds=settings.artifact_upload_completion_grace_seconds),
+        provider_stability_grace=timedelta(seconds=settings.artifact_provider_stability_grace_seconds),
+        multipart_writes_enabled=False,
+        max_inline_content_bytes=settings.artifact_inline_content_max_bytes,
+        max_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
+        default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
+        retention=timedelta(seconds=settings.artifact_retention_seconds),
+        require_tls_handles=settings.artifact_store_verify_tls,
+    )
+    deadline = asyncio.get_running_loop().time() + settings.schema_bridge_readiness_deadline_seconds
+    try:
+        while True:
+            status = await repository.legacy_version_rollout_status()
+            if status.unresolved != 0:
+                raise RuntimeError("schema bridge has irrecoverable legacy provider-version evidence")
+            if status.missing_unfinished_upload_sessions != 0:
+                raise RuntimeError("schema bridge has predecessor uploads without retained sessions")
+            if status.pending == 0 and status.unbound_artifacts == 0:
+                evidence = await reader.verify()
+                await repository.mark_schema_bridge_ready(
+                    bridge_image_ref=settings.schema_rollout_bridge_image_ref,
+                    bridge_release_revision=settings.schema_rollout_release_revision,
+                    predecessor_image_ref=settings.schema_rollout_predecessor_image_ref,
+                    evidence=evidence,
+                )
+                return
+            if asyncio.get_running_loop().time() >= deadline:
+                raise RuntimeError("schema bridge legacy provider-version binding deadline expired")
+            await service.pin_legacy_provider_versions(limit=50)
+            await asyncio.sleep(1)
     finally:
         await object_store.close()
         await pool.close()
@@ -762,11 +890,73 @@ async def migrate(settings: Settings) -> None:
     )
 
 
+def _validate_schema_rollout_prepare_receipt(settings: Settings) -> None:
+    from .postgresql_release import validate_schema_rollout_prepare_receipt
+
+    if not settings.schema_rollout_expected_image_ref:
+        raise RuntimeError("schema-rollout expected image is absent")
+    payload = json.loads(settings.schema_rollout_prepare_receipt_file.read_text(encoding="utf-8"))
+    validate_schema_rollout_prepare_receipt(
+        payload,
+        settings.migrations_dir,
+        settings.schema_rollout_expected_image_ref,
+    )
+
+
+async def validate_schema_rollout_image(settings: Settings) -> None:
+    _validate_schema_rollout_prepare_receipt(settings)
+
+
+async def migrate_expand(settings: Settings) -> None:
+    _validate_schema_rollout_prepare_receipt(settings)
+    await PostgresStore.migrate_database(
+        settings.database_url,
+        settings.migrations_dir,
+        settings.reporting_database_role,
+        settings.runtime_database_role,
+        settings.maintenance_database_role,
+        settings.activation_database_role,
+        settings.artifact_remover_database_role,
+        settings.artifact_verifier_database_role,
+        preserve_predecessor_artifact_authority=True,
+        rollout_bridge_image_ref=settings.schema_rollout_bridge_image_ref,
+        rollout_predecessor_image_ref=settings.schema_rollout_predecessor_image_ref,
+        rollout_release_revision=settings.schema_rollout_release_revision,
+    )
+
+
+async def migrate_contract(settings: Settings) -> None:
+    _validate_schema_rollout_prepare_receipt(settings)
+    await PostgresStore.migrate_database(
+        settings.database_url,
+        settings.migrations_dir,
+        settings.reporting_database_role,
+        settings.runtime_database_role,
+        settings.maintenance_database_role,
+        settings.activation_database_role,
+        settings.artifact_remover_database_role,
+        settings.artifact_verifier_database_role,
+        require_bridge_ready_receipt=True,
+        rollout_bridge_image_ref=settings.schema_rollout_bridge_image_ref,
+        rollout_predecessor_image_ref=settings.schema_rollout_predecessor_image_ref,
+        rollout_release_revision=settings.schema_rollout_release_revision,
+    )
+
+
 async def wait_schema(settings: Settings) -> None:
     await PostgresStore.wait_for_schema(
         settings.database_url,
         settings.migrations_dir,
         settings.schema_wait_seconds,
+    )
+
+
+async def wait_schema_expanded(settings: Settings) -> None:
+    await PostgresStore.wait_for_schema(
+        settings.database_url,
+        settings.migrations_dir,
+        settings.schema_wait_seconds,
+        allow_expanded_contract=True,
     )
 
 
@@ -841,9 +1031,15 @@ def main() -> None:
             "maintenance",
             "artifact-maintenance",
             "artifact-removal",
+            "artifact-finalization",
             "artifact-verification",
+            "artifact-bridge-ready",
             "migrate",
+            "migrate-expand",
+            "migrate-contract",
+            "validate-schema-rollout-image",
             "wait-schema",
+            "wait-schema-expanded",
             "bootstrap-access",
             "validate",
             "postgresql-release-contract",
@@ -871,9 +1067,15 @@ def main() -> None:
             "maintenance": maintain,
             "artifact-maintenance": maintain_artifact_removal,
             "artifact-removal": maintain_artifact_removal,
+            "artifact-finalization": maintain_artifact_finalization,
             "artifact-verification": maintain_artifact_verification,
+            "artifact-bridge-ready": mark_artifact_schema_bridge_ready,
             "migrate": migrate,
+            "migrate-expand": migrate_expand,
+            "migrate-contract": migrate_contract,
+            "validate-schema-rollout-image": validate_schema_rollout_image,
             "wait-schema": wait_schema,
+            "wait-schema-expanded": wait_schema_expanded,
             "bootstrap-access": bootstrap_access,
             "model-controller": run_model_controller,
             "gpu-allocation-observer": observe_gpu_allocations,

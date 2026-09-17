@@ -378,7 +378,10 @@ output "scientific_artifacts_status" {
     max_artifact_bytes  = var.scientific_artifacts.max_artifact_bytes
     tenant_quota_bytes  = var.scientific_artifacts.tenant_quota_bytes
     tenant_quota_objects = var.scientific_artifacts.tenant_quota_objects
+    multipart_writes_enabled = var.scientific_artifacts.multipart_writes_enabled
     upload_reservation_ttl_seconds = var.scientific_artifacts.upload_reservation_ttl_seconds
+    upload_completion_grace_seconds = var.scientific_artifacts.upload_completion_grace_seconds
+    provider_stability_grace_seconds = var.scientific_artifacts.provider_stability_grace_seconds
     media_types         = sort(var.scientific_artifacts.media_types)
     batch = {
       enabled        = var.scientific_batch.enabled

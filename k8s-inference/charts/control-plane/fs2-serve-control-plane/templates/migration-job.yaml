@@ -1,3 +1,4 @@
+{{- if or .Release.IsInstall (has .Values.migration.rolloutPhase (list "expand" "contract" "rollback")) }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -46,13 +47,24 @@ spec:
       {{- end }}
       containers:
         - name: migrate
-          image: {{ include "fs2-serve.image" . }}
+          image: {{ include "fs2-serve.schemaMigrationImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Release.IsInstall }}
           args: ["migrate"]
+          {{- else if has .Values.migration.rolloutPhase (list "expand" "rollback") }}
+          args: ["migrate-expand"]
+          {{- else }}
+          args: ["migrate-contract"]
+          {{- end }}
           env:
             {{- include "fs2-serve.migrationEnv" . | nindent 12 }}
           volumeMounts:
             {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 12 }}
+            {{- if .Release.IsUpgrade }}
+            - name: schema-rollout-prepare-receipt
+              mountPath: /etc/fs2-serve/schema-rollout
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.migration.resources | nindent 12 }}
           securityContext:
@@ -62,3 +74,12 @@ spec:
               drop: ["ALL"]
       volumes:
         {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.migrationsDatabase) | nindent 8 }}
+        {{- if .Release.IsUpgrade }}
+        - name: schema-rollout-prepare-receipt
+          configMap:
+            name: {{ include "fs2-serve.schemaMigrationPrepareReceiptName" . }}
+            items:
+              - key: prepare-receipt.json
+                path: prepare-receipt.json
+        {{- end }}
+{{- end }}

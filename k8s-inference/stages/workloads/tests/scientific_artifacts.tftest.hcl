@@ -295,7 +295,7 @@ run "storage_only_projects_the_canonical_chart_values" {
         retention = {
           artifact_retention_days                = 90
           abort_incomplete_multipart_upload_days = 1
-          noncurrent_version_expiration_days     = 1
+          noncurrent_version_expiration_days     = 90
           expired_object_delete_marker           = true
           current_object_expiration              = "application-owned"
           lifecycle_rule_ids = [
@@ -351,7 +351,10 @@ run "storage_only_projects_the_canonical_chart_values" {
       terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.maxBytes == 1099511627776 &&
       terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.tenantQuotaBytes == 1099511627776 &&
       terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.tenantQuotaObjects == 4096 &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.multipartWritesEnabled == true &&
       terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.uploadReservationTtlSeconds == 86400 &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.uploadCompletionGraceSeconds == 900 &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.providerStabilityGraceSeconds == 300 &&
       terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.retentionSeconds == 90 * 86400
     )
     error_message = "Handle and reservation lifetimes, maximum artifact size, tenant byte/object quotas and retention must reach the chart exactly."
@@ -373,6 +376,8 @@ run "storage_only_projects_the_canonical_chart_values" {
       terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactRemoverStore.name == "fs2-serve-artifact-remover-store" &&
       terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactVerifierStore.name == "fs2-serve-artifact-verifier-store" &&
       terraform_data.scientific_artifacts_contract.input.chart_values.artifactMaintenance.removalSchedule == "*/5 * * * *" &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.artifactMaintenance.finalizationSchedule == "1-59/5 * * * *" &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.artifactMaintenance.verificationConcurrency == 4 &&
       terraform_data.scientific_artifacts_contract.input.chart_values.artifactMaintenance.verificationSchedule == "2-59/5 * * * *" &&
       terraform_data.scientific_artifacts_contract.input.secret_name == "fs2-serve-artifact-store" &&
       terraform_data.scientific_artifacts_contract.input.remover_secret_name == "fs2-serve-artifact-remover-store" &&
@@ -461,7 +466,7 @@ run "the_credential_revision_is_the_only_rotation_trigger" {
         retention = {
           artifact_retention_days                = 90
           abort_incomplete_multipart_upload_days = 1
-          noncurrent_version_expiration_days     = 1
+          noncurrent_version_expiration_days     = 90
           expired_object_delete_marker           = true
           current_object_expiration              = "application-owned"
           lifecycle_rule_ids = [
@@ -649,7 +654,7 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
         retention = {
           artifact_retention_days                = 90
           abort_incomplete_multipart_upload_days = 1
-          noncurrent_version_expiration_days     = 1
+          noncurrent_version_expiration_days     = 90
           expired_object_delete_marker           = true
           current_object_expiration              = "application-owned"
           lifecycle_rule_ids = [
@@ -855,7 +860,7 @@ run "a_subnet_wide_egress_allowlist_is_refused" {
         retention = {
           artifact_retention_days                = 90
           abort_incomplete_multipart_upload_days = 1
-          noncurrent_version_expiration_days     = 1
+          noncurrent_version_expiration_days     = 90
           expired_object_delete_marker           = true
           current_object_expiration              = "application-owned"
           lifecycle_rule_ids = [
@@ -957,7 +962,7 @@ run "an_out_of_region_bucket_is_refused" {
         retention = {
           artifact_retention_days                = 90
           abort_incomplete_multipart_upload_days = 1
-          noncurrent_version_expiration_days     = 1
+          noncurrent_version_expiration_days     = 90
           expired_object_delete_marker           = true
           current_object_expiration              = "application-owned"
           lifecycle_rule_ids = [

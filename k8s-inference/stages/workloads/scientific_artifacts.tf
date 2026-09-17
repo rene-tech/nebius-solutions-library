@@ -232,7 +232,14 @@ locals {
         maxBytes         = var.scientific_artifacts.max_artifact_bytes
         tenantQuotaBytes = var.scientific_artifacts.tenant_quota_bytes
         tenantQuotaObjects = var.scientific_artifacts.tenant_quota_objects
+        multipartWritesEnabled = (
+          var.control_plane_schema_rollout_phase == "activate"
+          ? var.scientific_artifacts.multipart_writes_enabled
+          : false
+        )
         uploadReservationTtlSeconds = var.scientific_artifacts.upload_reservation_ttl_seconds
+        uploadCompletionGraceSeconds = var.scientific_artifacts.upload_completion_grace_seconds
+        providerStabilityGraceSeconds = var.scientific_artifacts.provider_stability_grace_seconds
         retentionSeconds = var.scientific_artifacts.retention_days * 86400
         mediaTypes       = sort(var.scientific_artifacts.media_types)
         egressCidrs      = sort(var.scientific_artifacts.egress_cidrs)
@@ -253,7 +260,11 @@ locals {
       }
       artifactMaintenance = {
         enabled              = true
+        activeDeadlineSeconds = 18000
+        finalizationSchedule = "1-59/5 * * * *"
         removalSchedule      = "*/5 * * * *"
+        verificationConcurrency = 4
+        verificationMinimumBytesPerSecond = 67108864
         verificationSchedule = "2-59/5 * * * *"
       }
       networkPolicy = {
