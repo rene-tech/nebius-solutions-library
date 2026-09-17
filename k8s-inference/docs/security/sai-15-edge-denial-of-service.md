@@ -299,6 +299,10 @@ key, authorization-scheme, JWT, and PEM private-key formats are removed even
 from malformed or partial bodies. The current policy is re-applied before every
 store write, decrypted read, and API export; a retained pre-hardening row or a
 custom store therefore cannot bypass a later taxonomy improvement. The
+same policy sanitizes legacy list-summary columns (`endpoint`, `model_id`,
+`mcp_tool`, and `error_type`) in the in-memory adapter, PostgreSQL adapter, and
+again at the route export boundary without changing IDs, timestamps, byte
+counts, completeness flags, or token-count telemetry. The
 separate accepted SAI-02 integration continues to own the exact 90-day record
 retention and purge.
 

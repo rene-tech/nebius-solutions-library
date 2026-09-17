@@ -16,6 +16,7 @@ from .request_debug import (
     DebugExchangeList,
     DebugStore,
     sanitize_debug_exchange,
+    sanitize_debug_list,
 )
 from .request_debug_authorization import RequestDebugAuthorization
 
@@ -173,6 +174,7 @@ def request_debug_router(
                         cursor=cursor,
                     )
                 )
+                result = sanitize_debug_list(result)
             except Exception as error:
                 failure = (
                     AdminProblemError(

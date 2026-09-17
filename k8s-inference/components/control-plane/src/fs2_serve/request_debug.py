@@ -356,6 +356,7 @@ def _sanitize(exchange: DebugExchange) -> DebugExchange:
             "endpoint": redact_text(exchange.endpoint, known),
             "model_id": redact_text(exchange.model_id, known) if exchange.model_id else None,
             "mcp_tool": redact_text(exchange.mcp_tool, known) if exchange.mcp_tool else None,
+            "error_type": redact_text(exchange.error_type, known) if exchange.error_type else None,
             "error_detail": redact_text(exchange.error_detail, known) if exchange.error_detail is not None else None,
         }
     )
@@ -365,6 +366,27 @@ def sanitize_debug_exchange(exchange: DebugExchange) -> DebugExchange:
     """Re-apply current redaction policy before every persistence/export boundary."""
 
     return _sanitize(exchange)
+
+
+def sanitize_debug_summary(summary: DebugExchangeSummary) -> DebugExchangeSummary:
+    """Redact legacy summary columns without altering identity or accounting fields."""
+
+    return summary.model_copy(
+        update={
+            "endpoint": redact_text(summary.endpoint),
+            "model_id": redact_text(summary.model_id) if summary.model_id else None,
+            "mcp_tool": redact_text(summary.mcp_tool) if summary.mcp_tool else None,
+            "error_type": redact_text(summary.error_type) if summary.error_type else None,
+        }
+    )
+
+
+def sanitize_debug_list(value: DebugExchangeList) -> DebugExchangeList:
+    """Apply the current summary policy at every list/export boundary."""
+
+    return value.model_copy(
+        update={"items": [sanitize_debug_summary(item) for item in value.items]}
+    )
 
 
 def _summary(exchange: DebugExchange) -> DebugExchangeSummary:
@@ -437,7 +459,7 @@ class InMemoryDebugStore:
             key=lambda row: (row.started_at, row.id),
             reverse=True,
         )
-        items = [_summary(row) for row in rows[:limit]]
+        items = [sanitize_debug_summary(_summary(row)) for row in rows[:limit]]
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
@@ -539,7 +561,10 @@ class PostgresDebugStore:
             after[1] if after else None,
             limit + 1,
         )
-        items = [DebugExchangeSummary.model_validate(dict(row)) for row in rows[:limit]]
+        items = [
+            sanitize_debug_summary(DebugExchangeSummary.model_validate(dict(row)))
+            for row in rows[:limit]
+        ]
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:

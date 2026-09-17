@@ -191,6 +191,10 @@ def test_recognizable_secret_formats_are_redacted(raw):
 async def test_legacy_or_custom_store_rows_are_resanitized_on_read_and_export():
     store = InMemoryDebugStore()
     unsafe = row(
+        endpoint="/v1/debug/ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+        model_id="github_pat_11AA22BB33_CC44DD55EE66FF77GG88HH99",
+        mcp_tool="-----BEGIN PRIVATE KEY-----\nunsafe\n-----END PRIVATE KEY-----",
+        error_type="AWS_SECRET_ACCESS_KEY=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/=",
         request_body=DebugBody(
             encoding="utf-8",
             data='{"api_token":"ghp_abcdefghijklmnopqrstuvwxyz0123456789","max_tokens":8}',
@@ -216,6 +220,15 @@ async def test_legacy_or_custom_store_rows_are_resanitized_on_read_and_export():
     assert "ghp_" not in loaded.model_dump_json()
     assert "PRIVATE KEY" not in loaded.model_dump_json()
     assert loaded.request_body.data.endswith('"max_tokens":8}')
+    listed = await store.list()
+    assert len(listed.items) == 1
+    listed_json = listed.model_dump_json()
+    assert "ghp_" not in listed_json
+    assert "github_pat_" not in listed_json
+    assert "PRIVATE KEY" not in listed_json
+    assert "AbCdEf" not in listed_json
+    assert listed.items[0].request_observed_bytes == 74
+    assert listed.items[0].response_observed_bytes == 60
     exported = sanitize_debug_exchange(unsafe)
     assert "ghp_" not in exported.model_dump_json()
     assert "PRIVATE KEY" not in exported.model_dump_json()
