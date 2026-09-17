@@ -44,6 +44,7 @@ from fs2_serve.model_deployment_controller import (
     FIXED_SCALE_FIELD_MANAGER,
     SCALE_GATE_CONFIG_MAP,
     SCALE_GATE_DENIAL_MESSAGE,
+    SCALE_GATE_MUTATION_ANNOTATION,
     SCALE_HANDOFF_RECEIPT_ANNOTATION,
     SCALE_HANDOFF_RECEIPT_FIELD_MANAGER,
     SCALE_INITIALIZATION_RECEIPT_ANNOTATION,
@@ -83,6 +84,8 @@ from fs2_serve.model_deployment_controller import (
     _scale_gate_allowance_value,
     _scale_gate_authorization,
     _scale_gate_companion_keys,
+    _scale_gate_mutation_token,
+    _scale_gate_scaler_checkpoint,
     _scale_gate_target,
     _scale_gate_target_key,
     _snapshot,
@@ -2601,6 +2604,27 @@ def _handoff_model_fence() -> ModelWriteFence:
 _TEST_SCALE_GATES: dict[str, str] = {}
 
 
+def _test_scaler_managed_fields(
+    *,
+    operation: Literal["Apply", "Update"] = "Apply",
+    mutation_token: str | None = None,
+) -> list[dict[str, Any]]:
+    fields_v1: dict[str, Any] = {"f:spec": {"f:scaleTargetRef": {}}}
+    if mutation_token is not None:
+        fields_v1["f:metadata"] = {
+            "f:annotations": {f"f:{SCALE_GATE_MUTATION_ANNOTATION}": {}}
+        }
+    return [
+        {
+            "manager": FIELD_MANAGER,
+            "operation": operation,
+            "apiVersion": "keda.sh/v1alpha1",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": fields_v1,
+        }
+    ]
+
+
 def _test_gate_key(resource: RenderedResource) -> str:
     return _scale_gate_target_key(_scale_gate_target(resource))
 
@@ -3633,7 +3657,7 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
             "uid": "scaler-uid",
             "resourceVersion": "31",
             "generation": 1,
-            "managedFields": [{"manager": FIELD_MANAGER, "apiVersion": "keda.sh/v1alpha1"}],
+            "managedFields": _test_scaler_managed_fields(),
         }
     )
     live_hpa: dict[str, Any] = {
@@ -3710,6 +3734,10 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
         model_fence=model_fence,
         fence=fence(),
     )
+    assert authorization.phase == "prepared"
+    assert authorization.expected_scaler_generation == 1
+    assert authorization.mutation_operation == "Update"
+    assert authorization.mutation_token is not None
     target_identity = _scale_gate_target(target)
     so_key, hpa_key = _scale_gate_companion_keys(target_identity)
     assert _TEST_SCALE_GATES[_test_gate_key(target)] == _test_gate_value(target, authorization)
@@ -3723,6 +3751,13 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
     )
     assert hpa_key not in _TEST_SCALE_GATES
 
+    assert authorization.mutation_token is not None
+    live_scaler["metadata"].setdefault("annotations", {})[
+        SCALE_GATE_MUTATION_ANNOTATION
+    ] = authorization.mutation_token
+    live_scaler["metadata"]["managedFields"] = _test_scaler_managed_fields(
+        operation="Update", mutation_token=authorization.mutation_token
+    )
     phase = "scaler"
     authorization = await client.release_scale_gate(
         target,
@@ -3781,6 +3816,9 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
     assert authorization.phase == "prepared"
     assert authorization.prior_scaler is not None
     assert authorization.prior_scaler.digest != authorization.desired_scaler_digest
+    assert authorization.expected_scaler_generation == 2
+    assert authorization.mutation_operation == "Apply"
+    assert authorization.mutation_token is not None
     live_model = _handoff_model()
 
     interrupted = ScaleHandoffReceipt(
@@ -3845,6 +3883,18 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
     )
     after_recovery = len(gate_patches)
     foreign = True
+    with pytest.raises(KubernetesConflictError, match="unexpected HPA"):
+        await client.release_scale_gate(
+            target,
+            scaler=scaler,
+            current=current_snapshot,
+            owner_uid="cr-uid-1",
+            model_fence=model_fence,
+            fence=fence(),
+        )
+    assert len(gate_patches) == after_recovery
+    foreign = False
+    live_hpa["metadata"]["deletionTimestamp"] = "2026-09-17T00:00:00Z"
     with pytest.raises(KubernetesConflictError, match="unexpected HPA"):
         await client.release_scale_gate(
             target,
@@ -4263,7 +4313,7 @@ async def test_http_records_or_refreshes_a_minimal_controller_owned_transition_r
             "resourceVersion": "30",
             "generation": 1,
             "ownerReferences": [{"uid": "cr-uid-1", "controller": True}],
-            "managedFields": [{"manager": FIELD_MANAGER, "apiVersion": "keda.sh/v1alpha1"}],
+            "managedFields": _test_scaler_managed_fields(),
         },
         "spec": {"scaleTargetRef": {"apiVersion": "apps/v1", "kind": "Deployment", "name": desired.name}},
     }
@@ -6442,6 +6492,14 @@ async def test_scaledobject_apply_fences_cr_change_at_the_mutating_boundary(tmp_
     scaler, target_resource = next(iter(_autoscaler_pairs(render)))
     model = _handoff_model()
     model_fence = _model_write_fence(model, ModelKey(namespace="fs2-models", name="qwen-live"))
+    mutation_token = _scale_gate_mutation_token(
+        deployment_uid="deployment-uid",
+        model_fence=model_fence,
+        scaler=scaler,
+        prior_scaler=None,
+        expected_generation=1,
+        operation="Update",
+    )
     authorization = ScaleGateReleaseAuthorization(
         version=2,
         deploymentUID="deployment-uid",
@@ -6454,6 +6512,9 @@ async def test_scaledobject_apply_fences_cr_change_at_the_mutating_boundary(tmp_
         scalerNamespace=scaler.namespace,
         scalerName=scaler.name,
         desiredScalerDigest=scaler.digest,
+        expectedScalerGeneration=1,
+        mutationToken=mutation_token,
+        mutationOperation="Update",
         phase="prepared",
     )
     _TEST_SCALE_GATES[_test_gate_key(target_resource)] = _test_gate_value(target_resource, authorization)
@@ -6531,12 +6592,21 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
             "uid": "scaler-uid",
             "resourceVersion": "31",
             "generation": 7,
-            "managedFields": [{"manager": FIELD_MANAGER, "apiVersion": "keda.sh/v1alpha1"}],
+            "managedFields": _test_scaler_managed_fields(),
         }
     )
     prior_snapshot = _snapshot(old, scaler)
     model = _handoff_model()
     model_fence = _model_write_fence(model, ModelKey(namespace="fs2-models", name="qwen-live"))
+    prior_checkpoint = _scale_gate_scaler_checkpoint(prior_snapshot)
+    mutation_token = _scale_gate_mutation_token(
+        deployment_uid="deployment-uid",
+        model_fence=model_fence,
+        scaler=scaler,
+        prior_scaler=prior_checkpoint,
+        expected_generation=8,
+        operation="Apply",
+    )
     authorization = ScaleGateReleaseAuthorization(
         version=2,
         deploymentUID="deployment-uid",
@@ -6549,12 +6619,10 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
         scalerNamespace=scaler.namespace,
         scalerName=scaler.name,
         desiredScalerDigest=scaler.digest,
-        priorScaler=ScaleGateScalerCheckpoint(
-            uid=prior_snapshot.observed.uid,
-            resourceVersion=prior_snapshot.resource_version,
-            generation=prior_snapshot.generation,
-            digest=prior_snapshot.observed.digest,
-        ),
+        expectedScalerGeneration=8,
+        mutationToken=mutation_token,
+        mutationOperation="Apply",
+        priorScaler=prior_checkpoint,
         phase="prepared",
     )
     _TEST_SCALE_GATES[_test_gate_key(target_resource)] = _test_gate_value(target_resource, authorization)
@@ -6564,12 +6632,15 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
         {"uid": "deployment-uid", "resourceVersion": "20", "generation": 1, "managedFields": []}
     )
     desired_live = copy.deepcopy(scaler.manifest)
+    desired_live["metadata"].setdefault("annotations", {})[SCALE_GATE_MUTATION_ANNOTATION] = mutation_token
     desired_live["metadata"].update(
         {
             "uid": "scaler-uid",
             "resourceVersion": "32",
             "generation": 8,
-            "managedFields": [{"manager": FIELD_MANAGER, "apiVersion": "keda.sh/v1alpha1"}],
+            "managedFields": _test_scaler_managed_fields(
+                operation="Apply", mutation_token=mutation_token
+            ),
         }
     )
     applied = resume_after_apply
@@ -6589,7 +6660,12 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
             if request.method == "PATCH":
                 scaler_patches.append(request)
                 applied = True
-            return httpx.Response(200, json=desired_live if applied else old)
+                return httpx.Response(200, json=desired_live)
+            if applied:
+                reread = copy.deepcopy(desired_live)
+                reread["metadata"]["resourceVersion"] = "33"
+                return httpx.Response(200, json=reread)
+            return httpx.Response(200, json=old)
         return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
@@ -6611,12 +6687,157 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
     assert result.observed.digest == scaler.digest
     assert len(scaler_patches) == (0 if resume_after_apply else 1)
     if scaler_patches:
-        assert json.loads(scaler_patches[0].content)["metadata"]["resourceVersion"] == "31"
+        patch = json.loads(scaler_patches[0].content)
+        assert patch["metadata"]["resourceVersion"] == "31"
+        assert patch["metadata"]["annotations"][SCALE_GATE_MUTATION_ANNOTATION] == mutation_token
     assert not any(request.url.path.endswith("/scale") for request in scaler_patches)
-    retained = _scale_gate_authorization(_TEST_SCALE_GATES[_test_gate_key(target_resource)], _scale_gate_target(target_resource))
+    retained = _scale_gate_authorization(
+        _TEST_SCALE_GATES[_test_gate_key(target_resource)],
+        _scale_gate_target(target_resource),
+    )
     assert isinstance(retained, ScaleGateReleaseAuthorization)
     assert retained.phase == "applied"
     assert retained.applied_scaler is not None and retained.applied_scaler.digest == scaler.digest
+    assert retained.applied_scaler.resource_version == ("33" if resume_after_apply else "32")
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tamper",
+    ["later-generation", "foreign-managed-fields", "missing-mutation-marker"],
+)
+async def test_crashed_scaledobject_update_rejects_unproven_same_digest_successor(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    """A toggled-away/back scaler cannot be normalized as our crashed write."""
+
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    render = renderer().render(
+        model_spec(),
+        RenderContext(
+            name="qwen-live",
+            namespace="fs2-models",
+            uid="cr-uid-1",
+            generation=2,
+            pool=envelope().pools["pool-b"],
+            eligible_pools=[envelope().pools[pool_ref] for pool_ref in model_spec().placement.pool_refs],
+            prometheus_server_address="http://prometheus:9090",
+        ),
+    )
+    scaler, target_resource = next(iter(_autoscaler_pairs(render)))
+    old = copy.deepcopy(scaler.manifest)
+    old["spec"]["maxReplicaCount"] += 1
+    old["metadata"].update(
+        {
+            "uid": "scaler-uid",
+            "resourceVersion": "31",
+            "generation": 7,
+            "managedFields": _test_scaler_managed_fields(),
+        }
+    )
+    prior = _scale_gate_scaler_checkpoint(_snapshot(old, scaler))
+    model = _handoff_model()
+    model_fence = _model_write_fence(model, ModelKey(namespace="fs2-models", name="qwen-live"))
+    mutation_token = _scale_gate_mutation_token(
+        deployment_uid="deployment-uid",
+        model_fence=model_fence,
+        scaler=scaler,
+        prior_scaler=prior,
+        expected_generation=8,
+        operation="Apply",
+    )
+    authorization = ScaleGateReleaseAuthorization(
+        version=2,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        modelResourceVersion=model_fence.resource_version,
+        modelGeneration=model_fence.generation,
+        modelSpecDigest=model_fence.spec_digest,
+        scalerAPIVersion=scaler.api_version,
+        scalerKind=scaler.kind,
+        scalerNamespace=scaler.namespace,
+        scalerName=scaler.name,
+        desiredScalerDigest=scaler.digest,
+        expectedScalerGeneration=8,
+        mutationToken=mutation_token,
+        mutationOperation="Apply",
+        priorScaler=prior,
+        phase="prepared",
+    )
+    _TEST_SCALE_GATES[_test_gate_key(target_resource)] = _test_gate_value(target_resource, authorization)
+    deployment = copy.deepcopy(target_resource.manifest)
+    deployment["spec"]["replicas"] = 0
+    deployment["metadata"].update(
+        {"uid": "deployment-uid", "resourceVersion": "20", "generation": 1, "managedFields": []}
+    )
+    toggled = copy.deepcopy(scaler.manifest)
+    if tamper != "missing-mutation-marker":
+        toggled["metadata"].setdefault("annotations", {})[
+            SCALE_GATE_MUTATION_ANNOTATION
+        ] = mutation_token
+    managed_fields = _test_scaler_managed_fields(
+        operation="Apply",
+        mutation_token=mutation_token if tamper != "missing-mutation-marker" else None,
+    )
+    if tamper == "foreign-managed-fields":
+        managed_fields.append(
+            {
+                "manager": "foreign-writer",
+                "operation": "Apply",
+                "apiVersion": "keda.sh/v1alpha1",
+                "fieldsType": "FieldsV1",
+                "fieldsV1": {"f:spec": {"f:maxReplicaCount": {}}},
+            }
+        )
+    toggled["metadata"].update(
+        {
+            "uid": "scaler-uid",
+            "resourceVersion": "39",
+            "generation": 10 if tamper == "later-generation" else 8,
+            "managedFields": managed_fields,
+        }
+    )
+    mutations: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            return httpx.Response(200, json=model)
+        if (response := _scale_gate_response(request)) is not None:
+            return response
+        if request.url.path.endswith(f"/deployments/{target_resource.name}"):
+            return httpx.Response(200, json=deployment)
+        if request.url.path.endswith(f"/scaledobjects/{scaler.name}"):
+            return httpx.Response(200, json=toggled)
+        if request.method in {"POST", "PATCH", "DELETE"}:
+            mutations.append(request)
+        return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    with pytest.raises(KubernetesConflictError):
+        await client.apply_autoscaler_resource(
+            scaler,
+            target=target_resource,
+            authorization=authorization,
+            owner_uid="cr-uid-1",
+            model_fence=model_fence,
+            fence=fence(),
+        )
+    assert mutations == []
+    assert _TEST_SCALE_GATES[_test_gate_key(target_resource)] == _test_gate_value(
+        target_resource, authorization
+    )
     await http.aclose()
 
 
@@ -6655,7 +6876,7 @@ async def test_http_older_handoff_receipt_requires_current_closed_gate_and_never
         scalerKind=receipt.scaler.kind,
         scalerNamespace=receipt.scaler.namespace,
         scalerName=receipt.scaler.name,
-        desiredScalerDigest=f"sha256:{'7' * 64}",
+        desiredScalerDigest=canonical_digest(receipt.scaler.model_dump(mode="json", by_alias=True)),
         phase="closed",
     )
     target_key = _test_gate_key(desired)
@@ -6704,8 +6925,6 @@ async def test_http_older_handoff_receipt_requires_current_closed_gate_and_never
         )
     assert not any(request.url.path.endswith("/scale") for request in requests)
     requests.clear()
-    stale_status_closure = closure.model_copy(update={"model_resource_version": "3"})
-    _TEST_SCALE_GATES[target_key] = _test_gate_value(desired, stale_status_closure)
     assert await client.fixed_scale_guard_clear(
         desired,
         current=_snapshot(current, desired),
@@ -6715,6 +6934,7 @@ async def test_http_older_handoff_receipt_requires_current_closed_gate_and_never
         fence=fence(),
     )
     assert _TEST_SCALE_GATES[target_key] == _test_gate_value(desired, closure)
+    assert set(_TEST_SCALE_GATES) == {target_key}
     assert not any(request.url.path.endswith("/scale") for request in requests)
     requests.clear()
     result = await client.apply_fixed_scale_handoff(
@@ -6764,7 +6984,7 @@ async def test_applied_scaler_authorization_refreshes_status_only_rvs_and_preser
             "uid": "scaler-uid",
             "resourceVersion": "32",
             "generation": 7,
-            "managedFields": [{"manager": FIELD_MANAGER, "apiVersion": scaler.api_version}],
+            "managedFields": _test_scaler_managed_fields(),
         }
     )
     live_hpa = {
@@ -6796,6 +7016,9 @@ async def test_applied_scaler_authorization_refreshes_status_only_rvs_and_preser
             resourceVersion="31",
             generation=7,
             digest=scaler.digest,
+            managedFieldsDigest=_scale_gate_scaler_checkpoint(
+                _snapshot(live_scaler, scaler)
+            ).managed_fields_digest,
         ),
         phase="applied",
     )
@@ -6866,6 +7089,9 @@ async def test_applied_scaler_authorization_refreshes_status_only_rvs_and_preser
         resourceVersion="32",
         generation=7,
         digest=scaler.digest,
+        managedFieldsDigest=_scale_gate_scaler_checkpoint(
+            _snapshot(live_scaler, scaler)
+        ).managed_fields_digest,
     )
     assert _scale_gate_authorization(_TEST_SCALE_GATES[target_key], target) == refreshed
     assert hpa_key in _TEST_SCALE_GATES
@@ -6909,6 +7135,14 @@ async def test_scaledobject_absent_creation_uses_atomic_post_and_rejects_a_racin
     _, deployment, _ = _fixed_scale_http_fixture()
     model = _handoff_model()
     model_fence = _model_write_fence(model, ModelKey(namespace="fs2-models", name="qwen-live"))
+    mutation_token = _scale_gate_mutation_token(
+        deployment_uid="deployment-uid",
+        model_fence=model_fence,
+        scaler=scaler,
+        prior_scaler=None,
+        expected_generation=1,
+        operation="Update",
+    )
     authorization = ScaleGateReleaseAuthorization(
         version=2,
         deploymentUID="deployment-uid",
@@ -6921,6 +7155,9 @@ async def test_scaledobject_absent_creation_uses_atomic_post_and_rejects_a_racin
         scalerNamespace=scaler.namespace,
         scalerName=scaler.name,
         desiredScalerDigest=scaler.digest,
+        expectedScalerGeneration=1,
+        mutationToken=mutation_token,
+        mutationOperation="Update",
         phase="prepared",
     )
     _TEST_SCALE_GATES[_test_gate_key(target_resource)] = _test_gate_value(target_resource, authorization)
@@ -6975,7 +7212,11 @@ async def test_scaledobject_absent_creation_uses_atomic_post_and_rejects_a_racin
     assert create.method == "POST" and create.url.path.endswith("/scaledobjects")
     assert create.url.params["fieldManager"] == FIELD_MANAGER
     assert "force" not in create.url.params
-    assert json.loads(create.content) == scaler.manifest
+    expected_manifest = copy.deepcopy(scaler.manifest)
+    expected_manifest["metadata"].setdefault("annotations", {})[
+        SCALE_GATE_MUTATION_ANNOTATION
+    ] = authorization.mutation_token
+    assert json.loads(create.content) == expected_manifest
     assert _TEST_SCALE_GATES[_test_gate_key(target_resource)] == _test_gate_value(target_resource, authorization)
     await http.aclose()
 
