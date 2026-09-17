@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/sai-08-integration-dependencies/v2",
+  "schema": "fs2-serve.nebius.ai/sai-08-integration-dependencies/v3",
   "status": "blocked",
   "dependencies": {
     "sai_10_accepted_commit": null,
@@ -8,15 +8,23 @@
     "provider_authority_manifest_sha256": null,
     "provider_authority_prior_head_receipt_sha256": null,
     "provider_project_iam_inventory_receipt_sha256": null,
+    "provider_effective_authority_graph_receipt_sha256": null,
+    "provider_state_custody_sha256": null,
+    "boundary_state_custody_sha256": null,
     "kubernetes_rbac_inventory_receipt_sha256": null,
+    "kubernetes_service_account_inventory_sha256": null,
+    "kubernetes_system_subject_inventory_sha256": null,
+    "workload_policy_sha256": null,
     "predecessor_state_custody_sha256": null,
     "live_predecessor_compatibility_handoff_sha256": null
   },
   "requirements": [
     "accepted SAI-10 lineage with customer-storage cipher and name key generations",
-    "two separately mounted read-only authority anchors approved outside Terraform state",
-    "provider-native exact project IAM inventory proving no unlisted mutator",
-    "fresh signed target-cluster RBAC inventory covering every role and binding",
+    "clean integration lineage in which rejected SAI-10 is not an ancestor of accepted custody or HEAD",
+    "two separately mounted read-only authority anchors approved outside Terraform state with provider, boundary and workloads backend lineage/serial/address custody",
+    "provider-native effective authority graph covering inherited, federated and external principals plus exact project IAM inventory",
+    "fresh signed target-cluster RBAC inventory covering every role, binding and reconciled subject",
+    "exact admission contract for Pods, ServiceAccounts, Deployments, Jobs, CronJobs, DaemonSets, StatefulSets and ReplicaSets",
     "read-only live digest handoff for every fixed predecessor object",
     "retained predecessor state lineage with no forget action",
     "create-only provider, Kubernetes security, and generation-named Helm plans with zero delete, replace, update, rollback, or uninstall"

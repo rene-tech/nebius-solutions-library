@@ -9,7 +9,7 @@
 {{- if ne .Release.Name $expectedRelease }}{{ fail "each additive rollout requires its exact generation-named Helm release" }}{{ end -}}
 {{- $name := printf "fs2-storage-v2-%s-%s" $suffix $rolloutSuffix -}}
 {{- if ne .Release.Namespace "fs2-system" }}{{ fail "customer-storage-reconciler-v2 is restricted to fs2-system" }}{{ end -}}
-{{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v1" }}{{ fail "provider authority handoff is required" }}{{ end -}}
+{{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v2" }}{{ fail "provider authority handoff is required" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.releaseValuesSha256) }}{{ fail "externally signed release-values digest is required" }}{{ end -}}
 {{- if or (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.priorHeadReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.iamInventoryReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.rbacInventoryReceiptSha256)) }}{{ fail "separately anchored prior head and exact provider IAM/RBAC receipts are required" }}{{ end -}}
 {{- if ne .Values.authority.nodeSelectorValue $authorityGeneration }}{{ fail "authority node selector must equal its generation" }}{{ end -}}
@@ -20,6 +20,7 @@
 {{- if ne .Values.predecessor.schema "fs2-serve.nebius.ai/customer-storage-egress-predecessor/v1" }}{{ fail "fixed predecessor compatibility receipt is required" }}{{ end -}}
 {{- if ne .Values.predecessor.receiptSha256 .Values.authority.predecessorCompatibilitySha256 }}{{ fail "predecessor receipt must be bound by the external provider authority ledger" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.boundaryPolicySha256) }}{{ fail "content-bound admission policy digest is required" }}{{ end -}}
+{{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.workloadPolicySha256) }}{{ fail "content-bound workload admission policy digest is required" }}{{ end -}}
 {{- if hasPrefix "1ae009b85" .Values.custody.acceptedSai10Commit }}{{ fail "rejected SAI-10 custody lineage is forbidden" }}{{ end -}}
 {{- if or (not (regexMatch "^[a-f0-9]{40}$" .Values.custody.acceptedSai10Tree)) (eq .Values.custody.acceptedSai10Commit .Values.custody.acceptedSai10Tree) }}{{ fail "accepted SAI-10 commit and tree custody must be distinct exact Git identities" }}{{ end -}}
 apiVersion: v1
@@ -65,6 +66,7 @@ spec:
         fs2.nebius.ai/provider-identity-sha256: {{ .Values.authority.providerIdentitySha256 | quote }}
         fs2.nebius.ai/rbac-inventory-receipt-sha256: {{ .Values.authority.rbacInventoryReceiptSha256 | quote }}
         fs2.nebius.ai/boundary-policy-sha256: {{ .Values.authority.boundaryPolicySha256 | quote }}
+        fs2.nebius.ai/workload-policy-sha256: {{ .Values.authority.workloadPolicySha256 | quote }}
         fs2.nebius.ai/provider-security-group: {{ .Values.authority.securityGroupId | quote }}
         fs2.nebius.ai/provider-node-group: {{ .Values.authority.nodeGroupId | quote }}
         fs2.nebius.ai/storage-custody-commit: {{ .Values.custody.acceptedSai10Commit | quote }}

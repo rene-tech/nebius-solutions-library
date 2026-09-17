@@ -22,9 +22,9 @@ REGISTRY_PATH = Path("/etc/fs2-security-ro/authority/customer-storage-egress-aut
 PRIOR_HEAD_PATH = Path(
     "/var/lib/fs2-security-checkpoints-ro/customer-storage-egress-prior-head.json"
 )
-REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v2"
-PRIOR_HEAD_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-prior-head/v1"
-MANIFEST_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-ledger/v2"
+REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v3"
+PRIOR_HEAD_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-prior-head/v2"
+MANIFEST_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-ledger/v3"
 MAX_BYTES = 1024 * 1024
 NEBIUS_TERRAFORM_PROVIDER_VERSION = "0.5.232"
 
@@ -199,8 +199,11 @@ def verify(manifest_json: str) -> dict[str, str]:
         "authority_auth_public_keys",
         "workloads_service_account_id",
         "kubernetes_identity_inventory",
+        "kubernetes_service_account_inventory",
+        "kubernetes_system_subject_inventory",
         "kubernetes_rbac_inventory_receipt",
         "provider_project_iam_inventory_receipt",
+        "provider_effective_authority_graph_receipt",
         "accepted_custody",
         "approved_manifest_sha256",
         "manifest_public_key_pem",
@@ -249,6 +252,7 @@ def verify(manifest_json: str) -> dict[str, str]:
                 "name",
                 "category",
                 "username",
+                "groups",
                 "credential_sha256",
                 "provider_principal_id",
             }
@@ -258,6 +262,10 @@ def verify(manifest_json: str) -> dict[str, str]:
                 not isinstance(item.get(field), str) or not item[field]
                 for field in ("name", "username", "provider_principal_id")
             )
+            or not isinstance(item.get("groups"), list)
+            or not item["groups"]
+            or any(not isinstance(group, str) or not group for group in item["groups"])
+            or item["groups"] != sorted(set(item["groups"]))
             or not isinstance(item.get("credential_sha256"), str)
             or len(item["credential_sha256"]) != 64
             or any(character not in "0123456789abcdef" for character in item["credential_sha256"])
@@ -285,13 +293,151 @@ def verify(manifest_json: str) -> dict[str, str]:
     if workloads_identity["provider_principal_id"] != registry["workloads_service_account_id"]:
         raise ValueError("Kubernetes workloads identity is not bound to its provider principal")
 
+    service_account_subjects = registry["kubernetes_service_account_inventory"]
+    if (
+        not isinstance(service_account_subjects, list)
+        or not service_account_subjects
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"namespace", "name", "owner", "groups"}
+            or any(
+                not isinstance(item[field], str) or not item[field]
+                for field in ("namespace", "name", "owner")
+            )
+            or not isinstance(item.get("groups"), list)
+            or item["groups"] != sorted(set(item["groups"]))
+            or any(not isinstance(group, str) or not group for group in item["groups"])
+            for item in service_account_subjects
+        )
+        or service_account_subjects
+        != sorted(
+            service_account_subjects,
+            key=lambda item: (item["namespace"], item["name"], item["owner"]),
+        )
+        or len({(item["namespace"], item["name"]) for item in service_account_subjects})
+        != len(service_account_subjects)
+    ):
+        raise ValueError("Kubernetes service-account subject inventory is incomplete")
+    system_subjects = registry["kubernetes_system_subject_inventory"]
+    if (
+        not isinstance(system_subjects, list)
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"kind", "name", "namespace", "owner"}
+            or item.get("kind") not in {"User", "Group"}
+            or not isinstance(item.get("name"), str)
+            or not item["name"].startswith("system:")
+            or item.get("namespace") != ""
+            or not isinstance(item.get("owner"), str)
+            or not item["owner"]
+            for item in system_subjects
+        )
+        or system_subjects
+        != sorted(system_subjects, key=lambda item: (item["kind"], item["name"]))
+        or len({(item["kind"], item["name"]) for item in system_subjects})
+        != len(system_subjects)
+    ):
+        raise ValueError("Kubernetes native system-subject inventory is incomplete")
+
+    authority_graph = registry["provider_effective_authority_graph_receipt"]
+    if not isinstance(authority_graph, dict) or set(authority_graph) != {
+        "schema",
+        "authority_root_resource_id",
+        "project_id",
+        "cluster_id",
+        "snapshot_id",
+        "snapshot_serial",
+        "complete",
+        "principals",
+        "cluster_access_principal_ids",
+        "mutating_principal_ids",
+        "observed_at",
+        "payload_sha256",
+        "signature",
+    }:
+        raise ValueError("provider effective-authority graph receipt is absent")
+    authority_graph_sha256 = verify_signed_object(
+        authority_graph, public_key_pem=registry["checkpoint_public_key_pem"]
+    )
+    if authority_graph.get("schema") != (
+        "fs2-serve.nebius.ai/provider-effective-authority-graph/v1"
+    ):
+        raise ValueError("provider effective-authority graph schema differs")
+    if (
+        authority_graph.get("project_id") != registry["authority_project_id"]
+        or not isinstance(authority_graph.get("authority_root_resource_id"), str)
+        or not authority_graph["authority_root_resource_id"]
+        or not isinstance(authority_graph.get("cluster_id"), str)
+        or not authority_graph["cluster_id"]
+        or not isinstance(authority_graph.get("snapshot_id"), str)
+        or not authority_graph["snapshot_id"]
+        or not isinstance(authority_graph.get("snapshot_serial"), int)
+        or authority_graph["snapshot_serial"] < 1
+        or authority_graph.get("complete") is not True
+    ):
+        raise ValueError("provider effective-authority graph identity is incomplete")
+    require_fresh_timestamp(authority_graph.get("observed_at"), "provider authority graph")
+    graph_principals = authority_graph.get("principals")
+    if (
+        not isinstance(graph_principals, list)
+        or not graph_principals
+        or any(
+            not isinstance(item, dict)
+            or set(item)
+            != {
+                "id",
+                "kind",
+                "origin_resource_ids",
+                "cluster_access",
+                "mutation_capabilities",
+            }
+            or not isinstance(item.get("id"), str)
+            or not item["id"]
+            or item.get("kind")
+            not in {"service_account", "group", "user", "federated", "external"}
+            or not isinstance(item.get("origin_resource_ids"), list)
+            or not item["origin_resource_ids"]
+            or item["origin_resource_ids"] != sorted(set(item["origin_resource_ids"]))
+            or any(
+                not isinstance(resource_id, str) or not resource_id
+                for resource_id in item["origin_resource_ids"]
+            )
+            or not isinstance(item.get("cluster_access"), bool)
+            or not isinstance(item.get("mutation_capabilities"), list)
+            or item["mutation_capabilities"]
+            != sorted(set(item["mutation_capabilities"]))
+            or any(
+                not isinstance(capability, str) or not capability
+                for capability in item["mutation_capabilities"]
+            )
+            for item in graph_principals
+        )
+        or len({item["id"] for item in graph_principals}) != len(graph_principals)
+    ):
+        raise ValueError("provider effective-authority graph principals are incomplete")
+    graph_cluster_access_ids = sorted(
+        item["id"] for item in graph_principals if item["cluster_access"]
+    )
+    graph_mutating_ids = sorted(
+        item["id"] for item in graph_principals if item["mutation_capabilities"]
+    )
+    if (
+        authority_graph.get("cluster_access_principal_ids")
+        != graph_cluster_access_ids
+        or authority_graph.get("mutating_principal_ids") != graph_mutating_ids
+        or graph_cluster_access_ids
+        != sorted(item["provider_principal_id"] for item in kubernetes_subjects)
+        or graph_mutating_ids != [registry["authority_group_id"]]
+    ):
+        raise ValueError(
+            "provider-derived effective authority graph does not close cluster access and mutation"
+        )
+
     iam_receipt = registry["provider_project_iam_inventory_receipt"]
     if not isinstance(iam_receipt, dict) or set(iam_receipt) != {
         "schema",
         "project_id",
         "inventory",
-        "cluster_access_principal_ids",
-        "mutating_principal_ids",
         "observed_at",
         "payload_sha256",
         "signature",
@@ -300,7 +446,7 @@ def verify(manifest_json: str) -> dict[str, str]:
     iam_receipt_sha256 = verify_signed_object(
         iam_receipt, public_key_pem=registry["checkpoint_public_key_pem"]
     )
-    if iam_receipt.get("schema") != "fs2-serve.nebius.ai/provider-project-iam-inventory/v1":
+    if iam_receipt.get("schema") != "fs2-serve.nebius.ai/provider-project-iam-inventory/v2":
         raise ValueError("provider project IAM inventory receipt schema differs")
     if iam_receipt.get("project_id") != registry["authority_project_id"]:
         raise ValueError("provider project IAM inventory receipt project differs")
@@ -310,33 +456,6 @@ def verify(manifest_json: str) -> dict[str, str]:
     inventory = iam_receipt["inventory"]
     if set(inventory) != {"groups", "service_accounts", "access_permits"}:
         raise ValueError("provider project IAM inventory fields differ")
-    provider_inventory_ids = {
-        str(item.get("id"))
-        for field in ("groups", "service_accounts")
-        for item in inventory[field]
-        if isinstance(item, dict) and item.get("id")
-    }
-    provider_inventory_ids.update(
-        str(member)
-        for group in inventory["groups"]
-        if isinstance(group, dict)
-        for member in group.get("members", [])
-    )
-    if not {item["provider_principal_id"] for item in kubernetes_subjects}.issubset(
-        provider_inventory_ids
-    ):
-        raise ValueError("Kubernetes identity inventory contains a principal absent from provider IAM")
-    declared_provider_principals = sorted(
-        item["provider_principal_id"] for item in kubernetes_subjects
-    )
-    if iam_receipt.get("cluster_access_principal_ids") != declared_provider_principals:
-        raise ValueError(
-            "Kubernetes identity inventory is not the exact provider-approved cluster access set"
-        )
-    if iam_receipt.get("mutating_principal_ids") != [registry["authority_group_id"]]:
-        raise ValueError(
-            "provider IAM receipt does not confine mutations to the external authority group"
-        )
 
     rbac_receipt = registry["kubernetes_rbac_inventory_receipt"]
     if not isinstance(rbac_receipt, dict):
@@ -348,15 +467,66 @@ def verify(manifest_json: str) -> dict[str, str]:
         "schema",
         "cluster_id",
         "inventory_sha256",
+        "subjects",
         "observed_at",
         "payload_sha256",
         "signature",
     } or rbac_receipt.get("schema") != (
-        "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v1"
+        "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v2"
     ):
         raise ValueError("Kubernetes RBAC inventory receipt fields or schema differ")
     digest(rbac_receipt.get("inventory_sha256"), "Kubernetes RBAC inventory")
     require_fresh_timestamp(rbac_receipt.get("observed_at"), "Kubernetes RBAC inventory")
+    rbac_subjects = rbac_receipt.get("subjects")
+    if (
+        not isinstance(rbac_subjects, list)
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"kind", "name", "namespace"}
+            or item.get("kind") not in {"User", "Group", "ServiceAccount"}
+            or not isinstance(item.get("name"), str)
+            or not item["name"]
+            or not isinstance(item.get("namespace"), str)
+            or (item["kind"] == "ServiceAccount" and not item["namespace"])
+            or (item["kind"] != "ServiceAccount" and item["namespace"])
+            for item in rbac_subjects
+        )
+        or rbac_subjects
+        != sorted(
+            rbac_subjects,
+            key=lambda item: (item["kind"], item["namespace"], item["name"]),
+        )
+        or len({(item["kind"], item["namespace"], item["name"]) for item in rbac_subjects})
+        != len(rbac_subjects)
+    ):
+        raise ValueError("Kubernetes RBAC subject inventory is malformed")
+    authorized_users = {item["username"] for item in kubernetes_subjects}
+    authorized_groups = {
+        group for item in kubernetes_subjects for group in item["groups"]
+    }
+    authorized_groups.update(
+        group for item in service_account_subjects for group in item["groups"]
+    )
+    authorized_service_accounts = {
+        (item["namespace"], item["name"]) for item in service_account_subjects
+    }
+    authorized_users.update(
+        item["name"] for item in system_subjects if item["kind"] == "User"
+    )
+    authorized_groups.update(
+        item["name"] for item in system_subjects if item["kind"] == "Group"
+    )
+    for subject in rbac_subjects:
+        if subject["kind"] == "User" and subject["name"] not in authorized_users:
+            raise ValueError("RBAC contains a User absent from the authority identity inventory")
+        if subject["kind"] == "Group" and subject["name"] not in authorized_groups:
+            raise ValueError("RBAC contains a Group absent from the authority identity inventory")
+        if subject["kind"] == "ServiceAccount" and (
+            subject["namespace"], subject["name"]
+        ) not in authorized_service_accounts:
+            raise ValueError(
+                "RBAC contains a ServiceAccount absent from the authority identity inventory"
+            )
 
     custody = registry["accepted_custody"]
     if not isinstance(custody, dict) or set(custody) != {
@@ -379,6 +549,11 @@ def verify(manifest_json: str) -> dict[str, str]:
         "schema",
         "authority_project_id",
         "head_manifest_sha256",
+        "head_generation_sha256",
+        "provider_state_custody",
+        "provider_state_custody_sha256",
+        "boundary_state_custody",
+        "boundary_state_custody_sha256",
         "live_custody",
         "live_custody_sha256",
         "observed_at",
@@ -393,7 +568,125 @@ def verify(manifest_json: str) -> dict[str, str]:
     if prior_head.get("authority_project_id") != registry["authority_project_id"]:
         raise ValueError("authority prior head project differs")
     digest(prior_head.get("head_manifest_sha256"), "prior manifest head")
+    digest(prior_head.get("head_generation_sha256"), "prior generation head")
+    digest(prior_head.get("provider_state_custody_sha256"), "provider state custody")
+    digest(prior_head.get("boundary_state_custody_sha256"), "boundary state custody")
     digest(prior_head.get("live_custody_sha256"), "prior live custody")
+    provider_state_custody = prior_head.get("provider_state_custody")
+    provider_state_fields = {
+        "backend_config_sha256",
+        "backend_lineage",
+        "state_lineage",
+        "state_serial",
+        "state_version_id",
+        "state_snapshot_sha256",
+        "generations",
+        "managed_addresses",
+    }
+    provider_address_prefixes = (
+        "terraform_data.external_authority",
+        "nebius_vpc_v1_security_group.generation[",
+        "nebius_vpc_v1_security_rule.private_ingress[",
+        "nebius_vpc_v1_security_rule.dns_egress[",
+        "nebius_vpc_v1_security_rule.database_egress[",
+        "nebius_vpc_v1_security_rule.provider_egress[",
+        "nebius_mk8s_v1_node_group.generation[",
+    )
+    if (
+        not isinstance(provider_state_custody, dict)
+        or set(provider_state_custody) != provider_state_fields
+        or any(
+            not isinstance(provider_state_custody.get(field), str)
+            or not provider_state_custody[field]
+            for field in (
+                "backend_lineage",
+                "state_lineage",
+                "state_version_id",
+            )
+        )
+        or not isinstance(provider_state_custody.get("state_serial"), int)
+        or provider_state_custody["state_serial"] < 1
+        or not isinstance(provider_state_custody.get("managed_addresses"), list)
+        or not provider_state_custody["managed_addresses"]
+        or provider_state_custody["managed_addresses"]
+        != sorted(set(provider_state_custody["managed_addresses"]))
+        or any(
+            not isinstance(address, str)
+            or not address.startswith(provider_address_prefixes)
+            for address in provider_state_custody["managed_addresses"]
+        )
+        or not isinstance(provider_state_custody.get("generations"), list)
+        or provider_state_custody["generations"]
+        != sorted(set(provider_state_custody["generations"]))
+        or any(
+            not isinstance(generation, str)
+            or len(generation) != 28
+            or not generation.startswith("g")
+            for generation in provider_state_custody["generations"]
+        )
+    ):
+        raise ValueError("provider state custody is not canonical and complete")
+    for field in ("backend_config_sha256", "state_snapshot_sha256"):
+        digest(provider_state_custody[field], f"provider {field}")
+    if (
+        hashlib.sha256(canonical(provider_state_custody)).hexdigest()
+        != prior_head["provider_state_custody_sha256"]
+    ):
+        raise ValueError("provider state custody digest differs from its signed content")
+    boundary_state_custody = prior_head.get("boundary_state_custody")
+    boundary_state_fields = {
+        "backend_config_sha256",
+        "backend_lineage",
+        "state_lineage",
+        "state_serial",
+        "state_version_id",
+        "state_snapshot_sha256",
+        "managed_addresses",
+    }
+    boundary_address_prefixes = (
+        "terraform_data.separate_security_owner",
+        "kubernetes_manifest.boundary_policy[",
+        "kubernetes_manifest.boundary_binding[",
+        "kubernetes_manifest.workload_policy[",
+        "kubernetes_manifest.workload_binding[",
+        "kubernetes_config_map_v1.trust[",
+        "kubernetes_config_map_v1.contract[",
+        "kubernetes_network_policy_v1.contract[",
+        "kubernetes_role_v1.reconciler_inventory[",
+        "kubernetes_role_binding_v1.reconciler_inventory[",
+        "helm_release.storage_reconciler_v2[",
+    )
+    if (
+        not isinstance(boundary_state_custody, dict)
+        or set(boundary_state_custody) != boundary_state_fields
+        or any(
+            not isinstance(boundary_state_custody.get(field), str)
+            or not boundary_state_custody[field]
+            for field in (
+                "backend_lineage",
+                "state_lineage",
+                "state_version_id",
+            )
+        )
+        or not isinstance(boundary_state_custody.get("state_serial"), int)
+        or boundary_state_custody["state_serial"] < 0
+        or not isinstance(boundary_state_custody.get("managed_addresses"), list)
+        or boundary_state_custody["managed_addresses"]
+        != sorted(set(boundary_state_custody["managed_addresses"]))
+        or any(
+            not isinstance(address, str)
+            or not address.startswith(boundary_address_prefixes)
+            for address in boundary_state_custody["managed_addresses"]
+        )
+    ):
+        raise ValueError("boundary state custody is not canonical and complete")
+    for field in ("backend_config_sha256", "state_snapshot_sha256"):
+        digest(boundary_state_custody[field], f"boundary {field}")
+    if (
+        hashlib.sha256(canonical(boundary_state_custody)).hexdigest()
+        != prior_head["boundary_state_custody_sha256"]
+    ):
+        raise ValueError("boundary state custody digest differs from signed content")
     live_custody = prior_head.get("live_custody")
     expected_custody_fields = {
         "workloads_backend_id_sha256",
@@ -401,6 +694,13 @@ def verify(manifest_json: str) -> dict[str, str]:
         "workloads_state_serial",
         "managed_addresses",
         "predecessor_compatibility_sha256",
+        "control_plane_release_id",
+        "control_plane_release_revision",
+        "control_plane_release_manifest_sha256",
+        "predecessor_deployment_uid",
+        "predecessor_deployment_spec_sha256",
+        "predecessor_network_policy_uid",
+        "predecessor_network_policy_spec_sha256",
     }
     if (
         not isinstance(live_custody, dict)
@@ -411,13 +711,31 @@ def verify(manifest_json: str) -> dict[str, str]:
         or live_custody["workloads_state_serial"] < 1
         or live_custody.get("managed_addresses")
         != [
+            "helm_release.control_plane",
             "kubernetes_config_map_v1.customer_storage_egress_contract[0]",
             "kubernetes_manifest.customer_storage_egress_admission_binding[0]",
             "kubernetes_manifest.customer_storage_egress_admission_policy[0]",
         ]
+        or not isinstance(live_custody.get("control_plane_release_id"), str)
+        or not live_custody["control_plane_release_id"]
+        or not isinstance(live_custody.get("control_plane_release_revision"), int)
+        or live_custody["control_plane_release_revision"] < 1
+        or any(
+            not isinstance(live_custody.get(field), str) or not live_custody[field]
+            for field in (
+                "predecessor_deployment_uid",
+                "predecessor_network_policy_uid",
+            )
+        )
     ):
         raise ValueError("prior live custody does not retain the exact workloads state lineage")
-    digest(live_custody["workloads_backend_id_sha256"], "workloads backend identity")
+    for field in (
+        "workloads_backend_id_sha256",
+        "control_plane_release_manifest_sha256",
+        "predecessor_deployment_spec_sha256",
+        "predecessor_network_policy_spec_sha256",
+    ):
+        digest(live_custody[field], field)
     digest(
         live_custody["predecessor_compatibility_sha256"],
         "custodied predecessor compatibility",
@@ -430,8 +748,9 @@ def verify(manifest_json: str) -> dict[str, str]:
         ).astimezone(UTC)
     except ValueError as exc:
         raise ValueError("authority prior-head timestamp is not RFC3339") from exc
-    if observed_at > datetime.now(UTC):
-        raise ValueError("authority prior-head timestamp is in the future")
+    now = datetime.now(UTC)
+    if observed_at > now or now - observed_at > timedelta(hours=24):
+        raise ValueError("authority prior-head/state checkpoint is future-dated or stale")
 
     manifest = strict_json(manifest_json, "authority manifest")
     expected_manifest_fields = {
@@ -445,10 +764,14 @@ def verify(manifest_json: str) -> dict[str, str]:
         "generations",
         "current_generation",
         "parent_manifest_sha256",
+        "parent_generation_sha256",
+        "provider_state_custody_sha256",
+        "boundary_state_custody_sha256",
         "prior_live_custody_sha256",
         "nebius_terraform_provider_version",
         "accepted_custody",
         "provider_project_iam_inventory_receipt_sha256",
+        "provider_effective_authority_graph_receipt_sha256",
         "kubernetes_rbac_inventory_receipt_sha256",
         "payload_sha256",
         "signature",
@@ -466,6 +789,18 @@ def verify(manifest_json: str) -> dict[str, str]:
         raise ValueError("customer-storage authority requires the exact target cluster")
     if manifest.get("parent_manifest_sha256") != prior_head["head_manifest_sha256"]:
         raise ValueError("authority manifest does not extend the separately anchored prior head")
+    if manifest.get("parent_generation_sha256") != prior_head["head_generation_sha256"]:
+        raise ValueError("authority manifest does not extend the anchored generation chain")
+    if (
+        manifest.get("provider_state_custody_sha256")
+        != prior_head["provider_state_custody_sha256"]
+    ):
+        raise ValueError("authority manifest does not retain canonical provider state custody")
+    if (
+        manifest.get("boundary_state_custody_sha256")
+        != prior_head["boundary_state_custody_sha256"]
+    ):
+        raise ValueError("authority manifest does not retain canonical boundary state custody")
     if manifest.get("prior_live_custody_sha256") != prior_head["live_custody_sha256"]:
         raise ValueError("authority manifest does not retain the prior live custody")
     if manifest.get("nebius_terraform_provider_version") != NEBIUS_TERRAFORM_PROVIDER_VERSION:
@@ -474,6 +809,12 @@ def verify(manifest_json: str) -> dict[str, str]:
         raise ValueError("authority manifest does not bind the accepted SAI-10 custody")
     if manifest.get("provider_project_iam_inventory_receipt_sha256") != iam_receipt_sha256:
         raise ValueError("authority manifest does not bind the exact provider IAM receipt")
+    if (
+        manifest.get("provider_effective_authority_graph_receipt_sha256")
+        != authority_graph_sha256
+        or authority_graph.get("cluster_id") != manifest["cluster_id"]
+    ):
+        raise ValueError("authority manifest does not bind the provider authority graph")
     if (
         manifest.get("kubernetes_rbac_inventory_receipt_sha256")
         != rbac_receipt_sha256
@@ -485,7 +826,7 @@ def verify(manifest_json: str) -> dict[str, str]:
     if not isinstance(generations, list) or not generations:
         raise ValueError("authority manifest needs at least one generation")
     normalized: dict[str, dict[str, Any]] = {}
-    predecessor: str | None = None
+    predecessor = prior_head["head_generation_sha256"]
     for entry in generations:
         fields = {
             "generation",
@@ -493,9 +834,13 @@ def verify(manifest_json: str) -> dict[str, str]:
             "contract_sha256",
             "predecessor_compatibility_sha256",
             "boundary_policy_sha256",
+            "workload_policy_sha256",
             "release_values_sha256",
             "provider_iam_receipt_sha256",
+            "provider_authority_graph_receipt_sha256",
             "kubernetes_rbac_receipt_sha256",
+            "provider_state_custody_sha256",
+            "boundary_state_custody_sha256",
             "prior_live_custody_sha256",
             "accepted_sai10_commit",
             "accepted_sai10_tree",
@@ -534,9 +879,13 @@ def verify(manifest_json: str) -> dict[str, str]:
             "contract_sha256",
             "predecessor_compatibility_sha256",
             "boundary_policy_sha256",
+            "workload_policy_sha256",
             "release_values_sha256",
             "provider_iam_receipt_sha256",
+            "provider_authority_graph_receipt_sha256",
             "kubernetes_rbac_receipt_sha256",
+            "provider_state_custody_sha256",
+            "boundary_state_custody_sha256",
             "prior_live_custody_sha256",
             "accepted_sai10_review_sha256",
         ):
@@ -549,7 +898,13 @@ def verify(manifest_json: str) -> dict[str, str]:
                 raise ValueError(f"authority generation {field} is invalid")
         if (
             entry.get("provider_iam_receipt_sha256") != iam_receipt_sha256
+            or entry.get("provider_authority_graph_receipt_sha256")
+            != authority_graph_sha256
             or entry.get("kubernetes_rbac_receipt_sha256") != rbac_receipt_sha256
+            or entry.get("provider_state_custody_sha256")
+            != prior_head["provider_state_custody_sha256"]
+            or entry.get("boundary_state_custody_sha256")
+            != prior_head["boundary_state_custody_sha256"]
             or entry.get("prior_live_custody_sha256")
             != prior_head["live_custody_sha256"]
             or entry.get("accepted_sai10_commit") != custody["sai10_commit"]
@@ -586,6 +941,28 @@ def verify(manifest_json: str) -> dict[str, str]:
         predecessor = content_digest
     if manifest.get("current_generation") != list(normalized)[-1]:
         raise ValueError("current authority generation must be the final signed generation")
+    expected_provider_addresses = ["terraform_data.external_authority"]
+    manifest_generation_order = list(normalized)
+    if provider_state_custody["generations"] != manifest_generation_order[
+        : len(provider_state_custody["generations"])
+    ]:
+        raise ValueError("provider state generations are not a canonical ledger prefix")
+    for generation in provider_state_custody["generations"]:
+        quoted = json.dumps(generation)
+        expected_provider_addresses.extend(
+            [
+                f"nebius_mk8s_v1_node_group.generation[{quoted}]",
+                f"nebius_vpc_v1_security_group.generation[{quoted}]",
+                f"nebius_vpc_v1_security_rule.database_egress[{quoted}]",
+                f"nebius_vpc_v1_security_rule.dns_egress[{quoted}]",
+                f"nebius_vpc_v1_security_rule.private_ingress[{quoted}]",
+                f"nebius_vpc_v1_security_rule.provider_egress[{quoted}]",
+            ]
+        )
+    if provider_state_custody["managed_addresses"] != sorted(
+        expected_provider_addresses
+    ):
+        raise ValueError("provider state custody omits or adds a managed address")
 
     return {
         "authorized": "true",
@@ -604,7 +981,16 @@ def verify(manifest_json: str) -> dict[str, str]:
         "kubernetes_identity_inventory_sha256": hashlib.sha256(
             canonical(sorted(kubernetes_subjects, key=lambda item: item["name"]))
         ).hexdigest(),
+        "kubernetes_service_account_inventory_sha256": hashlib.sha256(
+            canonical(service_account_subjects)
+        ).hexdigest(),
+        "kubernetes_system_subject_inventory_sha256": hashlib.sha256(
+            canonical(system_subjects)
+        ).hexdigest(),
         "provider_project_iam_inventory_receipt_sha256": iam_receipt_sha256,
+        "provider_effective_authority_graph_receipt_sha256": authority_graph_sha256,
+        "provider_state_custody_sha256": prior_head["provider_state_custody_sha256"],
+        "boundary_state_custody_sha256": prior_head["boundary_state_custody_sha256"],
         "kubernetes_rbac_inventory_receipt_sha256": rbac_receipt_sha256,
         "kubernetes_rbac_inventory_sha256": rbac_receipt["inventory_sha256"],
         "accepted_sai10_commit": custody["sai10_commit"],

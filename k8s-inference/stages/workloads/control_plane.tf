@@ -259,8 +259,8 @@ resource "helm_release" "control_plane" {
   namespace        = "fs2-system"
   chart            = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
   create_namespace = false
-  atomic           = true
-  cleanup_on_fail  = true
+  atomic           = false
+  cleanup_on_fail  = false
   wait             = true
   wait_for_jobs    = true
   timeout          = 1800
@@ -277,6 +277,8 @@ resource "helm_release" "control_plane" {
   ]
 
   lifecycle {
+    prevent_destroy = true
+
     precondition {
       condition = (
         local.observability_operator.schema == "fs2-serve.nebius.ai/observability-operator/v1" &&

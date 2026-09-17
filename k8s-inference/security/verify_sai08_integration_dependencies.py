@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 MAX_BYTES = 64 * 1024
-SCHEMA = "fs2-serve.nebius.ai/sai-08-integration-dependencies/v2"
+SCHEMA = "fs2-serve.nebius.ai/sai-08-integration-dependencies/v3"
 REJECTED_SAI10 = "1ae009b858924138de70932ac84b8e595a2656a1"
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,6 +56,31 @@ def _git(*arguments: str) -> str:
     return result.stdout.strip()
 
 
+def _is_ancestor(ancestor: str, descendant: str) -> bool:
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            os.fspath(ROOT),
+            "merge-base",
+            "--is-ancestor",
+            ancestor,
+            descendant,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if (
+        result.returncode not in {0, 1}
+        or result.stdout
+        or len(result.stderr.encode()) > MAX_BYTES
+    ):
+        raise ValueError("Git ancestry exclusion check failed")
+    return result.returncode == 0
+
+
 def _digest(value: object, label: str) -> str:
     if (
         not isinstance(value, str)
@@ -80,14 +105,18 @@ def verify(record: dict[str, Any], expected: dict[str, str]) -> dict[str, str]:
         raise ValueError("dependency identities are incomplete")
     if dependencies != expected:
         raise ValueError("dependency identities differ from the signed provider handoff")
-    if dependencies["sai_10_accepted_commit"] == REJECTED_SAI10:
-        raise ValueError("rejected SAI-10 commit cannot authorize integration")
     for field in (
         "sai_10_independent_review_receipt_sha256",
         "provider_authority_manifest_sha256",
         "provider_authority_prior_head_receipt_sha256",
         "provider_project_iam_inventory_receipt_sha256",
+        "provider_effective_authority_graph_receipt_sha256",
+        "provider_state_custody_sha256",
+        "boundary_state_custody_sha256",
         "kubernetes_rbac_inventory_receipt_sha256",
+        "kubernetes_service_account_inventory_sha256",
+        "kubernetes_system_subject_inventory_sha256",
+        "workload_policy_sha256",
         "predecessor_state_custody_sha256",
         "live_predecessor_compatibility_handoff_sha256",
     ):
@@ -98,6 +127,14 @@ def verify(record: dict[str, Any], expected: dict[str, str]) -> dict[str, str]:
         raise ValueError("accepted SAI-10 commit/tree identity is invalid")
     if _git("show", "-s", "--format=%T", commit) != tree:
         raise ValueError("accepted SAI-10 commit does not have the recorded tree")
+    if _is_ancestor(REJECTED_SAI10, commit):
+        raise ValueError(
+            "accepted SAI-10 custody descends from the rejected SAI-10 lineage"
+        )
+    if _is_ancestor(REJECTED_SAI10, "HEAD"):
+        raise ValueError(
+            "SAI-08 must be integrated on a clean lineage that excludes rejected SAI-10"
+        )
     _git("merge-base", "--is-ancestor", commit, "HEAD")
     canonical = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
     return {

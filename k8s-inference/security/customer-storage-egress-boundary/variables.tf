@@ -27,6 +27,15 @@ variable "security_owner_username" {
   }
 }
 
+variable "security_owner_groups" {
+  description = "Exact sorted authenticated group set from the signed authority inventory."
+  type        = list(string)
+  validation {
+    condition     = length(var.security_owner_groups) > 0 && var.security_owner_groups == sort(distinct(var.security_owner_groups))
+    error_message = "security_owner_groups must be a non-empty sorted unique signed set."
+  }
+}
+
 variable "security_owner_credential_sha256" {
   description = "SHA-256 of the exact descriptor-read security-owner kubeconfig bytes."
   type        = string
@@ -74,6 +83,15 @@ variable "workloads_username" {
   }
 }
 
+variable "workloads_groups" {
+  description = "Exact sorted authenticated group set from the signed authority inventory."
+  type        = list(string)
+  validation {
+    condition     = length(var.workloads_groups) > 0 && var.workloads_groups == sort(distinct(var.workloads_groups))
+    error_message = "workloads_groups must be a non-empty sorted unique signed set."
+  }
+}
+
 variable "workloads_credential_sha256" {
   description = "SHA-256 of the exact descriptor-read workloads kubeconfig bytes."
   type        = string
@@ -95,11 +113,12 @@ variable "workloads_provider_principal_id" {
 variable "non_owner_identities" {
   description = "Every human, release, break-glass and other credential able to reach this cluster."
   type = map(object({
-    kubeconfig_path = string
-    kube_context    = string
-    username        = string
-    category        = string
-    credential_sha256    = string
+    kubeconfig_path       = string
+    kube_context          = string
+    username              = string
+    groups                = list(string)
+    category              = string
+    credential_sha256     = string
     provider_principal_id = string
   }))
 
@@ -116,6 +135,8 @@ variable "non_owner_identities" {
         !strcontains(identity.kubeconfig_path, "..") &&
         identity.kube_context != "" &&
         identity.username != "" &&
+        length(identity.groups) > 0 &&
+        identity.groups == sort(distinct(identity.groups)) &&
         can(regex("^[a-f0-9]{64}$", identity.credential_sha256)) &&
         identity.provider_principal_id != ""
       ])
@@ -135,6 +156,46 @@ variable "security_owner_group" {
   }
 }
 
+variable "kubernetes_service_account_inventory" {
+  description = "Exact sorted ServiceAccount subject closure from the signed RBAC authority receipt."
+  type = list(object({
+    namespace = string
+    name      = string
+    owner     = string
+    groups    = list(string)
+  }))
+  validation {
+    condition = (
+      length(var.kubernetes_service_account_inventory) > 0 &&
+      alltrue([
+        for subject in var.kubernetes_service_account_inventory :
+        subject.namespace != "" && subject.name != "" && subject.owner != "" &&
+        subject.groups == sort(distinct(subject.groups))
+      ])
+    )
+    error_message = "The complete signed Kubernetes ServiceAccount subject inventory is required."
+  }
+}
+
+variable "kubernetes_system_subject_inventory" {
+  description = "Exact Kubernetes-native system User/Group subjects from the signed RBAC authority receipt."
+  type = list(object({
+    kind      = string
+    name      = string
+    namespace = string
+    owner     = string
+  }))
+  validation {
+    condition = alltrue([
+      for subject in var.kubernetes_system_subject_inventory :
+      contains(["User", "Group"], subject.kind) &&
+      startswith(subject.name, "system:") &&
+      subject.namespace == "" && subject.owner != ""
+    ])
+    error_message = "Only explicitly owned Kubernetes-native system User/Group subjects are accepted."
+  }
+}
+
 variable "release_identity_name" {
   description = "Exact signed-inventory release identity used only for the additive v2 Helm install."
   type        = string
@@ -147,22 +208,22 @@ variable "release_identity_name" {
 variable "release_generations" {
   description = "Append-only v2 release payloads; custody identities come only from provider_authority."
   type = map(object({
-    rollout_generation              = string
-    image_repository                = string
-    image_digest                    = string
-    image_pull_secrets              = list(string)
-    storage_project_id              = string
-    storage_region                  = string
-    quota_bytes                     = number
-    excluded_tenants                = set(string)
+    rollout_generation               = string
+    image_repository                 = string
+    image_digest                     = string
+    image_pull_secrets               = list(string)
+    storage_project_id               = string
+    storage_region                   = string
+    quota_bytes                      = number
+    excluded_tenants                 = set(string)
     resource_credentials_secret_name = string
     iam_credentials_secret_name      = string
     database_secret_name             = string
     crypto_secret_name               = string
     storage_generation               = number
-    key_ttl_days                      = number
-    rotation_window_days              = number
-    action_timeout_seconds            = number
+    key_ttl_days                     = number
+    rotation_window_days             = number
+    action_timeout_seconds           = number
   }))
 
   validation {
@@ -204,40 +265,46 @@ variable "current_release_generation" {
 variable "provider_authority" {
   description = "Exact handoff from the independently approved Nebius VPC/node authority root."
   type = object({
-    schema                                        = string
-    generation                                    = string
-    authority_manifest_sha256                     = string
-    prior_head_receipt_sha256                     = string
-    predecessor_state_custody_sha256              = string
-    predecessor_state_compatibility_sha256        = string
-    contract_sha256                               = string
-    predecessor_compatibility_sha256              = string
-    boundary_policy_sha256                        = string
-    release_values_sha256                         = string
-    security_group_id                             = string
-    node_group_id                                 = string
-    node_selector_key                             = string
-    node_selector_value                           = string
-    taint_key                                     = string
-    taint_value                                   = string
-    taint_effect                                  = string
-    provider_api_cidrs                            = list(string)
-    kubernetes_api_cidrs                          = list(string)
-    authority_service_account_sha256              = string
-    provider_identity_sha256                      = string
-    kubernetes_identity_inventory_sha256           = string
-    kubernetes_rbac_inventory_sha256               = string
-    kubernetes_rbac_inventory_receipt_sha256       = string
-    provider_project_iam_inventory_receipt_sha256 = string
-    workloads_service_account_sha256              = string
-    accepted_sai10_commit                         = string
-    accepted_sai10_tree                           = string
-    sai10_independent_review_receipt_sha256       = string
+    schema                                            = string
+    generation                                        = string
+    authority_manifest_sha256                         = string
+    prior_head_receipt_sha256                         = string
+    predecessor_state_custody_sha256                  = string
+    predecessor_state_compatibility_sha256            = string
+    contract_sha256                                   = string
+    predecessor_compatibility_sha256                  = string
+    boundary_policy_sha256                            = string
+    workload_policy_sha256                            = string
+    release_values_sha256                             = string
+    security_group_id                                 = string
+    node_group_id                                     = string
+    node_selector_key                                 = string
+    node_selector_value                               = string
+    taint_key                                         = string
+    taint_value                                       = string
+    taint_effect                                      = string
+    provider_api_cidrs                                = list(string)
+    kubernetes_api_cidrs                              = list(string)
+    authority_service_account_sha256                  = string
+    provider_identity_sha256                          = string
+    kubernetes_identity_inventory_sha256              = string
+    kubernetes_service_account_inventory_sha256       = string
+    kubernetes_system_subject_inventory_sha256        = string
+    kubernetes_rbac_inventory_sha256                  = string
+    kubernetes_rbac_inventory_receipt_sha256          = string
+    provider_project_iam_inventory_receipt_sha256     = string
+    provider_effective_authority_graph_receipt_sha256 = string
+    provider_state_custody_sha256                     = string
+    boundary_state_custody_sha256                     = string
+    workloads_service_account_sha256                  = string
+    accepted_sai10_commit                             = string
+    accepted_sai10_tree                               = string
+    sai10_independent_review_receipt_sha256           = string
   })
 
   validation {
     condition = (
-      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v1" &&
+      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v2" &&
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.generation)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.authority_manifest_sha256)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.prior_head_receipt_sha256)) &&
@@ -246,6 +313,7 @@ variable "provider_authority" {
       can(regex("^[a-f0-9]{64}$", var.provider_authority.contract_sha256)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.predecessor_compatibility_sha256)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.boundary_policy_sha256)) &&
+      can(regex("^[a-f0-9]{64}$", var.provider_authority.workload_policy_sha256)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.release_values_sha256)) &&
       can(regex("^vpcsecuritygroup-[a-z0-9]+$", var.provider_authority.security_group_id)) &&
       can(regex("^mk8snodegroup-[a-z0-9]+$", var.provider_authority.node_group_id)) &&
@@ -265,9 +333,14 @@ variable "provider_authority" {
           var.provider_authority.authority_service_account_sha256,
           var.provider_authority.provider_identity_sha256,
           var.provider_authority.kubernetes_identity_inventory_sha256,
+          var.provider_authority.kubernetes_service_account_inventory_sha256,
+          var.provider_authority.kubernetes_system_subject_inventory_sha256,
           var.provider_authority.kubernetes_rbac_inventory_sha256,
           var.provider_authority.kubernetes_rbac_inventory_receipt_sha256,
           var.provider_authority.provider_project_iam_inventory_receipt_sha256,
+          var.provider_authority.provider_effective_authority_graph_receipt_sha256,
+          var.provider_authority.provider_state_custody_sha256,
+          var.provider_authority.boundary_state_custody_sha256,
           var.provider_authority.workloads_service_account_sha256,
           var.provider_authority.sai10_independent_review_receipt_sha256,
         ] : can(regex("^[a-f0-9]{64}$", digest))
@@ -332,6 +405,30 @@ variable "boundary_generations" {
       for generation in var.boundary_generations : can(regex("^g[0-9]{14}-[a-f0-9]{12}$", generation))
     ])
     error_message = "At least one versioned admission-boundary generation is required."
+  }
+}
+
+variable "workload_policy_generations" {
+  description = "Append-only content-bound workload admission generations."
+  type        = set(string)
+  validation {
+    condition = length(var.workload_policy_generations) > 0 && alltrue([
+      for generation in var.workload_policy_generations :
+      can(regex("^g[0-9]{14}-[a-f0-9]{12}$", generation))
+    ])
+    error_message = "At least one append-only workload admission generation is required."
+  }
+}
+
+variable "current_workload_policy_generation" {
+  description = "Content-bound workload admission generation selected for this release."
+  type        = string
+  validation {
+    condition = (
+      can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.current_workload_policy_generation)) &&
+      contains(var.workload_policy_generations, var.current_workload_policy_generation)
+    )
+    error_message = "current_workload_policy_generation must name a retained generation."
   }
 }
 

@@ -13,6 +13,7 @@ authority:
   rbacInventoryReceiptSha256: ""
   predecessorCompatibilitySha256: ""
   boundaryPolicySha256: ""
+  workloadPolicySha256: ""
   releaseValuesSha256: ""
   providerIdentitySha256: ""
   securityGroupId: ""

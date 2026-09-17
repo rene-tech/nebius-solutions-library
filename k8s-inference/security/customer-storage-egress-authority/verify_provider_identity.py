@@ -95,7 +95,7 @@ def _metadata_projection(item: dict[str, Any]) -> dict[str, str]:
 def _project_inventory(
     profile: str,
     project_id: str,
-    provider_principal_ids: set[str],
+    effective_principal_ids: set[str],
 ) -> dict[str, Any]:
     """Project every IAM object and grant without reading credential material."""
 
@@ -110,7 +110,11 @@ def _project_inventory(
         "service_accounts",
     )
     group_rows: list[dict[str, Any]] = []
-    all_principals = set(provider_principal_ids)
+    # Seed from the separately signed provider-native effective-authority
+    # graph, never from candidate declarations. This includes inherited,
+    # federated and external principals that are absent from project-local
+    # service-account/group listings.
+    all_principals = set(effective_principal_ids)
     for source in groups:
         group = _metadata_projection(source)
         all_principals.add(group["id"])
@@ -283,11 +287,21 @@ def verify(profile: str) -> dict[str, str]:
     receipt = registry.get("provider_project_iam_inventory_receipt")
     if not isinstance(receipt, dict) or not isinstance(receipt.get("inventory"), dict):
         raise ValueError("signed provider project IAM inventory is absent")
+    authority_graph = registry.get("provider_effective_authority_graph_receipt")
+    graph_principals = (
+        authority_graph.get("principals")
+        if isinstance(authority_graph, dict)
+        else None
+    )
+    if not isinstance(graph_principals, list) or not graph_principals:
+        raise ValueError("provider-native effective authority graph is absent")
     provider_principal_ids = {
-        str(item.get("provider_principal_id"))
-        for item in identity_inventory
-        if isinstance(item, dict) and item.get("provider_principal_id")
+        str(item.get("id"))
+        for item in graph_principals
+        if isinstance(item, dict) and item.get("id")
     }
+    if len(provider_principal_ids) != len(graph_principals):
+        raise ValueError("provider-native effective authority graph contains duplicate identities")
     observed_project_inventory = _project_inventory(
         profile,
         registry["authority_project_id"],

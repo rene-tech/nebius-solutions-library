@@ -8,7 +8,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from verify_owner_identity import _rbac_inventory_sha256
+from verify_owner_identity import _rbac_inventory
 
 
 def main() -> int:
@@ -19,13 +19,12 @@ def main() -> int:
     args = parser.parse_args()
     if not args.cluster_id:
         parser.error("--cluster-id is required")
+    inventory_sha256, subjects = _rbac_inventory(args.kubeconfig, args.context)
     receipt = {
-        "schema": "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v1",
+        "schema": "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v2",
         "cluster_id": args.cluster_id,
-        "inventory_sha256": _rbac_inventory_sha256(
-            args.kubeconfig,
-            args.context,
-        ),
+        "inventory_sha256": inventory_sha256,
+        "subjects": subjects,
         "observed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }
     print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
