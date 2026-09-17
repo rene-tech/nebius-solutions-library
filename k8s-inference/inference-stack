@@ -2797,109 +2797,522 @@ def plan_stage(
 
 
 _INDETERMINATE_APPLY_SCHEMA = (
-    "fs2-serve.nebius.ai/terraform-indeterminate-apply/v1"
+    "fs2-serve.nebius.ai/terraform-indeterminate-apply/v2"
 )
 _INDETERMINATE_RESOLUTION_SCHEMA = (
-    "fs2-serve.nebius.ai/terraform-indeterminate-resolution/v1"
+    "fs2-serve.nebius.ai/terraform-indeterminate-resolution/v2"
+)
+_PROVIDER_APPLY_JOURNAL_SCHEMA = (
+    "fs2-serve.nebius.ai/provider-apply-journal-observation/v1"
+)
+_PROVIDER_APPLY_JOURNAL_REQUEST_SCHEMA = (
+    "fs2-serve.nebius.ai/provider-apply-journal-request/v1"
 )
 
 
 def _append_private_json_once(path: Path, value: Mapping[str, Any]) -> None:
-    """Create one durable evidence object without replace, truncate, or cleanup."""
+    """Reject the retired user-owned journal path unconditionally."""
 
-    if path.is_symlink() or path.exists():
-        raise DeploymentError(f"append-only evidence path already exists: {path}")
-    descriptor = os.open(
-        path,
-        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
-        0o600,
+    raise DeploymentError(
+        "local append-only JSON is not an authority boundary; use the provider CAS journal"
     )
-    try:
-        encoded = (
-            json.dumps(value, indent=2, sort_keys=True) + "\n"
-        ).encode("utf-8")
-        offset = 0
-        while offset < len(encoded):
-            offset += os.write(descriptor, encoded[offset:])
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
 
 
 def _indeterminate_apply_directory(run_root: Path) -> Path:
-    directory = run_root / "indeterminate-applies"
-    private_directory(directory)
-    return directory
+    return run_root / "indeterminate-applies"
 
 
-def _unresolved_indeterminate_applies(run_root: Path) -> list[Path]:
+def _audit_local_indeterminate_artifacts(run_root: Path) -> None:
+    """Fail closed on legacy/local evidence; it never authorizes continuation."""
+
     directory = _indeterminate_apply_directory(run_root)
-    unresolved: list[Path] = []
-    for marker in sorted(directory.glob("*.indeterminate.json")):
-        apply_id = marker.name.removesuffix(".indeterminate.json")
-        if re.fullmatch(r"[a-f0-9]{32}", apply_id) is None:
-            raise DeploymentError(
-                f"indeterminate apply journal contains an invalid entry: {marker}"
+    try:
+        directory_metadata = directory.lstat()
+    except FileNotFoundError:
+        return
+    if not stat.S_ISDIR(directory_metadata.st_mode) or directory.is_symlink():
+        raise DeploymentError(
+            "the local indeterminate evidence location is not a real directory"
+        )
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if re.fullmatch(
+                r"[a-f0-9]{32}\.(?:indeterminate|resolved)\.json", entry.name
+            ) is None:
+                raise DeploymentError(
+                    "the local indeterminate evidence directory contains an unknown object"
+                )
+            metadata = entry.stat(follow_symlinks=False)
+            if (
+                entry.is_symlink()
+                or not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != 0
+                or metadata.st_nlink != 1
+                or metadata.st_mode & 0o222
+                or not 1 <= metadata.st_size <= _MAX_CUSTODY_DOCUMENT_BYTES
+            ):
+                raise DeploymentError(
+                    "local indeterminate evidence is not a root-custodied, "
+                    f"non-writable regular file: {directory / entry.name}"
+                )
+
+
+def _journal_receipt_payload(
+    receipt: Mapping[str, Any], *, label: str
+) -> dict[str, Any]:
+    if not isinstance(receipt, Mapping):
+        raise DeploymentError(f"{label} is not an object")
+    payload = {key: value for key, value in receipt.items() if key != "payload_sha256"}
+    if receipt.get("payload_sha256") != _json_sha256(payload):
+        raise DeploymentError(f"{label} payload digest is invalid")
+    return dict(receipt)
+
+
+def _verify_provider_journal_receipt_signature(
+    *,
+    receipt: Mapping[str, Any],
+    encoded_signature: object,
+    trust_root: bytes,
+    verifier_sha256: str,
+    label: str,
+) -> None:
+    if not isinstance(encoded_signature, str) or not encoded_signature:
+        raise DeploymentError(f"{label} has no provider signature")
+    try:
+        signature = base64.b64decode(encoded_signature, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise DeploymentError(f"{label} provider signature is malformed") from exc
+    if not 1 <= len(signature) <= _MAX_CUSTODY_SIGNATURE_BYTES:
+        raise DeploymentError(f"{label} provider signature size is invalid")
+    document = json.dumps(
+        receipt, sort_keys=True, separators=(",", ":")
+    ).encode()
+    _verify_detached_signature(
+        document=document,
+        signature=signature,
+        trust_root=trust_root,
+        verifier_sha256=verifier_sha256,
+        label=label,
+    )
+
+
+def _verified_provider_apply_journal(
+    observation: Mapping[str, Any],
+    *,
+    action: str,
+    project_id: str,
+    cluster_id: str,
+    provider_trust_root_sha256: str,
+    signature_verifier_sha256: str,
+) -> dict[str, Any]:
+    """Validate the complete external append-only apply journal and receipts."""
+
+    if action not in {"observe", "begin", "resolve"}:
+        raise DeploymentError("provider apply-journal action is invalid")
+    trust_root, actual_trust_root_sha256 = _stable_root_file_bytes(
+        Path(os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_TRUST_ROOT", "")),
+        label="provider apply-journal trust root",
+        maximum_bytes=_MAX_CUSTODY_DOCUMENT_BYTES,
+    )
+    if (
+        not re.fullmatch(r"[a-f0-9]{64}", provider_trust_root_sha256)
+        or actual_trust_root_sha256 != provider_trust_root_sha256
+    ):
+        raise DeploymentError(
+            "the provider apply-journal trust root differs from the root contract"
+        )
+    expected_keys = {
+        "schema",
+        "action",
+        "observed_at",
+        "provider_request_id",
+        "provider_response_sha256",
+        "project_id",
+        "cluster_id",
+        "journal_resource_version",
+        "records",
+        "completeness",
+        "observation_sha256",
+    }
+    try:
+        observed_at = datetime.fromisoformat(
+            str(observation["observed_at"]).replace("Z", "+00:00")
+        )
+        journal_revision = int(str(observation["journal_resource_version"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DeploymentError("provider apply-journal observation is malformed") from exc
+    records = observation.get("records")
+    completeness = observation.get("completeness")
+    semantic = {
+        key: value for key, value in observation.items() if key != "observation_sha256"
+    }
+    now = datetime.now(UTC)
+    if (
+        set(observation) != expected_keys
+        or observation.get("schema") != _PROVIDER_APPLY_JOURNAL_SCHEMA
+        or observation.get("action") != action
+        or observation.get("project_id") != project_id
+        or observation.get("cluster_id") != cluster_id
+        or observed_at.tzinfo is None
+        or observed_at > now + timedelta(seconds=30)
+        or now - observed_at > timedelta(minutes=2)
+        or not isinstance(observation.get("provider_request_id"), str)
+        or not 1 <= len(observation["provider_request_id"]) <= 253
+        or re.fullmatch(
+            r"[a-f0-9]{64}", str(observation.get("provider_response_sha256", ""))
+        )
+        is None
+        or not isinstance(observation.get("journal_resource_version"), str)
+        or re.fullmatch(
+            r"(?:0|[1-9][0-9]*)", observation["journal_resource_version"]
+        )
+        is None
+        or journal_revision < 0
+        or not isinstance(records, list)
+        or len(records) > 4096
+        or not isinstance(completeness, Mapping)
+        or completeness
+        != {
+            "all_records_enumerated": True,
+            "append_only_history": True,
+            "deletion_supported": False,
+            "history_closed_through_resource_version": observation.get(
+                "journal_resource_version"
+            ),
+        }
+        or observation.get("observation_sha256") != _json_sha256(semantic)
+    ):
+        raise DeploymentError(
+            "provider apply-journal observation is stale, incomplete, or malformed"
+        )
+    apply_ids: list[str] = []
+    validated_records: list[dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record, Mapping) or set(record) != {
+            "record_resource_version",
+            "marker",
+            "marker_signature",
+            "resolution",
+            "resolution_signature",
+        }:
+            raise DeploymentError("provider apply-journal record is malformed")
+        marker = _journal_receipt_payload(
+            record.get("marker", {}), label="provider indeterminate marker"
+        )
+        marker_payload = {
+            key: value for key, value in marker.items() if key != "payload_sha256"
+        }
+        expected_marker_keys = {
+            "schema",
+            "apply_id",
+            "stage",
+            "saved_plan_name",
+            "saved_plan_sha256",
+            "target_postconditions_sha256",
+            "source_commit",
+            "source_tree",
+            "project_id",
+            "cluster_id",
+            "custody_transaction_id",
+            "credential_epochs_sha256",
+            "started_at",
+            "journal_opened_at",
+            "journal_open_resource_version",
+            "remote_outcome",
+            "payload_sha256",
+        }
+        try:
+            started_at = datetime.fromisoformat(
+                str(marker["started_at"]).replace("Z", "+00:00")
             )
-        resolution = directory / f"{apply_id}.resolved.json"
-        if not resolution.exists():
-            unresolved.append(marker)
+            opened_at = datetime.fromisoformat(
+                str(marker["journal_opened_at"]).replace("Z", "+00:00")
+            )
+            marker_revision = int(str(marker["journal_open_resource_version"]))
+            record_revision = int(str(record["record_resource_version"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise DeploymentError("provider indeterminate marker is malformed") from exc
+        if (
+            set(marker) != expected_marker_keys
+            or marker.get("schema") != _INDETERMINATE_APPLY_SCHEMA
+            or marker.get("project_id") != project_id
+            or marker.get("cluster_id") != cluster_id
+            or re.fullmatch(r"[a-f0-9]{32}", str(marker.get("apply_id", "")))
+            is None
+            or marker.get("stage")
+            not in {"configuration", "infrastructure", "foundation", "workloads"}
+            or (
+                marker.get("saved_plan_name")
+                not in {
+                    f"{marker.get('stage')}.tfplan",
+                    f"{marker.get('stage')}-destroy.tfplan",
+                }
+                and re.fullmatch(
+                    rf"{re.escape(str(marker.get('stage', '')))}-[a-f0-9]{{32}}\.refresh-only\.tfplan",
+                    str(marker.get("saved_plan_name", "")),
+                )
+                is None
+            )
+            or (
+                marker.get("saved_plan_name")
+                not in {
+                    f"{marker.get('stage')}.tfplan",
+                    f"{marker.get('stage')}-destroy.tfplan",
+                }
+                and re.fullmatch(
+                    rf"{re.escape(str(marker.get('stage', '')))}-[a-f0-9]{{32}}\.refresh-only\.tfplan",
+                    str(marker.get("saved_plan_name", "")),
+                )
+                is None
+            )
+            or any(
+                re.fullmatch(r"[a-f0-9]{64}", str(marker.get(field, ""))) is None
+                for field in {
+                    "saved_plan_sha256",
+                    "target_postconditions_sha256",
+                    "credential_epochs_sha256",
+                }
+            )
+            or any(
+                re.fullmatch(r"[a-f0-9]{40}", str(marker.get(field, ""))) is None
+                for field in {"source_commit", "source_tree"}
+            )
+            or re.fullmatch(
+                r"[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}",
+                str(marker.get("custody_transaction_id", "")),
+            )
+            is None
+            or started_at.tzinfo is None
+            or opened_at.tzinfo is None
+            or opened_at < started_at
+            or opened_at > observed_at
+            or not isinstance(marker.get("journal_open_resource_version"), str)
+            or marker_revision < 1
+            or marker_revision > journal_revision
+            or not isinstance(record.get("record_resource_version"), str)
+            or record_revision < marker_revision
+            or record_revision > journal_revision
+            or marker.get("remote_outcome") != "pending-or-indeterminate"
+            or marker.get("payload_sha256") != _json_sha256(marker_payload)
+        ):
+            raise DeploymentError(
+                "provider indeterminate marker is outside the exact journal contract"
+            )
+        _verify_provider_journal_receipt_signature(
+            receipt=marker,
+            encoded_signature=record.get("marker_signature"),
+            trust_root=trust_root,
+            verifier_sha256=signature_verifier_sha256,
+            label="provider indeterminate marker",
+        )
+        resolution_value = record.get("resolution")
+        resolution_signature = record.get("resolution_signature")
+        if resolution_value is None:
+            if resolution_signature is not None or record_revision != marker_revision:
+                raise DeploymentError(
+                    "an unresolved provider journal record has contradictory state"
+                )
+            resolution: dict[str, Any] | None = None
+        else:
+            resolution = _journal_receipt_payload(
+                resolution_value, label="provider indeterminate resolution"
+            )
+            expected_resolution_keys = {
+                "schema",
+                "apply_id",
+                "marker_sha256",
+                "marker_journal_resource_version",
+                "resolution_kind",
+                "resolution_custody_transaction_id",
+                "provider_settlement_sha256",
+                "refresh_plan_sha256",
+                "refreshed_state_projection_sha256",
+                "target_postconditions_sha256",
+                "remote_operations_terminal",
+                "target_postconditions_satisfied",
+                "resolved_at",
+                "journal_previous_resource_version",
+                "journal_resolution_resource_version",
+                "payload_sha256",
+            }
+            try:
+                resolved_at = datetime.fromisoformat(
+                    str(resolution["resolved_at"]).replace("Z", "+00:00")
+                )
+                previous_revision = int(
+                    str(resolution["journal_previous_resource_version"])
+                )
+                resolution_revision = int(
+                    str(resolution["journal_resolution_resource_version"])
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise DeploymentError(
+                    "provider indeterminate resolution is malformed"
+                ) from exc
+            resolution_payload = {
+                key: value
+                for key, value in resolution.items()
+                if key != "payload_sha256"
+            }
+            kind = resolution.get("resolution_kind")
+            if (
+                set(resolution) != expected_resolution_keys
+                or resolution.get("schema") != _INDETERMINATE_RESOLUTION_SCHEMA
+                or resolution.get("apply_id") != marker["apply_id"]
+                or resolution.get("marker_sha256") != _json_sha256(marker)
+                or resolution.get("marker_journal_resource_version")
+                != marker["journal_open_resource_version"]
+                or kind not in {"normal-completion", "fresh-recovery"}
+                or re.fullmatch(
+                    r"[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}",
+                    str(resolution.get("resolution_custody_transaction_id", "")),
+                )
+                is None
+                or (
+                    kind == "normal-completion"
+                    and resolution.get("resolution_custody_transaction_id")
+                    != marker["custody_transaction_id"]
+                )
+                or (
+                    kind == "fresh-recovery"
+                    and resolution.get("resolution_custody_transaction_id")
+                    == marker["custody_transaction_id"]
+                )
+                or any(
+                    re.fullmatch(
+                        r"[a-f0-9]{64}", str(resolution.get(field, ""))
+                    )
+                    is None
+                    for field in {
+                        "provider_settlement_sha256",
+                        "refresh_plan_sha256",
+                        "refreshed_state_projection_sha256",
+                        "target_postconditions_sha256",
+                    }
+                )
+                or resolution.get("target_postconditions_sha256")
+                != marker["target_postconditions_sha256"]
+                or resolution.get("refreshed_state_projection_sha256")
+                != marker["target_postconditions_sha256"]
+                or (
+                    kind == "normal-completion"
+                    and resolution.get("refresh_plan_sha256")
+                    != marker["saved_plan_sha256"]
+                )
+                or resolution.get("remote_operations_terminal") is not True
+                or resolution.get("target_postconditions_satisfied") is not True
+                or resolved_at.tzinfo is None
+                or resolved_at < opened_at
+                or resolved_at > observed_at
+                or previous_revision != marker_revision
+                or resolution_revision != record_revision
+                or resolution_revision <= previous_revision
+                or resolution.get("payload_sha256")
+                != _json_sha256(resolution_payload)
+            ):
+                raise DeploymentError(
+                    "provider indeterminate resolution is outside the exact recovery contract"
+                )
+            _verify_provider_journal_receipt_signature(
+                receipt=resolution,
+                encoded_signature=resolution_signature,
+                trust_root=trust_root,
+                verifier_sha256=signature_verifier_sha256,
+                label="provider indeterminate resolution",
+            )
+        apply_ids.append(str(marker["apply_id"]))
+        validated_records.append(
+            {
+                "record_resource_version": record["record_resource_version"],
+                "marker": marker,
+                "resolution": resolution,
+            }
+        )
+    if apply_ids != sorted(set(apply_ids)):
+        raise DeploymentError(
+            "provider apply-journal records are not uniquely sorted by apply ID"
+        )
+    result = dict(observation)
+    result["records"] = validated_records
+    return result
+
+
+def _unresolved_indeterminate_applies(
+    run_root: Path, journal_observation: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    _audit_local_indeterminate_artifacts(run_root)
+    records = journal_observation.get("records")
+    if not isinstance(records, list):
+        raise DeploymentError("provider apply journal has no validated record set")
+    unresolved: list[dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record, Mapping):
+            raise DeploymentError(
+                "provider apply journal contains an invalid record"
+            )
+        if record.get("resolution") is None:
+            unresolved.append(dict(record))
     return unresolved
 
 
-def _assert_no_unresolved_indeterminate_apply(
-    run_root: Path, *, allowed_apply_ids: Sequence[str] = ()
+def _require_journal_resolution_matches_request(
+    record: Mapping[str, Any], request_document: Mapping[str, Any]
 ) -> None:
-    allowed_names = {
-        f"{apply_id}.indeterminate.json" for apply_id in allowed_apply_ids
-    }
-    unresolved = [
-        marker
-        for marker in _unresolved_indeterminate_applies(run_root)
-        if marker.name not in allowed_names
-    ]
-    if unresolved:
+    resolution = record.get("resolution")
+    requested = request_document.get("resolution")
+    if not isinstance(resolution, Mapping) or not isinstance(requested, Mapping):
         raise DeploymentError(
-            "mutation is blocked by unresolved indeterminate apply evidence: "
-            + ", ".join(str(path) for path in unresolved)
-            + "; run reconcile-indeterminate under a fresh signed custody epoch"
+            "the provider apply journal did not return the requested resolution"
+        )
+    expected_fields = {
+        key: value
+        for key, value in requested.items()
+        if key != "custody_valid_until"
+    }
+    actual_fields = {
+        key: resolution.get(key) for key in expected_fields
+    }
+    if (
+        record.get("marker", {}).get("apply_id")
+        != request_document.get("apply_id")
+        or _json_sha256(record.get("marker", {}))
+        != request_document.get("marker_sha256")
+        or actual_fields != expected_fields
+    ):
+        raise DeploymentError(
+            "the provider-signed resolution differs from the exact settlement and state proof"
         )
 
 
-def _record_indeterminate_apply(
-    *,
+def _assert_no_unresolved_indeterminate_apply(
     run_root: Path,
-    apply_id: str,
-    stage: str,
-    root: Path,
-    plan_path: Path,
-    project_id: str,
-    cluster_id: str,
-    custody_transaction_id: str,
-    started_at: datetime,
-    failure_type: str,
-) -> Path:
-    directory = _indeterminate_apply_directory(run_root)
-    marker = directory / f"{apply_id}.indeterminate.json"
-    document = {
-        "schema": _INDETERMINATE_APPLY_SCHEMA,
-        "apply_id": apply_id,
-        "stage": stage,
-        "terraform_root": str(root.resolve()),
-        "saved_plan_path": str(plan_path.resolve()),
-        "saved_plan_sha256": _sha256_file(plan_path),
-        "project_id": project_id,
-        "cluster_id": cluster_id,
-        "custody_transaction_id": custody_transaction_id,
-        "started_at": started_at.isoformat().replace("+00:00", "Z"),
-        "fenced_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "credential_process_disposition": "sigstop-then-sigkill-no-resume",
-        "remote_outcome": "indeterminate",
-        "failure_type": failure_type,
-    }
-    document["payload_sha256"] = _json_sha256(document)
-    _append_private_json_once(marker, document)
-    return marker
+    *,
+    journal_guard: Callable[[str, Mapping[str, Any]], dict[str, Any]],
+    allowed_apply_ids: Sequence[str] = (),
+) -> dict[str, Any]:
+    observation = journal_guard(
+        "observe",
+        {
+            "schema": _PROVIDER_APPLY_JOURNAL_REQUEST_SCHEMA,
+            "operation": "observe",
+        },
+    )
+    allowed = set(allowed_apply_ids)
+    unresolved = [
+        record
+        for record in _unresolved_indeterminate_applies(run_root, observation)
+        if record.get("marker", {}).get("apply_id") not in allowed
+    ]
+    if unresolved:
+        raise DeploymentError(
+            "mutation is blocked by unresolved provider-custodied apply receipts: "
+            + ", ".join(
+                str(record.get("marker", {}).get("apply_id"))
+                for record in unresolved
+            )
+            + "; run reconcile-indeterminate under a fresh signed custody epoch"
+        )
+    return observation
 
 
 def apply_plan(
@@ -2914,6 +3327,10 @@ def apply_plan(
     custody_project_id: str = "",
     custody_cluster_id: str = "",
     custody_transaction_id: str = "",
+    credential_epochs_sha256: str = "",
+    target_postconditions_sha256: str = "",
+    journal_guard: Callable[[str, Mapping[str, Any]], dict[str, Any]] | None = None,
+    settlement_guard: Callable[[Mapping[str, Any], datetime], dict[str, Any]] | None = None,
     reconciling_apply_ids: Sequence[str] = (),
 ) -> None:
     arguments = [
@@ -2936,12 +3353,27 @@ def apply_plan(
             custody_transaction_id,
         )
         is None
+        or re.fullmatch(r"[a-f0-9]{64}", credential_epochs_sha256) is None
+        or re.fullmatch(r"[a-f0-9]{64}", target_postconditions_sha256) is None
+        or journal_guard is None
+        or settlement_guard is None
+        or plan_path.parent.resolve() != indeterminate_root.resolve()
+        or (
+            plan_path.name not in {f"{stage}.tfplan", f"{stage}-destroy.tfplan"}
+            and re.fullmatch(
+                rf"{re.escape(stage)}-[a-f0-9]{{32}}\.refresh-only\.tfplan",
+                plan_path.name,
+            )
+            is None
+        )
     ):
         raise DeploymentError(
-            "a custodied apply requires an append-only indeterminate-state journal identity"
+            "a custodied apply requires an external append-only journal identity and exact saved plan"
         )
-    _assert_no_unresolved_indeterminate_apply(
-        indeterminate_root, allowed_apply_ids=reconciling_apply_ids
+    journal_observation = _assert_no_unresolved_indeterminate_apply(
+        indeterminate_root,
+        journal_guard=journal_guard,
+        allowed_apply_ids=reconciling_apply_ids,
     )
     print(f"+ {command_text(arguments)}", file=sys.stderr)
     expires_at = custody_guard()
@@ -2963,6 +3395,62 @@ def apply_plan(
 
     apply_id = secrets.token_hex(16)
     apply_started_at = datetime.now(UTC)
+    source_identity = source_commit()
+    source_tree = run(
+        ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD^{tree}"],
+        capture=True,
+        env=clean_environment(),
+    ).stdout.strip()
+    if re.fullmatch(r"[a-f0-9]{40}", source_tree) is None:
+        raise DeploymentError("the source checkout has no exact tree identity")
+    begin_request = {
+        "schema": _PROVIDER_APPLY_JOURNAL_REQUEST_SCHEMA,
+        "operation": "begin",
+        "expected_journal_resource_version": journal_observation[
+            "journal_resource_version"
+        ],
+        "marker": {
+            "schema": _INDETERMINATE_APPLY_SCHEMA,
+            "apply_id": apply_id,
+            "stage": stage,
+            "saved_plan_name": plan_path.name,
+            "saved_plan_sha256": _sha256_file(plan_path),
+            "target_postconditions_sha256": target_postconditions_sha256,
+            "source_commit": source_identity,
+            "source_tree": source_tree,
+            "project_id": custody_project_id,
+            "cluster_id": custody_cluster_id,
+            "custody_transaction_id": custody_transaction_id,
+            "credential_epochs_sha256": credential_epochs_sha256,
+            "started_at": apply_started_at.isoformat().replace("+00:00", "Z"),
+            "remote_outcome": "pending-or-indeterminate",
+        },
+    }
+    opened_observation = journal_guard("begin", begin_request)
+    opened_records = {
+        record["marker"]["apply_id"]: record
+        for record in opened_observation["records"]
+    }
+    opened_record = opened_records.get(apply_id)
+    if (
+        not isinstance(opened_record, Mapping)
+        or opened_record.get("resolution") is not None
+        or {
+            key: value
+            for key, value in opened_record["marker"].items()
+            if key
+            not in {
+                "journal_opened_at",
+                "journal_open_resource_version",
+                "payload_sha256",
+            }
+        }
+        != begin_request["marker"]
+    ):
+        raise DeploymentError(
+            "provider apply journal did not atomically open the exact apply marker"
+        )
+    marker = dict(opened_record["marker"])
     apply_environment = dict(environment)
     if "TF_APPEND_USER_AGENT" in apply_environment:
         raise DeploymentError(
@@ -3027,107 +3515,117 @@ def apply_plan(
                     stop_process_tree(process)
                 except BaseException as error:
                     fence_error = error
-                marker = _record_indeterminate_apply(
-                    run_root=indeterminate_root,
-                    apply_id=apply_id,
-                    stage=stage,
-                    root=root,
-                    plan_path=plan_path,
-                    project_id=custody_project_id,
-                    cluster_id=custody_cluster_id,
-                    custody_transaction_id=custody_transaction_id,
-                    started_at=apply_started_at,
-                    failure_type=(
-                        type(fence_error).__name__
-                        if fence_error is not None
-                        else type(custody_error).__name__
-                    ),
-                )
                 if fence_error is not None:
                     raise DeploymentError(
                         "provider custody failed during apply and the stopped process "
                         "group could not be fully reaped; credential use remains fenced, "
-                        f"remote outcome is indeterminate ({marker}), and no continuation "
+                        f"remote outcome is indeterminate (provider apply {apply_id}), and no continuation "
                         "is permitted"
                     ) from fence_error
                 raise DeploymentError(
                     "provider custody failed during apply; the stopped Terraform "
                     "process group was killed without resuming credential use and "
-                    f"remote outcome is indeterminate ({marker}). Run the explicit "
+                    f"remote outcome is indeterminate (provider apply {apply_id}). Run the explicit "
                     "reconcile-indeterminate command under a fresh signed custody "
                     "epoch before any further mutation"
                 ) from custody_error
     if return_code != 0:
-        marker = _record_indeterminate_apply(
-            run_root=indeterminate_root,
-            apply_id=apply_id,
-            stage=stage,
-            root=root,
-            plan_path=plan_path,
-            project_id=custody_project_id,
-            cluster_id=custody_cluster_id,
-            custody_transaction_id=custody_transaction_id,
-            started_at=apply_started_at,
-            failure_type=f"TerraformExit{return_code}",
-        )
         raise DeploymentError(
             f"command failed with exit code {return_code}; remote outcome is "
-            f"indeterminate ({marker}): {command_text(arguments)}"
+            f"indeterminate (provider apply {apply_id}): {command_text(arguments)}"
         )
     if process_group_alive(process.pid):
         stop_process_tree(process)
-        marker = _record_indeterminate_apply(
-            run_root=indeterminate_root,
-            apply_id=apply_id,
-            stage=stage,
-            root=root,
-            plan_path=plan_path,
-            project_id=custody_project_id,
-            cluster_id=custody_cluster_id,
-            custody_transaction_id=custody_transaction_id,
-            started_at=apply_started_at,
-            failure_type="SurvivingProviderProcessGroup",
-        )
         raise DeploymentError(
             "Terraform returned while a provider/plugin process remained alive; "
-            f"remote outcome is indeterminate ({marker})"
+            f"remote outcome is indeterminate (provider apply {apply_id})"
         )
     try:
         refreshed_expiry = custody_guard()
     except BaseException as custody_error:
-        marker = _record_indeterminate_apply(
-            run_root=indeterminate_root,
-            apply_id=apply_id,
-            stage=stage,
-            root=root,
-            plan_path=plan_path,
-            project_id=custody_project_id,
-            cluster_id=custody_cluster_id,
-            custody_transaction_id=custody_transaction_id,
-            started_at=apply_started_at,
-            failure_type=type(custody_error).__name__,
-        )
         raise DeploymentError(
             "post-apply custody verification failed; remote outcome is "
-            f"indeterminate ({marker})"
+            f"indeterminate (provider apply {apply_id})"
         ) from custody_error
     if refreshed_expiry < expires_at or refreshed_expiry - datetime.now(UTC) < timedelta(seconds=60):
-        marker = _record_indeterminate_apply(
-            run_root=indeterminate_root,
-            apply_id=apply_id,
-            stage=stage,
-            root=root,
-            plan_path=plan_path,
-            project_id=custody_project_id,
-            cluster_id=custody_cluster_id,
-            custody_transaction_id=custody_transaction_id,
-            started_at=apply_started_at,
-            failure_type="PostApplyCustodyRegression",
-        )
         raise DeploymentError(
             "provider custody changed or expired before the post-apply fence; "
-            f"remote outcome is indeterminate ({marker})"
+            f"remote outcome is indeterminate (provider apply {apply_id})"
         )
+    settlement = settlement_guard(marker, refreshed_expiry - timedelta(minutes=2))
+    refreshed_state = run(
+        [terraform, f"-chdir={root}", "show", "-json"],
+        env=environment,
+        capture=True,
+    )
+    target_plan = run(
+        [terraform, f"-chdir={root}", "show", "-json", str(plan_path)],
+        env=environment,
+        capture=True,
+    )
+    try:
+        refreshed_document = json.loads(refreshed_state.stdout)
+        target_document = json.loads(target_plan.stdout)
+    except json.JSONDecodeError as exc:
+        raise DeploymentError(
+            f"provider apply {apply_id} completed but its state proof is unreadable; the external marker remains open"
+        ) from exc
+    refreshed_projection = _terraform_value_projection(refreshed_document, "values")
+    target_projection = _terraform_value_projection(target_document, "planned_values")
+    if (
+        _json_sha256(target_projection) != target_postconditions_sha256
+        or refreshed_projection != target_projection
+    ):
+        raise DeploymentError(
+            f"provider apply {apply_id} does not satisfy its signed saved-plan postconditions; the external marker remains open"
+        )
+    final_expiry = custody_guard()
+    resolution_request = {
+        "schema": _PROVIDER_APPLY_JOURNAL_REQUEST_SCHEMA,
+        "operation": "resolve",
+        "expected_journal_resource_version": opened_observation[
+            "journal_resource_version"
+        ],
+        "apply_id": apply_id,
+        "marker_sha256": _json_sha256(marker),
+        "resolution": {
+            "schema": _INDETERMINATE_RESOLUTION_SCHEMA,
+            "resolution_kind": "normal-completion",
+            "resolution_custody_transaction_id": custody_transaction_id,
+            "provider_settlement_sha256": _json_sha256(settlement),
+            "refresh_plan_sha256": _sha256_file(plan_path),
+            "refreshed_state_projection_sha256": _json_sha256(
+                refreshed_projection
+            ),
+            "target_postconditions_sha256": target_postconditions_sha256,
+            "remote_operations_terminal": True,
+            "target_postconditions_satisfied": True,
+            "custody_valid_until": final_expiry.isoformat().replace(
+                "+00:00", "Z"
+            ),
+        },
+    }
+    resolved_observation = journal_guard("resolve", resolution_request)
+    _assert_no_unresolved_indeterminate_apply(
+        indeterminate_root,
+        journal_guard=journal_guard,
+        allowed_apply_ids=reconciling_apply_ids,
+    )
+    resolved_record = next(
+        (
+            record
+            for record in resolved_observation["records"]
+            if record["marker"]["apply_id"] == apply_id
+        ),
+        None,
+    )
+    if not isinstance(resolved_record, Mapping):
+        raise DeploymentError(
+            "the provider apply journal did not return the signed resolution"
+        )
+    _require_journal_resolution_matches_request(
+        resolved_record, resolution_request
+    )
 
 
 def _exact_kubernetes_user_info(document: Mapping[str, Any], label: str) -> dict[str, Any]:
@@ -3708,6 +4206,7 @@ def _verified_provider_authority_census(
     provider_freeze = snapshot.get("provider_mutation_freeze")
     runtime_measurements = snapshot.get("gateway_runtime_measurements")
     signing_material = snapshot.get("signing_material")
+    apply_journal = snapshot.get("apply_journal")
     completeness_token = snapshot.get("completeness_token")
     if (
         set(snapshot)
@@ -3725,6 +4224,7 @@ def _verified_provider_authority_census(
             "provider_mutation_freeze",
             "gateway_runtime_measurements",
             "signing_material",
+            "apply_journal",
         }
         or snapshot.get("source") != "nebius-provider-authority-export/v1"
         or re.fullmatch(
@@ -3748,6 +4248,7 @@ def _verified_provider_authority_census(
         or not isinstance(provider_freeze, Mapping)
         or not isinstance(runtime_measurements, Mapping)
         or not isinstance(signing_material, Mapping)
+        or not isinstance(apply_journal, Mapping)
         or not isinstance(completeness_token, Mapping)
     ):
         raise DeploymentError(
@@ -3800,6 +4301,7 @@ def _verified_provider_authority_census(
             "effective_iam_inheritance_included",
             "all_mutation_authorities_included",
             "all_gateway_network_paths_included",
+            "all_apply_journal_records_included",
         }
         or completeness_token.get("scope_root_id") != scope_ids[-1]
         or not isinstance(completeness_token.get("resource_version"), int)
@@ -3813,6 +4315,7 @@ def _verified_provider_authority_census(
         or completeness_token.get("effective_iam_inheritance_included") is not True
         or completeness_token.get("all_mutation_authorities_included") is not True
         or completeness_token.get("all_gateway_network_paths_included") is not True
+        or completeness_token.get("all_apply_journal_records_included") is not True
     ):
         raise DeploymentError(
             "provider-native completeness token does not cover inherited IAM and every gateway path"
@@ -3876,6 +4379,42 @@ def _verified_provider_authority_census(
     ):
         raise DeploymentError(
             "provider signing material is not bound to the root-pinned trust key"
+        )
+    journal_resource_id = apply_journal.get("resource_id")
+    if (
+        set(apply_journal)
+        != {
+            "resource_id",
+            "resource_version",
+            "semantic_sha256",
+            "api_path_prefix",
+            "storage",
+            "compare_and_swap",
+            "append_only",
+            "deletion_supported",
+            "receipt_signing_public_key_sha256",
+        }
+        or not isinstance(journal_resource_id, str)
+        or not journal_resource_id
+        or not isinstance(apply_journal.get("resource_version"), int)
+        or isinstance(apply_journal.get("resource_version"), bool)
+        or apply_journal["resource_version"] < 0
+        or re.fullmatch(
+            r"[a-f0-9]{64}", str(apply_journal.get("semantic_sha256", ""))
+        )
+        is None
+        or apply_journal.get("api_path_prefix")
+        != "/v1/effective-authority/apply-journal"
+        or apply_journal.get("storage") != "provider-native-durable-multi-az"
+        or apply_journal.get("compare_and_swap")
+        != "resource-version-required"
+        or apply_journal.get("append_only") is not True
+        or apply_journal.get("deletion_supported") is not False
+        or apply_journal.get("receipt_signing_public_key_sha256")
+        != provider_trust_root_sha256
+    ):
+        raise DeploymentError(
+            "provider apply journal is not immutable, CAS-bound, and root-signed"
         )
     freeze_resource_id = provider_freeze.get("resource_id")
     if not isinstance(freeze_resource_id, str) or not freeze_resource_id:
@@ -4006,6 +4545,7 @@ def _verified_provider_authority_census(
             f"mk8s.cluster/{cluster_id}",
             f"iam.mutation-freeze/{freeze_resource_id}",
             f"iam.signing-material/{signing_resource_id}",
+            f"provider.apply-journal/{journal_resource_id}",
             *(
                 f"iam.{scope['kind']}/{scope['id']}"
                 for scope in scope_chain
@@ -5076,6 +5616,7 @@ def _provider_operation_settlement(
         "aborted_freeze_transaction_id",
         "apply_id",
         "started_at",
+        "credential_epochs_sha256",
         "correlation",
         "accepted_operations",
         "active_operation_ids",
@@ -5120,6 +5661,8 @@ def _provider_operation_settlement(
             str(marker["apply_id"]),
             "--started-at",
             str(marker["started_at"]),
+            "--credential-epochs-sha256",
+            str(marker["credential_epochs_sha256"]),
             "--output",
             "json",
         ]
@@ -5179,6 +5722,8 @@ def _provider_operation_settlement(
                 != marker.get("custody_transaction_id")
                 or observation.get("apply_id") != marker.get("apply_id")
                 or observation.get("started_at") != marker.get("started_at")
+                or observation.get("credential_epochs_sha256")
+                != marker.get("credential_epochs_sha256")
                 or observation.get("correlation")
                 != "provider-audit-log-exact-user-agent-and-credential-epoch"
                 or observed_at.tzinfo is None
@@ -5293,6 +5838,278 @@ def _provider_operation_settlement(
             time.sleep(5)
     raise DeploymentError(
         "provider operations did not reach two stable terminal observations before custody expiry"
+    )
+
+
+def _provider_apply_journal_operation(
+    *,
+    attestation: Mapping[str, Any],
+    operation: str,
+    request_document: Mapping[str, Any],
+    provider_trust_root_sha256: str,
+    signature_verifier_sha256: str,
+) -> dict[str, Any]:
+    """Perform one provider-native append-only apply-journal CAS operation."""
+
+    if (
+        operation not in {"observe", "begin", "resolve"}
+        or request_document.get("schema")
+        != _PROVIDER_APPLY_JOURNAL_REQUEST_SCHEMA
+        or request_document.get("operation") != operation
+    ):
+        raise DeploymentError("provider apply-journal request is not exact")
+    if operation == "observe":
+        if set(request_document) != {"schema", "operation"}:
+            raise DeploymentError("provider journal observe request is not exact")
+    elif operation == "begin":
+        marker = request_document.get("marker")
+        expected_marker_keys = {
+            "schema",
+            "apply_id",
+            "stage",
+            "saved_plan_name",
+            "saved_plan_sha256",
+            "target_postconditions_sha256",
+            "source_commit",
+            "source_tree",
+            "project_id",
+            "cluster_id",
+            "custody_transaction_id",
+            "credential_epochs_sha256",
+            "started_at",
+            "remote_outcome",
+        }
+        try:
+            started_at = datetime.fromisoformat(
+                str(marker["started_at"]).replace("Z", "+00:00")
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise DeploymentError("provider journal begin time is malformed") from exc
+        if (
+            set(request_document)
+            != {
+                "schema",
+                "operation",
+                "expected_journal_resource_version",
+                "marker",
+            }
+            or not isinstance(marker, Mapping)
+            or set(marker) != expected_marker_keys
+            or marker.get("schema") != _INDETERMINATE_APPLY_SCHEMA
+            or re.fullmatch(r"[a-f0-9]{32}", str(marker.get("apply_id", "")))
+            is None
+            or marker.get("stage")
+            not in {"configuration", "infrastructure", "foundation", "workloads"}
+            or re.fullmatch(
+                r"(?:0|[1-9][0-9]*)",
+                str(request_document.get("expected_journal_resource_version", "")),
+            )
+            is None
+            or any(
+                re.fullmatch(r"[a-f0-9]{64}", str(marker.get(field, ""))) is None
+                for field in {
+                    "saved_plan_sha256",
+                    "target_postconditions_sha256",
+                    "credential_epochs_sha256",
+                }
+            )
+            or any(
+                re.fullmatch(r"[a-f0-9]{40}", str(marker.get(field, ""))) is None
+                for field in {"source_commit", "source_tree"}
+            )
+            or re.fullmatch(
+                r"[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}",
+                str(marker.get("custody_transaction_id", "")),
+            )
+            is None
+            or started_at.tzinfo is None
+            or started_at > datetime.now(UTC) + timedelta(seconds=30)
+            or marker.get("remote_outcome") != "pending-or-indeterminate"
+        ):
+            raise DeploymentError("provider journal begin request is not exact")
+    else:
+        resolution = request_document.get("resolution")
+        expected_resolution_keys = {
+            "schema",
+            "resolution_kind",
+            "resolution_custody_transaction_id",
+            "provider_settlement_sha256",
+            "refresh_plan_sha256",
+            "refreshed_state_projection_sha256",
+            "target_postconditions_sha256",
+            "remote_operations_terminal",
+            "target_postconditions_satisfied",
+            "custody_valid_until",
+        }
+        try:
+            valid_until = datetime.fromisoformat(
+                str(resolution["custody_valid_until"]).replace("Z", "+00:00")
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise DeploymentError(
+                "provider journal resolution validity is malformed"
+            ) from exc
+        if (
+            set(request_document)
+            != {
+                "schema",
+                "operation",
+                "expected_journal_resource_version",
+                "apply_id",
+                "marker_sha256",
+                "resolution",
+            }
+            or not isinstance(resolution, Mapping)
+            or set(resolution) != expected_resolution_keys
+            or resolution.get("schema") != _INDETERMINATE_RESOLUTION_SCHEMA
+            or resolution.get("resolution_kind")
+            not in {"normal-completion", "fresh-recovery"}
+            or re.fullmatch(
+                r"[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}",
+                str(resolution.get("resolution_custody_transaction_id", "")),
+            )
+            is None
+            or re.fullmatch(
+                r"[1-9][0-9]*",
+                str(request_document.get("expected_journal_resource_version", "")),
+            )
+            is None
+            or re.fullmatch(
+                r"[a-f0-9]{32}", str(request_document.get("apply_id", ""))
+            )
+            is None
+            or re.fullmatch(
+                r"[a-f0-9]{64}", str(request_document.get("marker_sha256", ""))
+            )
+            is None
+            or any(
+                re.fullmatch(
+                    r"[a-f0-9]{64}", str(resolution.get(field, ""))
+                )
+                is None
+                for field in {
+                    "provider_settlement_sha256",
+                    "refresh_plan_sha256",
+                    "refreshed_state_projection_sha256",
+                    "target_postconditions_sha256",
+                }
+            )
+            or resolution.get("remote_operations_terminal") is not True
+            or resolution.get("target_postconditions_satisfied") is not True
+            or valid_until.tzinfo is None
+            or valid_until <= datetime.now(UTC)
+        ):
+            raise DeploymentError("provider journal resolution request is not exact")
+    project_id = str(attestation.get("project_id", ""))
+    cluster_id = str(attestation.get("cluster_id", ""))
+    if operation == "begin" and (
+        request_document["marker"].get("project_id") != project_id
+        or request_document["marker"].get("cluster_id") != cluster_id
+    ):
+        raise DeploymentError(
+            "provider journal marker differs from the attested project or cluster"
+        )
+    census = attestation.get("provider_authority_census")
+    exporter = census.get("exporter") if isinstance(census, Mapping) else None
+    snapshot = census.get("snapshot") if isinstance(census, Mapping) else None
+    if (
+        re.fullmatch(r"project-[a-z0-9]+", project_id) is None
+        or re.fullmatch(r"mk8scluster-[a-z0-9]+", cluster_id) is None
+        or not isinstance(exporter, Mapping)
+        or not isinstance(snapshot, Mapping)
+    ):
+        raise DeploymentError(
+            "fresh provider custody has no apply-journal-capable authority exporter"
+        )
+    exporter_path = Path(str(exporter.get("path", "")))
+    exporter_bytes, exporter_sha256 = _stable_root_file_bytes(
+        exporter_path,
+        label="provider apply-journal exporter",
+        maximum_bytes=_MAX_CUSTODY_EXECUTABLE_BYTES,
+    )
+    _require_static_elf(exporter_bytes, label="provider apply-journal exporter")
+    credential_bytes: dict[str, bytes] = {}
+    for name, path_field, digest_field in (
+        ("authority-ca", "authority_ca_path", "authority_ca_sha256"),
+        ("client-certificate", "client_certificate_path", "client_certificate_sha256"),
+        ("client-key", "client_key_path", "client_key_sha256"),
+    ):
+        captured, digest = _stable_root_file_bytes(
+            Path(str(exporter.get(path_field, ""))),
+            label=f"provider apply-journal {name}",
+            maximum_bytes=_MAX_CUSTODY_DOCUMENT_BYTES,
+            private=True,
+        )
+        if digest != exporter.get(digest_field):
+            raise DeploymentError(
+                f"provider apply-journal {name} differs from fresh custody"
+            )
+        credential_bytes[name] = captured
+    encoded_request = json.dumps(
+        request_document, sort_keys=True, separators=(",", ":")
+    ).encode()
+    with ExitStack() as stack:
+        credential_fds = {
+            name: stack.enter_context(
+                _sealed_memfd(f"fs2-provider-journal-{name}", value)
+            )
+            for name, value in credential_bytes.items()
+        }
+        request_fd = stack.enter_context(
+            _sealed_memfd("fs2-provider-journal-request", encoded_request)
+        )
+        inherited_fds = (*credential_fds.values(), request_fd)
+        result = _pinned_custody_command(
+            executable_path=exporter_path,
+            expected_sha256=exporter_sha256,
+            label="provider apply-journal exporter",
+            arguments=[
+                "journal",
+                "--operation",
+                operation,
+                "--project-id",
+                project_id,
+                "--cluster-id",
+                cluster_id,
+                "--output",
+                "json",
+            ],
+            environment={
+                "FS2_PROVIDER_AUTHORITY_API_URL": str(
+                    snapshot["provider_api_endpoint"]
+                ),
+                "FS2_PROVIDER_AUTHORITY_API_SERVER_CERT_SHA256": str(
+                    snapshot["authority_api_server_certificate_sha256"]
+                ),
+                "FS2_PROVIDER_AUTHORITY_API_CA": (
+                    f"/proc/self/fd/{credential_fds['authority-ca']}"
+                ),
+                "FS2_PROVIDER_AUTHORITY_API_CLIENT_CERT": (
+                    f"/proc/self/fd/{credential_fds['client-certificate']}"
+                ),
+                "FS2_PROVIDER_AUTHORITY_API_CLIENT_KEY": (
+                    f"/proc/self/fd/{credential_fds['client-key']}"
+                ),
+                "FS2_PROVIDER_APPLY_JOURNAL_REQUEST": f"/proc/self/fd/{request_fd}",
+            },
+            timeout=60,
+            inherited_fds=inherited_fds,
+        )
+    try:
+        observation = json.loads(result.stdout)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DeploymentError(
+            "provider apply-journal observation is not JSON"
+        ) from exc
+    if result.returncode != 0 or not isinstance(observation, dict):
+        raise DeploymentError("provider apply-journal operation failed closed")
+    return _verified_provider_apply_journal(
+        observation,
+        action=operation,
+        project_id=project_id,
+        cluster_id=cluster_id,
+        provider_trust_root_sha256=provider_trust_root_sha256,
+        signature_verifier_sha256=signature_verifier_sha256,
     )
 
 
@@ -8104,122 +8921,75 @@ def reconcile_indeterminate_stack(
     contract: Mapping[str, Any],
     configuration_environment: Mapping[str, str],
 ) -> None:
-    unresolved = _unresolved_indeterminate_applies(run_root)
+    transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
+    provider_trust_root_sha256 = transition.get(
+        "provider_trust_root_sha256", ""
+    )
+    signature_verifier_sha256 = transition.get(
+        "signature_verifier_sha256", ""
+    )
+    provider_attestation = provider_custody_preflight(args, contract)
+
+    def journal_guard(
+        operation: str, request_document: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        return _provider_apply_journal_operation(
+            attestation=provider_attestation,
+            operation=operation,
+            request_document=request_document,
+            provider_trust_root_sha256=provider_trust_root_sha256,
+            signature_verifier_sha256=signature_verifier_sha256,
+        )
+
+    journal_observation = journal_guard(
+        "observe",
+        {
+            "schema": _PROVIDER_APPLY_JOURNAL_REQUEST_SCHEMA,
+            "operation": "observe",
+        },
+    )
+    unresolved = _unresolved_indeterminate_applies(
+        run_root, journal_observation
+    )
     if not unresolved:
         raise DeploymentError(
-            "reconcile-indeterminate requires an unresolved append-only marker"
+            "reconcile-indeterminate requires an unresolved provider-custodied marker"
         )
-    marker_candidates: list[
-        tuple[datetime, str, Path, dict[str, Any], str]
-    ] = []
-    for candidate_path in unresolved:
-        candidate, candidate_sha256 = _read_private_evidence(
-            candidate_path, label="indeterminate apply marker"
-        )
-        try:
-            candidate_fenced_at = datetime.fromisoformat(
-                str(candidate["fenced_at"]).replace("Z", "+00:00")
-            )
-        except (KeyError, ValueError) as exc:
-            raise DeploymentError(
-                "indeterminate apply marker time is malformed"
-            ) from exc
-        marker_candidates.append(
-            (
-                candidate_fenced_at,
-                str(candidate.get("apply_id", "")),
-                candidate_path,
-                candidate,
-                candidate_sha256,
-            )
-        )
-    (
-        _selected_fenced_at,
-        _selected_apply_id,
-        marker_path,
-        marker,
-        marker_sha256,
-    ) = sorted(marker_candidates)[-1]
-    try:
-        marker_started_at = datetime.fromisoformat(
-            str(marker["started_at"]).replace("Z", "+00:00")
-        )
-        marker_fenced_at = datetime.fromisoformat(
-            str(marker["fenced_at"]).replace("Z", "+00:00")
-        )
-    except (KeyError, ValueError) as exc:
-        raise DeploymentError("indeterminate apply marker time is malformed") from exc
-    payload = {key: value for key, value in marker.items() if key != "payload_sha256"}
-    expected_marker_keys = {
-        "schema",
-        "apply_id",
-        "stage",
-        "terraform_root",
-        "saved_plan_path",
-        "saved_plan_sha256",
-        "project_id",
-        "cluster_id",
-        "custody_transaction_id",
-        "started_at",
-        "fenced_at",
-        "credential_process_disposition",
-        "remote_outcome",
-        "failure_type",
-        "payload_sha256",
-    }
-    if (
-        set(marker) != expected_marker_keys
-        or marker.get("schema") != _INDETERMINATE_APPLY_SCHEMA
-        or marker.get("payload_sha256") != _json_sha256(payload)
-        or marker.get("credential_process_disposition")
-        != "sigstop-then-sigkill-no-resume"
-        or marker.get("remote_outcome") != "indeterminate"
-        or marker.get("project_id") != contract["target"]["project_id"]
-        or re.fullmatch(r"[a-f0-9]{32}", str(marker.get("apply_id", ""))) is None
-        or re.fullmatch(
-            r"mk8scluster-[a-z0-9]+", str(marker.get("cluster_id", ""))
-        )
-        is None
-        or re.fullmatch(
-            r"[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}",
-            str(marker.get("custody_transaction_id", "")),
-        )
-        is None
-        or re.fullmatch(
-            r"[a-f0-9]{64}", str(marker.get("saved_plan_sha256", ""))
-        )
-        is None
-        or marker_started_at.tzinfo is None
-        or marker_fenced_at.tzinfo is None
-        or marker_fenced_at < marker_started_at
-        or marker_fenced_at > datetime.now(UTC) + timedelta(seconds=30)
-    ):
-        raise DeploymentError("indeterminate apply marker is outside the recovery contract")
+    selected_record = sorted(
+        unresolved,
+        key=lambda record: (
+            str(record["marker"]["journal_opened_at"]),
+            str(record["marker"]["apply_id"]),
+        ),
+    )[-1]
+    marker = dict(selected_record["marker"])
+    marker_sha256 = _json_sha256(marker)
     stage = str(marker.get("stage", ""))
-    if stage not in {"configuration", "infrastructure", "foundation", "workloads"}:
-        raise DeploymentError("indeterminate apply marker names an unknown stage")
     expected_root = DEPLOY_ROOT if stage == "configuration" else stage_root(stage)
-    if marker.get("terraform_root") != str(expected_root.resolve()):
-        raise DeploymentError("indeterminate apply marker names the wrong Terraform root")
-    saved_plan_path = Path(str(marker.get("saved_plan_path", "")))
+    saved_plan_path = run_root / str(marker["saved_plan_name"])
     if (
-        not saved_plan_path.is_absolute()
+        saved_plan_path.parent.resolve() != run_root.resolve()
         or saved_plan_path.is_symlink()
         or not saved_plan_path.is_file()
         or _sha256_file(saved_plan_path) != marker.get("saved_plan_sha256")
     ):
         raise DeploymentError("the exact aborted saved plan is unavailable or changed")
-
-    transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
-    provider_attestation = provider_custody_preflight(args, contract)
+    current_source_commit = source_commit()
+    current_source_tree = run(
+        ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD^{tree}"],
+        capture=True,
+        env=clean_environment(),
+    ).stdout.strip()
     if (
         provider_attestation.get("cluster_id") != marker.get("cluster_id")
         or provider_attestation.get("project_id") != marker.get("project_id")
         or provider_attestation.get("mutation_freeze", {}).get("transaction_id")
         == marker.get("custody_transaction_id")
+        or current_source_commit != marker.get("source_commit")
+        or current_source_tree != marker.get("source_tree")
     ):
         raise DeploymentError(
-            "indeterminate recovery requires a fresh custody transaction for the same target"
+            "indeterminate recovery requires the exact source plus a fresh custody transaction for the same target"
         )
     current_transaction_id = str(
         provider_attestation["mutation_freeze"]["transaction_id"]
@@ -8269,6 +9039,27 @@ def reconcile_indeterminate_stack(
                 "fresh recovery custody changed during indeterminate reconciliation"
             )
         return active_until
+
+    def recovery_journal_guard(
+        operation: str, request_document: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        recovery_custody_guard()
+        return _provider_apply_journal_operation(
+            attestation=provider_attestation,
+            operation=operation,
+            request_document=request_document,
+            provider_trust_root_sha256=provider_trust_root_sha256,
+            signature_verifier_sha256=signature_verifier_sha256,
+        )
+
+    def recovery_settlement_guard(
+        apply_marker: Mapping[str, Any], deadline: datetime
+    ) -> dict[str, Any]:
+        return _provider_operation_settlement(
+            attestation=provider_attestation,
+            marker=apply_marker,
+            deadline=deadline,
+        )
 
     active_until = recovery_custody_guard()
     settlement = _provider_operation_settlement(
@@ -8328,6 +9119,13 @@ def reconcile_indeterminate_stack(
         capture=True,
     )
     private_text(refresh_json_path, refresh_show.stdout)
+    try:
+        refresh_document = json.loads(refresh_show.stdout)
+    except json.JSONDecodeError as exc:
+        raise DeploymentError("refresh-only saved plan is not readable JSON") from exc
+    unresolved_apply_ids = tuple(
+        str(record["marker"]["apply_id"]) for record in unresolved
+    )
     apply_plan(
         args.terraform,
         expected_root,
@@ -8339,10 +9137,15 @@ def reconcile_indeterminate_stack(
         custody_project_id=str(marker["project_id"]),
         custody_cluster_id=str(marker["cluster_id"]),
         custody_transaction_id=current_transaction_id,
-        reconciling_apply_ids=tuple(
-            str(candidate.get("apply_id", ""))
-            for _fenced, _apply_id, _path, candidate, _sha256 in marker_candidates
+        credential_epochs_sha256=_provider_credential_epochs_sha256(
+            provider_attestation
         ),
+        target_postconditions_sha256=_json_sha256(
+            _terraform_value_projection(refresh_document, "planned_values")
+        ),
+        journal_guard=recovery_journal_guard,
+        settlement_guard=recovery_settlement_guard,
+        reconciling_apply_ids=unresolved_apply_ids,
     )
     recovery_custody_guard()
     refreshed_state = run(
@@ -8376,33 +9179,75 @@ def reconcile_indeterminate_stack(
         ) from exc
     refreshed_projection = _terraform_value_projection(refreshed_document, "values")
     target_projection = _terraform_value_projection(target_document, "planned_values")
-    if refreshed_projection != target_projection:
+    target_postconditions_sha256 = _json_sha256(target_projection)
+    if (
+        refreshed_projection != target_projection
+        or target_postconditions_sha256
+        != marker.get("target_postconditions_sha256")
+    ):
         raise DeploymentError(
             "remote operations settled, but refreshed state does not satisfy the exact "
             "saved-plan postconditions; keep the indeterminate marker unresolved"
         )
     final_expiry = recovery_custody_guard()
-    resolution = {
-        "schema": _INDETERMINATE_RESOLUTION_SCHEMA,
+    resolution_observation = _assert_no_unresolved_indeterminate_apply(
+        run_root,
+        journal_guard=recovery_journal_guard,
+        allowed_apply_ids=unresolved_apply_ids,
+    )
+    resolution_request = {
+        "schema": _PROVIDER_APPLY_JOURNAL_REQUEST_SCHEMA,
+        "operation": "resolve",
+        "expected_journal_resource_version": resolution_observation[
+            "journal_resource_version"
+        ],
         "apply_id": marker["apply_id"],
         "marker_sha256": marker_sha256,
-        "aborted_custody_transaction_id": marker["custody_transaction_id"],
-        "recovery_custody_transaction_id": current_transaction_id,
-        "provider_settlement_sha256": _json_sha256(settlement),
-        "refresh_plan_sha256": _sha256_file(refresh_plan_path),
-        "refreshed_state_projection_sha256": _json_sha256(refreshed_projection),
-        "target_postconditions_sha256": _json_sha256(target_projection),
-        "remote_operations_terminal": True,
-        "target_postconditions_satisfied": True,
-        "resolved_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "custody_valid_until": final_expiry.isoformat().replace("+00:00", "Z"),
+        "resolution": {
+            "schema": _INDETERMINATE_RESOLUTION_SCHEMA,
+            "resolution_kind": "fresh-recovery",
+            "resolution_custody_transaction_id": current_transaction_id,
+            "provider_settlement_sha256": _json_sha256(settlement),
+            "refresh_plan_sha256": _sha256_file(refresh_plan_path),
+            "refreshed_state_projection_sha256": _json_sha256(
+                refreshed_projection
+            ),
+            "target_postconditions_sha256": target_postconditions_sha256,
+            "remote_operations_terminal": True,
+            "target_postconditions_satisfied": True,
+            "custody_valid_until": final_expiry.isoformat().replace(
+                "+00:00", "Z"
+            ),
+        },
     }
-    resolution["payload_sha256"] = _json_sha256(resolution)
-    resolution_path = marker_path.with_name(
-        f"{marker['apply_id']}.resolved.json"
+    resolved_observation = recovery_journal_guard(
+        "resolve", resolution_request
     )
-    _append_private_json_once(resolution_path, resolution)
-    remaining = _unresolved_indeterminate_applies(run_root)
+    resolved_record = next(
+        (
+            record
+            for record in resolved_observation["records"]
+            if record["marker"]["apply_id"] == marker["apply_id"]
+        ),
+        None,
+    )
+    if not isinstance(resolved_record, Mapping):
+        raise DeploymentError(
+            "provider apply journal omitted the recovery resolution"
+        )
+    _require_journal_resolution_matches_request(
+        resolved_record, resolution_request
+    )
+    remaining = _unresolved_indeterminate_applies(
+        run_root, resolved_observation
+    )
+    if any(
+        record["marker"]["apply_id"] == marker["apply_id"]
+        for record in remaining
+    ):
+        raise DeploymentError(
+            "provider apply journal did not commit the exact signed recovery resolution"
+        )
     print(
         json.dumps(
             {
@@ -8412,8 +9257,13 @@ def reconcile_indeterminate_stack(
                     else "indeterminate-apply-reconciled-more-pending"
                 ),
                 "apply_id": marker["apply_id"],
-                "resolution": str(resolution_path),
-                "remaining_unresolved": [str(path) for path in remaining],
+                "resolution": "provider-authority-append-only-cas",
+                "journal_resource_version": resolved_observation[
+                    "journal_resource_version"
+                ],
+                "remaining_unresolved": [
+                    record["marker"]["apply_id"] for record in remaining
+                ],
             },
             indent=2,
         )
@@ -8427,7 +9277,6 @@ def apply_stack(
     commit: str,
     configuration_environment: Mapping[str, str],
 ) -> None:
-    _assert_no_unresolved_indeterminate_apply(run_root)
     transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
     transition_phase = transition.get("phase", "prepare")
     trust_root_sha256 = transition.get("authority_trust_root_sha256", "")
@@ -8526,13 +9375,40 @@ def apply_stack(
             )
         return active_until
 
+    def journal_guard(
+        operation: str, request_document: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        custody_guard()
+        return _provider_apply_journal_operation(
+            attestation=preflight_attestation,
+            operation=operation,
+            request_document=request_document,
+            provider_trust_root_sha256=provider_trust_root_sha256,
+            signature_verifier_sha256=signature_verifier_sha256,
+        )
+
+    def settlement_guard(
+        marker: Mapping[str, Any], deadline: datetime
+    ) -> dict[str, Any]:
+        return _provider_operation_settlement(
+            attestation=preflight_attestation,
+            marker=marker,
+            deadline=deadline,
+        )
+
     # No infrastructure, registry, Kubernetes, or root-state mutation may
     # precede this independently signed and live-reconciled boundary.
     custody_guard()
+    _assert_no_unresolved_indeterminate_apply(
+        run_root, journal_guard=journal_guard
+    )
+    credential_epochs_sha256 = _provider_credential_epochs_sha256(
+        preflight_attestation
+    )
     infrastructure_variables = write_infrastructure_variables(
         run_root, contract, commit, args.nebius_profile
     )
-    plan_path, _, environment = plan_stage(
+    plan_path, infrastructure_plan, environment = plan_stage(
         args.terraform,
         run_root=run_root,
         stage="infrastructure",
@@ -8550,6 +9426,12 @@ def apply_stack(
         custody_project_id=contract["target"]["project_id"],
         custody_cluster_id=preflight_cluster_id,
         custody_transaction_id=custody_transaction_id,
+        credential_epochs_sha256=credential_epochs_sha256,
+        target_postconditions_sha256=_json_sha256(
+            _terraform_value_projection(infrastructure_plan, "planned_values")
+        ),
+        journal_guard=journal_guard,
+        settlement_guard=settlement_guard,
     )
 
     dynamic = infrastructure_outputs(
@@ -8598,7 +9480,7 @@ def apply_stack(
         run_root, contract, dynamic
     )
 
-    plan_path, _, environment = plan_stage(
+    plan_path, foundation_plan, environment = plan_stage(
         args.terraform,
         run_root=run_root,
         stage="foundation",
@@ -8616,6 +9498,12 @@ def apply_stack(
         custody_project_id=contract["target"]["project_id"],
         custody_cluster_id=preflight_cluster_id,
         custody_transaction_id=custody_transaction_id,
+        credential_epochs_sha256=credential_epochs_sha256,
+        target_postconditions_sha256=_json_sha256(
+            _terraform_value_projection(foundation_plan, "planned_values")
+        ),
+        journal_guard=journal_guard,
+        settlement_guard=settlement_guard,
     )
     custody_guard()
 
@@ -8704,6 +9592,12 @@ def apply_stack(
             custody_project_id=contract["target"]["project_id"],
             custody_cluster_id=preflight_cluster_id,
             custody_transaction_id=custody_transaction_id,
+            credential_epochs_sha256=credential_epochs_sha256,
+            target_postconditions_sha256=_json_sha256(
+                _terraform_value_projection(workloads_plan, "planned_values")
+            ),
+            journal_guard=journal_guard,
+            settlement_guard=settlement_guard,
         )
         if operation_lock_identity:
             ensure_control_plane_helm_release_idle(
@@ -8838,6 +9732,10 @@ def apply_stack(
             )
 
     # Record the accepted root contract after all of its staged consumers converge.
+    configuration_plan, _configuration_plan_sha256 = _read_private_evidence(
+        run_root / "configuration.plan.json",
+        label="configuration saved-plan JSON",
+    )
     apply_plan(
         args.terraform,
         DEPLOY_ROOT,
@@ -8849,6 +9747,12 @@ def apply_stack(
         custody_project_id=contract["target"]["project_id"],
         custody_cluster_id=preflight_cluster_id,
         custody_transaction_id=custody_transaction_id,
+        credential_epochs_sha256=credential_epochs_sha256,
+        target_postconditions_sha256=_json_sha256(
+            _terraform_value_projection(configuration_plan, "planned_values")
+        ),
+        journal_guard=journal_guard,
+        settlement_guard=settlement_guard,
     )
 
     endpoints = workload_endpoint_outputs(args.terraform, run_root, contract)
@@ -9006,8 +9910,67 @@ def destroy_stack(
     contract: Mapping[str, Any],
     commit: str,
 ) -> None:
-    _assert_no_unresolved_indeterminate_apply(run_root)
+    transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
+    provider_trust_root_sha256 = transition.get(
+        "provider_trust_root_sha256", ""
+    )
+    signature_verifier_sha256 = transition.get(
+        "signature_verifier_sha256", ""
+    )
     provider_attestation = provider_custody_preflight(args, contract)
+    stable_custody_sha256 = _provider_custody_stable_sha256(
+        provider_attestation
+    )
+    custody_transaction_id = str(
+        provider_attestation["mutation_freeze"]["transaction_id"]
+    )
+
+    def custody_guard() -> datetime:
+        observed, _digest, active_until = _verified_provider_custody(
+            cluster_id=str(provider_attestation["cluster_id"]),
+            project_id=str(provider_attestation["project_id"]),
+            nebius=args.nebius,
+            nebius_profile=args.nebius_profile,
+            provider_trust_root_sha256=provider_trust_root_sha256,
+            signature_verifier_sha256=signature_verifier_sha256,
+        )
+        if (
+            _provider_custody_stable_sha256(observed) != stable_custody_sha256
+            or observed.get("mutation_freeze", {}).get("transaction_id")
+            != custody_transaction_id
+        ):
+            raise DeploymentError(
+                "provider custody changed during the destroy transaction"
+            )
+        return active_until
+
+    def journal_guard(
+        operation: str, request_document: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        custody_guard()
+        return _provider_apply_journal_operation(
+            attestation=provider_attestation,
+            operation=operation,
+            request_document=request_document,
+            provider_trust_root_sha256=provider_trust_root_sha256,
+            signature_verifier_sha256=signature_verifier_sha256,
+        )
+
+    def settlement_guard(
+        marker: Mapping[str, Any], deadline: datetime
+    ) -> dict[str, Any]:
+        return _provider_operation_settlement(
+            attestation=provider_attestation,
+            marker=marker,
+            deadline=deadline,
+        )
+
+    _assert_no_unresolved_indeterminate_apply(
+        run_root, journal_guard=journal_guard
+    )
+    credential_epochs_sha256 = _provider_credential_epochs_sha256(
+        provider_attestation
+    )
     reference_infrastructure = (
         contract.get("stages", {}).get("infrastructure", {}).get("reference_data", {})
     )
@@ -9143,7 +10106,7 @@ def destroy_stack(
             raise DeploymentError(
                 f"cannot destroy {stage}: its generated private variable file is unavailable"
             )
-        plan_path, _, environment = plan_stage(
+        plan_path, destroy_plan, environment = plan_stage(
             args.terraform,
             run_root=run_root,
             stage=stage,
@@ -9151,7 +10114,24 @@ def destroy_stack(
             variable_file=variable_file,
             destroy=True,
         )
-        apply_plan(args.terraform, stage_root(stage), plan_path, environment)
+        apply_plan(
+            args.terraform,
+            stage_root(stage),
+            plan_path,
+            environment,
+            custody_guard=custody_guard,
+            indeterminate_root=run_root,
+            stage=stage,
+            custody_project_id=str(provider_attestation["project_id"]),
+            custody_cluster_id=str(provider_attestation["cluster_id"]),
+            custody_transaction_id=custody_transaction_id,
+            credential_epochs_sha256=credential_epochs_sha256,
+            target_postconditions_sha256=_json_sha256(
+                _terraform_value_projection(destroy_plan, "planned_values")
+            ),
+            journal_guard=journal_guard,
+            settlement_guard=settlement_guard,
+        )
         destroyed_stages.append(stage)
 
     if retain_infrastructure:

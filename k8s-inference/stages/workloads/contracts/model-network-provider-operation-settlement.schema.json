@@ -6,7 +6,7 @@
   "required": [
     "schema", "observed_at", "provider_request_ids", "provider_response_sha256",
     "project_id", "cluster_id", "aborted_freeze_transaction_id", "apply_id",
-    "started_at", "correlation", "accepted_operations", "active_operation_ids",
+    "started_at", "credential_epochs_sha256", "correlation", "accepted_operations", "active_operation_ids",
     "completeness", "observation_sha256"
   ],
   "properties": {
@@ -22,6 +22,7 @@
     "aborted_freeze_transaction_id": {"type": "string", "pattern": "^[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}$"},
     "apply_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
     "started_at": {"type": "string", "format": "date-time"},
+    "credential_epochs_sha256": {"$ref": "#/$defs/sha256"},
     "correlation": {"const": "provider-audit-log-exact-user-agent-and-credential-epoch"},
     "accepted_operations": {
       "type": "array", "maxItems": 4096, "uniqueItems": true,

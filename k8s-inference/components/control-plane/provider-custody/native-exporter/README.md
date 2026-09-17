@@ -19,8 +19,18 @@ digest, rejects scripts and ELF `PT_INTERP`, copies the exact bytes to a sealed
 memfd, and executes with a minimal environment. CA, client certificate, and
 client key bytes are likewise inherited only through sealed memfds.
 
-The binary supports the normal nonce-bound authority `snapshot` and a separate
-read-only `settlement` request used after a fenced apply. Settlement asks the
+The binary supports the normal nonce-bound authority `snapshot`, a separate
+read-only `settlement` request, and `journal observe|begin|resolve` operations
+against the provider-native apply journal. The journal request body is supplied
+through an immutable sealed memfd. `begin` and `resolve` require the current
+provider resourceVersion and are append-only CAS operations; the provider API
+has no delete endpoint. Every response returns the complete journal history,
+and every marker and resolution carries a detached signature under the
+root-enrolled provider custody key. The wrapper validates those signatures and
+the complete receipt semantics before every mutation gate; the TLS envelope
+alone is not treated as a receipt.
+
+Settlement asks the
 provider authority API to enumerate every operation accepted under the aborted
 apply's unique Terraform user-agent and credential epoch, including an empty
 set, and to report active/terminal state plus an audit-log high-water mark.

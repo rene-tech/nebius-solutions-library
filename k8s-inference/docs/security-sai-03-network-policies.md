@@ -529,23 +529,28 @@ workloads mutation; and running Terraform in a separately fenced/reaped process
 group with a post-abort live reconciliation. These are unexecuted source
 corrections, not acceptance evidence or a GO claim.
 
-Exact successor `0a9b5a725e070a49fdddbf9211a12a407ba3993c` / tree
-`1394f10dca48080d927101f1dd39571af1104d16` received independent
-**SOURCE/INTEGRATION/LIVE NO-GO**. It left the credential-epoch digest scoped
-outside its receipt verifier, still depended on the ambient dynamic loader and
-OpenSSL library/provider graph, and resumed stopped Terraform/provider children
-for graceful termination without settling provider-accepted remote operations.
-The additive successor computes the epoch digest through one reusable validated
-helper; replaces OpenSSL with the reviewed `native-verifier/` source and a
-root-custodied `static-elf-no-interpreter` artifact; and changes abort handling
-to stop-then-kill without resume. An append-only indeterminate marker blocks
-all later mutation. Recovery requires a new signed custody epoch and distinct
-recovery identity, two stable provider-authoritative terminal-operation
-observations, a refresh-only Terraform state reconciliation, and exact equality
-between refreshed state and the aborted saved plan before an append-only
-resolution receipt is accepted. No source test, build, Terraform, Helm, provider,
-cluster, database, registry, or live action was run for this correction, and it
-does not claim GO or satisfy the separate SAI-07/KEDA integration dependency.
+Exact successor `538f8fc0398a2f8d5774dbe31a871123b515b315` / tree
+`05b40d52dc40465418209ce9ef2fd40df3c75f02` received independent **SOURCE
+NO-GO** because its user-owned local indeterminate marker and resolution files
+were self-hashed rather than independently authenticated, and existence of any
+`resolved.json` path bypassed the fence without parsing it. The additive
+successor moves authority to a provider-native durable append-only CAS journal.
+The provider opens and signs the exact marker before Terraform starts; every
+mutation gate reads and validates the complete external history, full schemas,
+receipt hashes/signatures, marker digest, journal resourceVersions, transaction
+freshness, provider settlement and state-postcondition equality. Resolution is
+an append-only provider CAS and recovery requires a different signed custody
+transaction. Local files cannot authorize continuation; symlinks, non-regular
+objects, wrong ownership, writable files and unknown entries fail closed.
+Provider journal configuration and receipt-signing material are enrolled in
+the provider authority census and zero-principal freeze; its durable record
+store independently permits only marker creation and one CAS resolution append,
+with replacement and deletion unsupported.
+
+This is an unexecuted source correction. No source test, parser, build,
+formatter, Terraform, Helm, provider, cluster, database, registry, cleanup or
+live action was run, and it does not claim GO or satisfy the separate accepted
+SAI-07/KEDA integration dependency.
 
 Run from `k8s-inference` unless a command changes directory:
 

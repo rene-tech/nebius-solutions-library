@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-provider-apply-journal/v1",
+  "title": "Provider-authoritative append-only Terraform apply journal",
+  "type": "object",
+  "required": [
+    "schema", "action", "observed_at", "provider_request_id",
+    "provider_response_sha256", "project_id", "cluster_id",
+    "journal_resource_version", "records", "completeness",
+    "observation_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/provider-apply-journal-observation/v1"},
+    "action": {"enum": ["observe", "begin", "resolve"]},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "provider_request_id": {"type": "string", "minLength": 1, "maxLength": 253},
+    "provider_response_sha256": {"$ref": "#/$defs/sha256"},
+    "project_id": {"type": "string", "pattern": "^project-[a-z0-9]+$"},
+    "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
+    "journal_resource_version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "records": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {"$ref": "#/$defs/record"}
+    },
+    "completeness": {
+      "type": "object",
+      "required": [
+        "all_records_enumerated", "append_only_history", "deletion_supported",
+        "history_closed_through_resource_version"
+      ],
+      "properties": {
+        "all_records_enumerated": {"const": true},
+        "append_only_history": {"const": true},
+        "deletion_supported": {"const": false},
+        "history_closed_through_resource_version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}
+      },
+      "additionalProperties": false
+    },
+    "observation_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "gitObject": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "transaction": {"type": "string", "pattern": "^[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}$"},
+    "signature": {"type": "string", "contentEncoding": "base64", "minLength": 1, "maxLength": 16384},
+    "marker": {
+      "type": "object",
+      "required": [
+        "schema", "apply_id", "stage", "saved_plan_name",
+        "saved_plan_sha256", "target_postconditions_sha256", "source_commit",
+        "source_tree", "project_id", "cluster_id", "custody_transaction_id",
+        "credential_epochs_sha256", "started_at", "journal_opened_at",
+        "journal_open_resource_version", "remote_outcome", "payload_sha256"
+      ],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/terraform-indeterminate-apply/v2"},
+        "apply_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+        "stage": {"enum": ["configuration", "infrastructure", "foundation", "workloads"]},
+        "saved_plan_name": {"type": "string", "pattern": "^(configuration|infrastructure|foundation|workloads)(-destroy|-[a-f0-9]{32}\\.refresh-only)?\\.tfplan$"},
+        "saved_plan_sha256": {"$ref": "#/$defs/sha256"},
+        "target_postconditions_sha256": {"$ref": "#/$defs/sha256"},
+        "source_commit": {"$ref": "#/$defs/gitObject"},
+        "source_tree": {"$ref": "#/$defs/gitObject"},
+        "project_id": {"type": "string", "pattern": "^project-[a-z0-9]+$"},
+        "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
+        "custody_transaction_id": {"$ref": "#/$defs/transaction"},
+        "credential_epochs_sha256": {"$ref": "#/$defs/sha256"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "journal_opened_at": {"type": "string", "format": "date-time"},
+        "journal_open_resource_version": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "remote_outcome": {"const": "pending-or-indeterminate"},
+        "payload_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "resolution": {
+      "type": "object",
+      "required": [
+        "schema", "apply_id", "marker_sha256", "marker_journal_resource_version",
+        "resolution_kind", "resolution_custody_transaction_id",
+        "provider_settlement_sha256", "refresh_plan_sha256",
+        "refreshed_state_projection_sha256", "target_postconditions_sha256",
+        "remote_operations_terminal", "target_postconditions_satisfied",
+        "resolved_at", "journal_previous_resource_version",
+        "journal_resolution_resource_version", "payload_sha256"
+      ],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/terraform-indeterminate-resolution/v2"},
+        "apply_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+        "marker_sha256": {"$ref": "#/$defs/sha256"},
+        "marker_journal_resource_version": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "resolution_kind": {"enum": ["normal-completion", "fresh-recovery"]},
+        "resolution_custody_transaction_id": {"$ref": "#/$defs/transaction"},
+        "provider_settlement_sha256": {"$ref": "#/$defs/sha256"},
+        "refresh_plan_sha256": {"$ref": "#/$defs/sha256"},
+        "refreshed_state_projection_sha256": {"$ref": "#/$defs/sha256"},
+        "target_postconditions_sha256": {"$ref": "#/$defs/sha256"},
+        "remote_operations_terminal": {"const": true},
+        "target_postconditions_satisfied": {"const": true},
+        "resolved_at": {"type": "string", "format": "date-time"},
+        "journal_previous_resource_version": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "journal_resolution_resource_version": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "payload_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "record": {
+      "type": "object",
+      "required": [
+        "record_resource_version", "marker", "marker_signature",
+        "resolution", "resolution_signature"
+      ],
+      "properties": {
+        "record_resource_version": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "marker": {"$ref": "#/$defs/marker"},
+        "marker_signature": {"$ref": "#/$defs/signature"},
+        "resolution": {"oneOf": [{"$ref": "#/$defs/resolution"}, {"type": "null"}]},
+        "resolution_signature": {"oneOf": [{"$ref": "#/$defs/signature"}, {"type": "null"}]}
+      },
+      "additionalProperties": false
+    }
+  }
+}

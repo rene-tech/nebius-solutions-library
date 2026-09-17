@@ -138,17 +138,33 @@ every member challenge. During apply it repeats the full custody verifier every
 five seconds, accepts only a later expiry for the same stable transaction and
 policy, terminates the apply before the remaining window falls below 90
 seconds, and repeats custody after a successful apply. Terraform runs in a new
-process group. On custody failure the whole credential-bearing group is
-`SIGSTOP` fenced and then `SIGKILL`ed while still stopped; it is never resumed
-for graceful termination. The wrapper writes an append-only indeterminate
-marker and refuses every later mutation. The separate
+process group. Before that process starts, the wrapper opens a marker in a
+provider-native, multi-AZ, append-only CAS journal. The provider signs the full
+marker, including the exact source commit/tree, saved-plan digest, derived
+postcondition digest, credential epochs and freeze transaction. Local files in
+the run directory are diagnostic only: they never resolve or suppress a
+provider record, and any legacy marker or resolution there must be a
+root-owned, non-writable, single-link regular file or the wrapper fails closed.
+On custody failure the whole credential-bearing group is `SIGSTOP` fenced and
+then `SIGKILL`ed while still stopped; it is never resumed for graceful
+termination. The pre-existing external marker remains unresolved, so a local
+empty file, symlink, rewritten marker or forged self-hash cannot authorize a
+later mutation. The separate
 `reconcile-indeterminate` command requires a fresh signed recovery credential
 and custody transaction, asks the static provider exporter for the complete
 operation set correlated by the prior apply ID, credential epoch and Terraform
 user-agent, waits for two stable terminal observations, applies only a
 refresh-only state plan, and compares refreshed state with the exact original
-saved-plan postconditions. Only then does it add an immutable resolution
-receipt; it never removes or rewrites the failure marker. A two-hour assertion
+saved-plan postconditions. Only then may a resourceVersion-CAS append the
+provider-signed resolution bound to the original marker digest, a distinct
+recovery transaction, provider settlement, refresh plan, refreshed state and
+target postconditions. The provider journal exposes the complete ordered
+history on every mutation gate and supports no delete operation. The journal
+service configuration and signing material are held by the provider freeze;
+the record store separately permits only service-mediated create and one
+resourceVersion-CAS resolution append, never update, replacement or deletion.
+A normal successful apply uses the same settlement and postcondition
+proof before appending its signed completion. A two-hour assertion
 is therefore only a maximum renewal envelope, not permission for an unbounded
 unwatched apply or ambiguous continuation.
 
@@ -161,6 +177,8 @@ task:
    provider-issued client CA. Do not install a front proxy.
 3. Publish the provider-native authority exporter and enroll its immutable
    provenance plus every gateway runtime/process/listener measurement.
+   Provision and enroll the provider-native append-only apply journal, its
+   no-delete/CAS policy, durable resource identity and receipt-signing key.
 4. Create the two idle operation Leases before restricting API access.
 5. Write and sign the exact gateway policy and provider custody attestation,
    including the complete provider enumeration, two stable authority
@@ -173,6 +191,9 @@ task:
    in-cluster RBAC subject can mutate the five excluded admission guards while
    ordinary controllers still reconcile; and exercise custody renewal across a
    bounded apply before any SAI-03 prepare phase.
+8. Prove journal begin-before-process, failed-apply persistence, forged local
+   marker/resolution rejection, stale-resourceVersion rejection, signed fresh
+   recovery, exact state-postcondition equality and complete-history reads.
 
 There is no destructive break-glass operation. A future recovery policy is a
 new signed, versioned provider policy and in-place update; it never deletes a

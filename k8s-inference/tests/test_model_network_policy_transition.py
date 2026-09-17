@@ -1433,6 +1433,9 @@ def test_provider_custody_closes_in_cluster_ha_inventory_and_apply_expiry_paths(
     assert "measurement_resource_id" in wrapper
     assert "all_mutation_authorities_included" in wrapper
     assert "all_gateway_network_paths_included" in wrapper
+    assert "all_apply_journal_records_included" in wrapper
+    assert "provider.apply-journal" in wrapper
+    assert "receipt_signing_public_key_sha256" in wrapper
     assert "server_certificate_sha256" in wrapper
     assert "socket.create_connection" in wrapper
     assert '"jobset.x-k8s.io": {"jobsets"}' in wrapper
@@ -1462,6 +1465,9 @@ def test_provider_custody_closes_in_cluster_ha_inventory_and_apply_expiry_paths(
     ]["$ref"] == "#/$defs/sha256"
     assert schema["properties"]["schema"]["const"].endswith("/v7")
     assert "provider_authority_census" in schema["required"]
+    assert "apply_journal" in schema["$defs"]["providerAuthorityCensus"][
+        "properties"
+    ]["snapshot"]["required"]
     assert schema["$defs"]["providerAuthorityCensus"]["properties"][
         "snapshot"
     ]["properties"]["provider_mutation_freeze"]["properties"][

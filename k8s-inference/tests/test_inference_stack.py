@@ -1832,6 +1832,25 @@ class InferenceStackTests(unittest.TestCase):
         self.assertIn("reconcile-indeterminate", source)
         self.assertIn("provider operation-settlement exporter", source)
         self.assertIn("target_postconditions_satisfied", source)
+        self.assertIn("provider-apply-journal-observation/v1", source)
+        self.assertIn("journal_guard(\"begin\", begin_request)", source)
+        self.assertIn("_verify_provider_journal_receipt_signature(", source)
+        self.assertIn("metadata.st_uid != 0", source)
+        self.assertIn("metadata.st_mode & 0o222", source)
+        self.assertNotIn("if not resolution.exists()", source)
+        apply_plan_source = source[
+            source.index("def apply_plan(") : source.index(
+                "def _exact_kubernetes_user_info"
+            )
+        ]
+        self.assertLess(
+            apply_plan_source.index('journal_guard("begin", begin_request)'),
+            apply_plan_source.index("subprocess.Popen("),
+        )
+        self.assertLess(
+            apply_plan_source.index("settlement_guard(marker"),
+            apply_plan_source.index('journal_guard("resolve", resolution_request)'),
+        )
         apply_source = source[source.index("def apply_stack(") : source.index("def plan_stack(")]
         self.assertLess(
             apply_source.index("preflight_attestation = provider_custody_preflight"),

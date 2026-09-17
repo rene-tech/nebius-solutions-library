@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-provider-apply-journal-request/v1",
+  "title": "Provider apply-journal observe and append-only CAS requests",
+  "oneOf": [
+    {"$ref": "#/$defs/observe"},
+    {"$ref": "#/$defs/begin"},
+    {"$ref": "#/$defs/resolve"}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "gitObject": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "transaction": {"type": "string", "pattern": "^[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}$"},
+    "base": {
+      "type": "object",
+      "required": ["schema", "operation"],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/provider-apply-journal-request/v1"},
+        "operation": {"enum": ["observe", "begin", "resolve"]}
+      }
+    },
+    "observe": {
+      "allOf": [
+        {"$ref": "#/$defs/base"},
+        {
+          "type": "object",
+          "properties": {"operation": {"const": "observe"}}
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "markerDraft": {
+      "type": "object",
+      "required": [
+        "schema", "apply_id", "stage", "saved_plan_name",
+        "saved_plan_sha256", "target_postconditions_sha256", "source_commit",
+        "source_tree", "project_id", "cluster_id", "custody_transaction_id",
+        "credential_epochs_sha256", "started_at", "remote_outcome"
+      ],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/terraform-indeterminate-apply/v2"},
+        "apply_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+        "stage": {"enum": ["configuration", "infrastructure", "foundation", "workloads"]},
+        "saved_plan_name": {"type": "string", "pattern": "^(configuration|infrastructure|foundation|workloads)(-destroy|-[a-f0-9]{32}\\.refresh-only)?\\.tfplan$"},
+        "saved_plan_sha256": {"$ref": "#/$defs/sha256"},
+        "target_postconditions_sha256": {"$ref": "#/$defs/sha256"},
+        "source_commit": {"$ref": "#/$defs/gitObject"},
+        "source_tree": {"$ref": "#/$defs/gitObject"},
+        "project_id": {"type": "string", "pattern": "^project-[a-z0-9]+$"},
+        "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
+        "custody_transaction_id": {"$ref": "#/$defs/transaction"},
+        "credential_epochs_sha256": {"$ref": "#/$defs/sha256"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "remote_outcome": {"const": "pending-or-indeterminate"}
+      },
+      "additionalProperties": false
+    },
+    "begin": {
+      "allOf": [
+        {"$ref": "#/$defs/base"},
+        {
+          "type": "object",
+          "required": ["expected_journal_resource_version", "marker"],
+          "properties": {
+            "operation": {"const": "begin"},
+            "expected_journal_resource_version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+            "marker": {"$ref": "#/$defs/markerDraft"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "resolutionDraft": {
+      "type": "object",
+      "required": [
+        "schema", "resolution_kind", "resolution_custody_transaction_id",
+        "provider_settlement_sha256", "refresh_plan_sha256",
+        "refreshed_state_projection_sha256", "target_postconditions_sha256",
+        "remote_operations_terminal", "target_postconditions_satisfied",
+        "custody_valid_until"
+      ],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/terraform-indeterminate-resolution/v2"},
+        "resolution_kind": {"enum": ["normal-completion", "fresh-recovery"]},
+        "resolution_custody_transaction_id": {"$ref": "#/$defs/transaction"},
+        "provider_settlement_sha256": {"$ref": "#/$defs/sha256"},
+        "refresh_plan_sha256": {"$ref": "#/$defs/sha256"},
+        "refreshed_state_projection_sha256": {"$ref": "#/$defs/sha256"},
+        "target_postconditions_sha256": {"$ref": "#/$defs/sha256"},
+        "remote_operations_terminal": {"const": true},
+        "target_postconditions_satisfied": {"const": true},
+        "custody_valid_until": {"type": "string", "format": "date-time"}
+      },
+      "additionalProperties": false
+    },
+    "resolve": {
+      "allOf": [
+        {"$ref": "#/$defs/base"},
+        {
+          "type": "object",
+          "required": [
+            "expected_journal_resource_version", "apply_id", "marker_sha256",
+            "resolution"
+          ],
+          "properties": {
+            "operation": {"const": "resolve"},
+            "expected_journal_resource_version": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+            "apply_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+            "marker_sha256": {"$ref": "#/$defs/sha256"},
+            "resolution": {"$ref": "#/$defs/resolutionDraft"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

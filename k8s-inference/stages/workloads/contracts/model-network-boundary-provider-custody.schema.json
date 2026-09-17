@@ -292,21 +292,22 @@
         },
         "snapshot": {
           "type": "object",
-          "required": ["source", "provider_api_endpoint", "authority_api_server_certificate_sha256", "completeness_token", "project_id", "cluster_id", "scope_chain", "identity_collections", "access_permits_sha256", "control_plane_mutation_authorities", "provider_mutation_freeze", "gateway_runtime_measurements", "signing_material"],
+          "required": ["source", "provider_api_endpoint", "authority_api_server_certificate_sha256", "completeness_token", "project_id", "cluster_id", "scope_chain", "identity_collections", "access_permits_sha256", "control_plane_mutation_authorities", "provider_mutation_freeze", "gateway_runtime_measurements", "signing_material", "apply_journal"],
           "properties": {
             "source": {"const": "nebius-provider-authority-export/v1"},
             "provider_api_endpoint": {"type": "string", "pattern": "^https://[^\\s/?#]+(?:/[^\\s?#]*)?$"},
             "authority_api_server_certificate_sha256": {"$ref": "#/$defs/sha256"},
             "completeness_token": {
               "type": "object",
-              "required": ["scope_root_id", "resource_version", "provider_response_sha256", "effective_iam_inheritance_included", "all_mutation_authorities_included", "all_gateway_network_paths_included"],
+              "required": ["scope_root_id", "resource_version", "provider_response_sha256", "effective_iam_inheritance_included", "all_mutation_authorities_included", "all_gateway_network_paths_included", "all_apply_journal_records_included"],
               "properties": {
                 "scope_root_id": {"type": "string", "minLength": 1, "maxLength": 253},
                 "resource_version": {"type": "integer", "minimum": 0},
                 "provider_response_sha256": {"$ref": "#/$defs/sha256"},
                 "effective_iam_inheritance_included": {"const": true},
                 "all_mutation_authorities_included": {"const": true},
-                "all_gateway_network_paths_included": {"const": true}
+                "all_gateway_network_paths_included": {"const": true},
+                "all_apply_journal_records_included": {"const": true}
               },
               "additionalProperties": false
             },
@@ -414,6 +415,22 @@
                 "resource_version": {"type": "integer", "minimum": 0},
                 "semantic_sha256": {"$ref": "#/$defs/sha256"},
                 "public_key_sha256": {"$ref": "#/$defs/sha256"}
+              },
+              "additionalProperties": false
+            },
+            "apply_journal": {
+              "type": "object",
+              "required": ["resource_id", "resource_version", "semantic_sha256", "api_path_prefix", "storage", "compare_and_swap", "append_only", "deletion_supported", "receipt_signing_public_key_sha256"],
+              "properties": {
+                "resource_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                "resource_version": {"type": "integer", "minimum": 0},
+                "semantic_sha256": {"$ref": "#/$defs/sha256"},
+                "api_path_prefix": {"const": "/v1/effective-authority/apply-journal"},
+                "storage": {"const": "provider-native-durable-multi-az"},
+                "compare_and_swap": {"const": "resource-version-required"},
+                "append_only": {"const": true},
+                "deletion_supported": {"const": false},
+                "receipt_signing_public_key_sha256": {"$ref": "#/$defs/sha256"}
               },
               "additionalProperties": false
             }
