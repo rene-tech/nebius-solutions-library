@@ -134,6 +134,52 @@ variable "target_contract" {
   }
 }
 
+variable "public_edge_availability_contract" {
+  description = "Infrastructure-derived public-edge system-pool capacity and exact scheduler placement. The safe default is internal-only; public mode must carry the real node-group receipt."
+  type = object({
+    schema               = string
+    enabled              = bool
+    system_node_group_id = optional(string)
+    system_node_count    = number
+    node_selector        = map(string)
+    topology_key         = string
+    minimum_domains      = number
+  })
+  default = {
+    schema               = "fs2-serve.nebius.ai/public-edge-availability/v1"
+    enabled              = false
+    system_node_group_id = null
+    system_node_count    = 0
+    node_selector        = {}
+    topology_key         = "kubernetes.io/hostname"
+    minimum_domains      = 3
+  }
+  nullable = false
+
+  validation {
+    condition = try(
+      var.public_edge_availability_contract.schema == "fs2-serve.nebius.ai/public-edge-availability/v1" &&
+      var.public_edge_availability_contract.topology_key == "kubernetes.io/hostname" &&
+      var.public_edge_availability_contract.minimum_domains == 3 &&
+      (
+        !var.public_edge_availability_contract.enabled ||
+        (
+          can(regex("^mk8snodegroup-[a-z0-9]+$", var.public_edge_availability_contract.system_node_group_id)) &&
+          floor(var.public_edge_availability_contract.system_node_count) == var.public_edge_availability_contract.system_node_count &&
+          var.public_edge_availability_contract.system_node_count >= 3 &&
+          var.public_edge_availability_contract.node_selector == {
+            "workload.fs2.nebius/system" = "true"
+            "capacity.fs2.nebius/type"   = "regular"
+            "capacity.fs2.nebius/pool"   = "system"
+          }
+        )
+      ),
+      false,
+    )
+    error_message = "A public edge requires the exact infrastructure-derived regular system-pool selector, at least three fixed nodes, and three kubernetes.io/hostname domains."
+  }
+}
+
 variable "infrastructure_contract" {
   description = "Optional legacy v1 B300 infrastructure output. accelerator_pool_contract is authoritative; when this compatibility view is supplied it must agree exactly with v2."
   type = object({

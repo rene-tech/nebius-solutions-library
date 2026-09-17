@@ -228,6 +228,16 @@ resource "nebius_mk8s_v1_node_group" "system" {
     cloud_init_user_data = var.reference_data.enabled ? local.system_shared_cache_reference_data_cloud_init_user_data : local.system_shared_cache_cloud_init_user_data
   }
 
+  lifecycle {
+    precondition {
+      condition = (
+        var.public_edge_mode != "public" ||
+        local.effective_system_pool.node_count >= 3
+      )
+      error_message = "public_edge_mode=public requires at least three fixed system nodes for the required three-domain edge placement contract."
+    }
+  }
+
   depends_on = [
     nebius_iam_v1_group_membership.nodepull_target_registry,
     nebius_iam_v1_group_membership.nodepull_external_registry,

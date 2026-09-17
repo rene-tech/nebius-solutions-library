@@ -97,7 +97,10 @@ resource "helm_release" "envoy_gateway" {
   wait            = true
   timeout         = 900
 
-  values = [file("${path.module}/values/envoy-gateway.yaml")]
+  values = [
+    file("${path.module}/values/envoy-gateway.yaml"),
+    yamlencode(local.envoy_gateway_edge_availability_values),
+  ]
 
   depends_on = [
     terraform_data.cluster_contract,

@@ -1600,6 +1600,8 @@
       "required": [
         "enabled",
         "authorityMode",
+        "audioStreamRequestTimeout",
+        "audioStreamBackendRequestTimeout",
         "requestTimeout",
         "backendRequestTimeout"
       ],
@@ -1612,6 +1614,12 @@
             "dns",
             "ip"
           ]
+        },
+        "audioStreamRequestTimeout": {
+          "const": "7500s"
+        },
+        "audioStreamBackendRequestTimeout": {
+          "const": "7500s"
         },
         "requestTimeout": {
           "const": "40s"
@@ -1658,8 +1666,10 @@
       "type": "object",
       "required": [
         "replicaCount",
+        "nodeSelector",
         "podDisruptionBudget",
         "resources",
+        "affinity",
         "topologySpreadConstraints"
       ],
       "properties": {
@@ -1667,6 +1677,13 @@
           "type": "integer",
           "minimum": 2,
           "maximum": 20
+        },
+        "nodeSelector": {
+          "const": {
+            "workload.fs2.nebius/system": "true",
+            "capacity.fs2.nebius/type": "regular",
+            "capacity.fs2.nebius/pool": "system"
+          }
         },
         "podDisruptionBudget": {
           "type": "object",
@@ -1727,6 +1744,26 @@
           },
           "additionalProperties": false
         },
+        "affinity": {
+          "const": {
+            "podAntiAffinity": {
+              "requiredDuringSchedulingIgnoredDuringExecution": [
+                {
+                  "topologyKey": "kubernetes.io/hostname",
+                  "labelSelector": {
+                    "matchLabels": {
+                      "app.kubernetes.io/component": "proxy",
+                      "app.kubernetes.io/managed-by": "envoy-gateway",
+                      "app.kubernetes.io/name": "envoy",
+                      "gateway.envoyproxy.io/owning-gateway-name": "public",
+                      "gateway.envoyproxy.io/owning-gateway-namespace": "fs2-system"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
         "topologySpreadConstraints": {
           "type": "array",
           "minItems": 1,
@@ -1735,23 +1772,23 @@
             "type": "object",
             "required": [
               "maxSkew",
+              "minDomains",
               "topologyKey",
               "whenUnsatisfiable",
               "labelSelector"
             ],
             "properties": {
               "maxSkew": {
-                "type": "integer",
-                "minimum": 1
+                "const": 1
+              },
+              "minDomains": {
+                "const": 3
               },
               "topologyKey": {
                 "const": "kubernetes.io/hostname"
               },
               "whenUnsatisfiable": {
-                "enum": [
-                  "DoNotSchedule",
-                  "ScheduleAnyway"
-                ]
+                "const": "DoNotSchedule"
               },
               "labelSelector": {
                 "type": "object",

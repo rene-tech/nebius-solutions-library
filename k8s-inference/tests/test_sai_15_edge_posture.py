@@ -57,9 +57,13 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
     assert 'resource "kubernetes_pod_disruption_budget_v1" "edge_rate_limit_redis"' in terraform
     assert 'min_available = "2"' in terraform
     assert 'resource "kubernetes_network_policy_v1" "edge_rate_limit_redis"' in terraform
+    assert "min_domains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : 1" in terraform
+    assert 'dynamic "affinity"' in terraform
+    assert "required_during_scheduling_ignored_during_execution" in terraform
+    assert "var.public_edge_availability_contract.node_selector" in terraform
 
     release = (ROOT / "stages/foundation/releases.tf").read_text(encoding="utf-8")
-    assert 'values = [file("${path.module}/values/envoy-gateway.yaml")]' in release
+    assert "yamlencode(local.envoy_gateway_edge_availability_values)" in release
     assert "kubernetes_stateful_set_v1.edge_rate_limit_redis" in release
     assert "kubernetes_service_v1.edge_rate_limit_redis_headless" in release
     assert "kubernetes_service_v1.edge_rate_limit_redis_sentinel" in release
@@ -77,6 +81,17 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
     assert 'output "edge_rate_limit_managed_resource_addresses"' in outputs
     for address in addresses:
         assert f'"{address}"' in terraform
+
+    foundation_locals = (ROOT / "stages/foundation/locals.tf").read_text(
+        encoding="utf-8"
+    )
+    assert foundation_locals.count("minDomains        = local.public_edge_enabled ?") == 2
+    assert foundation_locals.count(
+        "requiredDuringSchedulingIgnoredDuringExecution"
+    ) == 2
+    assert foundation_locals.count(
+        "var.public_edge_availability_contract.node_selector"
+    ) == 2
 
 
 def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
@@ -129,6 +144,23 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     }
     assert values["edgeConnectionLimits"]["maxStreamDuration"] == "7500s"
     assert values["edgeConnectionLimits"]["maxConnectionDuration"] == "7800s"
+    assert values["httpRoute"]["audioStreamRequestTimeout"] == "7500s"
+    assert values["httpRoute"]["audioStreamBackendRequestTimeout"] == "7500s"
+    assert values["envoyProxy"]["topologySpreadConstraints"][0]["minDomains"] == 3
+    assert values["envoyProxy"]["affinity"]["podAntiAffinity"][
+        "requiredDuringSchedulingIgnoredDuringExecution"
+    ][0]["topologyKey"] == "kubernetes.io/hostname"
+
+    route = (
+        ROOT / "charts/control-plane/fs2-serve-control-plane/templates/httproute.yaml"
+    ).read_text(encoding="utf-8")
+    assert route.index("value: /v1/audio/stream") < route.index("value: /v1\n")
+    assert "type: Exact\n            value: /v1/audio/stream" in route
+    assert "request: {{ .Values.httpRoute.audioStreamRequestTimeout | quote }}" in route
+    assert (
+        "backendRequest: {{ .Values.httpRoute.audioStreamBackendRequestTimeout | quote }}"
+        in route
+    )
 
     root_variables = (ROOT / "variables.tf").read_text(encoding="utf-8")
     workload_contract = (ROOT / "stages/workloads/cluster_contract.tf").read_text(
@@ -148,6 +180,10 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     infrastructure_outputs = (ROOT / "stages/infrastructure/outputs.tf").read_text(
         encoding="utf-8"
     )
+    infrastructure_cluster = (ROOT / "stages/infrastructure/cluster.tf").read_text(
+        encoding="utf-8"
+    )
+    root_contract = (ROOT / "main.tf").read_text(encoding="utf-8")
     assert "client_identity = optional(any)" in root_variables
     assert "var.deployment.edge.client_identity == null" in root_variables
     assert "var.deployment.edge.client_identity.verified" not in root_variables
@@ -174,3 +210,11 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         "security_group_source_cidrs",
     ):
         assert identity in infrastructure_outputs
+    assert 'output "public_edge_availability_contract"' in infrastructure_outputs
+    assert 'schema               = "fs2-serve.nebius.ai/public-edge-availability/v1"' in infrastructure_outputs
+    assert 'topology_key   = "kubernetes.io/hostname"' in infrastructure_outputs
+    assert "minimum_domains = 3" in infrastructure_outputs
+    assert 'var.public_edge_mode != "public" ||' in infrastructure_cluster
+    assert "local.effective_system_pool.node_count >= 3" in infrastructure_cluster
+    assert 'var.deployment.edge.mode != "public" ||' in root_contract
+    assert "local.effective_system_node_count >= 3" in root_contract

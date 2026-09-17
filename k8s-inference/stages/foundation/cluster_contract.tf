@@ -19,6 +19,7 @@ resource "terraform_data" "cluster_contract" {
     accelerator_pool_contract_sha256 = local.accelerator_pool_contract_sha256
     infrastructure_contract          = var.infrastructure_contract
     infrastructure_contract_sha256   = local.infrastructure_contract_sha256
+    public_edge_availability_contract = var.public_edge_availability_contract
     kueue_teardown_cleanup = {
       cluster_id      = var.cluster_id
       cluster_name    = var.cluster_name
@@ -61,6 +62,21 @@ resource "terraform_data" "cluster_contract" {
   }
 
   lifecycle {
+    precondition {
+      condition = (
+        !local.public_edge_enabled ||
+        (
+          var.public_edge_availability_contract.system_node_count >= var.public_edge_availability_contract.minimum_domains &&
+          var.public_edge_availability_contract.node_selector == {
+            "workload.fs2.nebius/system" = "true"
+            "capacity.fs2.nebius/type"   = "regular"
+            "capacity.fs2.nebius/pool"   = "system"
+          }
+        )
+      )
+      error_message = "The public edge foundation requires the infrastructure-derived three-node, three-domain regular system-pool placement contract."
+    }
+
     precondition {
       condition     = abspath(var.kubeconfig_path) == local.expected_kubeconfig_path
       error_message = "kubeconfig_path must be the exact run-owned <run_root>/kubeconfig file."

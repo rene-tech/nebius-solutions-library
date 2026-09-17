@@ -55,10 +55,11 @@ are full, a newly committed request immediately returns its durable `202`
 operation instead of failing or becoming unreachable. The edge adds a shared
 Envoy Gateway global rate limit. Each trusted original client address receives
 an independent 200 requests/second bucket per route; `/admin` traffic also
-enters a separate 30 requests/minute bucket. The policy targets the public
-HTTPS listener, so the landing site, API, admin console, and Grafana inherit
-the baseline without route enumeration. PostgreSQL token budgets and operation
-concurrency remain the authoritative authenticated cross-replica controls. A
+enters a separate 30 requests/minute bucket. The policy targets both public
+HTTP and HTTPS listeners, so redirect/ACME, landing site, API, admin console,
+and Grafana inherit the baseline without route enumeration. PostgreSQL token
+budgets and operation concurrency remain the authoritative authenticated
+cross-replica controls. A
 more-specific future route policy must set `mergeType: StrategicMerge` so it
 cannot replace this listener baseline.
 The chart's public `HTTPRoute` exposes only `/v1`, exact `/mcp`, and exact
@@ -716,8 +717,14 @@ plan before reconciling the Service.
 
 The same `EnvoyProxy` requires two data-plane replicas, bounded CPU/memory, a
 one-Pod minimum disruption budget, rolling updates with zero unavailable Pods,
-and hostname topology spread. The foundation runs Envoy Gateway's shared
-rate-limit service with two replicas and a network-isolated ephemeral
+required hostname anti-affinity, and hostname spread with `minDomains: 3`.
+Public mode fails closed unless Terraform's fixed regular system pool contains
+at least three nodes. Its infrastructure output binds the exact node-group ID,
+node count, three-label system selector, hostname topology key, and minimum
+domain count; foundation and workloads compare that receipt before rendering.
+The controller, data plane, rate-limit service, Redis, and Sentinel workloads
+all consume the bound public placement. The foundation runs Envoy Gateway's
+shared rate-limit service with two replicas and a network-isolated ephemeral
 three-member Redis replication group supervised by three Sentinels. The RLS
 NetworkPolicy admits only DNS plus Redis data port 6379 and Sentinel discovery
 port 26379 to those store Pods. Sentinel preserves one logical writable counter
@@ -744,15 +751,18 @@ Secret, and exposes only `/v1`, exact `/mcp`, and the two exact protected-resour
 metadata paths. It never exposes admin, probe, metrics, schema, or activation
 paths on plaintext HTTP.
 An Envoy `ClientTrafficPolicy` on HTTPS fixes the accepted protocol range to
-TLS 1.2 through TLS 1.3 and trusts exactly one rightmost forwarded-address hop
-for client-bucket selection. Do not deploy it until the retained load balancer
-is proven to append that position and direct header forgery is excluded. Both
+TLS 1.2 through TLS 1.3. HTTP and HTTPS policies consume only the trusted-hop
+count derived by the signed provider/LB evidence adapter; no hop count is
+hard-coded or accepted from deployment input. Do not deploy until that evidence
+proves append/overwrite behavior and excludes direct header forgery. Both
 HTTP and HTTPS listeners cap concurrent connections, connection and stream
 lifetime, requests per connection, incomplete request reception, idle time,
 and concurrent HTTP/2 streams. Active streams may run for at most 7,500
-seconds, preserving the supported audio allowance; the 7,800-second connection
-lifetime supplies five minutes of setup/transport headroom. Idle streams are
-released after five minutes.
+seconds, preserving the supported audio allowance; the exact higher-priority
+`/v1/audio/stream` route also sets both request and backend request timeouts to
+7,500 seconds, while the remaining `/v1` paths stay at 40 seconds. The
+7,800-second connection lifetime supplies five minutes of setup/transport
+headroom. Idle streams are released after five minutes.
 
 The optional namespaced issuer selects only Let's Encrypt's exact staging or
 production directory, the `shortlived` ACME profile, a generated account-key

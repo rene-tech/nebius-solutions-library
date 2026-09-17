@@ -205,6 +205,13 @@ locals {
       }
     }
     publicGateway = { enabled = local.public_edge_enabled }
+    envoyProxy = {
+      nodeSelector = local.public_edge_enabled ? var.public_edge_availability_contract.node_selector : {
+        "workload.fs2.nebius/system" = "true"
+        "capacity.fs2.nebius/type"   = "regular"
+        "capacity.fs2.nebius/pool"   = "system"
+      }
+    }
     edgeClientIdentity = {
       verified                      = local.verified_edge_client_identity.verified
       trustedHops                   = local.verified_edge_client_identity.trusted_hops

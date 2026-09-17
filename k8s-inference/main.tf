@@ -3,6 +3,14 @@ resource "terraform_data" "deployment_contract" {
 
   lifecycle {
     precondition {
+      condition = (
+        var.deployment.edge.mode != "public" ||
+        local.effective_system_node_count >= 3
+      )
+      error_message = "Public edge mode requires at least three fixed system nodes so the proxy, controller, rate-limit service, Redis, and Sentinel placement contracts can span three hostname domains. Select a capacity profile with system_nodes >= 3 or set deployment.cluster.system_pool.node_count >= 3."
+    }
+
+    precondition {
       condition = !var.academic_assets.enabled || (
         local.committed_academic_asset_readiness.schema == "fs2-serve.nebius.ai/academic-asset-readiness/v1" &&
         length(local.committed_academic_asset_readiness_sha256) == 64

@@ -51,7 +51,12 @@ three stable Sentinel endpoints), so it discovers one writable authority and
 never sends writes through a Service that balances independent Redis servers.
 A restarting StatefulSet member asks Ready Sentinels for the current primary;
 only a no-quorum bootstrap uses ordinal zero. A two-Pod PDB, failover quorum,
-strict node spread, probes, and bounded resources cover a member/update loss.
+required hostname anti-affinity, three-domain `minDomains` spread, probes, and
+bounded resources cover a member/update loss. Public mode is rejected at both
+the root and infrastructure stage unless the fixed regular system pool has at
+least three nodes. Infrastructure emits an exact availability receipt naming
+that node group, count, three-label selector, topology key, and minimum domain
+count; foundation and workloads consume and compare that receipt verbatim.
 If the complete HA authority or RLS is unavailable, Envoy is fail-closed rather
 than silently removing the security control.
 
@@ -64,12 +69,18 @@ Service, Sentinel discovery Service, PDB, and NetworkPolicy) are included by
 exact name in `managed_resource_count` and exposed as a closed evidence output.
 
 The Envoy data plane has two replicas, rolling availability, CPU/memory
-requests and limits, a one-Pod minimum PDB, and hostname topology spread. Both
+requests and limits, a one-Pod minimum PDB, required hostname anti-affinity,
+and hostname topology spread with `minDomains: 3`. The Envoy Gateway controller
+and RLS use the same public-only hard placement contract; internal-only mode
+retains soft placement and does not claim node-loss HA. Both
 listeners cap concurrent connections, connection lifetime, requests per
 connection, incomplete-body time, idle time, stream lifetime, and concurrent
 HTTP/2 streams. The active-stream ceiling is exactly 7,500 seconds, preserving
 the supported audio allowance; the 7,800-second connection lifetime gives that
-stream five minutes of connection/setup headroom.
+stream five minutes of connection/setup headroom. The application HTTPRoute
+places an exact `/v1/audio/stream` rule before the `/v1` prefix rule and gives
+both request and backend request a 7,500-second timeout. Other API paths retain
+their 40-second bound.
 
 The first source candidate, `f60ba3f8bfe8818a343bb16c2eda9ab9bdff6289`
 (tree `7b7903d928bf9d49ae12bf197c3ca1f0b5a6f25a`), is preserved as rejected
@@ -88,6 +99,13 @@ operator runbook describing fail-open/two-hour behavior. All three commits
 remain rejected evidence; this document describes their direct additive
 successor, which admits only ports 6379 and 26379 from RLS to the selected store
 Pods and aligns the source contracts without enrolling a production issuer.
+That successor, `644b365e74797937f5e0236e0bdfb1d18b9fdaed` (tree
+`e253e2cd57bd6825cfeef2ed93364db422ff5551`), is also preserved as rejected
+evidence: its general `/v1` route still imposed 40-second request/backend
+timeouts on `/v1/audio/stream`, and its spread preferences did not guarantee
+three eligible nodes or prevent co-location. This document describes the
+direct additive successor that closes those two source defects. The production
+issuer registry remains intentionally empty.
 
 ### Receipt and issuer custody
 
@@ -134,7 +152,8 @@ the coordinator's static-only boundary. A later reviewed integration must:
 
 1. Validate and render the chart and foundation configuration from the exact
    accepted successor commit, including CRD compatibility with Envoy Gateway
-   v1.8.3 and exact equality between the plan count and address allowlist.
+   v1.8.3, the exact 7,500-second audio rule, the exact three-domain placement
+   receipt, and equality between the plan count and address allowlist.
 2. Scan and promote every introduced image digest before creating resources.
 3. Record the current shared-service release/image identity and integrate all
    deployed sibling remediations before rollout.
@@ -154,8 +173,10 @@ the coordinator's static-only boundary. A later reviewed integration must:
    the two-client isolation test and prove counters never split or fail open.
    During an isolated total-backend fault, prove bounded fail-closed responses.
 8. Show at least two Ready Envoy proxy replicas on distinct nodes, an effective
-   PDB, bounded resources, two Ready rate-limit-service replicas, three Ready
-   store members on spread nodes, and accepted traffic policies.
+   PDB, bounded resources, two Ready controller and rate-limit-service replicas
+   on distinct nodes, three Ready store members on three distinct system nodes,
+   the exact infrastructure node-group/count/selector receipt, and accepted
+   traffic policies.
 9. Prove the existing Deployment/Service to StatefulSet/headless/Sentinel
    transition is a non-destructive staged migration: no old resource is deleted
    or replaced before the new single-primary/quorum contract is Ready, and no

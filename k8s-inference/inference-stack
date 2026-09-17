@@ -1759,6 +1759,12 @@ def infrastructure_outputs(
         "public_edge_contract": terraform_json_output(
             terraform, INFRA_ROOT, "public_edge_contract", environment
         ),
+        "public_edge_availability_contract": terraform_json_output(
+            terraform,
+            INFRA_ROOT,
+            "public_edge_availability_contract",
+            environment,
+        ),
         "reference_data_storage_contract": reference_data_storage,
         "reference_data_object_storage_access": reference_data_access,
         "reference_data_lifecycle": reference_data_lifecycle,
@@ -1853,6 +1859,7 @@ def write_downstream_variables(
         "target_contract",
         "infrastructure_contract",
         "accelerator_pool_contract",
+        "public_edge_availability_contract",
     )
     identity = {key: dynamic[key] for key in identity_keys}
     foundation = {**contract["stages"]["foundation"], **identity}

@@ -1,4 +1,5 @@
 locals {
+  public_edge_enabled   = var.public_edge_availability_contract.enabled
   selected_target        = var.target_contract
   target_contract_sha256 = sha256(jsonencode(var.target_contract))
 
@@ -206,6 +207,78 @@ locals {
       }))
     }
   })
+
+  edge_gateway_controller_labels = {
+    "control-plane" = "envoy-gateway"
+  }
+  edge_rate_limit_service_labels = {
+    "fs2.nebius.ai/edge-rate-limit-service" = "true"
+  }
+  edge_gateway_controller_pod_scheduling = {
+    nodeSelector = local.public_edge_enabled ? var.public_edge_availability_contract.node_selector : {
+      "workload.fs2.nebius/system" = "true"
+    }
+    topologySpreadConstraints = [{
+      maxSkew           = 1
+      minDomains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : 1
+      topologyKey       = var.public_edge_availability_contract.topology_key
+      whenUnsatisfiable = local.public_edge_enabled ? "DoNotSchedule" : "ScheduleAnyway"
+      labelSelector = {
+        matchLabels = local.edge_gateway_controller_labels
+      }
+    }]
+    affinity = local.public_edge_enabled ? {
+      podAntiAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = [{
+          topologyKey = var.public_edge_availability_contract.topology_key
+          labelSelector = {
+            matchLabels = local.edge_gateway_controller_labels
+          }
+        }]
+      }
+    } : null
+  }
+  edge_rate_limit_service_pod_scheduling = {
+    labels = local.edge_rate_limit_service_labels
+    nodeSelector = local.public_edge_enabled ? var.public_edge_availability_contract.node_selector : {
+      "workload.fs2.nebius/system" = "true"
+    }
+    topologySpreadConstraints = [{
+      maxSkew           = 1
+      minDomains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : 1
+      topologyKey       = var.public_edge_availability_contract.topology_key
+      whenUnsatisfiable = local.public_edge_enabled ? "DoNotSchedule" : "ScheduleAnyway"
+      labelSelector = {
+        matchLabels = local.edge_rate_limit_service_labels
+      }
+    }]
+    affinity = local.public_edge_enabled ? {
+      podAntiAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = [{
+          topologyKey = var.public_edge_availability_contract.topology_key
+          labelSelector = {
+            matchLabels = local.edge_rate_limit_service_labels
+          }
+        }]
+      }
+    } : null
+  }
+  envoy_gateway_edge_availability_values = {
+    deployment = {
+      pod = local.edge_gateway_controller_pod_scheduling
+    }
+    config = {
+      envoyGateway = {
+        provider = {
+          kubernetes = {
+            rateLimitDeployment = {
+              pod = local.edge_rate_limit_service_pod_scheduling
+            }
+          }
+        }
+      }
+    }
+  }
 
   kubeconfig                  = yamldecode(file(var.kubeconfig_path))
   selected_context            = try(one([for context in local.kubeconfig.contexts : context if context.name == var.kube_context]), null)

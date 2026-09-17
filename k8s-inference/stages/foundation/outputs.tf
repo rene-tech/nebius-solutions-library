@@ -1,20 +1,21 @@
 output "cluster_contract" {
   description = "Non-secret identity passed verbatim to the workloads state."
   value = {
-    cluster_id                       = var.cluster_id
-    cluster_name                     = var.cluster_name
-    kube_context                     = var.kube_context
-    kube_system_uid                  = var.kube_system_uid
-    project_sha256                   = nonsensitive(sha256(var.project_id))
-    target_contract                  = var.target_contract
-    target_sha256                    = local.target_contract_sha256
-    target_region                    = local.selected_target.region
-    run_id                           = var.run_id
-    accelerator_pool_contract        = var.accelerator_pool_contract
-    accelerator_pool_contract_sha256 = local.accelerator_pool_contract_sha256
-    infrastructure_contract          = var.infrastructure_contract
-    infrastructure_contract_sha256   = local.infrastructure_contract_sha256
-    jobset                           = var.jobset.enabled ? module.jobset_controller[0].contract : null
+    cluster_id                        = var.cluster_id
+    cluster_name                      = var.cluster_name
+    kube_context                      = var.kube_context
+    kube_system_uid                   = var.kube_system_uid
+    project_sha256                    = nonsensitive(sha256(var.project_id))
+    target_contract                   = var.target_contract
+    target_sha256                     = local.target_contract_sha256
+    target_region                     = local.selected_target.region
+    run_id                            = var.run_id
+    accelerator_pool_contract         = var.accelerator_pool_contract
+    accelerator_pool_contract_sha256  = local.accelerator_pool_contract_sha256
+    infrastructure_contract           = var.infrastructure_contract
+    infrastructure_contract_sha256    = local.infrastructure_contract_sha256
+    public_edge_availability_contract = var.public_edge_availability_contract
+    jobset                            = var.jobset.enabled ? module.jobset_controller[0].contract : null
   }
 }
 

@@ -24,6 +24,28 @@ spec:
       name: {{ .Values.publicGateway.gatewayName }}
       sectionName: {{ .Values.publicGateway.httpsListenerName }}
   rules:
+    # Exact matches take precedence over the /v1 prefix rule. Keep the
+    # supported long-lived audio stream on its reviewed 7,500-second window;
+    # the general API remains bounded to 40 seconds below.
+    - matches:
+        - path:
+            type: Exact
+            value: /v1/audio/stream
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - x-fs2-tenant
+              - x-fs2-principal
+              - x-fs2-token-id
+              - x-fs2-model-scope
+              - x-fs2-accounting-id
+      timeouts:
+        request: {{ .Values.httpRoute.audioStreamRequestTimeout | quote }}
+        backendRequest: {{ .Values.httpRoute.audioStreamBackendRequestTimeout | quote }}
+      backendRefs:
+        - name: {{ include "fs2-serve.fullname" . }}
+          port: {{ .Values.service.port }}
     - matches:
         - path:
             type: PathPrefix

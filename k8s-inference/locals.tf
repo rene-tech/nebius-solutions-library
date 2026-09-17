@@ -62,8 +62,12 @@ locals {
   accelerator_profile = coalesce(var.deployment.profiles.accelerators, local.capacity_profile)
   model_profile       = var.deployment.profiles.models
 
-  catalog_target                 = try(local.approved_target_contract.targets[var.deployment.target.project_id], null)
-  selected_capacity              = local.capacity_contract.capacity_profiles[local.capacity_profile]
+  catalog_target    = try(local.approved_target_contract.targets[var.deployment.target.project_id], null)
+  selected_capacity = local.capacity_contract.capacity_profiles[local.capacity_profile]
+  effective_system_node_count = try(
+    coalesce(var.deployment.cluster.system_pool.node_count, local.selected_capacity.system_nodes),
+    local.selected_capacity.system_nodes,
+  )
   selected_pool_profile          = local.pool_profile_contract.profiles[local.accelerator_profile]
   selected_model_profile         = local.model_profile_contract.profiles[local.model_profile]
   using_custom_accelerator_pools = length(var.deployment.accelerator_pools) > 0

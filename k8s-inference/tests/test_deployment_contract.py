@@ -507,6 +507,7 @@ class DeploymentContractTests(unittest.TestCase):
             "schema_version": 1,
             "name": "fs2-alertmanager-contract",
             "target": self.catalog_target(),
+            "cluster": {"system_pool": {"node_count": 3}},
             "observability": {
                 "grafana": {"publish_external": True},
                 "alertmanager": {
@@ -564,6 +565,7 @@ class DeploymentContractTests(unittest.TestCase):
             "schema_version": 1,
             "name": "fs2-no-self-asserted-public-client-identity",
             "target": self.catalog_target(),
+            "cluster": {"system_pool": {"node_count": 3}},
             "edge": {
                 "mode": "public",
                 "source_cidrs": ["192.0.2.0/24"],
@@ -582,6 +584,39 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn(
             "edge.client_identity assertions are forbidden",
             f"{result.stdout}\n{result.stderr}",
+        )
+
+    def test_public_edge_requires_three_fixed_system_nodes(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-public-edge-three-domains",
+            "target": self.catalog_target(),
+            "edge": {
+                "mode": "public",
+                "source_cidrs": ["192.0.2.0/24"],
+                "acme_email": "operator@example.invalid",
+            },
+        }
+        variable_file = self._write_configuration(
+            "public-edge-three-domains", deployment
+        )
+        result, _ = self._plan_file(variable_file, "public-edge-three-domains")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "Public edge mode requires at least three fixed system nodes",
+            f"{result.stdout}\n{result.stderr}",
+        )
+
+        deployment["cluster"] = {"system_pool": {"node_count": 3}}
+        outputs = self._planned_outputs(
+            self._write_configuration("public-edge-three-domains-valid", deployment),
+            "public-edge-three-domains-valid",
+        )
+        self.assertEqual(
+            outputs["deployment_contract"]["stages"]["infrastructure"][
+                "system_pool"
+            ]["node_count"],
+            3,
         )
 
     def test_request_debug_capture_is_an_opt_in_tfvars_workload_setting(self) -> None:

@@ -90,10 +90,20 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 "size_gibibytes": capacity["shared_cache_size_gib"]
             },
             "nebius_mk8s_v1_node_group.system": {
+                "id": "mk8snodegroup-test",
                 "fixed_node_count": capacity["system"]["nodes"],
                 "strategy": {
                     "max_surge": {"count": capacity["system"]["max_surge"]},
                     "max_unavailable": {"count": capacity["system"]["max_unavailable"]},
+                },
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "workload.fs2.nebius/system": "true",
+                            "capacity.fs2.nebius/type": "regular",
+                            "capacity.fs2.nebius/pool": "system",
+                        }
+                    }
                 },
             },
             VERIFY.POOL_ADDRESSES["gpu_b300_1x"]: {
@@ -320,6 +330,21 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 "outputs": {
                     "infrastructure_contract": {"value": contract},
                     "public_edge_contract": {"value": public_edge_contract},
+                    "public_edge_availability_contract": {
+                        "value": {
+                            "schema": "fs2-serve.nebius.ai/public-edge-availability/v1",
+                            "enabled": public_edge_mode == "public",
+                            "system_node_group_id": "mk8snodegroup-test",
+                            "system_node_count": capacity["system"]["nodes"],
+                            "node_selector": {
+                                "workload.fs2.nebius/system": "true",
+                                "capacity.fs2.nebius/type": "regular",
+                                "capacity.fs2.nebius/pool": "system",
+                            },
+                            "topology_key": "kubernetes.io/hostname",
+                            "minimum_domains": 3,
+                        }
+                    },
                     "gateway_allocation_id": {"value": allocation_id},
                     "gateway_public_cidr": {
                         "value": f"{public_ip}/32" if public_ip is not None else None
@@ -431,6 +456,23 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("exactly 14 managed resources", result.stdout)
                 self.assertIn("edge=internal-only", result.stdout)
+
+    def test_public_edge_rejects_less_than_three_system_domains(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            os.chmod(root, 0o700)
+            plan_path, metadata_path = self.fixture(root, mode="noop")
+            document = json.loads(plan_path.read_text(encoding="utf-8"))
+            document["planned_values"]["outputs"][
+                "public_edge_availability_contract"
+            ]["value"]["system_node_count"] = 2
+            plan_path.write_text(json.dumps(document), encoding="utf-8")
+            result = self.invoke(plan_path, metadata_path, mode="noop")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "exact three-domain system-pool contract",
+                result.stdout,
+            )
 
     def test_enabled_reference_data_has_exact_optional_types_and_count(self) -> None:
         for reference_data_mode in ("retain", "disposable"):
@@ -806,11 +848,13 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                     capacity_profile="minimal",
                     gpu_floor_profile="zero",
                     acceptance_mode=VERIFY.ADMIN_MINIMAL_ZERO_MODE,
+                    public_edge_mode="internal-only",
                 )
                 result = self.invoke(
                     *fixture,
                     mode=mode,
                     acceptance_mode=VERIFY.ADMIN_MINIMAL_ZERO_MODE,
+                    public_edge_mode="internal-only",
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("exact minimal/zero infrastructure contract", result.stdout)
@@ -853,11 +897,13 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                     root,
                     capacity_profile="minimal",
                     acceptance_mode=VERIFY.ADMIN_MINIMAL_ZERO_MODE,
+                    public_edge_mode="internal-only",
                     **fixture_kwargs,
                 )
                 result = self.invoke(
                     *fixture,
                     acceptance_mode=VERIFY.ADMIN_MINIMAL_ZERO_MODE,
+                    public_edge_mode="internal-only",
                 )
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(expected_error, result.stdout)
@@ -869,6 +915,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 root,
                 capacity_profile="minimal",
                 acceptance_mode=VERIFY.ADMIN_MINIMAL_ZERO_MODE,
+                public_edge_mode="internal-only",
             )
             document = json.loads(plan_path.read_text(encoding="utf-8"))
             document["resource_changes"] = document["resource_changes"][1:]
@@ -877,6 +924,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 plan_path,
                 metadata_path,
                 acceptance_mode=VERIFY.ADMIN_MINIMAL_ZERO_MODE,
+                public_edge_mode="internal-only",
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("managed address set differs", result.stdout)

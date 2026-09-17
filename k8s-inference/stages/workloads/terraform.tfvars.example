@@ -17,6 +17,10 @@ project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 # deployment workflow renders this value automatically; do not retype it.
 # `infrastructure_contract` is an optional legacy B300 compatibility view. If
 # supplied, pass the same value used by foundation; it must agree with v2.
+# Pass the same exact infrastructure `public_edge_availability_contract` used
+# by foundation. Public mode is rejected unless both stages agree on the real
+# system node group, fixed count of at least three, selector, and hostname
+# topology contract.
 
 # This chooses models only; it does not select accelerator pools.
 deployment_profile = "minimal"

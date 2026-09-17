@@ -598,6 +598,10 @@ maintenance:
 httpRoute:
   enabled: false
   authorityMode: ip
+  # Exact /v1/audio/stream rule; must equal the ClientTrafficPolicy stream
+  # allowance and remain below the 7,800-second connection lifetime.
+  audioStreamRequestTimeout: 7500s
+  audioStreamBackendRequestTimeout: 7500s
   # Must remain above config.maxSyncWaitSeconds (30 seconds).
   requestTimeout: 40s
   backendRequestTimeout: 40s
@@ -619,6 +623,10 @@ publicGateway:
 # tuning.
 envoyProxy:
   replicaCount: 2
+  nodeSelector:
+    workload.fs2.nebius/system: "true"
+    capacity.fs2.nebius/type: regular
+    capacity.fs2.nebius/pool: system
   podDisruptionBudget:
     minAvailable: 1
   resources:
@@ -628,8 +636,20 @@ envoyProxy:
     limits:
       cpu: "1"
       memory: 512Mi
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: proxy
+              app.kubernetes.io/managed-by: envoy-gateway
+              app.kubernetes.io/name: envoy
+              gateway.envoyproxy.io/owning-gateway-name: public
+              gateway.envoyproxy.io/owning-gateway-namespace: fs2-system
   topologySpreadConstraints:
     - maxSkew: 1
+      minDomains: 3
       topologyKey: kubernetes.io/hostname
       whenUnsatisfiable: DoNotSchedule
       labelSelector:

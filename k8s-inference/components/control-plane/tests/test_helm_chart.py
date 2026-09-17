@@ -725,6 +725,11 @@ def test_public_envoy_has_redundant_bounded_node_spread_data_plane() -> None:
     deployment = provider["envoyDeployment"]
 
     assert deployment["replicas"] == 2
+    assert deployment["pod"]["nodeSelector"] == {
+        "workload.fs2.nebius/system": "true",
+        "capacity.fs2.nebius/type": "regular",
+        "capacity.fs2.nebius/pool": "system",
+    }
     assert deployment["strategy"] == {
         "type": "RollingUpdate",
         "rollingUpdate": {"maxUnavailable": 0, "maxSurge": 1},
@@ -736,6 +741,7 @@ def test_public_envoy_has_redundant_bounded_node_spread_data_plane() -> None:
     spread = deployment["pod"]["topologySpreadConstraints"]
     assert len(spread) == 1
     assert spread[0]["maxSkew"] == 1
+    assert spread[0]["minDomains"] == 3
     assert spread[0]["topologyKey"] == "kubernetes.io/hostname"
     assert spread[0]["whenUnsatisfiable"] == "DoNotSchedule"
     assert spread[0]["labelSelector"]["matchLabels"] == {
@@ -744,6 +750,16 @@ def test_public_envoy_has_redundant_bounded_node_spread_data_plane() -> None:
         "app.kubernetes.io/name": "envoy",
         "gateway.envoyproxy.io/owning-gateway-name": "public",
         "gateway.envoyproxy.io/owning-gateway-namespace": "fs2-system",
+    }
+    assert deployment["pod"]["affinity"] == {
+        "podAntiAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+                {
+                    "topologyKey": "kubernetes.io/hostname",
+                    "labelSelector": {"matchLabels": spread[0]["labelSelector"]["matchLabels"]},
+                }
+            ]
+        }
     }
     assert provider["envoyPDB"] == {"minAvailable": 1}
 
@@ -2262,6 +2278,7 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
         for match in rule.get("matches", [])
     }
     assert paths == {
+        "/v1/audio/stream": "Exact",
         "/v1": "PathPrefix",
         "/mcp": "Exact",
         "/admin/api/v1": "PathPrefix",
@@ -2270,16 +2287,32 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
         "/readyz": "Exact",
     }
     assert "/" not in paths
-    removed = route["spec"]["rules"][0]["filters"][0]["requestHeaderModifier"]["remove"]
-    assert set(removed) == {
+    audio_rule = next(
+        rule
+        for rule in route["spec"]["rules"]
+        if rule["matches"] == [{"path": {"type": "Exact", "value": "/v1/audio/stream"}}]
+    )
+    general_rule = next(
+        rule
+        for rule in route["spec"]["rules"]
+        if any(match["path"]["value"] == "/v1" for match in rule["matches"])
+    )
+    expected_removed = {
         "x-fs2-tenant",
         "x-fs2-principal",
         "x-fs2-token-id",
         "x-fs2-model-scope",
         "x-fs2-accounting-id",
     }
+    for rule in (audio_rule, general_rule):
+        removed = rule["filters"][0]["requestHeaderModifier"]["remove"]
+        assert set(removed) == expected_removed
     assert route["spec"]["parentRefs"][0]["sectionName"] == "public-https"
-    assert route["spec"]["rules"][0]["timeouts"] == {
+    assert audio_rule["timeouts"] == {
+        "request": "7500s",
+        "backendRequest": "7500s",
+    }
+    assert general_rule["timeouts"] == {
         "request": "40s",
         "backendRequest": "40s",
     }

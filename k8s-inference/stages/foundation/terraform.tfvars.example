@@ -16,6 +16,10 @@ project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 # renders it automatically; do not retype it. `infrastructure_contract` is an
 # optional B300-only v1 compatibility proof; if supplied, pass the exact
 # infra-disposable output documented by the legacy profile example.
+# Pass `public_edge_availability_contract` from infrastructure unchanged. In
+# public mode it must bind the real system node-group ID, at least three fixed
+# nodes, the regular system selector, and three hostname domains. The deployment
+# workflow supplies it automatically; never hand-author a public receipt.
 
 # This is a reference to an externally created Secret, never credential data.
 grafana_admin_secret_ref = {

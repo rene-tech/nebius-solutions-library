@@ -136,8 +136,22 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
 
       spec {
         automount_service_account_token = false
-        node_selector = {
+        node_selector = local.public_edge_enabled ? var.public_edge_availability_contract.node_selector : {
           "workload.fs2.nebius/system" = "true"
+        }
+
+        dynamic "affinity" {
+          for_each = local.public_edge_enabled ? [1] : []
+          content {
+            pod_anti_affinity {
+              required_during_scheduling_ignored_during_execution {
+                topology_key = var.public_edge_availability_contract.topology_key
+                label_selector {
+                  match_labels = local.edge_rate_limit_redis_labels
+                }
+              }
+            }
+          }
         }
 
         security_context {
@@ -302,8 +316,9 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
 
         topology_spread_constraint {
           max_skew           = 1
-          topology_key       = "kubernetes.io/hostname"
-          when_unsatisfiable = "DoNotSchedule"
+          min_domains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : 1
+          topology_key       = var.public_edge_availability_contract.topology_key
+          when_unsatisfiable = local.public_edge_enabled ? "DoNotSchedule" : "ScheduleAnyway"
           label_selector {
             match_labels = local.edge_rate_limit_redis_labels
           }

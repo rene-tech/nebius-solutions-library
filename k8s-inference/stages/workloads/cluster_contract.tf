@@ -60,26 +60,38 @@ data "kubernetes_resource" "dcgm_daemonset" {
 
 resource "terraform_data" "cluster_contract" {
   input = {
-    cluster_id                       = var.cluster_id
-    cluster_name                     = var.cluster_name
-    kube_context                     = var.kube_context
-    kube_system_uid                  = var.kube_system_uid
-    model_profile                    = var.deployment_profile
-    accelerator_profile              = var.accelerator_pool_contract.profile
-    project_sha256                   = nonsensitive(sha256(var.project_id))
-    target_contract                  = var.target_contract
-    target_sha256                    = local.target_contract_sha256
-    target_region                    = local.selected_target.region
-    run_id                           = var.run_id
-    accelerator_pool_contract        = var.accelerator_pool_contract
-    accelerator_pool_contract_sha256 = local.accelerator_pool_contract_sha256
-    infrastructure_contract          = var.infrastructure_contract
-    infrastructure_contract_sha256   = local.infrastructure_contract_sha256
-    public_edge_contract             = var.public_edge_contract
-    public_edge_client_identity      = local.verified_edge_client_identity
+    cluster_id                        = var.cluster_id
+    cluster_name                      = var.cluster_name
+    kube_context                      = var.kube_context
+    kube_system_uid                   = var.kube_system_uid
+    model_profile                     = var.deployment_profile
+    accelerator_profile               = var.accelerator_pool_contract.profile
+    project_sha256                    = nonsensitive(sha256(var.project_id))
+    target_contract                   = var.target_contract
+    target_sha256                     = local.target_contract_sha256
+    target_region                     = local.selected_target.region
+    run_id                            = var.run_id
+    accelerator_pool_contract         = var.accelerator_pool_contract
+    accelerator_pool_contract_sha256  = local.accelerator_pool_contract_sha256
+    infrastructure_contract           = var.infrastructure_contract
+    infrastructure_contract_sha256    = local.infrastructure_contract_sha256
+    public_edge_contract              = var.public_edge_contract
+    public_edge_availability_contract = var.public_edge_availability_contract
+    public_edge_client_identity       = local.verified_edge_client_identity
   }
 
   lifecycle {
+    precondition {
+      condition = (
+        var.public_edge_availability_contract.enabled == local.public_edge_enabled &&
+        (
+          !local.public_edge_enabled ||
+          var.public_edge_availability_contract.system_node_count >= var.public_edge_availability_contract.minimum_domains
+        )
+      )
+      error_message = "Public edge mode must match the infrastructure-derived availability receipt and requires at least three eligible hostname domains."
+    }
+
     precondition {
       condition = (
         try(
@@ -224,7 +236,8 @@ resource "terraform_data" "cluster_contract" {
         data.terraform_remote_state.foundation.outputs.cluster_contract.accelerator_pool_contract == var.accelerator_pool_contract &&
         data.terraform_remote_state.foundation.outputs.cluster_contract.accelerator_pool_contract_sha256 == local.accelerator_pool_contract_sha256 &&
         data.terraform_remote_state.foundation.outputs.cluster_contract.infrastructure_contract == var.infrastructure_contract &&
-        data.terraform_remote_state.foundation.outputs.cluster_contract.infrastructure_contract_sha256 == local.infrastructure_contract_sha256
+        data.terraform_remote_state.foundation.outputs.cluster_contract.infrastructure_contract_sha256 == local.infrastructure_contract_sha256 &&
+        data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_availability_contract == var.public_edge_availability_contract
       )
       error_message = "Foundation state must match the selected cluster plus the exact authoritative v2 and optional legacy infrastructure contracts."
     }

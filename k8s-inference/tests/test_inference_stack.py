@@ -124,6 +124,19 @@ def dynamic_outputs(run_root: Path) -> dict:
             },
         },
         "public_edge_contract": {"mode": "internal-only"},
+        "public_edge_availability_contract": {
+            "schema": "fs2-serve.nebius.ai/public-edge-availability/v1",
+            "enabled": False,
+            "system_node_group_id": "mk8snodegroup-test",
+            "system_node_count": 1,
+            "node_selector": {
+                "workload.fs2.nebius/system": "true",
+                "capacity.fs2.nebius/type": "regular",
+                "capacity.fs2.nebius/pool": "system",
+            },
+            "topology_key": "kubernetes.io/hostname",
+            "minimum_domains": 3,
+        },
     }
 
 
@@ -663,12 +676,23 @@ class InferenceStackTests(unittest.TestCase):
                 "mode": "public",
                 "public_origin": "https://192.0.2.20",
             }
+            dynamic["public_edge_availability_contract"].update(
+                {"enabled": True, "system_node_count": 3}
+            )
             foundation_path, workloads_path = STACK.write_downstream_variables(
                 run_root, configuration, dynamic
             )
 
             foundation = json.loads(foundation_path.read_text(encoding="utf-8"))
             workloads = json.loads(workloads_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                foundation["public_edge_availability_contract"],
+                dynamic["public_edge_availability_contract"],
+            )
+            self.assertEqual(
+                workloads["public_edge_availability_contract"],
+                dynamic["public_edge_availability_contract"],
+            )
             self.assertEqual(
                 foundation["grafana_publication"]["external_base_url"],
                 "https://192.0.2.20",
@@ -1008,6 +1032,19 @@ class InferenceStackTests(unittest.TestCase):
             },
             "accelerator_pool_contract": {"schema": "accelerators-test/v2"},
             "public_edge_contract": {"mode": "internal-only"},
+            "public_edge_availability_contract": {
+                "schema": "fs2-serve.nebius.ai/public-edge-availability/v1",
+                "enabled": False,
+                "system_node_group_id": "mk8snodegroup-test",
+                "system_node_count": 1,
+                "node_selector": {
+                    "workload.fs2.nebius/system": "true",
+                    "capacity.fs2.nebius/type": "regular",
+                    "capacity.fs2.nebius/pool": "system",
+                },
+                "topology_key": "kubernetes.io/hostname",
+                "minimum_domains": 3,
+            },
         }
         terraform_outputs = {
             name: {"sensitive": False, "value": value}

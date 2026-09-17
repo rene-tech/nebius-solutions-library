@@ -561,9 +561,57 @@ def validate_public_edge_outputs(
         return []
     outputs = document.get("planned_values", {}).get("outputs", {})
     edge = outputs.get("public_edge_contract", {}).get("value")
+    availability = outputs.get("public_edge_availability_contract", {}).get("value")
     allocation_id = outputs.get("gateway_allocation_id", {}).get("value", "missing")
     public_cidr = outputs.get("gateway_public_cidr", {}).get("value", "missing")
     owned = outputs.get("owned_resource_ids", {}).get("value")
+    if not isinstance(availability, dict):
+        if mode != "create":
+            return ["planned public_edge_availability_contract output is absent or unknown"]
+    else:
+        expected_enabled = public_edge_mode == "public"
+        expected_selector = {
+            "workload.fs2.nebius/system": "true",
+            "capacity.fs2.nebius/type": "regular",
+            "capacity.fs2.nebius/pool": "system",
+        }
+        node_count = availability.get("system_node_count")
+        system_change = next(
+            (
+                change.get("change", {}).get("after") or {}
+                for change in document.get("resource_changes", [])
+                if change.get("address") == "nebius_mk8s_v1_node_group.system"
+            ),
+            {},
+        )
+        system_labels = nested(system_change, "template", "metadata", "labels") or {}
+        system_id = system_change.get("id")
+        if (
+            availability.get("schema")
+            != "fs2-serve.nebius.ai/public-edge-availability/v1"
+            or availability.get("enabled") is not expected_enabled
+            or isinstance(node_count, bool)
+            or not isinstance(node_count, int)
+            or node_count < (3 if expected_enabled else 1)
+            or availability.get("node_selector") != expected_selector
+            or availability.get("topology_key") != "kubernetes.io/hostname"
+            or availability.get("minimum_domains") != 3
+            or node_count != system_change.get("fixed_node_count")
+            or any(system_labels.get(key) != value for key, value in expected_selector.items())
+            or (
+                mode == "noop"
+                and (
+                    availability.get("system_node_group_id") != system_id
+                    or not re.fullmatch(
+                        r"mk8snodegroup-[a-z0-9]+",
+                        str(availability.get("system_node_group_id", "")),
+                    )
+                )
+            )
+        ):
+            return [
+                "planned public_edge_availability_contract differs from the exact three-domain system-pool contract"
+            ]
     if not isinstance(edge, dict):
         if mode == "create" and public_edge_mode == "public":
             return []
