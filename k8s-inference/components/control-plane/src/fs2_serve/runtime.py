@@ -9,7 +9,8 @@ import logging
 import re
 import time
 import wave
-from collections.abc import AsyncIterator
+import zlib
+from collections.abc import AsyncIterator, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
@@ -570,6 +571,95 @@ class RuntimeClient:
         )])
 
     @staticmethod
+    def _cosmos_binary_valid(body: bytes, content_type: str) -> None:
+        """Check the pinned Cosmos media container, not decoded/perceptual quality.
+
+        Runs only after the normal bounded response read. No decoder allocation,
+        external process or model-supplied identity/usage is trusted here.
+        """
+        def invalid() -> RuntimeProtocolError:
+            return RuntimeProtocolError("Cosmos media container is invalid")
+
+        if content_type == "image/png":
+            if not body.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise invalid()
+            offset, chunks, image_data = 8, 0, False
+            while offset < len(body):
+                if len(body) - offset < 12:
+                    raise invalid()
+                size = int.from_bytes(body[offset:offset + 4], "big")
+                end = offset + 12 + size
+                kind = body[offset + 4:offset + 8]
+                if end > len(body) or zlib.crc32(memoryview(body)[offset + 4:end - 4]) != int.from_bytes(
+                    body[end - 4:end], "big"
+                ):
+                    raise invalid()
+                if chunks == 0:
+                    header = body[offset + 8:end - 4]
+                    depths = {0: {1, 2, 4, 8, 16}, 2: {8, 16}, 3: {1, 2, 4, 8}, 4: {8, 16}, 6: {8, 16}}
+                    if (kind != b"IHDR" or size != 13 or not int.from_bytes(header[:4], "big")
+                            or not int.from_bytes(header[4:8], "big")
+                            or header[8] not in depths.get(header[9], set()) or header[10:12] != b"\x00\x00"
+                            or header[12] not in {0, 1}):
+                        raise invalid()
+                elif kind == b"IHDR":
+                    raise invalid()
+                if kind == b"IDAT" and size:
+                    image_data = True
+                if kind == b"IEND":
+                    if size or end != len(body) or not image_data:
+                        raise invalid()
+                    return
+                chunks += 1
+                offset = end
+            raise invalid()
+
+        if content_type != "video/mp4":
+            raise invalid()
+
+        def boxes(start: int, end: int) -> Iterator[tuple[bytes, int, int]]:
+            while start < end:
+                if end - start < 8:
+                    raise invalid()
+                size, header = int.from_bytes(body[start:start + 4], "big"), 8
+                if size == 1:
+                    if end - start < 16:
+                        raise invalid()
+                    size, header = int.from_bytes(body[start + 8:start + 16], "big"), 16
+                elif size == 0:
+                    size = end - start
+                if size < header or start + size > end:
+                    raise invalid()
+                yield body[start + 4:start + 8], start + header, start + size
+                start += size
+
+        brands, movie, media, video = False, False, False, False
+        for kind, start, end in boxes(0, len(body)):
+            if not brands:
+                if kind != b"ftyp" or end - start < 8 or (end - start) % 4:
+                    raise invalid()
+                brands = True
+            elif kind == b"ftyp":
+                raise invalid()
+            if kind == b"mdat" and end > start:
+                media = True
+            if kind == b"moov":
+                if movie:
+                    raise invalid()
+                movie = True
+                for child, child_start, child_end in boxes(start, end):
+                    if child != b"trak":
+                        continue
+                    for track, track_start, track_end in boxes(child_start, child_end):
+                        if track != b"mdia":
+                            continue
+                        for field, field_start, field_end in boxes(track_start, track_end):
+                            if field == b"hdlr" and field_end - field_start >= 12:
+                                video |= body[field_start + 8:field_start + 12] == b"vide"
+        if not (brands and movie and media and video):
+            raise invalid()
+
+    @staticmethod
     def _reported_usage(protocol: str, body: bytes, *, speech: bool = False) -> ReportedUsage | None:
         """Extract optional OpenAI token totals without making usage part of protocol validity."""
 
@@ -629,6 +719,8 @@ class RuntimeClient:
                       "magpie-tts-multilingual-357m",
                   })
         magpie = speech and source_model == "magpie-tts-multilingual-357m"
+        cosmos = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                  and source_model == "cosmos3-nano")
         if speech:
             # A retry after explicit pre-admission busy must be able to select
             # another Service endpoint instead of sticking to a busy socket.
@@ -717,6 +809,9 @@ class RuntimeClient:
                 if magpie:
                     usage = self._magpie_wave_usage(bytes(content), content_type)
                     semantic = "protocol_valid"
+                elif cosmos and content_type in {"image/png", "video/mp4"}:
+                    self._cosmos_binary_valid(bytes(content), content_type)
+                    semantic, usage = "protocol_valid", None
                 else:
                     semantic = self._semantic_outcome(operation.protocol, bytes(content))
                     usage = self._reported_usage(operation.protocol, bytes(content), speech=speech)
