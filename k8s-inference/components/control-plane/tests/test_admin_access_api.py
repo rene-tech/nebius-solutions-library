@@ -79,6 +79,22 @@ def _cookie_from(response: Any) -> str:
     return value
 
 
+def test_operator_readiness_detail_requires_an_authenticated_session(
+    registry: Any,
+    cipher: Any,
+    hasher: Any,
+) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    with _client(runtime) as client:
+        anonymous = client.get("/admin/api/v1/readiness")
+        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        operator = client.get("/admin/api/v1/readiness")
+
+    assert anonymous.status_code == 401
+    assert operator.status_code == 503
+    assert operator.json()["error"]["type"] == "activation_controller_unavailable"
+
+
 def test_admin_lifecycle_routes_expose_persisted_payload_free_workloads(
     registry: Any,
     cipher: Any,

@@ -24,6 +24,21 @@ def _module() -> ModuleType:
     return module
 
 
+def test_status_only_readiness_keeps_target_activation_gate() -> None:
+    module = _module()
+    module.validate_control_plane_readiness(200, {"status": "ready"})
+    module.validate_target_activation_disabled(
+        200,
+        {
+            "data": [
+                {"id": "another-model", "activation": "replica-scale"},
+                {"id": "target-model", "activation": "disabled"},
+            ]
+        },
+        "target-model",
+    )
+
+
 def test_localization_observation_retains_only_bounded_cache_result() -> None:
     module = _module()
 

@@ -66,6 +66,10 @@ hostname. IP mode is the source-chart default and forbids the `hostnames` value
 entirely, so rendered `spec.hostnames` can be neither an IP literal nor an
 empty list. It requires a private, project-checked static allocation input and
 an exact IPv4 Certificate SAN.
+For avoidance of doubt, exact `/readyz` is the additional public route: it is a
+status-only probe whose body contains no model, route-evidence, worker,
+publication, or federation detail. Viewer-or-higher operator sessions retain
+that detail at `/admin/api/v1/readiness`.
 The public model projection deliberately omits the cluster `service_origin`
 and activation URL. Readiness fails closed if PostgreSQL is unavailable, route
 revalidation is unhealthy, the canonical join has no routable model, a claim
@@ -276,6 +280,10 @@ protected-resource metadata request. No separate environment allowlist can
 broaden the trust boundary. OAuth metadata is served at both the pathless
 compatibility location and canonical resource-specific
 `/.well-known/oauth-protected-resource/mcp`; both advertise exact `/mcp`.
+Those documents describe header bearer transport but intentionally omit OAuth
+authorization-server and OAuth-scope claims. `/mcp` authenticates revocable,
+out-of-band platform PATs; this service implements no OAuth issuance,
+registration, refresh, or authorization-server discovery flow.
 
 OpenAI-compatible routes use the request's selected, enabled canonical model
 and route protocol to resolve the semantic policy operation. The base policy

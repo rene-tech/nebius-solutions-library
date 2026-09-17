@@ -1465,6 +1465,18 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         for status_code in (400, 401, 403, 404, 409, 422, 429, 503)
     }
 
+    @app.get(
+        "/admin/api/v1/readiness",
+        responses=admin_problem_responses,
+    )
+    async def admin_readiness(
+        identity: Annotated[OperatorPrincipal, Depends(operator)],
+    ) -> Response:
+        """Retain component readiness detail behind the operator session boundary."""
+
+        await admin_access.authorize_global(identity, OperatorRole.VIEWER, action="readiness.read")
+        return await readyz()
+
     @app.post(
         "/admin/api/v1/session",
         response_model=AdminEnvelope[OperatorSession],

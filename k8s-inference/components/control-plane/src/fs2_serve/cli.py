@@ -76,6 +76,7 @@ from .model_inventory import load_snapshot_capabilities
 from .models import TokenCreate
 from .postgres import PostgresMaintenanceStore, PostgresStore
 from .postgresql_release import render_postgresql_release_contract
+from .public_surface import PublicSurfaceBoundary
 from .registry import Registry
 from .request_debug import PostgresDebugStore
 from .route_revalidation import RouteRevalidator
@@ -646,6 +647,10 @@ async def build_app(settings: Settings) -> FastAPI:
     runtime = await build_runtime(settings)
     app = create_app(runtime)
     mount_mcp(app, runtime)
+    app.add_middleware(
+        PublicSurfaceBoundary,
+        mcp_resource=f"{runtime.settings.public_origin()}/mcp",
+    )
     return app
 
 

@@ -1573,15 +1573,24 @@ async def test_cli_composed_app_serves_stateless_mcp_over_real_uvicorn(
             # the existing FastAPI surface in the production composition.
             live = await client.get(f"{base_url}/livez")
             assert live.status_code == 200 and live.json() == {"status": "ok"}
+            readiness = await client.get(f"{base_url}/readyz")
+            assert readiness.status_code == 503
+            assert readiness.json() == {"status": "unavailable"}
             models = await client.get(f"{base_url}/v1/models")
             assert models.status_code == 200
             assert "qwen3-8b" in {model["id"] for model in models.json()["data"]}
             compatibility_metadata = await client.get(f"{base_url}/.well-known/oauth-protected-resource")
             assert compatibility_metadata.status_code == 200
             assert compatibility_metadata.json()["resource"] == "https://inference.test.invalid/mcp"
+            assert compatibility_metadata.json()["bearer_methods_supported"] == ["header"]
+            assert "authorization_servers" not in compatibility_metadata.json()
+            assert "scopes_supported" not in compatibility_metadata.json()
             canonical_metadata = await client.get(f"{base_url}/.well-known/oauth-protected-resource/mcp")
             assert canonical_metadata.status_code == 200
             assert canonical_metadata.json()["resource"] == "https://inference.test.invalid/mcp"
+            assert canonical_metadata.json()["bearer_methods_supported"] == ["header"]
+            assert "authorization_servers" not in canonical_metadata.json()
+            assert "scopes_supported" not in canonical_metadata.json()
             assert "location" not in canonical_metadata.headers
             spoofed_host = await client.post(f"{base_url}{MCP_HTTP_PATH}", headers={"host": "spoofed.invalid"}, json={})
             assert spoofed_host.status_code == 421

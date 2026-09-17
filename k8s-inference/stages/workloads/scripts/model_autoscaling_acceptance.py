@@ -244,6 +244,8 @@ def _json_http(
 
 
 def validate_control_plane_readiness(status: int, value: dict[str, Any]) -> None:
+    if status == 200 and value == {"status": "ready"}:
+        return
     activation = value.get("activation")
     if (
         status != 200
@@ -251,6 +253,17 @@ def validate_control_plane_readiness(status: int, value: dict[str, Any]) -> None
         or not isinstance(activation, dict)
         or activation.get("required") is not False
     ):
+        raise AcceptanceError("activation_handshake_not_disabled")
+
+
+def validate_target_activation_disabled(status: int, value: dict[str, Any], model_id: str) -> None:
+    data = value.get("data")
+    selected = (
+        [item for item in data if isinstance(item, dict) and item.get("id") == model_id]
+        if isinstance(data, list)
+        else []
+    )
+    if status != 200 or len(selected) != 1 or selected[0].get("activation") != "disabled":
         raise AcceptanceError("activation_handshake_not_disabled")
 
 
@@ -1324,6 +1337,19 @@ def run(args: argparse.Namespace, token: str) -> dict[str, Any]:
     )
     validate_control_plane_readiness(ready_status, ready_value)
     evidence["control_plane"] = {"activation_required": False}
+    catalog_status, _, catalog_value, _ = _json_http(
+        origin,
+        context,
+        token,
+        "GET",
+        "/v1/models",
+    )
+    validate_target_activation_disabled(catalog_status, catalog_value, args.model_id)
+    evidence["control_plane"] = {
+        "public_readiness": "ready",
+        "target_activation": "disabled",
+        "target_activation_required": False,
+    }
     if args.request_file is None:
         evidence.update({"result": "PASS", "completed_at": utc_now()})
         return evidence

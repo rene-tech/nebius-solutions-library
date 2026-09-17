@@ -239,3 +239,7 @@ the commit, tree, `uv.lock`, Dockerfile, and context-policy hashes.
 The local provenance file contains no credentials and must be retained beside
 the eventual immutable registry digest; registry publication remains a
 separate reviewed action.
+
+Public readiness and MCP authentication discovery are deliberately minimal.
+See [Public health and MCP authentication metadata](docs/public-health-and-authentication.md)
+for the status-only `/readyz` contract and the static PAT bearer-token boundary.
