@@ -22,6 +22,18 @@ the exact offline reproduction. Further admissions stopped at that failure.
 The video cohort does not qualify the failing image tool or the full customer
 workflow, and no LeRobot route was activated.
 
+`public_compatibility.py` prepares four small supplemental cases: typed MCP T2I,
+legacy HTTP T2V without a delivery override, typed MCP T2V, and typed MCP I2V
+using the exact generated PNG through the existing tenant upload path. It
+preflights all four public schemas before generation, verifies legacy JSON/base64
+or whole-JSON artifact envelopes separately from binary artifacts, fully decodes
+PNG/MP4 outputs, and checks both in-flight and terminal idempotent replay.
+Settings stay at 256x256, seed 20260917, 35 steps and guidance 6; video is 33
+frames at 20 fps without audio. This is a bounded compatibility test, not quality
+or full customer qualification. Its default action is `plan`; actual runs require
+the release owner's new-image GO, an exact expected digest and the existing
+disposable canary. Any failure stops the remaining cases.
+
 ## Reproduction inputs
 
 - `render_media_preview.py` renders only task-owned ConfigMap/Deployment names,
