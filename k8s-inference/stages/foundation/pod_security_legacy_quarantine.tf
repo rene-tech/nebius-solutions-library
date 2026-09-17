@@ -1,3 +1,9 @@
+/*
+REJECTED PLATFORM-OWNED LEGACY ADOPTION (retained as source provenance).
+
+Exact UID/resourceVersion/spec-bound adoption now belongs only to the external
+custody root. This inactive block documents the rejected in-process design.
+
 # The signed v4 baseline supplies the exact existing identities. These import
 # blocks adopt them in place; no object is deleted, recreated, or renamed.
 # Admission has already frozen the identities before this phase and permits
@@ -157,3 +163,4 @@ resource "kubernetes_labels" "pod_security_legacy_daemonset_quarantine" {
     module.pod_security_rollout_gate,
   ]
 }
+*/

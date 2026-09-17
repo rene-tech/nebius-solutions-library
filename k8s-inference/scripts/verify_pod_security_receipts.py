@@ -1219,6 +1219,7 @@ def _validate_cleanup_result(
         "fence_objects",
         "checked_objects",
         "retained_objects",
+        "retained_daemonset_pods",
         "removed_objects",
         "result_sha256",
     }
@@ -1226,7 +1227,7 @@ def _validate_cleanup_result(
     unsigned = dict(result)
     result_self_digest = unsigned.pop("result_sha256")
     if (
-        result["schema"] != "fs2-serve.nebius.ai/sai07-retained-quarantine-result/v7"
+        result["schema"] != "fs2-serve.nebius.ai/sai07-retained-quarantine-result/v8"
         or result["mode"] != "retained-quarantine"
         or result_self_digest != _sha256(_canonical(unsigned))
         or result["manifest_sha256"] != assertions["cleanup_manifest_sha256"]
@@ -1319,6 +1320,35 @@ def _validate_cleanup_result(
         retained_identities[identity] = item["uid"]
     if retained_identities != baseline_identities:
         raise ReceiptError("retained quarantine does not preserve every frozen legacy UID")
+    retained_daemonsets = {
+        item["name"] for item in retained if item["kind"] == "DaemonSet"
+    }
+    daemonset_pods = _object(result["retained_daemonset_pods"], "retained DaemonSet Pod inventory")
+    if set(daemonset_pods) != retained_daemonsets:
+        raise ReceiptError("retained DaemonSet Pod inventory omits a frozen DaemonSet")
+    for daemonset, raw_pods in daemonset_pods.items():
+        if not isinstance(raw_pods, list):
+            raise ReceiptError("retained DaemonSet Pod inventory must be a list")
+        seen_pods: set[str] = set()
+        for raw_pod in raw_pods:
+            pod = _object(raw_pod, f"retained DaemonSet {daemonset} Pod")
+            _exact_keys(
+                pod,
+                {"name", "uid", "resource_version", "object_sha256", "phase", "ready"},
+                f"retained DaemonSet {daemonset} Pod",
+            )
+            if (
+                pod["name"] in seen_pods
+                or pod["phase"] != "Running"
+                or pod["ready"] != "true"
+                or not IDENTIFIER_RE.fullmatch(_string(pod["uid"], "retained Pod UID"))
+                or not IDENTIFIER_RE.fullmatch(
+                    _string(pod["resource_version"], "retained Pod resourceVersion")
+                )
+                or not SHA256_RE.fullmatch(_string(pod["object_sha256"], "retained Pod hash"))
+            ):
+                raise ReceiptError("retained DaemonSet Pod inventory is malformed")
+            seen_pods.add(_string(pod["name"], "retained Pod name"))
     retained_names = sorted("/".join(identity) for identity in retained_identities)
     if assertions["retained_objects"] != retained_names:
         raise ReceiptError("signed retained quarantine identities differ from the verified result")
@@ -3900,9 +3930,8 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
 class KubectlClient:
     CUSTODIAN_NAMESPACE = "fs2-system"
     CUSTODIAN_NAME = "fs2-pod-security-rollout-custodian"
+    TOKEN_ANCHOR_NAME = "fs2-pod-security-token-anchor"
     CUSTODIAN_GROUP = "fs2-pod-security-receipt-custodians"
-    CUSTODY_OWNER_GROUP = "fs2-pod-security-custody-owners"
-    PLATFORM_GROUP = "fs2-platform-terraform"
 
     def __init__(
         self,
@@ -3910,53 +3939,18 @@ class KubectlClient:
         context: str,
         audience: str,
         expected_username: str,
-        platform_kubeconfig: Path,
-        platform_context: str,
-        custody_owner_kubeconfig: Path,
-        custody_owner_context: str,
-        expected_custody_owner_username: str,
-        expected_custody_owner_group: str,
-        expected_platform_username: str,
-        expected_platform_group: str,
+        token_anchor_uid: str,
     ) -> None:
         if not kubeconfig.is_absolute() or ".." in kubeconfig.parts:
             raise ReceiptError("custody kubeconfig path must be absolute without parent traversal")
-        if not platform_kubeconfig.is_absolute() or ".." in platform_kubeconfig.parts:
-            raise ReceiptError("platform kubeconfig path must be absolute without parent traversal")
-        if not custody_owner_kubeconfig.is_absolute() or ".." in custody_owner_kubeconfig.parts:
-            raise ReceiptError("custody-owner kubeconfig path must be absolute without parent traversal")
-        resolved_kubeconfigs = {
-            kubeconfig.resolve(strict=True),
-            platform_kubeconfig.resolve(strict=True),
-            custody_owner_kubeconfig.resolve(strict=True),
-        }
-        if len(resolved_kubeconfigs) != 3:
-            raise ReceiptError("receipt, platform, and custody-owner identities must use three distinct kubeconfigs")
         if not IDENTIFIER_RE.fullmatch(context):
             raise ReceiptError("custody kube_context is malformed")
-        if not IDENTIFIER_RE.fullmatch(platform_context):
-            raise ReceiptError("platform kube_context is malformed")
-        if not IDENTIFIER_RE.fullmatch(custody_owner_context):
-            raise ReceiptError("custody-owner kube_context is malformed")
         if not expected_username or len(expected_username) > 512 or expected_username.startswith("system:"):
             raise ReceiptError("external custody username must identify one non-system principal")
         if audience != "https://kubernetes.default.svc":
             raise ReceiptError("rollout token audience differs from the reviewed API audience")
-        for label, value in (
-            ("custody-owner username", expected_custody_owner_username),
-            ("platform username", expected_platform_username),
-            ("custody-owner group", expected_custody_owner_group),
-            ("platform group", expected_platform_group),
-        ):
-            if not value or len(value) > 512:
-                raise ReceiptError(f"{label} is malformed")
-        if expected_custody_owner_username.startswith("system:") or expected_platform_username.startswith("system:"):
-            raise ReceiptError("custody-owner and platform identities must be directly authenticated non-system principals")
-        if (
-            expected_custody_owner_group != self.CUSTODY_OWNER_GROUP
-            or expected_platform_group != self.PLATFORM_GROUP
-        ):
-            raise ReceiptError("custody-owner or platform group differs from the reviewed trust boundary")
+        if not IDENTIFIER_RE.fullmatch(token_anchor_uid):
+            raise ReceiptError("rollout TokenRequest anchor UID is malformed")
         bootstrap = [
             "kubectl",
             "--kubeconfig",
@@ -3964,47 +3958,13 @@ class KubectlClient:
             "--context",
             context,
         ]
-        platform = [
-            "kubectl",
-            "--kubeconfig",
-            str(platform_kubeconfig),
-            "--context",
-            platform_context,
-        ]
-        custody_owner = [
-            "kubectl",
-            "--kubeconfig",
-            str(custody_owner_kubeconfig),
-            "--context",
-            custody_owner_context,
-        ]
         custody_identity = self._authenticated_identity(bootstrap)
-        platform_identity = self._authenticated_identity(platform)
-        custody_owner_identity = self._authenticated_identity(custody_owner)
         if (
             custody_identity["username"] != expected_username
             or self.CUSTODIAN_GROUP not in custody_identity["groups"]
-            or expected_custody_owner_group in custody_identity["groups"]
-            or expected_platform_group in custody_identity["groups"]
-            or platform_identity["username"] != expected_platform_username
-            or expected_platform_group not in platform_identity["groups"]
-            or expected_custody_owner_group in platform_identity["groups"]
-            or self.CUSTODIAN_GROUP in platform_identity["groups"]
-            or custody_owner_identity["username"] != expected_custody_owner_username
-            or expected_custody_owner_group not in custody_owner_identity["groups"]
-            or expected_platform_group in custody_owner_identity["groups"]
-            or self.CUSTODIAN_GROUP in custody_owner_identity["groups"]
-            or "system:masters" in custody_owner_identity["groups"]
-            or len(
-                {
-                    custody_identity["username"],
-                    platform_identity["username"],
-                    custody_owner_identity["username"],
-                }
-            )
-            != 3
+            or "system:masters" in custody_identity["groups"]
         ):
-            raise ReceiptError("receipt, platform, and custody-owner identities or groups overlap")
+            raise ReceiptError("receipt identity differs from the bounded external custodian")
         self._require_external_custody(bootstrap)
         token_request = subprocess.run(
             [
@@ -4016,6 +3976,9 @@ class KubectlClient:
                 self.CUSTODIAN_NAMESPACE,
                 f"--audience={audience}",
                 "--duration=10m",
+                "--bound-object-kind=Secret",
+                f"--bound-object-name={self.TOKEN_ANCHOR_NAME}",
+                f"--bound-object-uid={token_anchor_uid}",
             ],
             check=False,
             capture_output=True,
@@ -4025,7 +3988,7 @@ class KubectlClient:
         if token_request.returncode != 0:
             raise ReceiptError("short-lived rollout custodian TokenRequest failed")
         token = token_request.stdout.strip()
-        claims = self._validate_token_claims(token, audience)
+        claims = self._validate_token_claims(token, audience, token_anchor_uid)
 
         rendered = subprocess.run(
             [*bootstrap, "config", "view", "--raw", "--minify", "-o", "json"],
@@ -4390,7 +4353,9 @@ class KubectlClient:
                 raise ReceiptError(error_message)
 
     @classmethod
-    def _validate_token_claims(cls, token: str, audience: str) -> dict[str, Any]:
+    def _validate_token_claims(
+        cls, token: str, audience: str, token_anchor_uid: str
+    ) -> dict[str, Any]:
         segments = token.split(".")
         if len(segments) != 3:
             raise ReceiptError("TokenRequest response is not a service-account JWT")
@@ -4420,6 +4385,8 @@ class KubectlClient:
             or not isinstance(kubernetes.get("serviceaccount"), dict)
             or kubernetes["serviceaccount"].get("name") != cls.CUSTODIAN_NAME
             or not IDENTIFIER_RE.fullmatch(str(kubernetes["serviceaccount"].get("uid", "")))
+            or kubernetes.get("secret")
+            != {"name": cls.TOKEN_ANCHOR_NAME, "uid": token_anchor_uid}
         ):
             raise ReceiptError("TokenRequest is not exact, short-lived, and API-audience bound")
         return claims
@@ -4519,43 +4486,20 @@ def main() -> int:
         query = _query_from_environment()
         kubeconfig = Path(_string(os.environ.get("FS2_KUBECONFIG"), "FS2_KUBECONFIG"))
         kube_context = _string(os.environ.get("FS2_KUBE_CONTEXT"), "FS2_KUBE_CONTEXT")
-        platform_kubeconfig = Path(
-            _string(os.environ.get("FS2_PLATFORM_KUBECONFIG"), "FS2_PLATFORM_KUBECONFIG")
-        )
-        platform_context = _string(
-            os.environ.get("FS2_PLATFORM_KUBE_CONTEXT"), "FS2_PLATFORM_KUBE_CONTEXT"
-        )
         custody_username = _string(
             os.environ.get("FS2_POD_SECURITY_CUSTODY_USER"), "FS2_POD_SECURITY_CUSTODY_USER"
         )
-        custody_owner_kubeconfig = Path(
-            _string(os.environ.get("FS2_CUSTODY_OWNER_KUBECONFIG"), "FS2_CUSTODY_OWNER_KUBECONFIG")
-        )
-        custody_owner_context = _string(
-            os.environ.get("FS2_CUSTODY_OWNER_KUBE_CONTEXT"), "FS2_CUSTODY_OWNER_KUBE_CONTEXT"
-        )
-        custody_owner_username = _string(
-            os.environ.get("FS2_CUSTODY_OWNER_USER"), "FS2_CUSTODY_OWNER_USER"
-        )
-        custody_owner_group = _string(
-            os.environ.get("FS2_CUSTODY_OWNER_GROUP"), "FS2_CUSTODY_OWNER_GROUP"
-        )
-        platform_username = _string(os.environ.get("FS2_PLATFORM_USER"), "FS2_PLATFORM_USER")
-        platform_group = _string(os.environ.get("FS2_PLATFORM_GROUP"), "FS2_PLATFORM_GROUP")
         audience = _string(os.environ.get("FS2_POD_SECURITY_TOKEN_AUDIENCE"), "token audience")
+        token_anchor_uid = _string(
+            os.environ.get("FS2_POD_SECURITY_TOKEN_ANCHOR_UID"),
+            "FS2_POD_SECURITY_TOKEN_ANCHOR_UID",
+        )
         with KubectlClient(
             kubeconfig,
             kube_context,
             audience,
             custody_username,
-            platform_kubeconfig,
-            platform_context,
-            custody_owner_kubeconfig,
-            custody_owner_context,
-            custody_owner_username,
-            custody_owner_group,
-            platform_username,
-            platform_group,
+            token_anchor_uid,
         ) as client:
             result = verify_and_consume(query, client)
     except (OSError, ReceiptError, json.JSONDecodeError, subprocess.SubprocessError) as error:

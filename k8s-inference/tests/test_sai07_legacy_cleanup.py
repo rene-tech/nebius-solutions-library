@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -132,7 +134,8 @@ def test_cleanup_contract_binds_resource_version_spec_and_result() -> None:
     assert "validate_cleanup_fence(client, manifest)" in source
     assert "validate_quarantined_object(client, item, live, retained_daemonsets)" in source
     assert "retained NetworkPolicy grants traffic" in source
-    assert "retained DaemonSet still owns Pods" in source
+    assert "stable, fully ready frozen generation" in source
+    assert '"retained_daemonset_pods"' in source
     assert '"delete"' not in source
     assert '"--execute"' not in source
     assert '"retained_objects": checked' in source
@@ -188,6 +191,64 @@ def test_retained_serviceaccount_must_be_tokenless_and_unused() -> None:
         cleanup.validate_quarantined_object(
             FakeClient(), candidate, {**safe, "automountServiceAccountToken": True}
         )
+
+
+def test_frozen_daemonset_closes_with_stable_ready_existing_pods() -> None:
+    daemonset = {
+        "apiVersion": "apps/v1",
+        "kind": "DaemonSet",
+        "metadata": {
+            "name": "legacy-agent",
+            "namespace": "fs2-models",
+            "uid": "daemonset-uid",
+            "resourceVersion": "17",
+            "generation": 3,
+            "labels": {"app.kubernetes.io/managed-by": "fs2-model-controller"},
+        },
+        "spec": {"selector": {"matchLabels": {"app": "legacy-agent"}}},
+        "status": {
+            "observedGeneration": 3,
+            "desiredNumberScheduled": 1,
+            "currentNumberScheduled": 1,
+            "numberReady": 1,
+            "numberAvailable": 1,
+            "updatedNumberScheduled": 1,
+            "numberMisscheduled": 0,
+            "numberUnavailable": 0,
+        },
+    }
+    candidate = bind(item("DaemonSet", "legacy-agent", "daemonset-uid"), daemonset)
+    pod = {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {
+            "name": "legacy-agent-pod",
+            "namespace": "fs2-models",
+            "uid": "pod-uid",
+            "resourceVersion": "18",
+            "ownerReferences": [
+                {
+                    "apiVersion": "apps/v1",
+                    "kind": "DaemonSet",
+                    "name": "legacy-agent",
+                    "uid": "daemonset-uid",
+                    "controller": True,
+                }
+            ],
+        },
+        "spec": {"containers": [{"name": "agent", "image": "example.invalid/agent@sha256:" + "a" * 64}]},
+        "status": {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}]},
+    }
+
+    class FakeClient:
+        def raw(self, uri: str, *, allow_absent: bool = False) -> dict[str, object]:
+            del allow_absent
+            return {"items": [pod]} if uri.endswith("/pods") else daemonset
+
+    retained = cleanup.validate_quarantined_object(
+        FakeClient(), candidate, daemonset, frozenset({"legacy-agent"})
+    )
+    assert [entry["uid"] for entry in retained] == ["pod-uid"]
 
 
 def test_cleanup_and_collector_use_the_identical_v4_projection() -> None:
@@ -250,31 +311,44 @@ def test_service_account_consumer_scan_includes_podtemplates_and_custom_controll
     ) == {"one", "two"}
 
 
-def test_live_annotated_service_account_token_secrets_block_closure() -> None:
-    class FakeClient:
-        def raw(self, uri: str, *, allow_absent: bool = False) -> dict[str, object]:
-            del allow_absent
-            assert uri.endswith("/secrets")
-            return {
-                "metadata": {"resourceVersion": "91"},
-                "items": [
-                    {
-                        "type": "kubernetes.io/service-account-token",
-                        "metadata": {
-                            "name": "legacy-token",
-                            "uid": "secret-uid",
-                            "resourceVersion": "90",
-                            "annotations": {
-                                "kubernetes.io/service-account.name": "legacy-runtime",
-                            },
-                        },
-                        "data": {"token": "must-not-enter-result"},
-                    }
-                ],
-            }
-
+def test_metadata_only_annotated_service_account_token_secrets_block_closure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    items = [
+        {
+            "namespace": "fs2-models",
+            "name": "legacy-token",
+            "uid": "secret-uid",
+            "resource_version": "90",
+            "service_account_name": "legacy-runtime",
+        }
+    ]
+    artifact = {
+        "schema": cleanup.SECRET_METADATA_SCHEMA,
+        "media_type": cleanup.SECRET_METADATA_MEDIA_TYPE,
+        "namespace": "fs2-models",
+        "collection_resource_version": "91",
+        "items": items,
+        "items_sha256": hashlib.sha256(cleanup.canonical(items)).hexdigest(),
+        "item_count": 1,
+        "contains_secret_payload": False,
+        "reader_service_account_uid": "reader-uid",
+        "token_bound_object_ref": {
+            "api_version": "v1",
+            "kind": "Secret",
+            "namespace": "fs2-system",
+            "name": "fs2-pod-security-token-anchor",
+            "uid": "anchor-uid",
+        },
+        "token_jti_sha256": "a" * 64,
+        "observed_at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+    }
+    payload = json.dumps(artifact, sort_keys=True, separators=(",", ":")).encode()
+    monkeypatch.setattr(cleanup, "read_regular", lambda _path: payload)
     resource_version, secrets = cleanup.legacy_service_account_token_secrets(
-        FakeClient(), frozenset({"legacy-runtime"})
+        Path("/not-read"),
+        hashlib.sha256(payload).hexdigest(),
+        frozenset({"legacy-runtime"}),
     )
     assert resource_version == "91"
     assert secrets == [

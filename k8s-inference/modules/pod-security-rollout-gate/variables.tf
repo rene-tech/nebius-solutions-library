@@ -53,51 +53,102 @@ variable "kube_context" {
 }
 
 variable "custody_kubeconfig_path" {
-  description = "Absolute kubeconfig for the separately administered external OIDC custody principal; never the platform Terraform kubeconfig."
+  description = "Retired fail-closed input. Platform Terraform must never receive the external receipt kubeconfig."
   type        = string
   default     = null
   nullable    = true
   sensitive   = true
 
   validation {
-    condition = var.custody_kubeconfig_path == null || (
-      startswith(var.custody_kubeconfig_path, "/") && !strcontains(var.custody_kubeconfig_path, "..")
-    )
-    error_message = "custody_kubeconfig_path must be absolute without parent traversal."
+    condition     = var.custody_kubeconfig_path == null
+    error_message = "custody_kubeconfig_path must be null; custody transitions run outside platform Terraform."
   }
 }
 
 variable "custody_context" {
-  description = "Exact context selected from the external-custody kubeconfig."
+  description = "Retired fail-closed input; must remain null."
   type        = string
   default     = null
   nullable    = true
+  validation {
+    condition     = var.custody_context == null
+    error_message = "custody_context must be null in platform Terraform."
+  }
 }
 
 variable "custody_username" {
-  description = "Exact non-system OIDC username independently assigned to receipt custody."
+  description = "Retired fail-closed input; identity is bound by the external handoff."
+  type        = string
+  default     = null
+  nullable    = true
+  validation {
+    condition     = var.custody_username == null
+    error_message = "custody_username must be null in platform Terraform."
+  }
+}
+
+variable "custody_owner_kubeconfig_path" {
+  description = "Retired fail-closed input. The external custody root is a separate invocation."
+  type        = string
+  default     = null
+  nullable    = true
+  sensitive   = true
+  validation {
+    condition     = var.custody_owner_kubeconfig_path == null
+    error_message = "custody_owner_kubeconfig_path must be null in platform Terraform."
+  }
+}
+
+variable "custody_owner_context" {
+  description = "Retired fail-closed input; must remain null."
+  type        = string
+  default     = null
+  nullable    = true
+  validation {
+    condition     = var.custody_owner_context == null
+    error_message = "custody_owner_context must be null in platform Terraform."
+  }
+}
+
+variable "custody_owner_username" {
+  description = "Expected owner identity bound by the external handoff; no owner credential is accepted."
   type        = string
   default     = null
   nullable    = true
 }
 
-variable "custody_owner_kubeconfig_path" {
-  description = "Absolute kubeconfig for the separately administered Terraform owner of custody objects."
+variable "external_handoff_path" {
+  description = "Absolute path to the short-lived whole-file signed handoff emitted by the independent custody root."
   type        = string
   default     = null
   nullable    = true
   sensitive   = true
 }
 
-variable "custody_owner_context" {
-  description = "Exact context selected from the custody-owner kubeconfig."
+variable "external_handoff_public_key_path" {
+  description = "Descriptor-fenced Ed25519 public key for external-custody handoffs."
   type        = string
   default     = null
   nullable    = true
+  sensitive   = true
 }
 
-variable "custody_owner_username" {
-  description = "Exact non-system identity that owns custody RBAC, admission, and ledger resources."
+variable "external_handoff_public_key_sha256" {
+  description = "Reviewed SHA-256 of the external-custody handoff public key."
+  type        = string
+  default     = null
+  nullable    = true
+  validation {
+    condition = (
+      var.external_handoff_public_key_sha256 == null ||
+      can(regex("^[a-f0-9]{64}$", var.external_handoff_public_key_sha256))
+    )
+    error_message = "external_handoff_public_key_sha256 must be a lowercase SHA-256."
+  }
+}
+
+variable "external_handoff_key_id" {
+  description = "Exact independent custody signing key identifier."
   type        = string
   default     = null
   nullable    = true

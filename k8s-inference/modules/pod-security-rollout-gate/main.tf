@@ -1,3 +1,12 @@
+/*
+REJECTED IN-PROCESS IMPLEMENTATION (retained as exact negative evidence).
+
+This block previously created the monotonic ledger and invoked its mutating
+consumer from the platform Terraform process while that process also received
+platform, receipt-custodian, and custody-owner kubeconfigs.  It is deliberately
+inactive: a Terraform invocation cannot be both the protected platform actor
+and the owner of the boundary that constrains it.
+
 locals {
   receipt_required = var.phase != "prepare"
   terminal_states = {
@@ -203,4 +212,60 @@ resource "terraform_data" "verified" {
   }
 
   depends_on = [kubernetes_config_map_v1.ledger]
+}
+*/
+
+locals {
+  # Even `prepare` must carry an external handoff now: this module gates the
+  # non-destructive transfer of pre-existing custody addresses out of platform
+  # state. A prepare handoff binds the zero receipt digest.
+  receipt_required        = var.phase != "prepare"
+  receipt_bundle_sha256   = local.receipt_required ? filesha256(var.receipt_bundle_path) : null
+  expected_bundle_sha256  = local.receipt_required ? local.receipt_bundle_sha256 : strrep("0", 64)
+  external_handoff_sha256 = filesha256(var.external_handoff_path)
+}
+
+# The platform invocation has no custody provider and receives no receipt,
+# owner, or token-minting kubeconfig.  It can only validate a short-lived,
+# whole-file signed handoff emitted by the independently administered custody
+# root after that root has completed live reads, authority audits and ledger
+# CAS.  This verifier is offline and cannot mutate Kubernetes.
+data "external" "verified_handoff" {
+  program = ["python3", "${path.module}/../../scripts/verify_sai07_external_handoff.py"]
+
+  query = {
+    handoff_path              = var.external_handoff_path
+    handoff_public_key_path   = var.external_handoff_public_key_path
+    handoff_public_key_sha256 = var.external_handoff_public_key_sha256
+    handoff_key_id            = var.external_handoff_key_id
+    receipt_bundle_sha256     = local.expected_bundle_sha256
+    expected_context_sha256   = sha256(jsonencode(var.expected_context))
+    expected_phase            = var.phase
+    expected_consumer         = var.consumer_role
+    expected_action           = var.action
+    cluster_id                = var.expected_context.cluster_id
+    kube_system_uid           = var.expected_context.kube_system_uid
+  }
+}
+
+resource "terraform_data" "verified" {
+  input = data.external.verified_handoff.result
+
+  lifecycle {
+    precondition {
+      condition = (
+        var.external_handoff_path != null &&
+        var.external_handoff_public_key_path != null &&
+        var.external_handoff_public_key_sha256 != null &&
+        var.external_handoff_key_id != null &&
+        data.external.verified_handoff.result.valid == "true" &&
+        data.external.verified_handoff.result.handoff_sha256 == local.external_handoff_sha256 &&
+        data.external.verified_handoff.result.bundle_sha256 == local.expected_bundle_sha256 &&
+        data.external.verified_handoff.result.phase == var.phase &&
+        data.external.verified_handoff.result.consumer == var.consumer_role &&
+        data.external.verified_handoff.result.action == var.action
+      )
+      error_message = "A fresh independently signed external-custody handoff matching this exact phase, consumer, action, bundle and context is required."
+    }
+  }
 }

@@ -199,86 +199,26 @@ data "kubernetes_persistent_volume_claim_v1" "reference_data" {
 module "pod_security_rollout_gate" {
   source = "../../modules/pod-security-rollout-gate"
 
-  providers = {
-    kubernetes = kubernetes.pod_security_custody
-  }
-
-  consumer_role                 = "owner"
-  kubeconfig_path               = var.kubeconfig_path
-  kube_context                  = var.kube_context
-  custody_kubeconfig_path       = var.pod_security_rollout_receipt.custody_kubeconfig_path
-  custody_context               = var.pod_security_rollout_receipt.custody_context
-  custody_username              = var.pod_security_rollout_receipt.custody_username
-  custody_owner_kubeconfig_path = var.pod_security_rollout_receipt.custody_owner_kubeconfig_path
-  custody_owner_context         = var.pod_security_rollout_receipt.custody_owner_context
-  custody_owner_username        = var.pod_security_rollout_receipt.custody_owner_username
-  custody_owner_group           = var.pod_security_rollout_receipt.custody_owner_group
-  platform_username             = var.pod_security_rollout_receipt.platform_username
-  platform_group                = var.pod_security_rollout_receipt.platform_group
-  phase                         = var.pod_security_rollout_phase
-  receipt_bundle_path           = var.pod_security_rollout_receipt.bundle_path
-  receipt_public_key_path       = var.pod_security_rollout_receipt.public_key_path
-  receipt_public_key_sha256     = var.pod_security_rollout_receipt.public_key_sha256
-  baseline_artifact_path        = var.pod_security_rollout_receipt.baseline_artifact_path
-  cleanup_result_path           = var.pod_security_rollout_receipt.cleanup_result_path
-  receipt_key_id                = var.pod_security_rollout_receipt.key_id
-  receipt_signer_identity       = var.pod_security_rollout_receipt.signer_identity
-  expected_context              = local.pod_security_receipt_context
-
-  depends_on = [
-    kubernetes_manifest.pod_security_ledger_binding,
-    kubernetes_manifest.pod_security_rollout_token_binding,
-    kubernetes_cluster_role_binding_v1.pod_security_rollout_custodian_reader,
-    kubernetes_role_binding_v1.pod_security_rollout_custodian_ledger,
-  ]
+  consumer_role                      = "owner"
+  kubeconfig_path                    = var.kubeconfig_path
+  kube_context                       = var.kube_context
+  custody_owner_username             = var.pod_security_rollout_receipt.custody_owner_username
+  custody_owner_group                = var.pod_security_rollout_receipt.custody_owner_group
+  platform_username                  = var.pod_security_rollout_receipt.platform_username
+  platform_group                     = var.pod_security_rollout_receipt.platform_group
+  phase                              = var.pod_security_rollout_phase
+  receipt_bundle_path                = var.pod_security_rollout_receipt.bundle_path
+  external_handoff_path              = var.pod_security_rollout_receipt.external_handoff_path
+  external_handoff_public_key_path   = var.pod_security_rollout_receipt.external_handoff_public_key_path
+  external_handoff_public_key_sha256 = var.pod_security_rollout_receipt.external_handoff_public_key_sha256
+  external_handoff_key_id            = var.pod_security_rollout_receipt.external_handoff_key_id
+  expected_context                   = local.pod_security_receipt_context
 }
 
-# A phase is not complete when its receipt is consumed.  Re-read the signed
-# live state and acknowledge only after every foundation-side dependency has
-# applied. Exact reruns are idempotent, so a crash between CAS and state write
-# resumes the same transition instead of consuming a new nonce.
-module "pod_security_rollout_ack" {
-  source = "../../modules/pod-security-rollout-gate"
-
-  providers = {
-    kubernetes = kubernetes.pod_security_custody
-  }
-
-  consumer_role                 = "owner"
-  action                        = "acknowledge"
-  kubeconfig_path               = var.kubeconfig_path
-  kube_context                  = var.kube_context
-  custody_kubeconfig_path       = var.pod_security_rollout_receipt.custody_kubeconfig_path
-  custody_context               = var.pod_security_rollout_receipt.custody_context
-  custody_username              = var.pod_security_rollout_receipt.custody_username
-  custody_owner_kubeconfig_path = var.pod_security_rollout_receipt.custody_owner_kubeconfig_path
-  custody_owner_context         = var.pod_security_rollout_receipt.custody_owner_context
-  custody_owner_username        = var.pod_security_rollout_receipt.custody_owner_username
-  custody_owner_group           = var.pod_security_rollout_receipt.custody_owner_group
-  platform_username             = var.pod_security_rollout_receipt.platform_username
-  platform_group                = var.pod_security_rollout_receipt.platform_group
-  phase                         = var.pod_security_rollout_phase
-  receipt_bundle_path           = var.pod_security_rollout_receipt.bundle_path
-  receipt_public_key_path       = var.pod_security_rollout_receipt.public_key_path
-  receipt_public_key_sha256     = var.pod_security_rollout_receipt.public_key_sha256
-  baseline_artifact_path        = var.pod_security_rollout_receipt.baseline_artifact_path
-  cleanup_result_path           = var.pod_security_rollout_receipt.cleanup_result_path
-  receipt_key_id                = var.pod_security_rollout_receipt.key_id
-  receipt_signer_identity       = var.pod_security_rollout_receipt.signer_identity
-  expected_context              = local.pod_security_receipt_context
-
-  depends_on = [
-    kubernetes_labels.platform_pod_security,
-    kubernetes_config_map_v1.otel_node_relay,
-    kubernetes_manifest.node_observability_config_binding,
-    kubernetes_manifest.node_observability_daemonset_binding,
-    kubernetes_manifest.node_observability_pod_binding,
-    kubernetes_manifest.pod_security_enforcement_fence_binding,
-    kubernetes_manifest.pod_security_legacy_cleanup_fence_binding,
-    helm_release.node_exporter_exception,
-    helm_release.otel_node_exception,
-  ]
-}
+# Acknowledgement is intentionally not part of platform Terraform. After this
+# root applies, the independent custody pipeline performs immediate live reads
+# and advances the externally owned ledger. This avoids pre-authorizing its own
+# success and avoids giving this provider any ledger/admission credential.
 
 resource "terraform_data" "pod_security_rollout_contract" {
   input = module.pod_security_rollout_gate.verification

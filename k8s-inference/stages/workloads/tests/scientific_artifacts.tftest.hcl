@@ -835,14 +835,6 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
         revision            = 1
       }
     }
-    scheduling = {
-      core_pool_capacity = {
-        nebius-b300-preemptible-1x = {
-          cpu_millicores = 22000
-          memory_mib     = 344064
-        }
-      }
-    }
   }
 
   expect_failures = [terraform_data.scientific_artifacts_contract]

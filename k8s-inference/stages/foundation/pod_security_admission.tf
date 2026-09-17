@@ -194,6 +194,13 @@ locals {
 # self-protecting: once its binding exists, neither the platform Terraform
 # identity, the receipt operator, system:masters, nor a service account may
 # rewrite or remove custody RBAC, admission, identity, or ledger objects.
+/*
+REJECTED PLATFORM-OWNED CUSTODY RESOURCES (retained as source provenance).
+
+The resources below are inactive in this root. They are rendered and adopted
+only by stages/pod-security-custody under its separate state and credential.
+Platform Terraform must not own the boundary that constrains it.
+
 resource "kubernetes_manifest" "pod_security_custody_boundary_policy" {
   provider = kubernetes.pod_security_custody
 
@@ -1434,3 +1441,4 @@ resource "kubernetes_manifest" "pod_security_ledger_binding" {
   }
 
 }
+*/

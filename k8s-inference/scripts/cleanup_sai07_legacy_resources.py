@@ -2,11 +2,11 @@
 """Prove an inert retained SAI-07 legacy quarantine without mutation.
 
 The hard no-delete contract forbids this tool from mutating Kubernetes. It can
-close a non-empty inventory only when every retained object is already inert:
-NetworkPolicies are deny-only, ServiceAccounts are tokenless and unreferenced,
-and DaemonSets own no Pods and schedule nothing. The exact admission fence then
-freezes those identities, denies new ServiceAccount consumers, and denies Pods
-owned by a retained DaemonSet. Anything active or permissive fails closed.
+close a non-empty inventory only when NetworkPolicies are deny-only,
+ServiceAccounts are tokenless, and every frozen DaemonSet is healthy while an
+exact admission fence denies replacement Pods and spec mutations. Existing
+DaemonSet Pods are retained and identified exactly; they converge to zero only
+through ordinary node/pod lifecycle, never through this tool.
 """
 
 from __future__ import annotations
@@ -15,6 +15,9 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
+import re
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -24,7 +27,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sai07_inventory_projection import ProjectionError, live_projection  # noqa: E402
 
 SCHEMA = "fs2-serve.nebius.ai/sai07-retained-quarantine/v6"
-RESULT_SCHEMA = "fs2-serve.nebius.ai/sai07-retained-quarantine-result/v7"
+RESULT_SCHEMA = "fs2-serve.nebius.ai/sai07-retained-quarantine-result/v8"
+SECRET_METADATA_SCHEMA = "fs2-serve.nebius.ai/sai07-secret-metadata/v1"
+SECRET_METADATA_MEDIA_TYPE = (
+    "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"
+)
 NAMESPACE = "fs2-models"
 MAX_OBJECTS = 128
 KINDS = {
@@ -356,11 +363,11 @@ def nested_service_account_names(value: object) -> set[str]:
     return result
 
 
-def daemonset_owned_pods(client: Kubectl, name: str, uid: str) -> list[str]:
+def daemonset_owned_pods(client: Kubectl, name: str, uid: str) -> list[dict[str, str]]:
     collection = client.raw(f"/api/v1/namespaces/{NAMESPACE}/pods")
     if collection is None:  # pragma: no cover - mandatory read
         raise CleanupError("Pod inventory disappeared during retained quarantine verification")
-    owned: list[str] = []
+    owned: list[dict[str, str]] = []
     for pod in collection.get("items", []):
         metadata = pod.get("metadata", {}) if isinstance(pod, dict) else {}
         owners = metadata.get("ownerReferences", []) if isinstance(metadata, dict) else []
@@ -372,48 +379,131 @@ def daemonset_owned_pods(client: Kubectl, name: str, uid: str) -> list[str]:
             and owner.get("uid") == uid
             for owner in owners or []
         ):
-            owned.append(str(metadata.get("name", "")))
-    return sorted(owned)
+            ready = any(
+                isinstance(condition, dict)
+                and condition.get("type") == "Ready"
+                and condition.get("status") == "True"
+                for condition in (pod.get("status", {}).get("conditions", []) or [])
+            )
+            identity = {
+                "name": str(metadata.get("name", "")),
+                "uid": str(metadata.get("uid", "")),
+                "resource_version": str(metadata.get("resourceVersion", "")),
+                "object_sha256": hashlib.sha256(canonical(live_projection(pod))).hexdigest(),
+                "phase": str(pod.get("status", {}).get("phase", "")),
+                "ready": "true" if ready else "false",
+            }
+            if (
+                not all(identity[field] for field in ("name", "uid", "resource_version"))
+                or metadata.get("deletionTimestamp") is not None
+                or identity["phase"] != "Running"
+                or identity["ready"] != "true"
+            ):
+                raise CleanupError("retained DaemonSet owns a non-ready or terminating Pod")
+            owned.append(identity)
+    return sorted(owned, key=lambda item: item["name"])
+
+
+def read_regular(path: Path, limit: int = 4 * 1024 * 1024) -> bytes:
+    if not path.is_absolute() or ".." in path.parts:
+        raise CleanupError("metadata artifact path must be absolute without parent traversal")
+    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_size > limit:
+            raise CleanupError("metadata artifact is not a bounded regular file")
+        payload = os.read(descriptor, before.st_size + 1)
+        after = os.fstat(descriptor)
+        if len(payload) != before.st_size or (before.st_dev, before.st_ino, before.st_size) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+        ):
+            raise CleanupError("metadata artifact changed during its descriptor-fenced read")
+        return payload
+    finally:
+        os.close(descriptor)
 
 
 def legacy_service_account_token_secrets(
-    client: Kubectl, service_accounts: frozenset[str]
+    artifact_path: Path,
+    expected_sha256: str,
+    service_accounts: frozenset[str],
 ) -> tuple[str, list[dict[str, str]]]:
-    """Read the complete live Secret collection and return metadata only.
+    """Validate a separately collected PartialObjectMetadataList artifact."""
 
-    The caller needs Secret-list authority, but neither token bytes nor any
-    other Secret data are copied into the result.  The admission fence must be
-    active before this read, so the collection resourceVersion plus an empty
-    exact result closes the create-after-baseline race.
-    """
-
-    collection = client.raw(f"/api/v1/namespaces/{NAMESPACE}/secrets")
-    if collection is None:  # pragma: no cover - mandatory read
-        raise CleanupError("legacy token Secret inventory disappeared")
-    metadata = collection.get("metadata")
-    items = collection.get("items")
-    if not isinstance(metadata, dict) or not isinstance(items, list):
-        raise CleanupError("legacy token Secret collection is malformed")
-    resource_version = metadata.get("resourceVersion")
+    if not re.fullmatch(r"[a-f0-9]{64}", expected_sha256):
+        raise CleanupError("metadata artifact SHA-256 is malformed")
+    payload = read_regular(artifact_path)
+    if hashlib.sha256(payload).hexdigest() != expected_sha256:
+        raise CleanupError("metadata artifact digest differs")
+    try:
+        artifact = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CleanupError("metadata artifact is not JSON") from error
+    required = {
+        "schema",
+        "media_type",
+        "namespace",
+        "collection_resource_version",
+        "items",
+        "items_sha256",
+        "item_count",
+        "contains_secret_payload",
+        "reader_service_account_uid",
+        "token_bound_object_ref",
+        "token_jti_sha256",
+        "observed_at",
+    }
+    if not isinstance(artifact, dict) or set(artifact) != required:
+        raise CleanupError("metadata artifact fields differ from the v1 contract")
+    if canonical(artifact) != payload:
+        raise CleanupError("metadata artifact is not canonical JSON")
+    if (
+        artifact["schema"] != SECRET_METADATA_SCHEMA
+        or artifact["media_type"] != SECRET_METADATA_MEDIA_TYPE
+        or artifact["namespace"] != NAMESPACE
+        or artifact["contains_secret_payload"] is not False
+        or not isinstance(artifact["items"], list)
+        or artifact["item_count"] != len(artifact["items"])
+        or hashlib.sha256(canonical(artifact["items"])).hexdigest() != artifact["items_sha256"]
+    ):
+        raise CleanupError("metadata artifact is not a complete PartialObjectMetadataList projection")
+    bound = artifact["token_bound_object_ref"]
+    if not isinstance(bound, dict) or set(bound) != {"api_version", "kind", "namespace", "name", "uid"}:
+        raise CleanupError("metadata token boundObjectRef is malformed")
+    if (
+        bound["api_version"] != "v1"
+        or bound["kind"] != "Secret"
+        or bound["namespace"] != "fs2-system"
+        or bound["name"] != "fs2-pod-security-token-anchor"
+        or not isinstance(bound["uid"], str)
+        or not bound["uid"]
+    ):
+        raise CleanupError("metadata token is not bound to the exact custody anchor")
+    observed_at = instant(artifact["observed_at"], "metadata observed_at")
+    if abs(dt.datetime.now(dt.UTC) - observed_at) > dt.timedelta(minutes=2, seconds=30):
+        raise CleanupError("metadata artifact is stale")
+    resource_version = artifact["collection_resource_version"]
     if not isinstance(resource_version, str) or not resource_version:
         raise CleanupError("legacy token Secret collection resourceVersion is absent")
     result: list[dict[str, str]] = []
-    for secret in items:
-        if not isinstance(secret, dict) or secret.get("type") != "kubernetes.io/service-account-token":
-            continue
-        secret_metadata = secret.get("metadata")
-        if not isinstance(secret_metadata, dict):
-            raise CleanupError("legacy token Secret metadata is malformed")
-        annotations = secret_metadata.get("annotations") or {}
-        if not isinstance(annotations, dict):
-            raise CleanupError("legacy token Secret annotations are malformed")
-        service_account_name = annotations.get("kubernetes.io/service-account.name")
+    for item in artifact["items"]:
+        if not isinstance(item, dict) or set(item) != {
+            "namespace",
+            "name",
+            "uid",
+            "resource_version",
+            "service_account_name",
+        }:
+            raise CleanupError("legacy token Secret metadata fields differ")
+        service_account_name = item["service_account_name"]
         if service_account_name not in service_accounts:
             continue
         identity = {
-            "name": str(secret_metadata.get("name", "")),
-            "uid": str(secret_metadata.get("uid", "")),
-            "resource_version": str(secret_metadata.get("resourceVersion", "")),
+            "name": str(item["name"]),
+            "uid": str(item["uid"]),
+            "resource_version": str(item["resource_version"]),
             "service_account_name": str(service_account_name),
         }
         if not all(identity.values()):
@@ -429,7 +519,7 @@ def validate_quarantined_object(
     item: dict[str, str],
     live: dict[str, object],
     retained_daemonsets: frozenset[str] = frozenset(),
-) -> None:
+) -> list[dict[str, str]]:
     if item["kind"] == "NetworkPolicy":
         spec = live.get("spec")
         if not isinstance(spec, dict) or set(spec.get("policyTypes", [])) != {"Ingress", "Egress"}:
@@ -438,7 +528,7 @@ def validate_quarantined_object(
             raise CleanupError("retained NetworkPolicy grants traffic and cannot be quarantined")
         if not isinstance(spec.get("podSelector"), dict):
             raise CleanupError("retained NetworkPolicy pod selector is malformed")
-        return
+        return []
     if item["kind"] == "ServiceAccount":
         if (
             live.get("automountServiceAccountToken") is not False
@@ -458,23 +548,36 @@ def validate_quarantined_object(
             raise CleanupError(
                 "retained ServiceAccount still has workload consumers: " + ", ".join(references)
             )
-        return
+        return []
     status = live.get("status", {})
     if not isinstance(status, dict):
         raise CleanupError("retained DaemonSet status is malformed")
-    counters = (
-        "desiredNumberScheduled",
-        "currentNumberScheduled",
-        "numberReady",
-        "numberAvailable",
-        "updatedNumberScheduled",
-        "numberMisscheduled",
-    )
-    if any(isinstance(status.get(field, 0), bool) or status.get(field, 0) != 0 for field in counters):
-        raise CleanupError("retained DaemonSet still schedules or owns live capacity")
-    owned = daemonset_owned_pods(client, item["name"], item["uid"])
-    if owned:
-        raise CleanupError("retained DaemonSet still owns Pods: " + ", ".join(owned))
+    desired = status.get("desiredNumberScheduled")
+    counters = [
+        status.get("currentNumberScheduled"),
+        status.get("numberReady"),
+        status.get("numberAvailable"),
+        status.get("updatedNumberScheduled"),
+    ]
+    if (
+        not isinstance(desired, int)
+        or isinstance(desired, bool)
+        or desired < 0
+        or any(not isinstance(value, int) or isinstance(value, bool) or value != desired for value in counters)
+        or status.get("numberMisscheduled", 0) != 0
+        or status.get("numberUnavailable", 0) != 0
+        or status.get("observedGeneration") != live.get("metadata", {}).get("generation")
+    ):
+        raise CleanupError("retained DaemonSet is not a stable, fully ready frozen generation")
+    first_pods = daemonset_owned_pods(client, item["name"], item["uid"])
+    second_live = client.raw(path_for("DaemonSet", item["name"]))
+    second_pods = daemonset_owned_pods(client, item["name"], item["uid"])
+    if second_live is None:
+        raise CleanupError("retained DaemonSet disappeared during the fenced read")
+    validate_live(item, second_live)
+    if first_pods != second_pods or len(first_pods) != desired:
+        raise CleanupError("retained DaemonSet Pod identities changed during the fenced read")
+    return first_pods
 
 
 def run(args: argparse.Namespace) -> dict[str, object]:
@@ -493,11 +596,16 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         item["name"] for item in objects if item["kind"] == "ServiceAccount"
     )
     token_secret_collection_resource_version, token_secrets = (
-        legacy_service_account_token_secrets(client, retained_service_accounts)
+        legacy_service_account_token_secrets(
+            args.secret_metadata_artifact,
+            args.secret_metadata_sha256,
+            retained_service_accounts,
+        )
     )
     if token_secrets:
         raise CleanupError("a live annotated legacy ServiceAccount token Secret blocks retained quarantine")
     checked: list[dict[str, str]] = []
+    retained_daemonset_pods: dict[str, list[dict[str, str]]] = {}
     retained_daemonsets = frozenset(item["name"] for item in objects if item["kind"] == "DaemonSet")
     for item in objects:
         uri = path_for(item["kind"], item["name"])
@@ -505,7 +613,9 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         if live is None:  # pragma: no cover - mandatory object
             raise CleanupError(f"cleanup object disappeared before validation: {item['kind']}/{item['name']}")
         validate_live(item, live)
-        validate_quarantined_object(client, item, live, retained_daemonsets)
+        owned_pods = validate_quarantined_object(client, item, live, retained_daemonsets)
+        if item["kind"] == "DaemonSet":
+            retained_daemonset_pods[item["name"]] = owned_pods
         checked.append(item)
     result = {
         "schema": RESULT_SCHEMA,
@@ -528,6 +638,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         "fence_objects": manifest["fence_objects"],
         "checked_objects": checked,
         "retained_objects": checked,
+        "retained_daemonset_pods": retained_daemonset_pods,
         "removed_objects": [],
     }
     result["result_sha256"] = hashlib.sha256(canonical(result)).hexdigest()
@@ -539,6 +650,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--manifest", required=True, type=Path)
     result.add_argument("--kubeconfig", required=True, type=Path)
     result.add_argument("--context", required=True)
+    result.add_argument("--secret-metadata-artifact", required=True, type=Path)
+    result.add_argument("--secret-metadata-sha256", required=True)
     return result
 
 

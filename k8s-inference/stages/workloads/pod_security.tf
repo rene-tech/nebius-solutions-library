@@ -182,64 +182,24 @@ data "kubernetes_persistent_volume_claim_v1" "reference_data" {
 module "pod_security_rollout_gate" {
   source = "../../modules/pod-security-rollout-gate"
 
-  consumer_role                 = "downstream"
-  kubeconfig_path               = var.kubeconfig_path
-  kube_context                  = var.kube_context
-  custody_kubeconfig_path       = var.pod_security_rollout_receipt.custody_kubeconfig_path
-  custody_context               = var.pod_security_rollout_receipt.custody_context
-  custody_username              = var.pod_security_rollout_receipt.custody_username
-  custody_owner_kubeconfig_path = var.pod_security_rollout_receipt.custody_owner_kubeconfig_path
-  custody_owner_context         = var.pod_security_rollout_receipt.custody_owner_context
-  custody_owner_username        = var.pod_security_rollout_receipt.custody_owner_username
-  custody_owner_group           = var.pod_security_rollout_receipt.custody_owner_group
-  platform_username             = var.pod_security_rollout_receipt.platform_username
-  platform_group                = var.pod_security_rollout_receipt.platform_group
-  phase                         = var.pod_security_rollout_phase
-  receipt_bundle_path           = var.pod_security_rollout_receipt.bundle_path
-  receipt_public_key_path       = var.pod_security_rollout_receipt.public_key_path
-  receipt_public_key_sha256     = var.pod_security_rollout_receipt.public_key_sha256
-  baseline_artifact_path        = var.pod_security_rollout_receipt.baseline_artifact_path
-  cleanup_result_path           = var.pod_security_rollout_receipt.cleanup_result_path
-  receipt_key_id                = var.pod_security_rollout_receipt.key_id
-  receipt_signer_identity       = var.pod_security_rollout_receipt.signer_identity
-  expected_context              = local.pod_security_receipt_context
+  consumer_role                      = "downstream"
+  kubeconfig_path                    = var.kubeconfig_path
+  kube_context                       = var.kube_context
+  custody_owner_username             = var.pod_security_rollout_receipt.custody_owner_username
+  custody_owner_group                = var.pod_security_rollout_receipt.custody_owner_group
+  platform_username                  = var.pod_security_rollout_receipt.platform_username
+  platform_group                     = var.pod_security_rollout_receipt.platform_group
+  phase                              = var.pod_security_rollout_phase
+  receipt_bundle_path                = var.pod_security_rollout_receipt.bundle_path
+  external_handoff_path              = var.pod_security_rollout_receipt.external_handoff_path
+  external_handoff_public_key_path   = var.pod_security_rollout_receipt.external_handoff_public_key_path
+  external_handoff_public_key_sha256 = var.pod_security_rollout_receipt.external_handoff_public_key_sha256
+  external_handoff_key_id            = var.pod_security_rollout_receipt.external_handoff_key_id
+  expected_context                   = local.pod_security_receipt_context
 }
 
-module "pod_security_rollout_ack" {
-  source = "../../modules/pod-security-rollout-gate"
-
-  consumer_role                 = "downstream"
-  action                        = "acknowledge"
-  kubeconfig_path               = var.kubeconfig_path
-  kube_context                  = var.kube_context
-  custody_kubeconfig_path       = var.pod_security_rollout_receipt.custody_kubeconfig_path
-  custody_context               = var.pod_security_rollout_receipt.custody_context
-  custody_username              = var.pod_security_rollout_receipt.custody_username
-  custody_owner_kubeconfig_path = var.pod_security_rollout_receipt.custody_owner_kubeconfig_path
-  custody_owner_context         = var.pod_security_rollout_receipt.custody_owner_context
-  custody_owner_username        = var.pod_security_rollout_receipt.custody_owner_username
-  custody_owner_group           = var.pod_security_rollout_receipt.custody_owner_group
-  platform_username             = var.pod_security_rollout_receipt.platform_username
-  platform_group                = var.pod_security_rollout_receipt.platform_group
-  phase                         = var.pod_security_rollout_phase
-  receipt_bundle_path           = var.pod_security_rollout_receipt.bundle_path
-  receipt_public_key_path       = var.pod_security_rollout_receipt.public_key_path
-  receipt_public_key_sha256     = var.pod_security_rollout_receipt.public_key_sha256
-  baseline_artifact_path        = var.pod_security_rollout_receipt.baseline_artifact_path
-  cleanup_result_path           = var.pod_security_rollout_receipt.cleanup_result_path
-  receipt_key_id                = var.pod_security_rollout_receipt.key_id
-  receipt_signer_identity       = var.pod_security_rollout_receipt.signer_identity
-  expected_context              = local.pod_security_receipt_context
-
-  depends_on = [
-    kubernetes_labels.existing_scientific_pod_security,
-    kubernetes_config_map_v1.dcgm_cold_config,
-    kubernetes_config_map_v1.dcgm_metrics,
-    helm_release.dcgm_exporter_exception,
-    module.academic_assets,
-    module.reference_data,
-  ]
-}
+# Post-apply acknowledgement is emitted by the external custody pipeline after
+# it re-reads the workloads objects. No platform state owns or advances it.
 
 resource "terraform_data" "pod_security_rollout_contract" {
   input = module.pod_security_rollout_gate.verification

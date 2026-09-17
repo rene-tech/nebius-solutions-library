@@ -64,14 +64,19 @@ workload movement. Advance only after the checks for the current phase pass:
    admission freezes its spec and refuses every new owned Pod. The closure then
    performs exact read-only UID/resourceVersion/spec checks and permits
    a nonempty legacy inventory only as a retained quarantine: NetworkPolicies
-   must grant no ingress or egress, ServiceAccounts must be tokenless and have
-   no consumers, and DaemonSets must schedule and own zero Pods. Admission
-   freezes every retained identity, denies token requests and new consumers for
-   retained ServiceAccounts, and permanently denies Pods owned by retained
-   DaemonSets. Existing DaemonSet Pods are not deleted and remain a hard block
-   until they naturally reach zero. An immediate complete Secret-list read must
-   also prove that no annotated legacy ServiceAccount token Secret exists; its
-   resourceVersion is signed into the result. The result is withheld until the
+   must grant no ingress or egress, ServiceAccounts must be tokenless, and each
+   frozen DaemonSet must have one stable, fully Ready generation. The result
+   binds every retained Pod UID, resourceVersion, projected-spec hash, phase,
+   and readiness value across two fenced reads. Admission freezes every
+   retained identity, denies token requests and new consumers for retained
+   ServiceAccounts, and permanently denies replacement Pods owned by retained
+   DaemonSets. Existing healthy DaemonSet Pods remain available; no impossible
+   `desiredNumberScheduled=0` condition is required. A distinct bounded reader
+   uses a ten-minute anchor-bound token and Kubernetes
+   `PartialObjectMetadataList` content negotiation to prove that no annotated
+   legacy ServiceAccount token Secret exists. A full SecretList is never
+   requested or loaded. The metadata collection resourceVersion is signed into
+   the result. The result is withheld until the
    admission/token fence has outlived the externally reviewed maximum prior
    bound-token lifetime. The signed result preserves every frozen UID and permits no
    removed or absent object. Any active or permissive object remains a hard
@@ -216,14 +221,15 @@ volumes and receipt digests are independently reviewed, a non-destructive plan
 proves only additive actions, and the live probes complete under the serialized
 rollout gate.
 
-Every post-prepare phase requires one short-lived v5 Ed25519 receipt whose single
-signature covers the complete canonical bundle: reviewed signer identity and
-key digest, cluster/run/kube-system UID, deployment nonce, exact prior and next
-state, phase, one-time nonce, expiry, pinned PSA minor, six-namespace
-inventory, PVC UID/resourceVersion/volume/class, dataset/revision/tree,
-retained filesystem, digest-pinned proof image, immutable tooling digest, and live
-three mutually exclusive identities and groups (platform Terraform, receipt
-operator, and custody owner), and live observations. Each present observation carries the exact Kubernetes UID,
+Every phase, including the non-destructive initial custody-state handoff,
+requires a short-lived external-custody handoff. Post-prepare transitions also
+require one v5 Ed25519 receipt whose single signature covers the complete
+canonical bundle: reviewed signer identity and key digest,
+cluster/run/kube-system UID, deployment nonce, exact prior and next state,
+phase, one-time nonce, expiry, pinned PSA minor, six-namespace inventory, PVC
+UID/resourceVersion/volume/class, dataset/revision/tree, retained filesystem,
+digest-pinned proof image, immutable tooling digest, three mutually exclusive
+identities and groups, and live observations. Each present observation carries the exact Kubernetes UID,
 resourceVersion, and canonical object hash; absence observations carry no
 substitutable identity. Baseline gates accept v5 artifacts only and additionally
 bind complete live collection resourceVersions plus exact object
@@ -231,50 +237,47 @@ UID/resourceVersion/hash sets and their aggregate digest for every relevant
 workload kind, including ConfigMaps, in every frozen namespace. Historical
 v3/v4 artifacts and fixed 103/103/716 counts cannot bootstrap a rollout.
 
-Receipt verification is an apply-time operation, never a replayable Terraform
-data source. The foundation consumer re-reads every signed object and inventory
-from the selected API server immediately before an atomic ConfigMap
-resourceVersion compare-and-swap. The monotonic ledger is context- and
-authority-bound, deletion-protected, admission-limited to exact rollout
-identities, and stores the last receipt, nonce, sequence, state, and phase
-authorization. The owner and workloads stages acknowledge the exact
-authorization only after their dependent resources pass immediate live checks.
+Live receipt verification and ledger mutation run only in the separately
+administered custody pipeline, never inside platform Terraform. The standalone
+`stages/pod-security-custody` root has a distinct backend, owner identity, and
+provider graph; it accepts no platform, receipt-reader, or metadata-reader
+kubeconfig. It re-reads every signed object and inventory immediately before an
+atomic ConfigMap resourceVersion compare-and-swap. Platform Terraform receives
+only a descriptor-fenced, whole-file signed handoff binding the exact context,
+bundle, phase, action, ledger UID/resourceVersion/sequence/nonce, adopted object
+aggregate, authority audits, and metadata-only Secret inventory. It cannot
+acknowledge its own apply: the external pipeline performs post-apply live reads
+and acknowledgement separately. The monotonic ledger stores the last receipt,
+nonce, sequence, state, and phase authorization.
 An exact already-consumed bundle can resume idempotently after a process crash;
 a different or expired bundle cannot. Phase skipping, stale resourceVersions,
 spec/status drift, inventory omission, context substitution, and concurrent
 ledger updates all fail closed. A digest-shaped string or a valid signature
 without successful live reconciliation and ledger consumption has no authority.
 
-The verifier does not impersonate the rollout identity. Every post-prepare
-stage requires three different kubeconfigs and authenticated users: platform
-Terraform, a non-system receipt operator in the dedicated receipt-custodian
-group, and a separately administered non-system custody owner in its own group.
-The foundation provider alias for custody resources uses only the third
-kubeconfig. A self-protecting admission boundary excludes the platform,
-receipt, `system:masters`, and service-account identities from modifying or
-deleting custody ServiceAccounts, RBAC, ledger and admission objects. A
-SelfSubjectReview proves all three identities and groups are disjoint.
-SelfSubjectRulesReview is then evaluated in every live namespace, not a static
-namespace subset, and rejects Secret reads, Pod proxy/exec/log access, unrelated
-RoleBinding grants, persistent mutation, RBAC bind/escalate, admission-policy,
-impersonation, credential, or workload pivots. Non-resource authority is
-restricted to the exact Kubernetes discovery/health URL set. The only
-persistent mutation edge allowed is exact-name `serviceaccounts/token`
-creation, alongside the self-review APIs needed to prove the boundary. A
-fail-closed admission policy requires a
-directly authenticated non-system identity with authenticator JTI metadata and
-permits only the exact API audience for at most ten minutes. The returned JWT
-is checked for subject, audience, lifetime and live ServiceAccount UID, then
-held in an anonymous in-memory kubeconfig. Exact SelfSubjectAccessReviews also
-pin the one token edge and deny unbounded token minting, direct ledger or
-admission mutation, RBAC creation/bind/escalate, custodian
-user/ServiceAccount/group impersonation, and authenticator-extra impersonation.
-Ledger admission
-independently requires that short-lived ServiceAccount JWT's authenticator JTI;
-ordinary username/group impersonation cannot write the ledger. The retained
-predecessor manager and its bindings remain unchanged for non-destructive state
-continuity, but that username cannot pass ledger admission and is never used by
-the verifier.
+Kubernetes admission cannot self-protect its own ValidatingAdmissionPolicy or
+binding objects, so this design makes no such claim. Preventive custody comes
+from a separately issued IAM/backend/provider boundary receipt and group
+exclusion outside the platform root. Before each handoff, exhaustive live
+SelfSubjectRulesReview plus named SelfSubjectAccessReviews cover every namespace
+and cluster-scoped edge. They deny Secret reads, Pod/Service proxy access,
+unrelated RoleBinding and ClusterRoleBinding creation, RBAC bind/escalate,
+admission-policy mutation, ledger mutation, token minting, and user/group/
+ServiceAccount impersonation for both the platform and inactive owner
+identities. The signed handoff binds the complete namespace inventory and both
+authority-audit digests.
+
+The two short-lived automation identities are tokenless ServiceAccounts.
+Their distinct TokenRequest credentials use exactly the Kubernetes API
+audience, at most ten minutes, and `boundObjectRef` to the immutable empty
+`fs2-system/fs2-pod-security-token-anchor` Secret UID. JWT subject, audience,
+lifetime, ServiceAccount UID, bound Secret UID, and JTI are checked before each
+token is held in anonymous memory-backed storage. Fail-closed admission limits
+TokenRequests to those two exact ServiceAccounts and requires the anchor
+reference on every request. The metadata reader requests
+only `PartialObjectMetadataList`; the collector rejects any response containing
+Secret `data`, `stringData`, or other non-metadata fields. No command in this
+task queried live Secret data.
 
 ## Model-controller ownership
 
@@ -324,10 +327,13 @@ request debugging disabled.
 
 Under the current no-delete operating constraint, legacy controller-owned
 objects are never reported as removed. A nonempty inventory may advance only
-when the read-only v7 retained-quarantine result proves all exact objects inert
-under the admission fence described above. Active/permissive objects, changed
-UIDs, annotated token Secrets, a token-drain interval shorter than the reviewed
-issuer maximum, consumers, scheduled/owned Pods, missing objects, or any claimed
-removal keep integration and enforcement blocked. Source conformance is not
-live closure evidence. The current SAI-03 successor remains source-only and
-independently NO-GO; sharing its finite-profile contract is not acceptance.
+when the read-only v8 retained-quarantine result proves all exact objects and
+the stable Ready Pod set under the admission fence described above.
+Permissive/unhealthy objects, changed UIDs, annotated token Secrets, a token
+drain shorter than the reviewed issuer maximum, new consumers or Pods, missing
+objects, or any claimed removal keep integration and enforcement blocked.
+Source conformance is not live closure evidence. The current SAI-03 successor
+remains source-only and independently NO-GO; sharing its finite-profile
+contract is not acceptance. The independently accepted KEDA scale-handoff
+lineage is present in this branch, but that ancestry does not change SAI-03 or
+SAI-07 acceptance status.

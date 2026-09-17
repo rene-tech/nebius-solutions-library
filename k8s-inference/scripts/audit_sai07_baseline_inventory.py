@@ -17,6 +17,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -28,6 +29,10 @@ from sai07_inventory_projection import ProjectionError, live_projection  # noqa:
 
 SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-inventory/v5"
 VERIFICATION_SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-verification/v1"
+SECRET_METADATA_SCHEMA = "fs2-serve.nebius.ai/sai07-secret-metadata/v1"
+SECRET_METADATA_MEDIA_TYPE = (
+    "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"
+)
 SCIENTIFIC_NAMESPACES = (
     "fs2-academic-poc",
     "fs2-bioir-boltz2",
@@ -418,6 +423,91 @@ def validate_artifact(value: object) -> dict[str, Any]:
     return value
 
 
+def validate_secret_metadata_artifact(
+    artifact_bytes: bytes, expected_sha256: str
+) -> tuple[str, list[dict[str, str]]]:
+    """Consume only the separately collected PartialObjectMetadata artifact."""
+
+    if not re.fullmatch(r"[a-f0-9]{64}", expected_sha256):
+        raise InventoryError("Secret metadata artifact SHA-256 is malformed")
+    if hashlib.sha256(artifact_bytes).hexdigest() != expected_sha256:
+        raise InventoryError("Secret metadata artifact digest differs")
+    try:
+        value = json.loads(artifact_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise InventoryError("Secret metadata artifact is not JSON") from error
+    required = {
+        "schema",
+        "media_type",
+        "namespace",
+        "collection_resource_version",
+        "items",
+        "items_sha256",
+        "item_count",
+        "contains_secret_payload",
+        "reader_service_account_uid",
+        "token_bound_object_ref",
+        "token_jti_sha256",
+        "observed_at",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise InventoryError("Secret metadata artifact fields differ from the v1 contract")
+    if canonical(value) != artifact_bytes:
+        raise InventoryError("Secret metadata artifact is not canonical JSON")
+    if (
+        value["schema"] != SECRET_METADATA_SCHEMA
+        or value["media_type"] != SECRET_METADATA_MEDIA_TYPE
+        or value["namespace"] != "fs2-models"
+        or value["contains_secret_payload"] is not False
+    ):
+        raise InventoryError("Secret inventory was not collected as PartialObjectMetadataList")
+    if not isinstance(value["items"], list):
+        raise InventoryError("Secret metadata items must be a list")
+    if (
+        hashlib.sha256(canonical(value["items"])).hexdigest() != value["items_sha256"]
+        or value["item_count"] != len(value["items"])
+    ):
+        raise InventoryError("Secret metadata item count or digest differs")
+    bound = value["token_bound_object_ref"]
+    if not isinstance(bound, dict) or bound != {
+        "api_version": "v1",
+        "kind": "Secret",
+        "namespace": "fs2-system",
+        "name": "fs2-pod-security-token-anchor",
+        "uid": bound.get("uid"),
+    } or not isinstance(bound["uid"], str) or not bound["uid"]:
+        raise InventoryError("metadata reader token is not bound to the exact custody anchor")
+    if not isinstance(value["reader_service_account_uid"], str) or not value["reader_service_account_uid"]:
+        raise InventoryError("metadata reader ServiceAccount UID is missing")
+    if not re.fullmatch(r"[a-f0-9]{64}", str(value["token_jti_sha256"])):
+        raise InventoryError("metadata reader token JTI digest is malformed")
+    try:
+        observed_at = dt.datetime.fromisoformat(
+            str(value["observed_at"]).removesuffix("Z") + "+00:00"
+        )
+    except ValueError as error:
+        raise InventoryError("Secret metadata observed_at is malformed") from error
+    if observed_at.tzinfo != dt.UTC or abs(dt.datetime.now(dt.UTC) - observed_at) > dt.timedelta(minutes=2, seconds=30):
+        raise InventoryError("Secret metadata artifact is stale")
+    for item in value["items"]:
+        if not isinstance(item, dict) or set(item) != {
+            "namespace",
+            "name",
+            "uid",
+            "resource_version",
+            "service_account_name",
+        }:
+            raise InventoryError("Secret metadata item fields differ")
+        if item["namespace"] != "fs2-models" or not all(isinstance(field, str) and field for field in item.values()):
+            raise InventoryError("Secret metadata item identity is incomplete")
+    if value["items"] != sorted(value["items"], key=lambda item: (item["service_account_name"], item["name"])):
+        raise InventoryError("Secret metadata items are not canonically ordered")
+    resource_version = value["collection_resource_version"]
+    if not isinstance(resource_version, str) or not resource_version:
+        raise InventoryError("Secret metadata collection resourceVersion is absent")
+    return resource_version, value["items"]
+
+
 def legacy_controller_identity(
     namespace: str,
     kind: str,
@@ -477,7 +567,10 @@ def authorized_exception_config_map(value: dict[str, Any]) -> bool:
     )
 
 
-def inventory(client: Kubectl) -> dict[str, Any]:
+def inventory(
+    client: Kubectl,
+    secret_metadata: tuple[str, list[dict[str, str]]],
+) -> dict[str, Any]:
     namespaces = client.raw("/api/v1/namespaces")
     discovered = sorted(
         item.get("metadata", {}).get("name", "")
@@ -557,30 +650,17 @@ def inventory(client: Kubectl) -> dict[str, Any]:
     legacy_service_account_names = {
         item["name"] for item in legacy_controller_objects if item["kind"] == "ServiceAccount"
     }
-    secret_collection = client.raw("/api/v1/namespaces/fs2-models/secrets")
-    secret_collection_metadata = secret_collection.get("metadata", {})
-    secret_collection_resource_version = str(secret_collection_metadata.get("resourceVersion", ""))
-    if not secret_collection_resource_version:
-        raise InventoryError("legacy token Secret collection has no resourceVersion")
-    legacy_token_secrets: list[dict[str, str]] = []
-    for secret in secret_collection.get("items", []):
-        if not isinstance(secret, dict) or secret.get("type") != "kubernetes.io/service-account-token":
-            continue
-        metadata = secret.get("metadata", {})
-        annotations = metadata.get("annotations", {}) if isinstance(metadata, dict) else {}
-        service_account_name = (
-            annotations.get("kubernetes.io/service-account.name") if isinstance(annotations, dict) else None
-        )
-        if service_account_name not in legacy_service_account_names:
-            continue
-        legacy_token_secrets.append(
-            {
-                "name": str(metadata.get("name", "")),
-                "uid": str(metadata.get("uid", "")),
-                "resource_version": str(metadata.get("resourceVersion", "")),
-                "service_account_name": str(service_account_name),
-            }
-        )
+    secret_collection_resource_version, metadata_token_secrets = secret_metadata
+    legacy_token_secrets = [
+        {
+            "name": item["name"],
+            "uid": item["uid"],
+            "resource_version": item["resource_version"],
+            "service_account_name": item["service_account_name"],
+        }
+        for item in metadata_token_secrets
+        if item["service_account_name"] in legacy_service_account_names
+    ]
 
     unauthorized_exception: list[str] = []
     for exception_namespace in (EXCEPTION_NAMESPACE, SNAPSHOT_EXCEPTION_NAMESPACE):
@@ -723,6 +803,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--context", required=True)
     result.add_argument("--baseline-artifact", type=Path)
     result.add_argument("--baseline-sha256")
+    result.add_argument("--secret-metadata-artifact", required=True, type=Path)
+    result.add_argument("--secret-metadata-sha256", required=True)
     result.add_argument("--mode", choices=("capture", "initial", "clean"), default="capture")
     result.add_argument("--require-clean", action="store_true")
     return result
@@ -731,7 +813,11 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = parser().parse_args()
     try:
-        live = inventory(Kubectl(args.kubeconfig, args.context))
+        secret_metadata = validate_secret_metadata_artifact(
+            read_regular(args.secret_metadata_artifact, limit=4 * 1024 * 1024),
+            args.secret_metadata_sha256,
+        )
+        live = inventory(Kubectl(args.kubeconfig, args.context), secret_metadata)
         if args.mode == "capture":
             if args.baseline_artifact is not None or args.baseline_sha256 is not None:
                 raise InventoryError("capture mode does not accept a baseline artifact")

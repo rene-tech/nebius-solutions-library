@@ -101,6 +101,8 @@ def test_exception_namespace_has_enforceable_identity_and_content_admission() ->
 def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     verifier = _source("scripts/verify_pod_security_receipts.py")
     gate = _source("modules/pod-security-rollout-gate/main.tf")
+    active_gate = gate.split("*/", 1)[1]
+    handoff = _source("scripts/verify_sai07_external_handoff.py")
     admission = _source("stages/foundation/pod_security_admission.tf")
     expected = {
         "bootstrap-baseline": "baseline-captured",
@@ -129,7 +131,8 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "SelfSubjectAccessReview" in verifier
     assert "SelfSubjectRulesReview" in verifier
     assert "SelfSubjectReview" in verifier
-    assert "receipt, platform, and custody-owner identities must use three distinct kubeconfigs" in verifier
+    assert "FS2_PLATFORM_KUBECONFIG" not in verifier
+    assert "FS2_CUSTODY_OWNER_KUBECONFIG" not in verifier
     assert "external custody has authority outside namespace inventory, self-review, and exact token minting" in verifier
     assert "external custody has a non-discovery non-resource URL edge" in verifier
     assert "ambient identity has direct rollout-ledger authority" in verifier
@@ -137,20 +140,27 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "ambient identity may impersonate service accounts" in verifier
     assert "ambient identity may forge authenticator credential metadata" in verifier
     assert "os.memfd_create" in verifier
-    assert "FS2_PLATFORM_KUBECONFIG" in gate
-    assert "FS2_POD_SECURITY_CUSTODY_USER" in gate
-    assert "FS2_CUSTODY_OWNER_KUBECONFIG" in gate
-    assert "FS2_CUSTODY_OWNER_GROUP" in gate
+    assert "FS2_PLATFORM_KUBECONFIG" not in active_gate
+    assert "FS2_POD_SECURITY_CUSTODY_USER" not in active_gate
+    assert "FS2_CUSTODY_OWNER_KUBECONFIG" not in active_gate
+    assert 'data "external" "verified_handoff"' in active_gate
+    assert "verify_sai07_external_handoff.py" in active_gate
+    assert "platform_authority_audit" in handoff
+    assert "owner_authority_audit" in handoff
+    assert "PartialObjectMetadataList" in handoff
+    assert "receipt_token_request" in handoff
+    assert "metadata_token_request" in handoff
+    assert "bound_object_ref" in handoff
     assert "foundation resources have not acknowledged this authorization" in verifier
     assert "prior phase has not been acknowledged by both Terraform stages" in verifier
     assert '"owner-acknowledgement"' in verifier
     assert '"downstream-acknowledgement"' in verifier
-    assert 'resource "kubernetes_config_map_v1" "ledger"' in gate
-    assert "prevent_destroy = true" in gate
-    assert "ignore_changes  = [data]" in gate
-    assert 'resource "terraform_data" "verified"' in gate
-    assert "baseline_artifact_path" in gate
-    assert 'data "external"' not in gate
+    assert 'resource "kubernetes_config_map_v1" "ledger"' not in active_gate
+    assert 'resource "terraform_data" "verified"' in active_gate
+    assert "external_handoff_sha256" in active_gate
+    assert "receipt_bundle_sha256" in active_gate
+    assert "--bound-object-kind=Secret" in verifier
+    assert "FS2_POD_SECURITY_TOKEN_ANCHOR_UID" in verifier
     assert 'operations  = ["UPDATE", "DELETE"]' in admission
     assert "The monotonic pod-security rollout ledger may not be deleted" in admission
     assert "object.data.size() == 19" in admission
@@ -420,34 +430,65 @@ def test_legacy_cleanup_is_exactly_fenced_and_never_touches_finite_profiles() ->
 
 def test_custody_provider_is_distinct_and_legacy_objects_are_adopted_without_delete() -> None:
     providers = _source("stages/foundation/providers.tf")
-    admission = _source("stages/foundation/pod_security_admission.tf")
-    quarantine = _source("stages/foundation/pod_security_legacy_quarantine.tf")
-    verifier = _source("scripts/verify_pod_security_receipts.py")
+    custody = _source("stages/pod-security-custody/main.tf")
+    custody_variables = _source("stages/pod-security-custody/variables.tf")
+    state_handoff = _source("stages/foundation/pod_security_custody_state_handoff.tf")
+    manifest_verifier = _source("scripts/verify_sai07_custody_manifest_bundle.py")
 
-    assert 'alias = "pod_security_custody"' in providers
-    assert "custody_owner_kubeconfig_path" in providers
-    for resource in (
-        "pod_security_rollout_custodian",
-        "pod_security_rollout_reader",
-        "pod_security_rollout_ledger",
-        "pod_security_external_custody_audit",
-        "pod_security_rollout_token_request",
-        "pod_security_legacy_cleanup_fence_policy",
+    assert 'alias = "pod_security_custody"' not in providers
+    assert "custody_owner_kubeconfig_path" not in providers
+    assert 'provider "kubernetes"' in custody
+    assert "owner_kubeconfig_path" in custody_variables
+    assert "platform_kubeconfig" not in custody_variables
+    assert "receipt_kubeconfig" not in custody_variables
+    assert "iam_boundary_sha256" in custody_variables
+    assert 'field_manager {' in custody and "force_conflicts = false" in custody
+    assert "prevent_destroy = true" in custody
+    assert state_handoff.count("destroy = false") >= 30
+    assert "fs2-pod-security-token-anchor" in manifest_verifier
+    assert "immutable empty token-anchor Secret" in manifest_verifier
+    assert "fs2-pod-security-rollout-custodian" in manifest_verifier
+    assert "fs2-pod-security-metadata-reader" in manifest_verifier
+    assert "has(object.spec.boundObjectRef)" in manifest_verifier
+    assert (
+        "a ValidatingAdmissionPolicy cannot be treated as its own custody boundary"
+        not in manifest_verifier
+    )
+    assert "REQUIRED_OBJECTS" in manifest_verifier
+
+
+def test_secret_inventory_is_metadata_only_and_bound_to_a_short_lived_actor() -> None:
+    collector = _source("scripts/collect_sai07_secret_metadata.py")
+    baseline = _source("scripts/audit_sai07_baseline_inventory.py")
+    cleanup = _source("scripts/cleanup_sai07_legacy_resources.py")
+
+    assert "PartialObjectMetadataList" in collector
+    assert '"Accept": MEDIA_TYPE' in collector
+    assert "token_bound_object_ref" in collector
+    assert 'kubernetes.get("secret")' in collector
+    assert 'client.raw("/api/v1/namespaces/fs2-models/secrets")' not in baseline
+    assert 'client.raw(f"/api/v1/namespaces/{NAMESPACE}/secrets")' not in cleanup
+    assert "--secret-metadata-artifact" in baseline
+    assert "--secret-metadata-artifact" in cleanup
+
+
+def test_effective_authority_audit_covers_cluster_and_every_live_namespace() -> None:
+    audit = _source("scripts/audit_sai07_effective_authority.py")
+    handoff = _source("scripts/verify_sai07_external_handoff.py")
+
+    assert 'client.raw("/api/v1/namespaces")' in audit
+    assert "for namespace in namespaces" in audit
+    for boundary in (
+        "secrets",
+        "pods/proxy",
+        "services/proxy",
+        "rolebindings",
+        "clusterrolebindings",
+        "validatingadmissionpolicies",
+        "validatingadmissionpolicybindings",
+        "impersonate",
+        "bind",
+        "escalate",
     ):
-        block = admission.split(f'"{resource}"', 1)[1]
-        assert "provider = kubernetes.pod_security_custody" in block[:500]
-
-    assert 'resource "kubernetes_manifest" "pod_security_legacy_networkpolicy_quarantine"' in quarantine
-    assert 'resource "kubernetes_manifest" "pod_security_legacy_serviceaccount_quarantine"' in quarantine
-    assert 'resource "kubernetes_labels" "pod_security_legacy_daemonset_quarantine"' in quarantine
-    assert quarantine.count("prevent_destroy = true") == 3
-    assert quarantine.count("force_conflicts = false") == 2
-    assert 'force = false' in quarantine
-    assert "retained-quarantine" in quarantine
-    assert "for namespace in cls._all_namespaces(bootstrap)" in verifier
-    assert 'resources == {"namespaces"}' in verifier
-    assert 'resources == {"serviceaccounts/token"}' in verifier
-    assert 'allowed_non_resource_urls' in verifier
-    assert '"/api/*"' in verifier and '"/apis/*"' in verifier
-    authority_audit = verifier.split("allowed_self_reviews", 1)[1].split("checks = [", 1)[0]
-    assert 'resources == {"secrets"}' not in authority_audit
+        assert boundary in audit
+        assert boundary in handoff
