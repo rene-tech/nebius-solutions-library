@@ -199,6 +199,116 @@ def descriptor_sha256(descriptor: int) -> str:
     return digest.hexdigest()
 
 
+def descriptor_stability_identity(descriptor: int) -> dict[str, int | str]:
+    """Hash an open file and prove its kernel metadata stayed fixed while read."""
+
+    before = os.fstat(descriptor)
+    digest = descriptor_sha256(descriptor)
+    after = os.fstat(descriptor)
+    metadata_fields = (
+        "st_dev",
+        "st_ino",
+        "st_mode",
+        "st_uid",
+        "st_gid",
+        "st_nlink",
+        "st_size",
+        "st_mtime_ns",
+        "st_ctime_ns",
+    )
+    if any(getattr(before, field) != getattr(after, field) for field in metadata_fields):
+        raise DeploymentError("saved plan changed while its bytes were being hashed")
+    return {
+        "device": before.st_dev,
+        "inode": before.st_ino,
+        "mode": before.st_mode,
+        "uid": before.st_uid,
+        "gid": before.st_gid,
+        "links": before.st_nlink,
+        "size": before.st_size,
+        "mtime_ns": before.st_mtime_ns,
+        "ctime_ns": before.st_ctime_ns,
+        "sha256": digest,
+    }
+
+
+def assert_descriptor_stable(
+    descriptor: int, expected: Mapping[str, int | str], *, label: str
+) -> None:
+    if descriptor_stability_identity(descriptor) != dict(expected):
+        raise DeploymentError(f"{label} changed after saved-plan authorization")
+
+
+def required_plan_seals() -> int:
+    names = ("F_SEAL_WRITE", "F_SEAL_GROW", "F_SEAL_SHRINK", "F_SEAL_SEAL")
+    if any(not hasattr(fcntl, name) for name in (*names, "F_GET_SEALS", "F_ADD_SEALS")):
+        raise DeploymentError("this host cannot create byte-immutable saved plans")
+    seals = 0
+    for name in names:
+        seals |= int(getattr(fcntl, name))
+    return seals
+
+
+def assert_sealed_plan_descriptor(
+    descriptor: int, *, expected_size: int, expected_sha256: str
+) -> None:
+    metadata = os.fstat(descriptor)
+    required = required_plan_seals()
+    try:
+        observed = int(fcntl.fcntl(descriptor, fcntl.F_GET_SEALS))
+    except OSError as exc:
+        raise DeploymentError("runtime saved plan is not a sealable memfd") from exc
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or stat.S_IMODE(metadata.st_mode) != 0o400
+        or metadata.st_size != expected_size
+        or observed & required != required
+        or descriptor_sha256(descriptor) != expected_sha256
+    ):
+        raise DeploymentError("runtime saved plan is not the exact sealed snapshot")
+
+
+def sealed_plan_snapshot(
+    source_descriptor: int, *, expected_size: int, expected_sha256: str
+) -> int:
+    """Copy approved bytes into a write/grow/shrink/seal-protected memfd."""
+
+    if not hasattr(os, "memfd_create") or not hasattr(os, "MFD_ALLOW_SEALING"):
+        raise DeploymentError("this host cannot create a sealed saved-plan snapshot")
+    descriptor = os.memfd_create(
+        "fs2-terraform-saved-plan",
+        flags=int(getattr(os, "MFD_CLOEXEC", 0)) | int(os.MFD_ALLOW_SEALING),
+    )
+    try:
+        offset = 0
+        while offset < expected_size:
+            chunk = os.pread(
+                source_descriptor, min(1024 * 1024, expected_size - offset), offset
+            )
+            if not chunk:
+                raise DeploymentError("saved plan ended while creating sealed snapshot")
+            written = 0
+            while written < len(chunk):
+                count = os.pwrite(descriptor, chunk[written:], offset + written)
+                if count <= 0:
+                    raise DeploymentError("sealed saved-plan snapshot write failed")
+                written += count
+            offset += len(chunk)
+        os.fchmod(descriptor, 0o400)
+        os.fsync(descriptor)
+        fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, required_plan_seals())
+        assert_sealed_plan_descriptor(
+            descriptor,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
+        )
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
 def write_once_private_json(path: Path, value: Any) -> None:
     """Create one owner-only receipt without replace, unlink, or overwrite."""
 
@@ -1673,6 +1783,9 @@ def seal_saved_plan_gate(
     )
     environment["FS2_TERRAFORM_APPLY_GATE_RECEIPT"] = str(receipt)
     environment["FS2_TERRAFORM_SAVED_PLAN"] = str(plan_path)
+    environment["FS2_TERRAFORM_SAVED_PLAN_ORIGINAL_PATH"] = str(
+        plan_path.resolve(strict=True)
+    )
     return receipt
 
 
@@ -1709,26 +1822,33 @@ def validate_saved_plan_apply_gate(
     pinned_plan_path: Path,
     original_plan_path: Path,
     plan_descriptor: int,
+    runtime_snapshot: bool,
 ) -> None:
     validation_environment = dict(environment)
     validation_environment["FS2_TERRAFORM_SAVED_PLAN"] = str(pinned_plan_path)
     validation_environment["FS2_TERRAFORM_SAVED_PLAN_ORIGINAL_PATH"] = str(
         original_plan_path
     )
+    arguments = [
+        sys.executable,
+        str(SECRET_MIGRATION_GUARD),
+        "apply-saved-plan-gate",
+        "--terraform-configuration",
+        str(root),
+        "--terraform-root",
+        terraform_root_name(root),
+        "--source-commit",
+        environment.get("TF_VAR_credential_migration_gate_source_commit", ""),
+        "--registry",
+        str(DURABLE_CREDENTIAL_REGISTRY),
+        (
+            "--wrapper-runtime-snapshot"
+            if runtime_snapshot
+            else "--wrapper-preflight"
+        ),
+    ]
     run(
-        [
-            sys.executable,
-            str(SECRET_MIGRATION_GUARD),
-            "apply-saved-plan-gate",
-            "--terraform-configuration",
-            str(root),
-            "--terraform-root",
-            terraform_root_name(root),
-            "--source-commit",
-            environment.get("TF_VAR_credential_migration_gate_source_commit", ""),
-            "--registry",
-            str(DURABLE_CREDENTIAL_REGISTRY),
-        ],
+        arguments,
         env=validation_environment,
         capture=True,
         pass_fds=(plan_descriptor,),
@@ -3731,6 +3851,8 @@ def apply_plan(
     plan_descriptor = os.open(
         plan_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     )
+    snapshot_descriptor: int | None = None
+    source_identity: dict[str, int | str] | None = None
     try:
         metadata = os.fstat(plan_descriptor)
         if (
@@ -3740,6 +3862,7 @@ def apply_plan(
         ):
             raise DeploymentError("saved plan must be an owner-only regular file")
         pinned_plan_path = Path(f"/proc/self/fd/{plan_descriptor}")
+        source_identity = descriptor_stability_identity(plan_descriptor)
         validate_credential_migration_gate(root, environment)
         validate_saved_plan_apply_gate(
             root,
@@ -3747,6 +3870,10 @@ def apply_plan(
             pinned_plan_path=pinned_plan_path,
             original_plan_path=original_plan_path,
             plan_descriptor=plan_descriptor,
+            runtime_snapshot=False,
+        )
+        assert_descriptor_stable(
+            plan_descriptor, source_identity, label="saved plan source"
         )
         guard_saved_plan(
             terraform,
@@ -3756,20 +3883,75 @@ def apply_plan(
             environment,
             plan_descriptor=plan_descriptor,
         )
-        saved_plan_sha256 = descriptor_sha256(plan_descriptor)
+        assert_descriptor_stable(
+            plan_descriptor, source_identity, label="saved plan source"
+        )
+        saved_plan_sha256 = str(source_identity["sha256"])
+        snapshot_descriptor = sealed_plan_snapshot(
+            plan_descriptor,
+            expected_size=int(source_identity["size"]),
+            expected_sha256=saved_plan_sha256,
+        )
+        assert_descriptor_stable(
+            plan_descriptor, source_identity, label="saved plan source"
+        )
+        runtime_plan_path = Path(f"/proc/self/fd/{snapshot_descriptor}")
+        runtime_environment = dict(environment)
+        runtime_environment["FS2_TERRAFORM_SAVED_PLAN"] = str(runtime_plan_path)
+        runtime_environment["FS2_TERRAFORM_SAVED_PLAN_ORIGINAL_PATH"] = str(
+            original_plan_path
+        )
+        validate_saved_plan_apply_gate(
+            root,
+            runtime_environment,
+            pinned_plan_path=runtime_plan_path,
+            original_plan_path=original_plan_path,
+            plan_descriptor=snapshot_descriptor,
+            runtime_snapshot=True,
+        )
+        guard_saved_plan(
+            terraform,
+            root,
+            runtime_plan_path,
+            original_plan_path,
+            runtime_environment,
+            plan_descriptor=snapshot_descriptor,
+        )
+        assert_sealed_plan_descriptor(
+            snapshot_descriptor,
+            expected_size=int(source_identity["size"]),
+            expected_sha256=saved_plan_sha256,
+        )
+        assert_descriptor_stable(
+            plan_descriptor, source_identity, label="saved plan source"
+        )
         run(
             [
                 terraform,
                 f"-chdir={root}",
                 "apply",
                 "-input=false",
-                str(pinned_plan_path),
+                str(runtime_plan_path),
             ],
-            env=environment,
-            pass_fds=(plan_descriptor,),
+            env=runtime_environment,
+            pass_fds=(snapshot_descriptor,),
         )
     finally:
-        os.close(plan_descriptor)
+        try:
+            if snapshot_descriptor is not None and source_identity is not None:
+                assert_sealed_plan_descriptor(
+                    snapshot_descriptor,
+                    expected_size=int(source_identity["size"]),
+                    expected_sha256=str(source_identity["sha256"]),
+                )
+            if source_identity is not None:
+                assert_descriptor_stable(
+                    plan_descriptor, source_identity, label="saved plan source"
+                )
+        finally:
+            if snapshot_descriptor is not None:
+                os.close(snapshot_descriptor)
+            os.close(plan_descriptor)
     if initialization["initialization_mode"] == "greenfield-empty":
         capture_greenfield_transition(
             root, saved_plan_sha256, environment, initialization

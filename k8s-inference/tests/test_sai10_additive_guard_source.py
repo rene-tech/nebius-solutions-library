@@ -451,6 +451,10 @@ def test_apply_gate_is_additive_and_authority_is_not_caller_selected() -> None:
         assert '"/opt/fs2/k8s-inference/scripts/secret_migration_guard.py"' in source
         assert '${path.module}/../../scripts/secret_migration_guard.py' not in source
         assert '"--registry"' not in source
+        assert source.count(
+            "!contains(var.credential_migration_gate_history, "
+            "var.credential_migration_gate_receipt_sha256)"
+        ) == 2
     assert 'PRODUCTION_TERRAFORM_COMMAND = "/snap/bin/terraform"' in guard_source
     assert "FS2_TERRAFORM_EXECUTABLE" not in guard_source
     assert "private_temporary_json" not in wrapper_source
@@ -1188,9 +1192,12 @@ def test_configuration_root_has_an_explicit_zero_credential_plan_guard() -> None
     assert "depends_on = [terraform_data.credential_migration_gate]" in main
 
 
-def test_saved_plan_validation_and_apply_share_one_open_descriptor() -> None:
+def test_saved_plan_validation_and_apply_use_one_sealed_immutable_snapshot() -> None:
     wrapper = (ROOT / "inference-stack").read_text()
     guard = (ROOT / "scripts/secret_migration_guard.py").read_text()
+    contract = json.loads(
+        (ROOT / "security/credential-authority-deployment-contract.json").read_text()
+    )["saved_plan_execution"]
     apply_source = wrapper[
         wrapper.index("def apply_plan(") : wrapper.index(
             "\ndef workload_endpoint_outputs", wrapper.index("def apply_plan(")
@@ -1198,16 +1205,80 @@ def test_saved_plan_validation_and_apply_share_one_open_descriptor() -> None:
     ]
     assert "os.open(" in apply_source
     assert "O_NOFOLLOW" in apply_source
-    assert 'Path(f"/proc/self/fd/{plan_descriptor}")' in apply_source
-    assert "pass_fds=(plan_descriptor,)" in apply_source
-    assert "str(pinned_plan_path)" in apply_source
+    assert 'Path(f"/proc/self/fd/{snapshot_descriptor}")' in apply_source
+    assert "pass_fds=(snapshot_descriptor,)" in apply_source
+    assert "str(runtime_plan_path)" in apply_source
     assert "str(plan_path)" not in apply_source
-    assert "descriptor_sha256(plan_descriptor)" in apply_source
+    assert "sealed_plan_snapshot(" in apply_source
+    assert "assert_sealed_plan_descriptor(" in apply_source
+    assert apply_source.count("assert_descriptor_stable(") >= 4
     assert "FS2_TERRAFORM_SAVED_PLAN_ORIGINAL_PATH" in wrapper
+    assert "os.memfd_create(" in wrapper
+    assert "fcntl.F_ADD_SEALS" in wrapper
+    for seal in ("F_SEAL_WRITE", "F_SEAL_GROW", "F_SEAL_SHRINK", "F_SEAL_SEAL"):
+        assert seal in wrapper
     assert 're.fullmatch(r"/proc/self/fd/([0-9]+)"' in guard
     assert "os.fstat(descriptor)" in guard
     assert "descriptor_sha256(descriptor)" in guard
-    assert "pass_fds=plan_descriptors" in guard
+    assert "require_sealed_saved_plan(saved_plan)" in guard
+    assert contract["runtime_object"] == "memfd"
+    assert set(contract["required_runtime_seals"]) == {
+        "write",
+        "grow",
+        "shrink",
+        "seal",
+    }
+    assert contract["native_gate_plan_authority"].endswith(
+        "not-environment-path"
+    )
+
+
+def test_native_saved_plan_gate_binds_the_actual_terraform_ancestor_plan() -> None:
+    guard = (ROOT / "scripts/secret_migration_guard.py").read_text()
+    native = guard[
+        guard.index("def actual_terraform_apply_plan(") : guard.index(
+            "\ndef validate_saved_plan_gate_from_environment(",
+            guard.index("def actual_terraform_apply_plan("),
+        )
+    ]
+    validation = guard[
+        guard.index("def validate_saved_plan_gate_from_environment(") : guard.index(
+            "\ndef load_registry(",
+            guard.index("def validate_saved_plan_gate_from_environment("),
+        )
+    ]
+    execution_validation = guard[
+        guard.index("def validate_saved_plan_gate(") : guard.index(
+            "\ndef command_json(", guard.index("def validate_saved_plan_gate(")
+        )
+    ]
+    assert 'Path(f"/proc/{pid}")' in native
+    assert '(process_path / "cmdline").read_bytes()' in native
+    assert 'f"-chdir={expected_configuration}"' in native
+    assert '"apply",' in native
+    assert '"-input=false",' in native
+    assert 'process_path / "fd" / str(descriptor_number)' in native
+    assert "process_start_time(pid) != started" in native
+    assert "require_sealed_saved_plan(" in native
+    assert "os.environ" not in native
+    assert "actual_terraform_apply_plan(" in validation
+    assert 'saved_plan = Path(f"/proc/self/fd/{plan_descriptor}")' in validation
+    assert "saved_plan = Path(plan_value)" in validation
+    assert "sealed_runtime_snapshot=" in validation
+    assert 'plan_sha256 = execution_plan_identity["sha256"]' in execution_validation
+    assert 'saved_plan_identity(saved_plan)["sha256"]' not in execution_validation
+
+
+def test_feature_activation_markers_are_ordered_after_native_gate() -> None:
+    for relative in (
+        "stages/infrastructure/credential_migration_gate.tf",
+        "stages/workloads/credential_migration_gate.tf",
+    ):
+        source = (ROOT / relative).read_text()
+        marker = source[
+            source.index('resource "terraform_data" "credential_feature_activation"') :
+        ]
+        assert "depends_on = [terraform_data.credential_migration_gate]" in marker
 
 
 def test_greenfield_transition_auto_seals_durable_identity_before_promotion() -> None:

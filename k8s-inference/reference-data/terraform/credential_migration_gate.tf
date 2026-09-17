@@ -60,9 +60,10 @@ resource "terraform_data" "credential_migration_gate" {
     precondition {
       condition = (
         data.external.credential_migration_gate.result.status == "pass" &&
-        data.external.credential_migration_gate.result.receipt_sha256 == var.credential_migration_gate_receipt_sha256
+        data.external.credential_migration_gate.result.receipt_sha256 == var.credential_migration_gate_receipt_sha256 &&
+        !contains(var.credential_migration_gate_history, var.credential_migration_gate_receipt_sha256)
       )
-      error_message = "The short-lived SAI-10 credential migration gate did not pass. Use the staged operator workflow; direct apply without an exact gate receipt is forbidden."
+      error_message = "The short-lived SAI-10 credential migration gate did not pass or its current receipt was reused. Use the staged operator workflow; direct apply without one new exact gate generation is forbidden."
     }
   }
 }
@@ -80,9 +81,10 @@ resource "terraform_data" "credential_apply_gate_generation" {
     precondition {
       condition = (
         data.external.credential_migration_gate.result.status == "pass" &&
-        data.external.credential_migration_gate.result.receipt_sha256 == var.credential_migration_gate_receipt_sha256
+        data.external.credential_migration_gate.result.receipt_sha256 == var.credential_migration_gate_receipt_sha256 &&
+        !contains(var.credential_migration_gate_history, var.credential_migration_gate_receipt_sha256)
       )
-      error_message = "The short-lived SAI-10 credential migration gate did not pass. Use the staged operator workflow; direct apply without an exact gate receipt is forbidden."
+      error_message = "The short-lived SAI-10 credential migration gate did not pass or its current receipt was reused. Use the staged operator workflow; direct apply without one new exact gate generation is forbidden."
     }
   }
 }

@@ -64,9 +64,10 @@ resource "terraform_data" "credential_migration_gate" {
     precondition {
       condition = (
         data.external.credential_migration_gate.result.status == "pass" &&
-        data.external.credential_migration_gate.result.receipt_sha256 == var.credential_migration_gate_receipt_sha256
+        data.external.credential_migration_gate.result.receipt_sha256 == var.credential_migration_gate_receipt_sha256 &&
+        !contains(var.credential_migration_gate_history, var.credential_migration_gate_receipt_sha256)
       )
-      error_message = "The short-lived credential migration gate did not pass. Use inference-stack; direct apply without an exact gate receipt is forbidden."
+      error_message = "The short-lived credential migration gate did not pass or its current receipt was reused. Use inference-stack; direct apply without one new exact gate generation is forbidden."
     }
   }
 }
@@ -88,9 +89,10 @@ resource "terraform_data" "credential_apply_gate_generation" {
     precondition {
       condition = (
         data.external.credential_migration_gate.result.status == "pass" &&
-        data.external.credential_migration_gate.result.receipt_sha256 == var.credential_migration_gate_receipt_sha256
+        data.external.credential_migration_gate.result.receipt_sha256 == var.credential_migration_gate_receipt_sha256 &&
+        !contains(var.credential_migration_gate_history, var.credential_migration_gate_receipt_sha256)
       )
-      error_message = "The short-lived credential migration gate did not pass. Use inference-stack; direct apply without an exact gate receipt is forbidden."
+      error_message = "The short-lived credential migration gate did not pass or its current receipt was reused. Use inference-stack; direct apply without one new exact gate generation is forbidden."
     }
   }
 }
@@ -99,6 +101,8 @@ resource "terraform_data" "credential_apply_gate_generation" {
 # credential presence.  It keeps disabled minimal deployments valid without
 # treating a missing Secret as evidence that its feature is disabled.
 resource "terraform_data" "credential_feature_activation" {
+  depends_on = [terraform_data.credential_migration_gate]
+
   input = {
     schema = "fs2-serve.nebius.ai/credential-feature-activation/v1"
     activations = {

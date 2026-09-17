@@ -342,7 +342,7 @@ database, registry, and Grafana generations are
 independent. Generation 1 retains the existing persisted resource addresses;
 later keyrings use new Secret names, retain every predecessor needed for reads,
 and trigger readiness-gated consumer rollouts from non-secret generation
-metadata. See [operator access and credential migration](docs/OPERATOR_ACCESS_HYGIENE_V9.md)
+metadata. See [operator access and credential migration](docs/OPERATOR_ACCESS_HYGIENE_V11.md)
 for the plan guard, encrypted-state retirement, scoped credential export, and
 rollback contract.
 

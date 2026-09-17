@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -614,17 +615,13 @@ def saved_plan_identity(
     """Identify a named plan or an inherited, descriptor-pinned plan exactly."""
 
     descriptor_match = re.fullmatch(r"/proc/self/fd/([0-9]+)", str(path))
+    close_descriptor = False
     if descriptor_match is not None:
         descriptor = int(descriptor_match.group(1))
         if descriptor < 3 or original_path is None or not original_path.is_absolute():
             raise GuardError(
                 "descriptor-pinned saved plan requires its exact absolute original path"
             )
-        try:
-            metadata = os.fstat(descriptor)
-        except OSError as error:
-            raise GuardError("saved Terraform plan descriptor is not open") from error
-        plan_sha256 = descriptor_sha256(descriptor)
         identity_path = original_path
     else:
         path = path.absolute()
@@ -634,9 +631,43 @@ def saved_plan_identity(
             or not path.is_file()
         ):
             raise GuardError("saved Terraform plan must be a real file")
-        metadata = path.stat()
-        plan_sha256 = file_sha256(path)
-        identity_path = path.resolve()
+        identity_path = path.resolve(strict=True)
+        try:
+            descriptor = os.open(
+                identity_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            )
+        except OSError as error:
+            raise GuardError("saved Terraform plan could not be pinned") from error
+        close_descriptor = True
+    try:
+        before = os.fstat(descriptor)
+        plan_sha256 = descriptor_sha256(descriptor)
+        metadata = os.fstat(descriptor)
+        stability_fields = (
+            "st_dev",
+            "st_ino",
+            "st_mode",
+            "st_uid",
+            "st_gid",
+            "st_nlink",
+            "st_size",
+            "st_mtime_ns",
+            "st_ctime_ns",
+        )
+        if any(
+            getattr(before, field) != getattr(metadata, field)
+            for field in stability_fields
+        ):
+            raise GuardError("saved Terraform plan changed while it was identified")
+        if close_descriptor:
+            current = identity_path.stat(follow_symlinks=False)
+            if (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino):
+                raise GuardError("saved Terraform plan pathname changed while identified")
+    except OSError as error:
+        raise GuardError("saved Terraform plan descriptor is not open") from error
+    finally:
+        if close_descriptor:
+            os.close(descriptor)
     if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
         raise GuardError("saved Terraform plan must be owner-owned and owner-only")
     if not stat.S_ISREG(metadata.st_mode):
@@ -648,6 +679,27 @@ def saved_plan_identity(
         "size": metadata.st_size,
         "sha256": plan_sha256,
     }
+
+
+def require_sealed_saved_plan(path: Path) -> None:
+    """Require an inherited Linux memfd whose bytes can no longer change."""
+
+    descriptor_match = re.fullmatch(r"/proc/self/fd/([0-9]+)", str(path))
+    seal_names = ("F_SEAL_WRITE", "F_SEAL_GROW", "F_SEAL_SHRINK", "F_SEAL_SEAL")
+    if descriptor_match is None or any(
+        not hasattr(fcntl, name) for name in (*seal_names, "F_GET_SEALS")
+    ):
+        raise GuardError("runtime Terraform plan is not a sealable inherited descriptor")
+    descriptor = int(descriptor_match.group(1))
+    required = 0
+    for name in seal_names:
+        required |= int(getattr(fcntl, name))
+    try:
+        observed = int(fcntl.fcntl(descriptor, fcntl.F_GET_SEALS))
+    except OSError as error:
+        raise GuardError("runtime Terraform plan descriptor is not sealed") from error
+    if observed & required != required:
+        raise GuardError("runtime Terraform plan descriptor is not byte-immutable")
 
 
 def write_saved_plan_gate_receipt(
@@ -669,6 +721,7 @@ def write_saved_plan_gate_receipt(
     """Seal the exact saved plan and live credential identities for apply."""
 
     registry = registry or load_registry()
+    saved_plan_binding = saved_plan_identity(saved_plan)
     if live_secret_document is not None:
         raise GuardError(
             "caller-supplied live Secret inventories are forbidden; use the fixed authority"
@@ -779,7 +832,7 @@ def write_saved_plan_gate_receipt(
             admission.get("phase") != admission_phase
             or admission.get("registry_sha256") != registry_sha256(registry)
             or not isinstance(authority_plans, list)
-            or saved_plan_identity(saved_plan)["sha256"]
+            or saved_plan_binding["sha256"]
             not in {
                 item.get("plan_sha256")
                 for item in authority_plans
@@ -808,7 +861,7 @@ def write_saved_plan_gate_receipt(
         "planned_secret_commitments": commitments,
         "planned_generation_admission": admission,
         "planning_receipt_sha256": file_sha256(planning_receipt_path),
-        "saved_plan": saved_plan_identity(saved_plan),
+        "saved_plan": saved_plan_binding,
         "plan_json_sha256": canonical_sha256(plan_document),
         "issued_at": now.isoformat().replace("+00:00", "Z"),
         "expires_at": (now + timedelta(seconds=ttl_seconds))
@@ -831,6 +884,7 @@ def validate_saved_plan_gate(
     terraform_root: str,
     source_commit: str,
     registry: dict[str, Any] | None = None,
+    sealed_runtime_snapshot: bool = False,
 ) -> dict[str, str]:
     """Revalidate the saved plan at execution time, including receipt expiry."""
 
@@ -841,14 +895,28 @@ def validate_saved_plan_gate(
         != "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v5"
     ):
         raise GuardError("saved-plan apply receipt has the wrong schema")
+    execution_plan_identity = saved_plan_identity(
+        saved_plan, original_path=saved_plan_original_path
+    )
+    if sealed_runtime_snapshot:
+        require_sealed_saved_plan(saved_plan)
+        stored_plan_identity = receipt.get("saved_plan")
+        if not isinstance(stored_plan_identity, dict) or any(
+            execution_plan_identity.get(field) != stored_plan_identity.get(field)
+            for field in ("realpath_sha256", "size", "sha256")
+        ):
+            raise GuardError(
+                "sealed runtime plan bytes or original-path binding differ from the receipt"
+            )
+    elif receipt.get("saved_plan") != execution_plan_identity:
+        raise GuardError(
+            "saved-plan apply receipt differs from the exact execution object"
+        )
     expected = {
         "terraform_root": terraform_root,
         "source_commit": source_commit,
         "registry_sha256": registry_sha256(registry),
         "configuration_sha256": configuration_sha256(terraform_configuration),
-        "saved_plan": saved_plan_identity(
-            saved_plan, original_path=saved_plan_original_path
-        ),
         "plan_json_sha256": canonical_sha256(plan_document),
     }
     if any(receipt.get(key) != value for key, value in expected.items()):
@@ -914,7 +982,7 @@ def validate_saved_plan_gate(
             }
         )
         verify_external_evidence(fresh_admission)
-        plan_sha256 = saved_plan_identity(saved_plan)["sha256"]
+        plan_sha256 = execution_plan_identity["sha256"]
         for admission in (stored_admission, fresh_admission):
             if (
                 admission.get("phase") != admission_phase
@@ -1162,12 +1230,106 @@ def live_secret_inventory_for_state(
     return {"items": selected}
 
 
+def process_parent_pid(pid: int) -> int:
+    """Read one Linux process parent without trusting process-supplied data."""
+
+    try:
+        for line in Path(f"/proc/{pid}/status").read_text(encoding="utf-8").splitlines():
+            if line.startswith("PPid:"):
+                return int(line.split(":", 1)[1].strip())
+    except (OSError, ValueError) as error:
+        raise GuardError("Terraform apply ancestry changed during gate validation") from error
+    raise GuardError("Terraform apply ancestor has no kernel parent identity")
+
+
+def process_start_time(pid: int) -> str:
+    """Return the kernel start-time field used to detect PID reuse."""
+
+    try:
+        encoded = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+        fields = encoded[encoded.rfind(")") + 2 :].split()
+        return fields[19]
+    except (OSError, IndexError) as error:
+        raise GuardError("Terraform apply process identity is unavailable") from error
+
+
+def actual_terraform_apply_plan(terraform_configuration: Path) -> int:
+    """Duplicate the exact sealed plan descriptor used by the Terraform ancestor.
+
+    The local-exec process must descend from the fixed Terraform binary with the
+    exact wrapper apply argv.  Environment paths are deliberately not consulted
+    when selecting the plan: the kernel-owned ancestor argv and fd table are the
+    authority for the bytes Terraform has open.
+    """
+
+    expected_executable = Path(PRODUCTION_TERRAFORM_COMMAND).resolve(strict=True)
+    expected_configuration = str(terraform_configuration.resolve(strict=True))
+    pid = os.getppid()
+    visited: set[int] = set()
+    for _ in range(32):
+        if pid <= 1 or pid in visited:
+            break
+        visited.add(pid)
+        started = process_start_time(pid)
+        process_path = Path(f"/proc/{pid}")
+        try:
+            if process_path.stat().st_uid != os.geteuid():
+                raise GuardError("Terraform apply ancestor has a different operating UID")
+            executable = Path(os.readlink(process_path / "exe")).resolve(strict=True)
+        except OSError as error:
+            raise GuardError("Terraform apply ancestry changed during inspection") from error
+        if executable == expected_executable:
+            try:
+                arguments = [
+                    item.decode("utf-8")
+                    for item in (process_path / "cmdline").read_bytes().split(b"\0")
+                    if item
+                ]
+            except (OSError, UnicodeDecodeError) as error:
+                raise GuardError("Terraform apply argv is unavailable") from error
+            expected_prefix = [
+                f"-chdir={expected_configuration}",
+                "apply",
+                "-input=false",
+            ]
+            if len(arguments) != 5 or arguments[1:4] != expected_prefix:
+                raise GuardError(
+                    "native apply gate is not running under the exact release wrapper argv"
+                )
+            descriptor_match = re.fullmatch(
+                r"/proc/self/fd/([0-9]+)", arguments[4]
+            )
+            if descriptor_match is None or int(descriptor_match.group(1)) < 3:
+                raise GuardError(
+                    "Terraform is not applying an inherited descriptor-pinned plan"
+                )
+            descriptor_number = int(descriptor_match.group(1))
+            try:
+                duplicate = os.open(
+                    process_path / "fd" / str(descriptor_number), os.O_RDONLY
+                )
+            except OSError as error:
+                raise GuardError("Terraform's applied plan descriptor is unavailable") from error
+            try:
+                if process_start_time(pid) != started:
+                    raise GuardError("Terraform apply PID changed during plan binding")
+                require_sealed_saved_plan(Path(f"/proc/self/fd/{duplicate}"))
+            except Exception:
+                os.close(duplicate)
+                raise
+            return duplicate
+        pid = process_parent_pid(pid)
+    raise GuardError("native apply gate has no fixed Terraform apply ancestor")
+
+
 def validate_saved_plan_gate_from_environment(
     *,
     terraform_configuration: Path,
     terraform_root: str,
     source_commit: str,
     registry: dict[str, Any] | None = None,
+    wrapper_preflight: bool = False,
+    wrapper_runtime_snapshot: bool = False,
 ) -> dict[str, str]:
     """Execution-time entrypoint used by Terraform's local apply provisioner."""
 
@@ -1177,55 +1339,67 @@ def validate_saved_plan_gate_from_environment(
         "FS2_TERRAFORM_SAVED_PLAN_ORIGINAL_PATH", ""
     )
     terraform = PRODUCTION_TERRAFORM_COMMAND
-    if not receipt_value or not plan_value:
+    if wrapper_preflight and wrapper_runtime_snapshot:
+        raise GuardError("saved-plan validation mode is ambiguous")
+    if not receipt_value or not original_plan_value:
         raise GuardError(
-            "apply requires the exact saved-plan receipt and plan in the execution environment"
+            "apply requires the exact receipt and original-path binding"
         )
     receipt_path = Path(receipt_value)
-    saved_plan = Path(plan_value)
-    descriptor_match = re.fullmatch(r"/proc/self/fd/([0-9]+)", plan_value)
-    plan_descriptor = (
-        int(descriptor_match.group(1)) if descriptor_match is not None else None
-    )
-    if plan_descriptor is not None and plan_descriptor < 3:
-        raise GuardError("saved Terraform plan descriptor is not a private inherited file")
-    plan_descriptors = (plan_descriptor,) if plan_descriptor is not None else ()
-    original_plan = Path(original_plan_value) if original_plan_value else None
-    if descriptor_match is not None and original_plan is None:
-        raise GuardError("descriptor-pinned apply omitted the original saved-plan path")
-    receipt = load_private_document(receipt_path, label="saved-plan apply receipt")
-    plan_document = command_json(
-        [
-            terraform,
-            f"-chdir={terraform_configuration}",
-            "show",
-            "-json",
-            str(saved_plan),
-        ],
-        label="saved Terraform plan inspection",
-        pass_fds=plan_descriptors,
-    )
-    raw_state_document = (
-        None
-        if receipt.get("state_initialization") == "greenfield-empty"
-        else command_json(
-            [terraform, f"-chdir={terraform_configuration}", "state", "pull"],
-            label="authoritative Terraform state inspection",
+    original_plan = Path(original_plan_value)
+    close_plan_descriptor = False
+    if wrapper_preflight or wrapper_runtime_snapshot:
+        descriptor_match = re.fullmatch(r"/proc/self/fd/([0-9]+)", plan_value)
+        if descriptor_match is None or int(descriptor_match.group(1)) < 3:
+            raise GuardError(
+                "wrapper validation requires a private inherited plan descriptor"
+            )
+        plan_descriptor = int(descriptor_match.group(1))
+        saved_plan = Path(plan_value)
+    else:
+        plan_descriptor = actual_terraform_apply_plan(terraform_configuration)
+        close_plan_descriptor = True
+        saved_plan = Path(f"/proc/self/fd/{plan_descriptor}")
+    try:
+        receipt = load_private_document(receipt_path, label="saved-plan apply receipt")
+        plan_document = command_json(
+            [
+                terraform,
+                f"-chdir={terraform_configuration}",
+                "show",
+                "-json",
+                str(saved_plan),
+            ],
+            label="saved Terraform plan inspection",
+            pass_fds=(plan_descriptor,),
         )
-    )
-    live_document = live_secret_inventory_for_receipt(receipt)
-    return validate_saved_plan_gate(
-        receipt_path=receipt_path,
-        plan_document=plan_document,
-        saved_plan=saved_plan,
-        saved_plan_original_path=original_plan,
-        live_secret_document=live_document,
-        raw_state_document=raw_state_document,
-        terraform_configuration=terraform_configuration,
-        terraform_root=terraform_root,
-        source_commit=source_commit,
-        registry=registry,
-    )
+        raw_state_document = (
+            None
+            if receipt.get("state_initialization") == "greenfield-empty"
+            else command_json(
+                [terraform, f"-chdir={terraform_configuration}", "state", "pull"],
+                label="authoritative Terraform state inspection",
+            )
+        )
+        live_document = live_secret_inventory_for_receipt(receipt)
+        return validate_saved_plan_gate(
+            receipt_path=receipt_path,
+            plan_document=plan_document,
+            saved_plan=saved_plan,
+            saved_plan_original_path=original_plan,
+            live_secret_document=live_document,
+            raw_state_document=raw_state_document,
+            terraform_configuration=terraform_configuration,
+            terraform_root=terraform_root,
+            source_commit=source_commit,
+            registry=registry,
+            sealed_runtime_snapshot=(
+                wrapper_runtime_snapshot or not wrapper_preflight
+            ),
+        )
+    finally:
+        if close_plan_descriptor:
+            os.close(plan_descriptor)
 
 
 def load_registry(path: Path = DEFAULT_REGISTRY) -> dict[str, Any]:
@@ -4273,6 +4447,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     execution_gate.add_argument("--source-commit", required=True)
     execution_gate.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
+    execution_mode = execution_gate.add_mutually_exclusive_group()
+    execution_mode.add_argument("--wrapper-preflight", action="store_true")
+    execution_mode.add_argument("--wrapper-runtime-snapshot", action="store_true")
     artifacts = subparsers.add_parser("capture-global-state")
     artifacts.add_argument("receipt", type=Path)
     root = subparsers.add_parser("global-state")
@@ -4320,6 +4497,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             terraform_root=args.terraform_root,
             source_commit=args.source_commit,
             registry=load_registry(args.registry),
+            wrapper_preflight=args.wrapper_preflight,
+            wrapper_runtime_snapshot=args.wrapper_runtime_snapshot,
         )
     elif args.command == "capture-saved-plan-gate":
         registry = load_registry(args.registry)

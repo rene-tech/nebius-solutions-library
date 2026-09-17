@@ -12,8 +12,9 @@ top-level directory is `configuration`; it is never inferred from the basename
 `k8s-inference`. Infrastructure, foundation and workloads use their registered
 stage names. Unknown directories fail closed.
 
-The configuration root has no credential resources or native credential gate.
-Its plan is nevertheless inspected through a dedicated zero-credential path:
+The configuration root has no credential resources, but it has the same native
+apply gate as every credential-bearing root. Its plan is also inspected through
+a dedicated zero-credential path:
 credential-shaped resources, moved addresses, mode/address disagreement and
 mutating data sources are rejected. Credential-bearing roots continue through
 the full registry, state, Secret, consumer and append-only apply-gate checks.
@@ -84,15 +85,37 @@ equality across all five registries, including the transition operation's exact
 
 ## Saved-plan object pinning
 
-Release automation opens an owner-only saved plan once with `O_NOFOLLOW` and
-keeps that descriptor open across execution-time receipt validation, the
-second plan inspection, and `terraform apply`. Those subprocesses receive the
-same descriptor and use `/proc/self/fd/<n>`; the original canonical path is
-retained only to match the write-once receipt. Replacing the pathname cannot
-change the bytes Terraform applies. The top-level configuration root now has
-the same append-only native gate generation as infrastructure, foundation and
-workloads, and its deployment contract depends on that gate. A direct plan or
-saved-plan apply without the exact short-lived gate therefore fails closed.
+Release automation opens the owner-only saved plan once with `O_NOFOLLOW`,
+validates its full device/inode/size/time/hash identity, then copies the exact
+approved bytes into a Linux memfd sealed against write, grow, shrink and later
+seal changes. Receipt validation and plan inspection are repeated against the
+sealed snapshot. Terraform receives only that snapshot as
+`/proc/self/fd/<n>`; its hash and seals, plus the original source identity, are
+rechecked after Terraform returns. Same-UID mutation of the source pathname or
+open source file therefore cannot change the bytes Terraform reads.
+
+The provisioner embedded in every additive gate generation does not select a
+plan from `FS2_TERRAFORM_SAVED_PLAN`. It walks its kernel process ancestry,
+requires the fixed Terraform executable and exact wrapper `apply` argv,
+duplicates Terraform's actual inherited plan fd through `/proc/<pid>/fd`, and
+requires the duplicate to carry the complete memfd seal set before checking
+its receipt, plan JSON, state and live bindings. The native gate never reads
+the environment plan pathname. A named direct apply, an unrelated
+environment-selected plan, or an unsealed descriptor fails closed.
+Infrastructure and workloads feature-activation markers explicitly depend on
+the native gate, so their state cannot advance ahead of it.
+
+Every root also rejects a current receipt hash already present in its permanent
+gate history. Retaining every historical generation remains mandatory, while
+each apply must add one new receipt generation whose creation provisioner runs
+the native check. Reusing an old generation cannot suppress local-exec.
+
+Preflight validation retains the original canonical path solely to match the
+write-once receipt. Runtime validation compares the sealed snapshot's path
+binding, byte size and SHA-256 with that receipt rather than incorrectly
+requiring the memfd to reuse the source file's device and inode. Staged and
+greenfield admissions reuse this computed execution identity; they do not
+reopen a descriptor path without its required original-path binding.
 
 ## Greenfield durable identity handoff
 
