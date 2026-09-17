@@ -206,6 +206,7 @@ def render_allowlist(
 def render_guard_params(
     security_principals: Sequence[str],
     automation_service_accounts: Sequence[str] = (),
+    namespaces: Sequence[str] = (),
 ) -> dict:
     """Render the security-owned guard parameter ConfigMap.
 
@@ -236,6 +237,7 @@ def render_guard_params(
             "automation-service-accounts": "\n".join(
                 sorted(set(map(str, automation_service_accounts)))
             ),
+            "namespaces": "\n".join(sorted(set(map(str, namespaces)))),
         },
     }
 
@@ -2030,9 +2032,9 @@ def load_bound_receipt(
 INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v7"
 COLLECTOR_METHOD = "fs2-live-enumeration/v1"
 INVENTORY_CHECKPOINT_SCHEMA = "fs2-serve.nebius.ai/inventory-checkpoint/v1"
-SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v13"
+SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v14"
 ROLLOUT_AUTHORIZATION_SCHEMA = "fs2-serve.nebius.ai/rollout-authorization/v3"
-PROVIDER_ATTESTATION_SCHEMA = "fs2-serve.nebius.ai/provider-attestation/v4"
+PROVIDER_ATTESTATION_SCHEMA = "fs2-serve.nebius.ai/provider-attestation/v5"
 # A provider PERMISSION is read-only when it matches this shape; a role is
 # treated as read-only ONLY when the owner lists it AND every permission
 # fetched from the provider matches — role NAMES prove nothing.
@@ -2130,12 +2132,15 @@ REQUIRED_ANCHOR_CHAINS = (
     "consumed",
     "publication-journal",
     "reconcile-journal",
+    "anchor-advances",
 )
-# The anchor-advances META-chain protects the monotonic checkpoint itself;
-# it is exported and off-host-anchored like the others but is NOT a required
-# attestation chain and never enters the monotonic floor — otherwise every
-# checkpoint advance would immediately invalidate the attestation that
-# produced it.
+# The anchor-advances META-chain protects the monotonic checkpoint itself.
+# It IS a required attestation chain (so deleting the local replay memory is
+# detectable against the off-host anchor: a local count of 0 falls BEHIND the
+# attested count and fails closed) but it never enters the monotonic FLOOR —
+# otherwise every checkpoint advance would immediately invalidate the
+# attestation that produced it. Local growth past the attested count passes
+# through the ordinary prefix-continuity rule like any other chain.
 ANCHOR_META_CHAIN = "anchor-advances"
 RECOVERY_ANNOTATION = "security.fs2.nebius.ai/recovery-authorization"
 TOKEN_AUDIENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:/._-]{1,127}$")
@@ -2248,16 +2253,34 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool | dict"], ...] 
         "why": "stored-credential access/minting in protected namespaces",
         "namespaced_to_scope": True,
     },
-    # Runtime credential theft: exec/attach/port-forward into a pod reaches
-    # its mounted credentials directly and invisibly. NOBODY is permitted —
-    # governed debugging goes through ephemeral containers below, which
-    # admission fully evaluates (digest-pinned images).
+    # Runtime credential theft: exec spawns arbitrary processes inside
+    # existing containers and port-forward tunnels invisibly — NOBODY is
+    # permitted these, ever.
     {
         "apiGroups": {""},
-        "resources": {"pods/exec", "pods/attach", "pods/portforward"},
+        "resources": {"pods/exec", "pods/portforward"},
         "verbs": {"create", "update", "patch"},
-        "why": "runtime credential theft via exec/attach/portforward",
+        "why": "runtime credential theft via exec/portforward",
         "namespaced_to_scope": True,
+    },
+    # pods/attach is part of the DOCUMENTED debug flow (`kubectl debug -it`
+    # attaches to the freshly injected, admission-pinned ephemeral
+    # container). It is permitted ONLY to the debug identity, grant-shaped.
+    # TRUTHFUL LIMIT (reviewer-accepted): RBAC attach is POD-scoped, not
+    # container-scoped — the debug identity can attach to any container of
+    # pods in its bound namespaces, which is why the identity is a separate,
+    # token-hardened, individually auditable automation principal.
+    {
+        "apiGroups": {""},
+        "resources": {"pods/attach"},
+        "verbs": {"get", "create", "update", "patch"},
+        "why": "pod attach outside the debug identity",
+        "namespaced_to_scope": True,
+        "permitted_role": "debug",
+        "permitted_grant": {
+            "verbs": {"get", "list", "watch", "create"},
+            "resources": {"pods/attach"},
+        },
     },
     # Ephemeral-container injection is the DOCUMENTED customer debug path
     # (kubectl debug) — it stays technically capable, but only for the
@@ -2306,6 +2329,22 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool | dict"], ...] 
         "resources": {"storageclasses", "csidrivers"},
         "verbs": {"create", "update", "patch", "delete"},
         "why": "storage-provisioning mutation",
+    },
+    # PersistentVolumeClaim writes in the protected namespaces: a crafted
+    # claim (volumeName targeting a foreign PV, or a swapped storage class)
+    # grafts foreign storage into deployed pods. Deploying claims is the
+    # deploy identity's function — grant-shaped, never delete.
+    {
+        "apiGroups": {""},
+        "resources": {"persistentvolumeclaims"},
+        "verbs": {"create", "update", "patch", "delete", "deletecollection"},
+        "why": "PersistentVolumeClaim write in a protected namespace",
+        "namespaced_to_scope": True,
+        "permitted_role": "deploy",
+        "permitted_grant": {
+            "verbs": {"get", "list", "watch", "create", "update", "patch"},
+            "resources": {"persistentvolumeclaims"},
+        },
     },
     # Endpoint hijack: writing Endpoints/EndpointSlices in the protected
     # namespaces redirects Service traffic to attacker pods.
@@ -2632,15 +2671,15 @@ def _validated_scope(value, context: str) -> dict:
     pvc_prefixes = value.get("workload_pvc_prefixes")
     if not isinstance(pvc_prefixes, list) or not all(
         isinstance(item, str)
-        and re.match(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?-?$", item)
+        and re.match(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(-\*)?$", item)
         for item in pvc_prefixes
     ) or len(set(pvc_prefixes)) != len(pvc_prefixes):
         raise ProvenanceError(
             f"{context} needs workload_pvc_prefixes: the (possibly empty) "
-            "owner-enumerated PersistentVolumeClaim name prefixes "
-            "automation-written workloads may mount; an empty list means no "
-            "PVC mounts, and an arbitrary claim can never be grafted onto a "
-            "deployed pod"
+            "owner-enumerated PersistentVolumeClaim names automation-written "
+            "workloads may mount — EXACT names, or an EXPLICIT '<prefix>-*' "
+            "wildcard entry; an empty list means no PVC mounts, and an "
+            "arbitrary claim can never be grafted onto a deployed pod"
         )
     readonly_roles = value.get("provider_readonly_roles")
     if not isinstance(readonly_roles, list) or not all(
@@ -3385,14 +3424,15 @@ def _assert_policy_matches_scope(
     expected_params = render_guard_params(
         owner_scope["security_principals"],
         sorted(
-        principal[len("system:serviceaccount:"):]
-        for principal in (
-            list(owner_scope["deploy_principals"])
-            + list(owner_scope["security_principals"])
-            + list(owner_scope["debug_principals"])
-        )
-        if principal.startswith("system:serviceaccount:")
-    ),
+            principal[len("system:serviceaccount:"):]
+            for principal in (
+                list(owner_scope["deploy_principals"])
+                + list(owner_scope["security_principals"])
+                + list(owner_scope["debug_principals"])
+            )
+            if principal.startswith("system:serviceaccount:")
+        ),
+        owner_scope["namespaces"],
     )
     if (live_guard_params.get("data") or {}) != expected_params["data"]:
         raise ProvenanceError(
@@ -4206,15 +4246,55 @@ def _assert_provider_boundary(
                 "passes; an unstable answer is never a boundary proof — "
                 "fails closed"
             )
-        # ATTESTOR-WITNESSED == LIVE: the canonical digest of the recomputed
-        # enumeration must equal the snapshot digest the SIGNED attestation
-        # binds — the provider state the attestor saw is the state that
-        # holds now, recomputable by anyone, self-asserted by no one.
+        # ROLE DEFINITIONS are mutable provider state: fetch every distinct
+        # role's permission set IN BOTH PASSES (a definition mutated between
+        # passes refuses) and bind them into the attested snapshot, so a
+        # role's permissions cannot change post-attestation undetected.
+        role_passes: list[dict[str, list[str]]] = []
+        for bindings_pass in passes:
+            role_definitions: dict[str, list[str]] = {}
+            for bindings in bindings_pass.values():
+                for _, role in bindings:
+                    if role in role_definitions:
+                        continue
+                    definition = json.loads(
+                        _provider_cli(
+                            owner_scope, runner, "iam", "role", "get",
+                            "--id", role,
+                        )
+                    )
+                    permissions = _provider_field(
+                        definition, ("permissions", "permission_ids")
+                    )
+                    if not isinstance(permissions, list) or not all(
+                        isinstance(item, str) for item in permissions
+                    ):
+                        raise ProvenanceError(
+                            f"the provider role {role!r} has no readable "
+                            "permission definition; an unverifiable role is "
+                            "never classified — fails closed"
+                        )
+                    role_definitions[role] = sorted(map(str, permissions))
+            role_passes.append(role_definitions)
+        if role_passes[0] != role_passes[1]:
+            raise ProvenanceError(
+                "a provider ROLE DEFINITION changed between enumeration "
+                "passes; unstable role permissions are never a boundary "
+                "proof — fails closed"
+            )
+        role_definitions = role_passes[0]
+        # ATTESTOR-WITNESSED == LIVE, bindings AND role definitions: the
+        # canonical digest of the recomputed enumeration must equal the
+        # snapshot digest the SIGNED attestation binds — recomputable by
+        # anyone, self-asserted by no one, covering mutable role bodies.
         snapshot_digest = hashlib.sha256(
             json.dumps(
                 {
-                    parent_id: [list(pair) for pair in bindings]
-                    for parent_id, bindings in passes[0].items()
+                    "bindings": {
+                        parent_id: [list(pair) for pair in bindings]
+                        for parent_id, bindings in passes[0].items()
+                    },
+                    "roles": role_definitions,
                 },
                 sort_keys=True,
             ).encode("utf-8")
@@ -4226,42 +4306,23 @@ def _assert_provider_boundary(
             raise ProvenanceError(
                 f"the LIVE provider IAM enumeration digests to "
                 f"{snapshot_digest}, not the attestor-witnessed "
-                f"{attested_digest}; provider IAM changed since attestation "
-                "— the attestor must re-witness and re-sign, fails closed"
+                f"{attested_digest}; provider IAM (bindings or role "
+                "definitions) changed since attestation — the attestor must "
+                "re-witness and re-sign, fails closed"
             )
-        # Role NAMES prove nothing: a role counts as read-only ONLY when the
-        # owner lists it AND every PERMISSION the provider reports for it is
-        # read-shaped. Unknown, unlisted, unfetchable, or write-permission
-        # roles are privileged-class and their subjects must be attested.
-        role_readonly: dict[str, bool] = {}
 
         def role_is_readonly(role: str) -> bool:
-            if role not in role_readonly:
-                if (
-                    role not in readonly_roles
-                    or PROVIDER_ADMIN_ROLE_PATTERN.search(role)
-                ):
-                    role_readonly[role] = False
-                else:
-                    definition = json.loads(
-                        _provider_cli(
-                            owner_scope, runner, "iam", "role", "get",
-                            "--id", role,
-                        )
-                    )
-                    permissions = _provider_field(
-                        definition, ("permissions", "permission_ids")
-                    )
-                    role_readonly[role] = (
-                        isinstance(permissions, list)
-                        and bool(permissions)
-                        and all(
-                            isinstance(item, str)
-                            and PROVIDER_READ_PERMISSION_PATTERN.search(item)
-                            for item in permissions
-                        )
-                    )
-            return role_readonly[role]
+            # Owner-listed AND every pass-fetched permission read-shaped;
+            # the admin-name pattern can never be declared read-only.
+            if role not in readonly_roles or PROVIDER_ADMIN_ROLE_PATTERN.search(
+                role
+            ):
+                return False
+            permissions = role_definitions.get(role) or []
+            return bool(permissions) and all(
+                PROVIDER_READ_PERMISSION_PATTERN.search(item)
+                for item in permissions
+            )
 
         rogue = sorted(
             {
@@ -4417,11 +4478,22 @@ def _assert_worm_anchor_object(
             ),
             "anchor object retain-until",
         )
+        attestation_horizon = _parse_rfc3339(
+            str(attestation.get("expires_at", "")), "attestation expires_at"
+        )
         if retain_until <= datetime.now(UTC):
             raise ProvenanceError(
                 "the attested anchor object's COMPLIANCE retention has "
                 "already lapsed; an expired lock protects nothing — fails "
                 "closed"
+            )
+        if retain_until < attestation_horizon:
+            raise ProvenanceError(
+                "the attested anchor object's COMPLIANCE retention ends "
+                "BEFORE the attestation's own validity horizon; the anchor "
+                "could become mutable while the attestation still "
+                "authorizes — re-anchor with retention covering the full "
+                "authority window, fails closed"
             )
         payload = _provider_cli(
             owner_scope,
@@ -4522,15 +4594,32 @@ def _ledger_recorded_anchor(run_root: Path) -> dict | None:
     return None
 
 
+def _write_anchor_checkpoint_file(run_root: Path, chains: dict) -> None:
+    checkpoint_path = _anchor_checkpoint_path(run_root)
+    payload = json.dumps({"chains": chains}, sort_keys=True).encode("utf-8")
+    descriptor, temp_name = tempfile.mkstemp(
+        dir=run_root, prefix="." + checkpoint_path.name + "-"
+    )
+    try:
+        _write_all(descriptor, payload)
+        os.fchmod(descriptor, 0o600)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.replace(temp_name, checkpoint_path)
+    _fsync_dir(run_root)
+
+
 def _assert_anchor_monotonic(run_root: Path, anchored: dict) -> None:
     """Presented anchors may never regress behind the best anchor seen.
 
-    The memory is DOUBLE-KEPT: a fast checkpoint file AND a hash-chained,
-    checkpointed, itself-anchored advance LEDGER. Deleting or rewinding the
-    plain file cannot reset monotonicity: the file must exist and agree
-    whenever the ledger carries advances, and the higher of the two is
-    enforced — so replaying an older/zero anchor after a newer one was
-    verified fails closed even against file tampering.
+    The memory is DOUBLE-KEPT with the tamper-evident advance LEDGER as the
+    source of truth and the checkpoint file as a repairable cache: advances
+    are made DURABLE IN THE LEDGER FIRST, so a crash can never leave a
+    checkpoint the ledger does not account for. A missing or lagging file is
+    ROLLED FORWARD from the ledger (memory is preserved, not reset); a file
+    AHEAD of the ledger cannot arise from any crash under this ordering and
+    fails closed as tampering. The meta-chain itself never enters the floor.
     """
     checkpoint_path = _anchor_checkpoint_path(run_root)
     file_chains: dict = {}
@@ -4544,37 +4633,42 @@ def _assert_anchor_monotonic(run_root: Path, anchored: dict) -> None:
             ) from error
         file_chains = recorded.get("chains") or {}
     ledger_chains = _ledger_recorded_anchor(run_root)
-    if ledger_chains is not None and not checkpoint_path.exists():
-        raise ProvenanceError(
-            "the anchor advance ledger records verified anchors but the "
-            "anchor checkpoint file is missing; a deleted checkpoint never "
-            "resets monotonicity — fails closed"
-        )
-    best: dict[str, dict] = {}
-    for source in (file_chains, ledger_chains or {}):
-        for name, state in source.items():
-            if not isinstance(state, dict):
-                continue
-            current = best.get(name)
-            if current is None or int(state.get("count", 0)) > int(
-                current.get("count", 0)
-            ):
-                best[name] = state
-    if (
-        ledger_chains is not None
-        and file_chains
-        and any(
+    if ledger_chains is not None:
+        behind = not checkpoint_path.exists() or any(
             int((file_chains.get(name) or {}).get("count", -1))
             < int(state.get("count", 0))
-            for name, state in (ledger_chains or {}).items()
+            for name, state in ledger_chains.items()
             if isinstance(state, dict)
         )
-    ):
-        raise ProvenanceError(
-            "the anchor checkpoint file is BEHIND the tamper-evident advance "
-            "ledger; a rewound checkpoint never resets monotonicity — fails "
-            "closed"
+        if behind:
+            # Crash between ledger append and file replace (or a lost
+            # cache file): repair FORWARD from the ledger.
+            _write_anchor_checkpoint_file(run_root, ledger_chains)
+            file_chains = ledger_chains
+        ahead = any(
+            int((file_chains.get(name) or {}).get("count", 0))
+            > int((ledger_chains.get(name) or {}).get("count", 0))
+            for name in file_chains
+            if name != ANCHOR_META_CHAIN
         )
+        if ahead:
+            raise ProvenanceError(
+                "the anchor checkpoint file is AHEAD of the tamper-evident "
+                "advance ledger; under ledger-first ordering no crash "
+                "produces this state — an unaccounted checkpoint never "
+                "sets the replay floor, fails closed"
+            )
+    elif file_chains:
+        raise ProvenanceError(
+            "the anchor checkpoint file exists but the advance ledger "
+            "records nothing; an unaccounted checkpoint never sets the "
+            "replay floor — fails closed"
+        )
+    best = {
+        name: state
+        for name, state in file_chains.items()
+        if isinstance(state, dict) and name != ANCHOR_META_CHAIN
+    }
     presented = anchored.get("chains") or {}
     for name, best_state in best.items():
         state = presented.get(name)
@@ -4602,12 +4696,12 @@ def _assert_anchor_monotonic(run_root: Path, anchored: dict) -> None:
 def _advance_anchor_checkpoint(run_root: Path, anchored: dict) -> None:
     """Forward-only, tamper-evident record of the best verified anchor.
 
-    The plain checkpoint file is replaced atomically (full-write loop), and
-    every GENUINE advance (any chain count increased) is ALSO appended to
-    the hash-chained anchor-advances ledger under its own lock — the ledger
-    is itself one of the anchored chains, so rewinding the fast file is
-    detectable and resetting monotonicity requires defeating the anchored
-    chain, not deleting one file.
+    ORDERING IS THE CRASH GUARANTEE: a genuine advance is appended to the
+    hash-chained advance ledger FIRST (durable, fsync'd, itself an anchored
+    chain) and only then is the fast checkpoint file replaced — a crash
+    between the two leaves the file BEHIND the ledger, which the reader
+    repairs forward; no crash can leave a checkpoint the ledger does not
+    account for. The meta-chain never records itself.
     """
     presented = anchored.get("chains") or {}
     with _exclusive_lock(run_root, "anchor-advance.lock"):
@@ -4623,6 +4717,13 @@ def _advance_anchor_checkpoint(run_root: Path, anchored: dict) -> None:
                 )
             except json.JSONDecodeError:
                 existing = {}
+        ledger_chains = _ledger_recorded_anchor(run_root) or {}
+        for name, state in ledger_chains.items():
+            current = existing.get(name)
+            if not isinstance(current, dict) or int(
+                state.get("count", 0)
+            ) > int(current.get("count", -1)):
+                existing[name] = state
         merged: dict[str, dict] = dict(existing)
         advanced = False
         for name, state in presented.items():
@@ -4638,21 +4739,9 @@ def _advance_anchor_checkpoint(run_root: Path, anchored: dict) -> None:
                 }
                 if current is not None or int(state.get("count", 0)) > 0:
                     advanced = True
-        payload = json.dumps({"chains": merged}, sort_keys=True).encode(
-            "utf-8"
-        )
-        descriptor, temp_name = tempfile.mkstemp(
-            dir=run_root, prefix="." + checkpoint_path.name + "-"
-        )
-        try:
-            _write_all(descriptor, payload)
-            os.fchmod(descriptor, 0o600)
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-        os.replace(temp_name, checkpoint_path)
-        _fsync_dir(run_root)
-        if advanced and merged != existing:
+        if advanced and merged != ledger_chains:
+            # LEDGER FIRST (durable), file second: the crash window between
+            # them leaves the file behind, which readers repair forward.
             _append_chained_record(
                 _anchor_advance_ledger_path(run_root),
                 {
@@ -4661,6 +4750,10 @@ def _advance_anchor_checkpoint(run_root: Path, anchored: dict) -> None:
                     "advanced_at": datetime.now(UTC).isoformat(),
                 },
             )
+            _write_anchor_checkpoint_file(run_root, merged)
+        elif ledger_chains and not checkpoint_path.exists():
+            # Cache repair only; no new memory, no file without a ledger.
+            _write_anchor_checkpoint_file(run_root, merged)
 
 
 def _adopt_anchored_legacy(run_root: Path, anchored: dict) -> None:
@@ -8277,14 +8370,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 render_guard_params(
                     owner_scope["security_principals"],
                     sorted(
-        principal[len("system:serviceaccount:"):]
-        for principal in (
-            list(owner_scope["deploy_principals"])
-            + list(owner_scope["security_principals"])
-            + list(owner_scope["debug_principals"])
-        )
-        if principal.startswith("system:serviceaccount:")
-    ),
+                        principal[len("system:serviceaccount:"):]
+                        for principal in (
+                            list(owner_scope["deploy_principals"])
+                            + list(owner_scope["security_principals"])
+                            + list(owner_scope["debug_principals"])
+                        )
+                        if principal.startswith("system:serviceaccount:")
+                    ),
+                    owner_scope["namespaces"],
                 ),
                 indent=2,
                 sort_keys=True,

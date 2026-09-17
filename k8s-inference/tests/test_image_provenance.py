@@ -154,11 +154,16 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertIn("params.data['security-principals']", guard_expressions)
         guard_keys = set(
             TOOL.render_guard_params(
-                ["system:serviceaccount:a:b"], ["a:b"]
+                ["system:serviceaccount:a:b"], ["a:b"], ["fs2-system"]
             )["data"]
         )
         self.assertEqual(
-            guard_keys, {"security-principals", "automation-service-accounts"}
+            guard_keys,
+            {
+                "security-principals",
+                "automation-service-accounts",
+                "namespaces",
+            },
         )
         referenced_keys = {
             key
@@ -215,13 +220,19 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertNotIn("validatingadmissionpolicies", manifest_text)
         self.assertNotIn("mutatingwebhookconfigurations", manifest_text)
         validations = spec["validations"]
-        self.assertEqual(len(validations), 2)
+        self.assertEqual(len(validations), 4)
         self.assertIn("securityPrincipals.exists", validations[0]["expression"])
         # Automation-written Services are fenced to ClusterIP-only: no
         # NodePort/LoadBalancer/ExternalName, no externalIPs redirects.
         self.assertIn("guardWriterIsAutomation", validations[1]["expression"])
         self.assertIn("'LoadBalancer'", validations[1]["expression"])
         self.assertIn("externalIPs", validations[1]["expression"])
+        # Automation CM/Service writes are namespace-bounded, and Service
+        # selector CHANGES (silent traffic redirects) are denied.
+        self.assertIn("guardNamespaces.exists", validations[2]["expression"])
+        self.assertIn(
+            "oldObject.spec.selector", validations[3]["expression"]
+        )
         rules = spec["matchConstraints"]["resourceRules"]
         self.assertEqual(
             sorted(r for rule in rules for r in rule["resources"]),
@@ -300,7 +311,13 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertIn("workloadCsiDrivers.exists", expressions[6])
         self.assertIn("workloadPvcPrefixes.exists", expressions[6])
         self.assertIn("claimName.startsWith", expressions[6])
+        self.assertIn("claimName == p", expressions[6])
         self.assertIn("v.csi.readOnly == true", expressions[6])
+        # App workloads can never mount the deploy-credential CSI driver.
+        self.assertIn(
+            "v.csi.driver != variables.deployCredentialCsiDriver",
+            expressions[6],
+        )
         for validation in self.policy["spec"]["validations"]:
             self.assertIn("SAI-09", validation["message"])
             self.assertEqual(validation["reason"], "Forbidden")
@@ -318,7 +335,7 @@ def render_allowlist_fixture(*args, **kwargs):
     kwargs.setdefault("deploy_credential_csi_driver", "secrets-store.csi.k8s.io")
     kwargs.setdefault("deploy_credential_spc", "fs2-release-helm-dsn")
     kwargs.setdefault("workload_csi_drivers", ["secrets-store.csi.k8s.io"])
-    kwargs.setdefault("workload_pvc_prefixes", ["fs2-models-"])
+    kwargs.setdefault("workload_pvc_prefixes", ["fs2-models-*"])
     return TOOL.render_allowlist(*args, **kwargs)
 
 
@@ -844,15 +861,44 @@ def fixture_provider_bindings(
     return snapshot
 
 
+def fixture_provider_roles(
+    admin_subject: str = PROVIDER_ADMIN_SUBJECT,
+    extra_bindings: list | None = None,
+    role_permissions: dict | None = None,
+) -> dict:
+    """Role -> sorted permissions, as the fixture provider reports them."""
+    permissions = {
+        "viewer": ["storage.objects.get", "iam.access.list"],
+        **(role_permissions or {}),
+    }
+    roles: dict[str, list[str]] = {}
+    for bindings in fixture_provider_bindings(
+        admin_subject, extra_bindings
+    ).values():
+        for _, role in bindings:
+            roles[role] = sorted(
+                permissions.get(role, ["resource.write", "resource.delete"])
+            )
+    return roles
+
+
 def fixture_iam_snapshot_sha(
     admin_subject: str = PROVIDER_ADMIN_SUBJECT,
     extra_bindings: list | None = None,
+    role_permissions: dict | None = None,
 ) -> str:
     import hashlib
 
     return hashlib.sha256(
         json.dumps(
-            fixture_provider_bindings(admin_subject, extra_bindings),
+            {
+                "bindings": fixture_provider_bindings(
+                    admin_subject, extra_bindings
+                ),
+                "roles": fixture_provider_roles(
+                    admin_subject, extra_bindings, role_permissions
+                ),
+            },
             sort_keys=True,
         ).encode("utf-8")
     ).hexdigest()
@@ -968,7 +1014,11 @@ IAM_BOUNDARY_PATH = PROVENANCE_DIR / "iam-boundary.yaml"
 
 def iam_boundary_documents() -> dict:
     return {
-        (document["kind"], document["metadata"]["name"]): document
+        (
+            document["kind"],
+            document["metadata"]["name"],
+            str(document["metadata"].get("namespace", "") or ""),
+        ): document
         for document in yaml.safe_load_all(
             IAM_BOUNDARY_PATH.read_text(encoding="utf-8")
         )
@@ -992,7 +1042,12 @@ def iam_boundary_live_answer(command):
         and command[2] in kinds
         and command[3] not in ("kube-system",)
     ):
-        document = iam_boundary_documents().get((kinds[command[2]], command[3]))
+        namespace = ""
+        if "-n" in command:
+            namespace = command[command.index("-n") + 1]
+        document = iam_boundary_documents().get(
+            (kinds[command[2]], command[3], namespace)
+        )
         if document is not None:
             return json.dumps(document)
     return None
@@ -1083,7 +1138,7 @@ def default_scope_fixture(
         "debug_principals": [
             "system:serviceaccount:fs2-security:fs2-debugger"
         ],
-        "workload_pvc_prefixes": ["fs2-models-"],
+        "workload_pvc_prefixes": ["fs2-models-*"],
         "deploy_credential_csi_driver": "secrets-store.csi.k8s.io",
         "deploy_credential_spc": "fs2-release-helm-dsn",
         "workload_csi_drivers": ["secrets-store.csi.k8s.io"],
@@ -1532,6 +1587,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
                             "metadata": {"name": name},
                             "data": {
                                 "security-principals": SECURITY_PRINCIPAL,
+                                "namespaces": "fs2-models\nfs2-system",
                                 "automation-service-accounts": (
                                     "fs2-security:fs2-admission-guard\nfs2-security:fs2-debugger\nfs2-system:fs2-release-automation"
                                 ),
@@ -2779,6 +2835,34 @@ class VerifiedAllowlistTest(unittest.TestCase):
                     namespaced_role_bindings=[combined_binding],
                 )
             )
+        pvc_deleter_role = {
+            "metadata": {"name": "pvc-deleter"},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["persistentvolumeclaims"],
+                    "verbs": ["create", "update", "patch", "delete"],
+                }
+            ],
+        }
+        pvc_deleter_binding = {
+            "metadata": {"name": "pvc-deleter", "namespace": "fs2-system"},
+            "roleRef": {"kind": "ClusterRole", "name": "pvc-deleter"},
+            "subjects": [
+                {
+                    "kind": "ServiceAccount",
+                    "namespace": "fs2-system",
+                    "name": "fs2-release-automation",
+                }
+            ],
+        }
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "identity boundary"):
+            self.render(
+                live_runner=self.live_runner(
+                    cluster_roles=[pvc_deleter_role],
+                    namespaced_role_bindings=[pvc_deleter_binding],
+                )
+            )
         impersonator_role = {
             "metadata": {"name": "security-impersonator"},
             "rules": [
@@ -3282,29 +3366,39 @@ class VerifiedAllowlistTest(unittest.TestCase):
             )
 
     def test_debug_identity_keeps_kubectl_debug_capable(self) -> None:
-        # The DOCUMENTED customer debug path has an authorized caller: the
-        # owner-designated debug identity may hold grant-shaped
-        # pods/ephemeralcontainers writes (admission pins every injected
-        # image); anyone else holding it violates, and exec/attach/
-        # portforward stay forbidden even for the debug identity.
+        # The DOCUMENTED customer debug flow is FUNCTIONAL end to end for the
+        # owner-designated debug identity: injection (ephemeralcontainers),
+        # interactive attach (-it), and log reading — grant-shape-bound; an
+        # outsider holding injection or attach violates, and exec stays
+        # forbidden even for the debug identity.
         debug_subject = {
             "kind": "ServiceAccount",
             "namespace": "fs2-security",
             "name": "fs2-debugger",
         }
         debug_role = {
-            "metadata": {"name": "fs2-debug-ephemeral"},
+            "metadata": {"name": "fs2-debug-capable"},
             "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["pods", "pods/log"],
+                    "verbs": ["get", "list"],
+                },
                 {
                     "apiGroups": [""],
                     "resources": ["pods/ephemeralcontainers"],
                     "verbs": ["get", "update", "patch"],
-                }
+                },
+                {
+                    "apiGroups": [""],
+                    "resources": ["pods/attach"],
+                    "verbs": ["get", "create"],
+                },
             ],
         }
         debug_binding = {
-            "metadata": {"name": "fs2-debug-ephemeral"},
-            "roleRef": {"kind": "ClusterRole", "name": "fs2-debug-ephemeral"},
+            "metadata": {"name": "fs2-debug-capable"},
+            "roleRef": {"kind": "ClusterRole", "name": "fs2-debug-capable"},
             "subjects": [dict(debug_subject)],
         }
         self.render(
@@ -3315,10 +3409,12 @@ class VerifiedAllowlistTest(unittest.TestCase):
         )
         outsider_binding = {
             "metadata": {"name": "outsider-debug"},
-            "roleRef": {"kind": "ClusterRole", "name": "fs2-debug-ephemeral"},
+            "roleRef": {"kind": "ClusterRole", "name": "fs2-debug-capable"},
             "subjects": [{"kind": "User", "name": "mallory"}],
         }
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "ephemeral-container"):
+        with self.assertRaisesRegex(
+            TOOL.ProvenanceError, "ephemeral-container|pod attach"
+        ):
             self.render(
                 live_runner=self.live_runner(
                     cluster_roles=[debug_role],
@@ -3340,11 +3436,35 @@ class VerifiedAllowlistTest(unittest.TestCase):
             "roleRef": {"kind": "ClusterRole", "name": "debug-exec"},
             "subjects": [dict(debug_subject)],
         }
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "exec/attach"):
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "exec/portforward"):
             self.render(
                 live_runner=self.live_runner(
                     cluster_roles=[exec_role],
                     cluster_role_bindings=[exec_binding],
+                )
+            )
+        # Grant shape: attach with update/patch verbs beyond the documented
+        # need is refused even for the debug identity.
+        broad_attach_role = {
+            "metadata": {"name": "broad-attach"},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["pods/attach"],
+                    "verbs": ["get", "create", "update", "patch"],
+                }
+            ],
+        }
+        broad_attach_binding = {
+            "metadata": {"name": "broad-attach"},
+            "roleRef": {"kind": "ClusterRole", "name": "broad-attach"},
+            "subjects": [dict(debug_subject)],
+        }
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "pod attach"):
+            self.render(
+                live_runner=self.live_runner(
+                    cluster_roles=[broad_attach_role],
+                    cluster_role_bindings=[broad_attach_binding],
                 )
             )
 
@@ -3360,16 +3480,38 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.assertTrue(TOOL._ledger_checkpoint_path(ledger).exists())
 
     def test_anchor_checkpoint_file_deletion_never_resets_replay(self) -> None:
-        # Monotonicity is double-kept: the advance ledger is hash-chained and
-        # itself anchored, so deleting the fast checkpoint FILE fails closed
-        # instead of resetting anti-replay.
+        # Monotonicity is double-kept, LEDGER FIRST: losing the fast
+        # checkpoint file REPAIRS forward from the tamper-evident advance
+        # ledger (memory preserved, not reset) — and a regressed anchor
+        # still refuses afterwards; a file AHEAD of the ledger is tampering.
         self.render()
         snapshot = TOOL._anchor_snapshot(self.run_root)
         checkpoint = self.run_root / "anchored-heads-checkpoint.json"
         self.assertTrue(checkpoint.exists())
         self.assertTrue((self.run_root / "anchor-advances.jsonl").exists())
+        preserved = json.loads(checkpoint.read_bytes())
         checkpoint.unlink()
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "checkpoint file"):
+        TOOL._assert_anchored_heads(self.run_root, snapshot)
+        self.assertTrue(checkpoint.exists())
+        repaired = json.loads(checkpoint.read_bytes())
+        for name, state in (preserved.get("chains") or {}).items():
+            self.assertGreaterEqual(
+                int(repaired["chains"][name]["count"]),
+                int(state["count"]),
+            )
+        hollow = json.loads(json.dumps(snapshot))
+        for name in list(hollow["chains"]):
+            hollow["chains"][name] = {"count": 0, "head": ""}
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "never replays"):
+            TOOL._assert_anchored_heads(self.run_root, hollow)
+        # A checkpoint file AHEAD of the ledger cannot come from any crash
+        # under ledger-first ordering: tampering, fails closed.
+        inflated = json.loads(checkpoint.read_bytes())
+        inflated["chains"]["consumed"] = {"count": 999, "head": "f" * 64}
+        checkpoint.write_bytes(
+            json.dumps(inflated, sort_keys=True).encode("utf-8")
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "AHEAD"):
             TOOL._assert_anchored_heads(self.run_root, snapshot)
 
     def test_bootstrap_masters_recognition_is_attestation_driven(self) -> None:
@@ -3999,6 +4141,7 @@ class _FakeAdmissionCluster:
                         "metadata": {"name": command[3]},
                         "data": {
                             "security-principals": SECURITY_PRINCIPAL,
+                            "namespaces": "fs2-models\nfs2-system",
                             "automation-service-accounts": (
                                 "fs2-security:fs2-admission-guard\nfs2-security:fs2-debugger\nfs2-system:fs2-release-automation"
                             ),
@@ -4427,14 +4570,17 @@ class ReconcileBoundaryTest(unittest.TestCase):
             self.cluster.identity = SECURITY_PRINCIPAL
         self.assertEqual(self.journal_phases(), [])
 
-    def attestation_for(self, extra_bindings=None, **overrides) -> Path:
+    def attestation_for(
+        self, extra_bindings=None, role_permissions=None, **overrides
+    ) -> Path:
         """An attestation whose witnessed IAM snapshot matches the fixture
-        provider's (possibly modified) enumeration."""
+        provider's (possibly modified) enumeration and role definitions."""
         evidence = {
             "reference": "ticket:FS2-SAI-09-boundary",
             "provider_admin_subjects": [PROVIDER_ADMIN_SUBJECT],
             "iam_snapshot_sha256": fixture_iam_snapshot_sha(
-                extra_bindings=extra_bindings
+                extra_bindings=extra_bindings,
+                role_permissions=role_permissions,
             ),
         }
         return write_attestation_fixture(
@@ -4493,17 +4639,33 @@ class ReconcileBoundaryTest(unittest.TestCase):
                 "parent": "cluster-fixture-id",
             }
         ]
-        sneaky_attestation = self.attestation_for(extra_bindings=writey_viewer)
+        sneaky_permissions = {
+            "viewer": ["storage.objects.get", "storage.objects.put"]
+        }
+        sneaky_attestation = self.attestation_for(
+            extra_bindings=writey_viewer, role_permissions=sneaky_permissions
+        )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "non-read-only"):
             self.plan_with_provider(
                 provider_cli_fixture(
                     anchor_source=sneaky_attestation,
                     extra_bindings=writey_viewer,
+                    role_permissions=sneaky_permissions,
+                ),
+                attestation=sneaky_attestation,
+            )
+        # A ROLE DEFINITION mutated after attestation is itself a digest
+        # mismatch — mutable role bodies are bound, not just names.
+        stale_attestation = self.attestation_for()
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "attestor-witnessed"):
+            self.plan_with_provider(
+                provider_cli_fixture(
+                    anchor_source=stale_attestation,
                     role_permissions={
                         "viewer": ["storage.objects.get", "storage.objects.put"]
                     },
                 ),
-                attestation=sneaky_attestation,
+                attestation=stale_attestation,
             )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "object-lock"):
             self.plan_with_provider(
@@ -4536,6 +4698,13 @@ class ReconcileBoundaryTest(unittest.TestCase):
             self.plan_with_provider(
                 provider_cli_fixture(
                     anchor_source=self.attestation_path, object_retain_days=-1
+                )
+            )
+        # Retention must outlive the attestation's own validity horizon.
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "validity horizon"):
+            self.plan_with_provider(
+                provider_cli_fixture(
+                    anchor_source=self.attestation_path, object_retain_days=3
                 )
             )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "provider_principal"):

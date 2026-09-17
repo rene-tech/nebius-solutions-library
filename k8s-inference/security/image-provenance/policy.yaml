@@ -68,15 +68,20 @@
 #     injection is admission-governed like any other image. Debugging stays
 #     available through the governed workflow below; it is never disabled.
 #
-# Governed debugging (kubectl debug keeps working, with pinned images; this
-# exact command shape is proven verbatim on an isolated kind cluster by
-# tests/test_admission_kind.py). The AUTHORIZED CALLER is the
+# Governed debugging (kubectl debug keeps working END TO END, with pinned
+# images; the injection command shape is proven verbatim on an isolated kind
+# cluster by tests/test_admission_kind.py). The AUTHORIZED CALLER is the
 # owner-designated DEBUG identity (scope.debug_principals; iam-boundary.yaml
-# defines fs2-debugger with exactly pods get/list +
-# pods/ephemeralcontainers get/update/patch): exec/attach/portforward stay
-# forbidden for every identity, while ephemeral-container injection — which
-# admission FULLY evaluates, unlike exec — is the sanctioned, image-pinned
-# debug path:
+# defines fs2-debugger in BOTH platform namespaces with exactly pods +
+# pods/log get/list, pods/ephemeralcontainers get/update/patch, and
+# pods/attach get/create — so injection, `-it` interactive attach, and log
+# reading all function). exec and port-forward stay forbidden for every
+# identity: exec spawns arbitrary processes in EXISTING containers, while
+# attach only reaches containers whose images admission pinned at injection.
+# TRUTHFUL LIMIT: RBAC attach is pod-scoped, not container-scoped — within
+# its bound namespaces the debug identity can attach to any container; that
+# breadth is why it is a separate, token-hardened, individually auditable
+# automation identity. The sanctioned, image-pinned debug path:
 #   kubectl -n fs2-system debug <pod> --container debugger \
 #     --image <allow-listed-registry>/fs2-tools/debug@sha256:<digest> -- sleep 3600
 #   (add -it to attach interactively once the ephemeral container is admitted)
@@ -403,9 +408,13 @@ spec:
              has(v.downwardAPI) ||
              (has(v.persistentVolumeClaim) &&
               variables.workloadPvcPrefixes.exists(p,
-                v.persistentVolumeClaim.claimName.startsWith(p))) ||
+                p.endsWith('*')
+                ? v.persistentVolumeClaim.claimName.startsWith(
+                    p.substring(0, p.size() - 1))
+                : v.persistentVolumeClaim.claimName == p)) ||
              (has(v.csi) && variables.workloadCsiDrivers.exists(
                 d, d == v.csi.driver) &&
+              v.csi.driver != variables.deployCredentialCsiDriver &&
               has(v.csi.readOnly) && v.csi.readOnly == true))))
       message: >-
         workloads written by an automation identity must run as an
@@ -589,6 +598,11 @@ spec:
       expression: >-
         variables.guardAutomationAccounts.exists(a,
           'system:serviceaccount:' + a == request.userInfo.username)
+    - name: guardNamespaces
+      expression: >-
+        ('namespaces' in params.data
+         ? params.data['namespaces'] : '')
+        .split("\n").filter(n, n != '')
     - name: subject
       expression: >-
         object != null ? object : oldObject
@@ -620,6 +634,25 @@ spec:
         NodePort/LoadBalancer/ExternalName types, externalIPs, and
         externalName redirects turn a deploy grant into external exposure or
         traffic diversion (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        !variables.guardWriterIsAutomation ||
+        variables.guardNamespaces.exists(n, n == request.namespace)
+      message: >-
+        automation identities write ConfigMaps and Services only inside the
+        owner-approved scope namespaces (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.subject.kind != 'Service' ||
+        !variables.guardWriterIsAutomation ||
+        request.operation != 'UPDATE' ||
+        oldObject == null ||
+        !has(oldObject.spec.selector) ||
+        (has(object.spec.selector) &&
+         object.spec.selector == oldObject.spec.selector)
+      message: >-
+        an automation identity may not CHANGE a Service selector: selector
+        swaps silently redirect existing traffic to different pods (SAI-09)
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

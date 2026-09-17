@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/release-scope/v13",
+  "schema": "fs2-serve.nebius.ai/release-scope/v14",
   "scope": {
     "cluster": "<kube-system-namespace-uid>",
     "namespaces": [
@@ -75,8 +75,8 @@
       "system:serviceaccount:fs2-security:fs2-debugger"
     ],
     "workload_pvc_prefixes": [
-      "fs2-models-",
-      "fs2-cache-"
+      "fs2-models-*",
+      "fs2-cache-*"
     ]
   }
 }

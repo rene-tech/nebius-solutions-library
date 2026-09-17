@@ -170,14 +170,18 @@ subjects:
     namespace: fs2-security
     name: fs2-admission-guard
 ---
-# DEBUG identity: the DOCUMENTED customer kubectl-debug path stays
-# technically capable with least privilege. Only this identity may write
-# pods/ephemeralcontainers (exec/attach/portforward remain forbidden for
-# everyone), every injected image is admission-governed (digest-pinned,
-# allow-listed registry), and the identity is a token-hardened automation
-# ServiceAccount audited like the other two (scope.debug_principals;
-# grant-shape-bound in the IAM table). Replicate the Role/RoleBinding per
-# debugged namespace (fs2-models alike).
+# DEBUG identity: the DOCUMENTED customer kubectl-debug workflow stays
+# FUNCTIONAL end to end with least privilege, per namespace it may reach:
+#   kubectl -n <ns> debug <pod> --image <pinned> …   -> pods/ephemeralcontainers
+#   kubectl -n <ns> debug -it …                      -> + pods/attach
+#   kubectl -n <ns> logs <pod> -c debugger           -> + pods/log
+# exec and port-forward remain forbidden for EVERYONE (exec spawns arbitrary
+# processes in existing containers; attach only reaches containers whose
+# images admission pinned at injection — TRUTHFUL LIMIT: RBAC attach is
+# pod-scoped, so within its bound namespaces the debug identity can attach
+# to any container; that breadth is why this is a separate, token-hardened,
+# individually auditable automation identity). The Role/RoleBinding pair is
+# defined for BOTH platform namespaces (fs2-system, fs2-models).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -196,17 +200,54 @@ metadata:
     security.fs2.nebius.ai/finding: sai-09
 rules:
   - apiGroups: [""]
-    resources: ["pods"]
+    resources: ["pods", "pods/log"]
     verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["pods/ephemeralcontainers"]
     verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods/attach"]
+    verbs: ["get", "create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: fs2-debug-ephemeral
   namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-debug-ephemeral
+subjects:
+  - kind: ServiceAccount
+    namespace: fs2-security
+    name: fs2-debugger
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-debug-ephemeral
+  namespace: fs2-models
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/ephemeralcontainers"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods/attach"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-debug-ephemeral
+  namespace: fs2-models
   labels:
     security.fs2.nebius.ai/finding: sai-09
 roleRef:
@@ -262,6 +303,12 @@ rules:
       - statefulsets
       - jobs
       - cronjobs
+    verbs: ["get", "list", "create", "update", "patch"]
+  # PVC writes are a SEPARATE rule (and a separate audited identity path):
+  # the grant-shape check binds each rule to its own forbidden-rule shape,
+  # and PVC delete is never granted.
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "create", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
