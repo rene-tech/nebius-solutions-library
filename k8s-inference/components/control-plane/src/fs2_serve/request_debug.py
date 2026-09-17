@@ -40,6 +40,7 @@ import contextlib
 import json
 import logging
 import re
+from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -523,32 +524,49 @@ def normalize_exchange_for_read(exchange: DebugExchange, max_body_bytes: int | N
     Idempotent on an already-normalized exchange. The stored ciphertext is never rewritten or deleted
     (a separately owned purge handles TTL)."""
     request = exchange.request_body
+    # Best-effort decode of the stored request body, used both to feed cross-field credential learning
+    # and (in the clean case) to re-scrub. An undecodable body contributes nothing and is withheld.
+    try:
+        request_bytes = _body_bytes(request)
+    except (ValueError, UnicodeError):
+        request_bytes = None
+    # Current-write-EQUIVALENT cross-field known credentials: learn from BOTH header sets, the query
+    # AND the request body, then redact EVERY served field with the full set — so a secret that
+    # survived in one field under older, narrower rules (or is echoed across fields) is scrubbed
+    # everywhere, matching what the write path does with credential_values.
+    known = credential_values(
+        [*exchange.request_headers, *exchange.response_headers],
+        exchange.query_string,
+        request_bytes,
+    )
     over_cap = max_body_bytes is not None and request.observed_bytes > max_body_bytes
-    if (not request.complete) or request.truncated or over_cap:
+    if (not request.complete) or request.truncated or over_cap or request_bytes is None:
         request_body = suppressed_body(request.content_type, request.observed_bytes, request.complete)
     else:
-        try:
-            raw = _body_bytes(request)
-        except (ValueError, UnicodeError):
-            request_body = suppressed_body(request.content_type, request.observed_bytes, request.complete)
-        else:
-            # Re-scrub with current rules; bounded_body_capture also withholds if the whole body is
-            # over the current cap or if redaction expands it past the cap.
-            request_body = bounded_body_capture(
-                raw,
-                request.content_type,
-                True,
-                (),
-                max_bytes=max_body_bytes,
-                observed_bytes=request.observed_bytes,
-            )
+        # Re-scrub with current rules + cross-field known values; bounded_body_capture also withholds
+        # if redaction expands the stored copy past the cap.
+        rescrubbed = bounded_body_capture(
+            request_bytes,
+            request.content_type,
+            True,
+            known,
+            max_bytes=max_body_bytes,
+            observed_bytes=request.observed_bytes,
+        )
+        # MONOTONIC flags: a re-scrub must never reset a stored redacted/truncated True back to False.
+        request_body = rescrubbed.model_copy(
+            update={
+                "redacted": rescrubbed.redacted or request.redacted,
+                "truncated": rescrubbed.truncated or request.truncated,
+            }
+        )
     response = exchange.response_body
     return exchange.model_copy(
         update={
             "request_body": request_body,
             "response_body": suppressed_body(response.content_type, response.observed_bytes, response.complete),
-            "query_string": redact_query(exchange.query_string),
-            "request_headers": redact_headers(exchange.request_headers),
+            "query_string": redact_query(exchange.query_string, known),
+            "request_headers": redact_headers(exchange.request_headers, known),
             "response_headers": redact_response_headers(exchange.response_headers),
             "error_detail": None if exchange.error_detail is None else _READ_WITHHELD_DETAIL,
         }
@@ -1089,9 +1107,17 @@ class DebugPersistQueue:
         persist_timeout_seconds: float = 2.0,
     ) -> None:
         self._store = store
-        self._queue: asyncio.Queue[tuple[Callable[[], DebugExchange | None], object]] = asyncio.Queue(
-            maxsize=max(1, maxsize)
-        )
+        # A plain deque + explicit signaling, NOT asyncio.Queue: deque.append is a single atomic
+        # C-level op (it either fully appends or raises WITHOUT a partial insert) and there is no
+        # separate unfinished-task/wakeup bookkeeping that a mid-op exception could corrupt (which on
+        # asyncio.Queue can deadlock join/task_done). This makes the enqueue exception-atomic, so the
+        # ownership flip can be sequenced immediately after a known-successful append.
+        self._maxsize = max(1, maxsize)
+        self._pending: deque[tuple[Callable[[], DebugExchange | None], object]] = deque()
+        self._wake = asyncio.Event()  # set when items are available (worker wakeup)
+        self._idle = asyncio.Event()  # set when nothing is pending AND nothing is being processed
+        self._idle.set()
+        self._processing = 0
         self._worker: asyncio.Task[None] | None = None
         self._persist_timeout_seconds = persist_timeout_seconds
         # Admission bound on concurrent in-flight captures: the number that may hold cap-sized
@@ -1140,36 +1166,36 @@ class DebugPersistQueue:
     def _commit(self, token: object, builder: Callable[[], DebugExchange | None]) -> bool:
         """Commit a reserved capture to the worker under its ISSUED token — the only enqueue path.
         Rejects (returns False, no state change) a token the queue does not currently hold as reserved
-        (value False): a fabricated/directly-constructed handle, a replay, or a double commit. Enqueue
-        happens FIRST; only then is the EXISTING entry flipped to True (committed) — a non-allocating,
-        cannot-raise dict-value update, so there is never a window where a queued token is unrecorded
-        (no undercount, no bound-exceedance, and submit surfaces no allocation error). On QueueFull (a
-        defensive backstop) the token stays reserved and the handle frees it on context exit.
-        Non-blocking: never blocks or awaits."""
+        (value False): a fabricated/directly-constructed handle, a replay, or a double commit.
+
+        EXCEPTION-ATOMIC enqueue: the queue item is fully ALLOCATED first (a pre-append MemoryError
+        then leaves the token reserved — nothing queued), then appended to the deque in a SINGLE atomic
+        op (``deque.append`` either inserts the whole item or raises WITHOUT a partial insert, and has
+        no separate bookkeeping to corrupt), and ONLY after a known-successful append is the EXISTING
+        entry flipped to True (committed) — a non-allocating, cannot-raise dict-value update. So there
+        is never a window where a queued item's token is unrecorded (undercount) or a committed token
+        has nothing queued (leak): the ownership count always matches the deque contents. On overload
+        (deque at maxsize) the capture is dropped with the token still reserved. Non-blocking."""
         if self._slots.get(token) is not False:
             return False
+        if len(self._pending) >= self._maxsize:
+            self.dropped += 1  # overload shed; token stays reserved, the handle frees it on exit
+            return False
+        item = (builder, token)  # allocate BEFORE append; a MemoryError here leaves the token reserved
+        try:
+            self._pending.append(item)  # atomic: fully appends or raises without a partial insert
+        except Exception:
+            self.dropped += 1  # nothing queued; token stays reserved, freed on context exit
+            return False
+        self._slots[token] = True  # commit AFTER a successful append: non-allocating, cannot raise
+        self._idle.clear()
+        self._wake.set()
         try:
             self._ensure_worker()
         except Exception:
-            self.dropped += 1  # worker could not be (re)started; token stays reserved, freed on exit
-            return False
-        if self._queue.full():
-            self.dropped += 1  # overload shed; token stays reserved, the handle frees it on exit
-            return False
-        # Commit BEFORE inserting. The queue was just observed not-full and asyncio is single-threaded
-        # (no await between the check and the put), so put_nowait's internal _put WILL append the item;
-        # the only way it can still raise is a post-append bookkeeping/wakeup error, by which point the
-        # item is already queued. Committing first makes the worker the SOLE releaser in every path, so
-        # the ownership count always matches the queue contents: inserted work can never be released
-        # by context exit while it sits queued (no undercount / bound drift). The flip is a
-        # non-allocating, cannot-raise update of an existing key.
-        self._slots[token] = True
-        try:
-            self._queue.put_nowait((builder, token))
-        except Exception:
-            # Past the not-full guard the item is appended; keep the token committed (the worker frees
-            # it after draining the item) and never re-raise onto the request path.
-            LOGGER.warning("request debug enqueue raised after insert; capture will still persist")
+            # The item is queued and the token committed; a worker (re)start failure here does not
+            # orphan accounting — a later commit re-tries the start, and drain()/aclose() start one too.
+            LOGGER.warning("request debug worker start failed; capture remains queued")
         return True
 
     def _release(self, token: object) -> None:
@@ -1192,7 +1218,16 @@ class DebugPersistQueue:
 
     async def _run(self) -> None:
         while True:
-            builder, token = await self._queue.get()
+            # Clear the wakeup FIRST, then check for work: a commit that arrives after this clear sets
+            # the event again, so a pending item can never be missed (no lost wakeup).
+            self._wake.clear()
+            if not self._pending:
+                if self._processing == 0:
+                    self._idle.set()
+                await self._wake.wait()
+                continue
+            builder, token = self._pending.popleft()
+            self._processing += 1
             try:
                 built = await offload_capture(builder)
                 if built is not None:
@@ -1200,14 +1235,17 @@ class DebugPersistQueue:
             except Exception as error:
                 LOGGER.warning("request debug capture failed error_type=%s", type(error).__name__)
             finally:
-                # Free the slot bound to THIS capture's token (its buffers are now released), then
-                # mark the queue item done for drain()/aclose().
+                # Free the slot bound to THIS capture's token (its buffers are now released).
                 self._complete(token)
-                self._queue.task_done()
+                self._processing -= 1
 
     async def drain(self) -> None:
-        """Wait for all queued captures to be processed. TESTS/SHUTDOWN ONLY — never on a request."""
-        await self._queue.join()
+        """Wait until nothing is pending and nothing is being processed. TESTS/SHUTDOWN ONLY — never on
+        a request. Relies on ``_commit`` clearing ``_idle`` on enqueue and the worker setting it only
+        when truly idle, so the wait returns exactly once the backlog is fully processed."""
+        self._ensure_worker()
+        while self._pending or self._processing:
+            await self._idle.wait()
 
     async def aclose(self) -> None:
         """Drain, then stop the worker. Shutdown only."""

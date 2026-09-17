@@ -499,7 +499,9 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         if settings.admin_capacity_enabled
         else None
     )
-    request_debug_store = PostgresDebugStore(store.pool, store.cipher)
+    request_debug_store = PostgresDebugStore(
+        store.pool, store.cipher, max_body_bytes=settings.request_debug_max_body_bytes
+    )
     runtime_client = RuntimeClient(
         activation_timeout_seconds=settings.activation_timeout_seconds,
         runtime_timeout_seconds=settings.runtime_timeout_seconds,

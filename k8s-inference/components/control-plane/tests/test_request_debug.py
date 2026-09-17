@@ -1651,34 +1651,41 @@ async def test_read_and_list_withhold_legacy_over_cap_request_and_normalize_flag
     assert summary.response_redacted is True and summary.request_redacted is True
 
 
-async def test_commit_post_insert_exception_keeps_count_matching_queue_contents():
-    """SAI-01 regression: asyncio.Queue.put_nowait appends the item BEFORE its bookkeeping/wakeup, so
-    a post-insert exception can leave work queued. With commit-before-insert behind a not-full guard,
-    the token is already committed when such an exception fires, so the count matches the queue
-    contents (no undercount) and the worker is the sole releaser. Simulated; not executed here."""
+async def test_commit_enqueue_is_exception_atomic_append_failure_leaves_token_reserved():
+    """SAI-01 regression: the enqueue is EXCEPTION-ATOMIC. `deque.append` fully inserts or raises
+    WITHOUT a partial insert (and there is no asyncio.Queue bookkeeping to corrupt), and the token is
+    committed ONLY after a known-successful append. If the append raises, nothing is queued and the
+    token stays RESERVED (freed once on context exit): no leak, no undercount. Simulated; not run."""
+    from collections import deque as _deque
+
     from fs2_serve.request_debug import DebugPersistQueue
+
+    class _RaisingDeque(_deque):  # type: ignore[type-arg]
+        def append(self, item: object) -> None:
+            raise MemoryError("simulated append allocation failure")
 
     store = InMemoryDebugStore()
     queue = DebugPersistQueue(store, maxsize=4, max_inflight=4)
     reservation = queue.reserve()
     assert reservation is not None and queue._inflight() == 1
 
-    # Simulate a post-insert failure: the real put_nowait fully inserts + bookkeeps (queue stays
-    # consistent), then a later step "raises". The item IS queued when the exception propagates.
-    real_put = queue._queue.put_nowait
-
-    def put_then_raise(item: object) -> None:
-        real_put(item)
-        raise MemoryError("simulated post-insert failure")
-
-    queue._queue.put_nowait = put_then_raise  # type: ignore[method-assign]
+    real_pending = queue._pending
+    queue._pending = _RaisingDeque()  # type: ignore[assignment]
     try:
-        assert reservation.submit(lambda: row(id=uuid4())) is True  # committed despite the raise
+        assert reservation.submit(lambda: row(id=uuid4())) is False  # append failed -> not committed
     finally:
-        queue._queue.put_nowait = real_put  # type: ignore[method-assign]
-    with reservation:  # context exit must NOT free the committed (worker-owned) slot
+        queue._pending = real_pending  # type: ignore[assignment]
+    assert queue.dropped == 1 and len(queue._pending) == 0
+    # Token stays RESERVED (never committed with nothing queued) and is freed once on context exit.
+    assert queue._inflight() == 1
+    with reservation:
         pass
-    assert queue._inflight() == 1  # count matches the one queued item (no undercount)
+    assert queue._inflight() == 0
+    # A subsequent real commit still works end to end.
+    r2 = queue.reserve()
+    assert r2 is not None
+    with r2:
+        assert r2.submit(lambda: row(id=uuid4())) is True
     await queue.drain()
-    assert queue._inflight() == 0 and len(store.exchanges) == 1
+    assert len(store.exchanges) == 1 and queue._inflight() == 0
     await queue.aclose()

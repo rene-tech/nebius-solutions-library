@@ -49,17 +49,20 @@ const exchange: DebugExchange = {
   method: "POST",
   http_status: 422,
   error_type: "HTTPStatusError",
-  error_detail: "Upstream returned 422: required field sequence is missing",
+  // The server serves error_detail failed-closed to a fixed generic marker (never raw free-text).
+  error_detail: "[detail withheld on read]",
   disconnected: false,
   query_string: "validate=true&label=%3Cfixture%3E",
   request_headers: [
     ["content-type", "application/json"],
     ["authorization", "[REDACTED]"],
   ],
+  // The server serves response headers structural-only: the canonical content-type is kept; every
+  // other header has BOTH its name and value redacted (the count is preserved).
   response_headers: [
     ["content-type", "application/json"],
-    ["x-trace", "one"],
-    ["x-trace", "two"],
+    ["[REDACTED]", "[REDACTED]"],
+    ["[REDACTED]", "[REDACTED]"],
   ],
   request_body: requestBody,
   // The server always serves the response body WITHHELD (redact-on-read); the true observed length
@@ -174,11 +177,20 @@ describe("actual request debug viewer", () => {
     );
     expect(screen.getByText("2026-09-09T00:00:01.123456Z")).toBeInTheDocument();
     expect(screen.getByText("key-id-only")).toBeInTheDocument();
+    const responseHeaderTable = screen.getByRole("table", {
+      name: "Response headers",
+    });
+    // Structural-only: the canonical content-type is kept; every other header (both name and value)
+    // is redacted, with the count preserved (two redacted rows -> four "[REDACTED]" cells).
     expect(
-      within(
-        screen.getByRole("table", { name: "Response headers" }),
-      ).getAllByText("x-trace"),
-    ).toHaveLength(2);
+      within(responseHeaderTable).getByText("content-type"),
+    ).toBeInTheDocument();
+    expect(
+      within(responseHeaderTable).queryByText("x-trace"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(responseHeaderTable).getAllByText("[REDACTED]"),
+    ).toHaveLength(4);
     expect(requestDebugApi.detail).toHaveBeenCalledWith(
       "app-one",
       "exchange-one",
@@ -251,7 +263,8 @@ describe("actual request debug viewer", () => {
       completed_at: null,
       http_status: null,
       error_type: "ConnectionError",
-      error_detail: "Connection closed before headers",
+      // Server serves the generic marker; the actionable classification rides in error_type.
+      error_detail: "[detail withheld on read]",
       disconnected: true,
     };
     vi.mocked(requestDebugApi.list).mockResolvedValue(
@@ -265,7 +278,7 @@ describe("actual request debug viewer", () => {
       screen.getByRole("button", { name: "Inspect exchange exchange-one" }),
     );
     expect(await screen.findByLabelText("Error detail")).toHaveTextContent(
-      "Connection closed before headers",
+      "[detail withheld on read]",
     );
     expect(screen.getAllByText("Not attributed")).toHaveLength(4);
     expect(screen.queryByText("HTTP 0")).not.toBeInTheDocument();
