@@ -44,6 +44,9 @@
     "audience": "fs2-sai24-release-attestation",
     "maximum_ttl_seconds": 3600,
     "required_authorization_model": "repository-digest-action",
+    "required_release_grant_model": "subject-actions-docker-auth-partition",
+    "flat_subject_action_cross_product_allowed": false,
+    "exact_docker_auth_partition_hash_required": true,
     "release_operation_actions": ["pull", "push"],
     "authorized_broker_ids": [],
     "allowed_registries": [],
@@ -65,6 +68,7 @@
     "secret_admission_contract_path": "workload-registry-secret-admission-contract.json",
     "secret_admission_contract_sha256": null,
     "authorized_secret_admission_proxy_ids": [],
+    "authorized_secret_admission_handoff_signer_ids": [],
     "allowed_registries": []
   }
 }

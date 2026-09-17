@@ -100,7 +100,9 @@
       "structured_in_toto_slsa_subject_source_dockerfile_and_builder",
       "repository_digest_pull_only_registry_authorization",
       "per_registry_operation_authorization_and_timeout",
+      "per_subject_action_and_docker_auth_partition_grants",
       "per_secret_provider_rpc_broker_admission",
+      "stable_per_secret_lease_and_external_signed_admission_handoff",
       "refresh_and_admission_readiness_maximum_age_seconds",
       "registry_resolution_receipt_signature_sha256",
       "oidc_protected_environment_identity"

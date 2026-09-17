@@ -149,8 +149,9 @@ cd k8s-inference
 install -m 0600 terraform.tfvars.example terraform.tfvars
 
 # Static NVCR Docker config is forbidden. The immutable external capsule
-# acquires fresh short-lived Docker bytes and exact signed receipts just before
-# workload plan/apply, after proving the refresh owner Ready. NGC_API_KEY is additionally
+# writes only stable per-Secret lease identities into the workload plan. It
+# brokers fresh bytes at each Secret RPC and retains volatile receipts/revisions
+# in a signed external handoff. NGC_API_KEY is additionally
 # required only when the selected set contains an
 # NGC-backed NIM (currently MSA Search PDB70, OpenFold2, or OpenFold3).
 export FS2_NGC_API_KEY='...'

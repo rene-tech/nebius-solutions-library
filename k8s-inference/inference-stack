@@ -56,7 +56,7 @@ CAPSULE_BINDINGS: dict[str, Any] = {}
 CAPSULE_SESSION_SCHEMA = "fs2-serve.nebius.ai/inference-stack-capsule-session/v1"
 CAPSULE_SESSION_OPERATIONS = {
     "acquire-release-registry-credential",
-    "acquire-workload-registry-credential",
+    "prepare-workload-registry-secret-leases",
     "exec-tool",
     "signed-terraform-apply",
     "signed-terraform-plan",
@@ -69,9 +69,13 @@ REGISTRY_DIGEST_OPERATION_TIMEOUT_SECONDS = 240
 REGISTRY_COPY_OPERATION_TIMEOUT_SECONDS = 3000
 REGISTRY_OPERATION_TTL_SAFETY_SECONDS = 300
 WORKLOAD_REGISTRY_SECRET_RESOURCES = (
-    "kubernetes_secret_v1.nvcrio_cred",
-    "kubernetes_secret_v1.dcgm_exporter_nvcrio",
-    "kubernetes_secret_v1.modelexpress_nvcrio",
+    "kubernetes_secret_v1.nvcrio_cred[0]",
+    "kubernetes_secret_v1.dcgm_exporter_nvcrio[0]",
+    "kubernetes_secret_v1.modelexpress_nvcrio[0]",
+)
+WORKLOAD_REGISTRY_SECRET_KEYS = ("models", "observability", "modelexpress")
+WORKLOAD_REGISTRY_SECRET_ADDRESSES = dict(
+    zip(WORKLOAD_REGISTRY_SECRET_KEYS, WORKLOAD_REGISTRY_SECRET_RESOURCES)
 )
 
 
@@ -1563,11 +1567,125 @@ def registry_client_environment(
         temporary_root = Path(temporary)
         temporary_root.chmod(0o700)
         # Never merge host credentials into a release operation. The broker
-        # token's server-side authorization is exact repository+digest+pull;
+        # token's server-side authorization is exact per subject/action row;
         # its Docker document is the complete and only client auth set.
         private_json(temporary_root / "config.json", extra)
         environment["DOCKER_CONFIG"] = str(temporary_root)
         yield environment
+
+
+def registry_partition(reference: str) -> str:
+    """Return the exact Docker auth key for a digest-bound image subject."""
+
+    if not re.fullmatch(r"[^@\s]+@sha256:[0-9a-f]{64}", reference):
+        raise DeploymentError("registry operation subject is not digest-bound")
+    repository = reference.rsplit("@", 1)[0]
+    registry, separator, repository_path = repository.partition("/")
+    if not separator or not registry or not repository_path:
+        raise DeploymentError("registry operation subject has no exact auth partition")
+    return registry
+
+
+def registry_grant(subject: str, action: str) -> dict[str, Any]:
+    """Bind one action to one subject and its only Docker auth partition."""
+
+    if action not in {"pull", "push"}:
+        raise DeploymentError("registry operation action is not reviewed")
+    return {
+        "subject": subject,
+        "actions": [action],
+        "docker_auth_partition": registry_partition(subject),
+    }
+
+
+def canonical_object_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def workload_secret_leases_are_exact(
+    leases: Any, authorization: Mapping[str, Any]
+) -> bool:
+    if (
+        not isinstance(leases, dict)
+        or set(leases) != set(WORKLOAD_REGISTRY_SECRET_KEYS)
+        or authorization.get("secret_lease_set_sha256")
+        != canonical_object_sha256(leases)
+    ):
+        return False
+    lease_ids: set[str] = set()
+    all_subjects: set[str] = set()
+    total_subjects = 0
+    expected_fields = {
+        "resource_address",
+        "lease_id",
+        "lease_generation",
+        "subjects",
+        "subject_scope_sha256",
+        "authorization_model",
+        "refresh_owner_id",
+        "management_mode",
+        "retire_superseded_without_delete",
+        "refresh_registration_sha256",
+        "secret_admission_proxy_id",
+        "secret_admission_contract_sha256",
+        "state_ownership",
+        "token_receipt_destination",
+    }
+    for key in WORKLOAD_REGISTRY_SECRET_KEYS:
+        lease = leases.get(key)
+        subjects = lease.get("subjects") if isinstance(lease, dict) else None
+        lease_id = lease.get("lease_id") if isinstance(lease, dict) else None
+        generation = (
+            lease.get("lease_generation") if isinstance(lease, dict) else None
+        )
+        if (
+            not isinstance(lease, dict)
+            or set(lease) != expected_fields
+            or lease.get("resource_address")
+            != WORKLOAD_REGISTRY_SECRET_ADDRESSES[key]
+            or not isinstance(lease_id, str)
+            or not lease_id
+            or lease_id in lease_ids
+            or not isinstance(generation, int)
+            or isinstance(generation, bool)
+            or generation < 1
+            or not isinstance(subjects, list)
+            or not subjects
+            or len(subjects) != len(set(subjects))
+            or subjects != sorted(subjects)
+            or not all(
+                isinstance(subject, str)
+                and re.fullmatch(r"[^@\s]+@sha256:[0-9a-f]{64}", subject)
+                for subject in subjects
+            )
+            or lease.get("subject_scope_sha256")
+            != canonical_object_sha256(subjects)
+            or lease.get("authorization_model") != "repository-digest-action"
+            or lease.get("refresh_owner_id") != authorization.get("refresh_owner_id")
+            or lease.get("management_mode")
+            != "external-short-lived-refresh-controller"
+            or lease.get("retire_superseded_without_delete") is not True
+            or lease.get("refresh_registration_sha256")
+            != authorization.get("refresh_registration_sha256")
+            or lease.get("secret_admission_proxy_id")
+            != authorization.get("secret_admission_proxy_id")
+            or lease.get("secret_admission_contract_sha256")
+            != authorization.get("secret_admission_contract_sha256")
+            or lease.get("state_ownership")
+            != "terraform-stable-metadata-external-write-only-data"
+            or lease.get("token_receipt_destination")
+            != "external-signed-admission-handoff"
+        ):
+            return False
+        lease_ids.add(lease_id)
+        all_subjects.update(subjects)
+        total_subjects += len(subjects)
+    return (
+        total_subjects == len(all_subjects)
+        and sorted(all_subjects) == authorization.get("subjects")
+    )
 
 
 def crane_digest(
@@ -1591,8 +1709,9 @@ def crane_digest(
             + REGISTRY_OPERATION_TTL_SAFETY_SECONDS
         ),
         operation_id="manifest-digest",
-        required_subjects=(f"{repository}@{expected_digest}",),
-        required_actions=("pull",),
+        required_grants=(
+            registry_grant(f"{repository}@{expected_digest}", "pull"),
+        ),
     )
     with registry_client_environment(
         contract, nebius_profile, credential
@@ -1642,8 +1761,10 @@ def crane_copy(
             + REGISTRY_OPERATION_TTL_SAFETY_SECONDS
         ),
         operation_id="copy-exact-image",
-        required_subjects=(source, f"{target_repository}@{expected_digest}"),
-        required_actions=("pull", "push"),
+        required_grants=(
+            registry_grant(source, "pull"),
+            registry_grant(f"{target_repository}@{expected_digest}", "push"),
+        ),
     )
     with registry_client_environment(
         contract, nebius_profile, credential
@@ -1815,13 +1936,8 @@ def stage_environment(
 
     if stage == "workloads":
         ngc_key = os.environ.get(secret_names["ngc_api_key"])
-        docker_config = (
-            registry_credential.get("docker_config_json")
-            if registry_credential is not None
-            else None
-        )
-        authorization = (
-            registry_credential.get("authorization")
+        admission_placeholders = (
+            registry_credential.get("secret_admission_placeholders")
             if registry_credential is not None
             else None
         )
@@ -1830,16 +1946,15 @@ def stage_environment(
             raise DeploymentError(
                 "the selected NIM models require the configured NGC API-key environment reference"
             )
-        if requirements["nvcr_dockerconfig"] and not docker_config:
+        if requirements["nvcr_dockerconfig"] and not admission_placeholders:
             raise DeploymentError(
-                "the selected workloads require a capsule-validated short-lived NVCR credential"
+                "the selected workloads require capsule-issued per-Secret admission placeholders"
             )
         if ngc_key:
             environment["TF_VAR_ngc_api_key"] = ngc_key
-        if docker_config:
-            environment["TF_VAR_nvcrio_dockerconfigjson"] = docker_config
-            environment["TF_VAR_nvcrio_credential_authorization"] = json.dumps(
-                authorization,
+        if admission_placeholders:
+            environment["TF_VAR_nvcrio_secret_admission_placeholders"] = json.dumps(
+                admission_placeholders,
                 sort_keys=True,
                 separators=(",", ":"),
             )
@@ -2180,14 +2295,15 @@ def load_registry_credential(
     purpose: str,
     minimum_remaining_ttl_seconds: int,
     operation_id: str | None = None,
-    required_subjects: Sequence[str] = (),
-    required_actions: Sequence[str] = (),
+    required_grants: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
-    """Acquire and verify a fresh credential from the external capsule.
+    """Acquire a mirror credential or prepare workload Secret admission leases.
 
     The root-peer-authenticated session selects every trust, closure, broker and
     refresh binding. The repository cannot nominate credential files or a
-    bootstrap. Neither the command nor an error path prints credential bytes.
+    bootstrap. Workload preparation returns no Docker bytes; its short-lived
+    render authorization never becomes Secret state. Neither command nor an
+    error path prints credential bytes.
     """
 
     if purpose not in {"release-mirror", "workload-secret"}:
@@ -2198,7 +2314,7 @@ def load_registry_credential(
     command_name = (
         "acquire-release-registry-credential"
         if purpose == "release-mirror"
-        else "acquire-workload-registry-credential"
+        else "prepare-workload-registry-secret-leases"
     )
     command = [
         CAPSULE_BINDINGS["bootstrap"]["path"],
@@ -2213,28 +2329,39 @@ def load_registry_credential(
         str(SOLUTION_ROOT / "security" / "image-attestation-trust.json"),
         "--closure",
         release_contract["closure_path"],
-        "--minimum-remaining-ttl-seconds",
-        str(minimum_remaining_ttl_seconds),
         "--output-format",
         "inference-stack-json",
     ]
     if purpose == "release-mirror":
         if (
             operation_id not in {"manifest-digest", "copy-exact-image"}
-            or not required_subjects
-            or not required_actions
+            or not required_grants
         ):
             raise DeploymentError("release registry operation scope is incomplete")
-        command.extend(["--operation-id", operation_id])
-        for subject in required_subjects:
-            command.extend(["--subject", subject])
-        for action in required_actions:
-            command.extend(["--action", action])
+        command.extend(
+            [
+                "--minimum-remaining-ttl-seconds",
+                str(minimum_remaining_ttl_seconds),
+                "--operation-id",
+                operation_id,
+            ]
+        )
+        for grant in required_grants:
+            command.extend(
+                [
+                    "--grant-json",
+                    json.dumps(grant, sort_keys=True, separators=(",", ":")),
+                ]
+            )
     if purpose == "workload-secret":
         command.extend(
             [
                 "--refresh-registration",
                 release_contract["registry_refresh_registration_path"],
+                "--surfaces",
+                str(SOLUTION_ROOT / "security" / "release-image-surfaces.json"),
+                "--minimum-admission-credential-remaining-ttl-seconds",
+                str(minimum_remaining_ttl_seconds),
                 "--require-refresh-owner-ready",
             ]
         )
@@ -2254,15 +2381,23 @@ def load_registry_credential(
         raise DeploymentError("external capsule returned malformed credential metadata") from exc
     authorization = result.get("authorization") if isinstance(result, dict) else None
     docker_config = result.get("docker_config_json") if isinstance(result, dict) else None
-    common_authorization = {
-        "receipt_sha256",
+    common_authorization = {"receipt_sha256", "authorization_model"}
+    release_authorization = {
+        "operation_id",
+        "issued_at",
         "expires_at",
         "revision",
-        "subjects",
-        "authorization_model",
+        "grants",
+        "docker_auth_partitions",
     }
-    release_authorization = {"operation_id", "actions", "issued_at"}
     workload_authorization = {
+        "subjects",
+        "planning_only",
+        "credential_issued",
+        "issued_at",
+        "expires_at",
+        "revision",
+        "secret_lease_set_sha256",
         "refresh_owner_id",
         "refresh_interval_seconds",
         "rotate_before_expiry_seconds",
@@ -2282,26 +2417,59 @@ def load_registry_credential(
         else common_authorization | release_authorization
     )
     if (
-        not isinstance(docker_config, str)
-        or not docker_config
+        (
+            purpose == "release-mirror"
+            and (not isinstance(docker_config, str) or not docker_config)
+        )
+        or (purpose == "workload-secret" and docker_config is not None)
         or not isinstance(authorization, dict)
         or set(authorization) != expected_authorization
-        or not isinstance(authorization.get("subjects"), list)
-        or not authorization["subjects"]
+        or not isinstance(authorization.get("receipt_sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", authorization["receipt_sha256"])
         or authorization.get("authorization_model")
         != "repository-digest-action"
         or (
             purpose == "release-mirror"
             and (
                 authorization.get("operation_id") != operation_id
-                or authorization.get("subjects") != list(required_subjects)
-                or authorization.get("actions") != list(required_actions)
+                or not isinstance(authorization.get("revision"), int)
+                or isinstance(authorization.get("revision"), bool)
+                or authorization["revision"] < 1
+                or authorization.get("grants") != list(required_grants)
             )
         )
         or (
             purpose == "workload-secret"
             and (
-                authorization.get("management_mode")
+                not isinstance(authorization.get("subjects"), list)
+                or not authorization["subjects"]
+                or authorization.get("planning_only") is not True
+                or authorization.get("credential_issued") is not True
+                or not isinstance(authorization.get("revision"), int)
+                or isinstance(authorization.get("revision"), bool)
+                or authorization["revision"] < 1
+                or not isinstance(
+                    authorization.get("refresh_interval_seconds"), int
+                )
+                or isinstance(
+                    authorization.get("refresh_interval_seconds"), bool
+                )
+                or not 60 <= authorization["refresh_interval_seconds"] <= 300
+                or not isinstance(
+                    authorization.get("rotate_before_expiry_seconds"), int
+                )
+                or isinstance(
+                    authorization.get("rotate_before_expiry_seconds"), bool
+                )
+                or authorization["rotate_before_expiry_seconds"] < 60
+                or not isinstance(
+                    authorization.get("refresh_registration_sha256"), str
+                )
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    authorization["refresh_registration_sha256"],
+                )
+                or authorization.get("management_mode")
                 != "external-short-lived-refresh-controller"
                 or authorization.get("retire_superseded_without_delete") is not True
                 or authorization.get("refresh_owner_ready") is not True
@@ -2310,6 +2478,9 @@ def load_registry_credential(
                     authorization.get("secret_admission_proxy_id"), str
                 )
                 or not authorization["secret_admission_proxy_id"]
+                or not isinstance(
+                    authorization.get("secret_admission_contract_sha256"), str
+                )
                 or authorization.get("secret_admission_contract_sha256")
                 != _sha256_file(
                     SOLUTION_ROOT
@@ -2320,12 +2491,66 @@ def load_registry_credential(
         )
     ):
         raise DeploymentError("external capsule credential projection is incomplete")
-    try:
-        decoded = json.loads(docker_config)
-    except json.JSONDecodeError as exc:
-        raise DeploymentError("external capsule Docker configuration is invalid") from exc
-    if not isinstance(decoded, dict) or not isinstance(decoded.get("auths"), dict):
-        raise DeploymentError("external capsule Docker configuration has no exact auth set")
+    if purpose == "release-mirror":
+        try:
+            decoded = json.loads(docker_config)
+        except json.JSONDecodeError as exc:
+            raise DeploymentError("external capsule Docker configuration is invalid") from exc
+        partitions = authorization.get("docker_auth_partitions")
+        if (
+            not isinstance(decoded, dict)
+            or set(decoded) != {"auths"}
+            or not isinstance(decoded.get("auths"), dict)
+            or not isinstance(partitions, list)
+        ):
+            raise DeploymentError(
+                "external capsule Docker configuration has no exact auth partition set"
+            )
+        expected_by_partition: dict[str, list[Mapping[str, Any]]] = {}
+        for grant in required_grants:
+            partition = grant.get("docker_auth_partition")
+            if not isinstance(partition, str) or not partition:
+                raise DeploymentError("registry grant auth partition is incomplete")
+            expected_by_partition.setdefault(partition, []).append(grant)
+        expected_partition_ids = sorted(expected_by_partition)
+        if not all(isinstance(row, dict) for row in partitions):
+            raise DeploymentError("registry Docker auth partition row is malformed")
+        if [row.get("partition_id") for row in partitions] != expected_partition_ids:
+            raise DeploymentError("registry Docker auth partitions differ from exact grants")
+        if sorted(decoded["auths"]) != expected_partition_ids:
+            raise DeploymentError("registry Docker auth host set differs from exact grants")
+        for row in partitions:
+            partition_id = row.get("partition_id")
+            if (
+                not isinstance(row, dict)
+                or set(row)
+                != {"partition_id", "docker_auth_key", "grants", "auth_entry_sha256"}
+                or row.get("docker_auth_key") != partition_id
+                or row.get("grants") != expected_by_partition.get(partition_id)
+                or row.get("auth_entry_sha256")
+                != canonical_object_sha256(decoded["auths"].get(partition_id))
+            ):
+                raise DeploymentError(
+                    "registry Docker auth partition is not bound to its exact grants"
+                )
+    else:
+        leases = result.get("secret_leases")
+        placeholders = result.get("secret_admission_placeholders")
+        if (
+            not workload_secret_leases_are_exact(leases, authorization)
+            or not isinstance(placeholders, dict)
+            or tuple(sorted(placeholders))
+            != tuple(sorted(WORKLOAD_REGISTRY_SECRET_KEYS))
+            or not all(
+                isinstance(value, str)
+                and value.startswith("fs2-noncredential-placeholder:v1:")
+                for value in placeholders.values()
+            )
+            or len(set(placeholders.values())) != len(WORKLOAD_REGISTRY_SECRET_KEYS)
+        ):
+            raise DeploymentError(
+                "external capsule workload lease projection is incomplete"
+            )
     receipt_path = result.get("registry_auth_receipt_path")
     refresh_path = result.get("registry_refresh_registration_path")
     if (
@@ -2347,6 +2572,9 @@ def load_registry_credential(
         "registry_refresh_registration_path": refresh_path,
         "purpose": purpose,
     }
+    if purpose == "workload-secret":
+        credential["secret_leases"] = leases
+        credential["secret_admission_placeholders"] = placeholders
     require_registry_credential_margin(
         credential, minimum_remaining_ttl_seconds=minimum_remaining_ttl_seconds
     )
@@ -2357,18 +2585,28 @@ def require_registry_credential_margin(
     credential: Mapping[str, Any], *, minimum_remaining_ttl_seconds: int
 ) -> None:
     authorization = credential.get("authorization")
-    expires_at = authorization.get("expires_at") if isinstance(authorization, Mapping) else None
+    if not isinstance(authorization, Mapping):
+        raise DeploymentError("registry authorization metadata is unavailable")
+    now = datetime.now(timezone.utc)
+    expires_at = authorization.get("expires_at")
     if not isinstance(expires_at, str) or not expires_at.endswith("Z"):
         raise DeploymentError("registry credential expiry is not canonical UTC")
     try:
         expiry = datetime.fromisoformat(expires_at.removesuffix("Z") + "+00:00")
     except (TypeError, ValueError) as exc:
-        raise DeploymentError("registry credential readiness timestamps are invalid") from exc
-    now = datetime.now(timezone.utc)
+        raise DeploymentError("registry credential expiry is invalid") from exc
     if (expiry - now).total_seconds() < minimum_remaining_ttl_seconds:
         raise DeploymentError(
             "registry credential lacks the required remaining-TTL admission margin"
         )
+    try:
+        issued = datetime.fromisoformat(
+            str(authorization["issued_at"]).removesuffix("Z") + "+00:00"
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DeploymentError("registry operation issue timestamp is invalid") from exc
+    if issued > now or (now - issued).total_seconds() > 60:
+        raise DeploymentError("registry operation authorization is not fresh")
     if credential.get("purpose") == "workload-secret":
         try:
             observed = datetime.fromisoformat(
@@ -2403,15 +2641,6 @@ def require_registry_credential_margin(
             now - admission_observed
         ).total_seconds() > MAXIMUM_REFRESH_READINESS_AGE_SECONDS:
             raise DeploymentError("registry Secret admission readiness is stale")
-    else:
-        try:
-            issued = datetime.fromisoformat(
-                str(authorization["issued_at"]).removesuffix("Z") + "+00:00"
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise DeploymentError("registry operation issue timestamp is invalid") from exc
-        if issued > now or (now - issued).total_seconds() > 60:
-            raise DeploymentError("registry operation authorization is not fresh")
 
 
 def credential_release_contract(
@@ -2648,12 +2877,12 @@ def bind_fresh_workload_registry_contract(
     release_contract: Mapping[str, str],
     credential: Mapping[str, Any],
 ) -> Path:
-    """Create a new workload input bound to the just-issued credential receipt.
+    """Create a workload input bound to stable per-Secret admission leases.
 
     The stable generated input is retained unchanged for audit. The credential
-    bytes remain only in the ephemeral Terraform environment; this derivative
-    contains non-secret capsule evidence paths and is never reused on a later
-    invocation.
+    is issued only at each provider RPC and never exists in the plan. This
+    derivative contains non-secret lease identities and capsule evidence paths;
+    volatile token receipts/revisions are written only to the external handoff.
     """
 
     if workloads_path.is_symlink() or not workloads_path.is_file():
@@ -2667,6 +2896,7 @@ def bind_fresh_workload_registry_contract(
     workloads["release_image_contract"] = credential_release_contract(
         release_contract, credential
     )
+    workloads["nvcrio_secret_leases"] = credential["secret_leases"]
     destination = workloads_path.with_name("workloads.jit-credential.tfvars.json")
     private_json(destination, workloads)
     return destination
@@ -2762,11 +2992,14 @@ def apply_plan(
             )
     gate_environment = dict(environment)
     if registry_credential_required:
-        # Planning credentials authorize rendering only. They never enter the
-        # apply process. The measured provider proxy brokers and injects fresh
-        # exact-subject bytes at each reviewed Secret create/update RPC.
-        gate_environment.pop("TF_VAR_nvcrio_dockerconfigjson", None)
-        gate_environment.pop("TF_VAR_nvcrio_credential_authorization", None)
+        # The plan contains stable lease metadata only. Terraform's ephemeral
+        # values are invalid, distinct placeholders; the measured provider
+        # proxy may replace only write-only Secret bytes at each reviewed RPC.
+        # It may not change planned annotations or data_wo_revision.
+        gate_environment.pop("TF_VAR_nvcrio_secret_admission_placeholders", None)
+    registry_secret_handoff = plan_path.with_name(
+        f"{plan_path.name}.registry-secret-handoff.json"
+    )
     gate_environment.update(
         {
             "FS2_IMAGE_GATE_BOOTSTRAP": release_image_contract["bootstrap_path"],
@@ -2811,6 +3044,8 @@ def apply_plan(
                     str(MAXIMUM_REFRESH_READINESS_AGE_SECONDS),
                     "--require-refresh-owner-ready",
                     "--broker-workload-credential-at-provider-rpc",
+                    "--replace-only-write-only-secret-data",
+                    "--preserve-planned-secret-metadata-and-revision",
                     "--registry-secret-admission-contract",
                     str(
                         SOLUTION_ROOT
@@ -2825,6 +3060,11 @@ def apply_plan(
                     ),
                     "--refresh-readiness-source",
                     "external-attested-owner-at-provider-rpc",
+                    "--registry-secret-handoff-output",
+                    str(registry_secret_handoff),
+                    "--registry-secret-handoff-signature-output",
+                    f"{registry_secret_handoff}.sig",
+                    "--require-complete-registry-secret-handoff",
                     *[
                         argument
                         for resource in WORKLOAD_REGISTRY_SECRET_RESOURCES

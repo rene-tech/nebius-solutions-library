@@ -221,7 +221,8 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  # Private-registry tests must use capsule-issued stable leases and distinct
+  # invalid ephemeral placeholders; no Docker credential fixture is accepted.
 }
 
 run "deployment_runtime_settings_reach_gpu_requests_and_cache_paths" {

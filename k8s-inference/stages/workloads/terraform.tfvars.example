@@ -113,9 +113,10 @@ hot_model_ids      = []
 # }
 
 # NVCR is required by the full-catalog DCGM exporter. NGC is additionally
-# required only when enabled_model_ids includes an NGC-backed NIM.
-# ngc_api_key               = "REPLACE"
-# nvcrio_dockerconfigjson   = "{...}"
+# required only when enabled_model_ids includes an NGC-backed NIM. The capsule
+# alone supplies nvcrio_secret_leases and ephemeral per-Secret noncredential
+# placeholders; never place Docker credentials or token receipts in tfvars.
+# ngc_api_key = "REPLACE"
 
 # Initial verified create requires false. After all 16 routes/17 backends are
 # Ready, change only this value to true for the verified acceptance augmentation.

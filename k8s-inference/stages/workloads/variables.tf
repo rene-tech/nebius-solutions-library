@@ -1611,71 +1611,79 @@ variable "ngc_api_key" {
   default     = null
 }
 
-variable "nvcrio_dockerconfigjson" {
-  description = "Ephemeral broker-issued Docker config for exact nvcr.io digests. It may flow only into write-only Secret data and is never retained in plan or state."
-  type        = string
+variable "nvcrio_secret_admission_placeholders" {
+  description = "Distinct invalid placeholders used only to evaluate each write-only registry Secret field. The external provider proxy replaces only these bytes at the corresponding Secret RPC."
+  type        = map(string)
   sensitive   = true
   ephemeral   = true
   nullable    = true
   default     = null
+
+  validation {
+    condition = var.nvcrio_secret_admission_placeholders == null || (
+      toset(keys(var.nvcrio_secret_admission_placeholders)) == toset(["models", "observability", "modelexpress"]) &&
+      length(distinct(values(var.nvcrio_secret_admission_placeholders))) == 3 &&
+      alltrue([
+        for placeholder in values(var.nvcrio_secret_admission_placeholders) :
+        startswith(placeholder, "fs2-noncredential-placeholder:v1:")
+      ])
+    )
+    error_message = "NVCR Secret admission requires three distinct, explicitly noncredential placeholders."
+  }
 }
 
-variable "nvcrio_credential_authorization" {
-  description = "Non-secret signed-receipt projection for the short-lived pull-only credential."
-  type = object({
-    receipt_sha256                     = string
-    expires_at                         = string
-    revision                           = number
+variable "nvcrio_secret_leases" {
+  description = "Stable, per-Secret noncredential lease identities stored in the signed plan. Token receipts, expiries and token revisions exist only in the authoritative external admission handoff."
+  type = map(object({
+    resource_address                   = string
+    lease_id                           = string
+    lease_generation                   = number
     subjects                           = set(string)
+    subject_scope_sha256               = string
     authorization_model                = string
     refresh_owner_id                   = string
-    refresh_interval_seconds           = number
-    rotate_before_expiry_seconds       = number
     management_mode                    = string
     retire_superseded_without_delete   = bool
     refresh_registration_sha256        = string
-    refresh_owner_ready                = bool
-    refresh_owner_ready_observed_at    = string
     secret_admission_proxy_id          = string
     secret_admission_contract_sha256   = string
-    secret_admission_ready             = bool
-    secret_admission_ready_observed_at = string
-  })
+    state_ownership                    = string
+    token_receipt_destination          = string
+  }))
   nullable = true
   default  = null
 
   validation {
-    condition = var.nvcrio_credential_authorization == null || (
-      can(regex("^[0-9a-f]{64}$", var.nvcrio_credential_authorization.receipt_sha256)) &&
-      can(timecmp(var.nvcrio_credential_authorization.expires_at, timestamp())) &&
-      timecmp(var.nvcrio_credential_authorization.expires_at, timeadd(timestamp(), "600s")) >= 0 &&
-      floor(var.nvcrio_credential_authorization.revision) == var.nvcrio_credential_authorization.revision &&
-      var.nvcrio_credential_authorization.revision > 0 &&
-      length(var.nvcrio_credential_authorization.refresh_owner_id) > 0 &&
-      floor(var.nvcrio_credential_authorization.refresh_interval_seconds) == var.nvcrio_credential_authorization.refresh_interval_seconds &&
-      var.nvcrio_credential_authorization.refresh_interval_seconds >= 60 &&
-      var.nvcrio_credential_authorization.refresh_interval_seconds <= 300 &&
-      var.nvcrio_credential_authorization.authorization_model == "repository-digest-action" &&
-      var.nvcrio_credential_authorization.refresh_owner_ready &&
-      can(timecmp(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, timestamp())) &&
-      timecmp(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, timestamp()) <= 0 &&
-      length(var.nvcrio_credential_authorization.secret_admission_proxy_id) > 0 &&
-      can(regex("^[0-9a-f]{64}$", var.nvcrio_credential_authorization.secret_admission_contract_sha256)) &&
-      var.nvcrio_credential_authorization.secret_admission_ready &&
-      can(timecmp(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, timestamp())) &&
-      timecmp(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, timestamp()) <= 0 &&
-      floor(var.nvcrio_credential_authorization.rotate_before_expiry_seconds) == var.nvcrio_credential_authorization.rotate_before_expiry_seconds &&
-      var.nvcrio_credential_authorization.rotate_before_expiry_seconds >= 60 &&
-      var.nvcrio_credential_authorization.management_mode == "external-short-lived-refresh-controller" &&
-      var.nvcrio_credential_authorization.retire_superseded_without_delete &&
-      can(regex("^[0-9a-f]{64}$", var.nvcrio_credential_authorization.refresh_registration_sha256)) &&
-      length(var.nvcrio_credential_authorization.subjects) > 0 &&
+    condition = var.nvcrio_secret_leases == null || (
+      toset(keys(var.nvcrio_secret_leases)) == toset(["models", "observability", "modelexpress"]) &&
+      try(var.nvcrio_secret_leases.models.resource_address, "") == "kubernetes_secret_v1.nvcrio_cred[0]" &&
+      try(var.nvcrio_secret_leases.observability.resource_address, "") == "kubernetes_secret_v1.dcgm_exporter_nvcrio[0]" &&
+      try(var.nvcrio_secret_leases.modelexpress.resource_address, "") == "kubernetes_secret_v1.modelexpress_nvcrio[0]" &&
+      length(distinct([for lease in values(var.nvcrio_secret_leases) : lease.lease_id])) == 3 &&
+      length(flatten([for lease in values(var.nvcrio_secret_leases) : tolist(lease.subjects)])) == length(distinct(flatten([for lease in values(var.nvcrio_secret_leases) : tolist(lease.subjects)]))) &&
       alltrue([
-        for subject in var.nvcrio_credential_authorization.subjects :
-        can(regex("^[^@[:space:]]+@sha256:[0-9a-f]{64}$", subject))
+        for lease in values(var.nvcrio_secret_leases) :
+        length(lease.lease_id) > 0 &&
+        floor(lease.lease_generation) == lease.lease_generation &&
+        lease.lease_generation > 0 &&
+        length(lease.subjects) > 0 &&
+        lease.subject_scope_sha256 == sha256(jsonencode(sort(tolist(lease.subjects)))) &&
+        lease.authorization_model == "repository-digest-action" &&
+        length(lease.refresh_owner_id) > 0 &&
+        lease.management_mode == "external-short-lived-refresh-controller" &&
+        lease.retire_superseded_without_delete &&
+        can(regex("^[0-9a-f]{64}$", lease.refresh_registration_sha256)) &&
+        length(lease.secret_admission_proxy_id) > 0 &&
+        can(regex("^[0-9a-f]{64}$", lease.secret_admission_contract_sha256)) &&
+        lease.state_ownership == "terraform-stable-metadata-external-write-only-data" &&
+        lease.token_receipt_destination == "external-signed-admission-handoff" &&
+        alltrue([
+          for subject in lease.subjects :
+          can(regex("^[^@[:space:]]+@sha256:[0-9a-f]{64}$", subject))
+        ])
       ])
     )
-    error_message = "NVCR planning authorization requires a signed receipt with >=600 seconds remaining at plan time, exact digest subjects, and an approved provider-RPC broker; freshness is re-established at each Secret RPC."
+    error_message = "NVCR Secret leases must be three distinct stable identities with exact digest scopes and external ownership of volatile credential receipts/revisions."
   }
 }
 

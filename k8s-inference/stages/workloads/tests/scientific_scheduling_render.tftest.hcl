@@ -218,7 +218,8 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  # Private-registry tests must use capsule-issued stable leases and distinct
+  # invalid ephemeral placeholders; no Docker credential fixture is accepted.
 
   # The reference-data plane, whose CPU ClusterQueue the licensed CPU lane
   # points at. Its pool is a 32 vCPU / 128 GB class node with conservative

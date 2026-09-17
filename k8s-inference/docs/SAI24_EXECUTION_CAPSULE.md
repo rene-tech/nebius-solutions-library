@@ -59,7 +59,7 @@ The reviewed bootstrap command surface is closed: `verify`, `python-entry`,
 `python-stdin`, `shell-entry`, `exec-tool`, `tool-sha256`, `terraform-init`,
 `terraform-validate-root`, `signed-terraform-plan`, `signed-terraform-apply`,
 `acquire-release-registry-credential`,
-`acquire-workload-registry-credential`, `verify-workload-registry-credential`, `apply-registry-secret`, and
+`prepare-workload-registry-secret-leases`, `verify-workload-registry-credential`, `apply-registry-secret`, and
 `register-workload-registry-refresh`. The protected scan workflow uses the
 toolchain-bound Trivy executable and records that executable's exact digest;
 it does not download a second scanner after capsule verification.
@@ -70,11 +70,11 @@ populates all null tool, provider, module, trust, digest, scan and broker facts.
 
 ## Short-lived private pulls
 
-Static NVCR environment credentials are not an accepted input. The capsule
-joins broker-returned Docker bytes to their detached-signed receipt and release
-closure, then projects the bytes only through Terraform ephemeral variables and
-provider write-only Secret fields. The non-secret projection carries the exact
-repository+digest subjects, receipt revision and expiry.
+Static NVCR environment credentials are not an accepted input. The signed plan
+contains only a distinct stable lease identity, lease generation and exact
+subject-scope digest for each Secret. Its three ephemeral inputs are distinct,
+explicitly invalid noncredential placeholders; no token receipt, expiry, token
+revision or Docker bytes are retained in the plan or Terraform state.
 
 Every managed pull Secret also names one signed refresh owner, a maximum
 300-second cadence, a pre-expiry rotation margin and non-delete supersession.
@@ -87,27 +87,35 @@ long-lived credentials in Terraform state.
 The repository never accepts broker receipt, Docker configuration, bootstrap,
 trust, toolchain or refresh-registration paths on the `inference-stack` CLI.
 After infrastructure and foundation have converged, it asks the authenticated
-capsule peer for planning-only render evidence. Before apply, repository code
-removes both registry Terraform variables. `signed-terraform-apply` must use
+capsule peer for planning-only render evidence and stable Secret leases. Before
+apply, repository code removes the placeholder Terraform variable.
+`signed-terraform-apply` must use
 the externally bound provider-RPC proxy and
 `security/workload-registry-secret-admission-contract.json`: immediately before
-starting Terraform it supplies only a signed noncredential placeholder for
-ephemeral expression evaluation; the proxy must reject that placeholder if it
-ever reaches the Kubernetes provider. Immediately before
+starting Terraform it supplies distinct signed noncredential placeholders for
+ephemeral expression evaluation; the proxy must reject any placeholder if it
+ever reaches the Kubernetes API. Immediately before
 each of the three reviewed Secret create/update RPCs, the proxy rechecks that
 both refresh owner and proxy readiness were observed no more than 60 seconds
 ago, derives exact private subjects from the signed plan and closure, brokers a
-new pull-only credential, requires at least 600 seconds remaining, injects it
-only through write-only provider data, and records a non-secret receipt. A
-credential may not be reused for another Secret RPC. The plan credential is
-never forwarded to apply, so a long workload apply cannot admit expired bytes.
+new pull-only credential, requires at least 600 seconds remaining, and replaces
+only the write-only provider data. It must not change planned annotations or
+`data_wo_revision`. A credential may not be reused for another Secret RPC.
+After each API response it records a unique token receipt/revision, lease,
+subject scope, Secret UID/resourceVersion, response hash and planned/observed
+metadata hashes in an external signed handoff. Apply succeeds only after the
+capsule verifies the complete one-to-one handoff with the externally bound
+signer/public-key/verifier identities; no credential bytes enter it. Those
+runtime trust fields remain null in source, so integration stays fail-closed.
 
 ## Registry mirroring
 
 There is no mirror-loop credential. Each target lookup, source lookup, copy,
 post-copy tag lookup, and digest-reference lookup asks the authenticated
-capsule for a new operation-specific authorization. The authorization binds
-the exact repository+expected digest, action, and operation ID. Digest calls
+capsule for a new operation-specific authorization. The authorization carries
+exact grant rows, each binding one repository+expected-digest subject to one
+action and one Docker-auth partition. The capsule rejects flat subject/action
+sets, extra auth hosts and any partition whose auth-entry hash differs. Digest calls
 have a 240-second execution bound and at least a 300-second TTL safety margin;
 copies have a 3,000-second execution bound and the same margin. A copy that
 cannot finish within that bound fails closed and is retried as a new operation

@@ -199,15 +199,22 @@ so private-image integration remains blocked rather than pretending that one
 short-lived initial Secret preserves later scale or reschedule behavior. The
 separate provider-RPC admission contract is also blocked until Platform
 Security supplies its exact proxy executable, provider-protocol, SBOM and
-provenance identities. Planning credentials are stripped before apply; that
-proxy must broker distinct fresh bytes immediately before each exact Secret
-create/update and reject readiness older than 60 seconds.
+provenance identities, plus the external handoff signer/public-key/verifier
+identities. The signed plan stores a distinct stable lease and lease
+generation for each Secret, plus only invalid ephemeral placeholders. The proxy
+must preserve every planned annotation and `data_wo_revision`, broker distinct
+fresh bytes immediately before each exact Secret create/update, and reject
+readiness older than 60 seconds. Each volatile token receipt/revision is bound
+to the API response in a complete signed external handoff; Terraform apply may
+not report success until the capsule verifies that handoff.
 
 Regional mirroring similarly has no credential shared by an artifact loop.
-Every digest lookup and copy receives a distinct operation ID, exact
-repository+expected-digest subject set, action set, bounded command timeout and
-fresh authorization with an additional TTL safety margin. Post-copy checks use
-new authorizations rather than inheriting the copy token.
+Every digest lookup and copy receives a distinct operation ID and exact grant
+rows. Each row binds one repository+expected-digest subject to its action and
+Docker-auth partition; flat subject/action cross-products are forbidden. The
+capsule compares each Docker auth entry hash and the complete host set to those
+rows, applies a bounded command timeout and TTL safety margin, and uses a new
+authorization for every post-copy check.
 
 Rollback is a normal Git revert of the integration commit plus restoration of
 the previously recorded first-party image digests or Helm revisions. The

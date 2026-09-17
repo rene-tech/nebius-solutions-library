@@ -11,17 +11,21 @@
   "secret_admission_contract_sha256": null,
   "initial_admission_sequence": [
     "refresh-owner-ready-and-observed",
-    "planning-only-render-authorization-issued",
+    "stable-distinct-per-secret-leases-issued",
+    "distinct-invalid-ephemeral-placeholders-issued",
     "workload-plan-created",
-    "planning-credential-removed-from-apply-environment",
+    "ephemeral-placeholders-removed-from-apply-environment",
     "refresh-owner-readiness-rechecked-at-provider-rpc",
     "fresh-exact-subject-credential-brokered-at-provider-rpc",
     "secret-admitted-with-at-least-600-seconds-remaining",
-    "refresh-owner-confirms-revision"
+    "refresh-owner-confirms-token-revision-in-external-handoff",
+    "capsule-verifies-complete-signed-handoff-before-apply-success"
   ],
   "readiness_receipt_schema": "fs2-serve.nebius.ai/workload-registry-refresh-readiness/v1",
   "retire_superseded_without_delete": true,
   "credential_storage": "kubernetes-secret-write-only-no-terraform-state",
+  "terraform_state_ownership": "stable-lease-metadata-and-lease-generation-only",
+  "volatile_receipt_storage": "external-signed-admission-handoff-only",
   "subject_scope": "exact-repository-digest-pull",
   "watched_secrets": [
     "fs2-models/nvcrio-cred",

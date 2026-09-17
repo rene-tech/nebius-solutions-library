@@ -191,28 +191,25 @@ resource "kubernetes_secret_v1" "nvcrio_cred" {
     namespace = "fs2-models"
     labels    = local.common_labels
     annotations = {
-      "fs2.nebius.ai/registry-auth-receipt-sha256" = try(var.nvcrio_credential_authorization.receipt_sha256, "blocked")
-      "fs2.nebius.ai/registry-auth-expires-at"     = try(var.nvcrio_credential_authorization.expires_at, "blocked")
-      "fs2.nebius.ai/registry-auth-refresh-owner"  = try(var.nvcrio_credential_authorization.refresh_owner_id, "blocked")
-      "fs2.nebius.ai/registry-auth-refresh-seconds" = tostring(try(var.nvcrio_credential_authorization.refresh_interval_seconds, 0))
-      "fs2.nebius.ai/registry-auth-rotate-before-seconds" = tostring(try(var.nvcrio_credential_authorization.rotate_before_expiry_seconds, 0))
-      "fs2.nebius.ai/registry-auth-management" = try(var.nvcrio_credential_authorization.management_mode, "blocked")
-      "fs2.nebius.ai/registry-auth-retirement" = try(var.nvcrio_credential_authorization.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
-      "fs2.nebius.ai/registry-auth-refresh-registration-sha256" = try(var.nvcrio_credential_authorization.refresh_registration_sha256, "blocked")
-      "fs2.nebius.ai/registry-auth-authorization-model" = try(var.nvcrio_credential_authorization.authorization_model, "blocked")
-      "fs2.nebius.ai/registry-auth-refresh-owner-ready" = try(var.nvcrio_credential_authorization.refresh_owner_ready, false) ? "true" : "blocked"
-      "fs2.nebius.ai/registry-auth-refresh-owner-observed-at" = try(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, "blocked")
-      "fs2.nebius.ai/registry-auth-admission-proxy" = try(var.nvcrio_credential_authorization.secret_admission_proxy_id, "blocked")
-      "fs2.nebius.ai/registry-auth-admission-contract-sha256" = try(var.nvcrio_credential_authorization.secret_admission_contract_sha256, "blocked")
-      "fs2.nebius.ai/registry-auth-admission-ready" = try(var.nvcrio_credential_authorization.secret_admission_ready, false) ? "true" : "blocked"
-      "fs2.nebius.ai/registry-auth-admission-observed-at" = try(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, "blocked")
+      "fs2.nebius.ai/registry-lease-id"                          = try(var.nvcrio_secret_leases.models.lease_id, "blocked")
+      "fs2.nebius.ai/registry-lease-generation"                  = tostring(try(var.nvcrio_secret_leases.models.lease_generation, 0))
+      "fs2.nebius.ai/registry-subject-scope-sha256"              = try(var.nvcrio_secret_leases.models.subject_scope_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-refresh-owner"                = try(var.nvcrio_secret_leases.models.refresh_owner_id, "blocked")
+      "fs2.nebius.ai/registry-auth-management"                   = try(var.nvcrio_secret_leases.models.management_mode, "blocked")
+      "fs2.nebius.ai/registry-auth-retirement"                   = try(var.nvcrio_secret_leases.models.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
+      "fs2.nebius.ai/registry-auth-refresh-registration-sha256"  = try(var.nvcrio_secret_leases.models.refresh_registration_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-authorization-model"          = try(var.nvcrio_secret_leases.models.authorization_model, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-proxy"              = try(var.nvcrio_secret_leases.models.secret_admission_proxy_id, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-contract-sha256"    = try(var.nvcrio_secret_leases.models.secret_admission_contract_sha256, "blocked")
+      "fs2.nebius.ai/registry-token-receipt"                     = try(var.nvcrio_secret_leases.models.token_receipt_destination, "blocked")
+      "fs2.nebius.ai/registry-credential-state-ownership"        = try(var.nvcrio_secret_leases.models.state_ownership, "blocked")
     }
   }
   type = "kubernetes.io/dockerconfigjson"
   data_wo = {
-    ".dockerconfigjson" = var.nvcrio_dockerconfigjson
+    ".dockerconfigjson" = try(var.nvcrio_secret_admission_placeholders.models, null)
   }
-  data_wo_revision = try(var.nvcrio_credential_authorization.revision, 0)
+  data_wo_revision = try(var.nvcrio_secret_leases.models.lease_generation, 0)
   depends_on = [terraform_data.cluster_contract]
 }
 
@@ -224,27 +221,24 @@ resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio" {
     namespace = "fs2-observability"
     labels    = local.common_labels
     annotations = {
-      "fs2.nebius.ai/registry-auth-receipt-sha256" = try(var.nvcrio_credential_authorization.receipt_sha256, "blocked")
-      "fs2.nebius.ai/registry-auth-expires-at"     = try(var.nvcrio_credential_authorization.expires_at, "blocked")
-      "fs2.nebius.ai/registry-auth-refresh-owner"  = try(var.nvcrio_credential_authorization.refresh_owner_id, "blocked")
-      "fs2.nebius.ai/registry-auth-refresh-seconds" = tostring(try(var.nvcrio_credential_authorization.refresh_interval_seconds, 0))
-      "fs2.nebius.ai/registry-auth-rotate-before-seconds" = tostring(try(var.nvcrio_credential_authorization.rotate_before_expiry_seconds, 0))
-      "fs2.nebius.ai/registry-auth-management" = try(var.nvcrio_credential_authorization.management_mode, "blocked")
-      "fs2.nebius.ai/registry-auth-retirement" = try(var.nvcrio_credential_authorization.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
-      "fs2.nebius.ai/registry-auth-refresh-registration-sha256" = try(var.nvcrio_credential_authorization.refresh_registration_sha256, "blocked")
-      "fs2.nebius.ai/registry-auth-authorization-model" = try(var.nvcrio_credential_authorization.authorization_model, "blocked")
-      "fs2.nebius.ai/registry-auth-refresh-owner-ready" = try(var.nvcrio_credential_authorization.refresh_owner_ready, false) ? "true" : "blocked"
-      "fs2.nebius.ai/registry-auth-refresh-owner-observed-at" = try(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, "blocked")
-      "fs2.nebius.ai/registry-auth-admission-proxy" = try(var.nvcrio_credential_authorization.secret_admission_proxy_id, "blocked")
-      "fs2.nebius.ai/registry-auth-admission-contract-sha256" = try(var.nvcrio_credential_authorization.secret_admission_contract_sha256, "blocked")
-      "fs2.nebius.ai/registry-auth-admission-ready" = try(var.nvcrio_credential_authorization.secret_admission_ready, false) ? "true" : "blocked"
-      "fs2.nebius.ai/registry-auth-admission-observed-at" = try(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, "blocked")
+      "fs2.nebius.ai/registry-lease-id"                          = try(var.nvcrio_secret_leases.observability.lease_id, "blocked")
+      "fs2.nebius.ai/registry-lease-generation"                  = tostring(try(var.nvcrio_secret_leases.observability.lease_generation, 0))
+      "fs2.nebius.ai/registry-subject-scope-sha256"              = try(var.nvcrio_secret_leases.observability.subject_scope_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-refresh-owner"                = try(var.nvcrio_secret_leases.observability.refresh_owner_id, "blocked")
+      "fs2.nebius.ai/registry-auth-management"                   = try(var.nvcrio_secret_leases.observability.management_mode, "blocked")
+      "fs2.nebius.ai/registry-auth-retirement"                   = try(var.nvcrio_secret_leases.observability.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
+      "fs2.nebius.ai/registry-auth-refresh-registration-sha256"  = try(var.nvcrio_secret_leases.observability.refresh_registration_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-authorization-model"          = try(var.nvcrio_secret_leases.observability.authorization_model, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-proxy"              = try(var.nvcrio_secret_leases.observability.secret_admission_proxy_id, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-contract-sha256"    = try(var.nvcrio_secret_leases.observability.secret_admission_contract_sha256, "blocked")
+      "fs2.nebius.ai/registry-token-receipt"                     = try(var.nvcrio_secret_leases.observability.token_receipt_destination, "blocked")
+      "fs2.nebius.ai/registry-credential-state-ownership"        = try(var.nvcrio_secret_leases.observability.state_ownership, "blocked")
     }
   }
   type = "kubernetes.io/dockerconfigjson"
   data_wo = {
-    ".dockerconfigjson" = var.nvcrio_dockerconfigjson
+    ".dockerconfigjson" = try(var.nvcrio_secret_admission_placeholders.observability, null)
   }
-  data_wo_revision = try(var.nvcrio_credential_authorization.revision, 0)
+  data_wo_revision = try(var.nvcrio_secret_leases.observability.lease_generation, 0)
   depends_on = [terraform_data.cluster_contract]
 }

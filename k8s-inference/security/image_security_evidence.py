@@ -303,7 +303,11 @@ def validate_workload_registry_auth_receipt(
         raise EvidenceError("Secret admission contract differs from trust")
     admission_contract = _load_object(admission_contract_path)
     admission_runtime = admission_contract.get("runtime")
+    admission_handoff = admission_contract.get("authoritative_handoff")
     authorized_admission_proxies = policy.get("authorized_secret_admission_proxy_ids")
+    authorized_handoff_signers = policy.get(
+        "authorized_secret_admission_handoff_signer_ids"
+    )
     if (
         refresh_contract.get("schema")
         != "fs2-serve.nebius.ai/workload-registry-refresh-contract/v1"
@@ -326,13 +330,24 @@ def validate_workload_registry_auth_receipt(
         or refresh_contract.get("secret_admission_contract_sha256")
         != admission_sha256
         or admission_contract.get("schema")
-        != "fs2-serve.nebius.ai/workload-registry-secret-admission-contract/v1"
+        != "fs2-serve.nebius.ai/workload-registry-secret-admission-contract/v2"
         or admission_contract.get("state") != "trusted"
         or admission_contract.get("provider_rpc_mode")
         != "broker-immediately-before-secret-create-or-update"
+        or admission_contract.get("provider_proxy_mutates_planned_metadata") is not False
+        or admission_contract.get("provider_proxy_mutates_data_wo_revision") is not False
+        or admission_contract.get("provider_proxy_mutates_only_write_only_secret_data") is not True
+        or admission_contract.get("token_receipt_persisted_in_terraform_state") is not False
+        or admission_contract.get("token_revision_persisted_in_terraform_state") is not False
+        or not isinstance(admission_handoff, dict)
+        or admission_handoff.get("terraform_apply_success_requires_verified_handoff")
+        is not True
         or not isinstance(admission_runtime, dict)
         or not isinstance(authorized_admission_proxies, list)
         or admission_runtime.get("proxy_id") not in authorized_admission_proxies
+        or not isinstance(authorized_handoff_signers, list)
+        or admission_runtime.get("handoff_signer_id")
+        not in authorized_handoff_signers
         or not all(
             isinstance(admission_runtime.get(field), str)
             and HEX_SHA256.fullmatch(admission_runtime[field])
@@ -341,6 +356,8 @@ def validate_workload_registry_auth_receipt(
                 "provider_protocol_sha256",
                 "sbom_sha256",
                 "provenance_sha256",
+                "handoff_public_key_sha256",
+                "handoff_verifier_sha256",
             )
         )
     ):
@@ -441,6 +458,10 @@ def validate_workload_registry_auth_receipt(
         != "broker-immediately-before-secret-create-or-update"
         or admission.get("planning_credential_forwarded_to_apply") is not False
         or admission.get("credential_reuse_across_resource_rpcs") is not False
+        or admission.get("mutate_write_only_secret_data_only") is not True
+        or admission.get("preserve_planned_metadata_and_data_wo_revision") is not True
+        or admission.get("token_receipt_destination")
+        != "external-signed-admission-handoff"
     ):
         raise EvidenceError(f"{path}: pull credential refresh ownership is invalid")
     revision = receipt.get("revision")

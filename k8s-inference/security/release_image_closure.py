@@ -232,6 +232,30 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
     manifest = _load(manifest_path)
     if manifest.get("schema") != "fs2-serve.nebius.ai/release-image-surfaces/v1":
         raise EvidenceError(f"{manifest_path}: unsupported schema")
+    expected_secret_leases = [
+        {
+            "key": "models",
+            "resource_address": "kubernetes_secret_v1.nvcrio_cred[0]",
+            "subject_sources": ["catalog_image_sources"],
+        },
+        {
+            "key": "observability",
+            "resource_address": "kubernetes_secret_v1.dcgm_exporter_nvcrio[0]",
+            "subject_consumers": ["stages/workloads/values/dcgm-exporter.yaml"],
+        },
+        {
+            "key": "modelexpress",
+            "resource_address": "kubernetes_secret_v1.modelexpress_nvcrio[0]",
+            "subject_consumers": [
+                "charts/addons/modelexpress/values.yaml",
+                "charts/addons/modelexpress/templates/tests/test-connection.yaml",
+            ],
+        },
+    ]
+    if manifest.get("workload_registry_secret_leases") != expected_secret_leases:
+        raise EvidenceError(
+            f"{manifest_path}: workload registry Secret lease consumers are incomplete"
+        )
     discovered: set[str] = set()
     for path in sorted(root.rglob("*.tf")):
         if ".terraform" in path.parts:
@@ -336,13 +360,18 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
         "receive_capsule_bindings",
         "SO_PEERCRED",
         "SOCK_SEQPACKET",
-        "acquire-workload-registry-credential",
+        "prepare-workload-registry-secret-leases",
+        "release-image-surfaces.json",
         "MINIMUM_WORKLOAD_CREDENTIAL_TTL_SECONDS",
         "MAXIMUM_REFRESH_READINESS_AGE_SECONDS",
         "REGISTRY_COPY_OPERATION_TIMEOUT_SECONDS",
         "--broker-workload-credential-at-provider-rpc",
+        "--replace-only-write-only-secret-data",
+        "--preserve-planned-secret-metadata-and-revision",
+        "--registry-secret-handoff-signature-output",
+        "--require-complete-registry-secret-handoff",
         "workload-registry-secret-admission-contract.json",
-        'gate_environment.pop("TF_VAR_nvcrio_dockerconfigjson", None)',
+        'gate_environment.pop("TF_VAR_nvcrio_secret_admission_placeholders", None)',
         "direct inference-stack execution is disabled",
         "registry_refresh_registration_path",
         'terraform_capsule_command("terraform-init"',

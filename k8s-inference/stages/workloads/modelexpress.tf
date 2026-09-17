@@ -158,28 +158,25 @@ resource "kubernetes_secret_v1" "modelexpress_nvcrio" {
     namespace = var.model_express.namespace
     labels    = local.common_labels
     annotations = {
-      "fs2.nebius.ai/registry-auth-receipt-sha256" = try(var.nvcrio_credential_authorization.receipt_sha256, "blocked")
-      "fs2.nebius.ai/registry-auth-expires-at"     = try(var.nvcrio_credential_authorization.expires_at, "blocked")
-      "fs2.nebius.ai/registry-auth-refresh-owner"  = try(var.nvcrio_credential_authorization.refresh_owner_id, "blocked")
-      "fs2.nebius.ai/registry-auth-refresh-seconds" = tostring(try(var.nvcrio_credential_authorization.refresh_interval_seconds, 0))
-      "fs2.nebius.ai/registry-auth-rotate-before-seconds" = tostring(try(var.nvcrio_credential_authorization.rotate_before_expiry_seconds, 0))
-      "fs2.nebius.ai/registry-auth-management" = try(var.nvcrio_credential_authorization.management_mode, "blocked")
-      "fs2.nebius.ai/registry-auth-retirement" = try(var.nvcrio_credential_authorization.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
-      "fs2.nebius.ai/registry-auth-refresh-registration-sha256" = try(var.nvcrio_credential_authorization.refresh_registration_sha256, "blocked")
-      "fs2.nebius.ai/registry-auth-authorization-model" = try(var.nvcrio_credential_authorization.authorization_model, "blocked")
-      "fs2.nebius.ai/registry-auth-refresh-owner-ready" = try(var.nvcrio_credential_authorization.refresh_owner_ready, false) ? "true" : "blocked"
-      "fs2.nebius.ai/registry-auth-refresh-owner-observed-at" = try(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, "blocked")
-      "fs2.nebius.ai/registry-auth-admission-proxy" = try(var.nvcrio_credential_authorization.secret_admission_proxy_id, "blocked")
-      "fs2.nebius.ai/registry-auth-admission-contract-sha256" = try(var.nvcrio_credential_authorization.secret_admission_contract_sha256, "blocked")
-      "fs2.nebius.ai/registry-auth-admission-ready" = try(var.nvcrio_credential_authorization.secret_admission_ready, false) ? "true" : "blocked"
-      "fs2.nebius.ai/registry-auth-admission-observed-at" = try(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, "blocked")
+      "fs2.nebius.ai/registry-lease-id"                          = try(var.nvcrio_secret_leases.modelexpress.lease_id, "blocked")
+      "fs2.nebius.ai/registry-lease-generation"                  = tostring(try(var.nvcrio_secret_leases.modelexpress.lease_generation, 0))
+      "fs2.nebius.ai/registry-subject-scope-sha256"              = try(var.nvcrio_secret_leases.modelexpress.subject_scope_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-refresh-owner"                = try(var.nvcrio_secret_leases.modelexpress.refresh_owner_id, "blocked")
+      "fs2.nebius.ai/registry-auth-management"                   = try(var.nvcrio_secret_leases.modelexpress.management_mode, "blocked")
+      "fs2.nebius.ai/registry-auth-retirement"                   = try(var.nvcrio_secret_leases.modelexpress.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
+      "fs2.nebius.ai/registry-auth-refresh-registration-sha256"  = try(var.nvcrio_secret_leases.modelexpress.refresh_registration_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-authorization-model"          = try(var.nvcrio_secret_leases.modelexpress.authorization_model, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-proxy"              = try(var.nvcrio_secret_leases.modelexpress.secret_admission_proxy_id, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-contract-sha256"    = try(var.nvcrio_secret_leases.modelexpress.secret_admission_contract_sha256, "blocked")
+      "fs2.nebius.ai/registry-token-receipt"                     = try(var.nvcrio_secret_leases.modelexpress.token_receipt_destination, "blocked")
+      "fs2.nebius.ai/registry-credential-state-ownership"        = try(var.nvcrio_secret_leases.modelexpress.state_ownership, "blocked")
     }
   }
   type = "kubernetes.io/dockerconfigjson"
   data_wo = {
-    ".dockerconfigjson" = var.nvcrio_dockerconfigjson
+    ".dockerconfigjson" = try(var.nvcrio_secret_admission_placeholders.modelexpress, null)
   }
-  data_wo_revision = try(var.nvcrio_credential_authorization.revision, 0)
+  data_wo_revision = try(var.nvcrio_secret_leases.modelexpress.lease_generation, 0)
 
   depends_on = [kubernetes_namespace_v1.modelexpress]
 }
@@ -213,24 +210,19 @@ resource "helm_release" "modelexpress" {
     }
 
     precondition {
-      condition = !local.modelexpress_nvcr_required || (
-        var.nvcrio_dockerconfigjson != null &&
-        var.nvcrio_credential_authorization != null &&
-        timecmp(var.nvcrio_credential_authorization.expires_at, timeadd(timestamp(), "600s")) >= 0 &&
-        var.nvcrio_credential_authorization.authorization_model == "repository-digest-action" &&
-        var.nvcrio_credential_authorization.refresh_owner_ready &&
-        timecmp(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, timestamp()) <= 0 &&
-        var.nvcrio_credential_authorization.secret_admission_ready &&
-        timecmp(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, timestamp()) <= 0 &&
-        can(regex("^[0-9a-f]{64}$", var.nvcrio_credential_authorization.secret_admission_contract_sha256)) &&
-        var.nvcrio_credential_authorization.management_mode == "external-short-lived-refresh-controller" &&
-        var.nvcrio_credential_authorization.retire_superseded_without_delete &&
+      condition = !local.modelexpress_nvcr_required || try((
+        var.nvcrio_secret_admission_placeholders != null &&
+        var.nvcrio_secret_leases != null &&
+        var.nvcrio_secret_leases.modelexpress.authorization_model == "repository-digest-action" &&
+        var.nvcrio_secret_leases.modelexpress.management_mode == "external-short-lived-refresh-controller" &&
+        var.nvcrio_secret_leases.modelexpress.retire_superseded_without_delete &&
+        var.nvcrio_secret_leases.modelexpress.state_ownership == "terraform-stable-metadata-external-write-only-data" &&
         contains(
-          var.nvcrio_credential_authorization.subjects,
+          var.nvcrio_secret_leases.modelexpress.subjects,
           "${var.model_express.server_image.repository}@${var.model_express.server_image.digest}",
         )
-      )
-      error_message = "Managed NVCR ModelExpress requires exact-digest planning authorization and an approved per-Secret provider-RPC broker that establishes freshness at admission."
+      ), false)
+      error_message = "Managed NVCR ModelExpress requires its own exact-digest stable lease and an approved provider-RPC broker that records fresh token evidence outside Terraform state."
     }
   }
 

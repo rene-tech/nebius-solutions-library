@@ -47,6 +47,7 @@ def _capsule_source_root() -> Path:
 
 
 DIGEST_REFERENCE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class BrokerError(ValueError):
@@ -351,6 +352,11 @@ def workload_registry_auth(
         if isinstance(admission_contract, dict)
         else None
     )
+    admission_handoff = (
+        admission_contract.get("authoritative_handoff")
+        if isinstance(admission_contract, dict)
+        else None
+    )
     if (
         _sha256(refresh_contract_path) != contract_sha256
         or refresh_contract.get("state") != "trusted"
@@ -358,10 +364,25 @@ def workload_registry_auth(
         or refresh_runtime.get("owner_id")
         not in policy.get("authorized_refresh_owner_ids", [])
         or _sha256(admission_contract_path) != admission_sha256
+        or admission_contract.get("schema")
+        != "fs2-serve.nebius.ai/workload-registry-secret-admission-contract/v2"
         or admission_contract.get("state") != "trusted"
+        or admission_contract.get("provider_proxy_mutates_planned_metadata") is not False
+        or admission_contract.get("provider_proxy_mutates_data_wo_revision") is not False
+        or admission_contract.get("provider_proxy_mutates_only_write_only_secret_data") is not True
+        or not isinstance(admission_handoff, dict)
+        or admission_handoff.get("terraform_apply_success_requires_verified_handoff")
+        is not True
         or not isinstance(admission_runtime, dict)
         or admission_runtime.get("proxy_id")
         not in policy.get("authorized_secret_admission_proxy_ids", [])
+        or admission_runtime.get("handoff_signer_id")
+        not in policy.get("authorized_secret_admission_handoff_signer_ids", [])
+        or not all(
+            isinstance(admission_runtime.get(field), str)
+            and HEX_SHA256.fullmatch(admission_runtime[field])
+            for field in ("handoff_public_key_sha256", "handoff_verifier_sha256")
+        )
     ):
         raise BrokerError(
             "refresh-controller and Secret-admission runtimes are not trusted"
@@ -431,6 +452,11 @@ def workload_registry_auth(
                         ),
                         "planning_credential_forwarded_to_apply": False,
                         "credential_reuse_across_resource_rpcs": False,
+                        "mutate_write_only_secret_data_only": True,
+                        "preserve_planned_metadata_and_data_wo_revision": True,
+                        "token_receipt_destination": (
+                            "external-signed-admission-handoff"
+                        ),
                     },
                 }
             ).encode("utf-8"),
@@ -475,6 +501,9 @@ def workload_registry_auth(
             "provider_rpc_mode": "broker-immediately-before-secret-create-or-update",
             "planning_credential_forwarded_to_apply": False,
             "credential_reuse_across_resource_rpcs": False,
+            "mutate_write_only_secret_data_only": True,
+            "preserve_planned_metadata_and_data_wo_revision": True,
+            "token_receipt_destination": "external-signed-admission-handoff",
         }
     ):
         raise BrokerError("workload registry receipt scope differs")

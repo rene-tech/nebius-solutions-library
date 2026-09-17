@@ -107,7 +107,13 @@
       "provider_protocol_sha256": null,
       "admission_contract_sha256": null,
       "credential_reuse_across_resource_rpcs": false,
-      "planning_credential_forwarded_to_apply": false
+      "planning_credential_forwarded_to_apply": false,
+      "mutates_write_only_secret_data_only": true,
+      "mutates_planned_metadata": false,
+      "mutates_planned_data_wo_revision": false,
+      "admission_handoff_signer_id": null,
+      "admission_handoff_public_key_sha256": null,
+      "admission_handoff_verifier_sha256": null
     }
   }
 }

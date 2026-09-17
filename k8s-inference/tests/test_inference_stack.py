@@ -376,28 +376,13 @@ class InferenceStackTests(unittest.TestCase):
             paths = (infrastructure_path, foundation_path, workloads_path)
             first_bytes = {path.name: path.read_bytes() for path in paths}
 
-            authorization = {
-                "receipt_sha256": "a" * 64,
-                "expires_at": "2099-01-01T00:00:00Z",
-                "revision": 1,
-                "subjects": ["nvcr.io/example/runtime@sha256:" + "b" * 64],
-                "authorization_model": "repository-digest-action",
-                "refresh_owner_id": "reviewed-owner",
-                "refresh_interval_seconds": 300,
-                "rotate_before_expiry_seconds": 120,
-                "management_mode": "external-short-lived-refresh-controller",
-                "retire_superseded_without_delete": True,
-                "refresh_registration_sha256": "c" * 64,
-                "refresh_owner_ready": True,
-                "refresh_owner_ready_observed_at": "2026-09-17T00:00:00Z",
-                "secret_admission_proxy_id": "reviewed-admission-proxy",
-                "secret_admission_contract_sha256": "d" * 64,
-                "secret_admission_ready": True,
-                "secret_admission_ready_observed_at": "2026-09-17T00:00:00Z",
+            placeholders = {
+                "models": "fs2-noncredential-placeholder:v1:models",
+                "observability": "fs2-noncredential-placeholder:v1:observability",
+                "modelexpress": "fs2-noncredential-placeholder:v1:modelexpress",
             }
             registry_credential = {
-                "docker_config_json": '{"auths":{"nvcr.io":{"auth":"SENTINEL"}}}',
-                "authorization": authorization,
+                "secret_admission_placeholders": placeholders,
             }
             with mock.patch.dict(os.environ, secret_values, clear=False):
                 foundation_environment = STACK.stage_environment(
@@ -424,16 +409,16 @@ class InferenceStackTests(unittest.TestCase):
                 secret_values["TEST_FS2_NGC_API_KEY"],
             )
             self.assertEqual(
-                workloads_environment["TF_VAR_nvcrio_dockerconfigjson"],
-                '{"auths":{"nvcr.io":{"auth":"SENTINEL"}}}',
-            )
-            self.assertEqual(
                 json.loads(
                     workloads_environment[
-                        "TF_VAR_nvcrio_credential_authorization"
+                        "TF_VAR_nvcrio_secret_admission_placeholders"
                     ]
                 ),
-                authorization,
+                placeholders,
+            )
+            self.assertNotIn("TF_VAR_nvcrio_dockerconfigjson", workloads_environment)
+            self.assertNotIn(
+                "TF_VAR_nvcrio_credential_authorization", workloads_environment
             )
 
             generated = b"".join(first_bytes.values()).decode("utf-8")
@@ -820,7 +805,7 @@ class InferenceStackTests(unittest.TestCase):
                     Path(temporary), "workloads", configuration
                 )
         self.assertNotIn("TF_VAR_ngc_api_key", environment)
-        self.assertNotIn("TF_VAR_nvcrio_dockerconfigjson", environment)
+        self.assertNotIn("TF_VAR_nvcrio_secret_admission_placeholders", environment)
 
     def test_capacity_block_preflight_is_repeatable_for_an_allocated_block(
         self,
@@ -2676,10 +2661,18 @@ class InferenceStackTests(unittest.TestCase):
             "def workload_endpoint_outputs", 1
         )[0]
         self.assertIn(
-            'gate_environment.pop("TF_VAR_nvcrio_dockerconfigjson", None)',
+            'gate_environment.pop("TF_VAR_nvcrio_secret_admission_placeholders", None)',
             apply_plan_source,
         )
         self.assertIn("--broker-workload-credential-at-provider-rpc", apply_plan_source)
+        self.assertIn("--replace-only-write-only-secret-data", apply_plan_source)
+        self.assertIn(
+            "--preserve-planned-secret-metadata-and-revision", apply_plan_source
+        )
+        self.assertIn(
+            "--registry-secret-handoff-signature-output", apply_plan_source
+        )
+        self.assertIn("--require-complete-registry-secret-handoff", apply_plan_source)
         self.assertIn("--maximum-refresh-readiness-age-seconds", apply_plan_source)
         self.assertNotIn("require_registry_credential_margin(", apply_plan_source)
         for resource in STACK.WORKLOAD_REGISTRY_SECRET_RESOURCES:
@@ -2702,8 +2695,135 @@ class InferenceStackTests(unittest.TestCase):
         self.assertIn("load_registry_credential", copy_source)
         self.assertIn('operation_id="copy-exact-image"', copy_source)
         self.assertIn("REGISTRY_COPY_OPERATION_TIMEOUT_SECONDS", copy_source)
+        self.assertIn('registry_grant(source, "pull")', copy_source)
+        self.assertIn(
+            'registry_grant(f"{target_repository}@{expected_digest}", "push")',
+            copy_source,
+        )
+        self.assertNotIn("required_subjects", copy_source)
+        self.assertNotIn("required_actions", copy_source)
+        credential_source = source.split("def load_registry_credential", 1)[1].split(
+            "def require_registry_credential_margin", 1
+        )[0]
+        self.assertIn("--grant-json", credential_source)
+        self.assertIn("docker_auth_partitions", credential_source)
+        self.assertIn("canonical_object_sha256", credential_source)
         self.assertNotIn("registry_credential:", mirror_source)
         self.assertIn("registry refresh-owner readiness is stale", source)
+
+    def test_registry_grants_do_not_form_a_subject_action_cross_product(self) -> None:
+        source = "nvcr.io/nvidia/runtime@sha256:" + "a" * 64
+        target = "registry.example/fs2/runtime@sha256:" + "a" * 64
+        grants = [
+            STACK.registry_grant(source, "pull"),
+            STACK.registry_grant(target, "push"),
+        ]
+        self.assertEqual(
+            grants,
+            [
+                {
+                    "subject": source,
+                    "actions": ["pull"],
+                    "docker_auth_partition": "nvcr.io",
+                },
+                {
+                    "subject": target,
+                    "actions": ["push"],
+                    "docker_auth_partition": "registry.example",
+                },
+            ],
+        )
+        self.assertNotIn("push", grants[0]["actions"])
+        self.assertNotIn("pull", grants[1]["actions"])
+        with self.assertRaisesRegex(STACK.DeploymentError, "not digest-bound"):
+            STACK.registry_grant("nvcr.io/nvidia/runtime:latest", "pull")
+
+    def test_workload_secret_leases_are_distinct_and_state_stable(self) -> None:
+        subjects = {
+            key: f"nvcr.io/nvidia/{key}@sha256:" + f"{index}" * 64
+            for index, key in enumerate(
+                STACK.WORKLOAD_REGISTRY_SECRET_KEYS, start=1
+            )
+        }
+        authorization = {
+            "subjects": sorted(subjects.values()),
+            "refresh_owner_id": "refresh-owner",
+            "refresh_registration_sha256": "c" * 64,
+            "secret_admission_proxy_id": "provider-proxy",
+            "secret_admission_contract_sha256": "d" * 64,
+        }
+        leases = {}
+        for index, key in enumerate(STACK.WORKLOAD_REGISTRY_SECRET_KEYS, start=1):
+            lease_subjects = [subjects[key]]
+            leases[key] = {
+                "resource_address": STACK.WORKLOAD_REGISTRY_SECRET_ADDRESSES[key],
+                "lease_id": f"lease-{key}",
+                "lease_generation": index,
+                "subjects": lease_subjects,
+                "subject_scope_sha256": STACK.canonical_object_sha256(lease_subjects),
+                "authorization_model": "repository-digest-action",
+                "refresh_owner_id": "refresh-owner",
+                "management_mode": "external-short-lived-refresh-controller",
+                "retire_superseded_without_delete": True,
+                "refresh_registration_sha256": "c" * 64,
+                "secret_admission_proxy_id": "provider-proxy",
+                "secret_admission_contract_sha256": "d" * 64,
+                "state_ownership": (
+                    "terraform-stable-metadata-external-write-only-data"
+                ),
+                "token_receipt_destination": "external-signed-admission-handoff",
+            }
+        authorization["secret_lease_set_sha256"] = STACK.canonical_object_sha256(
+            leases
+        )
+        self.assertTrue(
+            STACK.workload_secret_leases_are_exact(leases, authorization)
+        )
+        forged = json.loads(json.dumps(leases))
+        forged["modelexpress"]["lease_id"] = forged["models"]["lease_id"]
+        authorization["secret_lease_set_sha256"] = STACK.canonical_object_sha256(
+            forged
+        )
+        self.assertFalse(
+            STACK.workload_secret_leases_are_exact(forged, authorization)
+        )
+        overbroad = json.loads(json.dumps(leases))
+        overbroad["modelexpress"]["subjects"] = list(
+            overbroad["models"]["subjects"]
+        )
+        overbroad["modelexpress"]["subject_scope_sha256"] = (
+            STACK.canonical_object_sha256(overbroad["modelexpress"]["subjects"])
+        )
+        authorization["subjects"] = sorted(
+            {
+                subject
+                for lease in overbroad.values()
+                for subject in lease["subjects"]
+            }
+        )
+        authorization["secret_lease_set_sha256"] = STACK.canonical_object_sha256(
+            overbroad
+        )
+        self.assertFalse(
+            STACK.workload_secret_leases_are_exact(overbroad, authorization)
+        )
+
+    def test_workload_registry_plan_has_stable_leases_not_token_receipts(self) -> None:
+        variables = (DEPLOY_ROOT / "stages/workloads/variables.tf").read_text()
+        secrets = (DEPLOY_ROOT / "stages/workloads/secrets.tf").read_text()
+        modelexpress = (DEPLOY_ROOT / "stages/workloads/modelexpress.tf").read_text()
+        self.assertIn('variable "nvcrio_secret_leases"', variables)
+        self.assertIn(
+            'variable "nvcrio_secret_admission_placeholders"', variables
+        )
+        self.assertNotIn('variable "nvcrio_dockerconfigjson"', variables)
+        self.assertNotIn('variable "nvcrio_credential_authorization"', variables)
+        for source in (secrets, modelexpress):
+            self.assertNotIn("registry-auth-receipt-sha256", source)
+            self.assertNotIn("registry-auth-expires-at", source)
+            self.assertNotIn("nvcrio_credential_authorization", source)
+            self.assertIn("registry-lease-id", source)
+            self.assertIn("external-signed-admission-handoff", variables)
 
 
 if __name__ == "__main__":

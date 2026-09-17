@@ -279,22 +279,21 @@ resource "terraform_data" "cluster_contract" {
     precondition {
       condition = (
         (!local.ngc_api_key_required || var.ngc_api_key != null) &&
-        (!(local.model_nvcr_credentials_required || local.dcgm_nvcr_credentials_required || local.modelexpress_nvcr_required) || (
-          var.nvcrio_dockerconfigjson != null &&
-          var.nvcrio_credential_authorization != null &&
-          timecmp(var.nvcrio_credential_authorization.expires_at, timeadd(timestamp(), "600s")) >= 0 &&
-          var.nvcrio_credential_authorization.authorization_model == "repository-digest-action" &&
-          var.nvcrio_credential_authorization.refresh_owner_ready &&
-          timecmp(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, timestamp()) <= 0 &&
-          var.nvcrio_credential_authorization.secret_admission_ready &&
-          timecmp(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, timestamp()) <= 0 &&
-          can(regex("^[0-9a-f]{64}$", var.nvcrio_credential_authorization.secret_admission_contract_sha256)) &&
-          var.nvcrio_credential_authorization.management_mode == "external-short-lived-refresh-controller" &&
-          var.nvcrio_credential_authorization.refresh_interval_seconds <= 300 &&
-          var.nvcrio_credential_authorization.retire_superseded_without_delete
-        ))
+        (!(local.model_nvcr_credentials_required || local.dcgm_nvcr_credentials_required || local.modelexpress_nvcr_required) || try((
+          var.nvcrio_secret_admission_placeholders != null &&
+          var.nvcrio_secret_leases != null &&
+          toset(keys(var.nvcrio_secret_leases)) == toset(["models", "observability", "modelexpress"]) &&
+          alltrue([
+            for lease in values(var.nvcrio_secret_leases) :
+            lease.authorization_model == "repository-digest-action" &&
+            lease.management_mode == "external-short-lived-refresh-controller" &&
+            lease.retire_superseded_without_delete &&
+            lease.state_ownership == "terraform-stable-metadata-external-write-only-data" &&
+            lease.token_receipt_destination == "external-signed-admission-handoff"
+          ])
+        ), false))
       )
-      error_message = "Private NVCR planning requires exact ephemeral inputs and an approved provider-RPC broker; the external apply capsule replaces them with freshly brokered bytes immediately before each Secret admission."
+      error_message = "Private NVCR planning requires distinct invalid placeholders and stable per-Secret leases; volatile credential receipts/revisions must remain in the external signed admission handoff."
     }
     precondition {
       condition     = try(data.kubernetes_resource.envoyproxy_crd.object.metadata.name, "") == "envoyproxies.gateway.envoyproxy.io"

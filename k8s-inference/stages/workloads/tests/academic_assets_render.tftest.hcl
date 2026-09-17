@@ -206,7 +206,8 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  # Private-registry tests must use capsule-issued stable leases and distinct
+  # invalid ephemeral placeholders; no Docker credential fixture is accepted.
 }
 
 run "disabled_academic_config_is_projected_as_disabled" {

@@ -260,6 +260,17 @@ def test_catalog_mapping_is_consumed_by_runtime_and_model_express_cannot_bypass_
         "direct_installer_scripts"
     ]
     assert surfaces["non_release_helm_scripts"]
+    lease_surfaces = {
+        row["key"]: row for row in surfaces["workload_registry_secret_leases"]
+    }
+    assert set(lease_surfaces) == {"models", "observability", "modelexpress"}
+    assert lease_surfaces["models"]["subject_sources"] == ["catalog_image_sources"]
+    assert lease_surfaces["observability"]["subject_consumers"] == [
+        "stages/workloads/values/dcgm-exporter.yaml"
+    ]
+    assert lease_surfaces["modelexpress"]["resource_address"] == (
+        "kubernetes_secret_v1.modelexpress_nvcrio[0]"
+    )
     modelexpress_readme = (ROOT / "charts/addons/modelexpress/README.md").read_text()
     assert "helm install " not in modelexpress_readme
     assert "helm upgrade " not in modelexpress_readme
@@ -280,7 +291,7 @@ def test_external_capsule_is_the_only_release_execution_authority() -> None:
         "signed-terraform-apply",
         "tool-sha256",
         "acquire-release-registry-credential",
-        "acquire-workload-registry-credential",
+        "prepare-workload-registry-secret-leases",
     }.issubset(external["capsule_contract"]["bootstrap_commands"])
     assert external["capsule_contract"]["protected_entrypoint_environment"] == {
         "FS2_EXTERNAL_CAPSULE_ACTIVE": "1",
@@ -296,6 +307,20 @@ def test_external_capsule_is_the_only_release_execution_authority() -> None:
     ]
     assert provider_admission["deny_planning_credential_forwarding"] is True
     assert provider_admission["deny_credential_reuse_across_resource_rpcs"] is True
+    assert provider_admission["mutate_write_only_secret_data_only"] is True
+    assert provider_admission["preserve_planned_metadata_and_data_wo_revision"] is True
+    assert (
+        provider_admission["require_complete_signed_external_handoff_before_apply_success"]
+        is True
+    )
+    assert provider_admission["handoff_signer_id"] is None
+    assert provider_admission["handoff_public_key_sha256"] is None
+    assert provider_admission["handoff_verifier_sha256"] is None
+    registry_operations = external["capsule_contract"][
+        "registry_operation_authorization"
+    ]
+    assert registry_operations["flat_subject_action_cross_product_forbidden"] is True
+    assert registry_operations["docker_auth_host_set_must_equal_grant_partitions"] is True
 
     toolchain = json.loads(
         (ROOT / "security/execution-toolchain.lock.json").read_text()
@@ -371,6 +396,7 @@ def test_private_pull_refresh_contract_stays_fail_closed_until_attested() -> Non
     assert policy["refresh_controller_contract_sha256"] is None
     assert policy["secret_admission_contract_sha256"] is None
     assert policy["authorized_secret_admission_proxy_ids"] == []
+    assert policy["authorized_secret_admission_handoff_signer_ids"] == []
 
     refresh = json.loads(
         (ROOT / "security/workload-registry-refresh-contract.json").read_text()
@@ -389,6 +415,9 @@ def test_private_pull_refresh_contract_stays_fail_closed_until_attested() -> Non
     admission = json.loads(
         (ROOT / "security/workload-registry-secret-admission-contract.json").read_text()
     )
+    assert admission["schema"] == (
+        "fs2-serve.nebius.ai/workload-registry-secret-admission-contract/v2"
+    )
     assert admission["state"] == (
         "blocked_pending_security_owner_and_runtime_attestation"
     )
@@ -396,20 +425,38 @@ def test_private_pull_refresh_contract_stays_fail_closed_until_attested() -> Non
         "broker-immediately-before-secret-create-or-update"
     )
     assert admission["planning_credential_is_never_forwarded_to_apply"] is True
+    assert admission["provider_proxy_mutates_planned_metadata"] is False
+    assert admission["provider_proxy_mutates_data_wo_revision"] is False
+    assert admission["provider_proxy_mutates_only_write_only_secret_data"] is True
+    assert admission["token_receipt_persisted_in_terraform_state"] is False
+    assert admission["token_revision_persisted_in_terraform_state"] is False
+    assert (
+        admission["authoritative_handoff"][
+            "terraform_apply_success_requires_verified_handoff"
+        ]
+        is True
+    )
     assert admission["fail_closed"]["credential_reuse_across_resource_rpcs_allowed"] is False
     assert admission["runtime"]["proxy_id"] is None
+    assert admission["runtime"]["handoff_signer_id"] is None
+    assert admission["runtime"]["handoff_public_key_sha256"] is None
+    assert admission["runtime"]["handoff_verifier_sha256"] is None
 
     variables = (ROOT / "variables.tf").read_text()
     assert "static NVCR Docker config input is forbidden" in variables
     workload_variables = (ROOT / "stages/workloads/variables.tf").read_text()
     for field in (
+        "lease_id",
+        "lease_generation",
+        "subject_scope_sha256",
         "refresh_owner_id",
-        "refresh_interval_seconds",
-        "rotate_before_expiry_seconds",
         "refresh_registration_sha256",
         "retire_superseded_without_delete",
         "secret_admission_proxy_id",
         "secret_admission_contract_sha256",
-        "secret_admission_ready_observed_at",
+        "state_ownership",
+        "token_receipt_destination",
     ):
         assert field in workload_variables
+    assert 'variable "nvcrio_dockerconfigjson"' not in workload_variables
+    assert 'variable "nvcrio_credential_authorization"' not in workload_variables

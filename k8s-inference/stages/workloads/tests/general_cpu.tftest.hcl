@@ -264,7 +264,8 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  # Private-registry tests must use capsule-issued stable leases and distinct
+  # invalid ephemeral placeholders; no Docker credential fixture is accepted.
   # The lane budgets cpu and memory, so core admission is on. These are one
   # truth at the facade: budget_core_resources is exactly
   # scheduling.core_capacity != null, and the root refuses an enabled general
