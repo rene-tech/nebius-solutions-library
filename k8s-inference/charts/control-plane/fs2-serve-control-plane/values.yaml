@@ -425,6 +425,19 @@ networkPolicy:
       app.kubernetes.io/name: gateway-helm
       control-plane: envoy-gateway
     port: 18000
+  rateLimit:
+    namespaceLabels:
+      kubernetes.io/metadata.name: envoy-gateway-system
+    podLabels:
+      fs2.nebius.ai/edge-rate-limit-service: "true"
+    port: 8081
+  rateLimitStore:
+    namespaceLabels:
+      kubernetes.io/metadata.name: envoy-gateway-system
+    podLabels:
+      app.kubernetes.io/name: fs2-edge-rate-limit-redis
+      app.kubernetes.io/component: edge-rate-limit-store
+    port: 6379
   solver:
     namespaceLabels:
       kubernetes.io/metadata.name: fs2-system
@@ -599,6 +612,46 @@ publicGateway:
   httpListenerName: acme-http
   httpsListenerName: public-https
 
+# Envoy Gateway data-plane availability and resource envelope. The managed
+# proxy Deployment defaults to one replica when this is omitted, so these
+# values are part of the public-edge security contract rather than optional
+# tuning.
+envoyProxy:
+  replicaCount: 2
+  podDisruptionBudget:
+    minAvailable: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: proxy
+          app.kubernetes.io/managed-by: envoy-gateway
+          app.kubernetes.io/name: envoy
+          gateway.envoyproxy.io/owning-gateway-name: public
+          gateway.envoyproxy.io/owning-gateway-namespace: fs2-system
+
+# Bound downstream connection and stream occupancy without shortening the
+# normal synchronous API timeout. Active speech streams may run for up to two
+# hours; idle streams and incomplete request bodies are released earlier.
+edgeConnectionLimits:
+  connectionLimit: 2000
+  maxConnectionDuration: 2h
+  maxRequestsPerConnection: 1000
+  maxStreamDuration: 2h
+  requestReceivedTimeout: 60s
+  idleTimeout: 5m
+  streamIdleTimeout: 5m
+  http2MaxConcurrentStreams: 100
+
 # Every public HTTPRoute requires these private deploy-time values. The cluster
 # lane supplies them from the exact Terraform-retained allocation only after a
 # read-only provider check proves the public IPv4 allocation belongs to
@@ -649,12 +702,18 @@ publicTls:
     accountPrivateKeySecretName: fs2-serve-ip-acme-account
     profile: shortlived
 
-# Lightweight per-Envoy abuse protection. Durable per-token budgets and
-# concurrency remain authoritative in PostgreSQL.
+# Shared edge abuse protection. Envoy Gateway's global rate-limit service uses
+# a foundation-owned Redis backend, so every proxy replica observes the same
+# counters. The trusted hop is the reviewed external load-balancer hop; Envoy
+# ignores caller-prepended X-Forwarded-For entries beyond that boundary.
 edgeRateLimit:
   enabled: true
+  trustedHops: 1
+  sourceCidr: 0.0.0.0/0
   requests: 200
   unit: Second
+  adminRequests: 30
+  adminUnit: Minute
 
 grafanaDashboard:
   enabled: true

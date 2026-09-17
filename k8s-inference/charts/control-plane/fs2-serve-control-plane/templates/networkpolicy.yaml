@@ -260,6 +260,16 @@ spec:
       ports:
         - port: {{ $network.envoyController.port }}
           protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.rateLimit.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.rateLimit.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.rateLimit.port }}
+          protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -308,6 +318,54 @@ spec:
               {{- toYaml $network.gateway.podLabels | nindent 14 }}
       ports:
         - port: {{ $network.envoyController.port }}
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-envoy-rate-limit
+  namespace: envoy-gateway-system
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: envoy-rate-limit
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $network.rateLimit.podLabels | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.gateway.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.gateway.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.rateLimit.port }}
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.dns.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.dns.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.dns.port }}
+          protocol: UDP
+        - port: {{ $network.dns.port }}
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.rateLimitStore.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.rateLimitStore.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.rateLimitStore.port }}
           protocol: TCP
 {{- end }}
 ---

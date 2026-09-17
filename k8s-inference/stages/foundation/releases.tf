@@ -97,7 +97,13 @@ resource "helm_release" "envoy_gateway" {
   wait            = true
   timeout         = 900
 
-  depends_on = [terraform_data.cluster_contract]
+  values = [file("${path.module}/values/envoy-gateway.yaml")]
+
+  depends_on = [
+    terraform_data.cluster_contract,
+    kubernetes_deployment_v1.edge_rate_limit_redis,
+    kubernetes_service_v1.edge_rate_limit_redis,
+  ]
 }
 
 data "external" "kueue_chart" {

@@ -430,9 +430,13 @@ def test_admin_console_renders_digest_bound_workload_route_and_network_boundary(
         }
 
     edge_policy = next(document for document in documents if document["kind"] == "BackendTrafficPolicy")
-    assert [target["name"] for target in edge_policy["spec"]["targetRefs"]] == [
-        "fs2-serve-control-plane",
-        "fs2-serve-control-plane-admin-console",
+    assert edge_policy["spec"]["targetRefs"] == [
+        {
+            "group": "gateway.networking.k8s.io",
+            "kind": "Gateway",
+            "name": "public",
+            "sectionName": "public-https",
+        }
     ]
     public_edge = next(
         document
@@ -688,6 +692,36 @@ def test_public_direct_ip_route_binds_reserved_public_allocation_without_interna
     service = proxy["spec"]["provider"]["kubernetes"]["envoyService"]
     assert service == expected_envoy_service()
     assert "nebius.com/load-balancer-type" not in service["annotations"]
+
+
+def test_public_envoy_has_redundant_bounded_node_spread_data_plane() -> None:
+    documents = render()
+    proxy = next(document for document in documents if document["kind"] == "EnvoyProxy")
+    provider = proxy["spec"]["provider"]["kubernetes"]
+    deployment = provider["envoyDeployment"]
+
+    assert deployment["replicas"] == 2
+    assert deployment["strategy"] == {
+        "type": "RollingUpdate",
+        "rollingUpdate": {"maxUnavailable": 0, "maxSurge": 1},
+    }
+    assert deployment["container"]["resources"] == {
+        "requests": {"cpu": "250m", "memory": "256Mi"},
+        "limits": {"cpu": "1", "memory": "512Mi"},
+    }
+    spread = deployment["pod"]["topologySpreadConstraints"]
+    assert len(spread) == 1
+    assert spread[0]["maxSkew"] == 1
+    assert spread[0]["topologyKey"] == "kubernetes.io/hostname"
+    assert spread[0]["whenUnsatisfiable"] == "DoNotSchedule"
+    assert spread[0]["labelSelector"]["matchLabels"] == {
+        "app.kubernetes.io/component": "proxy",
+        "app.kubernetes.io/managed-by": "envoy-gateway",
+        "app.kubernetes.io/name": "envoy",
+        "gateway.envoyproxy.io/owning-gateway-name": "public",
+        "gateway.envoyproxy.io/owning-gateway-namespace": "fs2-system",
+    }
+    assert provider["envoyPDB"] == {"minAvailable": 1}
 
 
 def test_public_edge_node_ports_are_configurable_inside_the_validated_range() -> None:
@@ -2222,13 +2256,32 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
     assert rate_limit["spec"]["targetRefs"] == [
         {
             "group": "gateway.networking.k8s.io",
-            "kind": "HTTPRoute",
-            "name": "fs2-serve-control-plane",
+            "kind": "Gateway",
+            "name": "public",
+            "sectionName": "public-https",
         }
     ]
-    rule = rate_limit["spec"]["rateLimit"]["local"]["rules"][0]
-    assert rule == {"limit": {"requests": 200, "unit": "Second"}}
-    assert rate_limit["spec"]["mergeType"] == "StrategicMerge"
+    assert "mergeType" not in rate_limit["spec"]
+    rules = rate_limit["spec"]["rateLimit"]["global"]["rules"]
+    assert rules == [
+        {
+            "clientSelectors": [
+                {"sourceCIDR": {"type": "Distinct", "value": "0.0.0.0/0"}}
+            ],
+            "limit": {"requests": 200, "unit": "Second"},
+            "shared": False,
+        },
+        {
+            "clientSelectors": [
+                {
+                    "sourceCIDR": {"type": "Distinct", "value": "0.0.0.0/0"},
+                    "path": {"type": "PathPrefix", "value": "/admin"},
+                }
+            ],
+            "limit": {"requests": 30, "unit": "Minute"},
+            "shared": False,
+        },
+    ]
 
 
 def test_enabled_public_route_rejects_an_incomplete_edge() -> None:
@@ -2435,7 +2488,18 @@ def test_direct_ip_edge_is_complete_tls_only_and_acme_reachable() -> None:
     redirect = redirect_route(documents)
     issuer = next(document for document in documents if document["kind"] == "Issuer")
     certificate = next(document for document in documents if document["kind"] == "Certificate")
-    client_policy = next(document for document in documents if document["kind"] == "ClientTrafficPolicy")
+    client_policy = next(
+        document
+        for document in documents
+        if document["kind"] == "ClientTrafficPolicy"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-public-tls"
+    )
+    http_client_policy = next(
+        document
+        for document in documents
+        if document["kind"] == "ClientTrafficPolicy"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-public-http-limits"
+    )
     assert gateway_class["spec"] == {
         "controllerName": "gateway.envoyproxy.io/gatewayclass-controller",
         "parametersRef": {
@@ -2473,16 +2537,38 @@ def test_direct_ip_edge_is_complete_tls_only_and_acme_reachable() -> None:
     }
     assert "hostname" not in listeners["acme-http"] and "hostname" not in listeners["public-https"]
     assert "addresses" not in gateway["spec"]
+    connection_limits = {
+        "connectionLimit": {"value": 2000},
+        "maxConnectionDuration": "2h",
+        "maxRequestsPerConnection": 1000,
+        "maxStreamDuration": "2h",
+    }
+    timeout_limits = {
+        "http": {
+            "requestReceivedTimeout": "60s",
+            "idleTimeout": "5m",
+            "streamIdleTimeout": "5m",
+        }
+    }
+    target = {
+        "group": "gateway.networking.k8s.io",
+        "kind": "Gateway",
+        "name": "public",
+        "sectionName": "public-https",
+    }
     assert client_policy["spec"] == {
-        "targetRefs": [
-            {
-                "group": "gateway.networking.k8s.io",
-                "kind": "Gateway",
-                "name": "public",
-                "sectionName": "public-https",
-            }
-        ],
+        "targetRefs": [target],
+        "clientIPDetection": {"xForwardedFor": {"numTrustedHops": 1}},
+        "connection": connection_limits,
+        "timeout": timeout_limits,
+        "http2": {"maxConcurrentStreams": 100},
         "tls": {"minVersion": "1.2", "maxVersion": "1.3"},
+    }
+    assert http_client_policy["spec"] == {
+        "targetRefs": [{**target, "sectionName": "acme-http"}],
+        "connection": connection_limits,
+        "timeout": timeout_limits,
+        "http2": {"maxConcurrentStreams": 100},
     }
     assert route["spec"]["parentRefs"] == [
         {

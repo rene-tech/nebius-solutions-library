@@ -28,6 +28,21 @@ spec:
   provider:
     type: Kubernetes
     kubernetes:
+      envoyDeployment:
+        replicas: {{ .Values.envoyProxy.replicaCount }}
+        strategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: 0
+            maxSurge: 1
+        pod:
+          topologySpreadConstraints:
+            {{- toYaml .Values.envoyProxy.topologySpreadConstraints | nindent 12 }}
+        container:
+          resources:
+            {{- toYaml .Values.envoyProxy.resources | nindent 12 }}
+      envoyPDB:
+        minAvailable: {{ .Values.envoyProxy.podDisruptionBudget.minAvailable }}
       envoyService:
         type: LoadBalancer
         # Nebius CCM rejects Local for this managed LoadBalancer path. Cluster

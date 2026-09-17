@@ -1,4 +1,4 @@
-{{- if and .Values.httpRoute.enabled .Values.edgeRateLimit.enabled }}
+{{- if and .Values.publicGateway.enabled .Values.edgeRateLimit.enabled }}
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
@@ -6,20 +6,31 @@ metadata:
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
 spec:
-  mergeType: StrategicMerge
   targetRefs:
     - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: {{ include "fs2-serve.fullname" . }}
-    {{- if .Values.adminConsole.httpRoute.enabled }}
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: {{ include "fs2-serve.adminConsoleFullname" . }}
-    {{- end }}
+      kind: Gateway
+      name: {{ .Values.publicGateway.gatewayName }}
+      sectionName: {{ .Values.publicGateway.httpsListenerName }}
   rateLimit:
-    local:
+    global:
       rules:
-        - limit:
+        - clientSelectors:
+            - sourceCIDR:
+                type: Distinct
+                value: {{ .Values.edgeRateLimit.sourceCidr | quote }}
+          limit:
             requests: {{ .Values.edgeRateLimit.requests }}
             unit: {{ .Values.edgeRateLimit.unit }}
+          shared: false
+        - clientSelectors:
+            - sourceCIDR:
+                type: Distinct
+                value: {{ .Values.edgeRateLimit.sourceCidr | quote }}
+              path:
+                type: PathPrefix
+                value: /admin
+          limit:
+            requests: {{ .Values.edgeRateLimit.adminRequests }}
+            unit: {{ .Values.edgeRateLimit.adminUnit }}
+          shared: false
 {{- end }}

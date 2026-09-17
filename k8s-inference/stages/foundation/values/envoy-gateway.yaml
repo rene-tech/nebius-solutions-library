@@ -1,0 +1,69 @@
+global:
+  images:
+    envoyGateway:
+      image: docker.io/envoyproxy/gateway:v1.8.3
+
+# Keep the controller available while it reconciles the public data plane and
+# the global rate-limit service.
+deployment:
+  replicas: 2
+  pod:
+    nodeSelector:
+      workload.fs2.nebius/system: "true"
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            control-plane: envoy-gateway
+podDisruptionBudget:
+  minAvailable: 1
+service:
+  type: ClusterIP
+
+config:
+  envoyGateway:
+    provider:
+      type: Kubernetes
+      kubernetes:
+        rateLimitDeployment:
+          replicas: 2
+          strategy:
+            type: RollingUpdate
+            rollingUpdate:
+              maxUnavailable: 0
+              maxSurge: 1
+          pod:
+            labels:
+              fs2.nebius.ai/edge-rate-limit-service: "true"
+            nodeSelector:
+              workload.fs2.nebius/system: "true"
+            topologySpreadConstraints:
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    fs2.nebius.ai/edge-rate-limit-service: "true"
+          container:
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+    rateLimit:
+      backend:
+        type: Redis
+        redis:
+          url: fs2-edge-rate-limit-redis.envoy-gateway-system.svc.cluster.local:6379
+      timeout: 100ms
+      # Preserve customer availability during a rate-limit backend incident;
+      # the proxy connection caps and application token budgets remain active.
+      failClosed: false
+      telemetry:
+        metrics:
+          prometheus:
+            disable: false

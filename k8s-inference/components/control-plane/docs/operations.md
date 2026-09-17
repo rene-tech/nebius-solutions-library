@@ -52,11 +52,15 @@ Wait reads use bounded exponential polling from
 50 ms database loop. Each replica holds at most `FS2_MAX_SYNC_WAITERS`
 connections, which must be at least its worker concurrency. Once those slots
 are full, a newly committed request immediately returns its durable `202`
-operation instead of failing or becoming unreachable. The edge adds a
-configurable Envoy Gateway local rate limit (200 requests/second per Envoy by
-default); PostgreSQL token budgets and operation concurrency remain the
-authoritative cross-replica controls. The local edge limit is merged with any
-Gateway-level platform policy rather than replacing it.
+operation instead of failing or becoming unreachable. The edge adds a shared
+Envoy Gateway global rate limit. Each trusted original client address receives
+an independent 200 requests/second bucket per route; `/admin` traffic also
+enters a separate 30 requests/minute bucket. The policy targets the public
+HTTPS listener, so the landing site, API, admin console, and Grafana inherit
+the baseline without route enumeration. PostgreSQL token budgets and operation
+concurrency remain the authoritative authenticated cross-replica controls. A
+more-specific future route policy must set `mergeType: StrategicMerge` so it
+cannot replace this listener baseline.
 The chart's public `HTTPRoute` exposes only `/v1`, exact `/mcp`, and exact
 `/.well-known/oauth-protected-resource` plus its resource-specific `/mcp`
 variant; bootstrap admin, metrics, probes, and
@@ -710,6 +714,15 @@ to the Envoy Gateway v1.8.3 contract. Change a NodePort only in the chart and
 Terraform `public_edge_service_ports` together, then review a fresh Terraform
 plan before reconciling the Service.
 
+The same `EnvoyProxy` requires two data-plane replicas, bounded CPU/memory, a
+one-Pod minimum disruption budget, rolling updates with zero unavailable Pods,
+and hostname topology spread. The foundation runs Envoy Gateway's shared
+rate-limit service with two replicas and a network-isolated ephemeral Redis
+counter store. Rate-limit backend failure is fail-open for customer
+availability; data-plane connection/stream caps and application token budgets
+remain enforced. The store contains counters only and is not a customer-data
+or request-debugging system.
+
 Nebius worker security groups must admit all three layers for both protocols:
 public listeners `80/443`, shifted Envoy targets `10080/10443`, and pinned
 NodePorts `31425/32633`. Allowing only the public listeners can produce
@@ -727,8 +740,14 @@ redirect. The static application route attaches by `sectionName` only to HTTPS:4
 Secret, and exposes only `/v1`, exact `/mcp`, and the two exact protected-resource
 metadata paths. It never exposes admin, probe, metrics, schema, or activation
 paths on plaintext HTTP.
-An Envoy `ClientTrafficPolicy` attaches only to the HTTPS listener and fixes
-the accepted protocol range to TLS 1.2 through TLS 1.3.
+An Envoy `ClientTrafficPolicy` on HTTPS fixes the accepted protocol range to
+TLS 1.2 through TLS 1.3 and trusts exactly one rightmost forwarded-address hop
+for client-bucket selection. Do not deploy it until the retained load balancer
+is proven to append that position and direct header forgery is excluded. Both
+HTTP and HTTPS listeners cap concurrent connections, connection and stream
+lifetime, requests per connection, incomplete request reception, idle time,
+and concurrent HTTP/2 streams. Active streams may run for at most two hours;
+idle streams are released after five minutes.
 
 The optional namespaced issuer selects only Let's Encrypt's exact staging or
 production directory, the `shortlived` ACME profile, a generated account-key
