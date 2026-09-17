@@ -636,7 +636,7 @@ def verify_rbac(payload: dict[str, Any], legacy_group: str) -> tuple[list[dict[s
         if subject["kind"] == "User":
             require(subject["namespace"] == "" and subject["name"] == username, f"{where} user subject mismatch")
         else:
-            require(subject["namespace"] in {"fs2-system", "fs2-observability"}, f"{where} service-account namespace invalid")
+            require(subject["namespace"] in {"fs2-system", "fs2-observability", "fs2-data", "cnpg-system"}, f"{where} service-account namespace invalid")
             require(username == f"system:serviceaccount:{subject['namespace']}:{subject['name']}", f"{where} service-account username mismatch")
         grants = principal["grants"]
         require(isinstance(grants, list), f"{where}.grants must be a list")

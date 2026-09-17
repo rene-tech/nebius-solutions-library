@@ -118,6 +118,9 @@ resource "terraform_data" "sai20_database_authority_v5_identity" {
         data.external.sai20_database_authority_v5_identity.result.apply_nonce == terraform_data.sai20_database_authority_v5_identity_nonce.output.nonce &&
         data.external.sai20_database_authority_v5_identity.result.successor_bundle_sha256 == terraform_data.sai20_database_authority_v5_plan.output.successor_bundle_sha256 &&
         data.external.sai20_database_authority_v5_identity.result.bootstrap_guard_sha256 == terraform_data.sai20_database_authority_v5_plan.output.bootstrap_guard_sha256 &&
+        data.external.sai20_database_authority_v5_identity.result.executor_uid == terraform_data.sai20_database_authority_v5_plan.output.executor_uid &&
+        data.external.sai20_database_authority_v5_identity.result.principal_identities_json == terraform_data.sai20_database_authority_v5_plan.output.principal_identities_json &&
+        data.external.sai20_database_authority_v5_identity.result.rollout_lineages_json == terraform_data.sai20_database_authority_v5_plan.output.rollout_lineages_json &&
         data.external.sai20_database_authority_v5_identity.result.source_commit == terraform_data.sai20_database_authority_v5_plan.output.source_commit &&
         data.external.sai20_database_authority_v5_identity.result.source_tree == terraform_data.sai20_database_authority_v5_plan.output.source_tree,
         false,
@@ -134,9 +137,13 @@ locals {
   sai20_authority_v5_cnpg_controller_identities = jsondecode(
     terraform_data.sai20_database_authority_v5_identity.output.cnpg_controller_identities_json
   )
+  sai20_authority_v5_rollout_lineages = jsondecode(
+    terraform_data.sai20_database_authority_v5_identity.output.rollout_lineages_json
+  )
   sai20_authority_v5_cnpg_controller_cel = join(" || ", [
     for principal in local.sai20_authority_v5_cnpg_controller_identities : format(
-      "(request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)))",
+      "(has(request.userInfo.uid) && request.userInfo.uid == %s && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)))",
+      jsonencode(principal.uid),
       jsonencode(principal.username),
       length(principal.groups),
       jsonencode(principal.groups),
@@ -163,6 +170,28 @@ locals {
       jsonencode(parent.kind),
       jsonencode(parent.name),
       jsonencode(parent.uid),
+    )
+  ])
+  sai20_authority_v5_rollout_child_cel = join(" || ", [
+    for lineage in local.sai20_authority_v5_rollout_lineages : format(
+      "(request.namespace == %s && %s in variables.effectivePodLabels && variables.effectivePodLabels[%s] == %s && has(variables.targetObject.metadata.ownerReferences) && ((request.resource.resource == 'replicasets' && variables.targetObject.metadata.ownerReferences.exists(owner, has(owner.controller) && owner.controller && owner.apiVersion == %s && owner.kind == %s && owner.name == %s && string(owner.uid) == %s)) || (request.resource.resource == 'pods' && variables.targetObject.metadata.ownerReferences.exists(owner, has(owner.controller) && owner.controller && owner.apiVersion == 'apps/v1' && owner.kind == 'ReplicaSet' && owner.name.startsWith(%s)))))",
+      jsonencode(lineage.namespace),
+      jsonencode("security.fs2.nebius.ai/sai20-rollout-lineage"),
+      jsonencode("security.fs2.nebius.ai/sai20-rollout-lineage"),
+      jsonencode(lineage.lineage),
+      jsonencode(lineage.api_version),
+      jsonencode(lineage.kind),
+      jsonencode(lineage.name),
+      jsonencode(lineage.uid),
+      jsonencode("${lineage.name}-"),
+    )
+  ])
+  sai20_authority_v5_known_rollout_lineage_cel = join(" || ", [
+    for lineage in local.sai20_authority_v5_rollout_lineages : format(
+      "(%s in variables.effectivePodLabels && variables.effectivePodLabels[%s] == %s)",
+      jsonencode("security.fs2.nebius.ai/sai20-rollout-lineage"),
+      jsonencode("security.fs2.nebius.ai/sai20-rollout-lineage"),
+      jsonencode(lineage.lineage),
     )
   ])
 }
@@ -236,6 +265,16 @@ resource "kubernetes_manifest" "sai20_database_peer_identity_v5" {
           ])
         },
         {
+          name = "oldEffectivePodLabels"
+          expression = join(" ", [
+            "request.operation != 'UPDATE' ? {} :",
+            "request.resource.resource == 'clusters' ? {} :",
+            "request.resource.resource == 'pods' ? (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) :",
+            "request.resource.resource == 'cronjobs' ? (has(oldObject.spec.jobTemplate.spec.template.metadata.labels) ? oldObject.spec.jobTemplate.spec.template.metadata.labels : {}) :",
+            "has(oldObject.spec.template.metadata.labels) ? oldObject.spec.template.metadata.labels : {}",
+          ])
+        },
+        {
           name = "databasePeer"
           expression = join(" ", [
             "request.namespace == 'fs2-data' &&",
@@ -252,6 +291,22 @@ resource "kubernetes_manifest" "sai20_database_peer_identity_v5" {
           ])
         },
         {
+          name = "oldDatabasePeer"
+          expression = join(" ", [
+            "request.operation == 'UPDATE' && request.namespace == 'fs2-data' &&",
+            "'cnpg.io/cluster' in variables.oldEffectivePodLabels &&",
+            "variables.oldEffectivePodLabels['cnpg.io/cluster'] == 'fs2-control-db'",
+          ])
+        },
+        {
+          name = "oldOperatorPeer"
+          expression = join(" ", [
+            "request.operation == 'UPDATE' && request.namespace == 'cnpg-system' &&",
+            "'app.kubernetes.io/name' in variables.oldEffectivePodLabels &&",
+            "variables.oldEffectivePodLabels['app.kubernetes.io/name'] == 'cloudnative-pg'",
+          ])
+        },
+        {
           name = "cnpgClusterObject"
           expression = join(" ", [
             "request.namespace == 'fs2-data' && request.resource.resource == 'clusters' &&",
@@ -261,7 +316,8 @@ resource "kubernetes_manifest" "sai20_database_peer_identity_v5" {
         {
           name = "custodian"
           expression = format(
-            "request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s))",
+            "has(request.userInfo.uid) && request.userInfo.uid == %s && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s))",
+            jsonencode(terraform_data.sai20_database_authority_v5_identity.output.executor_uid),
             jsonencode(terraform_data.sai20_database_authority_v5_identity.output.executor_username),
             length(jsondecode(terraform_data.sai20_database_authority_v5_identity.output.executor_groups_json)),
             terraform_data.sai20_database_authority_v5_identity.output.executor_groups_json,
@@ -278,6 +334,14 @@ resource "kubernetes_manifest" "sai20_database_peer_identity_v5" {
           expression = local.sai20_authority_v5_exact_peer_parent_cel
         },
         {
+          name       = "signedRolloutChild"
+          expression = local.sai20_authority_v5_rollout_child_cel
+        },
+        {
+          name       = "knownRolloutLineage"
+          expression = local.sai20_authority_v5_known_rollout_lineage_cel
+        },
+        {
           name = "exactCnpgClusterOwner"
           expression = join(" ", [
             "request.namespace == 'fs2-data' && request.resource.resource == 'pods' && variables.controllerIdentity &&",
@@ -290,7 +354,7 @@ resource "kubernetes_manifest" "sai20_database_peer_identity_v5" {
         {
           name = "controllerOwnedOperatorChild"
           expression = join(" ", [
-            "variables.controllerIdentity && variables.exactOperatorParent &&",
+            "variables.controllerIdentity && (variables.exactOperatorParent || variables.signedRolloutChild) &&",
             "has(variables.targetObject.metadata.ownerReferences) &&",
             "variables.targetObject.metadata.ownerReferences.exists(owner, has(owner.controller) && owner.controller)",
           ])
@@ -300,6 +364,16 @@ resource "kubernetes_manifest" "sai20_database_peer_identity_v5" {
         {
           expression = "!(variables.databasePeer || variables.operatorPeer) || variables.custodian || (variables.databasePeer && variables.exactCnpgClusterOwner) || (variables.operatorPeer && variables.controllerOwnedOperatorChild)"
           message    = "database and CNPG operator label peers require the exact custodian or an authenticated controller with the exact signed live owner name and UID"
+          reason     = "Forbidden"
+        },
+        {
+          expression = "!variables.operatorPeer || variables.knownRolloutLineage"
+          message    = "every CNPG operator peer must retain a source-derived Deployment rollout lineage"
+          reason     = "Forbidden"
+        },
+        {
+          expression = "request.operation != 'UPDATE' || !(variables.oldDatabasePeer || variables.oldOperatorPeer) || variables.custodian || variables.databasePeer || variables.operatorPeer"
+          message    = "removing a protected database or CNPG peer label requires the exact externally enrolled custodian"
           reason     = "Forbidden"
         },
         {
@@ -397,6 +471,9 @@ resource "terraform_data" "sai20_database_authority_v5_apply" {
         data.external.sai20_database_authority_v5_apply.result.apply_nonce == terraform_data.sai20_database_authority_v5_apply_nonce.output.nonce &&
         data.external.sai20_database_authority_v5_apply.result.successor_bundle_sha256 == terraform_data.sai20_database_authority_v5_plan.output.successor_bundle_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.bootstrap_guard_sha256 == terraform_data.sai20_database_authority_v5_identity.output.bootstrap_guard_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.executor_uid == terraform_data.sai20_database_authority_v5_identity.output.executor_uid &&
+        data.external.sai20_database_authority_v5_apply.result.principal_identities_json == terraform_data.sai20_database_authority_v5_identity.output.principal_identities_json &&
+        data.external.sai20_database_authority_v5_apply.result.rollout_lineages_json == terraform_data.sai20_database_authority_v5_identity.output.rollout_lineages_json &&
         data.external.sai20_database_authority_v5_apply.result.peer_workload_inventory_sha256 == terraform_data.sai20_database_authority_v5_identity.output.peer_workload_inventory_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.cluster_authority_review_sha256 == terraform_data.sai20_database_authority_v5_plan.output.cluster_authority_review_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.source_commit == terraform_data.sai20_database_authority_v5_plan.output.source_commit &&

@@ -127,6 +127,8 @@ resource "terraform_data" "sai20_database_authority_v4_identity" {
         data.external.sai20_database_authority_v4_identity.result.bundle_sha256 == terraform_data.sai20_database_authority_v4_plan.output.bundle_sha256 &&
         data.external.sai20_database_authority_v4_identity.result.source_commit == terraform_data.sai20_database_authority_v4_plan.output.source_commit &&
         data.external.sai20_database_authority_v4_identity.result.source_tree == terraform_data.sai20_database_authority_v4_plan.output.source_tree &&
+        data.external.sai20_database_authority_v4_identity.result.executor_uid == terraform_data.sai20_database_authority_v4_plan.output.executor_uid &&
+        data.external.sai20_database_authority_v4_identity.result.executor_uid == terraform_data.sai20_database_authority_v5_identity.output.executor_uid &&
         data.external.sai20_database_authority_v4_identity.result.executor_username == terraform_data.sai20_database_authority_v4_plan.output.executor_username &&
         data.external.sai20_database_authority_v4_identity.result.executor_groups_json == terraform_data.sai20_database_authority_v4_plan.output.executor_groups_json &&
         data.external.sai20_database_authority_v4_identity.result.executor_extra_json == terraform_data.sai20_database_authority_v4_plan.output.executor_extra_json,
@@ -194,6 +196,9 @@ resource "terraform_data" "sai20_database_authority_v4_apply" {
         data.external.sai20_database_authority_v4_apply.result.source_commit == terraform_data.sai20_database_authority_v4_plan.output.source_commit &&
         data.external.sai20_database_authority_v4_apply.result.source_tree == terraform_data.sai20_database_authority_v4_plan.output.source_tree &&
         data.external.sai20_database_authority_v4_apply.result.ingress_spec_sha256 == local.sai20_authority_v4_ingress_spec_sha256 &&
+        data.external.sai20_database_authority_v4_apply.result.executor_uid == terraform_data.sai20_database_authority_v4_plan.output.executor_uid &&
+        data.external.sai20_database_authority_v4_apply.result.executor_uid == terraform_data.sai20_database_authority_v4_identity.output.executor_uid &&
+        data.external.sai20_database_authority_v4_apply.result.executor_uid == terraform_data.sai20_database_authority_v5_apply.output.executor_uid &&
         data.external.sai20_database_authority_v4_apply.result.executor_username == terraform_data.sai20_database_authority_v4_plan.output.executor_username &&
         data.external.sai20_database_authority_v4_apply.result.executor_groups_json == terraform_data.sai20_database_authority_v4_plan.output.executor_groups_json &&
         data.external.sai20_database_authority_v4_apply.result.executor_extra_json == terraform_data.sai20_database_authority_v4_plan.output.executor_extra_json &&
@@ -211,6 +216,20 @@ resource "terraform_data" "sai20_database_authority_v4_apply" {
 }
 
 locals {
+  sai20_authority_v5_principal_identities = jsondecode(
+    terraform_data.sai20_database_authority_v5_identity.output.principal_identities_json
+  )
+  sai20_authority_v5_exact_principal_cel = join(" || ", [
+    for principal in local.sai20_authority_v5_principal_identities : format(
+      "(has(request.userInfo.uid) && request.userInfo.uid == %s && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)))",
+      jsonencode(principal.uid),
+      jsonencode(principal.username),
+      length(principal.groups),
+      jsonencode(principal.groups),
+      jsonencode(principal.extra),
+      jsonencode(principal.extra),
+    )
+  ])
   sai20_authority_v4_transition_policy_specs = jsondecode(
     terraform_data.sai20_database_authority_v4_plan.output.network_policy_specs_json
   )
@@ -328,7 +347,8 @@ resource "kubernetes_manifest" "sai20_database_authority_object_custody_v4" {
         {
           name = "custodian"
           expression = format(
-            "request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s))",
+            "has(request.userInfo.uid) && request.userInfo.uid == %s && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s))",
+            jsonencode(terraform_data.sai20_database_authority_v4_identity.output.executor_uid),
             jsonencode(terraform_data.sai20_database_authority_v4_identity.output.executor_username),
             length(jsondecode(terraform_data.sai20_database_authority_v4_identity.output.executor_groups_json)),
             terraform_data.sai20_database_authority_v4_identity.output.executor_groups_json,
@@ -415,7 +435,8 @@ resource "kubernetes_manifest" "sai20_database_policy_freeze_v4" {
         {
           name = "custodian"
           expression = format(
-            "request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s))",
+            "has(request.userInfo.uid) && request.userInfo.uid == %s && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s))",
+            jsonencode(terraform_data.sai20_database_authority_v4_identity.output.executor_uid),
             jsonencode(terraform_data.sai20_database_authority_v4_identity.output.executor_username),
             length(jsondecode(terraform_data.sai20_database_authority_v4_identity.output.executor_groups_json)),
             terraform_data.sai20_database_authority_v4_identity.output.executor_groups_json,
@@ -655,6 +676,10 @@ resource "kubernetes_manifest" "sai20_database_exact_owner_v4" {
           expression = local.sai20_authority_v3_controller_cel
         },
         {
+          name       = "exactPrincipalIdentity"
+          expression = local.sai20_authority_v5_exact_principal_cel
+        },
+        {
           name       = "exactLiveParent"
           expression = local.sai20_authority_v4_exact_parent_cel
         },
@@ -680,7 +705,7 @@ resource "kubernetes_manifest" "sai20_database_exact_owner_v4" {
       ]
       validations = [
         {
-          expression = "variables.releaseMutation || (variables.controllerIdentity && ((!variables.databaseClient && variables.controllerOwnedChild) || (variables.databaseClient && variables.exactLiveParent)))"
+          expression = "variables.exactPrincipalIdentity && (variables.releaseMutation || (variables.controllerIdentity && ((!variables.databaseClient && variables.controllerOwnedChild) || (variables.databaseClient && variables.exactLiveParent))))"
           message    = "workload mutation requires an exact grant; database-labelled controller children additionally require an exact signed live parent name and UID"
           reason     = "Forbidden"
         },

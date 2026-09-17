@@ -51,7 +51,7 @@
           "name": "protectedObject"
         },
         {
-          "expression": "request.userInfo.username == ${executor_username_json} && request.userInfo.groups.size() == ${executor_group_count} && request.userInfo.groups.all(group, group in ${executor_groups_json}) && ((${executor_extra_json} == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == ${executor_extra_json}))",
+          "expression": "has(request.userInfo.uid) && request.userInfo.uid == ${executor_uid_json} && request.userInfo.username == ${executor_username_json} && request.userInfo.groups.size() == ${executor_group_count} && request.userInfo.groups.all(group, group in ${executor_groups_json}) && ((${executor_extra_json} == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == ${executor_extra_json}))",
           "name": "custodian"
         }
       ],

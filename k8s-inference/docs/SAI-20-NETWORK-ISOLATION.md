@@ -323,3 +323,61 @@ credential, cluster object or provider response was created or inspected in
 this task. The v5 regressions are authored but deliberately unexecuted under
 the coordinator boundary. This remains a fail-closed candidate for independent
 static review only: no SOURCE GO, integration, deployment or live claim.
+
+## Independent-review correction after `efb29e68`
+
+Preliminary independent review rejected exact commit
+`efb29e684e0c91b06553d76b43c487a8531016f2` / tree
+`5d92ba0377f9c5aa4a00ffe9acfd26c488f5017e`. Preserve it as negative
+evidence. Its supplemental apply reader treated the singleton CNPG Cluster as
+a list; ClusterRoleBinding subjects were reconstructed but not restricted to
+the admitted principals; `cnpg-system` namespace RBAC was absent; update
+admission ignored protected labels on the old object; exact ReplicaSet UIDs
+made ordinary CNPG Deployment rollouts deadlock; authenticated UID was
+dropped; token, CSR and extended impersonation escalation edges were omitted;
+and the provider observer was authenticated by content but later reopened by
+mutable pathname.
+
+The direct additive successor preserves the accepted external-enrollment,
+bootstrap-guard, exact source/tree/ingress binding, unknown apply nonces and
+fresh provider reread design, while closing those eight boundaries:
+
+- Supplemental re-observation treats `Cluster/fs2-control-db` as a singleton
+  and compares its normalized complete object before entering list-only
+  pagination and `items` validation.
+- Raw RBAC closure now includes Roles and RoleBindings in `cnpg-system`.
+  Dangerous and sensitive ClusterRoleBinding subjects must be exact admitted
+  User or ServiceAccount subjects; inherited cluster authority cannot be
+  satisfied by the retired legacy group or an unlisted group.
+- Both the old and new effective Pod-template labels are evaluated on UPDATE.
+  A protected database or CNPG peer label can be removed only by the exact
+  externally enrolled custodian, while ordinary controller updates must keep
+  satisfying the new-object peer validation.
+- Every current CNPG operator Deployment is a signed rollout root identified
+  by API identity, name and UID. Its source-derived lineage label must be
+  inherited by current ReplicaSets and Pods. Admission permits a future
+  ReplicaSet from that exact Deployment and a future Pod from the
+  authenticated controller only when the Pod carries the same lineage and its
+  ReplicaSet owner name is in that Deployment's rollout namespace. This
+  permits a new ReplicaSet UID without accepting an unrelated root.
+- Collector, executor and every admitted Kubernetes principal now bind the
+  non-empty UID returned by SelfSubjectReview. Credential-subject hashes,
+  apply re-observation, bootstrap custody, workload custody and CNPG peer
+  admission all compare that UID in addition to username, groups and extras.
+- The signed SSAR and RBAC closures now include service-account token minting,
+  CSR creation and approval, signer approval, and `uids`/`userextras`
+  impersonation. Wildcard grants remain dangerous.
+- The provider observer is opened once with `O_NOFOLLOW`, checked as a bounded
+  executable regular file, hashed from that descriptor, executed through
+  `/proc/self/fd` with the descriptor inherited, and checked again for stable
+  device, inode, mode, size, modification time and change time before its
+  authenticated response is accepted.
+
+Activation remains deliberately fail-closed: a successor evidence packet must
+contain the expanded namespace/RBAC/identity/lineage closure, and the empty
+source enrollment registries still authorize nothing. The regression source
+was authored but not executed. Under the coordinator boundary there was no
+test, parser, formatter, Terraform, Helm, build, package-manager, scanner,
+cluster, provider, database, registry, credential, deployment, probe or
+cleanup action. This is a candidate for independent static review only and
+makes no SOURCE GO, integration, deployment or live claim.

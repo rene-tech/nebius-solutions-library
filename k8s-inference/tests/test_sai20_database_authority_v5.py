@@ -1,8 +1,9 @@
 """Unexecuted regressions for the additive SAI-20 v5 successor gate.
 
 The coordinator explicitly forbids executing tests or parsers in this task.
-These assertions encode the four deterministic blockers reported against
-d5c19b3a8b3345acbec7b16bd5a2c00a455874d8.
+These assertions encode the eight deterministic blockers reported against
+efb29e684e0c91b06553d76b43c487a8531016f2. They are authored evidence only;
+this task's coordinator boundary forbids executing them.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 V4_TF = ROOT / "stages/workloads/sai20_database_authority_v4.tf"
 V5_TF = ROOT / "stages/workloads/sai20_database_authority_v5.tf"
+V4_PY = ROOT / "stages/workloads/scripts/sai20_database_authority_v4.py"
 V5_PY = ROOT / "stages/workloads/scripts/sai20_database_authority_v5.py"
 INGRESS = ROOT / "stages/workloads/contracts/sai20-control-db-ingress-v4.json"
 BOOTSTRAP = ROOT / "stages/workloads/contracts/sai20-bootstrap-guard-v5.json"
@@ -28,6 +30,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.v4_tf = V4_TF.read_text(encoding="utf-8")
         cls.v5_tf = V5_TF.read_text(encoding="utf-8")
+        cls.v4_py = V4_PY.read_text(encoding="utf-8")
         cls.v5_py = V5_PY.read_text(encoding="utf-8")
         cls.ingress = json.loads(INGRESS.read_text(encoding="utf-8"))
         cls.bootstrap = json.loads(BOOTSTRAP.read_text(encoding="utf-8"))
@@ -37,6 +40,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
 
     def test_rejected_v4_source_cannot_be_reused(self) -> None:
         self.assertIn("d5c19b3a8b3345acbec7b16bd5a2c00a455874d8", self.v5_py)
+        self.assertIn("efb29e684e0c91b06553d76b43c487a8531016f2", self.v5_py)
         self.assertIn("source is a preserved rejected candidate", self.v5_py)
         self.assertIn("sai20_database_authority_v5_plan.output.successor_verified", self.v4_tf)
         self.assertIn("sai20_database_authority_v5_identity.output.bootstrap_reobserved", self.v4_tf)
@@ -119,6 +123,62 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("provider group membership changed between signed observation and apply", self.v5_py)
         self.assertIn('result.provider_group_reobserved == "true"', self.v5_tf)
         self.assertEqual(self.v5_tf.count("nonce                   = timestamp()"), 2)
+
+    def test_singleton_cnpg_reread_does_not_require_list_items(self) -> None:
+        singleton_branch = self.v5_py.index('if name == "k8s/cnpg-cluster/fs2-data/fs2-control-db"')
+        list_requirement = self.v5_py.index('isinstance(current.get("items"), list)', singleton_branch)
+        self.assertLess(singleton_branch, list_requirement)
+        self.assertIn("CNPG Cluster singleton differs from the signed observation", self.v5_py)
+
+    def test_cluster_and_cnpg_namespace_rbac_are_closed_over_exact_principals(self) -> None:
+        self.assertIn('(\"cnpg-system\", \"roles\")', self.v4_py)
+        self.assertIn('(\"cnpg-system\", \"rolebindings\")', self.v4_py)
+        self.assertIn('record["binding_resource"] == "clusterrolebindings"', self.v5_py)
+        self.assertIn("dangerous or sensitive ClusterRoleBinding authority is not constrained", self.v5_py)
+        self.assertIn("admitted_subjects", self.v5_py)
+
+    def test_update_cannot_strip_a_protected_peer_label(self) -> None:
+        self.assertIn('name = "oldEffectivePodLabels"', self.v5_tf)
+        self.assertIn('name = "oldDatabasePeer"', self.v5_tf)
+        self.assertIn('name = "oldOperatorPeer"', self.v5_tf)
+        self.assertIn("removing a protected database or CNPG peer label requires", self.v5_tf)
+
+    def test_cnpg_rollout_uses_signed_deployment_lineage(self) -> None:
+        self.assertIn('ROLLOUT_LINEAGE_LABEL = "security.fs2.nebius.ai/sai20-rollout-lineage"', self.v5_py)
+        self.assertIn("CNPG ReplicaSet does not resolve to one exact signed Deployment root", self.v5_py)
+        self.assertIn("rollout_lineages_json", self.v5_py)
+        self.assertIn("sai20_authority_v5_rollout_child_cel", self.v5_tf)
+        self.assertIn("owner.name.startsWith", self.v5_tf)
+        self.assertIn("variables.exactOperatorParent || variables.signedRolloutChild", self.v5_tf)
+
+    def test_authenticator_uid_is_signed_reobserved_and_admitted(self) -> None:
+        self.assertIn('uid = text(user_info.get("uid")', self.v4_py)
+        self.assertIn('"executor_uid": executor["uid"]', self.v4_py)
+        self.assertIn('live_identity["uid"] == context["executor"]["uid"]', self.v4_py)
+        self.assertIn('"principal_uids"', self.v5_py)
+        self.assertIn("has(request.userInfo.uid)", self.v4_tf)
+        self.assertIn("has(request.userInfo.uid)", self.v5_tf)
+        self.assertIn("${executor_uid_json}", json.dumps(self.bootstrap))
+
+    def test_sensitive_authority_includes_token_csr_and_impersonation_edges(self) -> None:
+        for resource in (
+            "serviceaccounts/token",
+            "certificatesigningrequests",
+            "certificatesigningrequests/approval",
+            "signers",
+            "uids",
+            "userextras",
+        ):
+            self.assertIn(resource, self.v4_py)
+            self.assertIn(resource, self.v5_py)
+
+    def test_provider_observer_executes_the_authenticated_open_descriptor(self) -> None:
+        self.assertIn("os.O_NOFOLLOW", self.v5_py)
+        self.assertIn("os.fstat(observer_fd)", self.v5_py)
+        self.assertIn('f"/proc/self/fd/{observer_fd}"', self.v5_py)
+        self.assertIn("pass_fds=(observer_fd,)", self.v5_py)
+        self.assertIn("provider group observer changed while it was executing", self.v5_py)
+        self.assertNotIn("[str(observer)]", self.v5_py)
 
     def test_existing_database_clients_and_debugging_paths_remain_present(self) -> None:
         serialized = json.dumps(self.ingress, sort_keys=True)

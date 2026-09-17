@@ -75,3 +75,21 @@ provider transcript against the pinned endpoint and CA, and requires its empty
 membership response to equal the signed response before the database policy
 can become authoritative. No provider executable, credential or response is
 committed here.
+
+## Post-`efb29e68` authority closure
+
+Exact `efb29e684e0c91b06553d76b43c487a8531016f2` remains rejected. Its
+external enrollment and pre-existing bootstrap concepts are retained, but a
+replacement packet must additionally bind authenticated principal UIDs,
+`cnpg-system` Roles/RoleBindings, exact admitted ClusterRoleBinding subjects,
+service-account token and CSR/signing escalation reviews, and source-derived
+CNPG Deployment rollout lineages. Apply re-observation distinguishes the
+singleton CNPG Cluster from list endpoints, and the provider observer is
+executed from the same no-follow file descriptor whose bytes were hashed.
+
+The peer admission contract evaluates both old and new template labels on
+UPDATE. It accepts future CNPG ReplicaSet UIDs only through an exact signed
+Deployment root, inherited rollout lineage and exact authenticated controller
+identity. These additions do not enroll a root or authorize activation; the
+source-owned registries remain empty and fail closed pending independent
+external enrollment and review.

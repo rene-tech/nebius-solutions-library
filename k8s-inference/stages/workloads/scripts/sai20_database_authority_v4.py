@@ -55,6 +55,8 @@ WORKLOAD_TYPES = {
 V4_RBAC_LISTS = v3.RBAC_LISTS | {
     ("fs2-data", "roles"),
     ("fs2-data", "rolebindings"),
+    ("cnpg-system", "roles"),
+    ("cnpg-system", "rolebindings"),
 }
 RBAC_ENDPOINTS = {
     (namespace, resource): (
@@ -76,6 +78,13 @@ DANGEROUS_REVIEWS = {
     "impersonate-users": {"group": "", "resource": "users", "verb": "impersonate"},
     "impersonate-groups": {"group": "", "resource": "groups", "verb": "impersonate"},
     "impersonate-serviceaccounts": {"group": "", "resource": "serviceaccounts", "verb": "impersonate"},
+    "impersonate-uids": {"group": "authentication.k8s.io", "resource": "uids", "verb": "impersonate"},
+    "impersonate-userextras": {"group": "authentication.k8s.io", "resource": "userextras", "verb": "impersonate"},
+    "create-serviceaccount-tokens": {"group": "", "resource": "serviceaccounts/token", "verb": "create"},
+    "create-certificate-signing-requests": {"group": "certificates.k8s.io", "resource": "certificatesigningrequests", "verb": "create"},
+    "update-certificate-signing-request-approval": {"group": "certificates.k8s.io", "resource": "certificatesigningrequests/approval", "verb": "update"},
+    "patch-certificate-signing-request-approval": {"group": "certificates.k8s.io", "resource": "certificatesigningrequests/approval", "verb": "patch"},
+    "approve-certificate-signers": {"group": "certificates.k8s.io", "resource": "signers", "verb": "approve"},
     "escalate-roles": {"group": "rbac.authorization.k8s.io", "resource": "roles", "verb": "escalate"},
     "escalate-clusterroles": {"group": "rbac.authorization.k8s.io", "resource": "clusterroles", "verb": "escalate"},
     "bind-roles": {"group": "rbac.authorization.k8s.io", "resource": "roles", "verb": "bind"},
@@ -355,7 +364,7 @@ def expected_transcript_names(principals: list[dict[str, Any]]) -> set[str]:
         names.add(f"k8s/identity/{principal_id}/selfsubjectreview")
         names.update(
             f"k8s/identity/{principal_id}/selfsubjectrulesreview/{namespace}"
-            for namespace in ("fs2-system", "fs2-observability", "fs2-data")
+            for namespace in ("fs2-system", "fs2-observability", "fs2-data", "cnpg-system")
         )
         names.update(
             f"k8s/identity/{principal_id}/selfsubjectaccessreview/{review_name}"
@@ -363,7 +372,7 @@ def expected_transcript_names(principals: list[dict[str, Any]]) -> set[str]:
         )
     names.update(
         f"k8s/collector/selfsubjectrulesreview/{namespace}"
-        for namespace in ("fs2-system", "fs2-observability", "fs2-data")
+        for namespace in ("fs2-system", "fs2-observability", "fs2-data", "cnpg-system")
     )
     names.update(
         f"k8s/collector/selfsubjectaccessreview/{review_name}"
@@ -377,6 +386,7 @@ def require_collector_credential(
     collector: dict[str, Any],
 ) -> None:
     subject = {
+        "uid": collector["uid"],
         "username": collector["username"],
         "groups": sorted(collector["groups"]),
         "extra_sha256": collector["extra_sha256"],
@@ -397,6 +407,7 @@ def verify_collector_identity(
     collector: dict[str, Any],
 ) -> None:
     subject = {
+        "uid": collector["uid"],
         "username": collector["username"],
         "groups": collector["groups"],
         "extra_sha256": collector["extra_sha256"],
@@ -416,11 +427,12 @@ def verify_collector_identity(
     observed = subject_from_review(identity_entry["body"], identity_name)
     require(
         observed["username"] == collector["username"]
+        and observed["uid"] == collector["uid"]
         and observed["groups"] == collector["groups"]
         and observed["extra_sha256"] == collector["extra_sha256"],
         "collector identity is not authenticator-derived",
     )
-    for namespace in ("fs2-system", "fs2-observability", "fs2-data"):
+    for namespace in ("fs2-system", "fs2-observability", "fs2-data", "cnpg-system"):
         name = f"k8s/collector/selfsubjectrulesreview/{namespace}"
         entry = entries[name]
         request = {
@@ -710,6 +722,7 @@ def subject_from_review(body: dict[str, Any], where: str) -> dict[str, Any]:
     require(body.get("kind") == "SelfSubjectReview", f"{where} is not SelfSubjectReview")
     user_info = body.get("status", {}).get("userInfo", {})
     username = text(user_info.get("username"), f"{where}.username")
+    uid = text(user_info.get("uid"), f"{where}.uid")
     groups = sorted(v3.unique_strings(user_info.get("groups", []), f"{where}.groups"))
     extra = user_info.get("extra", {})
     require(isinstance(extra, dict), f"{where}.extra invalid")
@@ -724,6 +737,7 @@ def subject_from_review(body: dict[str, Any], where: str) -> dict[str, Any]:
     )
     normalized_extra = {key: sorted(values) for key, values in sorted(extra.items())}
     return {
+        "uid": uid,
         "username": username,
         "groups": groups,
         "extra": normalized_extra,
@@ -753,6 +767,7 @@ def verify_identities(entries: dict[str, dict[str, Any]], legacy: dict[str, Any]
         require(identity["groups"] == sorted(principal["groups"]), f"{principal_id} groups are not authenticator-derived")
         subject_digest = digest(
             {
+                "uid": identity["uid"],
                 "username": identity["username"],
                 "groups": identity["groups"],
                 "extra_sha256": identity["extra_sha256"],
@@ -760,7 +775,7 @@ def verify_identities(entries: dict[str, dict[str, Any]], legacy: dict[str, Any]
         )
         require(identity_entry["request"]["credential_subject_sha256"] == subject_digest, f"{principal_id} transcript credential mismatch")
         rules_evidence[principal_id] = {}
-        for namespace in ("fs2-system", "fs2-observability", "fs2-data"):
+        for namespace in ("fs2-system", "fs2-observability", "fs2-data", "cnpg-system"):
             rules_name = f"k8s/identity/{principal_id}/selfsubjectrulesreview/{namespace}"
             rules_entry = entries[rules_name]
             require(
@@ -916,7 +931,7 @@ def verify_collector(
     exact_keys(
         collector,
         {
-            "root_key_id", "principal_id", "username", "groups", "extra_sha256",
+            "root_key_id", "principal_id", "uid", "username", "groups", "extra_sha256",
             "credential_subject_sha256", "software_commit", "software_tree",
             "software_blob", "kubectl_sha256",
         },
@@ -925,6 +940,7 @@ def verify_collector(
     root_key_id = text(collector["root_key_id"], "collector.root_key_id")
     require(root_key_id in roots and roots[root_key_id]["role"] == "evidence-collector", "collector root mismatch")
     require(collector["principal_id"] == roots[root_key_id]["principal_id"], "collector principal mismatch")
+    text(collector["uid"], "collector.uid")
     text(collector["username"], "collector.username")
     groups = v3.unique_strings(collector["groups"], "collector.groups")
     require(groups == sorted(groups), "collector.groups must be sorted")
@@ -1106,6 +1122,7 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
         "source_tree": tree,
         "ingress_spec_sha256": ingress_sha,
         "executor_principal_id": executor["id"],
+        "executor_uid": executor["uid"],
         "executor_username": executor["username"],
         "executor_groups_json": json.dumps(executor["groups"], separators=(",", ":")),
         "executor_extra_json": json.dumps(executor["extra"], sort_keys=True, separators=(",", ":")),
@@ -1184,7 +1201,13 @@ def verify_apply_identity(query: dict[str, str], context: dict[str, Any]) -> Non
 
     self_review_request = {"apiVersion": "authentication.k8s.io/v1", "kind": "SelfSubjectReview"}
     live_identity = subject_from_review(parse_json_bytes(live_post(query, SELF_SUBJECT_REVIEW_ENDPOINT, self_review_request), "apply SelfSubjectReview"), "apply executor")
-    require(live_identity["username"] == context["executor"]["username"] and live_identity["groups"] == context["executor"]["groups"] and live_identity["extra_sha256"] == context["executor"]["extra_sha256"], "Terraform executor is not the signed custodian")
+    require(
+        live_identity["uid"] == context["executor"]["uid"]
+        and live_identity["username"] == context["executor"]["username"]
+        and live_identity["groups"] == context["executor"]["groups"]
+        and live_identity["extra_sha256"] == context["executor"]["extra_sha256"],
+        "Terraform executor is not the exact signed custodian identity",
+    )
 
 
 def verify_apply(query: dict[str, str], context: dict[str, Any], _roots: dict[str, dict[str, Any]]) -> None:
@@ -1197,7 +1220,7 @@ def verify_apply(query: dict[str, str], context: dict[str, Any], _roots: dict[st
         current = parse_json_bytes(live_get(query, path), f"apply {name}")
         require(digest(stable_object(current)) == digest(stable_object(entry["body"])), f"apply-time re-observation differs: {name}")
 
-    for namespace in ("fs2-system", "fs2-observability", "fs2-data"):
+    for namespace in ("fs2-system", "fs2-observability", "fs2-data", "cnpg-system"):
         request = {
             "apiVersion": "authorization.k8s.io/v1",
             "kind": "SelfSubjectRulesReview",
