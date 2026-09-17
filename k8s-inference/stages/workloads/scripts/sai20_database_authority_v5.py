@@ -42,8 +42,12 @@ REJECTED_COMMITS = {
     "17469ed79eb56ae63327f0ddecb81d21b2170722",
     "6e1bf0f00d85a80d228a7cea803511391076fb5a",
     "e8ac34b7b9dd670015655d43cb24d14907abf8f1",
+    "1d00f13842ea0287b1aefa628bc0f224c461c65c",
 }
 ROLLOUT_LINEAGE_LABEL = "security.fs2.nebius.ai/sai20-rollout-lineage"
+CREDENTIAL_ROLLOUT_LINEAGE_LABEL = (
+    "security.fs2.nebius.ai/sai20-credential-rollout-lineage"
+)
 CREDENTIAL_CUSTODY_NAMESPACES = (
     "cnpg-system",
     "fs2-data",
@@ -66,12 +70,6 @@ WORKLOAD_CONTROLLER_CHILDREN = {
     "replicasets": "pods",
     "statefulsets": "pods",
 }
-NATIVE_WORKLOAD_CONTROLLER_IDENTITY = {
-    "uid": "",
-    "username": "system:kube-controller-manager",
-    "groups": ["system:authenticated"],
-    "extra": {},
-}
 POD_SECRET_REFERENCE_PATHS = {
     "azure-file": ("volumes", "*", "azureFile", "secretName"),
     "cephfs": ("volumes", "*", "cephfs", "secretRef", "name"),
@@ -92,6 +90,9 @@ POD_SECRET_REFERENCE_PATHS = {
     "secret-volume": ("volumes", "*", "secret", "secretName"),
     "storage-os": ("volumes", "*", "storageos", "secretRef", "name"),
 }
+SERVICE_ACCOUNT_TOKEN_PROJECTION_PATH = (
+    "volumes", "*", "projected", "sources", "*", "serviceAccountToken"
+)
 PEER_NAMESPACES = ("fs2-data", "cnpg-system")
 PEER_RESOURCES = tuple(sorted(v4.WORKLOAD_TYPES))
 PEER_ENDPOINTS = {
@@ -384,7 +385,7 @@ def workload_pod_spec(item: dict[str, Any], resource: str) -> dict[str, Any]:
 
 def verify_pod_secret_reference_contract(
     query: dict[str, str],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Load the one source-owned field map used by inventory and admission."""
 
     contract = source_json(
@@ -393,7 +394,11 @@ def verify_pod_secret_reference_contract(
         "expected_pod_secret_reference_contract_sha256",
         "Pod Secret reference contract",
     )
-    exact_keys(contract, {"schema", "references"}, "Pod Secret reference contract")
+    exact_keys(
+        contract,
+        {"schema", "references", "service_account_token_projection"},
+        "Pod Secret reference contract",
+    )
     require(
         contract["schema"]
         == "fs2-serve.nebius.ai/sai20-pod-secret-references/v1",
@@ -427,7 +432,34 @@ def verify_pod_secret_reference_contract(
         == sorted(POD_SECRET_REFERENCE_PATHS),
         "Pod Secret reference contract must contain every exact path in lexical order",
     )
-    return normalized
+    token_projection = contract["service_account_token_projection"]
+    require(
+        isinstance(token_projection, dict),
+        "service-account token projection contract must be an object",
+    )
+    exact_keys(
+        token_projection,
+        {"id", "path", "cel_surface"},
+        "service-account token projection contract",
+    )
+    require(
+        token_projection["id"] == "projected-service-account-token"
+        and token_projection["path"]
+        == list(SERVICE_ACCOUNT_TOKEN_PROJECTION_PATH),
+        "service-account token projection path is not source-exact",
+    )
+    token_cel = text(
+        token_projection["cel_surface"],
+        "service-account token projection CEL",
+    )
+    require(
+        token_cel.count("{spec}") >= 1
+        and "audience=" in token_cel
+        and "expiration_seconds=" in token_cel
+        and "path=" in token_cel,
+        "service-account token projection CEL omits its exact credential surface",
+    )
+    return normalized, token_projection
 
 
 def path_values(value: Any, path: list[str]) -> list[str]:
@@ -481,11 +513,157 @@ def pod_secret_names(
     )
 
 
+def pod_service_account_token_projection_surface(
+    spec: dict[str, Any],
+) -> list[list[list[str]]]:
+    """Preserve explicit projected token audience, lifetime and mount path."""
+
+    surface: list[list[list[str]]] = []
+    volumes = spec.get("volumes", [])
+    require(isinstance(volumes, list), "Pod volumes must be a list")
+    for volume in volumes:
+        require(isinstance(volume, dict), "Pod volume must be an object")
+        descriptors: list[list[str]] = []
+        projected = volume.get("projected")
+        if isinstance(projected, dict):
+            sources = projected.get("sources", [])
+            require(isinstance(sources, list), "projected volume sources must be a list")
+            for source in sources:
+                require(isinstance(source, dict), "projected volume source must be an object")
+                token = source.get("serviceAccountToken")
+                if token is None:
+                    continue
+                require(
+                    isinstance(token, dict)
+                    and isinstance(token.get("audience", ""), str)
+                    and type(token.get("expirationSeconds", 3600)) is int
+                    and isinstance(token.get("path"), str)
+                    and bool(token["path"]),
+                    "projected service-account token source is malformed",
+                )
+                descriptors.append(
+                    [
+                        f"audience={token.get('audience', '')}",
+                        f"expiration_seconds={token.get('expirationSeconds', 3600)}",
+                        f"path={token['path']}",
+                    ]
+                )
+        surface.append(descriptors)
+    return surface
+
+
+def normalized_controller_identity(value: dict[str, Any]) -> dict[str, Any]:
+    """Keep only authenticator-derived fields consumed by admission."""
+
+    return {
+        "uid": value["uid"],
+        "username": value["username"],
+        "groups": value["groups"],
+        "extra": value["extra"],
+    }
+
+
+def verify_workload_controller_transitions(
+    authorization: dict[str, Any],
+    v4_context: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Bind every native parent/child edge to one live-observed controller."""
+
+    transitions = authorization["workload_controller_transitions"]
+    require(
+        isinstance(transitions, list),
+        "workload_controller_transitions must be a list",
+    )
+    expected_edges = set(WORKLOAD_CONTROLLER_CHILDREN.items())
+    principals = {
+        principal["id"]: principal
+        for principal in v4_context["legacy"]["rbac_inventory"]["principals"]
+        if principal["class"] == "controller"
+    }
+    normalized: dict[str, dict[str, Any]] = {}
+    seen_edges: set[tuple[str, str]] = set()
+    principal_ids: set[str] = set()
+    for index, transition in enumerate(transitions):
+        where = f"workload_controller_transitions[{index}]"
+        require(isinstance(transition, dict), f"{where} must be an object")
+        exact_keys(
+            transition,
+            {"parent_resource", "child_resource", "principal_id"},
+            where,
+        )
+        parent_resource = text(
+            transition["parent_resource"], f"{where}.parent_resource"
+        )
+        child_resource = text(
+            transition["child_resource"], f"{where}.child_resource"
+        )
+        principal_id = text(transition["principal_id"], f"{where}.principal_id")
+        edge = (parent_resource, child_resource)
+        require(
+            edge in expected_edges and edge not in seen_edges,
+            f"{where} is not one unique source-defined controller edge",
+        )
+        require(
+            principal_id in principals,
+            f"{where} is not bound to an admitted controller principal",
+        )
+        observed = normalized_controller_identity(
+            v4_context["principal_identities"][principal_id]
+        )
+        normalized[parent_resource] = {
+            **transition,
+            "identity": observed,
+        }
+        seen_edges.add(edge)
+        principal_ids.add(principal_id)
+    require(
+        seen_edges == expected_edges,
+        "workload controller transition closure is incomplete",
+    )
+    require(
+        len(principal_ids) == 1,
+        "native workload transitions must use one exact live-observed controller principal",
+    )
+    return normalized
+
+
+def credential_rollout_labels(
+    item: dict[str, Any], resource: str
+) -> list[dict[str, str]]:
+    """Return every label map that must carry an authenticated root lineage."""
+
+    if resource == "cronjobs":
+        job_template = item.get("spec", {}).get("jobTemplate", {})
+        job_labels = job_template.get("metadata", {}).get("labels", {})
+        pod_labels = (
+            job_template.get("spec", {})
+            .get("template", {})
+            .get("metadata", {})
+            .get("labels", {})
+        )
+        require(
+            isinstance(job_labels, dict) and isinstance(pod_labels, dict),
+            "CronJob rollout labels must be maps",
+        )
+        return [job_labels, pod_labels]
+    if resource == "jobs":
+        object_labels = item.get("metadata", {}).get("labels", {})
+        pod_labels = effective_labels(item, resource)
+        require(
+            isinstance(object_labels, dict) and isinstance(pod_labels, dict),
+            "Job rollout labels must be maps",
+        )
+        return [object_labels, pod_labels]
+    labels = effective_labels(item, resource)
+    return [labels]
+
+
 def credential_workload_inventory(
     entries: dict[str, dict[str, Any]],
     v4_context: dict[str, Any],
     privileged_service_accounts: set[tuple[str, str]],
     secret_references: list[dict[str, Any]],
+    controller_transitions: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     protected_accounts = sorted(
         {
@@ -520,12 +698,27 @@ def credential_workload_inventory(
                     spec, secret_references
                 )
                 secret_names = pod_secret_names(spec, secret_references)
+                token_projection_surface = (
+                    pod_service_account_token_projection_surface(spec)
+                )
+                has_token_projection = any(token_projection_surface)
                 protected_account = (namespace, service_account) in account_set
+                require(
+                    all(
+                        type(spec.get(field, False)) is bool
+                        for field in (
+                            "hostIPC", "hostNetwork", "hostPID",
+                            "shareProcessNamespace",
+                        )
+                    ),
+                    "Pod namespace-sharing flags must be booleans",
+                )
                 surface = {
                     "service_account_name": service_account,
                     "automount_service_account_token": spec.get("automountServiceAccountToken", True),
                     "secret_reference_names": secret_names,
                     "secret_reference_surface": secret_reference_surface,
+                    "service_account_token_projection_surface": token_projection_surface,
                     "protected_service_account": protected_account,
                 }
                 workloads.append(
@@ -538,8 +731,21 @@ def credential_workload_inventory(
                             metadata.get("resourceVersion"),
                             "credential workload resourceVersion",
                         ),
+                        "api_version": v4.WORKLOAD_TYPES[resource][0],
+                        "kind": v4.WORKLOAD_TYPES[resource][1],
+                        "labels": effective_labels(item, resource),
+                        "rollout_label_maps": credential_rollout_labels(item, resource),
+                        "owner_references": owner_references(item),
+                        "ephemeral_debug_safe": not any(
+                            spec.get(field, False)
+                            for field in (
+                                "hostIPC", "hostNetwork", "hostPID",
+                                "shareProcessNamespace",
+                            )
+                        ),
                         "credential_bearing": protected_account
-                        or bool(secret_names),
+                        or bool(secret_names)
+                        or has_token_projection,
                         "credential_surface": surface,
                         "credential_surface_sha256": digest(surface),
                     }
@@ -558,6 +764,7 @@ def credential_workload_inventory(
             "name": item["name"],
             "uid": item["uid"],
             "credential_surface_sha256": item["credential_surface_sha256"],
+            "ephemeral_debug_safe": item["ephemeral_debug_safe"],
         }
         for item in workloads
         if item["resource"] == "pods" and item["credential_bearing"]
@@ -565,8 +772,8 @@ def credential_workload_inventory(
     protected_parents: list[dict[str, Any]] = []
     protected_objects: list[dict[str, Any]] = []
     controller_identities = {
-        NATIVE_WORKLOAD_CONTROLLER_IDENTITY["username"]:
-        NATIVE_WORKLOAD_CONTROLLER_IDENTITY
+        transition["principal_id"]: transition["identity"]
+        for transition in controller_transitions.values()
     }
     for item in workloads:
         child_resource = WORKLOAD_CONTROLLER_CHILDREN.get(item["resource"])
@@ -578,19 +785,22 @@ def credential_workload_inventory(
                 "resource": item["resource"],
                 "name": item["name"],
                 "uid": item["uid"],
-                "controller_uid": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["uid"],
-                "controller_username": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["username"],
-                "controller_groups": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["groups"],
-                "controller_extra": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["extra"],
+                "controller_uid": next(iter(controller_identities.values()))["uid"],
+                "controller_username": next(iter(controller_identities.values()))["username"],
+                "controller_groups": next(iter(controller_identities.values()))["groups"],
+                "controller_extra": next(iter(controller_identities.values()))["extra"],
                 "service_account_name": item["credential_surface"]["service_account_name"],
                 "automount_service_account_token": item["credential_surface"]["automount_service_account_token"],
                 "secret_reference_names": item["credential_surface"]["secret_reference_names"],
                 "secret_reference_surface": item["credential_surface"]["secret_reference_surface"],
+                "service_account_token_projection_surface": item["credential_surface"]["service_account_token_projection_surface"],
             }
         )
         if child_resource is None:
             continue
         surface = item["credential_surface"]
+        transition = controller_transitions[item["resource"]]
+        controller_identity = transition["identity"]
         protected_parents.append(
             {
                 "namespace": item["namespace"],
@@ -600,15 +810,17 @@ def credential_workload_inventory(
                 "name": item["name"],
                 "uid": item["uid"],
                 "child_resource": child_resource,
-                "controller_uid": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["uid"],
-                "controller_username": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["username"],
-                "controller_groups": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["groups"],
-                "controller_extra": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["extra"],
+                "controller_uid": controller_identity["uid"],
+                "controller_username": controller_identity["username"],
+                "controller_groups": controller_identity["groups"],
+                "controller_extra": controller_identity["extra"],
                 "service_account_name": surface["service_account_name"],
                 "automount_service_account_token": surface["automount_service_account_token"],
                 "secret_reference_names": surface["secret_reference_names"],
                 "secret_reference_surface": surface["secret_reference_surface"],
+                "service_account_token_projection_surface": surface["service_account_token_projection_surface"],
                 "credential_surface_sha256": item["credential_surface_sha256"],
+                "rollout_lineage": "",
             }
         )
     protected_parents.sort(
@@ -621,6 +833,129 @@ def credential_workload_inventory(
             item["namespace"], item["resource"], item["name"], item["uid"]
         )
     )
+    rollout_lineages: list[dict[str, Any]] = []
+    root_lineage_by_owner: dict[tuple[str, str, str, str, str], str] = {}
+    for item in workloads:
+        if not item["credential_bearing"] or item["resource"] not in {
+            "deployments", "cronjobs"
+        }:
+            continue
+        root_identity = {
+            "namespace": item["namespace"],
+            "api_version": item["api_version"],
+            "kind": item["kind"],
+            "name": item["name"],
+            "uid": item["uid"],
+            "credential_surface_sha256": item["credential_surface_sha256"],
+        }
+        lineage = digest(root_identity)
+        require(
+            all(
+                labels.get(CREDENTIAL_ROLLOUT_LINEAGE_LABEL) == lineage
+                for labels in item["rollout_label_maps"]
+            ),
+            "credential rollout root does not propagate its source-derived lineage",
+        )
+        first = controller_transitions[item["resource"]]
+        second_parent = first["child_resource"]
+        second = controller_transitions[second_parent]
+        rollout_lineages.append(
+            {
+                **root_identity,
+                "lineage": lineage,
+                "first_child_resource": first["child_resource"],
+                "first_controller_identity": first["identity"],
+                "second_parent_api_version": v4.WORKLOAD_TYPES[second_parent][0],
+                "second_parent_kind": v4.WORKLOAD_TYPES[second_parent][1],
+                "second_child_resource": second["child_resource"],
+                "second_controller_identity": second["identity"],
+                "service_account_name": item["credential_surface"]["service_account_name"],
+                "automount_service_account_token": item["credential_surface"]["automount_service_account_token"],
+                "secret_reference_surface": item["credential_surface"]["secret_reference_surface"],
+                "service_account_token_projection_surface": item["credential_surface"]["service_account_token_projection_surface"],
+            }
+        )
+        root_lineage_by_owner[
+            (
+                item["namespace"], item["api_version"], item["kind"],
+                item["name"], item["uid"],
+            )
+        ] = lineage
+        for parent in protected_parents:
+            if (
+                parent["namespace"] == item["namespace"]
+                and parent["resource"] == item["resource"]
+                and parent["name"] == item["name"]
+                and parent["uid"] == item["uid"]
+            ):
+                parent["rollout_lineage"] = lineage
+    intermediate_lineage_by_owner: dict[
+        tuple[str, str, str, str, str], str
+    ] = {}
+    for item in workloads:
+        if not item["credential_bearing"] or item["resource"] not in {
+            "replicasets", "jobs"
+        }:
+            continue
+        roots = {
+            root_lineage_by_owner[
+                (
+                    item["namespace"], owner["api_version"], owner["kind"],
+                    owner["name"], owner["uid"],
+                )
+            ]
+            for owner in item["owner_references"]
+            if owner["controller"]
+            and (
+                item["namespace"], owner["api_version"], owner["kind"],
+                owner["name"], owner["uid"],
+            ) in root_lineage_by_owner
+        }
+        if not roots:
+            continue
+        require(
+            len(roots) == 1
+            and all(
+                labels.get(CREDENTIAL_ROLLOUT_LINEAGE_LABEL) == next(iter(roots))
+                for labels in item["rollout_label_maps"]
+            ),
+            "credential rollout intermediate does not preserve one exact root lineage",
+        )
+        intermediate_lineage_by_owner[
+            (
+                item["namespace"], item["api_version"], item["kind"],
+                item["name"], item["uid"],
+            )
+        ] = next(iter(roots))
+    for item in workloads:
+        if not item["credential_bearing"] or item["resource"] != "pods":
+            continue
+        roots = {
+            intermediate_lineage_by_owner[
+                (
+                    item["namespace"], owner["api_version"], owner["kind"],
+                    owner["name"], owner["uid"],
+                )
+            ]
+            for owner in item["owner_references"]
+            if owner["controller"]
+            and (
+                item["namespace"], owner["api_version"], owner["kind"],
+                owner["name"], owner["uid"],
+            ) in intermediate_lineage_by_owner
+        }
+        if not roots:
+            continue
+        require(
+            len(roots) == 1
+            and item["labels"].get(CREDENTIAL_ROLLOUT_LINEAGE_LABEL)
+            == next(iter(roots)),
+            "credential rollout Pod does not preserve one exact root lineage",
+        )
+    rollout_lineages.sort(
+        key=lambda item: (item["namespace"], item["kind"], item["name"], item["uid"])
+    )
+
     debug_targets = [
         {
             "namespace": item["namespace"],
@@ -649,13 +984,128 @@ def credential_workload_inventory(
         "controller_identities": sorted(
             controller_identities.values(), key=lambda item: item["username"]
         ),
+        "controller_transitions": sorted(
+            controller_transitions.values(),
+            key=lambda item: (item["parent_resource"], item["child_resource"]),
+        ),
+        "credential_rollout_lineages": rollout_lineages,
     }
+
+
+def verify_debug_ephemeral_container(
+    value: Any,
+    expected_sha256: Any,
+    secret_references: list[dict[str, Any]],
+    where: str,
+) -> dict[str, Any]:
+    """Constrain one dual-signed ephemeral debugger without shared volumes."""
+
+    require(isinstance(value, dict), f"{where} must be an object")
+    allowed = {
+        "args", "command", "image", "imagePullPolicy", "name",
+        "securityContext", "stdin", "stdinOnce",
+        "terminationMessagePath", "terminationMessagePolicy", "tty",
+        "workingDir",
+    }
+    required = {
+        "args", "command", "image", "imagePullPolicy", "name",
+        "securityContext", "stdin", "stdinOnce", "terminationMessagePath",
+        "terminationMessagePolicy", "tty",
+    }
+    require(
+        required <= set(value) <= allowed,
+        f"{where} fields are not the source-owned least-privilege shape",
+    )
+    expected_digest = sha256(expected_sha256, f"{where}_sha256")
+    require(digest(value) == expected_digest, f"{where} digest differs")
+    text(value["name"], f"{where}.name")
+    image = text(value["image"], f"{where}.image")
+    require(
+        re.fullmatch(r"[^\s@]+(?:/[^\s@]+)*@sha256:[0-9a-f]{64}", image)
+        is not None,
+        f"{where}.image must use one exact sha256 digest",
+    )
+    require(
+        value["imagePullPolicy"] == "IfNotPresent",
+        f"{where}.imagePullPolicy must be IfNotPresent for the pinned image",
+    )
+    command = value["command"]
+    args = value["args"]
+    require(
+        isinstance(command, list)
+        and command
+        and all(isinstance(item, str) and item for item in command)
+        and command[0].startswith("/"),
+        f"{where}.command must be an explicit absolute executable",
+    )
+    require(
+        isinstance(args, list)
+        and all(isinstance(item, str) for item in args),
+        f"{where}.args must be an exact string list",
+    )
+    if "workingDir" in value:
+        require(
+            isinstance(value["workingDir"], str)
+            and value["workingDir"].startswith("/"),
+            f"{where}.workingDir must be absolute",
+        )
+    require(
+        all(type(value[field]) is bool for field in ("stdin", "stdinOnce", "tty")),
+        f"{where} interactive flags must be booleans",
+    )
+    require(
+        value["terminationMessagePath"] == "/dev/termination-log"
+        and value["terminationMessagePolicy"] == "File",
+        f"{where} termination-message policy is not source-exact",
+    )
+    security_context = value["securityContext"]
+    require(isinstance(security_context, dict), f"{where}.securityContext must be an object")
+    exact_keys(
+        security_context,
+        {
+            "allowPrivilegeEscalation", "capabilities", "privileged",
+            "readOnlyRootFilesystem", "runAsGroup", "runAsNonRoot",
+            "runAsUser", "seccompProfile",
+        },
+        f"{where}.securityContext",
+    )
+    require(
+        security_context["allowPrivilegeEscalation"] is False
+        and security_context["privileged"] is False
+        and security_context["readOnlyRootFilesystem"] is True
+        and security_context["runAsNonRoot"] is True
+        and type(security_context["runAsUser"]) is int
+        and security_context["runAsUser"] > 0
+        and type(security_context["runAsGroup"]) is int
+        and security_context["runAsGroup"] > 0,
+        f"{where}.securityContext is not least privilege",
+    )
+    require(
+        security_context["capabilities"] == {"drop": ["ALL"]},
+        f"{where}.securityContext capabilities must drop ALL",
+    )
+    require(
+        security_context["seccompProfile"] == {"type": "RuntimeDefault"},
+        f"{where}.securityContext must use RuntimeDefault seccomp",
+    )
+    require(
+        "env" not in value
+        and "envFrom" not in value
+        and "volumeMounts" not in value
+        and "volumeDevices" not in value
+        and not pod_secret_names(
+            {"ephemeralContainers": [value]}, secret_references
+        ),
+        f"{where} must not acquire environment, target-process or Pod-volume credentials",
+    )
+    return value
 
 
 def verify_debug_leases(
     authorization: dict[str, Any],
     v4_context: dict[str, Any],
     boundary: dict[str, Any],
+    secret_references: list[dict[str, Any]],
     observed: datetime,
     valid_until: datetime,
 ) -> tuple[
@@ -698,7 +1148,8 @@ def verify_debug_leases(
             {
                 "lease_id", "principal_id", "tenant_id", "namespace", "pod_name",
                 "pod_uid", "operations", "issued_at", "expires_at", "audit_id",
-                "reason_sha256",
+                "reason_sha256", "ephemeral_container",
+                "ephemeral_container_sha256",
             },
             where,
         )
@@ -729,6 +1180,24 @@ def verify_debug_leases(
                 and verbs
                 and set(verbs) <= set(POD_CONNECT_ACTIONS[subresource]),
                 f"{where}.operations[{subresource}] invalid",
+            )
+        ephemeral_verbs = set(operations.get("pods/ephemeralcontainers", []))
+        if ephemeral_verbs:
+            require(
+                targets[target_key]["ephemeral_debug_safe"],
+                f"{where} target shares host/process namespaces and cannot accept an ephemeral debugger",
+            )
+            verify_debug_ephemeral_container(
+                lease["ephemeral_container"],
+                lease["ephemeral_container_sha256"],
+                secret_references,
+                f"{where}.ephemeral_container",
+            )
+        else:
+            require(
+                lease["ephemeral_container"] is None
+                and lease["ephemeral_container_sha256"] is None,
+                f"{where} without ephemeral-container authority must not carry a debugger spec",
             )
         text(lease["tenant_id"], f"{where}.tenant_id")
         text(lease["audit_id"], f"{where}.audit_id")
@@ -956,13 +1425,17 @@ def verify_workload_create_contracts(
             f"{where} selects an unknown ServiceAccount",
         )
         secret_names = pod_secret_names(pod_spec, secret_references)
+        token_projection_surface = (
+            pod_service_account_token_projection_surface(pod_spec)
+        )
         require(
             all((namespace, secret_name) in known_secrets for secret_name in secret_names),
             f"{where} selects a Secret outside the metadata-only inventory",
         )
         require(
             (namespace, service_account) in protected_accounts
-            or bool(secret_names),
+            or bool(secret_names)
+            or any(token_projection_surface),
             f"{where} is not a privileged credential-bearing CREATE",
         )
         normalized.append(
@@ -1077,6 +1550,8 @@ def verify_debug_authorizer(
         "protected_service_accounts": boundary["protected_service_accounts"],
         "protected_workload_parents": boundary["protected_parents"],
         "workload_controller_identities": boundary["controller_identities"],
+        "workload_controller_transitions": boundary["controller_transitions"],
+        "credential_rollout_lineages": boundary["credential_rollout_lineages"],
     }
     require(
         value["credential_boundary_sha256"] == digest(credential_boundary),
@@ -1442,6 +1917,7 @@ def verify_peer_inventory(
         observed_identity = v4.subject_from_review(
             v4_context["entries"][f"k8s/identity/{principal['id']}/selfsubjectreview"]["body"],
             f"CNPG controller {principal['id']}",
+            allow_empty_uid=True,
         )
         require(observed_identity["username"] == username, "CNPG controller username is not authenticator-derived")
         controller_identities.append(observed_identity)
@@ -1730,6 +2206,7 @@ def verify_supplemental_bundle(
             "provider_observer_credential_subject_sha256",
             "credential_workload_inventory_sha256", "protected_service_accounts",
             "protected_secrets", "protected_pod_targets",
+            "workload_controller_transitions",
             "debug_broker_principal_id", "debug_access_leases",
             "debug_access_leases_sha256", "workload_create_contracts",
             "workload_create_contracts_sha256", "debug_authorizer",
@@ -1746,7 +2223,9 @@ def verify_supplemental_bundle(
         "workload_create_contracts_sha256", "pod_secret_reference_contract_sha256",
     ):
         sha256(authorization[field], f"v5 authorization.{field}")
-    secret_references = verify_pod_secret_reference_contract(query)
+    secret_references, _token_projection_contract = (
+        verify_pod_secret_reference_contract(query)
+    )
     require(
         authorization["pod_secret_reference_contract_sha256"]
         == query["expected_pod_secret_reference_contract_sha256"],
@@ -1768,11 +2247,16 @@ def verify_supplemental_bundle(
         for principal in v4_context["legacy"]["rbac_inventory"]["principals"]
         if principal["subject"]["kind"] == "ServiceAccount"
     )
+    controller_transitions = verify_workload_controller_transitions(
+        authorization,
+        v4_context,
+    )
     boundary = credential_workload_inventory(
         entries,
         v4_context,
         privileged_service_accounts,
         secret_references,
+        controller_transitions,
     )
     require(
         digest(boundary["workloads"])
@@ -1796,6 +2280,7 @@ def verify_supplemental_bundle(
         authorization,
         v4_context,
         boundary,
+        secret_references,
         observed,
         valid_until,
     )
@@ -1892,12 +2377,24 @@ def verify_supplemental_bundle(
         principal["id"]: v4.subject_from_review(
             v4_context["entries"][f"k8s/identity/{principal['id']}/selfsubjectreview"]["body"],
             f"v5 principal {principal['id']}",
+            allow_empty_uid=principal["class"] == "controller",
         )["uid"]
         for principal in v4_context["legacy"]["rbac_inventory"]["principals"]
     }
     require(
         isinstance(authorization["principal_uids"], dict)
-        and all(isinstance(key, str) and isinstance(value, str) and value for key, value in authorization["principal_uids"].items())
+        and all(
+            isinstance(key, str)
+            and isinstance(value, str)
+            and (
+                bool(value)
+                or any(
+                    principal["id"] == key and principal["class"] == "controller"
+                    for principal in v4_context["legacy"]["rbac_inventory"]["principals"]
+                )
+            )
+            for key, value in authorization["principal_uids"].items()
+        )
         and principal_uids == authorization["principal_uids"],
         "principal UID registry is not authenticator-derived",
     )
@@ -1906,6 +2403,7 @@ def verify_supplemental_bundle(
         observed = v4.subject_from_review(
             v4_context["entries"][f"k8s/identity/{principal['id']}/selfsubjectreview"]["body"],
             f"v5 exact principal {principal['id']}",
+            allow_empty_uid=principal["class"] == "controller",
         )
         principal_identities.append({"id": principal["id"], "class": principal["class"], **observed})
     principal_identities.sort(key=lambda item: item["id"])
@@ -1978,6 +2476,14 @@ def verify_supplemental_bundle(
         ),
         "workload_controller_identities_json": json.dumps(
             boundary["controller_identities"], sort_keys=True, separators=(",", ":")
+        ),
+        "workload_controller_transitions_json": json.dumps(
+            boundary["controller_transitions"], sort_keys=True, separators=(",", ":")
+        ),
+        "credential_rollout_lineages_json": json.dumps(
+            boundary["credential_rollout_lineages"],
+            sort_keys=True,
+            separators=(",", ":"),
         ),
         "debug_broker_principal_id": authorization["debug_broker_principal_id"],
         "debug_access_leases_json": json.dumps(

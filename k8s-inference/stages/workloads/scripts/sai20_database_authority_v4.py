@@ -1141,11 +1141,17 @@ def verify_rbac(
     )
 
 
-def subject_from_review(body: dict[str, Any], where: str) -> dict[str, Any]:
+def subject_from_review(
+    body: dict[str, Any], where: str, *, allow_empty_uid: bool = False
+) -> dict[str, Any]:
     require(body.get("kind") == "SelfSubjectReview", f"{where} is not SelfSubjectReview")
     user_info = body.get("status", {}).get("userInfo", {})
     username = text(user_info.get("username"), f"{where}.username")
-    uid = text(user_info.get("uid"), f"{where}.uid")
+    uid = user_info.get("uid", "")
+    require(
+        isinstance(uid, str) and (allow_empty_uid or bool(uid)),
+        f"{where}.uid invalid",
+    )
     groups = sorted(v3.unique_strings(user_info.get("groups", []), f"{where}.groups"))
     extra = user_info.get("extra", {})
     require(isinstance(extra, dict), f"{where}.extra invalid")
@@ -1193,7 +1199,11 @@ def verify_identities(
             == {"apiVersion": "authentication.k8s.io/v1", "kind": "SelfSubjectReview"},
             f"{identity_name} request is not the exact SelfSubjectReview",
         )
-        identity = subject_from_review(identity_entry["body"], identity_name)
+        identity = subject_from_review(
+            identity_entry["body"],
+            identity_name,
+            allow_empty_uid=principal["class"] == "controller",
+        )
         require(identity["username"] == principal["username"], f"{principal_id} username is not authenticator-derived")
         require(identity["groups"] == sorted(principal["groups"]), f"{principal_id} groups are not authenticator-derived")
         subject_digest = digest(

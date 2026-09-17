@@ -32,8 +32,10 @@
     "credential_boundary": [
       "source_owned_complete_pod_secret_reference_contract",
       "every_nonempty_secret_reference_regardless_of_secret_inventory",
+      "every_explicit_projected_service_account_token_with_exact_audience_expiration_and_path",
       "privileged_service_account_inventory",
-      "signed_controller_parent_uid_and_credential_surface",
+      "signed_controller_parent_uid_credential_surface_and_rollout_lineage",
+      "live_observed_controller_identity_for_every_native_parent_child_edge",
       "ephemeral_container_update_intersects_exact_lease_and_credential_custody"
     ],
     "identity_match": [
@@ -50,6 +52,11 @@
       "operation"
     ],
     "ephemeral_container_admission_operation": "UPDATE_for_signed_patch_or_update_lease",
+    "ephemeral_container_spec": "require_exact_dual_signed_full_spec_and_sha256",
+    "ephemeral_container_image": "require_digest_pinned_image_and_explicit_absolute_command",
+    "ephemeral_container_security": "require_nonroot_no_privilege_escalation_drop_all_runtime_default_readonly_root",
+    "ephemeral_container_storage": "forbid_all_volumeMounts_and_volumeDevices_including_secret_projected_service_account_token_csi_pvc_hostpath_and_runtime_volumes",
+    "ephemeral_container_namespace_isolation": "forbid_targetContainerName_and_deny_hostPID_hostIPC_hostNetwork_or_shareProcessNamespace_targets",
     "time_match": "issued_at_minus_skew_le_server_now_lt_expires_at_plus_skew",
     "maximum_lease_seconds": 900,
     "maximum_clock_skew_seconds": 5,

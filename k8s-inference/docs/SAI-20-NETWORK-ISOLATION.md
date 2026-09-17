@@ -682,3 +682,57 @@ scanner, provider, cluster, database, registry, credential, deployment,
 probe, cleanup or deletion action ran. This remains a source-only candidate
 for fresh independent review and makes no SOURCE GO, integration, deployment
 or live claim.
+
+## Final independent-review correction after `1d00f138`
+
+Exact `1d00f13842ea0287b1aefa628bc0f224c461c65c` / tree
+`4f3190b728569477f3b610f8dfa5eab949f312bb` is preserved as
+SOURCE/INTEGRATION/LIVE NO-GO evidence. Its leased ephemeral debugger could
+mount credential-bearing volumes, explicit projected ServiceAccount tokens
+were outside credential classification, dynamically created ReplicaSet and Job
+UIDs wedged ordinary multi-level rollouts, and the native-controller identity
+was assumed rather than derived from authenticated evidence.
+
+The successor requires every `pods/ephemeralcontainers` lease to contain an
+exact full debugger spec and content digest. The image is digest-pinned, the
+command is explicit, and the security context is non-root, read-only,
+no-privilege-escalation, drop-all and RuntimeDefault. Environment credential
+sources, `volumeMounts` and `volumeDevices` are absent. Admission requires the
+new ephemeral-container list to equal the old list plus exactly that signed
+spec, so the debugger cannot attach Secret, projected-token, CSI, PVC,
+hostPath or runtime credential volumes already present on the Pod. The spec
+also omits `targetContainerName`, and a Pod using host PID, IPC or network, or
+a shared process namespace, cannot receive an ephemeral-debug lease.
+
+The shared credential contract now also names projected
+`serviceAccountToken` sources. Static evidence and CEL preserve their exact
+audience, expiration and path surface; any such source is credential-bearing
+even when the selected ServiceAccount is otherwise unprotected and implicit
+automount is disabled. Signed create, update, controller-child and debug paths
+all compare the same token-projection surface.
+
+Native parent/child transitions are supplied by the dual-signed authorization
+packet and must cover every source-defined controller edge. Each transition is
+resolved to the exact SelfSubjectReview identity of one admitted controller;
+the source no longer assumes a kube-controller-manager username or groups.
+Credential-bearing Deployment and CronJob roots carry a UID- and
+credential-surface-derived lineage through both object and Pod templates. The
+exact observed controller may create the first exact-owner ReplicaSet or Job,
+and only that same identity may carry the lineage and unchanged credential
+surface through the dynamic ReplicaSet-to-Pod or Job-to-Pod hop. This permits
+ordinary atomic rollouts without pre-inventorying a new intermediate UID while
+denying another actor or root lineage.
+
+New top-level privileged controllers remain inert on signed CREATE. Their live
+UID and derived lineage must be captured in a fresh signed generation before
+activation; after that transition, intermediate controller UIDs may rotate
+atomically under the authenticated lineage. Existing and newly observed
+lineage chains are part of the signed workload inventory and are compared
+across plan, identity and final apply evidence.
+
+The regression tests for these four findings were authored but not executed.
+No parser, formatter, Terraform, Helm, build, package manager, provider, live
+system, credential, deployment, cleanup or deletion action ran. External root
+enrollment and authorizer operation remain fail-closed integration gates. This
+is a source-only candidate for independent review, not a SOURCE, integration,
+deployment or live GO claim.

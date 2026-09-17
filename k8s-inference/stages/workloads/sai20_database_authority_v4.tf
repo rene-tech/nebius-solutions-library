@@ -242,8 +242,8 @@ locals {
   )
   sai20_authority_v5_exact_principal_cel = join(" || ", [
     for principal in local.sai20_authority_v5_principal_identities : format(
-      "(has(request.userInfo.uid) && request.userInfo.uid == %s && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)))",
-      jsonencode(principal.uid),
+      "((%s) && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)))",
+      principal.uid == "" ? "!has(request.userInfo.uid)" : format("has(request.userInfo.uid) && request.userInfo.uid == %s", jsonencode(principal.uid)),
       jsonencode(principal.username),
       length(principal.groups),
       jsonencode(principal.groups),

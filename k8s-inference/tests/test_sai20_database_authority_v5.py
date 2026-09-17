@@ -5,7 +5,9 @@ These assertions include the provider-identity, target-classification,
 credential-workload and scoped-debug blockers finally reported against
 6e1bf0f00d85a80d228a7cea803511391076fb5a, plus the four dynamic
 credential-custody blockers finally reported against
-e8ac34b7b9dd670015655d43cb24d14907abf8f1.
+e8ac34b7b9dd670015655d43cb24d14907abf8f1, and the four final
+ephemeral-debug, projected-token and rollout-identity blockers reported against
+1d00f13842ea0287b1aefa628bc0f224c461c65c.
 They are authored evidence only;
 this task's coordinator boundary forbids executing them.
 """
@@ -72,6 +74,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("17469ed79eb56ae63327f0ddecb81d21b2170722", self.v5_py)
         self.assertIn("6e1bf0f00d85a80d228a7cea803511391076fb5a", self.v5_py)
         self.assertIn("e8ac34b7b9dd670015655d43cb24d14907abf8f1", self.v5_py)
+        self.assertIn("1d00f13842ea0287b1aefa628bc0f224c461c65c", self.v5_py)
         self.assertIn("source is a preserved rejected candidate", self.v5_py)
         self.assertIn("sai20_database_authority_v5_plan.output.successor_verified", self.v4_tf)
         self.assertIn("sai20_database_authority_v5_identity.output.bootstrap_reobserved", self.v4_tf)
@@ -491,7 +494,8 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("request.operation != 'CREATE'", self.v5_tf)
 
     def test_authenticator_uid_is_signed_reobserved_and_admitted(self) -> None:
-        self.assertIn('uid = text(user_info.get("uid")', self.v4_py)
+        self.assertIn('uid = user_info.get("uid", "")', self.v4_py)
+        self.assertIn("allow_empty_uid=principal[\"class\"] == \"controller\"", self.v4_py)
         self.assertIn('"executor_uid": executor["uid"]', self.v4_py)
         self.assertIn('live_identity["uid"] == context["executor"]["uid"]', self.v4_py)
         self.assertIn('"principal_uids"', self.v5_py)
@@ -556,6 +560,67 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
             self.assertIn(component, serialized)
         self.assertNotIn("request-debug", self.v5_tf)
         self.assertNotIn("customer-storage", self.v5_tf)
+
+    def test_ephemeral_debugger_is_exact_signed_and_cannot_mount_pod_volumes(self) -> None:
+        self.assertIn("verify_debug_ephemeral_container", self.v5_py)
+        self.assertIn('"ephemeral_container_sha256"', self.v5_py)
+        self.assertIn('"volumeMounts" not in value', self.v5_py)
+        self.assertIn('"volumeDevices" not in value', self.v5_py)
+        self.assertNotIn('"targetContainerName",', self.v5_py)
+        self.assertIn('targets[target_key]["ephemeral_debug_safe"]', self.v5_py)
+        for field in ("hostIPC", "hostNetwork", "hostPID", "shareProcessNamespace"):
+            self.assertIn(field, self.v5_py)
+        self.assertIn("capabilities must drop ALL", self.v5_py)
+        self.assertIn("RuntimeDefault", self.v5_py)
+        self.assertIn(
+            "variables.targetEphemeralContainers == variables.oldEphemeralContainers +",
+            self.v5_tf,
+        )
+        decision = self.debug_authorizer["decision_contract"]
+        self.assertEqual(
+            decision["ephemeral_container_spec"],
+            "require_exact_dual_signed_full_spec_and_sha256",
+        )
+        self.assertIn("forbid_all_volumeMounts", decision["ephemeral_container_storage"])
+        self.assertIn(
+            "forbid_targetContainerName",
+            decision["ephemeral_container_namespace_isolation"],
+        )
+
+    def test_explicit_projected_service_account_tokens_are_credential_bearing(self) -> None:
+        projection = self.pod_secret_references["service_account_token_projection"]
+        self.assertEqual(projection["id"], "projected-service-account-token")
+        self.assertEqual(
+            projection["path"],
+            ["volumes", "*", "projected", "sources", "*", "serviceAccountToken"],
+        )
+        for field in ("audience=", "expiration_seconds=", "path="):
+            self.assertIn(field, projection["cel_surface"])
+        self.assertIn("pod_service_account_token_projection_surface", self.v5_py)
+        self.assertIn("or has_token_projection", self.v5_py)
+        self.assertIn("targetHasServiceAccountTokenProjection", self.v5_tf)
+        self.assertIn("targetServiceAccountTokenProjectionSurface", self.v5_tf)
+
+    def test_native_controller_identity_is_live_observed_not_hard_coded(self) -> None:
+        self.assertIn("verify_workload_controller_transitions", self.v5_py)
+        self.assertIn('authorization["workload_controller_transitions"]', self.v5_py)
+        self.assertIn('v4_context["principal_identities"][principal_id]', self.v5_py)
+        self.assertIn("workload_controller_transitions_json", self.v5_tf)
+        self.assertIn('principal.uid == "" ? "!has(request.userInfo.uid)"', self.v5_tf)
+        self.assertNotIn("NATIVE_WORKLOAD_CONTROLLER_IDENTITY", self.v5_py)
+        self.assertNotIn('"system:kube-controller-manager"', self.v5_py)
+
+    def test_deployment_and_cronjob_rollouts_use_authenticated_multi_hop_lineage(self) -> None:
+        self.assertIn("CREDENTIAL_ROLLOUT_LINEAGE_LABEL", self.v5_py)
+        self.assertIn('"deployments", "cronjobs"', self.v5_py)
+        self.assertIn('"replicasets", "jobs"', self.v5_py)
+        self.assertIn("credential rollout intermediate does not preserve", self.v5_py)
+        self.assertIn("credential rollout Pod does not preserve", self.v5_py)
+        self.assertIn("credential_rollout_lineages_json", self.v5_tf)
+        self.assertIn("sai20_authority_v5_multi_hop_credential_child_terms", self.v5_tf)
+        self.assertIn("second_parent_api_version", self.v5_tf)
+        self.assertIn("second_controller_identity", self.v5_tf)
+        self.assertIn("multiHopCredentialChild", self.v5_tf)
 
 
 if __name__ == "__main__":

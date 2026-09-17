@@ -243,3 +243,36 @@ formatter, Terraform, Helm, provider, live, credential, cleanup or deletion
 action occurred. Empty external enrollment and debug-authorizer roots remain
 fail-closed integration gates; this is not a source, integration or live GO
 claim.
+
+## Post-`1d00f138` debugger, projected-token and rollout closure
+
+Exact `1d00f13842ea0287b1aefa628bc0f224c461c65c` / tree
+`4f3190b728569477f3b610f8dfa5eab949f312bb` remains rejected. A leased
+ephemeral debugger is now an exact dual-signed full container spec with a
+digest-pinned image, explicit command and least-privilege security context.
+It may carry neither environment sources nor `volumeMounts`/`volumeDevices`,
+and admission permits only the exact append of that spec to the old ephemeral
+container list. Existing Secret, projected-token, CSI, PVC, hostPath and
+runtime volumes therefore cannot be attached by the debugger. Target-container
+process sharing is forbidden, and Pods using host PID/IPC/network or a shared
+process namespace fail closed for this debugger path.
+
+The single source-owned credential-field contract additionally classifies
+every explicit projected ServiceAccount token by audience, expiration and
+path. That surface is credential-bearing and is compared unchanged on signed
+release, controller and debug paths even when implicit automount is disabled.
+
+The authorization packet now declares every native workload-controller edge,
+and each edge resolves to the exact live SelfSubjectReview identity of an
+admitted controller. No controller username or group is hard-coded. Signed
+Deployment and CronJob root UID/credential digests produce a propagated
+lineage. Exact-owner first hops and authenticated lineage-bound
+ReplicaSet-to-Pod and Job-to-Pod second hops preserve atomic rollout without
+trusting a name prefix or requiring every newly generated intermediate UID to
+exist in the prior inventory. A new privileged root still starts inert and
+requires fresh signed UID/lineage attestation before activation.
+
+Tests were authored but not executed. No parser, formatter, Terraform, Helm,
+provider, cluster, credential, deployment, cleanup or deletion action ran.
+The empty enrollment registries and external debug authorizer remain
+integration gates, and this source-only successor makes no GO claim.
