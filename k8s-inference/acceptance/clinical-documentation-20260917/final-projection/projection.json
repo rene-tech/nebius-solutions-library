@@ -1,0 +1,49 @@
+{
+  "results": [
+    {
+      "case": "de-grippaler-infekt",
+      "source_sha256": "560aaf8dd68abf2711e6b1e329ab4e603ae57e69e34f91328d236a8bd304d12c",
+      "facts": 23,
+      "review_candidates": 4,
+      "newly_withheld": [
+        "F0011"
+      ],
+      "live_inference": false
+    },
+    {
+      "case": "de-herzrasen",
+      "source_sha256": "897f53bbfa0bbe9ec2335221c87a554fffa8d2a4f42e84dadb537f529dda72b0",
+      "facts": 18,
+      "review_candidates": 1,
+      "newly_withheld": [],
+      "live_inference": false
+    },
+    {
+      "case": "de-polyarthritis",
+      "source_sha256": "326b963fd9f57688b9c29ce487b401be08cfa2d415a3cf70d1d939d45e921cff",
+      "facts": 23,
+      "review_candidates": 3,
+      "newly_withheld": [],
+      "live_inference": false
+    },
+    {
+      "case": "en-01",
+      "source_sha256": "bb546026d6d5a8515d858b8c86792cc5a74ccb70f3a94ad46408c388440705c1",
+      "facts": 35,
+      "review_candidates": 1,
+      "newly_withheld": [
+        "F0035"
+      ],
+      "live_inference": false
+    },
+    {
+      "case": "en-02",
+      "source_sha256": "d6bf496860d434c0a550efce7bd3b4787403b17403bfe7ce9905cb70bffae129",
+      "facts": 23,
+      "review_candidates": 3,
+      "newly_withheld": [],
+      "live_inference": false
+    }
+  ],
+  "live_inference": false
+}

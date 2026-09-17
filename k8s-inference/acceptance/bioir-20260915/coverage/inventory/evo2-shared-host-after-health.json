@@ -1,0 +1,134 @@
+{
+  "unix": 1789510462.6675887,
+  "node": "computeinstance-e00m0hsph76ajt9sdb",
+  "original_gpu_pods": [
+    {
+      "namespace": "fs2-models",
+      "pod": "diffdock-b300-hot-h100-reserved-8x-7b946d88bf-jctsd",
+      "before": [
+        {
+          "name": "runtime",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7"
+        }
+      ],
+      "after": [
+        {
+          "name": "runtime",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7"
+        }
+      ],
+      "after_phase": "Running"
+    },
+    {
+      "namespace": "fs2-models",
+      "pod": "genmol-b300-hot-h100-reserved-8x-f99894c9b-9qpg6",
+      "before": [
+        {
+          "name": "genmol",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf"
+        }
+      ],
+      "after": [
+        {
+          "name": "genmol",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf"
+        }
+      ],
+      "after_phase": "Running"
+    },
+    {
+      "namespace": "fs2-models",
+      "pod": "molmim-b300-hot-h100-reserved-8x-bbb94f885-rsvg6",
+      "before": [
+        {
+          "name": "molmim",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958"
+        }
+      ],
+      "after": [
+        {
+          "name": "molmim",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958"
+        }
+      ],
+      "after_phase": "Running"
+    },
+    {
+      "namespace": "fs2-models",
+      "pod": "nv-reason-cxr-3b-hot-h100-reserved-8x-dcfdcf7d5-gspdx",
+      "before": [
+        {
+          "name": "vllm",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+        }
+      ],
+      "after": [
+        {
+          "name": "vllm",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+        }
+      ],
+      "after_phase": "Running"
+    },
+    {
+      "namespace": "fs2-models",
+      "pod": "openfold2-b300-hot-h100-reserved-8x-7fb5f77897-zd9dz",
+      "before": [
+        {
+          "name": "openfold2",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164"
+        }
+      ],
+      "after": [
+        {
+          "name": "openfold2",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164"
+        }
+      ],
+      "after_phase": "Running"
+    },
+    {
+      "namespace": "fs2-models",
+      "pod": "proteinmpnn-b300-hot-h100-reserved-8x-966f7dcfd-hm2mk",
+      "before": [
+        {
+          "name": "runtime",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38"
+        }
+      ],
+      "after": [
+        {
+          "name": "runtime",
+          "ready": true,
+          "restarts": 0,
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38"
+        }
+      ],
+      "after_phase": "Running"
+    }
+  ],
+  "all_original_ready": true,
+  "note": "Kubernetes readiness/restart/image audit only, not an application latency or SLO guarantee. No customer inference requests sent."
+}

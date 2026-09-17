@@ -1,0 +1,20 @@
+!**/*.log
+**/__pycache__/
+**/vendor/
+**/*.pyc
+**/*.whl
+**/*.pt
+**/*.ckpt
+
+# Byte-preserving, checksum-indexed copies are committed in evidence-archives/.
+/boltz2/raw/
+/boltz2/evidence/
+/openfold/raw/
+/coverage/raw/
+/coverage/artifacts/
+/protenix/raw/
+/snapshot/raw/
+/snapshot/openfold3/raw/
+/snapshot/protenix/raw/
+/snapshot/protenix/xjaw/raw/
+/snapshot/protenix/y0jt/raw/

@@ -1,0 +1,230 @@
+{
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "aggregate.py",
+      "sha256": "761130797b37947a9001090b07e37bf2f0ea3cea40d37fabdb8279bc80931733",
+      "bytes": 5909
+    },
+    {
+      "path": "benchmark_http.py",
+      "sha256": "7ba4514663526891300120ef8d11f3481207ff34a0baf2a0a3a5d17e27e2a08d",
+      "bytes": 6195
+    },
+    {
+      "path": "bir_openfold2_server.py",
+      "sha256": "fc62c5d28ffc902d8b12697cee7978a3f47ed940c355b8680499b0681f820b33",
+      "bytes": 3256
+    },
+    {
+      "path": "bir_openfold3_server.py",
+      "sha256": "835477d5774d10c59ccd8188ab9fd442de549f0cac5b72525dfae529a5998181",
+      "bytes": 6669
+    },
+    {
+      "path": "cleanup_lane.py",
+      "sha256": "6d04c2608e27563b1402ac2bd52a0de7e80d9c3952e005c518958738b793bc33",
+      "bytes": 2313
+    },
+    {
+      "path": "collect_resource.py",
+      "sha256": "04571c172e727f0d9e4f50e4912aba7693b9f49597789eba54090b531e32466f",
+      "bytes": 1752
+    },
+    {
+      "path": "delete_resource.py",
+      "sha256": "3165bf89981ad58c82f0ffe2d2fa04e3418aca3989bbe662febe2f0a30d652bf",
+      "bytes": 1120
+    },
+    {
+      "path": "fixtures/1ake.pdb",
+      "sha256": "651e952f55f1317f50f4e82b7f0e99053397032cd8da5b2896f79d0af9f619a9",
+      "bytes": 357777
+    },
+    {
+      "path": "fixtures/1crn.pdb",
+      "sha256": "42199a30a0701864a2a5cc76cd7f35cc544cd0e65fbcf63e03c166543249b811",
+      "bytes": 49491
+    },
+    {
+      "path": "fixtures/1lyz.pdb",
+      "sha256": "28e95e819d4e0fc48acdf44209e37ba06f5c9d5d93d9950d67a760b32964326e",
+      "bytes": 145962
+    },
+    {
+      "path": "fixtures/4hhb.pdb",
+      "sha256": "abf382e0fd84b53bd4c08b373d37c0d7fe9fbe1a9a9c3851b2f5f2fbbe627101",
+      "bytes": 473850
+    },
+    {
+      "path": "fixtures/T1031_msa.pdb",
+      "sha256": "e3bd6197d8a1885f802217bbb8a68205a031d469d167e83c2f41460d235195cf",
+      "bytes": 62191
+    },
+    {
+      "path": "fixtures/cases.json",
+      "sha256": "e6c7a6db4cff37e54eca76838754bcf259f6fa4a031adcdaee1a68be5bd9a8c1",
+      "bytes": 287718
+    },
+    {
+      "path": "fixtures.py",
+      "sha256": "76df90bc1b4084733456ab25a3d485504fbd9511c46182d897718e1b32b4bf57",
+      "bytes": 2471
+    },
+    {
+      "path": "hash_evidence.py",
+      "sha256": "7de7fdaff285aecbea8e6bdb9f5e970ce4aaafddb1db4284c72488db5cde6e92",
+      "bytes": 604
+    },
+    {
+      "path": "make_result.py",
+      "sha256": "f899fa6b5e465f6c578a47bcb360dc9b2899b118e576233b621d2b784d3d0924",
+      "bytes": 8915
+    },
+    {
+      "path": "manifests/openfold2-baseline-h100.json",
+      "sha256": "ecb30d8b898573b7ff84105af5805d8abfafcb90b9008b70768299a0d25a737a",
+      "bytes": 4274
+    },
+    {
+      "path": "manifests/openfold2-baseline-l40s.json",
+      "sha256": "358e7b9c0b6916d83ad7d5bc7eab8906872d1c513e2d97b6dc3f44fe42df1bcd",
+      "bytes": 4273
+    },
+    {
+      "path": "manifests/openfold2-bir-float32-l40s.json",
+      "sha256": "f8855034cbaf0ed19ea139724770b1883a2db2c025ab121e047dd8627c10de8e",
+      "bytes": 17893
+    },
+    {
+      "path": "manifests/openfold2-bir-float32-r2-h100.json",
+      "sha256": "f95ff03f99d406308ce00382c28d2e2e4ac19f4818e8d737bbdc86b045d6f190",
+      "bytes": 17465
+    },
+    {
+      "path": "manifests/openfold2-bir-float32-r2-l40s.json",
+      "sha256": "4f52968d31a5ad96124bb7b5982f4a2d10e4b451c84cc881bf23839bafee79f7",
+      "bytes": 16939
+    },
+    {
+      "path": "manifests/openfold2-bir-mixed-r2-h100.json",
+      "sha256": "9760c81dc23d8157a1f2f557a6fc037b71e8d75b0fe5766304545ced042df837",
+      "bytes": 18683
+    },
+    {
+      "path": "manifests/openfold2-bir-mixed-r2-l40s.json",
+      "sha256": "693abd82883d2c96db4f15ff69db829838ece79f0270e63feb1f628117c5a9bc",
+      "bytes": 17089
+    },
+    {
+      "path": "manifests/openfold2-upstream-env-r2-l40s.json",
+      "sha256": "2a15cf075237baddebfedfdfbaa21ee3d34d8da058ffa1ebfe8d27647e4b281c",
+      "bytes": 17357
+    },
+    {
+      "path": "manifests/openfold3-baseline-h100.json",
+      "sha256": "036d8a920ccf303b5bfc82645e43d85fc7b712d3682beed2e7fd4d208d3fc2d9",
+      "bytes": 3779
+    },
+    {
+      "path": "manifests/openfold3-baseline-l40s.json",
+      "sha256": "2594df39ed1a4f7881e845f98eb8ba3eb73bfd78445871eba66df98dffc0cd79",
+      "bytes": 3779
+    },
+    {
+      "path": "manifests/openfold3-bir-float32-graph-resident-r7-h100.json",
+      "sha256": "25f2221b152e086d6cafc18d97444e26d4bd031b02215fb53666cfcf83c53aaf",
+      "bytes": 23961
+    },
+    {
+      "path": "manifests/openfold3-bir-float32-graph-resident-r7-l40s.json",
+      "sha256": "1978e79c20329869a833688589f78a80c1cca29c9dcfa3ee698c79a07d2930ac",
+      "bytes": 23960
+    },
+    {
+      "path": "manifests/openfold3-bir-float32-h100.json",
+      "sha256": "51f5eb39399fb1913288a8ae8d61d96a94e5e5725fcaf2ebf49a9a618e971a11",
+      "bytes": 19217
+    },
+    {
+      "path": "manifests/openfold3-bir-float32-r2-h100.json",
+      "sha256": "2d17fc7db3444aea2cb8fc415f1a8fbca9721f9c72359780b16ef1eb567d04e0",
+      "bytes": 19378
+    },
+    {
+      "path": "manifests/openfold3-bir-float32-r3-h100.json",
+      "sha256": "67da17f980d13cc89afc1c76c908ad82d0ff889a7d80d5b245654681b94021e7",
+      "bytes": 20278
+    },
+    {
+      "path": "manifests/openfold3-bir-float32-r4-h100.json",
+      "sha256": "8aa66ac3d0fa67957d3f1fe8d236fed46334f8258d049db4e32b5520f5dcd13e",
+      "bytes": 20523
+    },
+    {
+      "path": "manifests/openfold3-bir-float32-r5-h100.json",
+      "sha256": "641015e12006f7ef53403322a6f1f5b61678ce659015048f314837fd8cc50886",
+      "bytes": 20802
+    },
+    {
+      "path": "manifests/openfold3-bir-float32-r6-h100.json",
+      "sha256": "40ea9dde436fb99296184fd2de19dacc43afdecab1ea3285841b6bb93109ffd5",
+      "bytes": 21127
+    },
+    {
+      "path": "manifests/openfold3-bir-mixed-r6-h100.json",
+      "sha256": "96ddb920aa62a3a0b860c9a41c97a3394bcc6ba34ecf312d3ffdcd2f3d406cb1",
+      "bytes": 21119
+    },
+    {
+      "path": "manifests/openfold3-bir-mixed-r6-l40s.json",
+      "sha256": "0736b2bdeb3528fee05f4ba8cb0f6ad6821199bc4961fd35fba3bb150240417f",
+      "bytes": 21118
+    },
+    {
+      "path": "manifests/openfold3-upstream-resident-h100.json",
+      "sha256": "edb4a7f73833d0d3d6ddfd279ceb21cbdc499d1a695316e9ba68a368a31b9e00",
+      "bytes": 7013
+    },
+    {
+      "path": "prepare_baseline.py",
+      "sha256": "3a3a0f13a1d1b0da7d880b2115f395ac6ddf194e60eb60476651ac4a1a375e10",
+      "bytes": 3929
+    },
+    {
+      "path": "prepare_bir.py",
+      "sha256": "f3d1217f815907b189ab885c0c6bf36dc5e35b3f680cd7b7d5a245304ab7b65e",
+      "bytes": 9114
+    },
+    {
+      "path": "prepare_upstream_resident.py",
+      "sha256": "6a6064061caeb40cfed47afbed82a394814ef5a8b20a46212f58c61a8f8f7e1b",
+      "bytes": 2579
+    },
+    {
+      "path": "probe_contract.py",
+      "sha256": "797eabf2b6ec2522299af43435c124e339a8299934f1562c95f72786fc6a528c",
+      "bytes": 2095
+    },
+    {
+      "path": "resident_gpu.py",
+      "sha256": "98d30cefc5babf4ca8269e916e45ec43a531aef84c4beecd02ba3fa043f87de4",
+      "bytes": 758
+    },
+    {
+      "path": "run_resource.py",
+      "sha256": "3a9e7ea0898b0360ae05f69b21c85f2aeca27245ba8c7bb7d2f4ed322a15967a",
+      "bytes": 1982
+    },
+    {
+      "path": "score_outputs.py",
+      "sha256": "8c8f06b4eef2ec47998bb36878935627e6c21631b8e9e1542dd77bb271e79aa0",
+      "bytes": 7175
+    },
+    {
+      "path": "upstream_openfold3_resident_server.py",
+      "sha256": "45ce9cc9d86c0831a26e10b77cecf4393509c049e79209b20d13e98ec9d12a5b",
+      "bytes": 1424
+    }
+  ]
+}

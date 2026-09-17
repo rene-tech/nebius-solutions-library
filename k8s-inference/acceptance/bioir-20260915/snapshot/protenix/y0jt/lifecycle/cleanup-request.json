@@ -1,0 +1,9 @@
+{
+  "unix": 1789515036.9219866,
+  "receipts": [
+    "persistentvolumeclaim \"fs2-bioir-protenix-snapshot-y0jt\" deleted from fs2-bioir-protenix namespace\n",
+    "configmap \"fs2-bioir-protenix-snapshot-app-y0jt\" deleted from fs2-bioir-protenix namespace\nconfigmap \"fs2-bioir-protenix-snapshot-source-y0jt\" deleted from fs2-bioir-protenix namespace\n"
+  ],
+  "interrupted": false,
+  "force": false
+}

@@ -1,0 +1,11 @@
+{
+  "apiVersion": "v1",
+  "kind": "Namespace",
+  "metadata": {
+    "name": "fs2-bioir-coverage",
+    "labels": {
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "coverage"
+    }
+  }
+}

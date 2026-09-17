@@ -1,0 +1,51 @@
+{
+  "apiVersion": "v1",
+  "kind": "PersistentVolume",
+  "metadata": {
+    "annotations": {
+      "pv.kubernetes.io/provisioned-by": "compute.csi.nebius.com",
+      "volume.kubernetes.io/provisioner-deletion-secret-name": "",
+      "volume.kubernetes.io/provisioner-deletion-secret-namespace": ""
+    },
+    "creationTimestamp": "2026-09-15T21:56:03Z",
+    "finalizers": [
+      "external-provisioner.volume.kubernetes.io/finalizer",
+      "kubernetes.io/pv-protection",
+      "external-attacher/compute-csi-nebius-com"
+    ],
+    "name": "pvc-14c17928-d5f9-4850-9537-2be3b7438132",
+    "resourceVersion": "42317232",
+    "uid": "df0e438c-d7b7-40c0-9ea3-6117d079534c"
+  },
+  "spec": {
+    "accessModes": [
+      "ReadWriteOnce"
+    ],
+    "capacity": {
+      "storage": "64Gi"
+    },
+    "claimRef": {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "name": "fs2-bioir-snapshot-openfold2-checkpoints",
+      "namespace": "fs2-bioir-snapshot",
+      "resourceVersion": "42316912",
+      "uid": "14c17928-d5f9-4850-9537-2be3b7438132"
+    },
+    "csi": {
+      "driver": "compute.csi.nebius.com",
+      "fsType": "ext4",
+      "volumeAttributes": {
+        "storage.kubernetes.io/csiProvisionerIdentity": "1789087518606-8119-compute.csi.nebius.com"
+      },
+      "volumeHandle": "computedisk-e00t1rgzgyrbz6y413"
+    },
+    "persistentVolumeReclaimPolicy": "Delete",
+    "storageClassName": "compute-csi-default-sc",
+    "volumeMode": "Filesystem"
+  },
+  "status": {
+    "lastPhaseTransitionTime": "2026-09-15T21:56:03Z",
+    "phase": "Bound"
+  }
+}

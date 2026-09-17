@@ -1,0 +1,51 @@
+{
+  "apiVersion": "v1",
+  "kind": "PersistentVolume",
+  "metadata": {
+    "annotations": {
+      "pv.kubernetes.io/provisioned-by": "compute.csi.nebius.com",
+      "volume.kubernetes.io/provisioner-deletion-secret-name": "",
+      "volume.kubernetes.io/provisioner-deletion-secret-namespace": ""
+    },
+    "creationTimestamp": "2026-09-15T21:47:00Z",
+    "finalizers": [
+      "external-provisioner.volume.kubernetes.io/finalizer",
+      "kubernetes.io/pv-protection",
+      "external-attacher/compute-csi-nebius-com"
+    ],
+    "name": "pvc-753e45c4-3827-4007-bb3a-f2726954ae7e",
+    "resourceVersion": "42294401",
+    "uid": "d6aa410e-f1f5-444b-99f4-3219dff95520"
+  },
+  "spec": {
+    "accessModes": [
+      "ReadWriteOnce"
+    ],
+    "capacity": {
+      "storage": "128Gi"
+    },
+    "claimRef": {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "name": "fs2-bioir-snapshot-checkpoints",
+      "namespace": "fs2-bioir-boltz2",
+      "resourceVersion": "42293999",
+      "uid": "753e45c4-3827-4007-bb3a-f2726954ae7e"
+    },
+    "csi": {
+      "driver": "compute.csi.nebius.com",
+      "fsType": "ext4",
+      "volumeAttributes": {
+        "storage.kubernetes.io/csiProvisionerIdentity": "1789087518606-8119-compute.csi.nebius.com"
+      },
+      "volumeHandle": "computedisk-e00tr822v43j3dh47s"
+    },
+    "persistentVolumeReclaimPolicy": "Delete",
+    "storageClassName": "compute-csi-default-sc",
+    "volumeMode": "Filesystem"
+  },
+  "status": {
+    "lastPhaseTransitionTime": "2026-09-15T21:47:00Z",
+    "phase": "Bound"
+  }
+}

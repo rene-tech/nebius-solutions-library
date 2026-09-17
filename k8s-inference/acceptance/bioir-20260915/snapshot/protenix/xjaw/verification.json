@@ -1,0 +1,18 @@
+{
+  "status": "partial-evidence-validated",
+  "acceptance_pass": false,
+  "checks": {
+    "three_restores_two_controls_interruption_explicit": true,
+    "retained_native_and_semantically_valid_predictions": 13,
+    "unique_fresh_pods_donor_deleted_first_same_gpu_no_remap": true,
+    "actual_gpu_owning_worker_capture": true,
+    "fallback_unrun_not_invented": true,
+    "frozen_model_and_harness_identity_unchanged": true,
+    "matched_history_numerical_variation_retained_without_parity_claim": true,
+    "interrupted_normal3_gpu_release_unverified": true
+  },
+  "scientific_parity": "not-qualified",
+  "numerical_parity": "see retained pairwise dispersion; no equivalence inference",
+  "scope": "xjaw independent cohort only; prior interrupted attempts retained separately",
+  "acceptance_scope": "Technical capture/fresh-pod restore protocol only; not a scientific-parity or performance-improvement pass"
+}
