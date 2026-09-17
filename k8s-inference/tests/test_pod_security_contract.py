@@ -485,6 +485,55 @@ def test_custody_provider_is_distinct_and_legacy_objects_are_adopted_without_del
     assert 'metadata["resourceVersion"]' in manifest_verifier_v2
 
 
+def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state() -> None:
+    collector = _source("scripts/collect_sai07_authoritative_custody_evidence.py")
+    evidence = _source("scripts/sai07_authoritative_evidence.py")
+    trust = _source("scripts/verify_sai07_custody_trust_v3.py")
+    manifest = _source("scripts/verify_sai07_custody_manifest_bundle_v3.py")
+    pipeline = _source("scripts/run_sai07_retained_state_custody_v3.py")
+    readme = _source("stages/pod-security-custody/README.md")
+    lock = json.loads(_source("stages/pod-security-custody/custody-trust-lock-v3.json"))
+
+    assert lock["activation"] == "blocked"
+    assert len(lock["authorities"]) == 3
+    assert "provider_receipt" in lock["authorities"]
+    assert "backend_receipt" in lock["authorities"]
+    assert "manifest" in lock["authorities"]
+    assert "ListMembers" in collector and "ListMemberOf" in collector
+    assert "AccessPermitService" in collector
+    assert "ListAccessKeysByAccountRequest" in collector
+    assert 'calls["service_accounts_by_project"]' in collector
+    assert 'calls["federated_credentials_by_project"]' in collector
+    assert '"request_id": request_id' in collector and '"trace_id": trace_id' in collector
+    assert "get_secret" not in collector.lower()
+    assert 'os.O_EXCL' in collector and 'os.fsync' in collector
+    assert '"get_bucket_policy"' in collector
+    assert '"get_object_lock_configuration"' in collector
+    assert 'VersionId=version' in collector
+    assert "forward and reverse group membership enumerations differ" in evidence
+    assert "does not cover every tenant project" in evidence
+    assert "platform authority reaches an external custody resource" in evidence
+    assert "protected resource set omits a custody scope or inheritance ancestor" in evidence
+    assert "required permit is not bound to its provider identity" in evidence
+    assert "provider evidence contains an access-key secret" in evidence
+    assert "provider request ID" in evidence and "S3 {field} request ID" in evidence
+    assert "platform Terraform state is not version 4" in evidence
+    assert "custody_addresses_sha256" in evidence
+    assert "provider_evidence_path" in trust and "backend_evidence_path" in trust
+    assert "platform_state_path" in trust
+    assert "repository-pinned contract path" in trust
+    assert "cryptographically distinct" in trust
+    assert "independently reconstructed evidence" in trust
+    assert "raw backend state addresses" in manifest
+    assert '"state_ownership": "platform-retained-no-import-no-forget"' in pipeline
+    assert "two independently collected generation IDs" in pipeline
+    assert '"provider_backend_drift_fenced": "true"' in pipeline
+    assert '"terraform",' not in pipeline
+    assert "state rm" in pipeline and "terraform import" in pipeline
+    assert "RETAINED REJECTED V2 ROOT" in readme
+    assert "SOURCE/INTEGRATION/LIVE NO-GO" in readme
+
+
 def test_external_custody_pipeline_is_remote_attested_exact_and_non_destructive() -> None:
     pipeline = _source("scripts/run_sai07_external_custody_pipeline.py")
     handoff = _source("scripts/verify_sai07_external_handoff_v2.py")
@@ -520,6 +569,7 @@ def test_secret_inventory_is_metadata_only_and_bound_to_a_short_lived_actor() ->
 
 
 def test_effective_authority_audit_covers_cluster_and_every_live_namespace() -> None:
+    audit_v1 = _source("scripts/audit_sai07_effective_authority.py")
     audit = _source("scripts/audit_sai07_effective_authority_v2.py")
     handoff = _source("scripts/verify_sai07_external_handoff_v2.py")
 
@@ -560,3 +610,20 @@ def test_effective_authority_audit_covers_cluster_and_every_live_namespace() -> 
     ):
         assert boundary in audit
         assert boundary in handoff
+
+    # Kubernetes' impersonation resource split is security-significant:
+    # users/groups/serviceaccounts are core, while uids/userextras are in
+    # authentication.k8s.io.  A review against the wrong group is not a denial
+    # proof for the real authorization edge.
+    impersonation_block = audit.split("IMPERSONATION = (", 1)[1].split(")\n\n", 1)[0]
+    assert '("", "users")' in impersonation_block
+    assert '("", "groups")' in impersonation_block
+    assert '("", "serviceaccounts")' in impersonation_block
+    assert '("authentication.k8s.io", "uids")' in impersonation_block
+    assert '("authentication.k8s.io", "userextras")' in impersonation_block
+    assert '("authentication.k8s.io", "users")' not in impersonation_block
+    assert '("authentication.k8s.io", "groups")' not in impersonation_block
+    assert '"impersonate:v1/users": ("impersonate", "", "users", "")' in audit_v1
+    assert '"impersonate:v1/groups": ("impersonate", "", "groups", "")' in audit_v1
+    assert '"impersonate:authentication.k8s.io/uids"' in audit_v1
+    assert '"impersonate:authentication.k8s.io/userextras"' in audit_v1

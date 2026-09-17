@@ -1,3 +1,7 @@
+// RETAINED REJECTED V2 ROOT: do not initialize, plan, import or apply.
+// custody-trust-lock.json remains blocked. The canonical v3 successor keeps
+// every platform Terraform address and performs only evidence-backed external
+// SSA; see run_sai07_retained_state_custody_v3.py and this directory's README.
 provider "kubernetes" {
   config_path    = pathexpand(var.owner_kubeconfig_path)
   config_context = var.owner_context

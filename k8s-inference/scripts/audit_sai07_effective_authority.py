@@ -20,9 +20,11 @@ from typing import Any
 SCHEMA = "fs2-serve.nebius.ai/sai07-effective-authority-audit/v1"
 
 CLUSTER_CHECKS = {
-    "impersonate:authentication.k8s.io/users": ("impersonate", "authentication.k8s.io", "users", ""),
-    "impersonate:authentication.k8s.io/groups": ("impersonate", "authentication.k8s.io", "groups", ""),
+    "impersonate:v1/users": ("impersonate", "", "users", ""),
+    "impersonate:v1/groups": ("impersonate", "", "groups", ""),
     "impersonate:v1/serviceaccounts": ("impersonate", "", "serviceaccounts", ""),
+    "impersonate:authentication.k8s.io/uids": ("impersonate", "authentication.k8s.io", "uids", ""),
+    "impersonate:authentication.k8s.io/userextras": ("impersonate", "authentication.k8s.io", "userextras", ""),
     "create:authentication.k8s.io/tokenreviews": ("create", "authentication.k8s.io", "tokenreviews", ""),
     "create:authorization.k8s.io/subjectaccessreviews": ("create", "authorization.k8s.io", "subjectaccessreviews", ""),
     "bind:rbac.authorization.k8s.io/roles": ("bind", "rbac.authorization.k8s.io", "roles", ""),

@@ -90,11 +90,16 @@ NAMESPACED_RESOURCES = (
     ("inference.fs2.nebius.ai", "modeldeployments", ""),
     ("keda.sh", "scaledobjects", ""),
 )
+# Kubernetes authorizes impersonation against two API groups.  User, group and
+# ServiceAccount identities are core resources; only UID and user-extra keys
+# are authentication.k8s.io resources.  Keep every edge explicit so a false
+# negative cannot be hidden behind an invalid SSAR resource tuple.
 IMPERSONATION = (
-    ("authentication.k8s.io", "users"),
-    ("authentication.k8s.io", "groups"),
-    ("authentication.k8s.io", "userextras"),
+    ("", "users"),
+    ("", "groups"),
     ("", "serviceaccounts"),
+    ("authentication.k8s.io", "uids"),
+    ("authentication.k8s.io", "userextras"),
 )
 
 

@@ -237,6 +237,60 @@ UID/resourceVersion/hash sets and their aggregate digest for every relevant
 workload kind, including ConfigMaps, in every frozen namespace. Historical
 v3/v4 artifacts and fixed 103/103/716 counts cannot bootstrap a rollout.
 
+### Authoritative custody evidence and retained-state v3 handoff
+
+The receipt-only v2 custody path is retained as rejected evidence. It trusted
+signer assertions about provider policy and backend state without opening the
+claimed raw artifacts, and its separate Terraform state would have duplicated
+ownership while the platform retained the same addresses. Both v2 trust locks
+remain blocked and the v2 root must not be initialized, planned, imported or
+applied.
+
+The v3 contract is source-pinned in
+`stages/pod-security-custody/custody-trust-lock-v3.json` and is also deliberately
+blocked. Its read-only Nebius/S3 adapter exhaustively paginates the exact tenant
+and every project returned under it: tenants, projects, service accounts,
+tenant users, groups,
+forward/reverse memberships, every subject's access permits, access-key/auth-
+key/static-key/federated-credential metadata, and the native bucket resource.
+Every provider response carries its request and trace IDs; it never calls a
+secret-delivery API. S3 evidence includes the public caller
+access-key ID, ACL, policy and public-status, encryption, versioning, Object
+Lock, retention, legal hold, and an exact VersionId/ETag/length-fenced download
+of the platform Terraform state. Bounded generation files are created once,
+mode 0600, fsynced and retained; retries use a new collection ID and paths.
+
+The v3 verifier digest-matches those raw files to two independently signed
+receipts, uses distinct provider/backend authorities, and reconstructs the
+semantics instead of trusting receipt fields. It binds the S3 caller key back
+to the enumerated provider account, proves the exact provider hierarchy and
+group graph, binds each required permit to its claimed identity or signer,
+rejects any platform path to the tenant/project/bucket inheritance chain and
+all other protected custody resources,
+evaluates the native and S3 bucket controls, parses the raw Terraform state,
+and derives every retained custody address from its lineage/serial/version.
+A third distinct authority signs the manifest bundle. Two fresh, distinct
+preflight collections must have identical reconstructed IAM, backend-control
+and versioned-state projections. Collection age, raw
+digests, semantic projection digests, access-key identity, state version and
+address aggregate fence drift.
+
+The v3 handoff is non-state-forgetting. Every platform address remains in the
+platform state; no `removed`, `state rm`, import, second Terraform state or
+dual ownership is allowed. The external-custody preflight binds the raw-state
+address set to immediate live UID/resourceVersion/full-object reads and emits
+an `await-external-server-side-apply` handoff for one external field manager.
+It performs no mutation itself. Provider IAM must deny platform mutation of
+the protected resources before a separately reviewed external executor may
+act. This source does not contain that active external boundary or evidence,
+so it cannot authorize a rollout and makes no GO claim.
+
+### Retained rejected v2 archive (not operational)
+
+The following design record is preserved to explain the rejected v2 custody
+proposal. It is not an executable rollout path and does not supersede the
+blocked, non-state-forgetting v3 contract above.
+
 Live receipt verification and ledger mutation run only in the separately
 administered custody pipeline, never inside platform Terraform. The standalone
 `stages/pod-security-custody` root declares a partial encrypted, lock-enabled

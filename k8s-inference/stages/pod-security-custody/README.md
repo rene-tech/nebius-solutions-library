@@ -1,12 +1,52 @@
 # Pod-security custody root
 
-This standalone Terraform root is intended to become the only owner of SAI-07
-admission, custody RBAC, token-anchor, ledger, and retained-quarantine objects.
-It is deliberately blocked today by `custody-trust-lock.json`; no ownership or
-state transfer is authorized by this source revision. It intentionally
-accepts one custody-owner kubeconfig and does not accept the platform,
-receipt-operator, or metadata-reader credentials. Its state/backend and CI
-principal must be administered outside the platform Terraform trust domain.
+> **Retained rejected v2 root.** The Terraform resources in this directory are
+> preserved as predecessor evidence and remain unreachable because
+> `custody-trust-lock.json` is blocked. They must not be initialized, planned,
+> imported or applied. Importing the same live objects into this state while
+> the platform state retains them would create dual Terraform ownership.
+
+The canonical successor is the non-state-forgetting v3 preflight:
+`scripts/run_sai07_retained_state_custody_v3.py`. The v3 design leaves every
+existing address in the platform state, independently downloads the exact
+versioned state object read-only, derives its complete custody address set,
+and binds that set to immediate live UID/resourceVersion/full-object reads.
+An external field manager may eventually own the protected Kubernetes fields,
+while provider IAM prevents platform mutation, but no second Terraform state
+imports them and the platform state never forgets them. The current v3 trust
+lock is also blocked: no external SSA, provider boundary, or custody activation
+is authorized by this commit.
+
+`collect_sai07_authoritative_custody_evidence.py` is the source-pinned,
+provider-native read-only adapter. It exhaustively paginates the tenant and
+every project returned under it, including principals, groups, bidirectional
+memberships, access permits and credential metadata through the Nebius SDK; it
+retains every RPC request/trace ID and never requests credential secrets. It
+captures native bucket state plus S3 ACL, policy, encryption, versioning,
+Object Lock, retention, legal hold and an exact version-fenced platform-state
+download. Generation outputs are bounded, mode 0600, O_EXCL and retained.
+`verify_sai07_custody_trust_v3.py` opens those raw files, independently
+reconstructs IAM/backend/state semantics, and requires three distinct pinned
+provider/backend/manifest authorities. Every required permit is bound to its
+claimed identity or signer, and the platform is excluded from the full
+tenant/project/bucket inheritance chain. Caller-supplied summaries and hashes
+do not establish any fact. The retained-state preflight requires two fresh,
+distinct signed collections and exact equality of their reconstructed IAM,
+backend-control and versioned-state projections before emitting a handoff.
+
+The v3 preflight performs no Terraform or Kubernetes mutation. A separately
+reviewed external executor, authoritative evidence, active trust-lock commit,
+post-SSA drift fence and independent acceptance are still required. Until
+then SAI-07 remains SOURCE/INTEGRATION/LIVE NO-GO, and SAI-03 remains an
+unaccepted dependency.
+
+The rejected v2 proposal intended this standalone Terraform root to become the
+only owner of SAI-07 admission, custody RBAC, token-anchor, ledger, and
+retained-quarantine objects. It remains deliberately blocked by
+`custody-trust-lock.json`; no ownership or state transfer is authorized by this
+source revision. The preserved v2 design accepted one custody-owner kubeconfig
+and did not accept the platform, receipt-operator, or metadata-reader
+credentials. Its separate state/backend and CI principal were never activated.
 
 The root uses a partial encrypted, lock-enabled S3 backend. A repository-pinned
 trust lock and two canonical Ed25519-signed external receipts must prove the
