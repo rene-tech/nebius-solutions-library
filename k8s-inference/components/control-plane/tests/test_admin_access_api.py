@@ -502,6 +502,83 @@ def test_tenant_and_role_isolation_key_disclosure_rotation_and_cross_origin(
     assert any(event.action == "token.policy.update" and event.outcome == "succeeded" for event in runtime.store.audit)
 
 
+def test_operator_cannot_issue_or_assume_admin_key_policy(registry: Any, cipher: Any, hasher: Any) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    assert isinstance(runtime.store, MemoryStore)
+    operator_id = _create_principal(
+        runtime,
+        role=OperatorRole.OPERATOR,
+        tenant_id="tenant-a",
+        subject="tenant-a-policy-operator",
+    )
+    admin_id = _create_principal(
+        runtime,
+        role=OperatorRole.ADMIN,
+        tenant_id="tenant-a",
+        subject="tenant-a-policy-admin",
+    )
+    operator_cookie = _principal_cookie(runtime, operator_id)
+    admin_cookie = _principal_cookie(runtime, admin_id)
+    request = {
+        "name": "bounded-agent",
+        "principal_id": "agent-a",
+        "tenant_id": "tenant-a",
+        "scopes": ["inference.invoke"],
+        "models": ["qwen3-8b"],
+    }
+
+    with _client(runtime) as client:
+        operator_headers = {"cookie": f"{ADMIN_SESSION_COOKIE}={operator_cookie}"}
+        refused = [
+            client.post(
+                "/admin/api/v1/keys",
+                headers=operator_headers,
+                json={**request, "scopes": [scope]},
+            )
+            for scope in ("tenant.admin", "tokens.manage", "audit.read")
+        ]
+        refused.append(
+            client.post(
+                "/admin/api/v1/keys",
+                headers=operator_headers,
+                json={**request, "models": ["*"]},
+            )
+        )
+        bounded = client.post("/admin/api/v1/keys", headers=operator_headers, json=request)
+        elevated = client.post(
+            "/admin/api/v1/keys",
+            headers={"cookie": f"{ADMIN_SESSION_COOKIE}={admin_cookie}"},
+            json={
+                **request,
+                "name": "tenant-administrator",
+                "scopes": ["tenant.admin", "tokens.manage", "audit.read"],
+                "models": ["*"],
+            },
+        )
+        elevated_id = elevated.json()["data"]["key"]["id"]
+        refused_rotation = client.post(
+            f"/admin/api/v1/keys/{elevated_id}:rotate",
+            headers=operator_headers,
+            json={},
+        )
+        refused_policy_update = client.patch(
+            f"/admin/api/v1/keys/{elevated_id}",
+            headers=operator_headers,
+            json={"name": "operator-must-not-assume-this-key"},
+        )
+
+    assert all(response.status_code == 403 for response in refused)
+    assert bounded.status_code == elevated.status_code == 201
+    assert refused_rotation.status_code == refused_policy_update.status_code == 403
+    assert len(runtime.store.tokens) == 2
+    assert sum(
+        event.action == "admin.authorization"
+        and event.outcome == "failed"
+        and event.detail == {"reason": "admin_key_policy_required"}
+        for event in runtime.store.audit
+    ) == 6
+
+
 def test_tenant_viewer_bootstraps_context_and_reads_only_own_ledger(registry: Any, cipher: Any, hasher: Any) -> None:
     runtime = _runtime(registry, cipher, hasher)
     assert isinstance(runtime.store, MemoryStore)

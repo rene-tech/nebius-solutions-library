@@ -225,8 +225,12 @@ than a tenant-safe catalog projection, and return 403 to tenant identities.
 Viewer can read scoped keys/audit/operations, operator can also issue,
 atomically rotate, and revoke keys, and admin can manage operator principals
 within the same tenant. Only a global admin can create or modify a global
-principal. Delete `/admin/api/v1/session` and securely remove the cookie jar at
-the end of an operator session.
+principal. Operator-issued keys are limited to named models and ordinary
+customer workload scopes. Wildcard model grants and the privilege-bearing
+`tenant.admin`, `tokens.manage`, and `audit.read` scopes require an admin role
+for issuance, policy changes, and secret-bearing rotation. Delete
+`/admin/api/v1/session` and securely remove the cookie jar at the end of an
+operator session.
 
 API-key issue and rotation responses disclose the new opaque PAT exactly once
 and carry `Cache-Control: no-store`. List and audit responses expose only
@@ -391,7 +395,10 @@ principal ownership are both required. A different token receives the same
 not-found result as an unknown ID even if it carries an `operations.*` scope;
 only explicit same-tenant `tenant.admin` overrides ownership. The
 `operations.*` names remain accepted for compatibility but grant no delegated
-cross-token access.
+cross-token access. Artifact metadata, download handles, manifest inspection,
+and inline content reads resolve the immutable artifact record to this same
+owning operation before returning anything, so tenant equality alone does not
+grant access through either HTTP or MCP aliases.
 
 Input boundaries are fail closed before admission or reflection: model IDs are
 1-128 characters, idempotency keys are 8-200 characters, synchronous waits are

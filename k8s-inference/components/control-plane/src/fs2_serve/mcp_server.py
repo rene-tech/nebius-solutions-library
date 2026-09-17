@@ -580,6 +580,12 @@ async def _metadata(runtime: AppRuntime, principal: Principal, operation_id: UUI
     return operation
 
 
+async def _require_artifact_access(runtime: AppRuntime, principal: Principal, artifact_id: UUID) -> None:
+    if runtime.scientific_batches is None:
+        raise ArtifactNotFoundError("artifact not found")
+    await runtime.scientific_batches.require_artifact_access(artifact_id, principal=principal)
+
+
 async def _admit(
     runtime: AppRuntime,
     *,
@@ -981,6 +987,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         principal.require(Scope.OPERATIONS_RESULT)
         if runtime.artifact_service is None:
             raise MCPError(code=INVALID_PARAMS, message="model artifact service is unavailable")
+        await _require_artifact_access(runtime, principal, artifact_id)
         stream = await runtime.artifact_service.open_content(artifact_id, tenant_id=principal.tenant_id)
         return stream.artifact.to_public_ref().model_dump(mode="json", exclude_none=True)
 
@@ -1125,6 +1132,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         principal.require(Scope.OPERATIONS_RESULT)
         if runtime.artifact_service is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
+        await _require_artifact_access(runtime, principal, artifact_id)
         result = await runtime.artifact_service.download(artifact_id, tenant_id=principal.tenant_id)
         return {
             "artifact": result.artifact.to_public_ref().model_dump(mode="json", exclude_none=True),
@@ -1160,6 +1168,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         principal.require(Scope.OPERATIONS_RESULT)
         if runtime.artifact_service is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
+        await _require_artifact_access(runtime, principal, artifact_id)
         stream = await runtime.artifact_service.open_content(artifact_id, tenant_id=principal.tenant_id)
         if stream.artifact.media_type != "application/vnd.fs2.scientific-manifest+json":
             raise MCPError(code=INVALID_PARAMS, message="artifact is not a scientific manifest")
@@ -1201,6 +1210,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         principal.require(Scope.OPERATIONS_RESULT)
         if runtime.artifact_service is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
+        await _require_artifact_access(runtime, principal, artifact_id)
         ceiling = runtime.artifact_service.max_inline_content_bytes
         stream = await runtime.artifact_service.open_content(artifact_id, tenant_id=principal.tenant_id)
         if stream.artifact.size_bytes > ceiling:

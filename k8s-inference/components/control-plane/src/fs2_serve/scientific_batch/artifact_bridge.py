@@ -11,6 +11,8 @@ from uuid import UUID
 
 import httpx
 
+from ..auth import require_operation_access
+from ..models import Principal
 from ..scientific_artifacts import (
     ArtifactAccess,
     ArtifactAccessProfile,
@@ -209,6 +211,13 @@ class ArtifactServiceBridge:
         # locations remain an optional access-time concern of the artifact
         # service and are never persisted in controller state.
         return _public_artifact(artifact)
+
+    async def require_artifact_access(self, artifact_id: UUID, *, principal: Principal) -> None:
+        """Bind artifact authorization to the exact principal-owned operation."""
+
+        artifact = await self.artifacts.get_artifact(artifact_id, tenant_id=principal.tenant_id)
+        operation = await self.store.get_operation(artifact.operation_id, tenant_id=principal.tenant_id)
+        require_operation_access(principal, operation)
 
     def _require_service(self) -> ScientificArtifactControllerPort:
         if self.service is None:

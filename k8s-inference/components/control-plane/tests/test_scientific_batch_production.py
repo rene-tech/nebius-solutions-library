@@ -133,6 +133,7 @@ from fs2_serve.scientific_batch.worker import ScientificBatchWorker
 from fs2_serve.scientific_batch.workload_routes import scientific_workload_artifact_router
 from fs2_serve.scientific_input_uploads import ScientificInputUploadService
 from fs2_serve.settings import Settings
+from fs2_serve.store import NotFoundError
 from fs2_serve.telemetry import Metrics
 
 PARAMETER_SCHEMA = "fs2-serve.nebius.ai/example-parameters/v1"
@@ -488,6 +489,10 @@ class FakeArtifactAccess:
         assert pointer == self.pointer
         return self.admission
 
+    async def require_artifact_access(self, artifact_id, *, principal: Principal) -> None:
+        assert str(artifact_id) == self.pointer["artifact_id"]
+        assert principal.tenant_id == "tenant-a"
+
     async def artifact_response(self, artifact_id, *, tenant_id: str):
         return self.pointer
 
@@ -714,6 +719,61 @@ def scientific_runtime(
         scientific_batches=service,
     )
     return runtime, controller, repository, cluster, pointer
+
+
+@pytest.mark.asyncio
+async def test_scientific_lifecycle_service_denies_a_same_tenant_peer(registry, cipher, hasher) -> None:
+    runtime, _, _, _, pointer = scientific_runtime(registry, cipher, hasher)
+    assert runtime.scientific_batches is not None
+    scopes = {
+        Scope.INFERENCE_INVOKE,
+        Scope.OPERATIONS_READ,
+        Scope.OPERATIONS_RESULT,
+        Scope.OPERATIONS_CANCEL,
+    }
+    owner_token = await runtime.tokens.issue(
+        TokenCreate(
+            principal_id="scientist-a",
+            tenant_id="tenant-a",
+            scopes=scopes,
+            models={"protein-design"},
+        ),
+        created_by="test",
+    )
+    peer_token = await runtime.tokens.issue(
+        TokenCreate(
+            principal_id="scientist-b",
+            tenant_id="tenant-a",
+            scopes=scopes,
+            models={"protein-design"},
+        ),
+        created_by="test",
+    )
+    owner = await runtime.tokens.verify(owner_token.token)
+    peer = await runtime.tokens.verify(peer_token.token)
+    submitted = await runtime.scientific_batches.submit(
+        principal=owner,
+        model_id="protein-design",
+        request={
+            "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+            "operation": "design",
+            "service_class": "customer-batch",
+            "input_manifest": pointer,
+            "parameters": {},
+        },
+        idempotency_key="same-tenant-service-0001",
+        traceparent=None,
+    )
+    operation_id = UUID(submitted["operation"]["id"])
+
+    with pytest.raises(NotFoundError, match="operation not found"):
+        await runtime.scientific_batches.status(operation_id, principal=peer)
+    with pytest.raises(NotFoundError, match="operation not found"):
+        await runtime.scientific_batches.cancel(operation_id, principal=peer)
+    with pytest.raises(NotFoundError, match="operation not found"):
+        await runtime.scientific_batches.events(operation_id, principal=peer)
+    with pytest.raises(NotFoundError, match="operation not found"):
+        await runtime.scientific_batches.result(operation_id, principal=peer)
 
 
 @pytest.mark.asyncio

@@ -53,6 +53,8 @@ class ScientificArtifactAccess(Protocol):
 
     async def validate_input(self, pointer: Mapping[str, Any], *, tenant_id: str) -> ScientificInputAdmission: ...
 
+    async def require_artifact_access(self, artifact_id: UUID, *, principal: Principal) -> None: ...
+
     async def artifact_response(self, artifact_id: UUID, *, tenant_id: str) -> Mapping[str, Any]: ...
 
     async def result_response(self, operation_id: UUID, *, tenant_id: str) -> Mapping[str, Any]: ...
@@ -770,11 +772,17 @@ class ScientificBatchService:
         ).model_dump(mode="json")
 
     async def artifact(self, artifact_id: UUID, *, principal: Principal) -> Mapping[str, Any]:
-        self._authorize(principal, Scope.OPERATIONS_RESULT)
+        await self.require_artifact_access(artifact_id, principal=principal)
         artifact = ArtifactRef.model_validate(
             await self.artifacts.artifact_response(artifact_id, tenant_id=principal.tenant_id)
         )
         return artifact.model_dump(mode="json", exclude_unset=True)
+
+    async def require_artifact_access(self, artifact_id: UUID, *, principal: Principal) -> None:
+        """Resolve an artifact to its operation and enforce exact owner access."""
+
+        self._authorize(principal, Scope.OPERATIONS_RESULT)
+        await self.artifacts.require_artifact_access(artifact_id, principal=principal)
 
     async def result(self, operation_id: UUID, *, principal: Principal) -> Mapping[str, Any]:
         self._authorize(principal, Scope.OPERATIONS_RESULT)

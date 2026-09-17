@@ -40,6 +40,7 @@ from fs2_serve.scientific_artifacts import (
     MemoryArtifactRepository,
     ScientificArtifactService,
 )
+from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge
 from fs2_serve.scientific_input_uploads import ScientificInputUploadService, content_path
 
 PAYLOAD = b">target\nMKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ\n"
@@ -70,6 +71,14 @@ def _artifact_plane(runtime: AppRuntime, **service_kwargs: Any) -> tuple[FakeObj
         **service_kwargs,
     )
     runtime.artifact_service = service
+    assert runtime.scientific_batches is not None
+    runtime.scientific_batches.artifacts = ArtifactServiceBridge(
+        artifacts=repository,
+        batches=runtime.scientific_batches.repository,
+        profiles=runtime.scientific_batches.profiles,
+        store=runtime.store,
+        service=service,
+    )
     runtime.scientific_input_uploads = ScientificInputUploadService(
         store=runtime.store,
         artifacts=_MemoryInputUploadPort(repository, service),
@@ -388,6 +397,54 @@ async def test_a_foreign_tenant_can_neither_write_nor_read_the_bytes(registry, c
         assert stolen_status.status_code == 404
         # The owner's object itself was never touched by the foreign tenant.
         assert len(object_store.written) == 1
+
+
+@pytest.mark.asyncio
+async def test_same_tenant_peer_cannot_cancel_or_read_another_principals_artifact(
+    registry, cipher, hasher
+) -> None:
+    """Tenant equality never substitutes for the exact operation owner."""
+
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    _artifact_plane(runtime)
+    owner = await _token(runtime, principal_id="scientist-a", tenant_id="tenant-a")
+    peer = await _token(runtime, principal_id="scientist-b", tenant_id="tenant-a")
+    app = create_app(runtime)
+    async with app.router.lifespan_context(app), _client(app, owner) as client:
+        reservation = await _begin(client, key="same-tenant-owner-0001", request=_upload_request())
+        assert (await _put(client, reservation, PAYLOAD)).status_code == 200
+        finalized = await client.post(
+            f"/v1/scientific-artifacts/uploads/{reservation['upload_id']}:finalize",
+            json={"operation_id": reservation["operation_id"]},
+        )
+        assert finalized.status_code == 200
+        pointer = finalized.json()
+
+    async with app.router.lifespan_context(app), _client(app, peer) as other:
+        denied = [
+            await other.delete(f"/v1/operations/{reservation['operation_id']}"),
+            await other.get(f"/v1/artifacts/{pointer['artifact_id']}"),
+            await other.get(f"/v1/artifacts/{pointer['artifact_id']}/download"),
+            await other.get(f"/v1/artifacts/{pointer['artifact_id']}/content"),
+        ]
+    assert [response.status_code for response in denied] == [404, 404, 404, 404]
+
+    server = build_mcp_server(runtime)
+    context = Context(mcp_server=server, subscriptions=server._subscriptions)  # type: ignore[attr-defined]
+    peer_access = await PATTokenVerifier(runtime).verify_token(peer)
+    assert peer_access is not None
+    auth_token = auth_context_var.set(AuthenticatedUser(peer_access))
+    try:
+        for tool in ("get_scientific_artifact", "download_scientific_artifact"):
+            with pytest.raises(Exception):  # noqa: B017 - the SDK collapses the failure class
+                await server._tool_manager.call_tool(  # type: ignore[attr-defined]
+                    tool,
+                    {"artifact_id": pointer["artifact_id"]},
+                    context,
+                    convert_result=False,
+                )
+    finally:
+        auth_context_var.reset(auth_token)
 
 
 @pytest.mark.asyncio

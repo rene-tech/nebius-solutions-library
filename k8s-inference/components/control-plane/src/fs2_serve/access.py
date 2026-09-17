@@ -25,11 +25,19 @@ from .access_models import (
     OperatorRole,
 )
 from .auth import TokenService
-from .models import TokenIssued, TokenView
+from .models import Scope, TokenIssued, TokenView
 from .store import NotFoundError, Store
 
 
 class AdminAccessService:
+    _ADMIN_ONLY_KEY_SCOPES = frozenset(
+        {
+            Scope.TOKENS_MANAGE,
+            Scope.AUDIT_READ,
+            Scope.TENANT_ADMIN,
+        }
+    )
+
     def __init__(self, store: Store, tokens: TokenService) -> None:
         self.store = store
         self.tokens = tokens
@@ -291,6 +299,12 @@ class AdminAccessService:
             action="token.issue",
             tenant_id=request.tenant_id,
         )
+        await self._authorize_key_policy(
+            identity,
+            scopes=request.scopes,
+            models=request.models,
+            action="token.issue",
+        )
         try:
             issued = await self.tokens.issue(request, created_by=identity.subject)
         except Exception as exc:
@@ -319,6 +333,12 @@ class AdminAccessService:
             OperatorRole.OPERATOR,
             action="token.rotate",
             tenant_id=existing.tenant_id,
+        )
+        await self._authorize_key_policy(
+            identity,
+            scopes=existing.scopes,
+            models=existing.models,
+            action="token.rotate",
         )
         try:
             issued = await self.tokens.rotate(
@@ -378,6 +398,12 @@ class AdminAccessService:
             action="token.policy.update",
             tenant_id=existing.tenant_id,
         )
+        await self._authorize_key_policy(
+            identity,
+            scopes=request.scopes if request.scopes is not None else existing.scopes,
+            models=request.models if request.models is not None else existing.models,
+            action="token.policy.update",
+        )
         try:
             updated = await self.store.update_token_policy(
                 token_id,
@@ -393,6 +419,22 @@ class AdminAccessService:
             )
             raise
         return (await self._project_keys([updated], tenant_id=tenant))[0]
+
+    async def _authorize_key_policy(
+        self,
+        identity: OperatorPrincipal,
+        *,
+        scopes: set[Scope] | list[str],
+        models: set[str] | list[str],
+        action: str,
+    ) -> None:
+        """Keep privilege-bearing PAT policy behind the admin role boundary."""
+
+        if identity.role is OperatorRole.ADMIN:
+            return
+        requested_scopes = frozenset(str(scope) for scope in scopes)
+        if "*" in models or requested_scopes.intersection(str(scope) for scope in self._ADMIN_ONLY_KEY_SCOPES):
+            await self._deny(identity, action=action, reason="admin_key_policy_required")
 
     async def _disclosure(self, issued: TokenIssued, *, tenant_id: str | None) -> AdminApiKeyDisclosure:
         projected = await self._project_keys(

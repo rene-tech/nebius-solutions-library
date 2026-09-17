@@ -1378,8 +1378,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         identity: Annotated[Principal, Depends(principal)],
     ) -> Response:
         identity.require(Scope.OPERATIONS_RESULT)
-        if runtime.artifact_service is None:
+        if runtime.artifact_service is None or runtime.scientific_batches is None:
             return _error(404, "artifact_not_found", "scientific artifact was not found")
+        await runtime.scientific_batches.require_artifact_access(artifact_id, principal=identity)
         result = await runtime.artifact_service.download(artifact_id, tenant_id=identity.tenant_id)
         return JSONResponse(
             {
@@ -1409,8 +1410,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         """
 
         identity.require(Scope.OPERATIONS_RESULT)
-        if runtime.artifact_service is None:
+        if runtime.artifact_service is None or runtime.scientific_batches is None:
             return _error(404, "artifact_not_found", "scientific artifact was not found")
+        await runtime.scientific_batches.require_artifact_access(artifact_id, principal=identity)
         stream = await runtime.artifact_service.open_content(artifact_id, tenant_id=identity.tenant_id)
         artifact = stream.artifact
         headers = {
