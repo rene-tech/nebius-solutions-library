@@ -294,22 +294,30 @@ custody boundary. They may be absent only in the first signed preparation;
 subsequent generations bind their exact state address and live UID/RV/hash.
 The external executor has no RBAC mutation authority.
 
-The v4 execution capsule does not execute OpenSSL or another general-purpose
-crypto CLI before trust is established. Its only pre-trust child is the
-source-reviewed `sai07-bootstrap-ed25519-verify` protocol: no arguments, empty
-environment, no pathname opens, fixed sealed payload/key/signature descriptors,
-and no output. Activation requires two independent reproducible builds from a
-pinned `CGO_ENABLED=0` Go toolchain and standard-library tree. The exact binary
-digest is compiled into the bootstrap, and its ELF must be ELF64 `ET_EXEC`
-without `PT_INTERP`, `PT_DYNAMIC`, writable executable segments, or executable
-stack. The checked-in build contract deliberately has null binary/toolchain
-facts and is blocked. General OpenSSL is sealed and exposed only after this
-narrow verifier authenticates the capsule graph, with configuration, engine,
-and module discovery disabled for later signed-graph operations. Runtime image
-evidence is likewise content-bound: signed OCI digest, digest-qualified Pod
-image reference and runtime `imageID` must resolve to one digest, while sealed
-canonical provenance and SPDX-envelope documents must match their signed hashes
-and name that same image.
+The v4 execution capsule makes a static native launcher—not Python—the actual
+PID 1 and first trust decision. The external root signs the exact
+digest-qualified image, complete admission-object identities, launcher binary,
+capsule, worker and evidence closure. The launcher measures `/proc/self/exe`,
+rejects `PT_INTERP`, `PT_DYNAMIC`, writable executable segments and executable
+stack, verifies that root signature without spawning a helper, and seals every
+executable/runtime input before `exec` replaces it with measured Python. The
+worker requires the launcher's sealed grant and exact sealed descriptors; its
+preserved Python-first verifier is not reachable from plan/apply or external
+acknowledgement execution.
+
+Activation also requires two detached Ed25519-signed builder provenance
+statements, not two self-declared builder labels. Distinct root-authorized
+principals, keys, nonces and isolation domains independently bind the exact
+source, build arguments and contract, pinned `CGO_ENABLED=0` Go toolchain and
+standard-library closure, build environment, isolation-evidence digest and one
+identical launcher output. The external root pins both public keys, receipts,
+isolation facts and the closed receipt schema. Checked-in binary, authority,
+toolchain, environment, isolation and receipt facts are deliberately null, so
+launcher and capsule activation remain blocked. The former narrow verifier is
+retained only as rejected provenance. General OpenSSL is sealed only after the
+native decision and has configuration, engine and module discovery disabled.
+The signed OCI digest, Pod image reference, runtime `imageID`, canonical image
+provenance and SPDX envelope must still resolve to the same image.
 
 Terraform parent timeout is not treated as mutation settlement. The dedicated
 PID-1 capsule fences and reaps every descendant, including escaped process
@@ -346,7 +354,7 @@ identity and rejects any ConfigMap or Secret outside the exact anchor and
 generation-acknowledgement profiles.
 
 The platform kubeconfig is accepted only as canonical JSON and copied to a
-sealed descriptor before use. PID 1 parses those bytes before launching
+sealed descriptor before use. The native-authenticated PID-1 worker parses those bytes before launching
 kubectl; the rendered context must then resolve to exactly one linked cluster
 and user with only embedded CA bytes and one embedded bearer token;
 exec/auth-provider/token-file,

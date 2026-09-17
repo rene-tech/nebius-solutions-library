@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schemas/sai07-launcher-builder-provenance-v1.json",
+  "additionalProperties": false,
+  "properties": {
+    "claims": {
+      "additionalProperties": false,
+      "properties": {
+        "build_environment_sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"},
+        "builder": {
+          "additionalProperties": false,
+          "properties": {
+            "isolation_domain": {"minLength": 1, "type": "string"},
+            "isolation_evidence_sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"},
+            "key_id": {"minLength": 1, "type": "string"},
+            "principal_id": {"minLength": 1, "type": "string"},
+            "role": {"enum": ["builder-a", "builder-b"]}
+          },
+          "required": ["isolation_domain", "isolation_evidence_sha256", "key_id", "principal_id", "role"],
+          "type": "object"
+        },
+        "built_at": {"format": "date-time", "type": "string"},
+        "materials_sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"},
+        "nonce": {"minLength": 1, "type": "string"},
+        "output": {
+          "additionalProperties": false,
+          "properties": {
+            "path": {"const": "/opt/fs2-sai07/bootstrap/sai07-capsule-launcher"},
+            "sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"}
+          },
+          "required": ["path", "sha256"],
+          "type": "object"
+        },
+        "recipe": {
+          "additionalProperties": false,
+          "properties": {
+            "arguments_sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"},
+            "build_contract_sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"},
+            "source_path": {"const": "scripts/sai07_capsule_launcher.go"},
+            "source_sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"}
+          },
+          "required": ["arguments_sha256", "build_contract_sha256", "source_path", "source_sha256"],
+          "type": "object"
+        },
+        "schema": {"const": "fs2-serve.nebius.ai/sai07-launcher-builder-provenance/v1"},
+        "toolchain": {
+          "additionalProperties": false,
+          "properties": {
+            "cgo_enabled": {"const": "0"},
+            "go_version": {"pattern": "^go1\\.[0-9]+(?:\\.[0-9]+)?$", "type": "string"},
+            "goarch": {"const": "amd64"},
+            "goos": {"const": "linux"},
+            "standard_library_tree_sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"},
+            "toolchain_archive_sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"}
+          },
+          "required": ["cgo_enabled", "go_version", "goarch", "goos", "standard_library_tree_sha256", "toolchain_archive_sha256"],
+          "type": "object"
+        }
+      },
+      "required": ["build_environment_sha256", "builder", "built_at", "materials_sha256", "nonce", "output", "recipe", "schema", "toolchain"],
+      "type": "object"
+    },
+    "signature": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {"const": "ed25519"},
+        "key_id": {"minLength": 1, "type": "string"},
+        "value": {"contentEncoding": "base64", "type": "string"}
+      },
+      "required": ["algorithm", "key_id", "value"],
+      "type": "object"
+    }
+  },
+  "required": ["claims", "signature"],
+  "title": "SAI-07 independent launcher builder provenance",
+  "type": "object"
+}

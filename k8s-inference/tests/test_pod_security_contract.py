@@ -573,6 +573,18 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
             "stages/pod-security-custody/bootstrap-ed25519-verifier-build-v1.json"
         )
     )
+    native_launcher = _source("scripts/sai07_capsule_launcher.go")
+    native_activation = json.loads(
+        _source("stages/pod-security-custody/capsule-launcher-activation-v1.json")
+    )
+    native_build = json.loads(
+        _source("stages/pod-security-custody/capsule-launcher-build-v1.json")
+    )
+    native_builder_schema = json.loads(
+        _source(
+            "stages/pod-security-custody/launcher-builder-provenance-v1.schema.json"
+        )
+    )
 
     assert lock["activation"] == "blocked"
     assert capsule["activation"] == "blocked"
@@ -615,6 +627,10 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
         "bootstrap_ed25519_build_contract",
         "bootstrap_ed25519_verifier",
         "bundle_builder_v4",
+        "capsule_launcher_activation_v1",
+        "capsule_launcher_build_v1",
+        "capsule_launcher_builder_schema_v1",
+        "capsule_launcher_v1",
         "custody_epoch_admission_v4",
         "custody_manifest_v1",
         "custody_manifest_v2",
@@ -830,6 +846,65 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
         ).encode()
     ).hexdigest()
     assert "BOOTSTRAP_ED25519_VERIFIER_SHA256: str | None = None" in authorized_apply
+    assert native_activation["activation"] == "blocked"
+    assert native_activation["launcher"]["sha256"] is None
+    assert native_build["activation"] == "blocked"
+    assert native_build["build"]["cgo_enabled"] == "0"
+    assert native_build["build"]["go_version"] is None
+    assert native_build["build"]["toolchain_archive_sha256"] is None
+    assert native_build["build"]["standard_library_tree_sha256"] is None
+    assert native_build["build_environment_sha256"] is None
+    assert native_builder_schema["properties"]["claims"]["properties"]["builder"][
+        "properties"
+    ]["role"]["enum"] == ["builder-a", "builder-b"]
+    assert len(native_activation["builder_authorities"]) == 2
+    assert len(native_activation["builder_receipts"]) == 2
+    assert {
+        item["role"] for item in native_activation["builder_authorities"]
+    } == {"builder-a", "builder-b"}
+    assert len(
+        {
+            item["public_key_path"]
+            for item in native_activation["builder_authorities"]
+        }
+    ) == 2
+    assert all(
+        item["sha256"] is None for item in native_activation["builder_receipts"]
+    )
+    assert native_activation["loader"] == {
+        "mechanism": "kubelet-verified-oci-digest-and-root-signed-exact-admission",
+        "require_digest_image": True,
+        "require_pid1": True,
+        "require_read_only_root": True,
+        "required_container_name_by_role": {
+            "external-ack": "",
+            "plan-apply": "",
+        },
+    }
+    assert hashlib.sha256(native_launcher.encode()).hexdigest() == native_build[
+        "source"
+    ]["sha256"]
+    assert native_build["source"] == native_activation["source"]
+    assert capsule["launcher"]["native_launch_grant_fd"] == 207
+    assert capsule["launcher"]["worker_script_fd"] == 208
+    assert capsule["launcher"]["runtime_attestation_schema"].endswith("/v5")
+    assert "os.Getpid() != 1" in native_launcher
+    assert "verifyRuntimeAttestation" in native_launcher
+    assert "verifyStaticLauncherELF" in native_launcher
+    assert "verifyBuilderReceipts" in native_launcher
+    assert "exactly two independent builder receipts are required" in native_launcher
+    assert "IsolationEvidenceSHA256" in native_launcher
+    assert "syscall.Exec" in native_launcher
+    assert "FS2_SAI07_NATIVE_LAUNCH_GRANT_FD=207" in native_launcher
+    assert "verify_native_attestation" in authorized_apply
+    assert authorized_apply.count("verify_native_attestation(") == 3
+    active_apply = authorized_apply.split("def execute(args:", 1)[1]
+    assert "verify_attestation(" not in active_apply
+    assert "native launcher" in authorized_apply
+    assert "NATIVE_WORKER_FD = 208" in authorized_apply
+    assert source_lock["sources"]["capsule_launcher_v1"]["sha256"] == (
+        native_build["source"]["sha256"]
+    )
     assert "validate_image_evidence" in authorized_apply
     assert "validate_image_evidence" in executor
     assert 'reference.count("@") != 1' in authorized_apply

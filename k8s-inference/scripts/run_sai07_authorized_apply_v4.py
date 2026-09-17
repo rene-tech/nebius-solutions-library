@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Create and apply one SAI-07 plan inside an independently attested capsule.
+"""Create and apply one SAI-07 plan after a native root-custodied launch.
 
-This PID-1 bootstrap intentionally imports only the Python standard library.
-It verifies an externally signed, short-lived runtime attestation before it
-loads any SAI-07 helper.  Executables, the source zipapp, contracts, CA,
-kubeconfig and tfvars are copied into sealed memfds.  Terraform plan and apply
-consume one fixed, sealed plan descriptor created by this process.
-
-The checked-in source cannot activate until a later reviewed commit replaces
-the four ``None`` bootstrap pins with authoritative facts.  They are compiled
-trust roots, not caller input and not content inside the attested OCI image.
+This module is never the capsule bootstrap trust root.  The statically linked
+``sai07-capsule-launcher`` must be PID 1, authenticate the external root-signed
+attestation, its own independently reproduced binary, the complete capsule and
+image closure, and this exact worker, then replace itself with measured Python.
+This worker accepts only the launcher's sealed, content-bound grant and sealed
+descriptors.  The predecessor Python-first verifier remains below as rejected,
+unreachable archaeology so the rejected design is not rewritten as success.
 """
 
 from __future__ import annotations
@@ -36,7 +34,7 @@ CAPSULE_CONTRACT_PATH = Path(
     "/opt/fs2-sai07/contracts/execution-capsule-contract-v4.json"
 )
 RUNTIME_ATTESTATION_PATH = Path(
-    "/opt/fs2-sai07/attestations/execution-capsule-runtime-attestation-v4.json"
+    "/opt/fs2-sai07/attestations/execution-capsule-runtime-attestation-v5.json"
 )
 ATTESTATION_KEY_PATH = Path(
     "/opt/fs2-sai07/attestations/execution-capsule-attestation-authority.pub"
@@ -62,8 +60,9 @@ BOOTSTRAP_ED25519_BUILD_CONTRACT_SHA256 = (
 
 CAPSULE_SCHEMA = "fs2-serve.nebius.ai/sai07-execution-capsule-contract/v4"
 ATTESTATION_SCHEMA = (
-    "fs2-serve.nebius.ai/sai07-execution-capsule-runtime-attestation/v4"
+    "fs2-serve.nebius.ai/sai07-execution-capsule-runtime-attestation/v5"
 )
+NATIVE_LAUNCH_GRANT_SCHEMA = "fs2-serve.nebius.ai/sai07-native-launch-grant/v1"
 MAX_JSON_BYTES = 8 * 1024 * 1024
 MAX_KUBECONFIG_BYTES = 4 * 1024 * 1024
 MAX_PLAN_BYTES = 512 * 1024 * 1024
@@ -109,6 +108,8 @@ FDS = {
     "settlement_plan_a": 201,
     "settlement_plan_b": 202,
 }
+NATIVE_LAUNCH_GRANT_FD = 207
+NATIVE_WORKER_FD = 208
 BOOTSTRAP_VERIFIER_FD = 203
 BOOTSTRAP_PAYLOAD_FD = 204
 BOOTSTRAP_PUBLIC_KEY_FD = 205
@@ -934,6 +935,319 @@ def verify_signature(
         raise AuthorizedApplyV4Error("runtime attestation signature is invalid")
 
 
+def read_native_sealed_bytes(
+    descriptor: int, label: str, maximum: int
+) -> bytes:
+    metadata = os.fstat(descriptor)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_size <= 0
+        or metadata.st_size > maximum
+        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & SEALS != SEALS
+    ):
+        raise AuthorizedApplyV4Error(
+            f"native launcher {label} is not a bounded write-sealed descriptor"
+        )
+    payload = os.pread(descriptor, metadata.st_size, 0)
+    if len(payload) != metadata.st_size:
+        raise AuthorizedApplyV4Error(f"native launcher {label} became short")
+    return payload
+
+
+def native_json(
+    descriptor: int,
+    label: str,
+    maximum: int,
+    *,
+    terminal_lf: bool,
+) -> tuple[bytes, dict[str, Any]]:
+    payload = read_native_sealed_bytes(descriptor, label, maximum)
+    try:
+        value = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise AuthorizedApplyV4Error(
+            f"native launcher {label} is not JSON"
+        ) from error
+    expected = canonical(value) + (b"\n" if terminal_lf else b"")
+    if not isinstance(value, dict) or payload != expected:
+        raise AuthorizedApplyV4Error(
+            f"native launcher {label} is not canonical"
+        )
+    return payload, value
+
+
+def verify_native_attestation(
+    expected_role: str,
+) -> tuple[bytes, dict[str, Any], bytes, dict[str, Any]]:
+    """Consume the native launcher's decision; never establish root trust here."""
+
+    if os.getpid() != 1 or os.environ.get("FS2_SAI07_NATIVE_LAUNCH_GRANT_FD") != str(
+        NATIVE_LAUNCH_GRANT_FD
+    ):
+        raise AuthorizedApplyV4Error(
+            "worker was not exec-replaced by the native PID-1 launcher"
+        )
+    if str(Path(__file__)) != f"/proc/self/fd/{NATIVE_WORKER_FD}":
+        raise AuthorizedApplyV4Error(
+            "worker source is not the native launcher's measured descriptor"
+        )
+    grant_bytes, grant = native_json(
+        NATIVE_LAUNCH_GRANT_FD,
+        "launch grant",
+        MAX_JSON_BYTES,
+        terminal_lf=False,
+    )
+    del grant_bytes
+    grant = exact(
+        grant,
+        {
+            "activation_contract_sha256",
+            "builder_receipt_sha256s",
+            "capsule_contract_sha256",
+            "image_digest",
+            "launcher_binary_sha256",
+            "role",
+            "runtime_attestation_sha256",
+            "schema",
+            "worker_argv_sha256",
+            "worker_python_sha256",
+            "worker_script_sha256",
+            "worker_source_bundle_sha256",
+        },
+        "native launch grant",
+    )
+    digests = grant["builder_receipt_sha256s"]
+    if (
+        grant["schema"] != NATIVE_LAUNCH_GRANT_SCHEMA
+        or grant["role"] != expected_role
+        or not isinstance(digests, list)
+        or len(digests) != 2
+        or digests != sorted(set(digests))
+        or any(
+            not isinstance(value, str)
+            or not SHA256_RE.fullmatch(value)
+            or value == "0" * 64
+            for value in digests
+        )
+        or any(
+            not isinstance(grant[field], str)
+            or not SHA256_RE.fullmatch(grant[field])
+            or grant[field] == "0" * 64
+            for field in (
+                "activation_contract_sha256",
+                "capsule_contract_sha256",
+                "launcher_binary_sha256",
+                "runtime_attestation_sha256",
+                "worker_argv_sha256",
+                "worker_python_sha256",
+                "worker_script_sha256",
+                "worker_source_bundle_sha256",
+            )
+        )
+        or not isinstance(grant["image_digest"], str)
+        or not OCI_DIGEST_RE.fullmatch(grant["image_digest"])
+    ):
+        raise AuthorizedApplyV4Error("native launch grant closure is incomplete")
+
+    capsule_bytes, capsule = native_json(
+        FDS["capsule_contract"],
+        "capsule contract",
+        MAX_JSON_BYTES,
+        terminal_lf=True,
+    )
+    attestation_bytes, attestation = native_json(
+        FDS["runtime_attestation"],
+        "runtime attestation",
+        MAX_JSON_BYTES,
+        terminal_lf=True,
+    )
+    exact(attestation, {"claims", "signature"}, "runtime attestation")
+    claims = exact(
+        attestation["claims"],
+        {
+            "admission_objects",
+            "api",
+            "capsule_contract_sha256",
+            "expires_at",
+            "handoff",
+            "image",
+            "issued_at",
+            "launcher",
+            "nonce",
+            "pod",
+            "role",
+            "schema",
+            "signing_principal_id",
+            "worker",
+        },
+        "native-authenticated runtime claims",
+    )
+    launcher = exact(
+        claims["launcher"],
+        {
+            "activation_contract_sha256",
+            "binary_sha256",
+            "build_contract_sha256",
+            "builder_receipt_sha256s",
+            "source_sha256",
+        },
+        "native-authenticated launcher",
+    )
+    worker = exact(
+        claims["worker"],
+        {"argv", "python_sha256", "script_sha256", "source_bundle_sha256"},
+        "native-authenticated worker",
+    )
+    if (
+        claims["schema"] != ATTESTATION_SCHEMA
+        or claims["role"] != expected_role
+        or not isinstance(claims["signing_principal_id"], str)
+        or not claims["signing_principal_id"]
+        or not isinstance(claims["nonce"], str)
+        or not claims["nonce"]
+        or sha256(capsule_bytes) != grant["capsule_contract_sha256"]
+        or claims["capsule_contract_sha256"] != grant["capsule_contract_sha256"]
+        or sha256(attestation_bytes) != grant["runtime_attestation_sha256"]
+        or launcher["activation_contract_sha256"]
+        != grant["activation_contract_sha256"]
+        or launcher["binary_sha256"] != grant["launcher_binary_sha256"]
+        or launcher["builder_receipt_sha256s"] != digests
+        or worker["python_sha256"] != grant["worker_python_sha256"]
+        or worker["script_sha256"] != grant["worker_script_sha256"]
+        or worker["source_bundle_sha256"]
+        != grant["worker_source_bundle_sha256"]
+        or sha256(canonical(sys.argv[1:])) != grant["worker_argv_sha256"]
+        or worker["argv"] != sys.argv[1:]
+    ):
+        raise AuthorizedApplyV4Error(
+            "native launch grant differs from the sealed runtime closure"
+        )
+
+    measured = {
+        "python": (
+            FDS["python"],
+            grant["worker_python_sha256"],
+            MAX_RUNTIME_FILE_BYTES,
+        ),
+        "source bundle": (
+            FDS["source_bundle"],
+            grant["worker_source_bundle_sha256"],
+            MAX_RUNTIME_FILE_BYTES,
+        ),
+        "worker": (
+            NATIVE_WORKER_FD,
+            grant["worker_script_sha256"],
+            MAX_RUNTIME_FILE_BYTES,
+        ),
+    }
+    for label, (descriptor, expected_sha256, maximum) in measured.items():
+        if sha256(read_native_sealed_bytes(descriptor, label, maximum)) != expected_sha256:
+            raise AuthorizedApplyV4Error(
+                f"native launcher {label} differs from its authenticated digest"
+            )
+    executable = os.stat("/proc/self/exe")
+    python_descriptor = os.fstat(FDS["python"])
+    if (executable.st_dev, executable.st_ino) != (
+        python_descriptor.st_dev,
+        python_descriptor.st_ino,
+    ):
+        raise AuthorizedApplyV4Error(
+            "running Python is not the native launcher's measured executable"
+        )
+
+    pod_claim = exact(
+        claims["pod"],
+        {
+            "container_name",
+            "image_digest",
+            "image_id",
+            "name",
+            "namespace",
+            "resource_version",
+            "security_projection_sha256",
+            "service_account_name",
+            "uid",
+        },
+        "attested Pod",
+    )
+    image = exact(
+        claims["image"],
+        {"digest", "provenance_sha256", "reference", "sbom_sha256"},
+        "attested image",
+    )
+    if (
+        image["digest"] != grant["image_digest"]
+        or image["digest"] != pod_claim["image_digest"]
+        or not OCI_DIGEST_RE.fullmatch(str(image["digest"]))
+        or not isinstance(image["reference"], str)
+        or image["reference"].count("@") != 1
+        or image["reference"].rsplit("@", 1)[1] != image["digest"]
+        or not isinstance(pod_claim["image_id"], str)
+        or re.search(r"(?:@|://)(sha256:[a-f0-9]{64})$", pod_claim["image_id"])
+        is None
+        or re.search(
+            r"(?:@|://)(sha256:[a-f0-9]{64})$", pod_claim["image_id"]
+        ).group(1)
+        != image["digest"]
+        or os.environ.get("FS2_SAI07_POD_NAME") != pod_claim["name"]
+        or os.environ.get("FS2_SAI07_POD_NAMESPACE") != pod_claim["namespace"]
+        or os.environ.get("FS2_SAI07_POD_UID") != pod_claim["uid"]
+    ):
+        raise AuthorizedApplyV4Error(
+            "native-authenticated downward/image identity differs"
+        )
+    try:
+        issued = dt.datetime.fromisoformat(
+            str(claims["issued_at"]).replace("Z", "+00:00")
+        )
+        expires = dt.datetime.fromisoformat(
+            str(claims["expires_at"]).replace("Z", "+00:00")
+        )
+    except ValueError as error:
+        raise AuthorizedApplyV4Error(
+            "runtime attestation time is malformed"
+        ) from error
+    now = dt.datetime.now(dt.UTC)
+    if (
+        issued.tzinfo != dt.UTC
+        or expires.tzinfo != dt.UTC
+        or issued > now + dt.timedelta(seconds=30)
+        or now > expires
+        or expires <= issued
+        or expires - issued > dt.timedelta(minutes=10)
+    ):
+        raise AuthorizedApplyV4Error("runtime attestation is stale or overlong")
+    launcher_contract = exact(
+        capsule.get("launcher"),
+        {
+            "activation_contract",
+            "binary",
+            "build_contract",
+            "builder_receipt_schema",
+            "native_launch_grant_fd",
+            "runtime_attestation_path",
+            "runtime_attestation_schema",
+            "worker_script",
+            "worker_script_fd",
+        },
+        "capsule native launcher",
+    )
+    if (
+        capsule.get("schema") != CAPSULE_SCHEMA
+        or capsule.get("activation") != "active"
+        or launcher_contract["native_launch_grant_fd"] != NATIVE_LAUNCH_GRANT_FD
+        or launcher_contract["worker_script_fd"] != NATIVE_WORKER_FD
+        or launcher_contract["runtime_attestation_path"]
+        != str(RUNTIME_ATTESTATION_PATH)
+        or launcher_contract["runtime_attestation_schema"] != ATTESTATION_SCHEMA
+    ):
+        raise AuthorizedApplyV4Error(
+            "native-authenticated capsule launcher contract differs"
+        )
+    validate_admission_claims(claims, capsule, expected_role)
+    return capsule_bytes, capsule, attestation_bytes, claims
+
+
 def verify_attestation(
     expected_role: str,
 ) -> tuple[bytes, dict[str, Any], bytes, dict[str, Any]]:
@@ -1445,13 +1759,28 @@ def runtime_files(
         item = exact(files[name], {"fd", "path", "sha256"}, f"capsule {name}")
         if item["fd"] != FDS[name]:
             raise AuthorizedApplyV4Error(f"capsule {name} descriptor differs")
-        seal_path(
-            Path(item["path"]),
-            item["sha256"],
-            item["fd"],
-            f"capsule {name}",
-            maximum,
-        )
+        if name in {"python", "source_bundle", "image_provenance", "image_sbom"}:
+            if (
+                not isinstance(item["sha256"], str)
+                or not SHA256_RE.fullmatch(item["sha256"])
+                or sha256(
+                    read_native_sealed_bytes(
+                        item["fd"], f"capsule {name}", maximum
+                    )
+                )
+                != item["sha256"]
+            ):
+                raise AuthorizedApplyV4Error(
+                    f"capsule {name} differs from the native measured descriptor"
+                )
+        else:
+            seal_path(
+                Path(item["path"]),
+                item["sha256"],
+                item["fd"],
+                f"capsule {name}",
+                maximum,
+            )
     contracts = exact(
         runtime["contract_files"],
         {"epoch_admission", "platform_authority", "source_lock", "trust_lock"},
@@ -2013,7 +2342,7 @@ def prove_provider_settlement(
 def execute(args: argparse.Namespace) -> dict[str, str]:
     if os.getpid() != 1:
         raise AuthorizedApplyV4Error("authorized apply v4 must be PID 1")
-    capsule_bytes, capsule, attestation_bytes, claims = verify_attestation(
+    capsule_bytes, capsule, attestation_bytes, claims = verify_native_attestation(
         "plan-apply"
     )
     handoff_root = handoff_paths(
@@ -2265,7 +2594,7 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
 def execute_external(args: argparse.Namespace, executor_args: list[str]) -> dict[str, str]:
     if os.getpid() != 1:
         raise AuthorizedApplyV4Error("external acknowledgement v4 must be PID 1")
-    capsule_bytes, capsule, attestation_bytes, claims = verify_attestation(
+    capsule_bytes, capsule, attestation_bytes, claims = verify_native_attestation(
         "external-ack"
     )
     handoff_root = handoff_paths(
