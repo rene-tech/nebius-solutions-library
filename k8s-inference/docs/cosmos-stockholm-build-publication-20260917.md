@@ -273,3 +273,58 @@ gate remains explicitly separate and was not duplicated. This one read-only
 pass performed no inference, admission, key creation, cleanup, alert change or
 live mutation. It verifies running-image/contract/telemetry availability, not
 Helm-history completion or customer/model qualification.
+
+## CPU input-upload demand correction publication — 2026-09-17 15:55 UTC
+
+Source `bce48ba034675eaf17bec473e3990fd4003185f2`, tree
+`c8305240951ea1db3f98e0629f98c97d21890925`, excludes only the CPU-only
+`scientific-artifact-upload-v1` protocol from PostgreSQL and memory GPU demand
+queue counts. The only production consumer is the model-demand metric
+projection. Durable uploads, audit entries, semantic outcomes and terminal
+accounting remain available. No startup formula, threshold, cooldown, limit,
+schema, adapter, model or customer setting changed.
+
+The original defect was reproduced in both storage implementations: a lone
+queued upload returned demand 1. After the fix, **27 focused tests passed** in
+4.23 seconds, including real local PostgreSQL 16, preserved native/chat/batch
+queued/activating/running demand, upload outcome metrics, dynamic model metrics
+and unchanged startup-retention tests. Ruff and whitespace checks passed. The
+existing Starlette 422 deprecation warning remains. These tests do not prove
+the final public upload/inference path or any live scaling behavior.
+
+The retained live diagnosis is
+`/home/tux/secure-handoff/cosmos-stockholm-rollout-20260917/cosmos-startup-demand-diagnosis-20260917.json`,
+SHA-256 `61765432eef07a19b4f3b4a48e10332f1b2180d49e5d2ecbce940b502fa22c0e`.
+It correlates the 15:43:32.949–33.869 CPU upload with a genuine demand pulse,
+subsequent restoring replicas and startup retention, after fresh zero-replica
+scrapes. No generation was submitted by the rejected cold-test case. The exact
+intermediate HPA decision sequence was not independently captured.
+
+Published Linux/amd64 tag in the existing CP repository:
+`cosmos-stockholm-bce48ba03-20260917`. The target was absent before build and
+publication; the exact committed 426-file context, packaging, SLSA provenance,
+SPDX SBOM, remote descriptors and OCI source/hash labels passed validation.
+Explicit authorized profile `sandbox2` and a separate private Docker config
+were used; the actual default profile was not changed. Logout completed and
+the temporary registry authorization was verified absent.
+
+| Artifact | Immutable identity / SHA-256 |
+| --- | --- |
+| CP OCI index | `sha256:25438d07ec2caae07ae30209f6267d215b6a037b453aa9f0a3a5a76cb5b6e37e` |
+| Linux/amd64 runtime manifest | `sha256:2bbafabf7ed59083a6938d5a88a35918b8a90f407ba0cd079e1ecbd29a7d0798` |
+| SLSA/SPDX attestation manifest | `sha256:de7e4a66e558ffd2e80b9ec77f0e3cfc66580312430825ece4055d8343f8c69d` |
+| Publication receipt | `06d285bef0b9a3e4b8ed80207856a1a93dcc13aeaf3cdf183ce72dedd71c61d4` |
+| Provenance JSON | `2af993759360eb38db9d6c2c0de55a58e243aca5b2a3c3d50e0dcaa01f6f1ccc` |
+| OCI archive | `97222156eba2ef92e8a76bb40c373e9681b2cef8d65103a9531156f4e250fd83` |
+| Remote image-config receipt | `5a53957eefe26705584c461f92918ba96466ca0c5a87d4c0360042c472998772` |
+| Focused test log | `8de2af3a2a1cb78656a340bf1c7ea51e4459b55bb83e530f05433852f6588b5b` |
+
+Protected directory:
+`/home/tux/secure-handoff/cosmos-upload-demand-build-20260917-kBlbg1V6`.
+Lock, Dockerfile and context-policy hashes remain unchanged from the earlier
+table. Admin `6428b350...` and schema 32 remain unchanged. The owner must deploy
+the successor, prove a queued public upload does not activate GPU replicas over
+fresh scrapes, and repeat affected exact-image acceptance. Release-145 cohorts
+remain valid only for their recorded release-145 scope. This build lane made
+no cluster mutation and claims neither deployed verification nor customer
+readiness for the new image.
