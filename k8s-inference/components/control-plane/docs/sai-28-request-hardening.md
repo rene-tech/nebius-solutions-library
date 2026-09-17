@@ -18,8 +18,8 @@ The corrected implementation commit is
 - App create/update and scientific workload rendering use forced refreshes.
   This bounds cross-replica policy staleness on ordinary request paths without
   allowing a stale app-to-runtime mapping at mutation or privileged execution
-  boundaries. Refresh failures are logged internally with their exception
-  context while public responses remain generic.
+  boundaries. Refresh failures are logged internally with a fixed event and
+  exception class only, while public responses remain generic.
 - The existing pure-ASGI request-size boundary now scans JSON bytes
   incrementally across chunks and rejects more than 64 nested containers before
   FastAPI/Pydantic or manual route parsing. Strings and cross-chunk escapes are

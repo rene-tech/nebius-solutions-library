@@ -90,10 +90,13 @@ class ScientificAppsInventory:
             try:
                 all_records = await self.repository.list_records()
                 discoverable = await self.repository.list_discoverable_records()
-            except Exception:
+            except Exception as error:
                 self._refreshed_at = None
                 self._retry_after = self._clock() + self.refresh_failure_retry_seconds
-                LOGGER.exception("scientific Apps inventory refresh failed")
+                LOGGER.error(
+                    "scientific Apps inventory refresh failed error_type=%s",
+                    type(error).__name__,
+                )
                 raise ScientificAppsRefreshError("scientific Apps inventory refresh unavailable") from None
             records = {
                 item.public_model_id: item
