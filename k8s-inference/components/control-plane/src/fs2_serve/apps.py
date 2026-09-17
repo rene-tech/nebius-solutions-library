@@ -375,7 +375,7 @@ class AppsService:
                 updated_at=now,
             )
         )
-        await self.scientific_apps.refresh()
+        await self.scientific_apps.refresh(force=True)
         if original.scientific is not None:
             policy = original.scientific.desired
             await self.scientific.set_policy(
@@ -467,7 +467,7 @@ class AppsService:
         except AppConflictError as exc:
             raise AdminProblemError(409, "app_revision_conflict", str(exc)) from None
         if self.scientific_apps is not None:
-            await self.scientific_apps.refresh()
+            await self.scientific_apps.refresh(force=True)
         return await self.settings(app_id, context, actor.tenant_id)
 
     async def _run(self, record: AppRecord, operation: AdminOperationItem, context: AdminContext) -> AppRun:

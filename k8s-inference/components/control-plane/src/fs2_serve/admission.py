@@ -57,6 +57,10 @@ from .telemetry import Metrics
 LOGGER = logging.getLogger(__name__)
 
 
+class AdmissionInputError(Exception):
+    """A precisely classified client admission payload or protocol error."""
+
+
 def _publication_surface(*, protocol: str, required_scope: str) -> str:
     """Map an admission transport to the configured publication surface.
 
@@ -212,7 +216,7 @@ class AdmissionService:
         if admission.operation not in model.gateway.policy_operations:
             raise PermissionError("operation is outside model policy")
         if admission.protocol not in model.gateway.protocols:
-            raise ValueError("model does not implement requested protocol")
+            raise AdmissionInputError("model does not implement requested protocol")
         request_body = admission.request_body
         trace_carrier: dict[str, str] = {}
         TraceContextTextMapPropagator().inject(trace_carrier)
@@ -222,14 +226,17 @@ class AdmissionService:
         if admission.protocol.startswith("openai-"):
             try:
                 payload = json.loads(request_body)
-                if not isinstance(payload, dict):
-                    raise ValueError
-                # Public app routes are independent, while an unchanged
-                # qualified runtime (including a restored GPU process) still
-                # serves its original model name.
-                payload["model"] = (
-                    model.dynamic_policy.publication.source_model_ref if model.dynamic_policy is not None else model.id
-                )
+            except (RecursionError, ValueError):
+                raise AdmissionInputError("OpenAI request payload is not canonical JSON") from None
+            if not isinstance(payload, dict):
+                raise AdmissionInputError("OpenAI request payload is not canonical JSON")
+            # Public app routes are independent, while an unchanged
+            # qualified runtime (including a restored GPU process) still
+            # serves its original model name.
+            payload["model"] = (
+                model.dynamic_policy.publication.source_model_ref if model.dynamic_policy is not None else model.id
+            )
+            try:
                 request_body = json.dumps(
                     payload,
                     sort_keys=True,
@@ -237,8 +244,8 @@ class AdmissionService:
                     ensure_ascii=False,
                     allow_nan=False,
                 ).encode("utf-8")
-            except (TypeError, ValueError):
-                raise ValueError("OpenAI request payload is not canonical JSON") from None
+            except (RecursionError, TypeError, ValueError):
+                raise AdmissionInputError("OpenAI request payload is not canonical JSON") from None
         canonical_admission = admission.model_copy(
             update={
                 "model_id": model.id,

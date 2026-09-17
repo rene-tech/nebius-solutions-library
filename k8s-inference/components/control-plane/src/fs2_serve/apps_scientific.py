@@ -8,7 +8,12 @@ GPU snapshot. Frozen stage bindings retain the exact source runtime commands.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import math
+import time
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Any
@@ -21,25 +26,90 @@ from .scientific_batch.profile_catalog import ScientificProfileCatalog, Scientif
 from .scientific_batch.scheduling import SchedulingContractResolver
 
 
+LOGGER = logging.getLogger(__name__)
+SCIENTIFIC_APPS_REFRESH_TTL_SECONDS = 5.0
+SCIENTIFIC_APPS_REFRESH_FAILURE_RETRY_SECONDS = 1.0
+
+
+class ScientificAppsRefreshError(RuntimeError):
+    """Fail closed when durable app policy cannot refresh safely."""
+
+
 class ScientificAppsInventory:
-    def __init__(self, repository: AppsRepository) -> None:
+    def __init__(
+        self,
+        repository: AppsRepository,
+        *,
+        refresh_ttl_seconds: float = SCIENTIFIC_APPS_REFRESH_TTL_SECONDS,
+        refresh_failure_retry_seconds: float = SCIENTIFIC_APPS_REFRESH_FAILURE_RETRY_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if not math.isfinite(refresh_ttl_seconds) or refresh_ttl_seconds <= 0:
+            raise ValueError("scientific Apps refresh TTL must be finite and positive")
+        if (
+            not math.isfinite(refresh_failure_retry_seconds)
+            or refresh_failure_retry_seconds <= 0
+            or refresh_failure_retry_seconds > refresh_ttl_seconds
+        ):
+            raise ValueError("scientific Apps refresh retry must be positive and no greater than the TTL")
         self.repository = repository
         self.records: dict[str, AppRecord] = {}
         self.discoverable_records: dict[str, AppRecord] = {}
+        self.refresh_ttl_seconds = refresh_ttl_seconds
+        self.refresh_failure_retry_seconds = refresh_failure_retry_seconds
+        self._clock = clock
+        self._refresh_lock = asyncio.Lock()
+        self._refresh_generation = 0
+        self._refreshed_at: float | None = None
+        self._retry_after = 0.0
 
-    async def refresh(self) -> None:
-        all_records = await self.repository.list_records()
-        discoverable = await self.repository.list_discoverable_records()
-        self.records = {
-            item.public_model_id: item
-            for item in all_records
-            if item.execution_mode == "scientific" and item.public_model_id != item.model_ref
-        }
-        self.discoverable_records = {
-            item.public_model_id: item
-            for item in discoverable
-            if item.execution_mode == "scientific" and item.public_model_id != item.model_ref
-        }
+    def _fresh(self, now: float) -> bool:
+        return self._refreshed_at is not None and now - self._refreshed_at < self.refresh_ttl_seconds
+
+    async def refresh(self, *, force: bool = False) -> None:
+        """Refresh once per bounded TTL and collapse concurrent repository reads.
+
+        A failed refresh invalidates freshness while retaining the last complete
+        snapshot for diagnostics. Callers never proceed through ``refresh``
+        with that stale snapshot: they receive a generic availability error
+        until a complete two-query refresh succeeds.
+        """
+
+        requested_generation = self._refresh_generation
+        now = self._clock()
+        if not force and self._fresh(now):
+            return
+        async with self._refresh_lock:
+            now = self._clock()
+            if not force and self._refresh_generation != requested_generation:
+                return
+            if not force and self._fresh(now):
+                return
+            if now < self._retry_after:
+                raise ScientificAppsRefreshError("scientific Apps inventory refresh unavailable")
+            try:
+                all_records = await self.repository.list_records()
+                discoverable = await self.repository.list_discoverable_records()
+            except Exception:
+                self._refreshed_at = None
+                self._retry_after = self._clock() + self.refresh_failure_retry_seconds
+                LOGGER.exception("scientific Apps inventory refresh failed")
+                raise ScientificAppsRefreshError("scientific Apps inventory refresh unavailable") from None
+            records = {
+                item.public_model_id: item
+                for item in all_records
+                if item.execution_mode == "scientific" and item.public_model_id != item.model_ref
+            }
+            discoverable_records = {
+                item.public_model_id: item
+                for item in discoverable
+                if item.execution_mode == "scientific" and item.public_model_id != item.model_ref
+            }
+            self.records = records
+            self.discoverable_records = discoverable_records
+            self._refreshed_at = self._clock()
+            self._retry_after = 0.0
+            self._refresh_generation += 1
 
     def source(self, model_id: str) -> str:
         record = self.records.get(model_id)
@@ -219,7 +289,9 @@ class AppScientificCluster:
 
     async def apply(self, resource: Any, *, controller_fence: int) -> Any:
         if resource.model_id.startswith("app-"):
-            await self.inventory.refresh()
+            # Never render a workload from a potentially stale app-to-runtime
+            # mapping, even when the request-path cache is still within TTL.
+            await self.inventory.refresh(force=True)
         return await self.source.apply(resource, controller_fence=controller_fence)
 
 

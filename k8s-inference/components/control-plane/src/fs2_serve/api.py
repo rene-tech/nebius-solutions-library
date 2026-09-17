@@ -61,7 +61,7 @@ from .admin_models import (
     AdminSource,
     AdminSourceState,
 )
-from .admission import AdmissionService
+from .admission import AdmissionInputError, AdmissionService
 from .app_observability import AppObservabilityService, AppObservationHistory
 from .app_observability_routes import app_observability_router
 from .apps import AppsService
@@ -183,6 +183,44 @@ MAX_JSON_DEPTH = 64
 
 class _RequestBodyTooLargeError(Exception):
     """Signal a streamed body overflow to the outer ASGI size guard."""
+
+
+class _RequestJsonTooDeepError(Exception):
+    """Signal excessive JSON nesting before framework body parsing."""
+
+
+class _JsonDepthGuard:
+    """Bound JSON containers incrementally without recursive parsing."""
+
+    def __init__(self, maximum: int) -> None:
+        self.maximum = maximum
+        self.depth = 0
+        self.in_string = False
+        self.escaped = False
+
+    def feed(self, body: bytes) -> None:
+        for byte in body:
+            if self.in_string:
+                if self.escaped:
+                    self.escaped = False
+                elif byte == 0x5C:  # Backslash.
+                    self.escaped = True
+                elif byte == 0x22:  # Double quote.
+                    self.in_string = False
+                continue
+            if byte == 0x22:
+                self.in_string = True
+            elif byte in (0x5B, 0x7B):  # Opening bracket or brace.
+                self.depth += 1
+                if self.depth > self.maximum:
+                    raise _RequestJsonTooDeepError
+            elif byte in (0x5D, 0x7D) and self.depth:
+                self.depth -= 1
+
+
+def _is_json_media_type(value: bytes) -> bool:
+    media_type = value.split(b";", 1)[0].strip().lower()
+    return media_type == b"application/json" or media_type.endswith(b"+json")
 
 
 ADMIN_SESSION_COOKIE = "__Host-fs2_admin_session"
@@ -333,20 +371,31 @@ class TrustedEdgeMiddleware:
                     pass
 
         total = 0
+        json_guard = (
+            _JsonDepthGuard(MAX_JSON_DEPTH)
+            if any(name.lower() == b"content-type" and _is_json_media_type(value) for name, value in headers)
+            else None
+        )
 
         async def bounded_receive() -> Message:
             nonlocal total
             message = await receive()
             if message["type"] == "http.request":
-                total += len(message.get("body", b""))
+                body = message.get("body", b"")
+                total += len(body)
                 if total > self.max_request_bytes:
                     raise _RequestBodyTooLargeError
+                if json_guard is not None:
+                    json_guard.feed(body)
             return message
 
         try:
             await self.app(scope, bounded_receive, send)
         except _RequestBodyTooLargeError:
             response = _error(413, "request_too_large", "request body exceeds limit")
+            await response(scope, receive, send)
+        except _RequestJsonTooDeepError:
+            response = _error(400, "invalid_request", "request body exceeds maximum JSON depth")
             await response(scope, receive, send)
 
 
@@ -1087,7 +1136,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                     deadline_at=deadline_at,
                 ),
             )
-        except (RecursionError, ValueError):
+        except AdmissionInputError:
             raise HTTPException(status_code=400, detail="request body is invalid") from None
         request.state.operation_id = admitted.id
         span = trace.get_current_span()
