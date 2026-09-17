@@ -1332,6 +1332,111 @@ async def test_expired_finalization_lease_is_recovered_not_cleaned_up() -> None:
     assert recovered[0].digest == digest(value)
 
 
+async def test_expired_foreground_lease_cannot_start_or_settle_provider_mutation() -> None:
+    current = [NOW]
+    clock = lambda: current[0]
+    repository = MemoryArtifactRepository(clock=clock)
+    store = FakeObjectStore(clock=clock)
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    service = build_service(
+        repository,
+        store,
+        clock=clock,
+        upload_completion_grace=timedelta(minutes=1),
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    value = b"foreground-expiry"
+    begun = await service.begin_upload(
+        BeginArtifactUpload(
+            upload_id=uuid4(),
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(value),
+            expected_size_bytes=len(value),
+            media_type="chemical/x-pdb",
+        )
+    )
+    request = FinalizeArtifactUpload(
+        upload_id=begun.upload.upload_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+    )
+    lease = await repository.acquire_finalization_lease(
+        request,
+        session_generation=begun.session.session_generation,
+        lease_id=uuid4(),
+    )
+    current[0] += timedelta(minutes=2)
+    with pytest.raises(ArtifactConflictError):
+        await repository.get_leased_upload(request, lease=lease)
+    with pytest.raises(ArtifactConflictError):
+        await repository.record_finalization_failure(
+            request,
+            session=begun.session,
+            lease=lease,
+            verified=VerifiedStoredObject(
+                storage_key=begun.upload.storage_key,
+                provider_version_id="expired-foreground-version",
+                provider_request_id="expired-foreground-request",
+                digest=digest(value),
+                size_bytes=len(value),
+                media_type="chemical/x-pdb",
+            ),
+            failure_code="content_verification_failed",
+        )
+
+
+async def test_provider_completion_crossing_foreground_expiry_cannot_publish() -> None:
+    current = [NOW]
+    clock = lambda: current[0]
+
+    class CompletionCrossesLeaseDeadline(FakeObjectStore):
+        async def complete_upload_session(
+            self, *, session: ArtifactUploadSession, intent: UploadIntent
+        ) -> VerifiedStoredObject:
+            verified = await super().complete_upload_session(session=session, intent=intent)
+            current[0] += timedelta(minutes=2)
+            return verified
+
+    repository = MemoryArtifactRepository(clock=clock)
+    store = CompletionCrossesLeaseDeadline(clock=clock)
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    service = build_service(
+        repository,
+        store,
+        clock=clock,
+        upload_completion_grace=timedelta(minutes=1),
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    value = b"completion-crosses-expiry"
+    begun = await service.begin_upload(
+        BeginArtifactUpload(
+            upload_id=uuid4(),
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(value),
+            expected_size_bytes=len(value),
+            media_type="chemical/x-pdb",
+        )
+    )
+    store.put(begun.upload.storage_key, value, "chemical/x-pdb")
+    request = FinalizeArtifactUpload(
+        upload_id=begun.upload.upload_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+    )
+    with pytest.raises(ArtifactConflictError):
+        await service.finalize_upload(request)
+    assert begun.upload.storage_key in store.versions
+    assert (await repository.get_upload_status(request)).artifact_id is None
+
+
 def test_quota_fencing_migration_uses_nonblocking_fair_v2_claims() -> None:
     sql = (CONTROL_ROOT / "migrations" / "0031_scientific_quota_fencing.sql").read_text(encoding="utf-8")
     normalized = " ".join(sql.split())
@@ -1409,6 +1514,7 @@ def test_finalization_authority_is_generation_and_database_clock_fenced() -> Non
     repository_source = inspect.getsource(PostgresArtifactRepository.get_leased_upload)
     assert "if self._recovery_authority" in repository_source
     assert "fs2_scientific_get_claimed_finalization_intent_v2" in repository_source
+    assert "lease.expires_at>clock_timestamp()" in repository_source
     assert repository_source.index("if self._recovery_authority") < repository_source.index(
         "SELECT upload.* FROM fs2_scientific_uploads upload"
     )
@@ -2446,6 +2552,8 @@ async def test_postgres_finalization_generation_transfer_is_clock_fenced(
             "SET expires_at=clock_timestamp()-interval '1 second' WHERE upload_id=$1",
             request.upload_id,
         )
+    with pytest.raises(ArtifactConflictError):
+        await runtime_repository.get_leased_upload(request, lease=foreground_lease)
     with pytest.raises(ArtifactConflictError):
         await runtime_repository.record_finalization_failure(
             request,

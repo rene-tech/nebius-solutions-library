@@ -360,13 +360,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`64afcd319b2d5ca5c84c58b00018e66afb22c5097852c70511b16deb8c3736d8`,
+`073509f1d23979832a30c9d10ac0d25658ab21ce93fb970e234935fbf3cdd4eb`,
 count `31`, first version `0001_initial.sql`, last version
 `0031_scientific_quota_fencing.sql`,
 and namespace/role ownership SHA-256
-`cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580`.
+`fd7e8b0bbc6f41d4cbaead87eeefcf84998cf646f40af734adca75096791faf6`.
 The whole logical contract payload is SHA-256
-`23e15ebf20f1a5beb4e2164cf699549876a7475f4cfd41dc063abb403536162d`.
+`925205801e53ee7bff6c72fb4bfc8a03baaef778a0cf17eeca9015ccce99bddc`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not
@@ -409,7 +409,8 @@ belong to the workload namespace. Runtime Secret `fs2-system/fs2-serve-database`
 migration-owner Secret `fs2-system/fs2-serve-database-migrations`, maintenance
 Secret `fs2-system/fs2-serve-database-maintenance`, artifact-remover Secret
 `fs2-system/fs2-serve-database-artifact-remover`, artifact-verifier Secret
-`fs2-system/fs2-serve-database-artifact-verifier`, and activation Secret
+`fs2-system/fs2-serve-database-artifact-verifier`, artifact-finalizer Secret
+`fs2-system/fs2-serve-database-artifact-finalizer`, and activation Secret
 `fs2-system/fs2-serve-database-activation` all use key `url` and have distinct
 principals and single named consumers. Reporting uses
 `fs2-observability/fs2-serve-database-reporting`. The PostgreSQL platform release
@@ -418,7 +419,8 @@ owns Cluster/database-owner/Secret writes. Only
 `fs2-serve-control-plane-migration`, owns schema DDL and creation/grants for
 NOLOGIN groups `fs2_serve_runtime`, `fs2_serve_maintenance`,
 `fs2_serve_artifact_remover`, `fs2_serve_artifact_verifier`,
-`fs2_serve_activation`, and `fs2_serve_reporting`. Application, maintenance,
+`fs2_serve_artifact_finalizer`, `fs2_serve_activation`, and
+`fs2_serve_reporting`. Application, maintenance,
 artifact-remover, artifact-verifier, artifact-finalizer, controller, and Grafana workloads only
 consume their named Secret and group membership.
 

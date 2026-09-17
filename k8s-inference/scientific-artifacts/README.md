@@ -46,19 +46,20 @@ output. `artifact_store.py` owns the builder, the parser and those rules, and
 
 ## Credential handling
 
-The three S3 secrets never exist in Terraform state, a plan file, generated
+The four S3 secrets never exist in Terraform state, a plan file, generated
 tfvars, a Helm value, an output, a log or a receipt.
 
-1. The infrastructure stage requests writer, remover, and verifier MysteryBox
+1. The infrastructure stage requests writer, remover, verifier, and finalizer MysteryBox
    keys and exports only each access-key ID, opaque secret reference and
    revision.
 2. `inference-stack` refuses a handoff that carries anything else and writes
-   those three fields into the private workloads tfvars.
+   those four identity/reference/revision records into the private workloads tfvars.
 3. The workloads stage resolves each secret through an ephemeral MysteryBox
    entry and writes it with the Kubernetes provider's write-only argument into
    distinct `fs2-system` Secrets. Runtime receives only
    `fs2-serve-artifact-store`; the remover and verifier CronJobs receive only
-   their corresponding store Secret.
+   their corresponding store Secret, and the finalizer receives only
+   `fs2-serve-artifact-finalizer-store`.
 4. The workloads stage derives the rollout identity as
    `credential_generation * 2^24` plus the first 24 bits of a digest over the
    key's non-secret identifiers. That value drives both `data_wo_revision` and
@@ -112,7 +113,7 @@ result record, which is why `retention_days` is passed to the control plane as
 
 `artifact-store-contract.json` is the written-down seam between the Terraform
 projection and the control-plane chart. The workloads stage emits canonical
-`scientificArtifacts` and `scientificBatch` values, the three artifact Secret
+`scientificArtifacts` and `scientificBatch` values, the four artifact Secret
 references, separate maintenance schedules, `networkPolicy.artifactStoreCidrs`
 and the rotation pod annotation. The obsolete `artifactService` wiring is not
 revived.

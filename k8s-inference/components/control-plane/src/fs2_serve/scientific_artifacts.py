@@ -3124,9 +3124,15 @@ class MemoryArtifactRepository:
         failure_code: Literal["content_verification_failed", "artifact_policy_failed"],
     ) -> ArtifactFinalizationFailureEvidence:
         async with self._lock:
+            now = self._clock()
             current = self._finalization_leases.get(request.upload_id)
             current_session = self._upload_sessions.get(request.upload_id)
-            if current != lease or current_session != session:
+            if (
+                current is None
+                or current != lease
+                or current_session != session
+                or current.expires_at <= now
+            ):
                 raise ArtifactConflictError("artifact finalization failure fence is stale")
             evidence = ArtifactFinalizationFailureEvidence(
                 upload_id=request.upload_id,
@@ -3138,7 +3144,7 @@ class MemoryArtifactRepository:
                 provider_version_id=verified.provider_version_id,
                 provider_request_id=verified.provider_request_id,
                 failure_code=failure_code,
-                observed_at=self._clock(),
+                observed_at=now,
             )
             existing = self._finalization_failures.get(request.upload_id)
             if existing is not None and existing != evidence:
@@ -3279,6 +3285,7 @@ class MemoryArtifactRepository:
         self, request: FinalizeArtifactUpload, *, lease: ArtifactFinalizationLease
     ) -> UploadIntent:
         async with self._lock:
+            now = self._clock()
             intent = self._uploads.get(request.upload_id)
             reservation = self._quota_reservations.get(request.upload_id)
             current = self._finalization_leases.get(request.upload_id)
@@ -3289,7 +3296,9 @@ class MemoryArtifactRepository:
                 or intent.artifact_id is not None
                 or reservation is None
                 or reservation.state is not ArtifactQuotaReservationState.ACTIVE
+                or current is None
                 or current != lease
+                or current.expires_at <= now
                 or request.upload_id in self._completed_finalization_leases
             ):
                 raise ArtifactConflictError("artifact finalization lease is stale")
@@ -3648,7 +3657,12 @@ class MemoryArtifactRepository:
             reservation = self._quota_reservations.get(request.upload_id)
             if reservation is None or reservation.state is not ArtifactQuotaReservationState.ACTIVE:
                 raise ArtifactConflictError("upload is fenced for or has completed provider removal")
-            if self._finalization_leases.get(request.upload_id) != lease:
+            current_lease = self._finalization_leases.get(request.upload_id)
+            if (
+                current_lease is None
+                or current_lease != lease
+                or current_lease.expires_at <= now
+            ):
                 raise ArtifactConflictError("artifact finalization lease is stale")
             attempt = self._attempts[intent.attempt_id]
             self._assert_live_attempt(attempt)
@@ -4896,7 +4910,8 @@ class PostgresArtifactRepository:
                     "WHERE upload.id=$1 AND upload.operation_id=$2 AND upload.tenant_id=$3 "
                     "AND upload.artifact_id IS NULL AND reservation.state='active' "
                     "AND lease.lease_id=$4 AND lease.lease_generation=$5 "
-                    "AND lease.session_generation=$6 AND lease.state='active'",
+                    "AND lease.session_generation=$6 AND lease.state='active' "
+                    "AND lease.expires_at>clock_timestamp()",
                     request.upload_id,
                     request.operation_id,
                     request.tenant_id,
