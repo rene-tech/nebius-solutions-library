@@ -45,7 +45,6 @@ from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from functools import cached_property
 from typing import Any, Literal, Protocol, TypeVar, get_args
 from urllib.parse import unquote_plus
 from uuid import UUID, uuid4
@@ -972,7 +971,7 @@ def _bounded_text_opt(value: str | None, byte_limit: int) -> str | None:
     return None if value is None else _bounded_text(value, byte_limit)
 
 
-def _bound_headers(headers: Iterable[tuple[str, str]], byte_limit: int) -> list[tuple[str, str]]:
+def _bound_headers(headers: HeaderPairs, byte_limit: int) -> list[tuple[str, str]]:
     """Bound a header list to <= ``byte_limit`` serialized bytes INCREMENTALLY: each name/value is first
     truncated to its own bounded budget (so a single huge value is bounded work), then whole pairs are kept
     until the running budget would be exceeded, at which point iteration STOPS and a disclosed marker pair
@@ -980,12 +979,36 @@ def _bound_headers(headers: Iterable[tuple[str, str]], byte_limit: int) -> list[
     iterable of pairs so a caller can bound a header view WHILE iterating (before materializing a full copy)."""
     out: list[tuple[str, str]] = []
     used = 0
+    marker_cost = (
+        len(_HEADERS_TRUNCATED_MARKER[0].encode())
+        + len(_HEADERS_TRUNCATED_MARKER[1].encode())
+        + _HEADER_PAIR_JSON_OVERHEAD
+    )
     for name, value in headers:
-        bname = _bounded_text(name, _MAX_HEADER_NAME_BYTES)
-        bvalue = _bounded_text(value, _MAX_HEADER_VALUE_BYTES)
+        # A bytes input is sliced BEFORE decoding so the upstream/httpx capture path never materializes an
+        # unbounded decoded string. The subsequent UTF-8 bound handles latin-1 bytes that expand on encoding.
+        name_text = (
+            _bounded_text(name[:_MAX_HEADER_NAME_BYTES].decode("latin-1"), _MAX_HEADER_NAME_BYTES)
+            if isinstance(name, bytes)
+            else name
+        )
+        value_text = (
+            _bounded_text(value[:_MAX_HEADER_VALUE_BYTES].decode("latin-1"), _MAX_HEADER_VALUE_BYTES)
+            if isinstance(value, bytes)
+            else value
+        )
+        bname = _bounded_text(name_text, _MAX_HEADER_NAME_BYTES)
+        bvalue = _bounded_text(value_text, _MAX_HEADER_VALUE_BYTES)
         cost = len(bname.encode()) + len(bvalue.encode()) + _HEADER_PAIR_JSON_OVERHEAD
         if used + cost > byte_limit:
-            out.append(_HEADERS_TRUNCATED_MARKER)
+            # The disclosure marker is part of the stored header list and therefore part of the SAME
+            # byte budget. Make room for it by replacing trailing pairs when necessary; blindly appending
+            # it to an already-full list would make the stated ceiling false by the marker's own size.
+            while out and used + marker_cost > byte_limit:
+                previous_name, previous_value = out.pop()
+                used -= len(previous_name.encode()) + len(previous_value.encode()) + _HEADER_PAIR_JSON_OVERHEAD
+            if marker_cost <= byte_limit:
+                out.append(_HEADERS_TRUNCATED_MARKER)
             break
         used += cost
         out.append((bname, bvalue))
@@ -993,9 +1016,10 @@ def _bound_headers(headers: Iterable[tuple[str, str]], byte_limit: int) -> list[
 
 
 def _bound_body_content_type(body: DebugBody) -> DebugBody:
-    if body.content_type is None or len(body.content_type.encode()) <= _MAX_DEBUG_CONTENT_TYPE_BYTES:
+    if body.content_type is None:
         return body
-    return body.model_copy(update={"content_type": _bounded_text(body.content_type, _MAX_DEBUG_CONTENT_TYPE_BYTES)})
+    bounded = _bounded_text(body.content_type, _MAX_DEBUG_CONTENT_TYPE_BYTES)
+    return body if bounded == body.content_type else body.model_copy(update={"content_type": bounded})
 
 
 def _capture_bounded_pairs(raw_pairs: Iterable[tuple[bytes, bytes]]) -> list[tuple[bytes, bytes]]:
@@ -1009,15 +1033,29 @@ def _capture_bounded_pairs(raw_pairs: Iterable[tuple[bytes, bytes]]) -> list[tup
     ``_bound_debug_metadata``. Values stay as bytes for the downstream redactors (which decode via latin-1)."""
     out: list[tuple[bytes, bytes]] = []
     used = 0
+    marker_cost = (
+        len(_HEADERS_TRUNCATED_MARKER_BYTES[0])
+        + len(_HEADERS_TRUNCATED_MARKER_BYTES[1])
+        + _HEADER_PAIR_JSON_OVERHEAD
+    )
+
+    def _mark_truncated() -> None:
+        nonlocal used
+        while out and used + marker_cost > _MAX_DEBUG_HEADERS_BYTES:
+            previous_name, previous_value = out.pop()
+            used -= len(previous_name) + len(previous_value) + _HEADER_PAIR_JSON_OVERHEAD
+        if marker_cost <= _MAX_DEBUG_HEADERS_BYTES:
+            out.append(_HEADERS_TRUNCATED_MARKER_BYTES)
+
     for name, value in raw_pairs:
         if len(out) >= _MAX_CAPTURE_HEADER_PAIRS:
-            out.append(_HEADERS_TRUNCATED_MARKER_BYTES)
+            _mark_truncated()
             break
         bname = name[:_MAX_HEADER_NAME_BYTES]
         bvalue = value[:_MAX_HEADER_VALUE_BYTES]
         cost = len(bname) + len(bvalue) + _HEADER_PAIR_JSON_OVERHEAD
         if used + cost > _MAX_DEBUG_HEADERS_BYTES:
-            out.append(_HEADERS_TRUNCATED_MARKER_BYTES)
+            _mark_truncated()
             break
         used += cost
         out.append((bname, bvalue))
@@ -1031,15 +1069,22 @@ def _capture_bounded_query(raw_query: bytes) -> bytes:
     return raw_query[:_MAX_DEBUG_QUERY_BYTES]
 
 
-def bound_capture_headers(pairs: Iterable[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Capture-time incremental bound for STR header pairs (the upstream/httpx capture path), applied WHILE
-    iterating and BEFORE credential learning/redaction/retention — the same budget the public path enforces on
-    the raw ASGI bytes pairs. Prevents an oversized upstream header set from materializing in full."""
+def bound_capture_headers(pairs: HeaderPairs) -> list[tuple[str, str]]:
+    """Capture-time incremental bound for STR OR raw-BYTES header pairs (the upstream/httpx capture path),
+    applied WHILE iterating and BEFORE credential learning/redaction/retention — the same budget the public
+    path enforces on raw ASGI pairs. Bytes are sliced before decoding, so neither a whole flooded list nor one
+    huge value is decoded/copied in full."""
     return _bound_headers(pairs, _MAX_DEBUG_HEADERS_BYTES)
 
 
-def bound_capture_query(query: str) -> str:
-    """Capture-time bound for the STR query (upstream path), applied before credential learning/redaction."""
+def bound_capture_query(query: str | bytes) -> str:
+    """Capture-time bound for an upstream query, applied before credential learning/redaction.
+
+    HTTPX exposes raw URL query bytes; slice those bytes BEFORE decoding so an unbounded temporary string is
+    never created merely to truncate it. A pre-decoded string is bounded with the same UTF-8 byte contract.
+    """
+    if isinstance(query, bytes):
+        return _bounded_text(query[:_MAX_DEBUG_QUERY_BYTES].decode("ascii", errors="replace"), _MAX_DEBUG_QUERY_BYTES)
     return _bounded_text(query, _MAX_DEBUG_QUERY_BYTES)
 
 
@@ -1169,14 +1214,34 @@ def _serialized_size(exchange: DebugExchange) -> int:
     return len(_serialize_exchange(exchange)) + _GCM_TAG_BYTES
 
 
-@dataclass(frozen=True)
+class _DebugPayloadLimitExceeded(ValueError):
+    """The canonical serialized row exceeded the hard persistence boundary."""
+
+
+def _serialize_for_persistence(exchange: DebugExchange, max_body_bytes: int | None) -> bytes:
+    """Serialize exactly once and enforce the ACTUAL UTF-8 byte boundary before persistence.
+
+    Per-field budgets make the ceiling provable for current captures, but this final check is the storage
+    invariant: a future field, an unexpectedly long exact AAD identifier, or a caller that bypassed the normal
+    builder cannot persist a row whose canonical serialized bytes exceed the whole-exchange ceiling. The
+    exception contains no payload or identity; the best-effort capture worker records only its type and leaves
+    the customer request outcome unchanged.
+    """
+    raw = _serialize_exchange(exchange)
+    if len(raw) + _GCM_TAG_BYTES > _stored_payload_ceiling(max_body_bytes):
+        raise _DebugPayloadLimitExceeded("request-debug serialized payload exceeds persistence ceiling")
+    return raw
+
+
+@dataclass(frozen=True, slots=True)
 class _StoredEntry:
     """The in-memory store's single, immutable, tamper-proof unit for one row. It holds the exchange ONLY as
     its CANONICAL SERIALIZED BYTES (``raw``, an immutable ``bytes``) plus the immutable primitive scalars the
     list/retention paths filter on — it holds NO mutable ``DebugExchange`` or ``list`` reference, so no nested
-    mutation after construction can stale the size or diverge from the stored content. ``size`` is derived from
-    ``raw`` (``len(raw) + tag``), so it is structurally incapable of being forged, omitted, or going stale (the
-    bytes are immutable; changing content means new bytes, i.e. a new entry). The full exchange is
+    mutation after construction can stale the size or diverge from the stored content. ``size`` is an uncached
+    O(1) property derived directly from ``raw`` (``len(raw) + tag``), so it is structurally incapable of being
+    forged, omitted, cached stale, or mutated through a frozen instance's ``__dict__`` (the entry is slotted and
+    the bytes are immutable; changing content means new bytes, i.e. a new entry). The full exchange is
     RECONSTRUCTED fresh from ``raw`` on demand (``exchange()``), so every handout is an isolated copy that
     cannot mutate stored state, and a read measures the size via ``len(raw)`` — never by re-serializing."""
 
@@ -1187,7 +1252,7 @@ class _StoredEntry:
     model_id: str | None
     operation_id: UUID | None
 
-    @cached_property
+    @property
     def size(self) -> int:
         return len(self.raw) + _GCM_TAG_BYTES
 
@@ -1196,9 +1261,9 @@ class _StoredEntry:
         return DebugExchange.model_validate_json(self.raw)
 
     @classmethod
-    def from_exchange(cls, exchange: DebugExchange) -> _StoredEntry:
+    def from_exchange(cls, exchange: DebugExchange, max_body_bytes: int | None) -> _StoredEntry:
         return cls(
-            raw=_serialize_exchange(exchange),
+            raw=_serialize_for_persistence(exchange, max_body_bytes),
             row_id=exchange.id,
             started_at=exchange.started_at,
             tenant_id=exchange.tenant_id,
@@ -1266,8 +1331,9 @@ class InMemoryDebugStore:
         # capturing middleware/runtime (offload_capture); the store never re-sanitizes.
         if exchange.id in self._entries:
             return  # idempotent: a fully-recorded row is never re-added or duplicated
-        entry = _StoredEntry.from_exchange(exchange)  # serialize to immutable bytes ONCE at write
-        assert entry.size >= 0  # warm the size cache ONCE at write; reads then read it O(1) (no re-serialize)
+        # Serialize ONCE and enforce the actual canonical UTF-8 byte ceiling BEFORE either in-memory index is
+        # mutated. The resulting bytes are the immutable stored authority; reads derive size with O(1) len().
+        entry = _StoredEntry.from_exchange(exchange, self._max_body_bytes)
         # FAULT-ATOMIC add: append the id FIRST, then commit the single coupled (row, size) entry (the
         # AUTHORITY for get()/idempotency and the list() liveness filter). If the entry commit fails (e.g.
         # MemoryError on resize), roll back the just-appended id so the two indexes can never permanently
@@ -1403,9 +1469,10 @@ class PostgresDebugStore:
             # store never re-sanitizes. The model_id backfill above is a server-side
             # canonicalization from the operations table, not a re-scrub.
             metadata = _summary(exchange).model_dump()
-            encrypted = self.cipher.encrypt(
-                exchange.model_dump_json().encode(), aad=self._aad(exchange.id, exchange.tenant_id, exchange.model_id)
-            )
+            # Enforce the ACTUAL canonical UTF-8 byte length before encryption/INSERT. This also covers the
+            # model_id backfill above (which must remain exact for AAD and therefore cannot be truncated).
+            raw = _serialize_for_persistence(exchange, self._max_body_bytes)
+            encrypted = self.cipher.encrypt(raw, aad=self._aad(exchange.id, exchange.tenant_id, exchange.model_id))
             columns = (*DebugExchangeSummary.model_fields, "key_id", "nonce", "ciphertext")
             values = (*metadata.values(), encrypted.key_id, encrypted.nonce, encrypted.value)
             await connection.execute(

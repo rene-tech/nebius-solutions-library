@@ -282,7 +282,9 @@ HTTP 0 or success.
   AAD identifier fields (tenant_id, model_id) are DELIBERATELY NOT truncated anywhere: they are sealed into the
   authentication tag at encrypt and must stay authentic on read, and they are inherently bounded,
   server-controlled identifiers (tenant from the authenticated principal; model from the model registry), not
-  attacker free-text. Only a pathologically large (often attacker-influenced, e.g. an endpoint that copies the
+  attacker free-text. The disclosed header-list truncation marker is itself charged to the same list budget
+  (it replaces a trailing pair if necessary; it is never appended outside the ceiling). Only a pathologically
+  large (often attacker-influenced, e.g. an endpoint that copies the
   request path) field is truncated; real fields are far under budget and untouched, and the customer's
   request/response processing is unaffected. Header lists and the query are additionally bounded INCREMENTALLY
   at capture — while the raw ASGI/upstream header pairs are iterated, before any full copy, credential-learning,
@@ -292,11 +294,16 @@ HTTP 0 or success.
   and bound happen together in the offload thread, before the row is retained or persisted), with bounded,
   incremental per-field work — a huge structure is never fully materialized or serialized on the loop just to be
   measured. `persist_debug_exchange` itself performs no on-loop metadata bounding; it stores the already-bounded
-  exchange. The size is measured in identical byte units in both stores (the encrypted store uses
+  exchange. Each store serializes once and checks the ACTUAL canonical UTF-8 byte length plus the AES-GCM tag
+  against the ceiling before mutating an in-memory index or issuing an encrypted INSERT. This final invariant
+  also fails closed if a future field, a caller bypassing the normal builder, or an unexpectedly long exact AAD
+  identifier would invalidate the component arithmetic; the AAD value is rejected as a best-effort capture,
+  never truncated. The size is measured in identical byte units in both stores (the encrypted store uses
   `octet_length(ciphertext)`; the in-memory store retains the exchange as immutable serialized bytes and its
-  size is `len(bytes) + tag`, derived from those immutable bytes — structurally incapable of going stale, being
-  forged, or diverging from the content even under nested mutation of a handed-out copy — computed ONCE at
-  record(), so a read never re-serializes a payload to measure it). This whole-exchange budget is used precisely
+  size is the uncached O(1) property `len(bytes) + tag`, derived from those immutable bytes in a frozen, slotted
+  entry — structurally incapable of going stale, being forged, or diverging from the content even under nested
+  mutation of a handed-out copy. The row is serialized ONCE at record(); a read never re-serializes a payload
+  to measure it. This whole-exchange budget is used precisely
   so a legitimate near-cap request (its ciphertext = the within-cap body plus the envelope, which always exceeds
   the per-body cap) is NOT wrongly withheld. A BOUNDED row is decrypted and re-sanitized via
   `normalize_exchange_for_read` — response withheld; a wire-incomplete, legacy-prefixed, or over-cap request

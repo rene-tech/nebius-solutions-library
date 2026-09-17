@@ -1825,6 +1825,62 @@ def test_bound_debug_metadata_bounds_every_field_and_is_idempotent():
     assert _bound_debug_metadata(bounded) is bounded  # idempotent: already within budget -> unchanged object
 
 
+def test_header_truncation_marker_remains_inside_the_same_byte_budget():
+    """SAI-01 serialized-byte regression: the disclosed truncation marker is stored data too. If the kept
+    pairs exactly fill the list budget, appending the marker must replace a trailing pair instead of making the
+    final list exceed the ceiling by the marker's own bytes. Authored; not executed here."""
+    from fs2_serve.request_debug import (
+        _HEADER_PAIR_JSON_OVERHEAD,
+        _MAX_DEBUG_HEADERS_BYTES,
+        _bound_headers,
+    )
+
+    # Seven maximum-size values plus one precisely-sized value fill the raw list budget exactly. The next pair
+    # triggers truncation; the implementation must make room for the marker within that same budget.
+    full_value = "v" * 2048
+    used = 7 * (len("h".encode()) + len(full_value.encode()) + _HEADER_PAIR_JSON_OVERHEAD)
+    final_value = "v" * (_MAX_DEBUG_HEADERS_BYTES - used - len("h".encode()) - _HEADER_PAIR_JSON_OVERHEAD)
+    bounded = _bound_headers(
+        [("h", full_value)] * 7 + [("h", final_value), ("overflow", "x")],
+        _MAX_DEBUG_HEADERS_BYTES,
+    )
+    stored_bytes = sum(
+        len(name.encode()) + len(value.encode()) + _HEADER_PAIR_JSON_OVERHEAD for name, value in bounded
+    )
+    assert stored_bytes <= _MAX_DEBUG_HEADERS_BYTES
+    assert "truncated" in bounded[-1][1]
+
+
+def test_raw_upstream_headers_and_query_are_bounded_incrementally_before_decode():
+    """SAI-01 pre-materialization regression: the upstream helpers accept raw bytes, slice each component
+    before decoding, and stop pulling a flooded iterator once the aggregate budget is full. The raw query is
+    sliced before conversion to str. Authored; not executed here."""
+    from fs2_serve.request_debug import (
+        _HEADER_PAIR_JSON_OVERHEAD,
+        _MAX_DEBUG_HEADERS_BYTES,
+        _MAX_DEBUG_QUERY_BYTES,
+        bound_capture_headers,
+        bound_capture_query,
+    )
+
+    pulled = 0
+    huge_value = b"v" * 1_000_000
+
+    def pairs():
+        nonlocal pulled
+        for _ in range(1000):
+            pulled += 1
+            yield b"x-debug", huge_value
+
+    bounded = bound_capture_headers(pairs())
+    stored_bytes = sum(
+        len(name.encode()) + len(value.encode()) + _HEADER_PAIR_JSON_OVERHEAD for name, value in bounded
+    )
+    assert pulled < 1000 and stored_bytes <= _MAX_DEBUG_HEADERS_BYTES
+    assert "truncated" in bounded[-1][1]
+    assert len(bound_capture_query(b"q=" + b"x" * 1_000_000).encode()) <= _MAX_DEBUG_QUERY_BYTES
+
+
 def test_ceiling_accounts_control_char_escaping_for_non_body_metadata_fields():
     """SAI-01 regression (blocker 1): the ceiling must account for JSON escaping on the NON-BODY fields too,
     not only the body. A metadata field whose RAW bytes are exactly at its budget but are ALL control
@@ -1910,6 +1966,20 @@ async def test_in_memory_size_is_serialized_once_at_record_not_on_read(monkeypat
     assert calls["n"] == 1  # reads parsed the stored bytes and used len(raw) for the size; no re-serialization
 
 
+async def test_in_memory_store_enforces_actual_serialized_utf8_ceiling_before_insert():
+    """SAI-01 serialized-byte regression: per-field arithmetic is not the final authority. The store measures
+    the canonical UTF-8 JSON bytes once and rejects an over-ceiling row before either index is mutated. Exact
+    AAD identifiers are never truncated to force a fit. Authored; not executed here."""
+    from fs2_serve.request_debug import _stored_payload_ceiling
+
+    cap = 1024
+    store = InMemoryDebugStore(max_body_bytes=cap)
+    oversized = row(tenant_id="tenant-" + "x" * (_stored_payload_ceiling(cap) + 1))
+    with pytest.raises(ValueError, match="serialized payload exceeds persistence ceiling"):
+        await store.record(oversized)
+    assert store.exchanges == {} and store._order == []
+
+
 async def test_read_path_rebounds_under_ceiling_legacy_oversized_field():
     """SAI-01 regression (blocker 3): a legacy row whose WHOLE payload is UNDER the ceiling (so it IS
     decrypted/served) may still carry an individual field that predates the per-field budgets and exceeds it.
@@ -1945,9 +2015,11 @@ async def test_stored_entry_is_immutable_against_external_mutation():
     size_before = entry.size
     raw_before = entry.raw
 
+    # A slotted entry has no mutable __dict__/cached-property slot; size is always len(immutable raw)+tag.
+    assert not hasattr(entry, "__dict__")
     # Mutate a handed-out copy every way an adversary might: mutate the model AND its nested list in place.
     handed_out = store.exchanges[ex.id]
-    handed_out.request_headers.append(("x-injected", "y" * 1_000_000))  # nested list mutation after "cache warm"
+    handed_out.request_headers.append(("x-injected", "y" * 1_000_000))
     handed_out.request_headers.clear()
 
     # The stored entry is unaffected: same immutable bytes, same size, and a fresh read is pristine.
@@ -2115,7 +2187,19 @@ async def test_legacy_huge_stored_response_is_not_bounded_even_when_redacted(mon
         ),
     )
     await store.record(bounded)
-    await store.record(legacy_huge)
+    # Seed a PRE-BOUNDARY legacy row directly into the private immutable authority. Current record() rejects
+    # over-ceiling serialized rows before insertion; this test specifically proves preserved historical rows
+    # remain safe to read without deleting or rewriting them.
+    legacy_entry = rd._StoredEntry(
+        raw=rd._serialize_exchange(legacy_huge),
+        row_id=legacy_huge.id,
+        started_at=legacy_huge.started_at,
+        tenant_id=legacy_huge.tenant_id,
+        model_id=legacy_huge.model_id,
+        operation_id=legacy_huge.operation_id,
+    )
+    store._order.append(legacy_huge.id)
+    store._entries[legacy_huge.id] = legacy_entry
 
     calls: list = []
     original = rd.normalize_exchange_for_read

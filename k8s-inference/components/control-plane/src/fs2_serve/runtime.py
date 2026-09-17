@@ -69,6 +69,26 @@ class RuntimeIdentityError(RuntimeOperationError):
     code = "runtime_identity_invalid"
 
 
+def _bounded_httpx_headers(headers: httpx.Headers) -> list[tuple[str, str]]:
+    """Bound HTTPX headers without ``multi_items()``/``raw``, which both copy the complete list first.
+
+    HTTPX already retains each header as a private raw tuple. Iterate that existing list lazily and let the
+    capture helper byte-slice each name/value before decoding. If a future HTTPX version changes the internal
+    representation, fail closed to no debug headers instead of falling back to an unbounded public copy.
+    """
+    stored = getattr(headers, "_list", ())
+    return bound_capture_headers(
+        (item[0], item[2])
+        for item in stored
+        if isinstance(item, tuple) and len(item) == 3 and isinstance(item[0], bytes) and isinstance(item[2], bytes)
+    )
+
+
+def _bounded_content_type(headers: list[tuple[str, str]]) -> str | None:
+    """Read Content-Type only from the already-bounded capture copy."""
+    return next((value for name, value in headers if name.lower() == "content-type"), None)
+
+
 _SECRET_RE = re.compile(r"(?i)(?:Bearer\s+\S+|fs2_pat_[A-Za-z0-9_-]+|https?://\S+|[A-Fa-f0-9]{64,})")
 _MEDIA_TYPE_RE = re.compile(r"^[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _TRACEPARENT_RE = re.compile(r"^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$")
@@ -126,10 +146,10 @@ class _UpstreamCapture:
     def request(self, request: httpx.Request) -> None:
         self.endpoint = request.url.path
         # Bound the query and header list at capture, WHILE iterating, before credential learning/redaction.
-        self.query_string = bound_capture_query(request.url.query.decode("ascii", errors="replace"))
+        self.query_string = bound_capture_query(request.url.query)
         self.method = request.method
-        self.request_headers = bound_capture_headers(request.headers.multi_items())
-        self.request_content_type = request.headers.get("content-type")
+        self.request_headers = _bounded_httpx_headers(request.headers)
+        self.request_content_type = _bounded_content_type(self.request_headers)
         try:
             content = request.content
             self.request_observed = len(content)
@@ -142,8 +162,8 @@ class _UpstreamCapture:
         self.request(response.request)
         self.status = response.status_code
         # Bound the (possibly malicious upstream) response header list at capture, before redaction/retention.
-        self.response_headers = bound_capture_headers(response.headers.multi_items())
-        self.response_content_type = response.headers.get("content-type")
+        self.response_headers = _bounded_httpx_headers(response.headers)
+        self.response_content_type = _bounded_content_type(self.response_headers)
         self.known_credentials.extend(credential_values(self.response_headers))
 
     def observe(self, chunk: bytes) -> None:
