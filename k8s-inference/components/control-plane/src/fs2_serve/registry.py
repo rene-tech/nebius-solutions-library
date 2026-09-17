@@ -7,6 +7,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -46,6 +47,20 @@ class RegistryError(ValueError):
 
 class ModelRouteUnavailableError(RuntimeError):
     """A known model has no currently valid route for new admissions."""
+
+
+class PrincipalResolutionStage(StrEnum):
+    """Non-sensitive stages shared by every public model-policy decision."""
+
+    LOOKUP = "lookup"
+    SELECTOR = "selector"
+    DYNAMIC_POLICY = "dynamic-policy"
+    TERMINAL = "terminal"
+
+
+_DENIAL_MODEL_ID = "\0fs2-denied-model"
+_DENIAL_TENANT_ID = "\0fs2-denied-tenant"
+_DENIAL_PRINCIPAL_IDS = frozenset({"\0fs2-denied-principal"})
 
 
 @dataclass(frozen=True)
@@ -923,25 +938,83 @@ class Registry:
         *,
         surface: str,
         require_enabled: bool = True,
+        stage_observer: Callable[[PrincipalResolutionStage], None] | None = None,
     ) -> OperationalModel:
-        """Resolve and authorize one model against the same registry snapshot."""
+        """Resolve one model without a shorter unknown or denial policy path."""
 
         snapshot = self._current()
         resolved = snapshot.aliases.get(model_id, model_id)
-        try:
-            model = snapshot.models[resolved]
-        except KeyError as exc:
-            raise KeyError(f"unknown model: {model_id}") from exc
-        self._authorize_principal_from_snapshot(
-            snapshot,
+        model = snapshot.models.get(resolved)
+        candidate_id = model.id if model is not None else _DENIAL_MODEL_ID
+        if stage_observer is not None:
+            stage_observer(PrincipalResolutionStage.LOOKUP)
+
+        wildcard_permitted = "*" in principal.models
+        requested_permitted = model_id in principal.models
+        candidate_permitted = candidate_id in principal.models
+        selector_matches = resolved == candidate_id
+        selector_permitted = bool(
+            selector_matches
+            & (wildcard_permitted | requested_permitted | candidate_permitted)
+        )
+        if stage_observer is not None:
+            stage_observer(PrincipalResolutionStage.SELECTOR)
+
+        dynamic_permitted = self._normalized_dynamic_permits(
             model,
             principal,
-            requested_model_id=model_id,
             surface=surface,
         )
+        if stage_observer is not None:
+            stage_observer(PrincipalResolutionStage.DYNAMIC_POLICY)
+
+        model_exists = model is not None
+        permitted = bool(model_exists & selector_permitted & dynamic_permitted)
+        if stage_observer is not None:
+            stage_observer(PrincipalResolutionStage.TERMINAL)
+        if not permitted:
+            raise PermissionError("model is outside principal policy")
+        assert model is not None
         if require_enabled and not model.enabled:
             raise ModelRouteUnavailableError("model is not routable")
         return model
+
+    @staticmethod
+    def _normalized_dynamic_permits(
+        model: OperationalModel | None,
+        principal: Principal,
+        *,
+        surface: str,
+    ) -> bool:
+        """Evaluate fixed policy gates for real and normalized denial candidates."""
+
+        policy = model.dynamic_policy if model is not None else None
+        policy_present = policy is not None
+        tenant_id = policy.tenant_id if policy is not None else _DENIAL_TENANT_ID
+        visibility = policy.visibility if policy is not None else Visibility.PRIVATE
+        allowed_principal_ids = (
+            policy.allowed_principal_ids if policy is not None else _DENIAL_PRINCIPAL_IDS
+        )
+        open_ai = policy.open_ai if policy is not None else False
+        mcp = policy.mcp if policy is not None else False
+
+        tenant_matches = tenant_id == principal.tenant_id
+        principal_listed = principal.principal_id in allowed_principal_ids
+        restricted = bool((visibility is Visibility.PRIVATE) | bool(allowed_principal_ids))
+        tenant_principal_permitted = bool(tenant_matches & principal_listed)
+        restriction_permitted = bool((not restricted) | tenant_principal_permitted)
+        openai_surface = surface == "openai"
+        mcp_surface = surface == "mcp"
+        openai_permitted = bool((not openai_surface) | open_ai)
+        mcp_permitted = bool((not mcp_surface) | mcp)
+        known_surface = surface in {"openai", "mcp", "native", "catalog"}
+        policy_permitted = bool(
+            restriction_permitted
+            & openai_permitted
+            & mcp_permitted
+            & known_surface
+        )
+        return bool((not policy_present) | policy_permitted)
 
     @classmethod
     def _authorize_principal_from_snapshot(

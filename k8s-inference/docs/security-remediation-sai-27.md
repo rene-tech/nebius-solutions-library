@@ -22,6 +22,15 @@ public request-detail validation run before authoritative route refresh. Known
 denials performed refresh work while unknown names exited early, preserving a
 timing/work distinction.
 
+Independent review then rejected exact commit
+`459632609a18ad5784da5b0efc655faab962cb64` / tree
+`7d659eead3a88c53b5b253f8011086ba780ffeae` as SOURCE, INTEGRATION, and LIVE
+NO-GO. It established one refresh and one immutable authorization snapshot, but
+an absent name still left `Registry.resolve_for_principal` immediately after
+the lookup while an existing denied model continued through selector and
+dynamic-policy evaluation. Identical HTTP results therefore did not establish
+an equivalent terminal work path.
+
 The new successor preserves the ordinary 403 missing-scope behavior by requiring
 `inference.invoke` before any registry lookup on public HTTP inference routes.
 After receiving the bounded raw body, every such route creates the same
@@ -34,6 +43,15 @@ scope, operation, protocol, MCP, admin/operator, and authorized readiness errors
 retain their existing behavior. The branch merges current `origin/main` at
 `0e6fdf6d9f61e5737dc6ac5cec4c0111207dd697`; rejected history is preserved
 without rebase or amendment.
+
+The latest additive correction normalizes an absent name to reserved,
+non-routable candidate fields. Real and normalized candidates unconditionally
+evaluate wildcard, requested-name, and canonical-name selector membership,
+then tenant, principal, visibility, public-surface, and known-surface policy
+gates without short-circuiting. A single terminal decision emits the same
+generic policy denial. Readiness remains strictly after that decision. The
+reserved fields contain NUL-prefixed identifiers that cannot satisfy the
+validated external model, tenant, or principal identifier contracts.
 
 ## Source contract
 
@@ -85,6 +103,22 @@ the private allowlist inside a refresh that reports stale evidence, supplies an
 otherwise rejected stream or native-operation field, and requires policy denial
 to remain byte-identical to unknown-model 404 behavior. These regressions cover
 OpenAI chat and native HTTP invocation.
+
+`test_public_resolution_denials_share_all_instrumented_policy_stages` observes
+only the fixed, non-sensitive stage sequence `lookup`, `selector`,
+`dynamic-policy`, and `terminal`. It requires that sequence for an unknown
+name, an existing selector denial, an existing dynamic-policy denial, and an
+authorized success, and requires one generic denial message for all three
+denial classes. The observer is a source/test seam rather than a public error
+or denial-class metric, so it does not introduce a new externally
+distinguishable classification.
+
+This static source candidate does not claim constant-time execution or latency
+equivalence. Integration acceptance must run equal-length request cohorts for
+unknown, selector-denied, and dynamic-policy-denied names, compare latency
+distributions under controlled conditions, and retain every result in the
+denominator. That evidence is deliberately deferred because this ticket's
+coordinator boundary forbids executing tests or live probes.
 
 The tests were authored but not executed because the parent coordinator limited
 this ticket to static additive source work. No formatter, linter, test, build,

@@ -21,7 +21,7 @@ from fs2_serve.model_deployment_records import (
     ModelDeploymentRevisionAction,
 )
 from fs2_serve.models import AdmissionRequest, Principal, Scope, TokenCreate
-from fs2_serve.registry import Registry
+from fs2_serve.registry import PrincipalResolutionStage, Registry
 from fs2_serve.runtime import StubRuntimeClient
 from fs2_serve.store import ConflictError
 from fs2_serve.telemetry import Metrics
@@ -215,6 +215,62 @@ def test_private_dynamic_route_requires_exact_principal(registry: Registry) -> N
             requested_model_id="qwen3-8b",
             surface="openai",
         )
+
+
+def test_public_resolution_denials_share_all_instrumented_policy_stages(
+    registry: Registry,
+) -> None:
+    revision = _revision(registry, visibility=Visibility.PRIVATE)
+    snapshot = project_dynamic_publications(
+        [revision],
+        {(revision.namespace, revision.name): status_view(revision)},
+    )
+    assert registry.set_dynamic_publications(
+        snapshot,
+        valid_until=datetime.now(UTC) + timedelta(minutes=1),
+    )
+
+    permitted = _principal(principal_id="private-user")
+    selector_denied = permitted.model_copy(
+        update={"models": frozenset({"glm-5-2-fp8"})},
+    )
+    dynamic_denied = _principal(principal_id="other-user")
+    expected_stages = list(PrincipalResolutionStage)
+    messages = []
+
+    for model_id, principal in (
+        ("unknown-private-app", permitted),
+        ("qwen3-8b", selector_denied),
+        ("qwen3-8b", dynamic_denied),
+    ):
+        observed_stages = []
+        with pytest.raises(
+            PermissionError,
+            match="model is outside principal policy",
+        ) as captured:
+            registry.resolve_for_principal(
+                model_id,
+                principal,
+                surface="openai",
+                require_enabled=False,
+                stage_observer=observed_stages.append,
+            )
+        messages.append(str(captured.value))
+        assert observed_stages == expected_stages
+
+    success_stages = []
+    assert (
+        registry.resolve_for_principal(
+            "qwen3-8b",
+            permitted,
+            surface="openai",
+            require_enabled=False,
+            stage_observer=success_stages.append,
+        ).id
+        == "qwen3-8b"
+    )
+    assert success_stages == expected_stages
+    assert messages == ["model is outside principal policy"] * 3
 
 
 def test_protocol_exposure_is_enforced_per_authenticated_surface(registry: Registry) -> None:
