@@ -61,6 +61,8 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
     assert 'dynamic "affinity"' in terraform
     assert "required_during_scheduling_ignored_during_execution" in terraform
     assert "var.public_edge_availability_contract.node_selector" in terraform
+    assert 'key      = "metadata.name"' in terraform
+    assert "local.public_edge_membership_authority.member_instance_ids" in terraform
 
     release = (ROOT / "stages/foundation/releases.tf").read_text(encoding="utf-8")
     assert "yamlencode(local.envoy_gateway_edge_availability_values)" in release
@@ -76,6 +78,9 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
         "kubernetes_service_v1.edge_rate_limit_redis_sentinel",
         "kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis",
         "kubernetes_network_policy_v1.edge_rate_limit_redis",
+        "terraform_data.public_edge_apply_eligibility[0]",
+        "kubernetes_manifest.public_edge_node_authority_policy[0]",
+        "kubernetes_manifest.public_edge_node_authority_binding[0]",
     )
     assert "31 + length(local.edge_rate_limit_managed_resource_addresses)" in outputs
     assert 'output "edge_rate_limit_managed_resource_addresses"' in outputs
@@ -192,6 +197,15 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
             encoding="utf-8"
         )
     )
+    membership_trust_store = yaml.safe_load(
+        (
+            ROOT
+            / "stages/foundation/trusted-public-edge-membership-issuers.json"
+        ).read_text(encoding="utf-8")
+    )
+    node_authority = (
+        ROOT / "stages/foundation/public_edge_node_authority.tf"
+    ).read_text(encoding="utf-8")
     infrastructure_outputs = (ROOT / "stages/infrastructure/outputs.tf").read_text(
         encoding="utf-8"
     )
@@ -214,6 +228,16 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         encoding="utf-8"
     )
     root_contract = (ROOT / "main.tf").read_text(encoding="utf-8")
+    foundation_apply_gate = (
+        ROOT / "stages/foundation/public_edge_apply_gate.tf"
+    ).read_text(encoding="utf-8")
+    workloads_apply_gate = (
+        ROOT / "stages/workloads/public_edge_apply_gate.tf"
+    ).read_text(encoding="utf-8")
+    apply_gate_verifier = (
+        ROOT
+        / "stages/foundation/scripts/verify-public-edge-node-eligibility.py"
+    ).read_text(encoding="utf-8")
     assert "client_identity = optional(any)" in root_variables
     assert "var.deployment.edge.client_identity == null" in root_variables
     assert "var.deployment.edge.client_identity.verified" not in root_variables
@@ -229,6 +253,10 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert "return len(chain)" in adapter
     assert trust_store == {
         "schema": "fs2-serve.nebius.ai/trusted-edge-evidence-issuers/v1",
+        "issuers": [],
+    }
+    assert membership_trust_store == {
+        "schema": "fs2-serve.nebius.ai/trusted-public-edge-membership-issuers/v1",
         "issuers": [],
     }
     for identity in (
@@ -276,6 +304,9 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert "tolerations    = []" in workload_control_plane
     assert "nebius.com/node-group-id" in envoy_proxy_template
     assert "lifecycle.fs2.nebius/run" in envoy_proxy_template
+    assert ".Values.envoyProxy.eligibleNodeNames" in envoy_proxy_template
+    assert "matchFields:" in envoy_proxy_template
+    assert "key: metadata.name" in envoy_proxy_template
     assert ".Values.envoyProxy.tolerations" in envoy_proxy_template
     for variables in (foundation_variables, workloads_variables):
         assert "update_strategy.max_unavailable <= 1" in variables
@@ -289,3 +320,81 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert "local.effective_system_node_count >= 3" in root_contract
     assert "local.effective_system_max_unavailable <= 1" in root_contract
     assert "local.effective_system_max_surge >= 1" in root_contract
+    for apply_gate in (foundation_apply_gate, workloads_apply_gate):
+        assert 'resource "terraform_data" "public_edge_apply_eligibility"' in apply_gate
+        assert 'data "external" "public_edge_mutation_fence"' in apply_gate
+        assert "plantimestamp()" in apply_gate
+        assert "maximum_plan_age_seconds  = 14400" in apply_gate
+        assert "FS2_EDGE_GATE_PLANNED_AT" in apply_gate
+        assert "FS2_EDGE_GATE_NODE_GROUP_ID" in apply_gate
+        assert "FS2_EDGE_GATE_NODE_SELECTOR_JSON" in apply_gate
+        assert "verify-public-edge-node-eligibility.py" in apply_gate
+        assert '"--external"' in apply_gate
+        assert "gate_id" in apply_gate
+        assert '"/usr/bin/python3"' in apply_gate
+        assert '"-I"' in apply_gate
+        assert '"-B"' in apply_gate
+        assert '"/usr/bin/env"' not in apply_gate
+    assert "terraform_data.public_edge_apply_eligibility" in terraform
+    assert "terraform_data.public_edge_apply_eligibility" in workload_control_plane
+    assert "data.external.public_edge_mutation_fence" in terraform
+    assert "data.external.public_edge_mutation_fence" in workload_control_plane
+    assert 'result.verdict == "PASS"' in terraform
+    assert 'result.verdict == "PASS"' in workload_control_plane
+    assert '"terraform_data.public_edge_apply_eligibility[0]"' in terraform
+    assert "local.public_edge_enabled ? 1 : 0" in (
+        ROOT / "stages/workloads/outputs.tf"
+    ).read_text(encoding="utf-8")
+    assert '"cluster.x-k8s.io/owner-name"' in apply_gate_verifier
+    assert '"cluster.x-k8s.io/cluster-name"' in apply_gate_verifier
+    assert '"Node.spec.providerID"' in apply_gate_verifier
+    assert 'r"nebius://computeinstance-[a-z0-9]+"' in apply_gate_verifier
+    assert '"node-group",' in apply_gate_verifier
+    assert 'compute_instance_cli = [*nebius, "compute", "instance"]' in apply_gate_verifier
+    assert '"--all"' not in apply_gate_verifier
+    assert '"--page-size", "100"' in apply_gate_verifier
+    assert 'page_arguments.extend(("--page-token", page_token))' in apply_gate_verifier
+    assert '"terminal_next_page_token": ""' in apply_gate_verifier
+    assert '"list", "--parent-id", project_id' in apply_gate_verifier
+    assert '"get", "--id", instance_id' in apply_gate_verifier
+    assert "provider_member_ids=provider_ids" in apply_gate_verifier
+    assert "Kubernetes Node provider IDs do not equal the provider member set" in apply_gate_verifier
+    assert 'status_value.get("state") != "RUNNING"' in apply_gate_verifier
+    assert 'status_value.get("reconciling") is not False' in apply_gate_verifier
+    assert "before_revision != after_revision" in apply_gate_verifier
+    assert apply_gate_verifier.count("plan_age = parse_plan_timestamp(") == 2
+    assert "nodes_before" in apply_gate_verifier
+    assert "nodes_after" in apply_gate_verifier
+    assert "signed_instance_ids=signed_member_ids" in apply_gate_verifier
+    assert "name_pattern" not in apply_gate_verifier
+    assert "public-edge membership signature verification failed" in apply_gate_verifier
+    assert "reopened provider membership export bytes" in apply_gate_verifier
+    assert "executable identity differs from the signed toolchain" in apply_gate_verifier
+    assert "executable changed between resolution and open" in apply_gate_verifier
+    assert "running Python interpreter differs from the signed toolchain" in apply_gate_verifier
+    assert "validate_parent_chain(path" in apply_gate_verifier
+    assert 'f"/proc/self/fd/{pinned_tools[\'nebius\'][2]}"' in apply_gate_verifier
+    assert 'f"/proc/self/fd/{pinned_tools[\'kubectl\'][2]}"' in apply_gate_verifier
+    assert 'return resolved_root, f"/proc/self/fd/{descriptor}", descriptor' in apply_gate_verifier
+    assert "pass_fds=PINNED_COMMAND_FDS" in apply_gate_verifier
+    assert 'cwd="/"' in apply_gate_verifier
+    assert '"PATH": "/usr/bin:/bin"' in apply_gate_verifier
+    assert apply_gate_verifier.index("nodes_after = run_json") < apply_gate_verifier.index(
+        "group_list_after = paginated_list"
+    )
+    assert 'data "external" "public_edge_membership_contract"' in node_authority
+    assert 'resource "kubernetes_manifest" "public_edge_node_authority_policy"' in node_authority
+    assert 'resource "kubernetes_manifest" "public_edge_node_authority_binding"' in node_authority
+    assert 'failurePolicy = "Fail"' in node_authority
+    assert 'operations  = ["CREATE", "UPDATE"]' in node_authority
+    assert "object.spec.providerID == 'nebius://' + object.metadata.name" in node_authority
+    assert "public_edge_protected_labels_unchanged_cel" in node_authority
+    assert "kubernetes_node_controller_username" in node_authority
+    for prerequisite in (
+        "kubernetes_config_map_v1.edge_rate_limit_redis",
+        "kubernetes_service_v1.edge_rate_limit_redis_headless",
+        "kubernetes_service_v1.edge_rate_limit_redis_sentinel",
+        "kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis",
+        "kubernetes_network_policy_v1.edge_rate_limit_redis",
+    ):
+        assert prerequisite in foundation_apply_gate

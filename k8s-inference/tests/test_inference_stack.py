@@ -390,6 +390,8 @@ class InferenceStackTests(unittest.TestCase):
             )
             paths = (infrastructure_path, foundation_path, workloads_path)
             first_bytes = {path.name: path.read_bytes() for path in paths}
+            generated_foundation = json.loads(foundation_path.read_text(encoding="utf-8"))
+            self.assertEqual(generated_foundation["nebius_profile"], "sandbox")
 
             with mock.patch.dict(os.environ, secret_values, clear=False):
                 foundation_environment = STACK.stage_environment(

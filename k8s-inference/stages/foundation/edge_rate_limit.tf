@@ -11,14 +11,18 @@ locals {
     "app.kubernetes.io/name"      = local.edge_rate_limit_redis_name
     "app.kubernetes.io/component" = "edge-rate-limit-store"
   })
-  edge_rate_limit_managed_resource_addresses = [
+  edge_rate_limit_managed_resource_addresses = concat([
     "kubernetes_config_map_v1.edge_rate_limit_redis",
     "kubernetes_stateful_set_v1.edge_rate_limit_redis",
     "kubernetes_service_v1.edge_rate_limit_redis_headless",
     "kubernetes_service_v1.edge_rate_limit_redis_sentinel",
     "kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis",
     "kubernetes_network_policy_v1.edge_rate_limit_redis",
-  ]
+  ], local.public_edge_enabled ? [
+    "terraform_data.public_edge_apply_eligibility[0]",
+    "kubernetes_manifest.public_edge_node_authority_policy[0]",
+    "kubernetes_manifest.public_edge_node_authority_binding[0]",
+  ] : [])
 }
 
 # The rate-limit store is an ephemeral three-member Redis replication group
@@ -143,6 +147,17 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
         dynamic "affinity" {
           for_each = local.public_edge_enabled ? [1] : []
           content {
+            node_affinity {
+              required_during_scheduling_ignored_during_execution {
+                node_selector_term {
+                  match_fields {
+                    key      = "metadata.name"
+                    operator = "In"
+                    values   = local.public_edge_membership_authority.member_instance_ids
+                  }
+                }
+              }
+            }
             pod_anti_affinity {
               required_during_scheduling_ignored_during_execution {
                 topology_key = var.public_edge_availability_contract.topology_key
@@ -350,7 +365,26 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
     }
   }
 
+  lifecycle {
+    precondition {
+      condition = (
+        !local.public_edge_enabled || try(
+          data.external.public_edge_mutation_fence[0].result.verdict == "PASS" &&
+          data.external.public_edge_mutation_fence[0].result.membership_payload_sha256 == local.public_edge_membership_authority.payload_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.membership_receipt_sha256 == local.public_edge_membership_authority.receipt_sha256 &&
+          tonumber(data.external.public_edge_mutation_fence[0].result.provider_member_count) >= 3 &&
+          tonumber(data.external.public_edge_mutation_fence[0].result.eligible_node_count) >= 3 &&
+          tonumber(data.external.public_edge_mutation_fence[0].result.hostname_domain_count) >= 3,
+          false,
+        )
+      )
+      error_message = "The public edge Redis/Sentinel StatefulSet requires the source-trusted provider membership receipt, continuous Node authority policy, and a fresh mutation fence with three eligible hostname domains."
+    }
+  }
+
   depends_on = [
+    data.external.public_edge_mutation_fence,
+    terraform_data.public_edge_apply_eligibility,
     kubernetes_service_v1.edge_rate_limit_redis_headless,
     kubernetes_service_v1.edge_rate_limit_redis_sentinel,
     kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis,

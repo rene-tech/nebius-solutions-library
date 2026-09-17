@@ -21,6 +21,14 @@
 {{- if not (regexMatch "^[a-z][a-z0-9]{5,11}$" $runId) }}
 {{- fail "envoyProxy.nodeSelector lifecycle.fs2.nebius/run must be the exact run ID" }}
 {{- end }}
+{{- if or (lt (len .Values.envoyProxy.eligibleNodeNames) 3) (ne (len .Values.envoyProxy.eligibleNodeNames) (len (uniq .Values.envoyProxy.eligibleNodeNames))) }}
+{{- fail "envoyProxy.eligibleNodeNames must contain at least three unique signed provider member IDs" }}
+{{- end }}
+{{- range $nodeName := .Values.envoyProxy.eligibleNodeNames }}
+{{- if not (regexMatch "^computeinstance-[a-z0-9]+$" $nodeName) }}
+{{- fail "envoyProxy.eligibleNodeNames entries must be exact Compute instance IDs" }}
+{{- end }}
+{{- end }}
 {{- $http := .Values.publicLoadBalancer.servicePorts.http }}
 {{- $https := .Values.publicLoadBalancer.servicePorts.https }}
 {{- if eq (int $http.nodePort) (int $https.nodePort) }}
@@ -49,6 +57,14 @@ spec:
           tolerations:
             {{- toYaml .Values.envoyProxy.tolerations | nindent 12 }}
           affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchFields:
+                      - key: metadata.name
+                        operator: In
+                        values:
+                          {{- toYaml .Values.envoyProxy.eligibleNodeNames | nindent 26 }}
             {{- toYaml .Values.envoyProxy.affinity | nindent 12 }}
           topologySpreadConstraints:
             {{- toYaml .Values.envoyProxy.topologySpreadConstraints | nindent 12 }}

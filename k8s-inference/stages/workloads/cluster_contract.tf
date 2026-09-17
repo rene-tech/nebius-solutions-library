@@ -90,6 +90,7 @@ resource "terraform_data" "cluster_contract" {
     public_edge_availability_contract_sha256 = local.public_edge_availability_contract_sha256
     public_edge_current_node_preflight       = local.public_edge_current_node_preflight
     public_edge_client_identity              = local.verified_edge_client_identity
+    public_edge_membership_authority         = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority
   }
 
   lifecycle {

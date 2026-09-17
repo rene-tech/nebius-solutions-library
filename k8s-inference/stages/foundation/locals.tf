@@ -233,6 +233,17 @@ locals {
       minDomains = var.public_edge_availability_contract.minimum_domains
     } : {})]
     affinity = local.public_edge_enabled ? {
+      nodeAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [{
+            matchFields = [{
+              key      = "metadata.name"
+              operator = "In"
+              values   = local.public_edge_membership_authority.member_instance_ids
+            }]
+          }]
+        }
+      }
       podAntiAffinity = {
         requiredDuringSchedulingIgnoredDuringExecution = [{
           topologyKey = var.public_edge_availability_contract.topology_key
@@ -260,6 +271,17 @@ locals {
       minDomains = var.public_edge_availability_contract.minimum_domains
     } : {})]
     affinity = local.public_edge_enabled ? {
+      nodeAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [{
+            matchFields = [{
+              key      = "metadata.name"
+              operator = "In"
+              values   = local.public_edge_membership_authority.member_instance_ids
+            }]
+          }]
+        }
+      }
       podAntiAffinity = {
         requiredDuringSchedulingIgnoredDuringExecution = [{
           topologyKey = var.public_edge_availability_contract.topology_key

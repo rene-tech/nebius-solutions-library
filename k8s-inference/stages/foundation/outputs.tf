@@ -17,6 +17,7 @@ output "cluster_contract" {
     public_edge_availability_contract         = var.public_edge_availability_contract
     public_edge_availability_contract_sha256  = local.public_edge_availability_contract_sha256
     public_edge_ready_node_preflight          = local.public_edge_ready_node_preflight
+    public_edge_membership_authority          = local.public_edge_membership_authority
     jobset                                    = var.jobset.enabled ? module.jobset_controller[0].contract : null
   }
 }
@@ -25,7 +26,9 @@ output "managed_resource_count" {
   description = "Expected managed Terraform address count for plan review."
   # 29 pre-existing addresses, the Kueue release verification, and the always
   # present jobset-system namespace. The six exact rate-limit-store addresses
-  # below are always present. The JobSet module itself contributes five
+  # below are always present. Public mode adds the apply-time eligibility gate
+  # and two Node-authority admission addresses to the same closed allowlist.
+  # The JobSet module itself contributes five
   # addresses only when it is enabled.
   value = (
     31 + length(local.edge_rate_limit_managed_resource_addresses) +
@@ -35,7 +38,7 @@ output "managed_resource_count" {
 }
 
 output "edge_rate_limit_managed_resource_addresses" {
-  description = "Closed allowlist of HA rate-limit-store Terraform addresses included in managed_resource_count."
+  description = "Closed allowlist of HA rate-limit-store and public-edge apply-gate Terraform addresses included in managed_resource_count."
   value       = local.edge_rate_limit_managed_resource_addresses
 }
 

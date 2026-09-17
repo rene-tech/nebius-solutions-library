@@ -211,6 +211,7 @@ locals {
         "capacity.fs2.nebius/type"   = "regular"
         "capacity.fs2.nebius/pool"   = "system"
       }
+      eligibleNodeNames = local.public_edge_enabled ? data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.member_instance_ids : []
     }
     edgeClientIdentity = {
       verified                      = local.verified_edge_client_identity.verified
@@ -262,6 +263,21 @@ resource "helm_release" "control_plane" {
   lifecycle {
     precondition {
       condition = (
+        !local.public_edge_enabled || try(
+          data.external.public_edge_mutation_fence[0].result.verdict == "PASS" &&
+          data.external.public_edge_mutation_fence[0].result.membership_payload_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.payload_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.membership_receipt_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.receipt_sha256 &&
+          tonumber(data.external.public_edge_mutation_fence[0].result.provider_member_count) >= 3 &&
+          tonumber(data.external.public_edge_mutation_fence[0].result.eligible_node_count) >= 3 &&
+          tonumber(data.external.public_edge_mutation_fence[0].result.hostname_domain_count) >= 3,
+          false,
+        )
+      )
+      error_message = "The public edge Helm release requires the foundation's source-trusted provider membership authority and a fresh matching mutation fence with three eligible hostname domains."
+    }
+
+    precondition {
+      condition = (
         local.observability_operator.schema == "fs2-serve.nebius.ai/observability-operator/v1" &&
         local.observability_operator.tempo.enabled &&
         local.observability_operator.tempo.service_port == 3200 &&
@@ -289,6 +305,8 @@ resource "helm_release" "control_plane" {
   }
 
   depends_on = [
+    data.external.public_edge_mutation_fence,
+    terraform_data.public_edge_apply_eligibility,
     kubernetes_manifest.model_deployment_crd,
     kubernetes_manifest.control_database,
     kubernetes_secret_v1.database_consumer,

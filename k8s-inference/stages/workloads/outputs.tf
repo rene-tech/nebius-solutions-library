@@ -21,6 +21,17 @@ output "public_edge_client_identity_evidence" {
   } : null
 }
 
+output "public_edge_membership_evidence" {
+  description = "Non-secret source-trusted NodeGroup membership projection consumed by admission and scheduler fences; null in internal-only mode."
+  value = local.public_edge_enabled ? {
+    payload_sha256              = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.payload_sha256
+    receipt_sha256              = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.receipt_sha256
+    evidence_sha256             = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.evidence_sha256
+    node_group_resource_version = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.node_group_resource_version
+    member_count                = length(data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.member_instance_ids)
+  } : null
+}
+
 output "mcp_endpoint_url" {
   description = "Resolved Streamable HTTP MCP endpoint. Internal-only deployments require the run-scoped operator proxy described by port_forward_contract."
   value       = "${trimsuffix(local.public_base_url, "/")}/mcp"
@@ -432,6 +443,9 @@ output "managed_resource_count" {
     # Profile-independent identity, credential, database, queue, control-plane,
     # and Grafana egress addresses. Profile-shaped collections stay explicit.
     47 +
+    # Public mode has one creation-only apply-time provider/Kubernetes
+    # eligibility receipt immediately before the control-plane Helm release.
+    (local.public_edge_enabled ? 1 : 0) +
     (local.ngc_api_key_required ? 1 : 0) +
     (local.model_nvcr_credentials_required ? 1 : 0) +
     (local.dcgm_nvcr_credentials_required ? 1 : 0) +

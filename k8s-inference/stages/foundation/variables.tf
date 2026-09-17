@@ -1,3 +1,14 @@
+variable "nebius_profile" {
+  description = "Exact authenticated Nebius CLI profile used for read-only apply-time NodeGroup authority checks."
+  type        = string
+  default     = "sandbox"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", var.nebius_profile))
+    error_message = "nebius_profile must be a bounded CLI profile name."
+  }
+}
+
 variable "kubeconfig_path" {
   description = "Absolute path to the run-scoped mode-0600 kubeconfig created for this disposable cluster."
   type        = string

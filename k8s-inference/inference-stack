@@ -1862,7 +1862,11 @@ def write_downstream_variables(
         "public_edge_availability_contract",
     )
     identity = {key: dynamic[key] for key in identity_keys}
-    foundation = {**contract["stages"]["foundation"], **identity}
+    foundation = {
+        **contract["stages"]["foundation"],
+        **identity,
+        "nebius_profile": dynamic.get("nebius_profile", "sandbox"),
+    }
     workloads = {
         **rewritten_workloads(contract, dynamic),
         **identity,

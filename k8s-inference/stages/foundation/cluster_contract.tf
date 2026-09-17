@@ -39,6 +39,7 @@ resource "terraform_data" "cluster_contract" {
     public_edge_availability_contract         = var.public_edge_availability_contract
     public_edge_availability_contract_sha256  = local.public_edge_availability_contract_sha256
     public_edge_ready_node_preflight          = local.public_edge_ready_node_preflight
+    public_edge_membership_authority          = local.public_edge_membership_authority
     kueue_teardown_cleanup = {
       cluster_id      = var.cluster_id
       cluster_name    = var.cluster_name

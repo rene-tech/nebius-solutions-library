@@ -70,7 +70,105 @@ state, no `NoSchedule` or `NoExecute` taint, and one of at least three distinct
 tolerations. Workloads independently reread those exact Nodes, recompute the
 UID/resourceVersion-bound receipt, and require every foundation UID to remain
 currently eligible; neither a wrapper copy nor a saved foundation snapshot is
-sufficient.
+sufficient. Those plan-time checks remain an early diagnostic, but they are not
+deployment authority.
+
+Public mode additionally has two creation-only apply gates: one ordered before
+the Redis/Sentinel StatefulSet and one after all workloads prerequisites but
+before the control-plane Helm release. Each new plan embeds `plantimestamp()`
+and is refused when it is more than four hours old. That plan-identity window
+accommodates the declared 10–30 minute prerequisite waits, including both
+15-minute cache bootstrap Jobs; it is not reused as the current-state clock.
+Each protected resource
+also consumes a second, deferred `data.external` mutation fence from its own
+lifecycle precondition. That fence cannot be removed from the resource graph
+while leaving the public mutation enabled. It repeats the complete authority
+join after the prerequisites and records a whole-second `observed_at` only after
+its fresh reads. In foundation both reads are ordered after the bootstrap
+ConfigMap, headless and Sentinel Services, PDB, NetworkPolicy, and continuous
+Node-authority binding, so delaying the StatefulSet cannot move the final read
+ahead of an unprotected prerequisite.
+The StatefulSet or Helm release proceeds only when the result says `PASS` with
+at least three provider members, eligible Nodes, and hostname domains. The
+Kubernetes scheduler is the final live fence at every Pod bind and re-evaluates
+the exact selector, Ready/cordon/taint state, and required anti-affinity rather
+than trusting the receipt as a scheduling decision.
+
+At apply time both fences use the fixed Nebius profile to get the exact
+cluster, derive its exact provider project, explicitly page through every
+NodeGroup under the cluster and every Compute instance under the project, and
+get the exact cluster, NodeGroup, and candidate member instances before and
+after the Kubernetes observations. Enumeration uses bounded `page_size=100`
+requests, follows each unique continuation token, rejects repeated resources,
+tokens and empty continuation pages, and accepts only an observed terminal
+empty token. It never treats a one-page result or CLI `--all` convenience as
+pagination proof. Provider resource versions and canonical cluster/NodeGroup
+objects must remain unchanged across the sandwich. The current NodeGroup must
+be `RUNNING`, non-reconciling, fixed at the contracted count, have zero
+outdated nodes, meet its target/current/Ready counts, and carry the exact run
+scheduler labels in its Node template.
+
+Mutable scheduler labels, Kubernetes annotations, instance names, and name
+regexes confer no membership authority. Public planning first authenticates a
+canonical Ed25519 receipt from the source-owned membership issuer registry. The
+signed exact subject binds project, cluster, NodeGroup, run, expected count,
+minimum domains, and selector digest. Its provider relation binds the exact
+NodeGroup resource version, sorted Compute instance IDs, and managed Node
+controller username to the reopened bytes of an authoritative provider
+membership export. The production registry is intentionally empty until an
+independently approved provider adapter and issuer are enrolled, so caller
+inputs cannot manufacture this relation.
+
+The receipt also binds the absolute path, resolved path, and SHA-256 of the
+Python interpreter, Nebius CLI, and kubectl used by the gate. The interpreter
+entrypoint is the fixed `/usr/bin/python3 -I -B`, so caller `PYTHONPATH`, user
+site packages, bytecode output, `env`, and caller `PATH` dispatch cannot alter
+the verifier. Each launcher and resolved binary must be root-owned, every
+parent directory must be owner-bound and not group/world writable, and each
+resolved regular file must be non-writable. The gate hashes each stable opened
+executable, retains that descriptor, and invokes Nebius and kubectl only through
+their inherited `/proc/self/fd/<n>` names. It refuses any signed identity
+mismatch and never closes then reopens a command by its mutable pathname.
+Provider subprocesses receive only the pinned command and kubeconfig
+descriptors plus a minimal fixed environment containing the canonical passwd
+home, `/usr/bin:/bin`, and the `C.UTF-8` locale, with `/` as the fixed working
+directory. The exact run-owned mode-0600
+kubeconfig is likewise opened once, inode-checked against its resolved path,
+retained, and supplied to kubectl only through its inherited descriptor. It
+then pages the complete project Compute inventory only to prove every signed
+member remains present;
+names are retained solely as change detectors. Both inventory observations and
+every signed exact-ID get must agree, and each member must have the exact project
+parent, stable positive resource version, and current `RUNNING`, non-reconciling,
+non-stopped state. Only then is a Kubernetes Node admitted when its name is a
+signed instance ID and `spec.providerID` is exactly
+`nebius://<instance-id>`.
+
+Cluster API cluster, MachineSet owner, owner-name and Machine annotations are
+retained only as corroboration: they can reject a provider member but can never
+add a Node to the provider set. The owner is either the exact group ID or that
+ID plus the provider's single five-character rollout generation; the Machine
+is exactly one bounded child generation below that owner. Arbitrary prefixes
+and additional suffixes fail. The two Node snapshots must retain identical
+UID/resourceVersion-bound eligibility projections and their instance-ID set
+must exactly equal the provider membership set. The terminal NodeList revision,
+provider revisions, explicit pagination summaries, and non-secret projection
+digests are included in the mutation-fence receipt. A cordon, hard taint,
+replacement, label/annotation spoof, provider member change, provider rollout,
+group move, incomplete enumeration, or stale saved plan therefore fails the
+protected mutation path; the scheduler then enforces the same placement facts
+at admission to a node. The final provider list/exact gets follow the second
+NodeList. After that read, a fail-closed `ValidatingAdmissionPolicy` and binding
+continuously reserve the five selector labels for the signed member IDs, require
+their exact `providerID`, and allow protected-field changes or new member Nodes
+only from the signed managed-node controller. Unrelated kubelet/status updates
+remain valid when protected values do not change. Membership transitions need a
+new signed receipt and policy update before a provider rollout; a mutable label
+cannot extend the accepted set during the read-to-mutation interval.
+Redis/Sentinel, Envoy Gateway, RLS, and the Envoy proxy also receive required
+`metadata.name` node affinity over that exact signed instance-ID set, so the
+scheduler consumes provider membership directly as well as the protected
+selector.
 If the complete HA authority or RLS is unavailable, Envoy is fail-closed rather
 than silently removing the security control.
 
@@ -78,9 +176,11 @@ Redis stores no customer data, credentials, request bodies, or durable
 accounting. Its image is digest-pinned in source, runs without a service-account
 token or Linux capabilities, and has read-only root storage. The image still
 requires the normal independent vulnerability/SBOM/promotion gate before any
-deployment. The six Terraform addresses (ConfigMap, StatefulSet, headless
-Service, Sentinel discovery Service, PDB, and NetworkPolicy) are included by
-exact name in `managed_resource_count` and exposed as a closed evidence output.
+deployment. The six always-present Terraform addresses (ConfigMap, StatefulSet,
+headless Service, Sentinel discovery Service, PDB, and NetworkPolicy), plus the
+public-only apply gate, Node-authority policy, and policy binding addresses,
+are included by exact name in
+`managed_resource_count` and exposed as a closed evidence output.
 
 The Envoy data plane has two replicas, rolling availability, CPU/memory
 requests and limits, a one-Pod minimum PDB, required hostname anti-affinity,
@@ -136,7 +236,41 @@ as eligible. Its internal-only soft-spread objects also paired `minDomains`
 with `ScheduleAnyway`, which Kubernetes rejects. The current additive successor
 adds an independent workloads-stage Node reread and exact UID/resourceVersion,
 ownership, and taint eligibility while omitting `minDomains` only for the soft
-internal mode. The production issuer registry remains intentionally empty.
+internal mode. Exact commit `17407f590673a30be48bc739e09aab279c1f1b52`
+(tree `2943858876b4bf9459c8f272c1e68cb1957acf1f`) is preserved as rejected
+evidence: both Node reads still occurred only while saved plans were created,
+and mutable labels were its only node-group ownership signal. Its interrupted
+successor added an apply-time provider/Kubernetes revision sandwich but inferred
+provider membership from a Compute instance name convention, executed
+caller-`PATH` tools, left foundation reads separable from store prerequisites,
+and spent a five-minute plan TTL on waits that can legitimately take much
+longer. The corrected source requires a signed provider membership relation and
+attested absolute toolchain, uses a four-hour plan-identity bound plus a
+fence-time observation, orders both foundation reads after every store
+prerequisite, and continuously protects the signed member/providerID/selector
+set with fail-closed admission. The production membership and client-identity
+issuer registries remain intentionally empty.
+
+The provider authority adapter is based on the current primary contracts:
+
+- Nebius documents retrieving the exact NodeGroup ID and the provider-created
+  Kubernetes Node/Compute instance identity:
+  <https://docs.nebius.com/kubernetes/node-groups/moving-workload>.
+- The Nebius CLI requires an exact parent cluster for NodeGroup enumeration and
+  exposes an exact-ID get with resource-version support:
+  <https://docs.nebius.com/cli/reference/mk8s/node-group/list> and
+  <https://docs.nebius.com/cli/reference/mk8s/node-group/get>.
+- The Nebius NodeGroup API defines fixed count, `RUNNING`, target/current/Ready
+  counts, outdated count, reconciliation state, and explicitly defines each
+  Node as a Nebius Compute instance:
+  <https://github.com/nebius/api/blob/main/nebius/mk8s/v1/node_group.proto>.
+- The Nebius Compute API defines exact project-scoped instance pagination and
+  its terminal `next_page_token` contract:
+  <https://github.com/nebius/api/blob/main/nebius/compute/v1/instance_service.proto>.
+
+The adapter deliberately accepts no alternate ownership representation. If a
+provider revision changes these documented facts, public apply fails until a
+new exact adapter and provenance are independently reviewed.
 
 ### Receipt and issuer custody
 
@@ -150,6 +284,18 @@ roles, caller-supplied registry paths, and all receipts while this registry is
 empty. Public keys are non-secret, but onboarding one grants evidence-signing
 authority and therefore requires its own Platform Security provenance and
 source review.
+
+NodeGroup membership has a separate least-authority registry at
+`stages/foundation/trusted-public-edge-membership-issuers.json`, also empty in
+this candidate. Its fixed role is
+`platform-security-public-edge-membership`. A receipt must reopen the exact
+mode-0600 `public-edge-provider-membership.json` bytes and bind the provider
+relation API, exact project/cluster/NodeGroup revision, member instance IDs,
+approved managed-node controller username, and attested toolchain. The fixed
+mode-0600 receipt name is
+`public-edge-node-group-membership-receipt.json`. Neither path, trust key,
+member list, controller identity, executable digest, nor verification result is
+caller-configurable.
 
 The receipt is canonical JSON followed by one newline and contains exactly the
 receipt schema, `ed25519` algorithm, payload, recomputed payload SHA-256, and
@@ -184,8 +330,15 @@ the coordinator's static-only boundary. A later reviewed integration must:
 1. Validate and render the chart and foundation configuration from the exact
    accepted successor commit, including CRD compatibility with Envoy Gateway
    v1.8.3, the exact 7,500-second audio rule, the exact three-domain placement
-   receipt and digest, both Node rereads and their UID/resourceVersion evidence,
-   exact node-group/run ownership, rejection of hard-tainted Nodes, valid
+   receipt and digest, both apply-time provider/Kubernetes rereads, the
+   prerequisite-compatible four-hour plan bound and fence-time timestamp, both
+   deferred mutation fences, complete explicit provider pagination, signed
+   provider membership export, isolated Python startup, attested executables
+   executed through retained descriptors, a retained-descriptor kubeconfig,
+   sanitized provider-command environment, stable
+   cluster/NodeGroup/instance and NodeList revisions, `spec.providerID` equality
+   with the exact signed Compute member set, fail-closed Node admission, rejection of
+   spoof-labeled/cordoned/hard-tainted Nodes, valid
    internal soft spread, the retained-capacity update strategy, and equality
    between the plan count and address allowlist.
 2. Scan and promote every introduced image digest before creating resources.
@@ -194,12 +347,15 @@ the coordinator's static-only boundary. A later reviewed integration must:
 4. Stage the foundation store and prove one primary, two replicas, three
    agreeing Sentinels, quorum failover, and RLS recovery before enabling policy;
    retain the previous Helm revision and state-backed plan for rollback.
-5. Onboard the exact Platform Security evidence-signing public key by reviewed
-   source commit. Produce a fresh signed receipt from independent provider/LB,
+5. Onboard the exact Platform Security client-identity and provider-membership
+   evidence-signing public keys by reviewed source commit. Produce a fresh
+   authoritative NodeGroup membership export and signed membership receipt,
+   then produce a fresh signed client-identity receipt from independent provider/LB,
    listener, backend, SG, route-table, XFF-mutation, and direct-access captures;
    store it mode 0600 at the fixed run-root path, and store the seven reopened
-   raw inputs under the fixed mode-0700 evidence directory. Prove the derived
-   address cannot be forged.
+   raw inputs under the fixed mode-0700 evidence directory. Prove the provider
+   relation, executable identities, managed-node controller identity, and
+   derived client address cannot be forged.
 6. Saturate client A's general and admin buckets while client B continues to
    receive non-429 responses, then repeat against HTTP redirect/ACME, website,
    API, admin, and Grafana routes.
@@ -210,8 +366,10 @@ the coordinator's static-only boundary. A later reviewed integration must:
    PDB, bounded resources, two Ready controller and rate-limit-service replicas
    on distinct nodes, three Ready store members on three distinct system nodes,
    the exact infrastructure node-group/count/selector/update receipt and digest,
-   every foundation UID remaining in the current workloads-stage eligible UID
-   set with a current resource version, zero untolerated
+   both creation gates and both mutation fences' provider/NodeList revisions
+   and receipt digests, every
+   foundation UID remaining in the current workloads-stage eligible UID set
+   with a current resource version and matching Nebius provider identity, zero untolerated
    `NoSchedule`/`NoExecute` taints, `maxUnavailable <= 1`, positive surge, at
    least two retained system nodes, and accepted traffic policies.
 9. Prove the existing Deployment/Service to StatefulSet/headless/Sentinel

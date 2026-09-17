@@ -630,6 +630,9 @@ envoyProxy:
     workload.fs2.nebius/system: "true"
     capacity.fs2.nebius/type: regular
     capacity.fs2.nebius/pool: system
+  # Public Terraform replaces this empty internal default with the exact sorted
+  # Compute instance IDs authenticated by the provider membership receipt.
+  eligibleNodeNames: []
   podDisruptionBudget:
     minAvailable: 1
   resources:

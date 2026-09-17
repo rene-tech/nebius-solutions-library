@@ -92,6 +92,12 @@ def helm_values() -> list[str]:
         f"edgeClientIdentity.providerLoadBalancerId={TEST_EDGE_LOAD_BALANCER_ID}",
         "--set",
         "edgeClientIdentity.directAccessExcluded=true",
+        "--set-string",
+        "envoyProxy.eligibleNodeNames[0]=computeinstance-system1",
+        "--set-string",
+        "envoyProxy.eligibleNodeNames[1]=computeinstance-system2",
+        "--set-string",
+        "envoyProxy.eligibleNodeNames[2]=computeinstance-system3",
     ]
 
 
@@ -761,6 +767,25 @@ def test_public_envoy_has_redundant_bounded_node_spread_data_plane() -> None:
         "gateway.envoyproxy.io/owning-gateway-namespace": "fs2-system",
     }
     assert deployment["pod"]["affinity"] == {
+        "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+                "nodeSelectorTerms": [
+                    {
+                        "matchFields": [
+                            {
+                                "key": "metadata.name",
+                                "operator": "In",
+                                "values": [
+                                    "computeinstance-system1",
+                                    "computeinstance-system2",
+                                    "computeinstance-system3",
+                                ],
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
         "podAntiAffinity": {
             "requiredDuringSchedulingIgnoredDuringExecution": [
                 {
