@@ -1,6 +1,7 @@
 name: 'Kubernetes Inference Image Security'
 
 on:
+  workflow_call:
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
@@ -61,9 +62,15 @@ jobs:
           set -euo pipefail
           evidence="${RUNNER_TEMP}/sai-24-evidence"
           source_tree=$(git rev-parse HEAD^{tree})
+          alpine_lock=k8s-inference/security/alpine-runtime-packages.lock.json
+          libcrypto3=$(python3 k8s-inference/security/image_security_evidence.py alpine-package "$alpine_lock" --package libcrypto3)
+          libssl3=$(python3 k8s-inference/security/image_security_evidence.py alpine-package "$alpine_lock" --package libssl3)
+          libexpat=$(python3 k8s-inference/security/image_security_evidence.py alpine-package "$alpine_lock" --package libexpat)
+          libuuid=$(python3 k8s-inference/security/image_security_evidence.py alpine-package "$alpine_lock" --package libuuid)
           docker buildx build \
             --file k8s-inference/components/control-plane/Dockerfile \
-            --output "type=oci,dest=${RUNNER_TEMP}/control-plane.oci.tar" \
+            --provenance=mode=max \
+            --output "type=oci,dest=${evidence}/control-plane.oci.tar" \
             --metadata-file "${evidence}/control-plane-build-metadata.json" \
             --build-arg "FS2_SOURCE_COMMIT=${GITHUB_SHA}" \
             --build-arg "FS2_SOURCE_TREE=${source_tree}" \
@@ -73,11 +80,17 @@ jobs:
             .
           docker buildx build \
             --file k8s-inference/components/admin-console/Dockerfile \
-            --output "type=oci,dest=${RUNNER_TEMP}/admin-console.oci.tar" \
+            --provenance=mode=max \
+            --output "type=oci,dest=${evidence}/admin-console.oci.tar" \
             --metadata-file "${evidence}/admin-console-build-metadata.json" \
             --build-arg "FS2_SOURCE_COMMIT=${GITHUB_SHA}" \
             --build-arg "FS2_SOURCE_TREE=${source_tree}" \
             --build-arg "FS2_PACKAGE_LOCK_SHA256=$(sha256sum k8s-inference/components/admin-console/package-lock.json | awk '{print $1}')" \
+            --build-arg "FS2_ALPINE_PACKAGE_LOCK_SHA256=$(sha256sum "$alpine_lock" | awk '{print $1}')" \
+            --build-arg "FS2_LIBCRYPTO3_APK=${libcrypto3}" \
+            --build-arg "FS2_LIBSSL3_APK=${libssl3}" \
+            --build-arg "FS2_LIBEXPAT_APK=${libexpat}" \
+            --build-arg "FS2_LIBUUID_APK=${libuuid}" \
             .
           jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' \
             "${evidence}/control-plane-build-metadata.json" > "${evidence}/control-plane.digest"
@@ -91,9 +104,9 @@ jobs:
           evidence="${RUNNER_TEMP}/sai-24-evidence"
           source_tree=$(git rev-parse HEAD^{tree})
           for component in control-plane admin-console; do
-            trivy image --input "${RUNNER_TEMP}/${component}.oci.tar" \
+            trivy image --input "${evidence}/${component}.oci.tar" \
               --scanners vuln,secret --format json --output "${evidence}/${component}.trivy.json"
-            trivy image --input "${RUNNER_TEMP}/${component}.oci.tar" \
+            trivy image --input "${evidence}/${component}.oci.tar" \
               --format spdx-json --output "${evidence}/${component}.spdx.json"
           done
           trivy fs k8s-inference/catalog/runtime --scanners vuln,secret --format json \
@@ -102,6 +115,7 @@ jobs:
             --output "${evidence}/catalog-runtime.spdx.json"
           trivy version --format json > "${evidence}/trivy-version.json"
           python3 k8s-inference/security/image_security_evidence.py create-receipt \
+            --repository "$GITHUB_WORKSPACE" \
             --source-commit "${GITHUB_SHA}" --source-tree "${source_tree}" \
             --kind image \
             --subject "local/fs2-control-plane@$(cat "${evidence}/control-plane.digest")" \
@@ -111,12 +125,15 @@ jobs:
             --command-contract 'trivy image --input OCI_ARCHIVE --scanners vuln,secret --format json' \
             --report "${evidence}/control-plane.trivy.json" \
             --sbom "${evidence}/control-plane.spdx.json" \
+            --build-metadata "${evidence}/control-plane-build-metadata.json" \
+            --oci-archive "${evidence}/control-plane.oci.tar" \
             --output "${evidence}/control-plane.receipt.json"
           python3 k8s-inference/security/image_security_evidence.py package-inventory \
             --sbom "${evidence}/admin-console.spdx.json" \
             --package libcrypto3 --package libssl3 --package libexpat --package libuuid \
             --output "${evidence}/admin-console-runtime-packages.json"
           python3 k8s-inference/security/image_security_evidence.py create-receipt \
+            --repository "$GITHUB_WORKSPACE" \
             --source-commit "${GITHUB_SHA}" --source-tree "${source_tree}" \
             --kind image \
             --subject "local/fs2-admin-console@$(cat "${evidence}/admin-console.digest")" \
@@ -127,8 +144,11 @@ jobs:
             --report "${evidence}/admin-console.trivy.json" \
             --sbom "${evidence}/admin-console.spdx.json" \
             --package-inventory "${evidence}/admin-console-runtime-packages.json" \
+            --build-metadata "${evidence}/admin-console-build-metadata.json" \
+            --oci-archive "${evidence}/admin-console.oci.tar" \
             --output "${evidence}/admin-console.receipt.json"
           python3 k8s-inference/security/image_security_evidence.py create-receipt \
+            --repository "$GITHUB_WORKSPACE" \
             --source-commit "${GITHUB_SHA}" --source-tree "${source_tree}" \
             --kind filesystem --subject "git-tree:${source_tree}:k8s-inference/catalog/runtime" \
             --scanner-release "${TRIVY_RELEASE}" \
@@ -138,6 +158,20 @@ jobs:
             --report "${evidence}/catalog-runtime.trivy.json" \
             --sbom "${evidence}/catalog-runtime.spdx.json" \
             --output "${evidence}/catalog-runtime.receipt.json"
+
+      - name: Attest exact first-party and filesystem receipts
+        shell: bash
+        env:
+          EVIDENCE_SIGNING_KEY: ${{ secrets.SAI24_EVIDENCE_SIGNING_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          test -n "$EVIDENCE_SIGNING_KEY"
+          umask 077
+          key="${RUNNER_TEMP}/sai-24-evidence-signing-key.pem"
+          printf '%s' "$EVIDENCE_SIGNING_KEY" > "$key"
+          for receipt in "${RUNNER_TEMP}/sai-24-evidence"/*.receipt.json; do
+            openssl dgst -sha256 -sign "$key" -out "${receipt}.sig" "$receipt"
+          done
 
       - name: Retain complete first-party evidence
         if: ${{ always() }}
@@ -158,12 +192,13 @@ jobs:
             "${evidence}/admin-console.trivy.json" \
             "${evidence}/catalog-runtime.trivy.json"
           python3 k8s-inference/security/image_security_evidence.py receipt \
+            --trust k8s-inference/security/image-attestation-trust.json \
             "${evidence}/control-plane.receipt.json" \
             "${evidence}/admin-console.receipt.json" \
             "${evidence}/catalog-runtime.receipt.json"
 
-  scan-third-party-images:
-    name: 'Scan complete digest-bound third-party inventory'
+  scan-release-image-closure:
+    name: 'Scan exact attested render and catalog image closure'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -186,36 +221,60 @@ jobs:
           printf '%s\n' "${RUNNER_TEMP}/trivy-bin" >> "${GITHUB_PATH}"
           "${RUNNER_TEMP}/trivy-bin/trivy" --version > "${RUNNER_TEMP}/sai-24-third-party/trivy-binary-version.txt"
 
-      - name: Require and scan every exact inventory subject
+      - name: Derive and scan every exact release-closure subject
         shell: bash
         run: |
           set -euo pipefail
           evidence="${RUNNER_TEMP}/sai-24-third-party"
           source_tree=$(git rev-parse HEAD^{tree})
           python3 k8s-inference/security/image_security_evidence.py inventory \
-            k8s-inference/security/third-party-images.lock.json \
-            --print-digest-references > "${RUNNER_TEMP}/third-party-digests.txt"
+            k8s-inference/security/third-party-images.lock.json
+          python3 k8s-inference/security/release_image_closure.py \
+            --root k8s-inference \
+            --surfaces k8s-inference/security/release-image-surfaces.json \
+            --render-packet k8s-inference/security/production-render-packet.json \
+            --trust k8s-inference/security/image-attestation-trust.json \
+            --inventory k8s-inference/security/third-party-images.lock.json \
+            --output "${evidence}/release-image-closure.json"
+          jq -er '.subjects[]' "${evidence}/release-image-closure.json" \
+            > "${RUNNER_TEMP}/release-image-digests.txt"
           while IFS= read -r image_ref; do
             artifact_id=$(printf '%s' "${image_ref}" | sha256sum | cut -c1-16)
             trivy image "${image_ref}" --scanners vuln,secret --format json \
               --output "${evidence}/${artifact_id}.trivy.json"
             trivy image "${image_ref}" --format spdx-json \
               --output "${evidence}/${artifact_id}.spdx.json"
-          done < "${RUNNER_TEMP}/third-party-digests.txt"
+          done < "${RUNNER_TEMP}/release-image-digests.txt"
           trivy version --format json > "${evidence}/trivy-version.json"
           while IFS= read -r image_ref; do
             artifact_id=$(printf '%s' "${image_ref}" | sha256sum | cut -c1-16)
             python3 k8s-inference/security/image_security_evidence.py create-receipt \
+              --repository "$GITHUB_WORKSPACE" \
               --source-commit "${GITHUB_SHA}" --source-tree "${source_tree}" \
-              --kind image --subject "${image_ref}" \
+              --kind third-party-image --subject "${image_ref}" \
               --scanner-release "${TRIVY_RELEASE}" \
               --scanner-archive-sha256 "${TRIVY_ARCHIVE_SHA256}" \
               --scanner-version "${evidence}/trivy-version.json" \
               --command-contract 'trivy image DIGEST_REFERENCE --scanners vuln,secret --format json' \
               --report "${evidence}/${artifact_id}.trivy.json" \
               --sbom "${evidence}/${artifact_id}.spdx.json" \
+              --resolution-receipt "${evidence}/release-image-closure.json" \
               --output "${evidence}/${artifact_id}.receipt.json"
-          done < "${RUNNER_TEMP}/third-party-digests.txt"
+          done < "${RUNNER_TEMP}/release-image-digests.txt"
+
+      - name: Attest every release-closure scan receipt
+        shell: bash
+        env:
+          EVIDENCE_SIGNING_KEY: ${{ secrets.SAI24_EVIDENCE_SIGNING_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          test -n "$EVIDENCE_SIGNING_KEY"
+          umask 077
+          key="${RUNNER_TEMP}/sai-24-closure-signing-key.pem"
+          printf '%s' "$EVIDENCE_SIGNING_KEY" > "$key"
+          for receipt in "${RUNNER_TEMP}/sai-24-third-party"/*.receipt.json; do
+            openssl dgst -sha256 -sign "$key" -out "${receipt}.sig" "$receipt"
+          done
 
       - name: Retain complete third-party evidence
         if: ${{ always() }}
@@ -236,4 +295,6 @@ jobs:
           test "${#reports[@]}" -gt 0
           test "${#reports[@]}" -eq "${#receipts[@]}"
           python3 k8s-inference/security/image_security_evidence.py report "${reports[@]}"
-          python3 k8s-inference/security/image_security_evidence.py receipt "${receipts[@]}"
+          python3 k8s-inference/security/image_security_evidence.py receipt \
+            --trust k8s-inference/security/image-attestation-trust.json \
+            "${receipts[@]}"

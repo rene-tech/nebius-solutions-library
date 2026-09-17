@@ -23,6 +23,11 @@ resource "helm_release" "tempo" {
   wait             = true
   timeout          = 1200
 
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
+
   # Chart archive SHA-256 at the pinned repository URL:
   # f1f6e318d5bca3b5097cb676077796cdf8135beb2c1f71c4d14614ccf9b0081b
   values = [
@@ -51,6 +56,11 @@ resource "helm_release" "otel_cluster" {
   cleanup_on_fail  = true
   wait             = true
   timeout          = 900
+
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
 
   values = [file("${path.module}/values/otel-cluster.yaml")]
 

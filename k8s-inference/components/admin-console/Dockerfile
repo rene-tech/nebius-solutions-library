@@ -17,15 +17,25 @@ RUN npm run build \
 
 FROM nginxinc/nginx-unprivileged:1.31.3-alpine3.24@sha256:f972e5322b9797dc2a6b830030094426437b1ae7032e4644496395336ac6fdac
 
-# Refresh only the libraries named by SAI-24. This keeps the runtime surface
-# unchanged while allowing the pinned Alpine repository snapshot to provide
-# its security revisions. Release publication remains blocked until the exact
-# installed versions and image digest pass the repository scan policy.
-RUN apk add --no-cache --upgrade \
-      libcrypto3 \
-      libssl3 \
-      libexpat \
-      libuuid
+ARG FS2_LIBCRYPTO3_APK
+ARG FS2_LIBSSL3_APK
+ARG FS2_LIBEXPAT_APK
+ARG FS2_LIBUUID_APK
+# Every package argument is an exact name=version constraint sourced from the
+# reviewed package lock. A missing/floating value fails before apk is invoked.
+RUN test "${FS2_LIBCRYPTO3_APK%%=*}" = libcrypto3 \
+    && test "${FS2_LIBSSL3_APK%%=*}" = libssl3 \
+    && test "${FS2_LIBEXPAT_APK%%=*}" = libexpat \
+    && test "${FS2_LIBUUID_APK%%=*}" = libuuid \
+    && test -n "${FS2_LIBCRYPTO3_APK#*=}" \
+    && test -n "${FS2_LIBSSL3_APK#*=}" \
+    && test -n "${FS2_LIBEXPAT_APK#*=}" \
+    && test -n "${FS2_LIBUUID_APK#*=}" \
+    && apk add --no-cache --upgrade \
+      "$FS2_LIBCRYPTO3_APK" \
+      "$FS2_LIBSSL3_APK" \
+      "$FS2_LIBEXPAT_APK" \
+      "$FS2_LIBUUID_APK"
 
 COPY --chown=101:101 k8s-inference/components/admin-console/nginx-main.conf /etc/nginx/nginx.conf
 COPY --chown=101:101 k8s-inference/components/admin-console/nginx.conf /etc/nginx/conf.d/default.conf
@@ -34,15 +44,18 @@ COPY --from=builder --chown=101:101 /workspace/k8s-inference/components/admin-co
 ARG FS2_SOURCE_COMMIT
 ARG FS2_SOURCE_TREE
 ARG FS2_PACKAGE_LOCK_SHA256
+ARG FS2_ALPINE_PACKAGE_LOCK_SHA256
 RUN test -n "$FS2_SOURCE_COMMIT" \
     && test -n "$FS2_SOURCE_TREE" \
-    && test -n "$FS2_PACKAGE_LOCK_SHA256"
+    && test -n "$FS2_PACKAGE_LOCK_SHA256" \
+    && test -n "$FS2_ALPINE_PACKAGE_LOCK_SHA256"
 LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
       org.opencontainers.image.revision="$FS2_SOURCE_COMMIT" \
       org.opencontainers.image.base.name="docker.io/nginxinc/nginx-unprivileged:1.31.3-alpine3.24" \
       org.opencontainers.image.base.digest="sha256:f972e5322b9797dc2a6b830030094426437b1ae7032e4644496395336ac6fdac" \
       ai.nebius.fs2-serve.source-tree="$FS2_SOURCE_TREE" \
       ai.nebius.fs2-serve.package-lock-sha256="$FS2_PACKAGE_LOCK_SHA256" \
+      ai.nebius.fs2-serve.alpine-package-lock-sha256="$FS2_ALPINE_PACKAGE_LOCK_SHA256" \
       ai.nebius.fs2-serve.node-builder.digest="sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f"
 
 USER 101:101

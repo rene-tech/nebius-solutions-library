@@ -178,6 +178,11 @@ resource "helm_release" "modelexpress" {
   wait             = true
   timeout          = 900
 
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
+
   values = [yamlencode(local.modelexpress_helm_values)]
 
   lifecycle {

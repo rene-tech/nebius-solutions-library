@@ -34,6 +34,17 @@ def test_runtime_dockerfiles_repair_the_reported_os_packages() -> None:
     for package in ("libcrypto3", "libssl3", "libexpat", "libuuid"):
         assert package in runtime
     assert "RUN apk upgrade" not in runtime
+    for argument in (
+        "FS2_LIBCRYPTO3_APK",
+        "FS2_LIBSSL3_APK",
+        "FS2_LIBEXPAT_APK",
+        "FS2_LIBUUID_APK",
+    ):
+        assert argument in runtime
+    package_lock = json.loads(
+        (ROOT / "security/alpine-runtime-packages.lock.json").read_text()
+    )
+    assert package_lock["state"] == "blocked_pending_authorized_package_resolution"
 
 
 def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
@@ -75,9 +86,18 @@ def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
         in workflow
     )
     assert "retention-days: 90" in workflow
+    assert "--provenance=mode=max" in workflow
+    assert "release_image_closure.py" in workflow
+    assert "SAI24_EVIDENCE_SIGNING_KEY_PEM" in workflow
+
+    normal_workflow = (ROOT.parent / ".github/workflows/k8s-inference.yml").read_text()
+    assert "uses: ./.github/workflows/k8s-inference-image-security.yml" in normal_workflow
+    assert "needs: image-security" in normal_workflow
+    assert "promotion-gate:" in normal_workflow
 
     inventory = json.loads((ROOT / "security/third-party-images.lock.json").read_text())
-    assert inventory["rendered_inventory_complete"] is False
+    assert "rendered_inventory_complete" not in inventory
+    assert "exact Helm post-render output" in inventory["completeness_authority"]
     assert inventory["inventory_state"] == "blocked_pending_digest_resolution"
     by_id = {image["id"]: image for image in inventory["images"]}
     assert by_id["dcgm-exporter"]["digest_reference"] == (

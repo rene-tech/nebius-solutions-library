@@ -3,11 +3,19 @@ set -euo pipefail
 
 task_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 task_lock="$task_root/versions.lock.yaml"
+task_security_dir=$(cd "$task_root/../security" && pwd)
 task_kubeconfig=${FS2_OBSERVABILITY_KUBECONFIG:-${KUBECONFIG:-$HOME/.kube/config}}
 task_context=${FS2_OBSERVABILITY_CONTEXT:?set FS2_OBSERVABILITY_CONTEXT to the target Kubernetes context}
 task_namespace=fs2-observability
 task_owner=fs2-serve-lean-observability-live
 task_tmp=$(mktemp -d /tmp/fs2-observability-install.XXXXXX)
+task_image_gate=(
+  --post-renderer /usr/bin/env
+  --post-renderer-args python3
+  --post-renderer-args "$task_security_dir/helm_image_postrenderer.py"
+  --post-renderer-args=--lock
+  --post-renderer-args "$task_security_dir/third-party-images.lock.json"
+)
 
 cleanup() {
   case "$task_tmp" in
@@ -78,22 +86,22 @@ task_otel=$(pull_chart openTelemetryCollector)
 hctl upgrade --install fs2-monitoring "$task_kps" \
   --namespace "$task_namespace" \
   --values "$task_root/values/kube-prometheus-stack.yaml" \
-  --rollback-on-failure --wait --timeout 15m --history-max 5
+  --rollback-on-failure --wait --timeout 15m --history-max 5 "${task_image_gate[@]}"
 
 hctl upgrade --install fs2-loki "$task_loki" \
   --namespace "$task_namespace" \
   --values "$task_root/values/loki.yaml" \
-  --rollback-on-failure --wait --timeout 10m --history-max 5
+  --rollback-on-failure --wait --timeout 10m --history-max 5 "${task_image_gate[@]}"
 
 hctl upgrade --install fs2-otel-gateway "$task_otel" \
   --namespace "$task_namespace" \
   --values "$task_root/values/otel-gateway.yaml" \
-  --rollback-on-failure --wait --timeout 10m --history-max 5
+  --rollback-on-failure --wait --timeout 10m --history-max 5 "${task_image_gate[@]}"
 
 hctl upgrade --install fs2-otel-node "$task_otel" \
   --namespace "$task_namespace" \
   --values "$task_root/values/otel-node.yaml" \
-  --rollback-on-failure --wait --timeout 10m --history-max 5
+  --rollback-on-failure --wait --timeout 10m --history-max 5 "${task_image_gate[@]}"
 
 kctl apply --server-side --field-manager=fs2-observability \
   -f "$task_root/manifests/observability.yaml"

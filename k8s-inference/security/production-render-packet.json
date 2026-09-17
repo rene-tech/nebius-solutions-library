@@ -1,0 +1,16 @@
+{
+  "schema": "fs2-serve.nebius.ai/release-render-packet/v1",
+  "status": "blocked_pending_authorized_exact_render",
+  "source": {
+    "commit": null,
+    "tree": null
+  },
+  "surface_manifest_sha256": null,
+  "inventory_sha256": null,
+  "terraform_plan": null,
+  "renders": [],
+  "attestation": {
+    "signature_path": null,
+    "trust_policy_sha256": null
+  }
+}

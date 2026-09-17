@@ -10,6 +10,11 @@ resource "helm_release" "cert_manager" {
   wait             = true
   timeout          = 900
 
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
+
   values = [yamlencode({
     crds = { enabled = true }
     config = {
@@ -42,6 +47,11 @@ resource "helm_release" "filesystem_csi" {
   cleanup_on_fail  = true
   wait             = true
   timeout          = 900
+
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
 
   values = [yamlencode({
     dataDir = "/mnt/fs2cache/csi-mounted-fs-path-data/"
@@ -76,6 +86,11 @@ resource "helm_release" "cloudnative_pg" {
   wait             = true
   timeout          = 900
 
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
+
   values = [file("${path.module}/values/cloudnative-pg.yaml")]
 
   depends_on = [terraform_data.kueue_deployment_admission_ready]
@@ -96,6 +111,11 @@ resource "helm_release" "envoy_gateway" {
   cleanup_on_fail = true
   wait            = true
   timeout         = 900
+
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
 
   depends_on = [terraform_data.cluster_contract]
 }
@@ -152,6 +172,11 @@ resource "helm_release" "kueue" {
   # WaitForDelete loop after every Kueue delete request has succeeded.
   wait    = false
   timeout = 900
+
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
 
   values = [yamlencode(local.kueue_effective_values)]
 
@@ -246,6 +271,11 @@ resource "helm_release" "keda" {
   wait             = true
   timeout          = 900
 
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
+
   values = [file("${path.module}/values/keda.yaml")]
 
   depends_on = [terraform_data.kueue_deployment_admission_ready]
@@ -262,6 +292,11 @@ resource "helm_release" "kserve_crd" {
   cleanup_on_fail  = true
   wait             = true
   timeout          = 900
+
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
 
   depends_on = [
     helm_release.cert_manager,
@@ -282,6 +317,11 @@ resource "helm_release" "kserve_resources" {
   wait             = true
   timeout          = 900
 
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
+
   depends_on = [
     helm_release.kserve_crd,
     terraform_data.kueue_deployment_admission_ready,
@@ -299,6 +339,11 @@ resource "helm_release" "monitoring" {
   cleanup_on_fail  = true
   wait             = true
   timeout          = 1200
+
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
 
   values = [
     yamlencode({
@@ -497,6 +542,11 @@ resource "helm_release" "loki" {
   wait             = true
   timeout          = 1200
 
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
+
   values = [file("${path.module}/values/loki.yaml")]
 
   depends_on = [helm_release.monitoring]
@@ -513,6 +563,11 @@ resource "helm_release" "otel_gateway" {
   cleanup_on_fail  = true
   wait             = true
   timeout          = 900
+
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
 
   values = [file("${path.module}/values/otel-gateway.yaml")]
 
@@ -533,6 +588,11 @@ resource "helm_release" "otel_node" {
   cleanup_on_fail  = true
   wait             = true
   timeout          = 900
+
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
 
   values = [file("${path.module}/values/otel-node.yaml")]
 

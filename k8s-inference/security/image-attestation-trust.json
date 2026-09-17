@@ -1,0 +1,9 @@
+{
+  "schema": "fs2-serve.nebius.ai/image-attestation-trust/v1",
+  "state": "blocked_pending_security_owner_key",
+  "signature_algorithm": "sha256-rsa-or-ecdsa",
+  "public_key_path": null,
+  "public_key_sha256": null,
+  "owner": "Platform Security",
+  "authority": "The public key and its independently reviewed fingerprint must be supplied before any render packet or scan receipt can pass."
+}

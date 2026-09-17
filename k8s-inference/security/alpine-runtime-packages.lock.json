@@ -1,0 +1,12 @@
+{
+  "schema": "fs2-serve.nebius.ai/alpine-runtime-package-lock/v1",
+  "state": "blocked_pending_authorized_package_resolution",
+  "base_image": "docker.io/nginxinc/nginx-unprivileged@sha256:f972e5322b9797dc2a6b830030094426437b1ae7032e4644496395336ac6fdac",
+  "packages": {
+    "libcrypto3": null,
+    "libssl3": null,
+    "libexpat": null,
+    "libuuid": null
+  },
+  "authority": "An authorized build worker must record exact name=version constraints from the digest-bound base repositories and independently verify the resulting OCI digest and scan."
+}

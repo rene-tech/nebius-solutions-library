@@ -191,6 +191,11 @@ resource "helm_release" "dcgm_exporter" {
   wait             = true
   timeout          = 900
 
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json"]
+  }
+
   # Chart archive SHA-256 at the pinned repository URL:
   # b1206338d5c446126e233f93df80f0538c285ce40b2e72e6c2f46c9db59ef223
   values = [

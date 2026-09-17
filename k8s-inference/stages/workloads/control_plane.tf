@@ -233,6 +233,11 @@ resource "helm_release" "control_plane" {
   wait_for_jobs    = true
   timeout          = 1800
 
+  postrender {
+    binary_path = "/usr/bin/env"
+    args = ["python3", "${local.fs2_root}/security/helm_image_postrenderer.py", "--lock", "${local.fs2_root}/security/third-party-images.lock.json"]
+  }
+
   values = [
     file("${local.fs2_root}/charts/control-plane/control-plane.values.yaml"),
     yamlencode(local.control_plane_overrides),

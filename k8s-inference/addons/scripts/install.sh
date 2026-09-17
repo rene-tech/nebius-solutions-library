@@ -2,6 +2,7 @@
 set -euo pipefail
 
 addons_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+security_dir=$(cd "$addons_dir/../security" && pwd)
 # shellcheck source=../lock.env
 source "$addons_dir/lock.env"
 state_home=${XDG_STATE_HOME:-$HOME/.local/state}
@@ -11,6 +12,13 @@ kubeconfig=${KUBECONFIG:-$HOME/.kube/config}
 export KUBECONFIG=$kubeconfig
 k=(kubectl --context "$kube_context")
 h=(helm --kube-context "$kube_context")
+image_gate=(
+  --post-renderer /usr/bin/env
+  --post-renderer-args python3
+  --post-renderer-args "$security_dir/helm_image_postrenderer.py"
+  --post-renderer-args=--lock
+  --post-renderer-args "$security_dir/third-party-images.lock.json"
+)
 
 [[ "$("${k[@]}" version -o json | jq -r .serverVersion.gitVersion)" == v1.35.* ]] || {
   printf 'refusing non-Kubernetes-1.35 target context %s\n' "$kube_context" >&2
@@ -33,16 +41,16 @@ for pair in \
 do
   IFS=: read -r chart values <<<"$pair"
   if [[ -n "$values" ]]; then
-    helm template verify "$cache_dir/$chart" --values "$values" >/dev/null
+    helm template verify "$cache_dir/$chart" --values "$values" "${image_gate[@]}" >/dev/null
   else
-    helm template verify "$cache_dir/$chart" >/dev/null
+    helm template verify "$cache_dir/$chart" "${image_gate[@]}" >/dev/null
   fi
 done
 
 "${k[@]}" apply --server-side --field-manager=fs2-upstream-addons -f "$addons_dir/manifests/namespaces.yaml"
 "${k[@]}" apply --server-side --field-manager=fs2-upstream-addons -f "$cache_dir/$GATEWAY_API_FILE"
 
-common=(--reset-values --rollback-on-failure --wait=watcher --wait-for-jobs --timeout 10m --history-max 10)
+common=(--reset-values --rollback-on-failure --wait=watcher --wait-for-jobs --timeout 10m --history-max 10 "${image_gate[@]}")
 envoy_crd_dir=$(mktemp -d "${TMPDIR:-/tmp}/fs2-envoy-crds.XXXXXX")
 trap 'rm -rf "$envoy_crd_dir"' EXIT
 tar -xzf "$cache_dir/$ENVOY_GATEWAY_CHART_FILE" -C "$envoy_crd_dir"

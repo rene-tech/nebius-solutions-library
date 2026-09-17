@@ -1,103 +1,119 @@
 {
   "schema": "fs2-serve.nebius.ai/third-party-image-lock/v1",
   "inventory_state": "blocked_pending_digest_resolution",
-  "rendered_inventory_complete": false,
-  "authority": "An integration worker must render the pinned charts and resolve registry digests; rejected historical packets are not authority.",
+  "completeness_authority": "Completeness is derived from exact Helm post-render output and catalog runtime sources; this file cannot self-assert closure.",
+  "authority": "An integration worker must render the pinned charts and resolve registry digests with provenance; rejected historical packets are not authority.",
   "images": [
     {
       "id": "cloudnative-pg-operator",
       "source_reference": "ghcr.io/cloudnative-pg/cloudnative-pg:1.30.0",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["stages/foundation/values/cloudnative-pg.yaml"]
     },
     {
       "id": "envoy-gateway-controller",
       "source_reference": "docker.io/envoyproxy/gateway:v1.8.3",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["addons/values/envoy-gateway.yaml"]
     },
     {
       "id": "grafana",
       "source_reference": "docker.io/grafana/grafana:13.2.0",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["observability/versions.lock.yaml"]
     },
     {
       "id": "busybox",
       "source_reference": "docker.io/library/busybox:1.38.0",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["observability/versions.lock.yaml"]
     },
     {
       "id": "kube-webhook-certgen",
       "source_reference": "ghcr.io/jkroepke/kube-webhook-certgen:1.8.7",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["observability/versions.lock.yaml"]
     },
     {
       "id": "k8s-sidecar",
       "source_reference": "quay.io/kiwigrid/k8s-sidecar:2.10.1",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["observability/versions.lock.yaml"]
     },
     {
       "id": "prometheus-operator",
       "source_reference": "quay.io/prometheus-operator/prometheus-operator:v0.93.1",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["observability/versions.lock.yaml"]
     },
     {
       "id": "prometheus-config-reloader",
       "source_reference": "quay.io/prometheus-operator/prometheus-config-reloader:v0.93.1",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["observability/versions.lock.yaml"]
     },
     {
       "id": "node-exporter",
       "source_reference": "quay.io/prometheus/node-exporter:v1.12.1-distroless",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["observability/versions.lock.yaml"]
     },
     {
       "id": "prometheus",
       "source_reference": "quay.io/prometheus/prometheus:v3.14.0-distroless",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["observability/versions.lock.yaml"]
     },
     {
       "id": "kube-state-metrics",
       "source_reference": "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["observability/versions.lock.yaml"]
     },
     {
       "id": "loki",
       "source_reference": "docker.io/grafana/loki:3.7.6",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["stages/foundation/values/loki.yaml", "observability/versions.lock.yaml"]
     },
     {
       "id": "tempo",
       "source_reference": "docker.io/grafana/tempo:2.9.0",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["stages/foundation/values/tempo.yaml"]
     },
     {
       "id": "otel-collector-contrib",
       "source_reference": "ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.159.0",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["stages/foundation/values/otel-gateway.yaml", "observability/versions.lock.yaml"]
     },
     {
       "id": "otel-collector-k8s",
       "source_reference": "ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s:0.159.0",
       "digest_reference": null,
+      "resolution_provenance": null,
       "consumers": ["stages/foundation/values/otel-cluster.yaml", "observability/versions.lock.yaml"]
     },
     {
       "id": "dcgm-exporter",
       "source_reference": "nvcr.io/nvidia/k8s/dcgm-exporter:4.6.0-4.8.3-distroless",
       "digest_reference": "nvcr.io/nvidia/k8s/dcgm-exporter@sha256:b4df763de9558e5b3f1f1d79bc65b772fcf65b8a9c3664ea7173e47153112b4a",
+      "resolution_provenance": null,
       "consumers": ["stages/workloads/values/dcgm-exporter.yaml"]
     }
   ]

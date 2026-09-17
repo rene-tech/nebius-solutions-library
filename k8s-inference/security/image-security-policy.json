@@ -29,7 +29,9 @@
       "record the registry, repository, tag, digest, and resolution timestamp",
       "scan the digest with vulnerability and secret scanners",
       "reject any fixable CRITICAL or HIGH finding",
-      "apply only the reviewed digest-bound values"
+      "apply only the reviewed digest-bound values",
+      "derive closure from every exact chart+values render and authoritative catalog source",
+      "apply the digest inventory through the mandatory Helm post-renderer"
     ]
   },
   "evidence": {
@@ -37,7 +39,9 @@
     "required_formats": [
       "trivy-json",
       "spdx-json",
-      "scan-receipt-json"
+      "scan-receipt-json",
+      "detached-scan-receipt-signature",
+      "attested-release-image-closure-json"
     ],
     "required_bindings": [
       "source_commit",
@@ -46,7 +50,9 @@
       "scanner_version",
       "scanner_archive_sha256",
       "report_sha256",
-      "sbom_sha256"
+      "sbom_sha256",
+      "buildkit_provenance_sha256",
+      "render_packet_signature_sha256"
     ]
   }
 }
