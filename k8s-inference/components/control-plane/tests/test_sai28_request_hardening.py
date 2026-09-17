@@ -235,7 +235,10 @@ def test_openai_route_rejects_json_beyond_the_nesting_limit(registry, cipher, ha
     assert not runtime.store.operations  # type: ignore[attr-defined]
 
 
-def test_native_route_rejects_deep_json_before_framework_validation(registry, cipher, hasher) -> None:
+@pytest.mark.parametrize("include_content_type", [True, False])
+def test_native_route_rejects_deep_json_before_framework_validation(
+    registry, cipher, hasher, include_content_type
+) -> None:
     runtime = build_runtime(registry, cipher, hasher)
     nested = "0"
     for _ in range(MAX_JSON_DEPTH):
@@ -244,9 +247,12 @@ def test_native_route_rejects_deep_json_before_framework_validation(registry, ci
 
     with TestClient(create_app(runtime)) as client:
         token = issue(client, principal="sai28-native-depth", scopes=["inference.invoke"])
+        headers = _invoke_headers(token, "sai28-native-depth-0001")
+        if not include_content_type:
+            headers.pop("content-type")
         response = client.post(
             "/v1/models/qwen3-8b:invoke",
-            headers=_invoke_headers(token, "sai28-native-depth-0001"),
+            headers=headers,
             content=body,
         )
 
@@ -315,6 +321,59 @@ def test_streamed_body_overflow_is_413_through_the_full_application_stack(regist
         "error": {"type": "request_too_large", "message": "request body exceeds limit"}
     }
     assert not runtime.store.operations  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_raw_artifact_content_is_not_treated_as_an_api_json_document() -> None:
+    downstream_completed = False
+    body = b"[" * (MAX_JSON_DEPTH + 1) + b"0" + b"]" * (MAX_JSON_DEPTH + 1)
+    path = "/v1/scientific-artifacts/uploads/00000000-0000-0000-0000-000000000000/content"
+
+    async def downstream(scope, receive, send) -> None:
+        nonlocal downstream_completed
+        message = await receive()
+        assert message["body"] == body
+        downstream_completed = True
+
+    messages = iter(({"type": "http.request", "body": body, "more_body": False},))
+    sent: list[dict] = []
+
+    async def receive() -> dict:
+        return next(messages)
+
+    async def send(message: dict) -> None:
+        sent.append(message)
+
+    middleware = TrustedEdgeMiddleware(
+        downstream,
+        max_request_bytes=1024,
+        allowed_hosts=("inference.test.invalid",),
+        allowed_origins=(),
+    )
+    await middleware(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "PUT",
+            "scheme": "https",
+            "path": path,
+            "raw_path": path.encode(),
+            "query_string": b"",
+            "root_path": "",
+            "headers": [
+                (b"host", b"inference.test.invalid"),
+                (b"content-type", b"application/json"),
+            ],
+            "client": ("192.0.2.1", 12345),
+            "server": ("inference.test.invalid", 443),
+        },
+        receive,
+        send,
+    )
+
+    assert downstream_completed
+    assert sent == []
 
 
 @pytest.mark.asyncio

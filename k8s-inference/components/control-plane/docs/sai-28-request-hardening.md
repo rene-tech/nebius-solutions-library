@@ -24,8 +24,11 @@ The corrected implementation commit is
   incrementally across chunks and rejects more than 64 nested containers before
   FastAPI/Pydantic or manual route parsing. Strings and cross-chunk escapes are
   tracked so structural characters in string values do not affect depth. The
-  boundary applies to `application/json` and structured `+json` media types,
-  including native `NativeInvocation` request bodies.
+  boundary applies to `application/json`, structured `+json` media types, and
+  missing media types (which FastAPI otherwise parses as JSON), including
+  native `NativeInvocation` request bodies. The raw scientific artifact-content
+  upload is explicitly excluded because its bytes are digest/size validated by
+  the artifact service rather than parsed as an API JSON document.
 - Only `AdmissionInputError`, raised at the unsupported-protocol and canonical
   OpenAI JSON branches, maps to HTTP 400. Route refresh, registry/configuration,
   store, cryptographic, and invariant `ValueError`/`RecursionError` failures are
@@ -50,7 +53,8 @@ must not be promoted.
 - typed protocol/canonical-JSON client errors and propagation of route-refresh
   and untyped admission server faults;
 - excessive depth through both an OpenAI route and an actual FastAPI native
-  Pydantic route; and
+  Pydantic route, including the framework's missing-`Content-Type` JSON path;
+  and
 - streamed overflow both at the pure-ASGI boundary and through the complete
   FastAPI middleware stack.
 

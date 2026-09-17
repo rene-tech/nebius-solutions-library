@@ -335,6 +335,14 @@ class TrustedEdgeMiddleware:
             or path == "/.well-known/oauth-protected-resource/mcp"
         )
 
+    @staticmethod
+    def _raw_body_path(method: str, path: str) -> bool:
+        return (
+            method == "PUT"
+            and path.startswith("/v1/scientific-artifacts/uploads/")
+            and path.endswith("/content")
+        )
+
     async def __call__(self, scope: ASGIScope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
@@ -371,9 +379,14 @@ class TrustedEdgeMiddleware:
                     pass
 
         total = 0
+        content_types = [value for name, value in headers if name.lower() == b"content-type"]
+        raw_body = self._raw_body_path(str(scope.get("method", "")), str(scope.get("path", "")))
+        guard_json = not raw_body and (
+            any(_is_json_media_type(value) for value in content_types) or not content_types
+        )
         json_guard = (
             _JsonDepthGuard(MAX_JSON_DEPTH)
-            if any(name.lower() == b"content-type" and _is_json_media_type(value) for name, value in headers)
+            if guard_json
             else None
         )
 
