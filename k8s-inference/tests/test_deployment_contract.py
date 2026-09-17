@@ -619,6 +619,25 @@ class DeploymentContractTests(unittest.TestCase):
             3,
         )
 
+        unsafe_strategies = (
+            {"node_count": 3, "max_surge": 1, "max_unavailable": 2},
+            {"node_count": 3, "max_surge": 0, "max_unavailable": 1},
+        )
+        for index, system_pool in enumerate(unsafe_strategies):
+            with self.subTest(system_pool=system_pool):
+                deployment["cluster"] = {"system_pool": system_pool}
+                variable_file = self._write_configuration(
+                    f"public-edge-unsafe-update-{index}", deployment
+                )
+                result, _ = self._plan_file(
+                    variable_file, f"public-edge-unsafe-update-{index}"
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    "max_unavailable <= 1, max_surge >= 1",
+                    f"{result.stdout}\n{result.stderr}",
+                )
+
     def test_request_debug_capture_is_an_opt_in_tfvars_workload_setting(self) -> None:
         for enabled in (False, True):
             deployment = {

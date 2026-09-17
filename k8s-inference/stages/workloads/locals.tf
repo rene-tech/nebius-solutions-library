@@ -1,6 +1,9 @@
 locals {
-  fs2_root            = abspath("${path.module}/../..")
+  fs2_root = abspath("${path.module}/../..")
   normalized_run_root = trimsuffix(abspath(var.run_root), "/")
+  public_edge_availability_contract_sha256 = sha256(jsonencode(
+    var.public_edge_availability_contract
+  ))
 
   selected_target        = var.target_contract
   target_contract_sha256 = sha256(jsonencode(var.target_contract))

@@ -125,7 +125,7 @@ def dynamic_outputs(run_root: Path) -> dict:
         },
         "public_edge_contract": {"mode": "internal-only"},
         "public_edge_availability_contract": {
-            "schema": "fs2-serve.nebius.ai/public-edge-availability/v1",
+            "schema": "fs2-serve.nebius.ai/public-edge-availability/v2",
             "enabled": False,
             "system_node_group_id": "mk8snodegroup-test",
             "system_node_count": 1,
@@ -136,6 +136,11 @@ def dynamic_outputs(run_root: Path) -> dict:
             },
             "topology_key": "kubernetes.io/hostname",
             "minimum_domains": 3,
+            "update_strategy": {
+                "max_surge": 1,
+                "max_unavailable": 0,
+                "minimum_available_nodes": 1,
+            },
         },
     }
 
@@ -677,7 +682,15 @@ class InferenceStackTests(unittest.TestCase):
                 "public_origin": "https://192.0.2.20",
             }
             dynamic["public_edge_availability_contract"].update(
-                {"enabled": True, "system_node_count": 3}
+                {
+                    "enabled": True,
+                    "system_node_count": 3,
+                    "update_strategy": {
+                        "max_surge": 1,
+                        "max_unavailable": 0,
+                        "minimum_available_nodes": 3,
+                    },
+                }
             )
             foundation_path, workloads_path = STACK.write_downstream_variables(
                 run_root, configuration, dynamic
@@ -1033,7 +1046,7 @@ class InferenceStackTests(unittest.TestCase):
             "accelerator_pool_contract": {"schema": "accelerators-test/v2"},
             "public_edge_contract": {"mode": "internal-only"},
             "public_edge_availability_contract": {
-                "schema": "fs2-serve.nebius.ai/public-edge-availability/v1",
+                "schema": "fs2-serve.nebius.ai/public-edge-availability/v2",
                 "enabled": False,
                 "system_node_group_id": "mk8snodegroup-test",
                 "system_node_count": 1,
@@ -1044,6 +1057,11 @@ class InferenceStackTests(unittest.TestCase):
                 },
                 "topology_key": "kubernetes.io/hostname",
                 "minimum_domains": 3,
+                "update_strategy": {
+                    "max_surge": 1,
+                    "max_unavailable": 0,
+                    "minimum_available_nodes": 1,
+                },
             },
         }
         terraform_outputs = {

@@ -14,8 +14,10 @@ output "cluster_contract" {
     accelerator_pool_contract_sha256  = local.accelerator_pool_contract_sha256
     infrastructure_contract           = var.infrastructure_contract
     infrastructure_contract_sha256    = local.infrastructure_contract_sha256
-    public_edge_availability_contract = var.public_edge_availability_contract
-    jobset                            = var.jobset.enabled ? module.jobset_controller[0].contract : null
+    public_edge_availability_contract         = var.public_edge_availability_contract
+    public_edge_availability_contract_sha256  = local.public_edge_availability_contract_sha256
+    public_edge_ready_node_preflight          = local.public_edge_ready_node_preflight
+    jobset                                    = var.jobset.enabled ? module.jobset_controller[0].contract : null
   }
 }
 

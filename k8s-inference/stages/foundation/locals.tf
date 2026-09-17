@@ -1,5 +1,8 @@
 locals {
-  public_edge_enabled   = var.public_edge_availability_contract.enabled
+  public_edge_enabled = var.public_edge_availability_contract.enabled
+  public_edge_availability_contract_sha256 = sha256(jsonencode(
+    var.public_edge_availability_contract
+  ))
   selected_target        = var.target_contract
   target_contract_sha256 = sha256(jsonencode(var.target_contract))
 
@@ -284,7 +287,44 @@ locals {
   selected_context            = try(one([for context in local.kubeconfig.contexts : context if context.name == var.kube_context]), null)
   selected_kubeconfig_cluster = try(local.selected_context.context.cluster, null)
   selected_cluster            = try(one([for cluster in local.kubeconfig.clusters : cluster if cluster.name == local.selected_kubeconfig_cluster]), null)
-  selected_api_server         = try(local.selected_cluster.cluster.server, null)
-  normalized_run_root         = trimsuffix(abspath(var.run_root), "/")
-  expected_kubeconfig_path    = "${local.normalized_run_root}/kubeconfig"
+  selected_api_server           = try(local.selected_cluster.cluster.server, null)
+  normalized_run_root           = trimsuffix(abspath(var.run_root), "/")
+  expected_kubeconfig_path      = "${local.normalized_run_root}/kubeconfig"
+  expected_infrastructure_state = "${local.normalized_run_root}/terraform.tfstate"
+  public_edge_system_nodes = local.public_edge_enabled ? try(
+    data.kubernetes_resources.public_edge_system_nodes[0].objects,
+    [],
+  ) : []
+  public_edge_ready_system_node_names = sort([
+    for node in local.public_edge_system_nodes : node.metadata.name
+    if !try(node.spec.unschedulable, false) && try(
+      one([
+        for condition in node.status.conditions : condition.status
+        if condition.type == "Ready"
+      ]) == "True",
+      false,
+    )
+  ])
+  public_edge_ready_system_hostnames = sort(distinct([
+    for node in local.public_edge_system_nodes : try(
+      node.metadata.labels[local.public_edge_availability_contract.topology_key],
+      "",
+    )
+    if !try(node.spec.unschedulable, false) && try(
+      one([
+        for condition in node.status.conditions : condition.status
+        if condition.type == "Ready"
+      ]) == "True",
+      false,
+    ) && try(length(node.metadata.labels[local.public_edge_availability_contract.topology_key]) > 0, false)
+  ]))
+  public_edge_ready_node_preflight = {
+    required                = local.public_edge_enabled
+    ready_node_names        = local.public_edge_ready_system_node_names
+    ready_node_count        = length(local.public_edge_ready_system_node_names)
+    distinct_hostnames      = local.public_edge_ready_system_hostnames
+    distinct_hostname_count = length(local.public_edge_ready_system_hostnames)
+    required_node_count     = local.public_edge_enabled ? var.public_edge_availability_contract.system_node_count : 0
+    required_domains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : 0
+  }
 }

@@ -56,7 +56,15 @@ bounded resources cover a member/update loss. Public mode is rejected at both
 the root and infrastructure stage unless the fixed regular system pool has at
 least three nodes. Infrastructure emits an exact availability receipt naming
 that node group, count, three-label selector, topology key, and minimum domain
-count; foundation and workloads consume and compare that receipt verbatim.
+count, plus the node-group update strategy and minimum retained capacity.
+Public mode requires positive surge, at most one unavailable system node, and
+at least two nodes retained during an update. Foundation reopens the fixed
+run-owned infrastructure state directly, compares both the whole receipt and
+its canonical SHA-256, and queries the selected Nodes before creating the
+foundation contract. Every contracted Node must be Ready and schedulable, with
+at least three distinct `kubernetes.io/hostname` values. Workloads consume the
+foundation state's exact digest and Ready-node receipt rather than trusting the
+wrapper's copy alone.
 If the complete HA authority or RLS is unavailable, Envoy is fail-closed rather
 than silently removing the security control.
 
@@ -104,8 +112,15 @@ That successor, `644b365e74797937f5e0236e0bdfb1d18b9fdaed` (tree
 evidence: its general `/v1` route still imposed 40-second request/backend
 timeouts on `/v1/audio/stream`, and its spread preferences did not guarantee
 three eligible nodes or prevent co-location. This document describes the
-direct additive successor that closes those two source defects. The production
-issuer registry remains intentionally empty.
+direct additive successor that closes those two source defects. Intermediate
+commit `f35b2a18f8390119b98fda29caa25a676e25ad85` (tree
+`104733c341e06e9331cd91da214c692e64b12ad3`) added the exact audio route and
+three-domain placement, but foundation still trusted a wrapper-propagated
+receipt and public callers could override the system-pool update strategy to
+remove too much capacity. It is preserved as intermediate negative evidence.
+The current additive successor binds foundation to infrastructure state and
+its digest, records the Ready-node/hostname preflight, and closes the update
+strategy override. The production issuer registry remains intentionally empty.
 
 ### Receipt and issuer custody
 
@@ -153,7 +168,9 @@ the coordinator's static-only boundary. A later reviewed integration must:
 1. Validate and render the chart and foundation configuration from the exact
    accepted successor commit, including CRD compatibility with Envoy Gateway
    v1.8.3, the exact 7,500-second audio rule, the exact three-domain placement
-   receipt, and equality between the plan count and address allowlist.
+   receipt and digest, the Ready/schedulable three-hostname preflight, the
+   retained-capacity update strategy, and equality between the plan count and
+   address allowlist.
 2. Scan and promote every introduced image digest before creating resources.
 3. Record the current shared-service release/image identity and integrate all
    deployed sibling remediations before rollout.
@@ -175,8 +192,9 @@ the coordinator's static-only boundary. A later reviewed integration must:
 8. Show at least two Ready Envoy proxy replicas on distinct nodes, an effective
    PDB, bounded resources, two Ready controller and rate-limit-service replicas
    on distinct nodes, three Ready store members on three distinct system nodes,
-   the exact infrastructure node-group/count/selector receipt, and accepted
-   traffic policies.
+   the exact infrastructure node-group/count/selector/update receipt and digest,
+   `maxUnavailable <= 1`, positive surge, at least two retained system nodes,
+   and accepted traffic policies.
 9. Prove the existing Deployment/Service to StatefulSet/headless/Sentinel
    transition is a non-destructive staged migration: no old resource is deleted
    or replaced before the new single-primary/quorum contract is Ready, and no

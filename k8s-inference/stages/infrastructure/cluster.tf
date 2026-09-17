@@ -232,9 +232,14 @@ resource "nebius_mk8s_v1_node_group" "system" {
     precondition {
       condition = (
         var.public_edge_mode != "public" ||
-        local.effective_system_pool.node_count >= 3
+        (
+          local.effective_system_pool.node_count >= 3 &&
+          local.effective_system_pool.max_unavailable <= 1 &&
+          local.effective_system_pool.max_surge >= 1 &&
+          local.effective_system_pool.node_count - local.effective_system_pool.max_unavailable >= 2
+        )
       )
-      error_message = "public_edge_mode=public requires at least three fixed system nodes for the required three-domain edge placement contract."
+      error_message = "public_edge_mode=public requires at least three fixed system nodes, max_unavailable <= 1, max_surge >= 1, and at least two retained nodes during update."
     }
   }
 

@@ -326,24 +326,38 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                     ["0.0.0.0/0"] if public_edge_mode == "public" else []
                 ),
             }
+            public_edge_availability_contract = {
+                "schema": "fs2-serve.nebius.ai/public-edge-availability/v2",
+                "enabled": public_edge_mode == "public",
+                "system_node_group_id": "mk8snodegroup-test",
+                "system_node_count": capacity["system"]["nodes"],
+                "node_selector": {
+                    "workload.fs2.nebius/system": "true",
+                    "capacity.fs2.nebius/type": "regular",
+                    "capacity.fs2.nebius/pool": "system",
+                },
+                "topology_key": "kubernetes.io/hostname",
+                "minimum_domains": 3,
+                "update_strategy": {
+                    "max_surge": capacity["system"]["max_surge"],
+                    "max_unavailable": capacity["system"]["max_unavailable"],
+                    "minimum_available_nodes": (
+                        capacity["system"]["nodes"]
+                        - capacity["system"]["max_unavailable"]
+                    ),
+                },
+            }
             document["planned_values"] = {
                 "outputs": {
                     "infrastructure_contract": {"value": contract},
                     "public_edge_contract": {"value": public_edge_contract},
                     "public_edge_availability_contract": {
-                        "value": {
-                            "schema": "fs2-serve.nebius.ai/public-edge-availability/v1",
-                            "enabled": public_edge_mode == "public",
-                            "system_node_group_id": "mk8snodegroup-test",
-                            "system_node_count": capacity["system"]["nodes"],
-                            "node_selector": {
-                                "workload.fs2.nebius/system": "true",
-                                "capacity.fs2.nebius/type": "regular",
-                                "capacity.fs2.nebius/pool": "system",
-                            },
-                            "topology_key": "kubernetes.io/hostname",
-                            "minimum_domains": 3,
-                        }
+                        "value": public_edge_availability_contract
+                    },
+                    "public_edge_availability_contract_sha256": {
+                        "value": VERIFY.canonical_sha256(
+                            public_edge_availability_contract
+                        )
                     },
                     "gateway_allocation_id": {"value": allocation_id},
                     "gateway_public_cidr": {
@@ -470,8 +484,62 @@ class InfrastructurePlanContractTests(unittest.TestCase):
             result = self.invoke(plan_path, metadata_path, mode="noop")
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(
-                "exact three-domain system-pool contract",
+                "exact three-domain system-pool and retained-capacity contract",
                 result.stdout,
+            )
+
+    def test_public_edge_rejects_unsafe_update_strategy_and_digest_drift(self) -> None:
+        mutations = (
+            (
+                "max unavailable above one",
+                ("strategy", "max_unavailable", "count"),
+                2,
+            ),
+            ("zero surge", ("strategy", "max_surge", "count"), 0),
+        )
+        for label, path, value in mutations:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                os.chmod(root, 0o700)
+                plan_path, _metadata_path = self.fixture(root, mode="noop")
+                document = json.loads(plan_path.read_text(encoding="utf-8"))
+                system_after = next(
+                    item["change"]["after"]
+                    for item in document["resource_changes"]
+                    if item["address"] == "nebius_mk8s_v1_node_group.system"
+                )
+                system_after[path[0]][path[1]][path[2]] = value
+                availability = document["planned_values"]["outputs"][
+                    "public_edge_availability_contract"
+                ]["value"]
+                availability["update_strategy"][path[1]] = value
+                availability["update_strategy"]["minimum_available_nodes"] = (
+                    availability["system_node_count"]
+                    - availability["update_strategy"]["max_unavailable"]
+                )
+                document["planned_values"]["outputs"][
+                    "public_edge_availability_contract_sha256"
+                ]["value"] = VERIFY.canonical_sha256(availability)
+                errors = VERIFY.validate_public_edge_outputs(
+                    document, "noop", "public"
+                )
+                self.assertTrue(
+                    any("retained-capacity contract" in error for error in errors),
+                    errors,
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            os.chmod(root, 0o700)
+            plan_path, _metadata_path = self.fixture(root, mode="noop")
+            document = json.loads(plan_path.read_text(encoding="utf-8"))
+            document["planned_values"]["outputs"][
+                "public_edge_availability_contract_sha256"
+            ]["value"] = "0" * 64
+            errors = VERIFY.validate_public_edge_outputs(document, "noop", "public")
+            self.assertTrue(
+                any("retained-capacity contract" in error for error in errors),
+                errors,
             )
 
     def test_enabled_reference_data_has_exact_optional_types_and_count(self) -> None:

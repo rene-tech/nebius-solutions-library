@@ -20,7 +20,10 @@ project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 # Pass the same exact infrastructure `public_edge_availability_contract` used
 # by foundation. Public mode is rejected unless both stages agree on the real
 # system node group, fixed count of at least three, selector, and hostname
-# topology contract.
+# topology contract, plus a positive-surge/max-one-unavailable update strategy.
+# Workloads also require foundation's matching canonical digest and recorded
+# Ready/schedulable three-hostname preflight; this tfvars value is not authority
+# by itself.
 
 # This chooses models only; it does not select accelerator pools.
 deployment_profile = "minimal"

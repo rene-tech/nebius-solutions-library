@@ -5,9 +5,14 @@ resource "terraform_data" "deployment_contract" {
     precondition {
       condition = (
         var.deployment.edge.mode != "public" ||
-        local.effective_system_node_count >= 3
+        (
+          local.effective_system_node_count >= 3 &&
+          local.effective_system_max_unavailable <= 1 &&
+          local.effective_system_max_surge >= 1 &&
+          local.effective_system_node_count - local.effective_system_max_unavailable >= 2
+        )
       )
-      error_message = "Public edge mode requires at least three fixed system nodes so the proxy, controller, rate-limit service, Redis, and Sentinel placement contracts can span three hostname domains. Select a capacity profile with system_nodes >= 3 or set deployment.cluster.system_pool.node_count >= 3."
+      error_message = "Public edge mode requires at least three fixed system nodes, max_unavailable <= 1, max_surge >= 1, and at least two retained nodes during update so the proxy, controller, rate-limit service, Redis, and Sentinel availability contracts remain effective."
     }
 
     precondition {

@@ -144,21 +144,31 @@ variable "public_edge_availability_contract" {
     node_selector        = map(string)
     topology_key         = string
     minimum_domains      = number
+    update_strategy = object({
+      max_surge               = number
+      max_unavailable         = number
+      minimum_available_nodes = number
+    })
   })
   default = {
-    schema               = "fs2-serve.nebius.ai/public-edge-availability/v1"
+    schema               = "fs2-serve.nebius.ai/public-edge-availability/v2"
     enabled              = false
     system_node_group_id = null
     system_node_count    = 0
     node_selector        = {}
     topology_key         = "kubernetes.io/hostname"
     minimum_domains      = 3
+    update_strategy = {
+      max_surge               = 0
+      max_unavailable         = 0
+      minimum_available_nodes = 0
+    }
   }
   nullable = false
 
   validation {
     condition = try(
-      var.public_edge_availability_contract.schema == "fs2-serve.nebius.ai/public-edge-availability/v1" &&
+      var.public_edge_availability_contract.schema == "fs2-serve.nebius.ai/public-edge-availability/v2" &&
       var.public_edge_availability_contract.topology_key == "kubernetes.io/hostname" &&
       var.public_edge_availability_contract.minimum_domains == 3 &&
       (
@@ -167,6 +177,13 @@ variable "public_edge_availability_contract" {
           can(regex("^mk8snodegroup-[a-z0-9]+$", var.public_edge_availability_contract.system_node_group_id)) &&
           floor(var.public_edge_availability_contract.system_node_count) == var.public_edge_availability_contract.system_node_count &&
           var.public_edge_availability_contract.system_node_count >= 3 &&
+          floor(var.public_edge_availability_contract.update_strategy.max_surge) == var.public_edge_availability_contract.update_strategy.max_surge &&
+          var.public_edge_availability_contract.update_strategy.max_surge >= 1 &&
+          floor(var.public_edge_availability_contract.update_strategy.max_unavailable) == var.public_edge_availability_contract.update_strategy.max_unavailable &&
+          var.public_edge_availability_contract.update_strategy.max_unavailable >= 0 &&
+          var.public_edge_availability_contract.update_strategy.max_unavailable <= 1 &&
+          var.public_edge_availability_contract.update_strategy.minimum_available_nodes == var.public_edge_availability_contract.system_node_count - var.public_edge_availability_contract.update_strategy.max_unavailable &&
+          var.public_edge_availability_contract.update_strategy.minimum_available_nodes >= 2 &&
           var.public_edge_availability_contract.node_selector == {
             "workload.fs2.nebius/system" = "true"
             "capacity.fs2.nebius/type"   = "regular"
@@ -176,7 +193,7 @@ variable "public_edge_availability_contract" {
       ),
       false,
     )
-    error_message = "A public edge requires the exact infrastructure-derived regular system-pool selector, at least three fixed nodes, and three kubernetes.io/hostname domains."
+    error_message = "A public edge requires the exact infrastructure-derived regular system-pool selector, at least three fixed nodes/domains, max_unavailable <= 1, max_surge >= 1, and at least two retained nodes during update."
   }
 }
 

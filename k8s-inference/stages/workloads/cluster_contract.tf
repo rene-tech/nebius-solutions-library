@@ -67,17 +67,18 @@ resource "terraform_data" "cluster_contract" {
     model_profile                     = var.deployment_profile
     accelerator_profile               = var.accelerator_pool_contract.profile
     project_sha256                    = nonsensitive(sha256(var.project_id))
-    target_contract                   = var.target_contract
-    target_sha256                     = local.target_contract_sha256
-    target_region                     = local.selected_target.region
-    run_id                            = var.run_id
-    accelerator_pool_contract         = var.accelerator_pool_contract
-    accelerator_pool_contract_sha256  = local.accelerator_pool_contract_sha256
-    infrastructure_contract           = var.infrastructure_contract
-    infrastructure_contract_sha256    = local.infrastructure_contract_sha256
-    public_edge_contract              = var.public_edge_contract
-    public_edge_availability_contract = var.public_edge_availability_contract
-    public_edge_client_identity       = local.verified_edge_client_identity
+    target_contract                            = var.target_contract
+    target_sha256                              = local.target_contract_sha256
+    target_region                              = local.selected_target.region
+    run_id                                     = var.run_id
+    accelerator_pool_contract                  = var.accelerator_pool_contract
+    accelerator_pool_contract_sha256           = local.accelerator_pool_contract_sha256
+    infrastructure_contract                    = var.infrastructure_contract
+    infrastructure_contract_sha256             = local.infrastructure_contract_sha256
+    public_edge_contract                       = var.public_edge_contract
+    public_edge_availability_contract          = var.public_edge_availability_contract
+    public_edge_availability_contract_sha256 = local.public_edge_availability_contract_sha256
+    public_edge_client_identity                = local.verified_edge_client_identity
   }
 
   lifecycle {
@@ -90,6 +91,25 @@ resource "terraform_data" "cluster_contract" {
         )
       )
       error_message = "Public edge mode must match the infrastructure-derived availability receipt and requires at least three eligible hostname domains."
+    }
+
+    precondition {
+      condition = (
+        data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_availability_contract_sha256 == local.public_edge_availability_contract_sha256 &&
+        (
+          !local.public_edge_enabled ||
+          (
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.required &&
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.required_node_count == var.public_edge_availability_contract.system_node_count &&
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.required_domains == var.public_edge_availability_contract.minimum_domains &&
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.ready_node_count >= var.public_edge_availability_contract.system_node_count &&
+            length(data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.ready_node_names) == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.ready_node_count &&
+            data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.distinct_hostname_count >= var.public_edge_availability_contract.minimum_domains &&
+            length(data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.distinct_hostnames) == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_ready_node_preflight.distinct_hostname_count
+          )
+        )
+      )
+      error_message = "Workloads require the foundation state digest and Ready-node/hostname preflight for the exact public-edge availability contract."
     }
 
     precondition {
@@ -237,7 +257,8 @@ resource "terraform_data" "cluster_contract" {
         data.terraform_remote_state.foundation.outputs.cluster_contract.accelerator_pool_contract_sha256 == local.accelerator_pool_contract_sha256 &&
         data.terraform_remote_state.foundation.outputs.cluster_contract.infrastructure_contract == var.infrastructure_contract &&
         data.terraform_remote_state.foundation.outputs.cluster_contract.infrastructure_contract_sha256 == local.infrastructure_contract_sha256 &&
-        data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_availability_contract == var.public_edge_availability_contract
+        data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_availability_contract == var.public_edge_availability_contract &&
+        data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_availability_contract_sha256 == local.public_edge_availability_contract_sha256
       )
       error_message = "Foundation state must match the selected cluster plus the exact authoritative v2 and optional legacy infrastructure contracts."
     }

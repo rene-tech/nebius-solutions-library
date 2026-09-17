@@ -872,6 +872,25 @@ locals {
     forbid_deletion  = try(coalesce(var.shared_cache.forbid_deletion, false), false)
   }
 
+  public_edge_availability_contract = {
+    schema               = "fs2-serve.nebius.ai/public-edge-availability/v2"
+    enabled              = var.public_edge_mode == "public"
+    system_node_group_id = nebius_mk8s_v1_node_group.system.id
+    system_node_count    = local.effective_system_pool.node_count
+    node_selector = {
+      "workload.fs2.nebius/system" = "true"
+      "capacity.fs2.nebius/type"   = local.effective_system_pool.capacity
+      "capacity.fs2.nebius/pool"   = "system"
+    }
+    topology_key    = "kubernetes.io/hostname"
+    minimum_domains = 3
+    update_strategy = {
+      max_surge               = local.effective_system_pool.max_surge
+      max_unavailable         = local.effective_system_pool.max_unavailable
+      minimum_available_nodes = local.effective_system_pool.node_count - local.effective_system_pool.max_unavailable
+    }
+  }
+
   effective_reference_data = var.reference_data
 
   # Pool realization is separate from the capacity envelope. These two

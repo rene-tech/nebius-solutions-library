@@ -130,6 +130,21 @@ locals {
     ), null)
   }
 
+  effective_system_max_surge = try(
+    coalesce(
+      var.deployment.cluster.system_pool.max_surge,
+      local.resolved_target_binding.system_update_strategy.max_surge,
+    ),
+    local.resolved_target_binding.system_update_strategy.max_surge,
+  )
+  effective_system_max_unavailable = try(
+    coalesce(
+      var.deployment.cluster.system_pool.max_unavailable,
+      local.resolved_target_binding.system_update_strategy.max_unavailable,
+    ),
+    local.resolved_target_binding.system_update_strategy.max_unavailable,
+  )
+
   run_id = "r${substr(sha256(jsonencode({
     name       = var.deployment.name
     project_id = var.deployment.target.project_id

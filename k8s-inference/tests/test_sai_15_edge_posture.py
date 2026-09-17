@@ -180,7 +180,22 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     infrastructure_outputs = (ROOT / "stages/infrastructure/outputs.tf").read_text(
         encoding="utf-8"
     )
+    infrastructure_variables = (
+        ROOT / "stages/infrastructure/variables.tf"
+    ).read_text(encoding="utf-8")
     infrastructure_cluster = (ROOT / "stages/infrastructure/cluster.tf").read_text(
+        encoding="utf-8"
+    )
+    foundation_contract = (ROOT / "stages/foundation/cluster_contract.tf").read_text(
+        encoding="utf-8"
+    )
+    foundation_locals = (ROOT / "stages/foundation/locals.tf").read_text(
+        encoding="utf-8"
+    )
+    foundation_variables = (ROOT / "stages/foundation/variables.tf").read_text(
+        encoding="utf-8"
+    )
+    workloads_variables = (ROOT / "stages/workloads/variables.tf").read_text(
         encoding="utf-8"
     )
     root_contract = (ROOT / "main.tf").read_text(encoding="utf-8")
@@ -211,10 +226,31 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     ):
         assert identity in infrastructure_outputs
     assert 'output "public_edge_availability_contract"' in infrastructure_outputs
-    assert 'schema               = "fs2-serve.nebius.ai/public-edge-availability/v1"' in infrastructure_outputs
-    assert 'topology_key   = "kubernetes.io/hostname"' in infrastructure_outputs
-    assert "minimum_domains = 3" in infrastructure_outputs
+    assert 'output "public_edge_availability_contract_sha256"' in infrastructure_outputs
+    assert 'schema               = "fs2-serve.nebius.ai/public-edge-availability/v2"' in infrastructure_variables
+    assert 'topology_key    = "kubernetes.io/hostname"' in infrastructure_variables
+    assert "minimum_domains = 3" in infrastructure_variables
+    assert "minimum_available_nodes" in infrastructure_variables
+    assert 'data "terraform_remote_state" "infrastructure"' in foundation_contract
+    assert "local.expected_infrastructure_state" in foundation_contract
+    assert (
+        "data.terraform_remote_state.infrastructure.outputs.public_edge_availability_contract_sha256"
+        in foundation_contract
+    )
+    assert "data.terraform_remote_state.infrastructure.outputs.cluster_id" in foundation_contract
+    assert "data.terraform_remote_state.infrastructure.outputs.target_contract" in foundation_contract
+    assert 'data "kubernetes_resources" "public_edge_system_nodes"' in foundation_contract
+    assert "public_edge_ready_node_preflight" in foundation_locals
+    assert "distinct_hostname_count" in foundation_locals
+    for variables in (foundation_variables, workloads_variables):
+        assert "update_strategy.max_unavailable <= 1" in variables
+        assert "update_strategy.max_surge >= 1" in variables
+        assert "update_strategy.minimum_available_nodes >= 2" in variables
     assert 'var.public_edge_mode != "public" ||' in infrastructure_cluster
     assert "local.effective_system_pool.node_count >= 3" in infrastructure_cluster
+    assert "local.effective_system_pool.max_unavailable <= 1" in infrastructure_cluster
+    assert "local.effective_system_pool.max_surge >= 1" in infrastructure_cluster
     assert 'var.deployment.edge.mode != "public" ||' in root_contract
     assert "local.effective_system_node_count >= 3" in root_contract
+    assert "local.effective_system_max_unavailable <= 1" in root_contract
+    assert "local.effective_system_max_surge >= 1" in root_contract

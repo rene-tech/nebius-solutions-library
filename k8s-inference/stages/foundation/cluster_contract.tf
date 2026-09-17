@@ -1,7 +1,24 @@
+data "terraform_remote_state" "infrastructure" {
+  backend = "local"
+  config = {
+    path = local.expected_infrastructure_state
+  }
+}
+
 data "kubernetes_namespace_v1" "kube_system" {
   metadata {
     name = "kube-system"
   }
+}
+
+data "kubernetes_resources" "public_edge_system_nodes" {
+  count          = local.public_edge_enabled ? 1 : 0
+  api_version    = "v1"
+  kind           = "Node"
+  label_selector = join(",", [
+    for key in sort(keys(var.public_edge_availability_contract.node_selector)) :
+    "${key}=${var.public_edge_availability_contract.node_selector[key]}"
+  ])
 }
 
 resource "terraform_data" "cluster_contract" {
@@ -19,7 +36,9 @@ resource "terraform_data" "cluster_contract" {
     accelerator_pool_contract_sha256 = local.accelerator_pool_contract_sha256
     infrastructure_contract          = var.infrastructure_contract
     infrastructure_contract_sha256   = local.infrastructure_contract_sha256
-    public_edge_availability_contract = var.public_edge_availability_contract
+    public_edge_availability_contract         = var.public_edge_availability_contract
+    public_edge_availability_contract_sha256  = local.public_edge_availability_contract_sha256
+    public_edge_ready_node_preflight          = local.public_edge_ready_node_preflight
     kueue_teardown_cleanup = {
       cluster_id      = var.cluster_id
       cluster_name    = var.cluster_name
@@ -64,6 +83,17 @@ resource "terraform_data" "cluster_contract" {
   lifecycle {
     precondition {
       condition = (
+        data.terraform_remote_state.infrastructure.outputs.cluster_id == var.cluster_id &&
+        data.terraform_remote_state.infrastructure.outputs.cluster_name == var.cluster_name &&
+        data.terraform_remote_state.infrastructure.outputs.target_contract == var.target_contract &&
+        data.terraform_remote_state.infrastructure.outputs.public_edge_availability_contract == var.public_edge_availability_contract &&
+        data.terraform_remote_state.infrastructure.outputs.public_edge_availability_contract_sha256 == local.public_edge_availability_contract_sha256
+      )
+      error_message = "Foundation cluster, target, public-edge availability contract, and canonical digest must match the fixed run-owned infrastructure state exactly."
+    }
+
+    precondition {
+      condition = (
         !local.public_edge_enabled ||
         (
           var.public_edge_availability_contract.system_node_count >= var.public_edge_availability_contract.minimum_domains &&
@@ -75,6 +105,17 @@ resource "terraform_data" "cluster_contract" {
         )
       )
       error_message = "The public edge foundation requires the infrastructure-derived three-node, three-domain regular system-pool placement contract."
+    }
+
+    precondition {
+      condition = (
+        !local.public_edge_enabled ||
+        (
+          local.public_edge_ready_node_preflight.ready_node_count >= var.public_edge_availability_contract.system_node_count &&
+          local.public_edge_ready_node_preflight.distinct_hostname_count >= var.public_edge_availability_contract.minimum_domains
+        )
+      )
+      error_message = "Public edge foundation preflight requires every contracted system node Ready and schedulable with at least three distinct kubernetes.io/hostname values."
     }
 
     precondition {
