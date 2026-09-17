@@ -1,0 +1,399 @@
+{{- if ne .Release.Name "fs2-nim-admission-security" }}
+{{- fail "the NIM admission security release name is fixed" }}
+{{- end }}
+{{- if ne .Release.Namespace "fs2-system" }}
+{{- fail "the NIM admission security release namespace is fixed" }}
+{{- end }}
+{{- if ne .Values.securityCustody "external-platform-security" }}
+{{- fail "the NIM admission backend requires external Platform Security custody" }}
+{{- end }}
+{{- if or (ne .Values.ownership.mode "preserve-legacy-selector") (ne .Values.ownership.legacyReleaseName "fs2-serve-control-plane") }}
+{{- fail "the external backend must preserve the immutable legacy Deployment selector during no-delete adoption" }}
+{{- end }}
+{{- $ipv4Cidr := `^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/([1-9]|[12][0-9]|3[0-2])$` }}
+{{- $ipv6Cidr := `^((([0-9a-f]{1,4}:){7}[0-9a-f]{1,4})|(([0-9a-f]{1,4}:){1,7}:)|(:(:[0-9a-f]{1,4}){1,7}))/([1-9]|[1-9][0-9]|1[01][0-9]|12[0-8])$` }}
+{{- range $name, $cidrs := dict "networkPolicy.webhookSourceCidrs" .Values.networkPolicy.webhookSourceCidrs "networkPolicy.kubernetesApiCidrs" .Values.networkPolicy.kubernetesApiCidrs }}
+{{- $ordered := sortAlpha (concat (list) $cidrs) }}
+{{- if or (ne (toJson $cidrs) (toJson $ordered)) (ne (len $ordered) (len (uniq $ordered))) }}
+{{- fail (printf "%s must be sorted and unique" $name) }}
+{{- end }}
+{{- range $cidr := $cidrs }}
+{{- if or (eq $cidr "0.0.0.0/0") (eq $cidr "::/0") (not (or (regexMatch $ipv4Cidr $cidr) (and (regexMatch $ipv6Cidr $cidr) (le (len (regexFindAll "::" $cidr -1)) 1)))) }}
+{{- fail (printf "%s contains an invalid or unbounded canonical CIDR: %s" $name $cidr) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if ne (sha256sum (b64dec .Values.admission.caBundle)) .Values.tls.caSha256 }}
+{{- fail "the webhook CA bundle differs from its reviewed SHA-256" }}
+{{- end }}
+{{- $tlsGeneration := sha256sum (printf "%s\n%s\n%s\n" .Values.tls.certificateSha256 .Values.tls.publicKeySpkiSha256 .Values.tls.caSha256) }}
+{{- if ne $tlsGeneration .Values.tls.generationSha256 }}
+{{- fail "the TLS generation digest does not bind certificate, key, and CA" }}
+{{- end }}
+{{- if ne .Values.tls.secretName (printf "fs2-nim-admission-tls-%s" (trunc 16 $tlsGeneration)) }}
+{{- fail "the immutable TLS Secret name must be content addressed" }}
+{{- end }}
+{{- if or (contains ".invalid/" .Values.image.repository) (contains "docker.io/" .Values.image.repository) }}
+{{- fail "the admission backend requires a private mirrored image repository" }}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fs2-serve-control-plane-nim-admission
+  namespace: fs2-system
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fs2-serve-control-plane-nim-admission
+  namespace: fs2-system
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+    fs2-serve.nebius.ai/admission-policy-sha256: {{ .Values.admission.policySha256 | quote }}
+    fs2-serve.nebius.ai/admission-config-sha256: {{ .Values.admission.configSha256 | quote }}
+    fs2-serve.nebius.ai/security-handoff-sha256: {{ .Values.admission.securityHandoffSha256 | quote }}
+    fs2-serve.nebius.ai/tls-secret-name: {{ .Values.tls.secretName | quote }}
+    fs2-serve.nebius.ai/tls-secret-uid: {{ .Values.tls.secretUid | quote }}
+    fs2-serve.nebius.ai/tls-secret-resource-version: {{ .Values.tls.secretResourceVersion | quote }}
+    fs2-serve.nebius.ai/tls-secret-type: {{ .Values.tls.secretType | quote }}
+    fs2-serve.nebius.ai/tls-generation-sha256: {{ .Values.tls.generationSha256 | quote }}
+    fs2-serve.nebius.ai/tls-certificate-sha256: {{ .Values.tls.certificateSha256 | quote }}
+    fs2-serve.nebius.ai/tls-public-key-spki-sha256: {{ .Values.tls.publicKeySpkiSha256 | quote }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Values.ownership.legacyReleaseName }}
+      app.kubernetes.io/component: nim-admission
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fs2-nim-admission-security
+        app.kubernetes.io/instance: {{ .Values.ownership.legacyReleaseName }}
+        app.kubernetes.io/component: nim-admission
+        app.kubernetes.io/part-of: fs2-serve
+      annotations:
+        fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+        fs2-serve.nebius.ai/admission-policy-sha256: {{ .Values.admission.policySha256 | quote }}
+        fs2-serve.nebius.ai/security-handoff-sha256: {{ .Values.admission.securityHandoffSha256 | quote }}
+        fs2-serve.nebius.ai/tls-secret-name: {{ .Values.tls.secretName | quote }}
+        fs2-serve.nebius.ai/tls-secret-uid: {{ .Values.tls.secretUid | quote }}
+        fs2-serve.nebius.ai/tls-secret-resource-version: {{ .Values.tls.secretResourceVersion | quote }}
+        fs2-serve.nebius.ai/tls-secret-type: {{ .Values.tls.secretType | quote }}
+        fs2-serve.nebius.ai/tls-generation-sha256: {{ .Values.tls.generationSha256 | quote }}
+        fs2-serve.nebius.ai/tls-certificate-sha256: {{ .Values.tls.certificateSha256 | quote }}
+        fs2-serve.nebius.ai/tls-public-key-spki-sha256: {{ .Values.tls.publicKeySpkiSha256 | quote }}
+        fs2-serve.nebius.ai/tls-ca-sha256: {{ .Values.tls.caSha256 | quote }}
+    spec:
+      serviceAccountName: fs2-serve-control-plane-nim-admission
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        supplementalGroupsPolicy: Strict
+        seccompProfile: {type: RuntimeDefault}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: nim-admission
+          image: {{ printf "%s@%s" .Values.image.repository .Values.image.digest | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["nim-admission"]
+          ports: [{name: https, containerPort: 8443, protocol: TCP}]
+          env:
+            - {name: FS2_NIM_ADMISSION_ENABLED, value: "true"}
+            - {name: FS2_NIM_ADMISSION_CONFIG_FILE, value: /etc/fs2-nim-admission/admission.json}
+            - {name: FS2_NIM_ADMISSION_TLS_CERTIFICATE_FILE, value: /var/run/secrets/fs2-nim-admission/tls.crt}
+            - {name: FS2_NIM_ADMISSION_TLS_PRIVATE_KEY_FILE, value: /var/run/secrets/fs2-nim-admission/tls.key}
+            - {name: FS2_NIM_ADMISSION_TLS_CA_FILE, value: /var/run/secrets/fs2-nim-admission/ca.crt}
+            - {name: FS2_NIM_ADMISSION_PORT, value: "8443"}
+            - {name: FS2_NIM_ADMISSION_KUBERNETES_API_URL, value: https://kubernetes.default.svc}
+            - {name: FS2_NIM_ADMISSION_KUBERNETES_TOKEN_FILE, value: /var/run/secrets/fs2-nim-admission/kubernetes/token}
+            - {name: FS2_NIM_ADMISSION_KUBERNETES_CA_FILE, value: /var/run/secrets/fs2-nim-admission/kubernetes/ca.crt}
+            - {name: FS2_CATALOG_DIR, value: /app/catalog}
+            - {name: HOME, value: /tmp}
+            - {name: TMPDIR, value: /tmp}
+          volumeMounts:
+            - {name: config, mountPath: /etc/fs2-nim-admission/admission.json, subPath: admission.json, readOnly: true}
+            - {name: tls, mountPath: /var/run/secrets/fs2-nim-admission, readOnly: true}
+            - {name: kubernetes-api, mountPath: /var/run/secrets/fs2-nim-admission/kubernetes, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          startupProbe: {httpGet: {path: /livez, port: https, scheme: HTTPS}, periodSeconds: 2, failureThreshold: 30}
+          livenessProbe: {httpGet: {path: /livez, port: https, scheme: HTTPS}, periodSeconds: 10}
+          readinessProbe: {httpGet: {path: /readyz, port: https, scheme: HTTPS}, periodSeconds: 5}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: {drop: ["ALL"]}
+      volumes:
+        - name: config
+          configMap: {name: {{ .Values.admission.configMapName }}}
+        - name: tls
+          secret: {secretName: {{ .Values.tls.secretName }}, defaultMode: 0440}
+        - name: kubernetes-api
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken: {path: token, audience: https://kubernetes.default.svc, expirationSeconds: 600}
+              - configMap: {name: kube-root-ca.crt, items: [{key: ca.crt, path: ca.crt}]}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: {app.kubernetes.io/name: fs2-nim-admission-security}
+              topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: fs2-nim-admission-security}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fs2-serve-control-plane-nim-admission
+  namespace: fs2-system
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Values.ownership.legacyReleaseName }}
+      app.kubernetes.io/component: nim-admission
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fs2-serve-control-plane-nim-admission
+  namespace: fs2-system
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Values.ownership.legacyReleaseName }}
+    app.kubernetes.io/component: nim-admission
+  ports: [{name: https, port: 8443, targetPort: https, protocol: TCP}]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: fs2-serve-control-plane-nim-admission
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+    fs2-serve.nebius.ai/admission-policy-sha256: {{ .Values.admission.policySha256 | quote }}
+webhooks:
+  - name: nim-security.fs2-serve.nebius.ai
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 30
+    clientConfig:
+      service: {namespace: fs2-system, name: fs2-serve-control-plane-nim-admission, path: /admit, port: 8443}
+      caBundle: {{ .Values.admission.caBundle | quote }}
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: fs2-models}
+    rules:
+      - {apiGroups: ["apps.nvidia.com"], apiVersions: ["v1alpha1"], operations: ["CREATE", "UPDATE"], resources: ["nimcaches", "nimservices"], scope: Namespaced}
+      - {apiGroups: [""], apiVersions: ["v1"], operations: ["CREATE", "UPDATE"], resources: ["pods", "pods/ephemeralcontainers"], scope: Namespaced}
+      - {apiGroups: ["apps"], apiVersions: ["v1"], operations: ["CREATE", "UPDATE"], resources: ["deployments", "replicasets", "statefulsets"], scope: Namespaced}
+      - {apiGroups: ["batch"], apiVersions: ["v1"], operations: ["CREATE", "UPDATE"], resources: ["jobs"], scope: Namespaced}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fs2-serve-control-plane-nim-policy-reader
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+rules:
+  - {apiGroups: ["admissionregistration.k8s.io"], resources: ["validatingwebhookconfigurations"], resourceNames: ["fs2-serve-control-plane-nim-admission"], verbs: ["get"]}
+  - {apiGroups: ["admissionregistration.k8s.io"], resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings"], resourceNames: ["fs2-platform-security-admission-guard", "fs2-nim-admission-apply-fence"], verbs: ["get"]}
+  - {apiGroups: ["rbac.authorization.k8s.io"], resources: ["clusterroles", "clusterrolebindings"], resourceNames: ["fs2-serve-control-plane-nim-policy-reader"], verbs: ["get"]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fs2-serve-control-plane-nim-policy-reader
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+subjects: [{kind: ServiceAccount, name: fs2-serve-control-plane-nim-admission, namespace: fs2-system}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: fs2-serve-control-plane-nim-policy-reader}
+---
+{{- range $namespace := .Values.admission.ownerLookupNamespaces }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-serve-control-plane-nim-owner-reader
+  namespace: {{ $namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" $ | nindent 4 }}
+rules:
+  - {apiGroups: [""], resources: ["pods"], verbs: ["get"]}
+  - {apiGroups: ["apps"], resources: ["deployments", "daemonsets", "replicasets", "statefulsets"], verbs: ["get"]}
+  - {apiGroups: ["batch"], resources: ["cronjobs", "jobs"], verbs: ["get"]}
+  - {apiGroups: ["jobset.x-k8s.io"], resources: ["jobsets"], verbs: ["get"]}
+  - {apiGroups: ["apps.nvidia.com"], resources: ["nimcaches", "nimservices"], verbs: ["get"]}
+  - {apiGroups: ["rbac.authorization.k8s.io"], resources: ["roles", "rolebindings"], resourceNames: ["fs2-serve-control-plane-nim-owner-reader", "fs2-serve-control-plane-nim-root-inventory"], verbs: ["get"]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-serve-control-plane-nim-owner-reader
+  namespace: {{ $namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" $ | nindent 4 }}
+subjects: [{kind: ServiceAccount, name: fs2-serve-control-plane-nim-admission, namespace: fs2-system}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: fs2-serve-control-plane-nim-owner-reader}
+---
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-serve-control-plane-nim-root-inventory
+  namespace: fs2-models
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+rules:
+  - {apiGroups: ["apps.nvidia.com"], resources: ["nimcaches", "nimservices"], verbs: ["get", "list"]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-serve-control-plane-nim-root-inventory
+  namespace: fs2-models
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+subjects: [{kind: ServiceAccount, name: fs2-serve-control-plane-nim-admission, namespace: fs2-system}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: fs2-serve-control-plane-nim-root-inventory}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-serve-control-plane-nim-root-enrollment
+  namespace: fs2-system
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+rules:
+  - {apiGroups: [""], resources: ["configmaps"], verbs: ["create", "get"]}
+  - {apiGroups: [""], resources: ["configmaps"], verbs: ["list"]}
+  - {apiGroups: [""], resources: ["secrets"], resourceNames: [{{ .Values.tls.secretName | quote }}], verbs: ["get"]}
+  - {apiGroups: [""], resources: ["serviceaccounts", "services"], resourceNames: ["fs2-serve-control-plane-nim-admission"], verbs: ["get"]}
+  - {apiGroups: ["apps"], resources: ["deployments"], resourceNames: ["fs2-serve-control-plane-nim-admission"], verbs: ["get"]}
+  - {apiGroups: ["networking.k8s.io"], resources: ["networkpolicies"], resourceNames: ["fs2-serve-control-plane-nim-admission"], verbs: ["get"]}
+  - {apiGroups: ["policy"], resources: ["poddisruptionbudgets"], resourceNames: ["fs2-serve-control-plane-nim-admission"], verbs: ["get"]}
+  - {apiGroups: ["rbac.authorization.k8s.io"], resources: ["roles", "rolebindings"], resourceNames: ["fs2-serve-control-plane-nim-root-enrollment", "fs2-serve-control-plane-nim-owner-reader"], verbs: ["get"]}
+  - {apiGroups: ["discovery.k8s.io"], resources: ["endpointslices"], verbs: ["get", "list"]}
+  - {apiGroups: ["coordination.k8s.io"], resources: ["leases"], resourceNames: ["fs2-nim-admission-apply-fence"], verbs: ["get"]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-serve-control-plane-nim-root-enrollment
+  namespace: fs2-system
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+subjects: [{kind: ServiceAccount, name: fs2-serve-control-plane-nim-admission, namespace: fs2-system}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: fs2-serve-control-plane-nim-root-enrollment}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fs2-serve-control-plane-nim-admission
+  namespace: fs2-system
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: external-adopted
+  labels:
+    {{- include "fs2-nim-admission-security.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: fs2-nim-admission-security}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        {{- range .Values.networkPolicy.webhookSourceCidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports: [{port: 8443, protocol: TCP}]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dns.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 14 }}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to:
+        {{- range .Values.networkPolicy.kubernetesApiCidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports: [{port: 443, protocol: TCP}]

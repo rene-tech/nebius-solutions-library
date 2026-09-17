@@ -38,6 +38,13 @@ compatibility was not bound to the exact pool/bundle/transport tuple, and the
 enabled example omitted its actor identities. This document describes the
 next additive successor; it does not convert any rejected commit into
 integration or deployment approval.
+Rejected successor `60b1266b763f5f9e7955132ee135fd3e271b6646`
+(tree `0faf4d36f671b380a639b0f7a3284e0dedfb0c60`) is likewise retained.
+Its independent review found that the ordinary release could still replace the
+admission backend, existing non-NIM controller chains could be denied or used
+as a blanket bypass, and the external guard did not cryptographically bind a
+fresh complete provider-permission inventory to its live policy projection.
+The additive work after that commit remains a source candidate only.
 
 ## Security contract
 
@@ -179,19 +186,65 @@ extras likewise resolve the request actor through Pod→ReplicaSet→the exact
 signed controller Deployment and private image; the controller-manager actor
 is admitted only on its exact built-in identity.
 
-The chart installs two restricted replicas under a dedicated tokenless service
-account, a ClusterIP Service, get-only owner/policy RBAC, exact get/list access
+DaemonSet, CronJob, and JobSet owner kinds are resolvable rather than omitted,
+but reaching an ownerless non-NIM controller is not an allow decision. The
+webhook still evaluates image, service-account, actor, and envelope attribution.
+An object with no NIM attribution may proceed; a NIM-attributed descendant is
+denied unless an independently signed, short-lived
+`non-nim-controller-exemption/v1` binds the exact model, namespace, live
+controller API version/kind/name/UID and full projection digest, descendant
+GVR/kind and full spec digest, and cold-start compatibility reason. Any
+controller recreation or spec change invalidates that exemption.
+
+The ordinary control-plane chart is observe-only for NIM admission and renders
+none of its security-critical objects. A distinct
+`fs2-platform-security-boundary` chart, fixed release name, and non-workload
+external automation identity install the VAP/binding first. A separate
+`fs2-nim-admission-security` chart under the same external custody installs two
+restricted replicas under a dedicated tokenless service account, a ClusterIP
+Service, get-only owner/policy RBAC, exact get/list access
 to the two NIM root inventories, narrowly scoped create/get access for immutable
-root-enrollment ConfigMaps, and a
+root-enrollment ConfigMaps, dynamic exact-name owner-reader RBAC in every signed
+lookup namespace, and a
 `failurePolicy: Fail` webhook over the full
 graph in `fs2-models`. Selection of any NIM model makes this path mandatory;
-the chart rejects attempts to disable it. The non-root webhook reads its TLS
-Secret and short-lived projected API token through group-owned mode `0440`
-volumes with `fsGroup: 65532`. Readiness remains false until the reconciler has
+the workload release cannot enable backend ownership. The external security
+chart requires a precreated immutable, generation-addressed TLS Secret and
+accepts only its name, UID, resourceVersion, type, leaf-certificate digest,
+SPKI digest, CA digest, and service DNS name. It never accepts a private key or
+certificate body as a Helm value, so Helm release-history Secrets do not become
+credential copies. The externally provisioned Secret must contain exact
+`tls.crt`, `tls.key`, and `ca.crt` entries. The non-root webhook reads them and
+its short-lived projected API token through group-owned mode `0440` volumes
+with `fsGroup: 65532`.
+
+The ownership transition is additive and preserves the existing Deployment's
+immutable selector. Before the ordinary release becomes observe-only, a
+one-time `legacy-prepare` render adds Helm keep policy and a handoff marker to
+every legacy backend object without renaming or deleting it; the Pod template
+also receives the new security label while retaining the exact legacy
+`app.kubernetes.io/instance=fs2-serve-control-plane` plus
+`app.kubernetes.io/component=nim-admission` selector. Platform Security records
+the retained object UIDs/resourceVersions and projection digests, adopts those
+same names under its external release, and renders the same immutable selector.
+Only after that adoption receipt is verified may the ordinary chart return to
+`observe-only`. Both charts retain the objects on release retirement; rollback
+restores the legacy owner against the same selector and recorded identities.
+No phase deletes or recreates the Deployment, Service, webhook, RBAC, or
+NetworkPolicy.
+
+Before Uvicorn binds a socket, the process parses the mounted leaf, private key,
+and CA in memory; verifies the leaf DER SHA-256, public SPKI SHA-256, raw CA
+bundle SHA-256, content-addressed generation, exact sole service DNS SAN,
+server-auth extended usage, digital-signature key usage, non-CA constraint,
+private/public key match, current validity, and complete chain to the signed CA;
+and then discards no customer or key material into Terraform state. Any mismatch
+prevents startup and readiness. Readiness remains false until the reconciler has
 read back the installed webhook, compared its CA digest, rules, selector,
 failure/match policy, timeout, and Service target to the externally signed
 policy digest, and completed one exact persisted-root inventory pass. The
-signed admission-policy v5 additionally carries the external guard's exact
+signed admission-policy v7 additionally carries the TLS generation, dynamic
+owner lookup namespace set, and the external guard's exact
 name, UID, resourceVersion, and subject digest. Startup and every reconciliation
 read back both the live guard policy and binding under get-only RBAC and remain
 unready if either identity or immutable-boundary label differs. Missing TLS/CA,
@@ -205,8 +258,59 @@ covered by the checked-in external Platform Security guard contract. Only the
 security release principal may mutate protected admission objects; only the
 exact NIM admission service account may create a structurally exact immutable
 enrollment. Workload activation must bind the observed guard UID,
-resourceVersion, and digest to an external signature. This task authors that
-contract but does not install or claim ownership of the boundary.
+resourceVersion, and digest to an external signature. The provider-custody
+subject contains a fresh complete paginated enumeration of effective grants,
+the cluster UID, disjoint external-security and ordinary-release principals,
+the dynamic owner lookup namespaces, and the canonical exact protected
+group/resource/scope/name-or-generation-prefix set. Runtime recomputes whether
+each ordinary-release grant intersects that exact set; unrelated deployment,
+ConfigMap, Secret, Service, RBAC, or NetworkPolicy writes remain usable, while
+broad or CREATE access reaching a protected name fails closed.
+
+The external owner then captures every installed protected object's exact UID,
+resourceVersion, generation, and projection digest—including the
+TLS Secret metadata but never its data—and signs a
+`nim-admission-installation-receipt/v5`. A third fixed external-security chart
+publishes only that immutable signed receipt. Terraform data-reads the
+content-addressed receipt and the admission ConfigMap; the ordinary control
+plane and all model resources depend on both, so a ConfigMap-only or partial
+backend install cannot admit a NIM workload. The handoff binds all three chart
+paths/release names, the desired configuration, public TLS identity, dynamic
+RBAC namespaces, provider authorization, and live installation-receipt
+authorization. This task authors those source contracts but does not install
+or claim ownership of the boundary.
+
+Provider-head activation is deliberately staged. Phase zero installs the base
+boundary with both provider-head bootstrap and derived-object enforcement
+disabled. After its UID/resourceVersion are observed, Platform Security signs
+the handoff-bound head envelope and updates the boundary with the exact
+bootstrap generation, subject, anchor, canonical envelope bytes, and digest.
+Only then may the fixed provider-head chart create the head without UID/RV CAS;
+subsequent generations must present the live head UID/resourceVersion and the
+strict generation-plus-one/predecessor CAS chain. The workload handoff exports
+the exact provider-head chart values but never writes the head. The long-lived
+installation receipt is selected once from that signed head and is verified
+against the exact handoff digest; the current/previous provider envelopes are
+then checked independently for bounded freshness. Head renewal cannot silently
+replace installation identity.
+
+Derived-object enforcement is activated only after the protected Deployment,
+Service, and its current ReplicaSet identities have been observed. Pods are
+selected by either the protected application label or the privileged admission
+service account, then admitted only when their sole controller owner has exact
+`apps/v1` ReplicaSet name and UID in the signed allowlist, whose entry binds the
+same protected Deployment UID. ReplicaSet and EndpointSlice owner references
+likewise require exact API version, name, UID, and `controller: true` for create,
+update, and retirement. A rollout stages each new ReplicaSet identity before its
+Pods are admitted; retained identities allow controller retry and rollback
+without deletion.
+
+The apply-fence VAP is only the first layer: its Lease-holder comparison does
+not itself establish freshness. The protected fail-closed admission backend
+re-reads the Lease, immutable authorization record, validity window, signed
+principal/session/handoff, and exact root action before allowing a NIM root.
+Consequently the apply fence is valid only while the protected webhook, guard,
+and their externally owned custody chain remain installed and verified.
 NIMService remains at zero and route-disabled until that descendant admission
 succeeds; a tag-to-digest annotation alone is not activation authority.
 
@@ -365,6 +469,16 @@ Source tests were updated to cover:
   read-only-mount, host-port, and security validation through the production
   fail-closed admission-server/chart path, including create-once root-UID
   enrollment and retry mismatch rejection;
+- separate Platform Security boundary/backend/receipt release ownership,
+  ordinary-chart omission, YAML document separation, null-safe guard matching,
+  dynamic owner-reader RBAC protection, exact provider-permission intersection,
+  signed complete live-installation gating, and absence of TLS private-key and
+  leaf-certificate bodies from Helm values (the webhook still needs its public
+  CA bundle);
+- pre-bind TLS leaf/CA parsing, exact public digests and generation, DNS SAN,
+  key match, server-auth/key-usage constraints, current validity, and CA-chain
+  verification; and signed exact non-NIM controller exemptions that invalidate
+  on controller UID/projection or descendant-spec drift;
 - authenticated cache bootstrap/writer actors, immutable owner chains, exact
   bootstrap environment and Pod closure, consumer-namespace selection,
   Job/JobSet descendants, and denied ephemeral-container injection;

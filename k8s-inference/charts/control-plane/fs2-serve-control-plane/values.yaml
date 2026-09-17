@@ -101,6 +101,9 @@ modelController:
 nimAdmission:
   enabled: true
   required: false
+  manageSecurityBackend: false
+  ownershipHandoffMode: observe-only
+  securityCustody: external-platform-security
   replicaCount: 2
   namespace: fs2-models
   configMapName: ""

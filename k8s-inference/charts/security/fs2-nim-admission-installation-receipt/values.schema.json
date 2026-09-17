@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["securityCustody", "subjectJson", "subjectSha256", "attestationJson", "attestationSha256"],
+  "properties": {
+    "securityCustody": {"const": "external-platform-security"},
+    "subjectJson": {"type": "string", "minLength": 2, "maxLength": 524288},
+    "subjectSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "attestationJson": {"type": "string", "minLength": 2, "maxLength": 65536},
+    "attestationSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

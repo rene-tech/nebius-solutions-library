@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fs2-nim-admission-provider-checkpoint
+description: Signed immutable activation checkpoint for an observed provider envelope
+type: application
+version: 0.1.0
+appVersion: "1"

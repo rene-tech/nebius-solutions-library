@@ -3775,6 +3775,21 @@ class DeploymentContractTests(unittest.TestCase):
 
     def test_sai25_external_guard_and_sai09_cache_chain_are_fail_closed(self) -> None:
         guard = (DEPLOY_ROOT / "policies/sai-25-platform-security-admission-guard.yaml").read_text()
+        boundary_chart = (
+            DEPLOY_ROOT
+            / "charts/security/fs2-platform-security-boundary/templates/guard.yaml"
+        ).read_text()
+        backend_chart = (
+            DEPLOY_ROOT
+            / "charts/security/fs2-nim-admission-security/templates/backend.yaml"
+        ).read_text()
+        receipt_chart = (
+            DEPLOY_ROOT
+            / "charts/security/fs2-nim-admission-installation-receipt/templates/receipt.yaml"
+        ).read_text()
+        nim_contract = (DEPLOY_ROOT / "stages/workloads/nim_admission.tf").read_text()
+        control_plane = (DEPLOY_ROOT / "stages/workloads/control_plane.tf").read_text()
+        models = (DEPLOY_ROOT / "stages/workloads/models.tf").read_text()
         cache = (DEPLOY_ROOT / "stages/workloads/scientific_artifacts.tf").read_text()
         renderer = (
             DEPLOY_ROOT
@@ -3786,11 +3801,38 @@ class DeploymentContractTests(unittest.TestCase):
         ).read_text()
 
         self.assertIn("fs2-platform-security-admission-guard", guard)
-        self.assertIn("platform-security-release", guard)
+        self.assertIn("fs2-platform-security-external-automation", guard)
+        self.assertIn("object != null", guard)
+        self.assertIn("oldObject != null", guard)
+        self.assertIn("fs2-serve-control-plane-nim-owner-reader", guard)
         self.assertIn("fs2-scientific-runtime-cache-writer-fence", guard)
         self.assertIn("fs2-scientific-cache-controller-chain", guard)
         self.assertIn("validatingwebhookconfigurations", guard)
         self.assertIn("request.operation == 'CREATE'", guard)
+        self.assertIn("providerHeadBootstrap.generation", guard)
+        self.assertNotIn("head-generation'] == '1'", guard)
+        self.assertIn(".Values.derivedObjects.replicaSets", guard)
+        self.assertIn("object.spec.serviceAccountName == 'fs2-serve-control-plane-nim-admission'", guard)
+        self.assertIn("ownerReferences[0].controller == true", guard)
+        self.assertIn("kind: ValidatingAdmissionPolicy", boundary_chart)
+        self.assertIn("kind: ValidatingAdmissionPolicyBinding", boundary_chart)
+        self.assertIn("providerAuthorizationSha256", boundary_chart)
+        self.assertIn("admission.json | nindent 4 }}\n---\napiVersion: v1", backend_chart)
+        self.assertIn("FS2_NIM_ADMISSION_TLS_CA_FILE", backend_chart)
+        self.assertIn('mode "preserve-legacy-selector"', backend_chart)
+        self.assertIn("app.kubernetes.io/instance: {{ .Values.ownership.legacyReleaseName }}", backend_chart)
+        self.assertIn("helm.sh/resource-policy: keep", backend_chart)
+        self.assertNotIn("privateKeyBase64", backend_chart)
+        self.assertNotIn("certificateBase64", backend_chart)
+        self.assertNotIn("kind: Secret", backend_chart)
+        self.assertIn("fs2-nim-installation-", receipt_chart)
+        self.assertIn("nim-admission-installation-receipt/v5", nim_contract)
+        self.assertIn('data "kubernetes_config_map_v1" "nim_admission_installation_receipt"', nim_contract)
+        self.assertIn("data.kubernetes_config_map_v1.nim_admission_installation_receipt", control_plane)
+        self.assertIn("data.kubernetes_config_map_v1.nim_admission_installation_receipt", models)
+        self.assertIn("owner_lookup_namespaces", nim_contract)
+        self.assertIn("tls_secret_uid", nim_contract)
+        self.assertIn("non_nim_controller_exemptions", nim_contract)
         self.assertIn("security_boundary_sha256", cache)
         self.assertIn("controller_admission_sha256", cache)
         self.assertIn("scientific-runtime-cache-quiescence/v3", cache)

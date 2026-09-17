@@ -1,0 +1,34 @@
+{{- if ne .Release.Name (printf "fs2-nim-installation-%s" (trunc 16 .Values.subjectSha256)) }}
+{{- fail "each installation receipt requires its own content-addressed release" }}
+{{- end }}
+{{- if ne .Release.Namespace "fs2-system" }}
+{{- fail "the NIM admission installation-receipt namespace is fixed" }}
+{{- end }}
+{{- if ne .Values.securityCustody "external-platform-security" }}
+{{- fail "the installation receipt requires external Platform Security custody" }}
+{{- end }}
+{{- if ne (sha256sum (printf "%s\n" .Values.subjectJson)) .Values.subjectSha256 }}
+{{- fail "installation receipt subject differs from its reviewed SHA-256" }}
+{{- end }}
+{{- if ne (sha256sum (printf "%s\n" .Values.attestationJson)) .Values.attestationSha256 }}
+{{- fail "installation receipt attestation differs from its reviewed SHA-256" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "fs2-nim-installation-%s" (trunc 16 .Values.subjectSha256) }}
+  namespace: fs2-system
+  labels:
+    app.kubernetes.io/managed-by: platform-security
+    app.kubernetes.io/component: nim-admission-installation-receipt
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
+    fs2-serve.nebius.ai/nim-installation-receipt: "true"
+  annotations:
+    helm.sh/resource-policy: keep
+immutable: true
+data:
+  subject.json: {{ .Values.subjectJson | quote }}
+  subject.sha256: {{ .Values.subjectSha256 | quote }}
+  attestation.json: {{ .Values.attestationJson | quote }}
+  attestation.sha256: {{ .Values.attestationSha256 | quote }}

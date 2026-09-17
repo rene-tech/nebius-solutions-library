@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fs2-nim-admission-static-generation
+description: Append-only externally owned NIM admission configuration and TLS custody record
+type: application
+version: 0.1.0
+appVersion: "1"

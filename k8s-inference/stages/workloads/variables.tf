@@ -1372,7 +1372,7 @@ variable "model_runtime_security_authorizations" {
     condition = alltrue([
       for authorization_id, authorization in var.model_runtime_security_authorizations :
       can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", authorization_id)) &&
-      contains(["image-promotion", "runtime-compatibility", "runtime-security-exception", "scientific-image", "cache-boundary", "cache-migration-quiescence", "nim-operator-descendant-admission"], authorization.kind) &&
+      contains(["image-promotion", "runtime-compatibility", "runtime-security-exception", "scientific-image", "cache-boundary", "cache-migration-quiescence", "nim-operator-descendant-admission", "platform-admission-boundary", "provider-admission-custody", "nim-admission-security-handoff", "nim-admission-installation-receipt", "non-nim-controller-exemption"], authorization.kind) &&
       can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", authorization.model_id)) &&
       can(regex("^fs2-serve\\.nebius\\.ai/[a-z0-9-]+/v[0-9]+$", authorization.subject_schema)) &&
       can(regex("^[0-9a-f]{64}$", authorization.subject_sha256)) &&
@@ -1554,15 +1554,65 @@ variable "nim_operator_admission" {
   description = "Fail-closed NIM CR/descendant webhook inputs bound to the fixed independent runtime-security authority."
   type = object({
     tls_secret_name = optional(string, "")
+    tls_secret_uid = optional(string, "")
+    tls_secret_resource_version = optional(string, "")
+    tls_secret_type = optional(string, "kubernetes.io/tls")
+    tls_generation_sha256  = optional(string, "")
+    tls_certificate_sha256 = optional(string, "")
+    tls_public_key_spki_sha256 = optional(string, "")
     ca_bundle       = optional(string, "")
+    webhook_source_cidrs = optional(list(string), [])
     security_boundary = optional(object({
-      name             = string
-      policy_uid              = string
-      policy_resource_version = string
-      binding_uid              = string
-      binding_resource_version = string
-      subject_sha256   = string
+      name             = optional(string, "")
+      policy_uid              = optional(string, "")
+      policy_resource_version = optional(string, "")
+      binding_uid              = optional(string, "")
+      binding_resource_version = optional(string, "")
+      subject_sha256   = optional(string, "")
+      authorization_id = optional(string, "")
+      cluster_uid                   = optional(string, "")
+      provider_authorization_id     = optional(string, "")
+      provider_authorization_sha256 = optional(string, "")
+      provider_subject              = optional(any, {})
+      owner_lookup_namespaces       = optional(list(string), [])
+      principal_epoch               = optional(any, {})
+      provider_renewal              = optional(any, {})
+      derived_objects               = optional(any, {})
     }), {})
+    security_handoff = optional(object({
+      subject          = optional(any, {})
+      subject_sha256   = optional(string, "")
+      authorization_id = optional(string, "")
+    }), {})
+    installation_receipt = optional(object({
+      subject          = optional(any, {})
+      subject_sha256   = optional(string, "")
+      authorization_id = optional(string, "")
+    }), {})
+    provider_head = optional(object({
+      envelope             = optional(any, {})
+      envelope_sha256      = optional(string, "")
+      head_uid             = optional(string, "")
+      head_resource_version = optional(string, "")
+    }), {})
+    security_release_artifacts = optional(object({
+      boundary_package_sha256            = optional(string, "")
+      boundary_rendered_projection_sha256 = optional(string, "")
+      backend_package_sha256             = optional(string, "")
+      backend_rendered_projection_sha256 = optional(string, "")
+      receipt_package_sha256              = optional(string, "")
+      static_generation_package_sha256    = optional(string, "")
+      provider_envelope_package_sha256    = optional(string, "")
+      provider_checkpoint_package_sha256  = optional(string, "")
+      provider_head_package_sha256        = optional(string, "")
+      projection_schema                   = optional(string, "")
+      expected_projections                = optional(map(string), {})
+    }), {})
+    non_nim_controller_exemptions = optional(map(object({
+      subject          = any
+      subject_sha256   = string
+      authorization_id = string
+    })), {})
     entries = optional(map(object({
       resource_kind    = string
       model_id         = string

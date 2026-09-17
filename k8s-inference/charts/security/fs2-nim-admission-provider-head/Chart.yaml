@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fs2-nim-admission-provider-head
+description: Security-owned CAS head for bounded SAI-25 provider authorization renewal
+type: application
+version: 0.1.0
+appVersion: "1"

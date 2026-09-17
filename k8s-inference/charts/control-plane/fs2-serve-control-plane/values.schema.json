@@ -800,10 +800,13 @@
     },
     "nimAdmission": {
       "type": "object",
-      "required": ["enabled", "required", "replicaCount", "namespace", "configMapName", "configKey", "tlsSecretName", "caBundle", "admissionPolicySha256", "ownerLookupNamespaces", "service", "resources", "nodeSelector", "tolerations", "affinity"],
+      "required": ["enabled", "required", "manageSecurityBackend", "ownershipHandoffMode", "securityCustody", "replicaCount", "namespace", "configMapName", "configKey", "tlsSecretName", "caBundle", "admissionPolicySha256", "ownerLookupNamespaces", "service", "resources", "nodeSelector", "tolerations", "affinity"],
       "properties": {
         "enabled": {"const": true},
         "required": {"type": "boolean"},
+        "manageSecurityBackend": {"const": false},
+        "ownershipHandoffMode": {"enum": ["observe-only", "legacy-prepare"]},
+        "securityCustody": {"const": "external-platform-security"},
         "replicaCount": {"type": "integer", "minimum": 2, "maximum": 20},
         "namespace": {"const": "fs2-models"},
         "configMapName": {"type": "string", "maxLength": 253, "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"},

@@ -1,7 +1,9 @@
-# Source contract only. This policy is owned and installed by Platform Security,
-# not by the workload release. SAI-25 and its SAI-09 controller-chain dependency
-# must observe and sign the installed UID/resourceVersion/digest before either
-# runtime-cache or NIM admission can become ready.
+# Defense-in-depth source contract only. This policy cannot prove or protect its
+# own lifecycle. Before activation, a separate provider/IAM owner must deny the
+# workload release identity admission-registration and protected-backend writes;
+# independent Platform Security signs that provider receipt and the canonical
+# live policy/binding projection. SAI-25 and its SAI-09 dependency consume those
+# two authorizations and remain unready when either is absent, stale, or differs.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -23,30 +25,116 @@ spec:
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["configmaps", "services"]
+        resources: ["configmaps", "secrets", "serviceaccounts", "services"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["deployments"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["networkpolicies"]
+      - apiGroups: ["policy"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["poddisruptionbudgets"]
   matchConditions:
     - name: exact-sai-25-security-objects
       expression: >-
-        (has(object.metadata) && (object.metadata.name in [
-          'fs2-platform-security-admission-guard',
-          'fs2-scientific-runtime-cache-writer-fence',
-          'fs2-scientific-cache-controller-chain',
-          'fs2-nim-operator-admission',
-          'fs2-nim-admission'
-        ] || object.metadata.name.startsWith('fs2-nim-root-') ||
-        (has(object.metadata.labels) &&
-        'fs2-serve.nebius.ai/immutable-security-boundary' in object.metadata.labels &&
-        object.metadata.labels['fs2-serve.nebius.ai/immutable-security-boundary'] == 'true'))) ||
-        (has(oldObject.metadata) && (oldObject.metadata.name in [
-          'fs2-platform-security-admission-guard',
-          'fs2-scientific-runtime-cache-writer-fence',
-          'fs2-scientific-cache-controller-chain',
-          'fs2-nim-operator-admission',
-          'fs2-nim-admission'
-        ] || oldObject.metadata.name.startsWith('fs2-nim-root-') ||
-        (has(oldObject.metadata.labels) &&
-        'fs2-serve.nebius.ai/immutable-security-boundary' in oldObject.metadata.labels &&
-        oldObject.metadata.labels['fs2-serve.nebius.ai/immutable-security-boundary'] == 'true')))
+        (object != null && has(object.metadata) && (
+          (request.resource.group == 'admissionregistration.k8s.io' &&
+           request.resource.resource in [
+             'validatingadmissionpolicies',
+             'validatingadmissionpolicybindings',
+             'validatingwebhookconfigurations'
+           ] && object.metadata.name in [
+             'fs2-platform-security-admission-guard',
+             'fs2-scientific-runtime-cache-writer-fence',
+             'fs2-scientific-cache-controller-chain',
+             'fs2-nim-operator-admission',
+             'fs2-serve-control-plane-nim-admission'
+           ]) ||
+          (object.metadata.namespace == 'fs2-system' && (
+            (request.resource.group == '' && request.resource.resource == 'configmaps' &&
+             (object.metadata.name.startsWith('fs2-nim-admission-') ||
+              object.metadata.name.startsWith('fs2-nim-installation-') ||
+              object.metadata.name.startsWith('fs2-nim-root-'))) ||
+            (request.resource.group == '' && request.resource.resource == 'secrets' &&
+             object.metadata.name.startsWith('fs2-nim-admission-tls-')) ||
+            (request.resource.group == '' &&
+             request.resource.resource in ['serviceaccounts', 'services'] &&
+             object.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'apps' && request.resource.resource == 'deployments' &&
+             object.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'networking.k8s.io' &&
+             request.resource.resource == 'networkpolicies' &&
+             object.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'policy' &&
+             request.resource.resource == 'poddisruptionbudgets' &&
+             object.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'rbac.authorization.k8s.io' &&
+             request.resource.resource in ['roles', 'rolebindings'] &&
+             object.metadata.name.startsWith('fs2-serve-control-plane-nim-')))) ||
+          (request.resource.group == 'rbac.authorization.k8s.io' &&
+           request.resource.resource in ['clusterroles', 'clusterrolebindings'] &&
+           object.metadata.name == 'fs2-serve-control-plane-nim-policy-reader') ||
+          (request.resource.group == 'rbac.authorization.k8s.io' &&
+           request.resource.resource in ['roles', 'rolebindings'] &&
+           object.metadata.name == 'fs2-serve-control-plane-nim-owner-reader') ||
+          (object.metadata.namespace == 'fs2-models' &&
+           request.resource.group == 'rbac.authorization.k8s.io' &&
+           request.resource.resource in ['roles', 'rolebindings'] &&
+           object.metadata.name.startsWith('fs2-serve-control-plane-nim-'))
+        )) ||
+        (oldObject != null && has(oldObject.metadata) && (
+          (request.resource.group == 'admissionregistration.k8s.io' &&
+           request.resource.resource in [
+             'validatingadmissionpolicies',
+             'validatingadmissionpolicybindings',
+             'validatingwebhookconfigurations'
+           ] && oldObject.metadata.name in [
+             'fs2-platform-security-admission-guard',
+             'fs2-scientific-runtime-cache-writer-fence',
+             'fs2-scientific-cache-controller-chain',
+             'fs2-nim-operator-admission',
+             'fs2-serve-control-plane-nim-admission'
+           ]) ||
+          (oldObject.metadata.namespace == 'fs2-system' && (
+            (request.resource.group == '' && request.resource.resource == 'configmaps' &&
+             (oldObject.metadata.name.startsWith('fs2-nim-admission-') ||
+              oldObject.metadata.name.startsWith('fs2-nim-installation-') ||
+              oldObject.metadata.name.startsWith('fs2-nim-root-'))) ||
+            (request.resource.group == '' && request.resource.resource == 'secrets' &&
+             oldObject.metadata.name.startsWith('fs2-nim-admission-tls-')) ||
+            (request.resource.group == '' &&
+             request.resource.resource in ['serviceaccounts', 'services'] &&
+             oldObject.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'apps' && request.resource.resource == 'deployments' &&
+             oldObject.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'networking.k8s.io' &&
+             request.resource.resource == 'networkpolicies' &&
+             oldObject.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'policy' &&
+             request.resource.resource == 'poddisruptionbudgets' &&
+             oldObject.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'rbac.authorization.k8s.io' &&
+             request.resource.resource in ['roles', 'rolebindings'] &&
+             oldObject.metadata.name.startsWith('fs2-serve-control-plane-nim-')))) ||
+          (request.resource.group == 'rbac.authorization.k8s.io' &&
+           request.resource.resource in ['clusterroles', 'clusterrolebindings'] &&
+           oldObject.metadata.name == 'fs2-serve-control-plane-nim-policy-reader') ||
+          (request.resource.group == 'rbac.authorization.k8s.io' &&
+           request.resource.resource in ['roles', 'rolebindings'] &&
+           oldObject.metadata.name == 'fs2-serve-control-plane-nim-owner-reader') ||
+          (oldObject.metadata.namespace == 'fs2-models' &&
+           request.resource.group == 'rbac.authorization.k8s.io' &&
+           request.resource.resource in ['roles', 'rolebindings'] &&
+           oldObject.metadata.name.startsWith('fs2-serve-control-plane-nim-'))
+        ))
   validations:
     - expression: >-
         request.operation == 'CREATE' &&
@@ -67,9 +155,9 @@ spec:
             object.data.subject_sha256.matches('^[a-f0-9]{64}$') &&
             object.metadata.name.matches('^fs2-nim-root-[a-f0-9]{12}-[0-9a-f-]{36}$')
           : request.userInfo.username ==
-              'system:serviceaccount:fs2-security:platform-security-release'
+              '__DENY_UNTEMPLATED_EPOCH_PRINCIPAL__'
       message: >-
-        protected SAI-25 objects require the external Platform Security release
+        protected SAI-25 objects require the external Platform Security
         identity; immutable NIM enrollment CREATE is restricted to the exact
         admission reconciler and generation-addressed signed-root schema
 ---
@@ -79,6 +167,7 @@ metadata:
   name: fs2-platform-security-admission-guard
   labels:
     app.kubernetes.io/managed-by: platform-security
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
 spec:
   policyName: fs2-platform-security-admission-guard
   validationActions: [Deny, Audit]

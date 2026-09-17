@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["securityCustody", "providerAuthorizationSha256", "principalEpochSha256", "principalEpoch", "providerHeadBootstrap", "derivedObjects"],
+  "properties": {
+    "securityCustody": {"const": "external-platform-security"},
+    "providerAuthorizationSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "principalEpochSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "principalEpoch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "generation", "epochId", "activePrincipal", "overlapPrincipals"],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/platform-security-principal-epoch/v1"},
+        "generation": {"type": "integer", "minimum": 1},
+        "epochId": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "activePrincipal": {"type": "string", "pattern": "^fs2-platform-security-external-automation-[a-f0-9]{64}$"},
+        "overlapPrincipals": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^fs2-platform-security-external-automation-[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "providerHeadBootstrap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "generation", "subjectSha256", "previousHeadSubjectSha256", "envelopeJson", "envelopeSha256", "anchorGeneration", "anchorSubjectSha256", "anchorChainSha256"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "generation": {"type": "integer", "minimum": 0},
+        "subjectSha256": {"type": "string", "pattern": "^(|[a-f0-9]{64})$"},
+        "previousHeadSubjectSha256": {"type": "string", "pattern": "^(|[a-f0-9]{64})$"},
+        "envelopeJson": {"type": "string", "maxLength": 262144},
+        "envelopeSha256": {"type": "string", "pattern": "^(|[a-f0-9]{64})$"},
+        "anchorGeneration": {"type": "integer", "minimum": 0},
+        "anchorSubjectSha256": {"type": "string", "pattern": "^(|[a-f0-9]{64})$"},
+        "anchorChainSha256": {"type": "string", "pattern": "^(|[a-f0-9]{64})$"}
+      }
+    },
+    "derivedObjects": {
+      "type": "object", "additionalProperties": false,
+      "required": ["enabled", "deploymentUid", "serviceUid", "replicaSets", "deploymentControllerUsernames", "replicaSetControllerUsernames", "endpointSliceControllerUsernames"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "deploymentUid": {"type": "string", "pattern": "^(|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"},
+        "serviceUid": {"type": "string", "pattern": "^(|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"},
+        "replicaSets": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["apiVersion", "name", "uid", "deploymentUid"],
+            "properties": {
+              "apiVersion": {"const": "apps/v1"},
+              "name": {"type": "string", "pattern": "^fs2-serve-control-plane-nim-admission-[a-z0-9]+$"},
+              "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+              "deploymentUid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}
+            }
+          }
+        },
+        "deploymentControllerUsernames": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "replicaSetControllerUsernames": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "endpointSliceControllerUsernames": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

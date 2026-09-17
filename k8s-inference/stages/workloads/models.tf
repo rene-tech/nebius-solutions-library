@@ -50,6 +50,8 @@ resource "kubernetes_manifest" "model" {
     kubernetes_secret_v1.ngc_api_key,
     kubernetes_secret_v1.nvcrio_cred,
     helm_release.dcgm_exporter,
+    data.kubernetes_config_map_v1.nim_admission_installation_receipt,
+    terraform_data.nim_admission_live_installation_gate,
   ]
 }
 

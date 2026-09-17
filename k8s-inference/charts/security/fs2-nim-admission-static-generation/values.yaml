@@ -1,0 +1,17 @@
+securityCustody: external-platform-security
+generationSha256: ""
+securityHandoffSha256: ""
+admission:
+  configMapName: ""
+  configJson: ""
+  configSha256: ""
+tls:
+  secretName: ""
+  secretUid: ""
+  secretResourceVersion: ""
+  secretType: kubernetes.io/tls
+  generationSha256: ""
+  certificateSha256: ""
+  publicKeySpkiSha256: ""
+  caSha256: ""
+  serviceDnsName: fs2-serve-control-plane-nim-admission.fs2-system.svc

@@ -1,0 +1,27 @@
+securityCustody: external-platform-security
+providerAuthorizationSha256: ""
+principalEpochSha256: ""
+principalEpoch:
+  schema: fs2-serve.nebius.ai/platform-security-principal-epoch/v1
+  generation: 0
+  epochId: ""
+  activePrincipal: ""
+  overlapPrincipals: []
+providerHeadBootstrap:
+  enabled: false
+  generation: 0
+  subjectSha256: ""
+  previousHeadSubjectSha256: ""
+  envelopeJson: ""
+  envelopeSha256: ""
+  anchorGeneration: 0
+  anchorSubjectSha256: ""
+  anchorChainSha256: ""
+derivedObjects:
+  enabled: false
+  deploymentUid: ""
+  serviceUid: ""
+  replicaSets: []
+  deploymentControllerUsernames: []
+  replicaSetControllerUsernames: []
+  endpointSliceControllerUsernames: []

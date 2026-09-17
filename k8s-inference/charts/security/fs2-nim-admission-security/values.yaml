@@ -1,0 +1,46 @@
+securityCustody: external-platform-security
+ownership:
+  mode: preserve-legacy-selector
+  legacyReleaseName: fs2-serve-control-plane
+image:
+  repository: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+admission:
+  namespace: fs2-models
+  configMapName: ""
+  configSha256: ""
+  policySha256: ""
+  securityHandoffSha256: ""
+  caBundle: ""
+  ownerLookupNamespaces: [fs2-models]
+tls:
+  secretName: ""
+  secretUid: ""
+  secretResourceVersion: ""
+  secretType: kubernetes.io/tls
+  generationSha256: ""
+  certificateSha256: ""
+  publicKeySpkiSha256: ""
+  caSha256: ""
+  serviceDnsName: fs2-serve-control-plane-nim-admission.fs2-system.svc
+replicaCount: 2
+service:
+  port: 8443
+resources:
+  requests: {cpu: 25m, memory: 64Mi}
+  limits: {cpu: 250m, memory: 256Mi}
+nodeSelector:
+  workload.fs2.nebius/system: "true"
+  capacity.fs2.nebius/type: regular
+  capacity.fs2.nebius/pool: system
+tolerations: []
+affinity: {}
+networkPolicy:
+  webhookSourceCidrs: []
+  kubernetesApiCidrs: []
+  dns:
+    namespaceLabels: {kubernetes.io/metadata.name: kube-system}
+    podLabels: {k8s-app: kube-dns}
+    port: 53

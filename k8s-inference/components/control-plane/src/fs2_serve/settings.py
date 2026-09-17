@@ -209,6 +209,7 @@ class Settings(BaseSettings):
     nim_admission_config_file: Path = Path("/etc/fs2-nim-admission/admission.json")
     nim_admission_tls_certificate_file: Path = Path("/var/run/secrets/fs2-nim-admission/tls.crt")
     nim_admission_tls_private_key_file: Path = Path("/var/run/secrets/fs2-nim-admission/tls.key")
+    nim_admission_tls_ca_file: Path = Path("/var/run/secrets/fs2-nim-admission/ca.crt")
     nim_admission_kubernetes_api_url: str = Field(
         default="https://kubernetes.default.svc", min_length=1, max_length=2048
     )

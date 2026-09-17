@@ -1,7 +1,11 @@
+{{- $admission := .Values.nimAdmission }}
+{{- if $admission.manageSecurityBackend }}
+{{- fail "the workload control-plane release must not render the Platform Security-owned NIM admission backend" }}
+{{- end }}
+{{- if eq $admission.ownershipHandoffMode "legacy-prepare" }}
 {{- if not .Values.nimAdmission.enabled }}
 {{- fail "nimAdmission is mandatory for this chart and cannot be disabled" }}
 {{- end }}
-{{- $admission := .Values.nimAdmission }}
 {{- if $admission.required }}
 {{- if ne $admission.namespace "fs2-models" }}
 {{- fail "nimAdmission.namespace must be fs2-models" }}
@@ -9,11 +13,17 @@
 {{- if ne .Release.Namespace "fs2-system" }}
 {{- fail "nimAdmission must run in the fixed fs2-system trust namespace" }}
 {{- end }}
+{{- if ne $admission.securityCustody "external-platform-security" }}
+{{- fail "nimAdmission backend custody must belong to the external Platform Security release" }}
+{{- end }}
 {{- if not (regexMatch "^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$" $admission.configMapName) }}
 {{- fail "nimAdmission.configMapName is required when enabled" }}
 {{- end }}
 {{- if not (regexMatch "^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$" $admission.tlsSecretName) }}
 {{- fail "nimAdmission.tlsSecretName is required when enabled" }}
+{{- end }}
+{{- if ne $admission.tlsSecretName "fs2-nim-admission-tls" }}
+{{- fail "nimAdmission.tlsSecretName is fixed for external security custody" }}
 {{- end }}
 {{- if not $admission.caBundle }}
 {{- fail "nimAdmission.caBundle is required when enabled" }}
@@ -34,9 +44,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-nim-admission
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: nim-admission
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
 automountServiceAccountToken: false
 ---
 apiVersion: apps/v1
@@ -46,7 +60,10 @@ metadata:
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: nim-admission
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
   annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
     fs2-serve.nebius.ai/admission-policy-sha256: {{ $admission.admissionPolicySha256 | quote }}
 spec:
   replicas: {{ $admission.replicaCount }}
@@ -63,6 +80,7 @@ spec:
   template:
     metadata:
       labels:
+        app.kubernetes.io/name: fs2-nim-admission-security
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: nim-admission
         app.kubernetes.io/part-of: fs2-serve
@@ -187,6 +205,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-nim-admission
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: nim-admission
@@ -209,6 +230,8 @@ metadata:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     fs2-serve.nebius.ai/immutable-security-boundary: "true"
   annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
     fs2-serve.nebius.ai/admission-policy-sha256: {{ $admission.admissionPolicySha256 | quote }}
 webhooks:
   - name: nim-security.fs2-serve.nebius.ai
@@ -253,8 +276,12 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-nim-policy-reader
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
 rules:
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["validatingwebhookconfigurations"]
@@ -269,8 +296,12 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-nim-policy-reader
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
 subjects:
   - kind: ServiceAccount
     name: {{ include "fs2-serve.fullname" . }}-nim-admission
@@ -286,17 +317,24 @@ kind: Role
 metadata:
   name: {{ include "fs2-serve.fullname" $ }}-nim-owner-reader
   namespace: {{ $namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
   labels:
     {{- include "fs2-serve.labels" $ | nindent 4 }}
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
 rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get"]
   - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets", "statefulsets"]
+    resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
     verbs: ["get"]
   - apiGroups: ["batch"]
-    resources: ["jobs"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["get"]
+  - apiGroups: ["jobset.x-k8s.io"]
+    resources: ["jobsets"]
     verbs: ["get"]
   - apiGroups: ["apps.nvidia.com"]
     resources: ["nimcaches", "nimservices"]
@@ -307,8 +345,12 @@ kind: RoleBinding
 metadata:
   name: {{ include "fs2-serve.fullname" $ }}-nim-owner-reader
   namespace: {{ $namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
   labels:
     {{- include "fs2-serve.labels" $ | nindent 4 }}
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
 subjects:
   - kind: ServiceAccount
     name: {{ include "fs2-serve.fullname" $ }}-nim-admission
@@ -324,8 +366,12 @@ kind: Role
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-nim-root-inventory
   namespace: {{ $admission.namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
 rules:
   - apiGroups: ["apps.nvidia.com"]
     resources: ["nimcaches", "nimservices"]
@@ -336,8 +382,12 @@ kind: RoleBinding
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-nim-root-inventory
   namespace: {{ $admission.namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
 subjects:
   - kind: ServiceAccount
     name: {{ include "fs2-serve.fullname" . }}-nim-admission
@@ -352,8 +402,12 @@ kind: Role
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-nim-root-enrollment
   namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
 rules:
   - apiGroups: [""]
     resources: ["configmaps"]
@@ -364,8 +418,12 @@ kind: RoleBinding
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-nim-root-enrollment
   namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
 subjects:
   - kind: ServiceAccount
     name: {{ include "fs2-serve.fullname" . }}-nim-admission
@@ -379,8 +437,12 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-nim-admission
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2-serve.nebius.ai/ownership-handoff: legacy-prepare
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
 spec:
   podSelector:
     matchLabels:
@@ -416,4 +478,5 @@ spec:
       ports:
         - port: 443
           protocol: TCP
+{{- end }}
 {{- end }}

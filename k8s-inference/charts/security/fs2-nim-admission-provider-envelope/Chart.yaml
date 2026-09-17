@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fs2-nim-admission-provider-envelope
+description: One append-only provider-custody generation staged before checkpointing
+type: application
+version: 0.1.0
+appVersion: "1"

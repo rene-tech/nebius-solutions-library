@@ -1,0 +1,60 @@
+{{- if ne .Release.Namespace "fs2-system" }}
+{{- fail "the NIM admission static generation namespace is fixed" }}
+{{- end }}
+{{- if ne .Values.securityCustody "external-platform-security" }}
+{{- fail "the NIM admission static generation requires external Platform Security custody" }}
+{{- end }}
+{{- if ne .Release.Name (printf "fs2-nim-admission-static-%s" (trunc 16 .Values.generationSha256)) }}
+{{- fail "each static generation requires its own content-addressed release" }}
+{{- end }}
+{{- if ne (sha256sum .Values.admission.configJson) .Values.admission.configSha256 }}
+{{- fail "admission configuration differs from its reviewed SHA-256" }}
+{{- end }}
+{{- $generation := sha256sum (printf "%s\n%s\n%s\n" .Values.admission.configSha256 .Values.tls.generationSha256 .Values.securityHandoffSha256) }}
+{{- if ne $generation .Values.generationSha256 }}
+{{- fail "the static generation digest does not bind config, TLS, and handoff" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.admission.configMapName }}
+  namespace: fs2-system
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    app.kubernetes.io/managed-by: platform-security
+    app.kubernetes.io/component: nim-admission-static-generation
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
+    fs2-serve.nebius.ai/append-only-generation: {{ .Values.generationSha256 | quote }}
+immutable: true
+data:
+  admission.json: |-
+    {{- .Values.admission.configJson | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "fs2-nim-admission-tls-receipt-%s" (trunc 16 .Values.tls.generationSha256) }}
+  namespace: fs2-system
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    app.kubernetes.io/managed-by: platform-security
+    app.kubernetes.io/component: nim-admission-tls-receipt
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
+    fs2-serve.nebius.ai/append-only-generation: {{ .Values.generationSha256 | quote }}
+immutable: true
+data:
+  schema: fs2-serve.nebius.ai/nim-admission-tls-custody-receipt/v1
+  secret_name: {{ .Values.tls.secretName | quote }}
+  secret_uid: {{ .Values.tls.secretUid | quote }}
+  secret_resource_version: {{ .Values.tls.secretResourceVersion | quote }}
+  secret_type: {{ .Values.tls.secretType | quote }}
+  generation_sha256: {{ .Values.tls.generationSha256 | quote }}
+  certificate_sha256: {{ .Values.tls.certificateSha256 | quote }}
+  public_key_spki_sha256: {{ .Values.tls.publicKeySpkiSha256 | quote }}
+  ca_sha256: {{ .Values.tls.caSha256 | quote }}
+  service_dns_name: {{ .Values.tls.serviceDnsName | quote }}
+  security_handoff_sha256: {{ .Values.securityHandoffSha256 | quote }}

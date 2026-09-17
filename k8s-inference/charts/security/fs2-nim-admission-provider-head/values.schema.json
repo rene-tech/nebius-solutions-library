@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["securityCustody", "headUid", "headResourceVersion", "generation", "subjectSha256", "previousHeadSubjectSha256", "envelopeJson", "envelopeSha256"],
+  "properties": {
+    "securityCustody": {"const": "external-platform-security"},
+    "headUid": {"type": "string", "pattern": "^(|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"},
+    "headResourceVersion": {"type": "string", "pattern": "^(|[1-9][0-9]*)$"},
+    "generation": {"type": "integer", "minimum": 1},
+    "subjectSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "previousHeadSubjectSha256": {"type": "string", "pattern": "^(|[a-f0-9]{64})$"},
+    "envelopeJson": {"type": "string", "minLength": 2, "maxLength": 262144},
+    "envelopeSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

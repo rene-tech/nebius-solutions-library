@@ -1,0 +1,9 @@
+apiVersion: v2
+name: fs2-nim-admission-installation-receipt
+description: Immutable Platform Security-signed live NIM admission installation receipt
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0-0"
+annotations:
+  artifacthub.io/license: Apache-2.0

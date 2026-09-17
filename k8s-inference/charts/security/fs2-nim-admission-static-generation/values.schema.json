@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["securityCustody", "generationSha256", "securityHandoffSha256", "admission", "tls"],
+  "properties": {
+    "securityCustody": {"const": "external-platform-security"},
+    "generationSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "securityHandoffSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "admission": {
+      "type": "object", "additionalProperties": false,
+      "required": ["configMapName", "configJson", "configSha256"],
+      "properties": {
+        "configMapName": {"type": "string", "pattern": "^fs2-nim-admission-[a-f0-9]{16}$"},
+        "configJson": {"type": "string", "minLength": 2, "maxLength": 900000},
+        "configSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "tls": {
+      "type": "object", "additionalProperties": false,
+      "required": ["secretName", "secretUid", "secretResourceVersion", "secretType", "generationSha256", "certificateSha256", "publicKeySpkiSha256", "caSha256", "serviceDnsName"],
+      "properties": {
+        "secretName": {"type": "string", "pattern": "^fs2-nim-admission-tls-[a-f0-9]{16}$"},
+        "secretUid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+        "secretResourceVersion": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "secretType": {"const": "kubernetes.io/tls"},
+        "generationSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "certificateSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "publicKeySpkiSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "caSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "serviceDnsName": {"const": "fs2-serve-control-plane-nim-admission.fs2-system.svc"}
+      }
+    }
+  }
+}

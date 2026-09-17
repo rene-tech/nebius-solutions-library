@@ -668,6 +668,7 @@ async def nim_admission(settings: Settings) -> None:
         catalog_dir=settings.catalog_dir,
         tls_certificate_file=settings.nim_admission_tls_certificate_file,
         tls_private_key_file=settings.nim_admission_tls_private_key_file,
+        tls_ca_file=settings.nim_admission_tls_ca_file,
         kubernetes_api_url=settings.nim_admission_kubernetes_api_url,
         kubernetes_token_file=settings.nim_admission_kubernetes_token_file,
         kubernetes_ca_file=settings.nim_admission_kubernetes_ca_file,

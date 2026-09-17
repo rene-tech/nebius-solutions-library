@@ -1,0 +1,305 @@
+{{- if ne .Release.Name "fs2-platform-security-boundary" }}
+{{- fail "the Platform Security boundary release name is fixed" }}
+{{- end }}
+{{- if ne .Release.Namespace "fs2-system" }}
+{{- fail "the Platform Security boundary release namespace is fixed" }}
+{{- end }}
+{{- if ne .Values.securityCustody "external-platform-security" }}
+{{- fail "the admission boundary requires external Platform Security custody" }}
+{{- end }}
+{{- if ne .Values.principalEpoch.activePrincipal (printf "fs2-platform-security-external-automation-%s" .Values.principalEpoch.epochId) }}
+{{- fail "the active Platform Security principal must be derived from its epoch" }}
+{{- end }}
+{{- if gt (len .Values.principalEpoch.overlapPrincipals) 1 }}
+{{- fail "at most one bounded next-epoch principal may overlap" }}
+{{- end }}
+{{- if has .Values.principalEpoch.activePrincipal .Values.principalEpoch.overlapPrincipals }}
+{{- fail "the overlap principal must be distinct from the active epoch" }}
+{{- end }}
+{{- if and .Values.providerHeadBootstrap.enabled (ne (sha256sum (printf "%s\n" .Values.providerHeadBootstrap.envelopeJson)) .Values.providerHeadBootstrap.envelopeSha256) }}
+{{- fail "the signed provider-head bootstrap bytes differ from their digest" }}
+{{- end }}
+{{- if and .Values.providerHeadBootstrap.enabled (or (lt .Values.providerHeadBootstrap.generation 1) (lt .Values.providerHeadBootstrap.anchorGeneration 1) (gt .Values.providerHeadBootstrap.anchorGeneration .Values.providerHeadBootstrap.generation) (empty .Values.providerHeadBootstrap.subjectSha256) (empty .Values.providerHeadBootstrap.envelopeJson) (empty .Values.providerHeadBootstrap.envelopeSha256) (empty .Values.providerHeadBootstrap.anchorSubjectSha256) (empty .Values.providerHeadBootstrap.anchorChainSha256)) }}
+{{- fail "the enabled provider-head bootstrap contract is incomplete" }}
+{{- end }}
+{{- if and .Values.derivedObjects.enabled (or (empty .Values.derivedObjects.deploymentUid) (empty .Values.derivedObjects.serviceUid) (empty .Values.derivedObjects.replicaSets) (empty .Values.derivedObjects.deploymentControllerUsernames) (empty .Values.derivedObjects.replicaSetControllerUsernames) (empty .Values.derivedObjects.endpointSliceControllerUsernames)) }}
+{{- fail "derived-object enforcement requires observed Deployment, Service, ReplicaSet UIDs and exact controller actors" }}
+{{- end }}
+{{- range $replicaSet := .Values.derivedObjects.replicaSets }}
+{{- if ne $replicaSet.deploymentUid $.Values.derivedObjects.deploymentUid }}
+{{- fail "every admitted ReplicaSet must bind the exact protected Deployment UID" }}
+{{- end }}
+{{- end }}
+{{- $allowedPrincipals := concat (list .Values.principalEpoch.activePrincipal) .Values.principalEpoch.overlapPrincipals }}
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: fs2-nim-admission-apply-fence
+  namespace: fs2-system
+  labels:
+    app.kubernetes.io/managed-by: platform-security
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
+    fs2-serve.nebius.ai/apply-fence: "true"
+spec:
+  leaseDurationSeconds: 1
+  holderIdentity: unheld
+  acquireTime: "1970-01-01T00:00:00Z"
+  renewTime: "1970-01-01T00:00:00Z"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: fs2-platform-security-admission-guard
+  labels:
+    app.kubernetes.io/managed-by: platform-security
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
+  annotations:
+    fs2-serve.nebius.ai/provider-authorization-sha256: {{ .Values.providerAuthorizationSha256 | quote }}
+    fs2-serve.nebius.ai/principal-epoch-sha256: {{ .Values.principalEpochSha256 | quote }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["admissionregistration.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings", "validatingwebhookconfigurations"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps", "secrets", "serviceaccounts", "services"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["deployments"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["networkpolicies"]
+      - apiGroups: ["policy"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["poddisruptionbudgets"]
+      - apiGroups: ["coordination.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["leases"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["replicasets"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["pods"]
+      - apiGroups: ["discovery.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["endpointslices"]
+  matchConditions:
+    - name: exact-sai-25-security-objects
+      expression: >-
+        (object != null && has(object.metadata) && (
+          (request.resource.group == 'admissionregistration.k8s.io' &&
+           request.resource.resource in ['validatingadmissionpolicies','validatingadmissionpolicybindings','validatingwebhookconfigurations'] &&
+           object.metadata.name in ['fs2-platform-security-admission-guard','fs2-nim-admission-apply-fence','fs2-scientific-runtime-cache-writer-fence','fs2-scientific-cache-controller-chain','fs2-nim-operator-admission','fs2-serve-control-plane-nim-admission']) ||
+          (object.metadata.namespace == 'fs2-system' && (
+            (request.resource.group == '' && request.resource.resource == 'configmaps' &&
+             (object.metadata.name.startsWith('fs2-nim-admission-') || object.metadata.name.startsWith('fs2-nim-installation-') || object.metadata.name.startsWith('fs2-nim-apply-authorization-') || object.metadata.name.startsWith('fs2-nim-root-'))) ||
+            (request.resource.group == '' && request.resource.resource == 'secrets' && object.metadata.name.startsWith('fs2-nim-admission-tls-')) ||
+            (request.resource.group == '' && request.resource.resource in ['serviceaccounts','services'] && object.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'apps' && request.resource.resource == 'deployments' && object.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'networking.k8s.io' && request.resource.resource == 'networkpolicies' && object.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'policy' && request.resource.resource == 'poddisruptionbudgets' && object.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'coordination.k8s.io' && request.resource.resource == 'leases' && object.metadata.name == 'fs2-nim-admission-apply-fence') ||
+            ({{ .Values.derivedObjects.enabled }} && request.resource.group == 'apps' && request.resource.resource == 'replicasets' && has(object.metadata.labels) && 'app.kubernetes.io/name' in object.metadata.labels && object.metadata.labels['app.kubernetes.io/name'] == 'fs2-nim-admission-security') ||
+            ({{ .Values.derivedObjects.enabled }} && request.resource.group == '' && request.resource.resource == 'pods' && ((has(object.metadata.labels) && 'app.kubernetes.io/name' in object.metadata.labels && object.metadata.labels['app.kubernetes.io/name'] == 'fs2-nim-admission-security') || (has(object.spec) && object.spec.serviceAccountName == 'fs2-serve-control-plane-nim-admission'))) ||
+            ({{ .Values.derivedObjects.enabled }} && request.resource.group == 'discovery.k8s.io' && request.resource.resource == 'endpointslices' && has(object.metadata.labels) && 'kubernetes.io/service-name' in object.metadata.labels && object.metadata.labels['kubernetes.io/service-name'] == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'rbac.authorization.k8s.io' && request.resource.resource in ['roles','rolebindings'] && object.metadata.name.startsWith('fs2-serve-control-plane-nim-')))) ||
+          (request.resource.group == 'rbac.authorization.k8s.io' && request.resource.resource in ['clusterroles','clusterrolebindings'] && object.metadata.name == 'fs2-serve-control-plane-nim-policy-reader') ||
+          (request.resource.group == 'rbac.authorization.k8s.io' && request.resource.resource in ['roles','rolebindings'] && object.metadata.name == 'fs2-serve-control-plane-nim-owner-reader') ||
+          (object.metadata.namespace == 'fs2-models' && request.resource.group == 'rbac.authorization.k8s.io' && request.resource.resource in ['roles','rolebindings'] && object.metadata.name.startsWith('fs2-serve-control-plane-nim-'))
+        )) ||
+        (oldObject != null && has(oldObject.metadata) && (
+          (request.resource.group == 'admissionregistration.k8s.io' &&
+           request.resource.resource in ['validatingadmissionpolicies','validatingadmissionpolicybindings','validatingwebhookconfigurations'] &&
+           oldObject.metadata.name in ['fs2-platform-security-admission-guard','fs2-nim-admission-apply-fence','fs2-scientific-runtime-cache-writer-fence','fs2-scientific-cache-controller-chain','fs2-nim-operator-admission','fs2-serve-control-plane-nim-admission']) ||
+          (oldObject.metadata.namespace == 'fs2-system' && (
+            (request.resource.group == '' && request.resource.resource == 'configmaps' &&
+             (oldObject.metadata.name.startsWith('fs2-nim-admission-') || oldObject.metadata.name.startsWith('fs2-nim-installation-') || oldObject.metadata.name.startsWith('fs2-nim-apply-authorization-') || oldObject.metadata.name.startsWith('fs2-nim-root-'))) ||
+            (request.resource.group == '' && request.resource.resource == 'secrets' && oldObject.metadata.name.startsWith('fs2-nim-admission-tls-')) ||
+            (request.resource.group == '' && request.resource.resource in ['serviceaccounts','services'] && oldObject.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'apps' && request.resource.resource == 'deployments' && oldObject.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'networking.k8s.io' && request.resource.resource == 'networkpolicies' && oldObject.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'policy' && request.resource.resource == 'poddisruptionbudgets' && oldObject.metadata.name == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'coordination.k8s.io' && request.resource.resource == 'leases' && oldObject.metadata.name == 'fs2-nim-admission-apply-fence') ||
+            ({{ .Values.derivedObjects.enabled }} && request.resource.group == 'apps' && request.resource.resource == 'replicasets' && has(oldObject.metadata.labels) && 'app.kubernetes.io/name' in oldObject.metadata.labels && oldObject.metadata.labels['app.kubernetes.io/name'] == 'fs2-nim-admission-security') ||
+            ({{ .Values.derivedObjects.enabled }} && request.resource.group == '' && request.resource.resource == 'pods' && ((has(oldObject.metadata.labels) && 'app.kubernetes.io/name' in oldObject.metadata.labels && oldObject.metadata.labels['app.kubernetes.io/name'] == 'fs2-nim-admission-security') || (has(oldObject.spec) && oldObject.spec.serviceAccountName == 'fs2-serve-control-plane-nim-admission'))) ||
+            ({{ .Values.derivedObjects.enabled }} && request.resource.group == 'discovery.k8s.io' && request.resource.resource == 'endpointslices' && has(oldObject.metadata.labels) && 'kubernetes.io/service-name' in oldObject.metadata.labels && oldObject.metadata.labels['kubernetes.io/service-name'] == 'fs2-serve-control-plane-nim-admission') ||
+            (request.resource.group == 'rbac.authorization.k8s.io' && request.resource.resource in ['roles','rolebindings'] && oldObject.metadata.name.startsWith('fs2-serve-control-plane-nim-')))) ||
+          (request.resource.group == 'rbac.authorization.k8s.io' && request.resource.resource in ['clusterroles','clusterrolebindings'] && oldObject.metadata.name == 'fs2-serve-control-plane-nim-policy-reader') ||
+          (request.resource.group == 'rbac.authorization.k8s.io' && request.resource.resource in ['roles','rolebindings'] && oldObject.metadata.name == 'fs2-serve-control-plane-nim-owner-reader') ||
+          (oldObject.metadata.namespace == 'fs2-models' && request.resource.group == 'rbac.authorization.k8s.io' && request.resource.resource in ['roles','rolebindings'] && oldObject.metadata.name.startsWith('fs2-serve-control-plane-nim-'))
+        ))
+  validations:
+    - expression: >-
+        request.operation == 'DELETE'
+          ? oldObject != null && has(oldObject.metadata) && (
+              (request.resource.group == 'apps' && request.resource.resource == 'replicasets' &&
+               request.userInfo.username in {{ .Values.derivedObjects.deploymentControllerUsernames | toJson }} &&
+               has(oldObject.metadata.ownerReferences) && oldObject.metadata.ownerReferences.size() == 1 &&
+               oldObject.metadata.ownerReferences[0].apiVersion == 'apps/v1' &&
+               oldObject.metadata.ownerReferences[0].kind == 'Deployment' &&
+               oldObject.metadata.ownerReferences[0].name == 'fs2-serve-control-plane-nim-admission' &&
+               oldObject.metadata.ownerReferences[0].uid == {{ .Values.derivedObjects.deploymentUid | quote }} &&
+               has(oldObject.metadata.ownerReferences[0].controller) && oldObject.metadata.ownerReferences[0].controller == true &&
+               {{ .Values.derivedObjects.replicaSets | toJson }}.exists(rs, rs.apiVersion == oldObject.apiVersion && rs.name == oldObject.metadata.name && rs.uid == oldObject.metadata.uid && rs.deploymentUid == oldObject.metadata.ownerReferences[0].uid)) ||
+              (request.resource.group == '' && request.resource.resource == 'pods' &&
+               request.userInfo.username in {{ .Values.derivedObjects.replicaSetControllerUsernames | toJson }} &&
+               has(oldObject.spec) && oldObject.spec.serviceAccountName == 'fs2-serve-control-plane-nim-admission' &&
+               has(oldObject.metadata.ownerReferences) && oldObject.metadata.ownerReferences.size() == 1 &&
+               oldObject.metadata.ownerReferences[0].apiVersion == 'apps/v1' &&
+               oldObject.metadata.ownerReferences[0].kind == 'ReplicaSet' &&
+               has(oldObject.metadata.ownerReferences[0].controller) && oldObject.metadata.ownerReferences[0].controller == true &&
+               {{ .Values.derivedObjects.replicaSets | toJson }}.exists(rs, rs.apiVersion == oldObject.metadata.ownerReferences[0].apiVersion && rs.name == oldObject.metadata.ownerReferences[0].name && rs.uid == oldObject.metadata.ownerReferences[0].uid && rs.deploymentUid == {{ .Values.derivedObjects.deploymentUid | quote }})) ||
+              (request.resource.group == 'discovery.k8s.io' && request.resource.resource == 'endpointslices' &&
+               request.userInfo.username in {{ .Values.derivedObjects.endpointSliceControllerUsernames | toJson }} &&
+               has(oldObject.metadata.ownerReferences) && oldObject.metadata.ownerReferences.size() == 1 &&
+               oldObject.metadata.ownerReferences[0].apiVersion == 'v1' &&
+               oldObject.metadata.ownerReferences[0].kind == 'Service' &&
+               oldObject.metadata.ownerReferences[0].name == 'fs2-serve-control-plane-nim-admission' &&
+               oldObject.metadata.ownerReferences[0].uid == {{ .Values.derivedObjects.serviceUid | quote }} &&
+               has(oldObject.metadata.ownerReferences[0].controller) && oldObject.metadata.ownerReferences[0].controller == true)
+            )
+          : (request.resource.group == '' && request.resource.resource == 'configmaps' &&
+             object != null && object.metadata.namespace == 'fs2-system' &&
+             object.metadata.name == 'fs2-nim-admission-provider-head')
+            ? request.userInfo.username in {{ $allowedPrincipals | toJson }} &&
+              has(object.metadata.labels) && has(object.metadata.annotations) && has(object.data) &&
+              'fs2-serve.nebius.ai/head-generation' in object.metadata.annotations &&
+              object.metadata.annotations['fs2-serve.nebius.ai/head-generation'].matches('^[1-9][0-9]*$') &&
+              'fs2-serve.nebius.ai/head-subject-sha256' in object.metadata.annotations &&
+              object.metadata.annotations['fs2-serve.nebius.ai/head-subject-sha256'].matches('^[a-f0-9]{64}$') &&
+              'fs2-serve.nebius.ai/head-envelope-sha256' in object.metadata.annotations &&
+              object.metadata.annotations['fs2-serve.nebius.ai/head-envelope-sha256'] == object.data['envelope.sha256'] &&
+              'fs2-serve.nebius.ai/previous-head-subject-sha256' in object.metadata.annotations &&
+              object.metadata.annotations['fs2-serve.nebius.ai/previous-head-subject-sha256'].matches('^(|[a-f0-9]{64})$') &&
+              object.metadata.labels == {'app.kubernetes.io/managed-by':'platform-security','fs2-serve.nebius.ai/immutable-security-boundary':'true','fs2-serve.nebius.ai/provider-renewal-head':'true'} &&
+              object.data.size() == 2 && 'envelope.json' in object.data && 'envelope.sha256' in object.data &&
+              object.data['envelope.sha256'].matches('^[a-f0-9]{64}$') &&
+              ((request.operation == 'CREATE' && oldObject == null &&
+                {{ .Values.providerHeadBootstrap.enabled }} &&
+                object.metadata.annotations['fs2-serve.nebius.ai/head-generation'] == {{ .Values.providerHeadBootstrap.generation | quote }} &&
+                object.metadata.annotations['fs2-serve.nebius.ai/head-subject-sha256'] == {{ .Values.providerHeadBootstrap.subjectSha256 | quote }} &&
+                object.metadata.annotations['fs2-serve.nebius.ai/previous-head-subject-sha256'] == {{ .Values.providerHeadBootstrap.previousHeadSubjectSha256 | quote }} &&
+                object.metadata.annotations['fs2-serve.nebius.ai/head-envelope-sha256'] == {{ .Values.providerHeadBootstrap.envelopeSha256 | quote }} &&
+                object.data == {'envelope.json':{{ .Values.providerHeadBootstrap.envelopeJson | quote }},'envelope.sha256':{{ .Values.providerHeadBootstrap.envelopeSha256 | quote }}} &&
+                !('fs2-serve.nebius.ai/cas-precondition-uid' in object.metadata.annotations) &&
+                !('fs2-serve.nebius.ai/cas-precondition-resource-version' in object.metadata.annotations)) ||
+               (request.operation == 'UPDATE' && oldObject != null && has(oldObject.metadata.annotations) &&
+                'fs2-serve.nebius.ai/head-generation' in oldObject.metadata.annotations &&
+                'fs2-serve.nebius.ai/head-subject-sha256' in oldObject.metadata.annotations &&
+                'fs2-serve.nebius.ai/cas-precondition-uid' in object.metadata.annotations &&
+                'fs2-serve.nebius.ai/cas-precondition-resource-version' in object.metadata.annotations &&
+                object.metadata.annotations['fs2-serve.nebius.ai/cas-precondition-uid'] == oldObject.metadata.uid &&
+                object.metadata.annotations['fs2-serve.nebius.ai/cas-precondition-resource-version'] == oldObject.metadata.resourceVersion &&
+                object.metadata.uid == oldObject.metadata.uid &&
+                object.metadata.resourceVersion == oldObject.metadata.resourceVersion &&
+                int(object.metadata.annotations['fs2-serve.nebius.ai/head-generation']) ==
+                  int(oldObject.metadata.annotations['fs2-serve.nebius.ai/head-generation']) + 1 &&
+                object.metadata.annotations['fs2-serve.nebius.ai/previous-head-subject-sha256'] ==
+                  oldObject.metadata.annotations['fs2-serve.nebius.ai/head-subject-sha256']))
+          : (request.operation == 'CREATE' && object != null && object.kind == 'ConfigMap' &&
+        object.metadata.namespace == 'fs2-system' && object.metadata.name.startsWith('fs2-nim-root-')
+          ? request.userInfo.username == 'system:serviceaccount:fs2-system:fs2-serve-control-plane-nim-admission' &&
+            object.immutable == true &&
+            object.metadata.labels == {'fs2-serve.nebius.ai/nim-root-enrollment':'true'} &&
+            object.data.schema == 'fs2-serve.nebius.ai/nim-root-enrollment/v1' &&
+            object.data.resource_kind in ['NIMCache','NIMService'] &&
+            object.data.root_uid.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$') &&
+            object.data.subject_sha256.matches('^[a-f0-9]{64}$') &&
+            object.metadata.name.matches('^fs2-nim-root-[a-f0-9]{12}-[0-9a-f-]{36}$')
+          : (request.resource.group == 'apps' && request.resource.resource == 'replicasets')
+            ? {{ .Values.derivedObjects.enabled }} && request.userInfo.username in {{ .Values.derivedObjects.deploymentControllerUsernames | toJson }} &&
+              object.metadata.ownerReferences.size() == 1 && object.metadata.ownerReferences[0].kind == 'Deployment' &&
+              object.metadata.ownerReferences[0].apiVersion == 'apps/v1' &&
+              object.metadata.ownerReferences[0].name == 'fs2-serve-control-plane-nim-admission' &&
+              object.metadata.ownerReferences[0].uid == {{ .Values.derivedObjects.deploymentUid | quote }} &&
+              has(object.metadata.ownerReferences[0].controller) && object.metadata.ownerReferences[0].controller == true &&
+              {{ .Values.derivedObjects.replicaSets | toJson }}.exists(rs, rs.apiVersion == object.apiVersion && rs.name == object.metadata.name && (request.operation == 'CREATE' || rs.uid == object.metadata.uid) && rs.deploymentUid == object.metadata.ownerReferences[0].uid)
+            : (request.resource.group == '' && request.resource.resource == 'pods')
+              ? {{ .Values.derivedObjects.enabled }} && request.userInfo.username in {{ .Values.derivedObjects.replicaSetControllerUsernames | toJson }} &&
+                object.spec.serviceAccountName == 'fs2-serve-control-plane-nim-admission' &&
+                object.metadata.ownerReferences.size() == 1 && object.metadata.ownerReferences[0].apiVersion == 'apps/v1' &&
+                object.metadata.ownerReferences[0].kind == 'ReplicaSet' &&
+                has(object.metadata.ownerReferences[0].controller) && object.metadata.ownerReferences[0].controller == true &&
+                {{ .Values.derivedObjects.replicaSets | toJson }}.exists(rs, rs.apiVersion == object.metadata.ownerReferences[0].apiVersion && rs.name == object.metadata.ownerReferences[0].name && rs.uid == object.metadata.ownerReferences[0].uid && rs.deploymentUid == {{ .Values.derivedObjects.deploymentUid | quote }})
+              : (request.resource.group == 'discovery.k8s.io' && request.resource.resource == 'endpointslices')
+                ? {{ .Values.derivedObjects.enabled }} && request.userInfo.username in {{ .Values.derivedObjects.endpointSliceControllerUsernames | toJson }} &&
+                  object.metadata.ownerReferences.size() == 1 && object.metadata.ownerReferences[0].kind == 'Service' &&
+                  object.metadata.ownerReferences[0].apiVersion == 'v1' &&
+                  object.metadata.ownerReferences[0].name == 'fs2-serve-control-plane-nim-admission' &&
+                  object.metadata.ownerReferences[0].uid == {{ .Values.derivedObjects.serviceUid | quote }} &&
+                  has(object.metadata.ownerReferences[0].controller) && object.metadata.ownerReferences[0].controller == true
+                : request.userInfo.username in {{ $allowedPrincipals | toJson }})
+      message: protected SAI-25 objects require the external Platform Security identity
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: fs2-platform-security-admission-guard
+  labels:
+    app.kubernetes.io/managed-by: platform-security
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
+  annotations:
+    fs2-serve.nebius.ai/provider-authorization-sha256: {{ .Values.providerAuthorizationSha256 | quote }}
+    fs2-serve.nebius.ai/principal-epoch-sha256: {{ .Values.principalEpochSha256 | quote }}
+spec:
+  policyName: fs2-platform-security-admission-guard
+  validationActions: [Deny, Audit]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: fs2-nim-admission-apply-fence
+  labels:
+    app.kubernetes.io/managed-by: platform-security
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: coordination.k8s.io/v1
+    kind: Lease
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps.nvidia.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["nimcaches", "nimservices"]
+  validations:
+    - expression: >-
+        request.operation != 'DELETE' && object != null && has(object.metadata) &&
+        has(object.metadata.annotations) &&
+        'fs2-serve.nebius.ai/apply-fence-nonce' in object.metadata.annotations &&
+        object.metadata.annotations['fs2-serve.nebius.ai/apply-fence-nonce'] == params.spec.holderIdentity &&
+        request.userInfo.username in {{ $allowedPrincipals | toJson }}
+      message: NIM root mutation requires the live externally owned apply fence and epoch principal
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: fs2-nim-admission-apply-fence
+  labels:
+    app.kubernetes.io/managed-by: platform-security
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
+spec:
+  policyName: fs2-nim-admission-apply-fence
+  validationActions: [Deny, Audit]
+  paramRef:
+    name: fs2-nim-admission-apply-fence
+    namespace: fs2-system
+    parameterNotFoundAction: Deny

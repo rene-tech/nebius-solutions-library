@@ -383,6 +383,249 @@ output "scientific_artifacts_status" {
   } : null
 }
 
+output "nim_admission_security_boundary_prepare" {
+  description = "Phase-zero external boundary proposal. It intentionally contains no future policy/binding UID or resourceVersion."
+  value = {
+    schema = terraform_data.nim_admission_boundary_prepare_contract.output.schema
+    boundary_chart = terraform_data.nim_admission_boundary_prepare_contract.output.boundary_chart
+    boundary_chart_tree_sha256 = terraform_data.nim_admission_boundary_prepare_contract.output.boundary_chart_tree_sha256
+    fixed_release = terraform_data.nim_admission_boundary_prepare_contract.output.fixed_release
+    external_inputs = terraform_data.nim_admission_boundary_prepare_contract.output.external_inputs
+    forbidden_inputs = terraform_data.nim_admission_boundary_prepare_contract.output.forbidden_inputs
+  }
+}
+
+output "nim_admission_security_prepare" {
+  description = "Phase-one unsigned backend proposal, generated only after exact external boundary UID/resourceVersion observation; phases two and three add installed-object receipt and readiness."
+  value = local.nim_admission_required ? {
+    schema                  = "fs2-serve.nebius.ai/nim-admission-security-prepare/v1"
+    proposed_handoff        = terraform_data.nim_admission_prepare_contract.output.proposed_handoff
+    proposed_handoff_sha256 = terraform_data.nim_admission_prepare_contract.output.proposed_handoff_sha256
+    config_json             = local.nim_admission_config_json
+    static_generation_chart_values = {
+      securityCustody       = "external-platform-security"
+      generationSha256      = sha256("${sha256(local.nim_admission_config_json)}\n${var.nim_operator_admission.tls_generation_sha256}\n${local.nim_admission_security_handoff_sha256}\n")
+      securityHandoffSha256 = local.nim_admission_security_handoff_sha256
+      admission = {
+        configMapName = local.nim_admission_config_name
+        configJson    = local.nim_admission_config_json
+        configSha256  = sha256(local.nim_admission_config_json)
+      }
+      tls = {
+        secretName            = var.nim_operator_admission.tls_secret_name
+        secretUid             = var.nim_operator_admission.tls_secret_uid
+        secretResourceVersion = var.nim_operator_admission.tls_secret_resource_version
+        secretType            = var.nim_operator_admission.tls_secret_type
+        generationSha256      = var.nim_operator_admission.tls_generation_sha256
+        certificateSha256     = var.nim_operator_admission.tls_certificate_sha256
+        publicKeySpkiSha256   = var.nim_operator_admission.tls_public_key_spki_sha256
+        caSha256              = local.nim_admission_policy_contract.ca_bundle_sha256
+        serviceDnsName        = "fs2-serve-control-plane-nim-admission.fs2-system.svc"
+      }
+    }
+    backend_chart_values = {
+      securityCustody = "external-platform-security"
+      ownership = {
+        mode              = "preserve-legacy-selector"
+        legacyReleaseName = "fs2-serve-control-plane"
+      }
+      image = {
+        repository = var.control_plane_image.repository
+        digest     = var.control_plane_image.digest
+        pullPolicy = "IfNotPresent"
+        pullSecrets = []
+      }
+      admission = {
+        namespace             = "fs2-models"
+        configMapName         = local.nim_admission_config_name
+        configSha256          = sha256(local.nim_admission_config_json)
+        policySha256          = local.nim_admission_policy_sha256
+        securityHandoffSha256 = local.nim_admission_security_handoff_sha256
+        caBundle              = var.nim_operator_admission.ca_bundle
+        ownerLookupNamespaces = local.nim_admission_owner_lookup_namespaces
+      }
+      tls = {
+        secretName             = var.nim_operator_admission.tls_secret_name
+        secretUid              = var.nim_operator_admission.tls_secret_uid
+        secretResourceVersion  = var.nim_operator_admission.tls_secret_resource_version
+        secretType             = var.nim_operator_admission.tls_secret_type
+        generationSha256       = var.nim_operator_admission.tls_generation_sha256
+        certificateSha256      = var.nim_operator_admission.tls_certificate_sha256
+        publicKeySpkiSha256    = var.nim_operator_admission.tls_public_key_spki_sha256
+        caSha256               = local.nim_admission_policy_contract.ca_bundle_sha256
+        serviceDnsName         = "fs2-serve-control-plane-nim-admission.fs2-system.svc"
+      }
+      replicaCount = 2
+      service      = { port = 8443 }
+      resources = {
+        requests = { cpu = "25m", memory = "64Mi" }
+        limits   = { cpu = "250m", memory = "256Mi" }
+      }
+      nodeSelector = {
+        "workload.fs2.nebius/system" = "true"
+        "capacity.fs2.nebius/type"   = "regular"
+        "capacity.fs2.nebius/pool"   = "system"
+      }
+      tolerations = []
+      affinity    = {}
+      networkPolicy = {
+        webhookSourceCidrs = local.nim_admission_policy_contract.network_policy.webhook_source_cidrs
+        kubernetesApiCidrs = sort(tolist(local.kubernetes_api_egress_cidrs))
+        dns = {
+          namespaceLabels = { "kubernetes.io/metadata.name" = "kube-system" }
+          podLabels       = { "k8s-app" = "kube-dns" }
+          port            = 53
+        }
+      }
+    }
+  } : null
+  sensitive = true
+}
+
+output "nim_admission_security_handoff" {
+  description = "Signed, content-addressed handoff for the separate Platform Security NIM admission release. The workload release only observes the resulting objects."
+  value = local.nim_admission_required ? {
+    subject          = local.nim_admission_security_handoff_subject
+    subject_sha256   = local.nim_admission_security_handoff_sha256
+    authorization_id = var.nim_operator_admission.security_handoff.authorization_id
+    attestation      = local.verified_runtime_security_authorizations[var.nim_operator_admission.security_handoff.authorization_id].attestation
+    config_json      = local.nim_admission_config_json
+    boundary_chart_values = {
+      securityCustody             = "external-platform-security"
+      providerAuthorizationSha256 = var.nim_operator_admission.security_boundary.provider_authorization_sha256
+      principalEpochSha256        = sha256("${jsonencode(var.nim_operator_admission.security_boundary.principal_epoch)}\n")
+      principalEpoch = {
+        schema            = var.nim_operator_admission.security_boundary.principal_epoch.schema
+        generation        = var.nim_operator_admission.security_boundary.principal_epoch.generation
+        epochId           = var.nim_operator_admission.security_boundary.principal_epoch.epoch_id
+        activePrincipal   = var.nim_operator_admission.security_boundary.principal_epoch.active_principal
+        overlapPrincipals = [for overlap in var.nim_operator_admission.security_boundary.principal_epoch.overlap_principals : overlap.principal]
+      }
+      providerHeadBootstrap = {
+        enabled                       = true
+        generation                    = var.nim_operator_admission.provider_head.envelope.subject.generation
+        subjectSha256                 = var.nim_operator_admission.provider_head.envelope.subject_sha256
+        previousHeadSubjectSha256     = var.nim_operator_admission.provider_head.envelope.subject.previous_head_subject_sha256
+        envelopeJson                  = jsonencode(var.nim_operator_admission.provider_head.envelope)
+        envelopeSha256                = var.nim_operator_admission.provider_head.envelope_sha256
+        anchorGeneration              = var.nim_operator_admission.provider_head.envelope.subject.anchor.generation
+        anchorSubjectSha256           = var.nim_operator_admission.provider_head.envelope.subject.anchor.subject_sha256
+        anchorChainSha256             = var.nim_operator_admission.provider_head.envelope.subject.anchor.chain_sha256
+      }
+      derivedObjects = {
+        enabled                          = var.nim_operator_admission.security_boundary.derived_objects.enabled
+        deploymentUid                    = var.nim_operator_admission.security_boundary.derived_objects.deployment_uid
+        serviceUid                       = var.nim_operator_admission.security_boundary.derived_objects.service_uid
+        replicaSets = [
+          for replica_set in try(var.nim_operator_admission.security_boundary.derived_objects.replica_sets, []) : {
+            apiVersion   = replica_set.api_version
+            name         = replica_set.name
+            uid          = replica_set.uid
+            deploymentUid = replica_set.deployment_uid
+          }
+        ]
+        deploymentControllerUsernames    = var.nim_operator_admission.security_boundary.derived_objects.deployment_controller_usernames
+        replicaSetControllerUsernames    = var.nim_operator_admission.security_boundary.derived_objects.replica_set_controller_usernames
+        endpointSliceControllerUsernames = var.nim_operator_admission.security_boundary.derived_objects.endpoint_slice_controller_usernames
+      }
+    }
+    provider_head_chart_values = {
+      securityCustody           = "external-platform-security"
+      headUid                   = var.nim_operator_admission.provider_head.head_uid
+      headResourceVersion       = var.nim_operator_admission.provider_head.head_resource_version
+      generation                = var.nim_operator_admission.provider_head.envelope.subject.generation
+      subjectSha256             = var.nim_operator_admission.provider_head.envelope.subject_sha256
+      previousHeadSubjectSha256 = var.nim_operator_admission.provider_head.envelope.subject.previous_head_subject_sha256
+      envelopeJson              = jsonencode(var.nim_operator_admission.provider_head.envelope)
+      envelopeSha256            = var.nim_operator_admission.provider_head.envelope_sha256
+    }
+    installation_receipt_chart_values = {
+      securityCustody  = "external-platform-security"
+      subjectJson      = local.nim_admission_installation_receipt_json
+      subjectSha256    = local.nim_admission_installation_receipt_sha256
+      attestationJson  = jsonencode(local.verified_runtime_security_authorizations[var.nim_operator_admission.installation_receipt.authorization_id].attestation)
+      attestationSha256 = local.verified_runtime_security_authorizations[var.nim_operator_admission.installation_receipt.authorization_id].attestation_sha256
+    }
+    static_generation_chart_values = {
+      securityCustody       = "external-platform-security"
+      generationSha256      = sha256("${sha256(local.nim_admission_config_json)}\n${var.nim_operator_admission.tls_generation_sha256}\n${local.nim_admission_security_handoff_sha256}\n")
+      securityHandoffSha256 = local.nim_admission_security_handoff_sha256
+      admission = {
+        configMapName = local.nim_admission_config_name
+        configJson    = local.nim_admission_config_json
+        configSha256  = sha256(local.nim_admission_config_json)
+      }
+      tls = {
+        secretName            = var.nim_operator_admission.tls_secret_name
+        secretUid             = var.nim_operator_admission.tls_secret_uid
+        secretResourceVersion = var.nim_operator_admission.tls_secret_resource_version
+        secretType            = var.nim_operator_admission.tls_secret_type
+        generationSha256      = var.nim_operator_admission.tls_generation_sha256
+        certificateSha256     = var.nim_operator_admission.tls_certificate_sha256
+        publicKeySpkiSha256   = var.nim_operator_admission.tls_public_key_spki_sha256
+        caSha256              = local.nim_admission_policy_contract.ca_bundle_sha256
+        serviceDnsName        = "fs2-serve-control-plane-nim-admission.fs2-system.svc"
+      }
+    }
+    chart_values = {
+      securityCustody = "external-platform-security"
+      ownership = {
+        mode              = "preserve-legacy-selector"
+        legacyReleaseName = "fs2-serve-control-plane"
+      }
+      image = {
+        repository = var.control_plane_image.repository
+        digest     = var.control_plane_image.digest
+        pullPolicy = "IfNotPresent"
+        pullSecrets = []
+      }
+      admission = {
+        namespace             = "fs2-models"
+        configMapName         = local.nim_admission_config_name
+        configSha256          = sha256(local.nim_admission_config_json)
+        policySha256          = local.nim_admission_policy_sha256
+        securityHandoffSha256 = local.nim_admission_security_handoff_sha256
+        caBundle              = var.nim_operator_admission.ca_bundle
+        ownerLookupNamespaces = local.nim_admission_owner_lookup_namespaces
+      }
+      tls = {
+        secretName          = var.nim_operator_admission.tls_secret_name
+        secretUid           = var.nim_operator_admission.tls_secret_uid
+        secretResourceVersion = var.nim_operator_admission.tls_secret_resource_version
+        secretType          = var.nim_operator_admission.tls_secret_type
+        generationSha256    = var.nim_operator_admission.tls_generation_sha256
+        certificateSha256   = var.nim_operator_admission.tls_certificate_sha256
+        publicKeySpkiSha256 = var.nim_operator_admission.tls_public_key_spki_sha256
+        caSha256            = local.nim_admission_policy_contract.ca_bundle_sha256
+        serviceDnsName      = "fs2-serve-control-plane-nim-admission.fs2-system.svc"
+      }
+      replicaCount = 2
+      service      = { port = 8443 }
+      resources = {
+        requests = { cpu = "25m", memory = "64Mi" }
+        limits   = { cpu = "250m", memory = "256Mi" }
+      }
+      nodeSelector = {
+        "workload.fs2.nebius/system" = "true"
+        "capacity.fs2.nebius/type"   = "regular"
+        "capacity.fs2.nebius/pool"   = "system"
+      }
+      tolerations = []
+      affinity    = {}
+      networkPolicy = {
+        webhookSourceCidrs = local.nim_admission_policy_contract.network_policy.webhook_source_cidrs
+        kubernetesApiCidrs = sort(tolist(local.kubernetes_api_egress_cidrs))
+        dns = {
+          namespaceLabels = { "kubernetes.io/metadata.name" = "kube-system" }
+          podLabels       = { "k8s-app" = "kube-dns" }
+          port            = 53
+        }
+      }
+    }
+  } : null
+  sensitive = true
+}
+
 output "reference_data_status" {
   description = "Non-secret reference storage IDs, retention state, CPU placement, status service and immutable pipeline state for inference-stack status."
   value = var.reference_data.enabled ? {
