@@ -226,7 +226,7 @@ variable "kubernetes_version" {
 }
 
 variable "control_plane_allowed_cidrs" {
-  description = "Optional public API allowlist. Empty relies on Nebius authentication during the short validation lifecycle."
+  description = "Public API allowlist. A live model-network boundary supplies only the redundant external provider-custody gateway /32 or /128 egress routes; the root module enforces exact equality."
   type        = list(string)
   default     = []
 

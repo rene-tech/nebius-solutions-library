@@ -39,7 +39,7 @@ webhooks:
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
-        resources: ["pods", "replicationcontrollers"]
+        resources: ["pods", "pods/ephemeralcontainers", "replicationcontrollers"]
         scope: Namespaced
       - apiGroups: ["apps"]
         apiVersions: ["v1"]

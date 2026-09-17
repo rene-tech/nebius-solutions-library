@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-provider-gateway-policy/v1",
+  "title": "External provider model-network preventive gateway policy",
+  "type": "object",
+  "required": [
+    "schema", "cluster_id", "policy_id", "policy_revision", "upstream_api_url",
+    "direct_control_plane_access", "provider_resource_ids",
+    "cluster_resource_version", "control_plane_allowed_cidrs", "principals", "mutation_freeze",
+    "operation_locks"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v1"},
+    "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
+    "policy_id": {"type": "string", "minLength": 1, "maxLength": 253},
+    "policy_revision": {"type": "string", "minLength": 1, "maxLength": 253},
+    "upstream_api_url": {"type": "string", "pattern": "^https://[^/?#]+(?::[0-9]{1,5})?$"},
+    "direct_control_plane_access": {"const": "provider-firewall-gateway-host-routes-only"},
+    "provider_resource_ids": {
+      "type": "object",
+      "required": ["gateway", "gateway_firewall", "cluster_endpoint_access"],
+      "properties": {
+        "gateway": {"type": "string", "minLength": 1, "maxLength": 253},
+        "gateway_firewall": {"type": "string", "minLength": 1, "maxLength": 253},
+        "cluster_endpoint_access": {"type": "string", "minLength": 1, "maxLength": 253}
+      },
+      "additionalProperties": false
+    },
+    "cluster_resource_version": {"type": "integer", "minimum": 0},
+    "control_plane_allowed_cidrs": {
+      "type": "array", "minItems": 2, "maxItems": 8, "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^((([0-9]{1,3}\\.){3}[0-9]{1,3})/32|([0-9A-Fa-f:]+)/128)$"}
+    },
+    "principals": {
+      "type": "object", "minProperties": 6, "maxProperties": 6,
+      "patternProperties": {
+        "^[a-f0-9]{64}$": {
+          "type": "object",
+          "required": ["principal_id", "username", "groups", "status_reader"],
+          "properties": {
+            "principal_id": {"type": "string", "pattern": "^spiffe://[^\\s]+$"},
+            "username": {"type": "string", "minLength": 1, "maxLength": 253},
+            "groups": {"type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 253}},
+            "status_reader": {"type": "boolean"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "mutation_freeze": {"$ref": "model-network-boundary-provider-custody.schema.json#/properties/mutation_freeze"},
+    "operation_locks": {"$ref": "model-network-boundary-provider-custody.schema.json#/properties/operation_locks"}
+  },
+  "additionalProperties": false
+}

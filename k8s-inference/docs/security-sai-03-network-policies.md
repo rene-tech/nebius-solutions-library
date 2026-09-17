@@ -1,10 +1,10 @@
 # SAI-03 model-runtime network isolation
 
 Status: unreviewed additive corrective successor whose direct parent is rejected
-source commit `cea63190aca6548d8be961a9432cc7cc1277721e` / tree
-`3b16346454d84fe2cd3dad7dc468b850615371a5`; that exact commit and every
-predecessor remain preserved as negative evidence. Its second exact static
-review remained SOURCE/INTEGRATION/LIVE NO-GO. Rejected commits
+source commit `7194ef74a9c9cf08c36788b81498b456fc643b8e` / tree
+`71440591189881a996a7d71c42ad1cd5483a01b2`; that exact commit and every
+predecessor remain preserved as negative evidence. Its exact static review
+remained SOURCE/INTEGRATION/LIVE NO-GO. Rejected commits
 `6dc67038698ed4d0412873e02baa1d50b179ff3c` and
 `093798f53cb4249887e59513a3b0114246f7e94c`, plus final-NO-GO
 `9b71b8a58b1e23a1d5f9d9ac11243dbad9a4652f` and
@@ -46,6 +46,19 @@ pods to carry the historical `app.kubernetes.io/instance` label:
   acquisition-plan annotation on Job and Pod template, and the dedicated cache
   service account. A runtime Deployment cannot regain public TCP/443 by copying
   the support profile label.
+- The API-server-native profile policies select the entire `fs2-models`
+  namespace, not only objects that already self-selected a profile. Every
+  create/update of a Deployment, StatefulSet, DaemonSet, ReplicaSet,
+  ReplicationController, Job, CronJob, JobSet, or Pod must carry a finite
+  profile and a token-free PodSpec with hostNetwork/hostPID/hostIPC disabled,
+  no hostPort, RuntimeDefault seccomp, non-root execution, privilege escalation
+  disabled, `ALL` capabilities dropped, and no added capability except the
+  reviewed ModelExpress `IPC_LOCK`. Arbitrary `hostPath` is denied; the sole
+  exception is the published `/mnt/fs2-reference-data/data` `Directory`, which
+  must be mounted read-only without propagation and whose scientific subPath
+  is independently bound by the immutable execution map. The independent
+  webhook repeats the same check, and the pre-enforcement census refuses a
+  receipt if an existing controller or Pod is outside that envelope.
 - Network-profile admission also binds **who may create** each parent workload.
   Arbitrary namespace Job writers cannot self-select public acquisition or
   support egress: scientific Job/JobSet creation is limited to the distinct
@@ -79,6 +92,10 @@ pods to carry the historical `app.kubernetes.io/instance` label:
   environment, volumes, mounts, UID/GID, security context and resource
   envelope; and writes with the distinct
   `fs2-system/fs2-scientific-job-writer` ServiceAccount.
+  The proxy rejects every container field absent from the reviewed renderer,
+  including `envFrom`, lifecycle hooks and startup/liveness/readiness probes;
+  it also rejects every added capability. The original submitted manifest is
+  forwarded only after that closed shape is validated.
   DELETE first reads the exact live Job/JobSet and revalidates that envelope,
   its internal profile, controller fence, operation/workload/attempt ownership,
   manifest digest, UID, and resourceVersion before forwarding the fenced
@@ -172,15 +189,18 @@ the rule before either can integrate.
    certificate, RBAC, Service, and two-replica Deployment. Kubernetes excludes
    ValidatingAdmissionPolicy, its binding, and validating webhook configuration
    from the in-cluster admission mechanisms that would otherwise protect them.
-   A separately signed provider/IAM v3 assertion therefore proves a
-   deny-except policy for exactly those five excluded guards, permits only two
-   distinct custodian/recovery principals to CREATE or UPDATE them, and forbids
-   DELETE or REPLACE. Immediately before receipt capture the provider also
-   activates a short-lived transaction freeze over every object in the full
-   authority receipt, with no allowed principal and CREATE, UPDATE, DELETE, and
-   REPLACE all denied. That external freeze—not a cooperative Lease—is the
-   apply-time serialization boundary. The chart grants no in-cluster
-   cainjector VWC mutation.
+   The repository now supplies a concrete provider-host gateway implementation,
+   mTLS NGINX boundary, systemd hardening template, immutable JSON policy
+   contract, and provider-refreshed cluster endpoint gate. Two or more external
+   gateway hosts are the complete `/32` or `/128` public API allowlist. Their
+   digest-pinned policy denies every mutation of the full receipt inventory
+   before kube-apiserver, freezes all RBAC collection prefixes while the
+   exhaustive census is sealed, rejects unresolvable/collection-wide writes, and
+   exposes a nonce-bound mTLS status projection. Immediately before receipt
+   capture the provider activates a short-lived transaction freeze with no
+   allowed principal. That external freeze—not a signed assertion, cooperative
+   Lease, VAP, or in-cluster webhook—is the apply-time serialization boundary.
+   The chart grants no in-cluster cainjector VWC mutation.
    cert-manager may rotate only the two exact labeled TLS Secrets and exact
    Certificate/Issuer status; an external custodian performs an exact VWC
    `caBundle` update. Platform Security signs an authority v3 receipt valid for
@@ -198,7 +218,8 @@ the rule before either can integrate.
    credential not bound to the signed receipt. A live census enumerates every
    Role/ClusterRole capable of impersonating users, groups, serviceaccounts,
    uids, userextras, binding/escalation, CSR approval/signing, token/Secret or
-   credential minting. It binds the exact live privileged-binding set to a
+   credential minting, reading/listing/watching Secrets, or reading/mutating/
+   executing workloads. It binds the exact live privileged-binding set to a
    scoped static policy that prevents every newly introduced or expanded
    identity-mint grant and every new principal binding while leaving an
    unchanged pre-existing wildcard role editable. The signed provider
@@ -208,8 +229,12 @@ the rule before either can integrate.
    embedded X.509 kubeconfigs, and requires the provider-signed inventory for
    the other phase credentials; it never treats `kubectl auth whoami` or a
    self-asserted `impersonation_allowed=false` field as custody. These
-   credentials are external prerequisites;
-   this task does not mint or commit them.
+   credentials are external prerequisites; this task does not mint or commit
+   them. The two operation Leases are provider-precreated retained objects,
+   excluded from the zero-principal freeze, and reachable only through a
+   separate exact-principal JSON-Patch channel with one resourceVersion CAS.
+   The phase wrapper cannot create or delete them and re-reads the live
+   resourceVersion before release.
 3. The bounded webhook freezes exact Helm storage and release objects outside
    an active operation Lease. Routine upgrades use the distinct `maintenance`
    identity and Lease while the marker, apply fence, finite profiles, and
@@ -392,6 +417,18 @@ exact run-scoped JobSet controller identity. No claim is
 made that independent review has accepted this successor, and no integration
 or live evidence exists.
 
+The next preserved parent, `7194ef74a9c9cf08c36788b81498b456fc643b8e` /
+tree `71440591189881a996a7d71c42ad1cd5483a01b2`, also received exact
+**SOURCE NO-GO**. It still relied on an assertion instead of a concrete
+preventive provider freeze, had a deterministic `freeze_active_until`
+NameError, placed the required operation Lease inside its own zero-principal
+freeze, omitted the host/capability envelope, forwarded unreviewed scientific
+container fields, and counted only Secret mutation rather than Secret reads
+and workload/exec authority. This additive successor supplies source
+corrections for those six findings and source-only regression cases. They have
+not been executed under the no-test constraint and remain subject to a fresh
+independent exact-commit review.
+
 Run from `k8s-inference` unless a command changes directory:
 
 ```bash
@@ -517,8 +554,13 @@ The safe order is:
 1. Record the settled Helm revision and both control-plane image digests. Build,
    scan, sign and roll out the integrated controller image before the boundary
    authority is installed. Confirm the release is idle and converged.
-2. Platform Security first applies the separately reviewed provider/IAM
-   deny-except policy for the five admission guards, then installs the
+2. Platform Security first deploys at least two separately reviewed external
+   provider-custody gateways from
+   `components/control-plane/provider-custody/`, precreates the two retained
+   idle operation Leases, and makes their sorted host routes the complete
+   managed-cluster public endpoint allowlist. It records the provider gateway,
+   firewall, endpoint-access resource IDs and live cluster resourceVersion,
+   then installs the
    independent authority chart with its distinct digest-pinned image and six
    externally issued credentials. It waits for every distinct-node replica and
    the CA/serving certificate hierarchy and all eight hooks. It then activates
@@ -526,12 +568,12 @@ The safe order is:
    receipt-bound authority object set, captures two identical
    protected-object/RBAC/Service/endpoint/TLS snapshots, and signs the
    bootstrap receipt with the freeze transaction and object-set digest. The
-   provider policy, not either excluded in-cluster admission object, is the
-   preventive custody boundary.
-   This repository validates the provider-signed assertion but does not create
-   that external control. Independent review must identify the concrete
-   provider policy/resource and prove its deny semantics before rollout; a
-   hand-authored assertion is not acceptable evidence.
+   provider gateway, not either excluded in-cluster admission object or the
+   signed assertion, is the preventive custody boundary. This source-only task
+   does not provision those external hosts or change the endpoint. Independent
+   review must verify the concrete deployed resource IDs, policy digest,
+   challenged live status, direct-access denial, and provider-refreshed
+   resourceVersion before rollout; a hand-authored assertion is not evidence.
 3. Supply the signed receipt and independently issued phase kubeconfigs, verify
    exact usernames/groups/provider principals and receipt-bound certificate,
    RBAC, protected-object, and webhook hashes, and apply

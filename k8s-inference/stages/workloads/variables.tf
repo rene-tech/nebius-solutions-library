@@ -484,6 +484,31 @@ variable "model_network_provider_trust_root_sha256" {
   }
 }
 
+variable "model_network_provider_gateway_egress_host_cidrs" {
+  description = "Exact redundant /32 or /128 egress routes of the external provider-custody gateways. Live plans require these to equal the provider-refreshed MK8s public endpoint allowlist."
+  type        = list(string)
+  default     = []
+  nullable    = false
+
+  validation {
+    condition = (
+      length(var.model_network_provider_gateway_egress_host_cidrs) == 0 ||
+      (
+        length(var.model_network_provider_gateway_egress_host_cidrs) >= 2 &&
+        length(var.model_network_provider_gateway_egress_host_cidrs) <= 8 &&
+        length(var.model_network_provider_gateway_egress_host_cidrs) == length(distinct(var.model_network_provider_gateway_egress_host_cidrs)) &&
+        alltrue([
+          for cidr in var.model_network_provider_gateway_egress_host_cidrs :
+          can(cidrhost(cidr, 0)) && (
+            strcontains(cidr, ":") ? endswith(cidr, "/128") : endswith(cidr, "/32")
+          )
+        ])
+      )
+    )
+    error_message = "model_network_provider_gateway_egress_host_cidrs must be empty offline or contain two to eight unique exact /32 or /128 host routes."
+  }
+}
+
 variable "model_network_boundary_authority_receipt" {
   description = "Signature-verified, non-secret external custody receipt supplied only by inference-stack after live authority preflight."
   type        = any

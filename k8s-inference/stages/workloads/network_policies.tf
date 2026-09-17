@@ -182,22 +182,66 @@ locals {
     ],
   ))
   model_runtime_controller_deployment_name = "fs2-serve-control-plane-model-controller"
+  model_runtime_pod_security_expression = <<-CEL
+    variables.podSpecs.size() > 0 &&
+    variables.podSpecs.all(pod,
+      (!has(pod.hostNetwork) || pod.hostNetwork == false) &&
+      (!has(pod.hostPID) || pod.hostPID == false) &&
+      (!has(pod.hostIPC) || pod.hostIPC == false) &&
+      (!has(pod.shareProcessNamespace) || pod.shareProcessNamespace == false) &&
+      has(pod.automountServiceAccountToken) && pod.automountServiceAccountToken == false &&
+      (!has(pod.volumes) || pod.volumes.all(volume,
+        !has(volume.hostPath) ||
+        (volume.hostPath.path == '/mnt/fs2-reference-data/data' &&
+         volume.hostPath.type == 'Directory' &&
+         (pod.containers + (has(pod.initContainers) ? pod.initContainers : []) + (has(pod.ephemeralContainers) ? pod.ephemeralContainers : [])).exists(container,
+           has(container.volumeMounts) && container.volumeMounts.exists(mount, mount.name == volume.name)) &&
+         (pod.containers + (has(pod.initContainers) ? pod.initContainers : []) + (has(pod.ephemeralContainers) ? pod.ephemeralContainers : [])).all(container,
+           !has(container.volumeMounts) || container.volumeMounts.all(mount,
+             mount.name != volume.name ||
+             (has(mount.readOnly) && mount.readOnly == true &&
+              (!has(mount.mountPropagation) || mount.mountPropagation == 'None') &&
+              !has(mount.subPathExpr))
+           )
+         )
+        )
+      )
+      ) &&
+      has(pod.containers) && pod.containers.size() > 0 &&
+      (pod.containers + (has(pod.initContainers) ? pod.initContainers : []) + (has(pod.ephemeralContainers) ? pod.ephemeralContainers : [])).all(container,
+        has(container.securityContext) &&
+        (!has(container.securityContext.privileged) || container.securityContext.privileged == false) &&
+        has(container.securityContext.allowPrivilegeEscalation) && container.securityContext.allowPrivilegeEscalation == false &&
+        ((has(pod.securityContext) && has(pod.securityContext.runAsNonRoot) && pod.securityContext.runAsNonRoot == true) ||
+         (has(container.securityContext.runAsNonRoot) && container.securityContext.runAsNonRoot == true)) &&
+        has(container.securityContext.capabilities) &&
+        has(container.securityContext.capabilities.drop) && container.securityContext.capabilities.drop == ['ALL'] &&
+        (!has(container.securityContext.capabilities.add) ||
+         container.securityContext.capabilities.add.size() == 0 ||
+         (object.metadata.labels['${local.model_runtime_network_profile_label}'].startsWith('mx-') &&
+          container.securityContext.capabilities.add == ['IPC_LOCK'])) &&
+        (!has(container.securityContext.procMount) || container.securityContext.procMount == 'Default') &&
+        (!has(container.volumeDevices) || container.volumeDevices.size() == 0) &&
+        ((has(pod.securityContext) && has(pod.securityContext.seccompProfile) && pod.securityContext.seccompProfile.type == 'RuntimeDefault') ||
+         (has(container.securityContext.seccompProfile) && container.securityContext.seccompProfile.type == 'RuntimeDefault')) &&
+        (!has(container.ports) || container.ports.all(port, !has(port.hostPort) || port.hostPort == 0))))
+  CEL
   model_runtime_admission_specs = {
     apps = {
-      name              = "fs2-model-network-profile-apps"
-      api_groups        = ["apps"]
-      api_versions      = ["v1"]
-      resources         = ["deployments", "statefulsets", "daemonsets", "replicasets"]
-      writer_expression = <<-CEL
-        request.operation != 'CREATE' ||
-        (request.kind.kind == 'ReplicaSet' ?
+      name                 = "fs2-model-network-profile-apps"
+      api_groups           = ["apps"]
+      api_versions         = ["v1"]
+      resources            = ["deployments", "statefulsets", "daemonsets", "replicasets"]
+      pod_specs_expression = "[object.spec.template.spec]"
+      writer_expression    = <<-CEL
+        request.kind.kind == 'ReplicaSet' ?
           (request.userInfo.username in ${jsonencode(local.model_runtime_replicaset_writers)} &&
            has(object.metadata.ownerReferences) &&
            object.metadata.ownerReferences.exists(owner, has(owner.controller) && owner.controller == true && owner.kind == 'Deployment')) :
           (request.userInfo.username == ${jsonencode(local.model_runtime_controller_writer)} ||
-           (${local.model_runtime_active_transition_writer_expression})))
+           (${local.model_runtime_active_transition_writer_expression}))
       CEL
-      expression        = <<-CEL
+      expression           = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         ((object.metadata.labels['app.kubernetes.io/component'] == 'model-runtime' &&
@@ -216,13 +260,13 @@ locals {
       CEL
     }
     jobs = {
-      name              = "fs2-model-network-profile-jobs"
-      api_groups        = ["batch"]
-      api_versions      = ["v1"]
-      resources         = ["jobs"]
-      writer_expression = <<-CEL
-        request.operation != 'CREATE' ||
-        (has(object.metadata.ownerReferences) &&
+      name                 = "fs2-model-network-profile-jobs"
+      api_groups           = ["batch"]
+      api_versions         = ["v1"]
+      resources            = ["jobs"]
+      pod_specs_expression = "[object.spec.template.spec]"
+      writer_expression    = <<-CEL
+        has(object.metadata.ownerReferences) &&
          object.metadata.ownerReferences.exists(owner, has(owner.controller) && owner.controller == true && owner.kind == 'JobSet') ?
           request.userInfo.username == ${jsonencode(local.model_runtime_jobset_writer)} :
          (has(object.metadata.ownerReferences) &&
@@ -232,9 +276,9 @@ locals {
             request.userInfo.username == ${jsonencode(local.model_runtime_scientific_writer)} :
            (object.metadata.labels['${local.model_runtime_network_class_label}'] == 'public-acquisition' ?
             request.userInfo.username == ${jsonencode(local.model_runtime_acquisition_writer)} :
-            (${local.model_runtime_active_transition_writer_expression})))))
+            (${local.model_runtime_active_transition_writer_expression}))))
       CEL
-      expression        = <<-CEL
+      expression           = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         ((object.metadata.labels['${local.model_runtime_network_class_label}'] == 'acceptance' &&
@@ -272,16 +316,16 @@ locals {
       CEL
     }
     jobsets = {
-      name              = "fs2-model-network-profile-jobsets"
-      api_groups        = ["jobset.x-k8s.io"]
-      api_versions      = ["v1alpha2"]
-      resources         = ["jobsets"]
-      writer_expression = <<-CEL
-        request.operation != 'CREATE' ||
+      name                 = "fs2-model-network-profile-jobsets"
+      api_groups           = ["jobset.x-k8s.io"]
+      api_versions         = ["v1alpha2"]
+      resources            = ["jobsets"]
+      pod_specs_expression = "object.spec.replicatedJobs.map(job, job.template.spec.template.spec)"
+      writer_expression    = <<-CEL
         request.userInfo.username == ${jsonencode(local.model_runtime_scientific_writer)} ||
         (${local.model_runtime_active_transition_writer_expression})
       CEL
-      expression        = <<-CEL
+      expression           = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         object.metadata.labels['${local.model_runtime_network_class_label}'] == 'internal-job' &&
@@ -300,15 +344,15 @@ locals {
       CEL
     }
     pods = {
-      name              = "fs2-model-network-profile-pods"
-      api_groups        = [""]
-      api_versions      = ["v1"]
-      resources         = ["pods"]
-      writer_expression = <<-CEL
-        request.operation != 'CREATE' ||
+      name                 = "fs2-model-network-profile-pods"
+      api_groups           = [""]
+      api_versions         = ["v1"]
+      resources            = ["pods", "pods/ephemeralcontainers"]
+      pod_specs_expression = "[object.spec]"
+      writer_expression    = <<-CEL
         request.userInfo.username in ${jsonencode(local.model_runtime_pod_controller_writers)}
       CEL
-      expression        = <<-CEL
+      expression           = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         ((object.metadata.labels['${local.model_runtime_network_class_label}'] == 'runtime' &&
@@ -346,15 +390,15 @@ locals {
       CEL
     }
     cronjobs = {
-      name              = "fs2-model-network-profile-cronjobs"
-      api_groups        = ["batch"]
-      api_versions      = ["v1"]
-      resources         = ["cronjobs"]
-      writer_expression = <<-CEL
-        request.operation != 'CREATE' ||
+      name                 = "fs2-model-network-profile-cronjobs"
+      api_groups           = ["batch"]
+      api_versions         = ["v1"]
+      resources            = ["cronjobs"]
+      pod_specs_expression = "[object.spec.jobTemplate.spec.template.spec]"
+      writer_expression    = <<-CEL
         (${local.model_runtime_active_transition_writer_expression})
       CEL
-      expression        = <<-CEL
+      expression           = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         object.metadata.labels['${local.model_runtime_network_class_label}'] == 'internal-job' &&
@@ -369,15 +413,15 @@ locals {
       CEL
     }
     replicationcontrollers = {
-      name              = "fs2-model-network-profile-replicationcontrollers"
-      api_groups        = [""]
-      api_versions      = ["v1"]
-      resources         = ["replicationcontrollers"]
-      writer_expression = <<-CEL
-        request.operation != 'CREATE' ||
+      name                 = "fs2-model-network-profile-replicationcontrollers"
+      api_groups           = [""]
+      api_versions         = ["v1"]
+      resources            = ["replicationcontrollers"]
+      pod_specs_expression = "[object.spec.template.spec]"
+      writer_expression    = <<-CEL
         (${local.model_runtime_active_transition_writer_expression})
       CEL
-      expression        = <<-CEL
+      expression           = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         object.metadata.labels['app.kubernetes.io/component'] == 'model-runtime' &&
@@ -408,6 +452,10 @@ locals {
           scope       = "Namespaced"
         }]
       }
+      variables = [{
+        name       = "podSpecs"
+        expression = admission.pod_specs_expression
+      }]
       validations = [
         {
           expression = trimspace(admission.expression)
@@ -416,7 +464,12 @@ locals {
         },
         {
           expression = trimspace(admission.writer_expression)
-          message    = "only the workload's exact platform controller or the active network-transition writer may create this profiled object"
+          message    = "only the workload's exact platform controller or the active network-transition writer may create or update this profiled object"
+          reason     = "Forbidden"
+        },
+        {
+          expression = trimspace(local.model_runtime_pod_security_expression)
+          message    = "profiled workloads require token-free, non-root RuntimeDefault PodSpecs with no host namespaces, host ports, arbitrary hostPath, privilege escalation, or unreviewed capabilities"
           reason     = "Forbidden"
         },
       ]
@@ -798,35 +851,47 @@ data "kubernetes_resources" "model_runtime_network_enforcement_markers" {
 
 resource "terraform_data" "model_runtime_network_policy_transition" {
   input = {
-    phase                         = var.model_runtime_network_policy.phase
-    cluster_id                    = var.cluster_id
-    namespace                     = "fs2-models"
-    profiles                      = local.model_runtime_profile_names
-    serving_profiles              = local.model_runtime_serving_profile_names
-    profiles_sha256               = local.model_runtime_profiles_sha256
-    allow_policy_names            = local.model_runtime_allow_policy_names
-    admission_policy_names        = local.model_runtime_admission_policy_names
-    admission_binding_names       = local.model_runtime_admission_binding_names
-    admission_policy_spec_sha256  = local.model_runtime_admission_policy_spec_sha256
-    admission_binding_spec_sha256 = local.model_runtime_admission_binding_spec_sha256
-    controller_deployment_name    = local.model_runtime_controller_deployment_name
-    transition_lock_name          = local.model_runtime_transition_lease_name
-    transition_lock_namespace     = local.model_runtime_transition_lease_namespace
-    transition_writer_username    = local.model_runtime_transition_writer
-    boundary_webhook_name         = local.model_runtime_boundary_webhook_name
-    boundary_authority            = var.model_network_boundary_authority_receipt
-    provider_trust_root_sha256     = var.model_network_provider_trust_root_sha256
-    jobset_writer_username         = local.model_runtime_jobset_writer
-    control_plane_image           = var.control_plane_image
-    inventory_receipt_sha256      = try(var.model_runtime_network_policy.inventory_receipt.payload_sha256, null)
-    deny_absent_receipt_sha256    = try(var.model_runtime_network_policy.deny_absent_receipt.payload_sha256, null)
-    default_deny_planned          = contains(["enforce", "maintenance"], var.model_runtime_network_policy.phase)
-    helm_maintenance_authorized   = var.model_runtime_network_policy.phase == "maintenance"
-    helm_rollback_authorized      = var.model_runtime_network_policy.phase == "rollback-helm"
-    deny_removal_apply_isolation  = var.model_runtime_network_policy.phase == "rollback-remove-deny"
+    phase                              = var.model_runtime_network_policy.phase
+    cluster_id                         = var.cluster_id
+    namespace                          = "fs2-models"
+    profiles                           = local.model_runtime_profile_names
+    serving_profiles                   = local.model_runtime_serving_profile_names
+    profiles_sha256                    = local.model_runtime_profiles_sha256
+    allow_policy_names                 = local.model_runtime_allow_policy_names
+    admission_policy_names             = local.model_runtime_admission_policy_names
+    admission_binding_names            = local.model_runtime_admission_binding_names
+    admission_policy_spec_sha256       = local.model_runtime_admission_policy_spec_sha256
+    admission_binding_spec_sha256      = local.model_runtime_admission_binding_spec_sha256
+    controller_deployment_name         = local.model_runtime_controller_deployment_name
+    transition_lock_name               = local.model_runtime_transition_lease_name
+    transition_lock_namespace          = local.model_runtime_transition_lease_namespace
+    transition_writer_username         = local.model_runtime_transition_writer
+    boundary_webhook_name              = local.model_runtime_boundary_webhook_name
+    boundary_authority                 = var.model_network_boundary_authority_receipt
+    provider_trust_root_sha256          = var.model_network_provider_trust_root_sha256
+    provider_cluster_resource_version  = local.live_model_network_cluster_resource_version
+    provider_gateway_egress_host_cidrs = local.live_model_network_control_plane_allowed_cidrs
+    jobset_writer_username             = local.model_runtime_jobset_writer
+    control_plane_image                = var.control_plane_image
+    inventory_receipt_sha256           = try(var.model_runtime_network_policy.inventory_receipt.payload_sha256, null)
+    deny_absent_receipt_sha256         = try(var.model_runtime_network_policy.deny_absent_receipt.payload_sha256, null)
+    default_deny_planned               = contains(["enforce", "maintenance"], var.model_runtime_network_policy.phase)
+    helm_maintenance_authorized        = var.model_runtime_network_policy.phase == "maintenance"
+    helm_rollback_authorized           = var.model_runtime_network_policy.phase == "rollback-helm"
+    deny_removal_apply_isolation       = var.model_runtime_network_policy.phase == "rollback-remove-deny"
   }
 
   lifecycle {
+    precondition {
+      condition = var.model_network_provider_trust_root_sha256 == "" ? true : (
+        length(var.model_network_provider_gateway_egress_host_cidrs) >= 2 &&
+        local.live_model_network_control_plane_allowed_cidrs == sort(var.model_network_provider_gateway_egress_host_cidrs) &&
+        local.live_model_network_cluster_resource_version != null &&
+        local.live_model_network_cluster_resource_version >= 0
+      )
+      error_message = "A live model-network phase requires a provider-refreshed MK8s endpoint whose entire public allowlist is exactly the redundant external custody-gateway host routes."
+    }
+
     precondition {
       condition = nonsensitive(var.model_network_boundary_kubeconfig_path) == "/var/run/fs2-network-boundary/credential-required" || try(
         var.model_network_boundary_trust_root_sha256 != "" &&
@@ -861,15 +926,18 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         var.model_network_boundary_authority_receipt.external_custody.schema == "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v3" &&
         var.model_network_boundary_authority_receipt.external_custody.provider_trust_root_sha256 == var.model_network_provider_trust_root_sha256 &&
         can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.attestation_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.gateway_policy_sha256)) &&
+        var.model_network_boundary_authority_receipt.external_custody.cluster_resource_version == local.live_model_network_cluster_resource_version &&
+        var.model_network_boundary_authority_receipt.external_custody.gateway_egress_host_cidrs == local.live_model_network_control_plane_allowed_cidrs &&
         can(regex("^[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}$", var.model_network_boundary_authority_receipt.external_custody.freeze_transaction_id)) &&
         can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.frozen_resources_sha256)) &&
         can(timecmp(var.model_network_boundary_authority_receipt.external_custody.freeze_expires_at, timestamp())) &&
         timecmp(var.model_network_boundary_authority_receipt.external_custody.freeze_expires_at, timestamp()) > 0 &&
-        jsonencode(var.model_network_boundary_authority_receipt.rbac_census.bound_impersonation_roles) == jsonencode(sort([
+        jsonencode(var.model_network_boundary_authority_receipt.rbac_census.bound_privileged_capability_roles) == jsonencode(sort([
           for binding in var.model_network_boundary_authority_receipt.rbac_census.provider_authorized_privileged_bindings :
           "${lower(binding.kind)}/${binding.namespace}/${binding.name}"
         ])) &&
-        length(var.model_network_boundary_authority_receipt.rbac_census.impersonation_capable_cluster_roles) > 0 &&
+        length(var.model_network_boundary_authority_receipt.rbac_census.privileged_capability_cluster_roles) > 0 &&
         var.model_network_boundary_authority_receipt.payload_sha256 == sha256(jsonencode({
           for key, value in var.model_network_boundary_authority_receipt : key => value
           if key != "payload_sha256"

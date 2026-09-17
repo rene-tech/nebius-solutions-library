@@ -26,6 +26,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 PROFILE_LABEL = "fs2-serve.nebius.ai/network-profile"
+REFERENCE_DATA_HOST_PATH = "/mnt/fs2-reference-data/data"
 CLASS_LABEL = "fs2-serve.nebius.ai/network-workload-class"
 TRANSITION_WRITER_ANNOTATION = "fs2-serve.nebius.ai/network-transition-writer"
 TRANSITION_HOLDER_ANNOTATION = "fs2-serve.nebius.ai/network-transition-holder"
@@ -292,6 +293,148 @@ def _parent_child_profile(parent: Mapping[str, Any], parent_kind: str, child: Ma
     return _profile(template, f"{parent_kind} Pod template")
 
 
+def _pod_specs(value: Mapping[str, Any], kind: str) -> tuple[Mapping[str, Any], ...]:
+    """Return every PodSpec embedded in a profiled object, without guessing."""
+
+    spec = _mapping(value.get("spec"), f"{kind}.spec")
+    if kind == "Pod":
+        return (spec,)
+    if kind in {
+        "Deployment",
+        "StatefulSet",
+        "DaemonSet",
+        "ReplicaSet",
+        "ReplicationController",
+        "Job",
+    }:
+        template = _mapping(spec.get("template"), f"{kind}.spec.template")
+        return (_mapping(template.get("spec"), f"{kind}.spec.template.spec"),)
+    if kind == "CronJob":
+        job_template = _mapping(spec.get("jobTemplate"), "CronJob.spec.jobTemplate")
+        job_spec = _mapping(job_template.get("spec"), "CronJob.spec.jobTemplate.spec")
+        template = _mapping(job_spec.get("template"), "CronJob Job template")
+        return (_mapping(template.get("spec"), "CronJob Pod template spec"),)
+    if kind == "JobSet":
+        replicated = spec.get("replicatedJobs")
+        if not isinstance(replicated, list) or not replicated:
+            raise NetworkBoundaryError("JobSet has no replicated Job PodSpecs")
+        result: list[Mapping[str, Any]] = []
+        for index, raw_job in enumerate(replicated):
+            job = _mapping(raw_job, f"JobSet.spec.replicatedJobs[{index}]")
+            template = _mapping(job.get("template"), f"JobSet Job template {index}")
+            job_spec = _mapping(template.get("spec"), f"JobSet Job spec {index}")
+            pod_template = _mapping(job_spec.get("template"), f"JobSet Pod template {index}")
+            result.append(_mapping(pod_template.get("spec"), f"JobSet PodSpec {index}"))
+        return tuple(result)
+    raise NetworkBoundaryError("the profiled object kind has no reviewed PodSpec projection")
+
+
+def _validate_pod_security(
+    spec: Mapping[str, Any], label: str, *, allow_ipc_lock: bool
+) -> None:
+    """Enforce the restricted host/capability boundary on every selected PodSpec."""
+
+    if (
+        any(
+            spec.get(field, False) is not False
+            for field in ("hostNetwork", "hostPID", "hostIPC")
+        )
+        or spec.get("automountServiceAccountToken") is not False
+        or spec.get("shareProcessNamespace", False) is not False
+    ):
+        raise NetworkBoundaryError(
+            f"{label} can reach host namespaces or a service-account token"
+        )
+    volumes = spec.get("volumes", [])
+    if not isinstance(volumes, list) or not all(
+        isinstance(volume, Mapping) for volume in volumes
+    ):
+        raise NetworkBoundaryError(f"{label} has a malformed volume")
+    pod_security = spec.get("securityContext", {})
+    if not isinstance(pod_security, Mapping):
+        raise NetworkBoundaryError(f"{label} Pod securityContext is malformed")
+    pod_run_as_non_root = pod_security.get("runAsNonRoot") is True
+    pod_seccomp = pod_security.get("seccompProfile", {})
+    pod_runtime_default = (
+        isinstance(pod_seccomp, Mapping)
+        and pod_seccomp.get("type") == "RuntimeDefault"
+    )
+    raw_containers = [
+        spec.get("containers"),
+        spec.get("initContainers", []),
+        spec.get("ephemeralContainers", []),
+    ]
+    if not isinstance(raw_containers[0], list) or not raw_containers[0]:
+        raise NetworkBoundaryError(f"{label} has no bounded container set")
+    containers: list[Mapping[str, Any]] = []
+    for collection in raw_containers:
+        if not isinstance(collection, list):
+            raise NetworkBoundaryError(f"{label} container collection is malformed")
+        for container in collection:
+            if not isinstance(container, Mapping):
+                raise NetworkBoundaryError(f"{label} contains a malformed container")
+            containers.append(container)
+            security = container.get("securityContext")
+            if not isinstance(security, Mapping):
+                raise NetworkBoundaryError(f"{label} container securityContext is absent")
+            capabilities = security.get("capabilities")
+            container_seccomp = security.get("seccompProfile", {})
+            runtime_default = pod_runtime_default or (
+                isinstance(container_seccomp, Mapping)
+                and container_seccomp.get("type") == "RuntimeDefault"
+            )
+            ports = container.get("ports", [])
+            if (
+                security.get("privileged", False) is not False
+                or security.get("allowPrivilegeEscalation") is not False
+                or not (pod_run_as_non_root or security.get("runAsNonRoot") is True)
+                or not isinstance(capabilities, Mapping)
+                or set(capabilities) - {"add", "drop"}
+                or capabilities.get("drop") != ["ALL"]
+                or capabilities.get("add", [])
+                not in ((None, [], ["IPC_LOCK"]) if allow_ipc_lock else (None, []))
+                or security.get("procMount", "Default") != "Default"
+                or not runtime_default
+                or not isinstance(ports, list)
+                or container.get("volumeDevices") not in (None, [])
+                or any(
+                    not isinstance(port, Mapping)
+                    or port.get("hostPort", 0) not in (None, 0)
+                    for port in ports
+                )
+            ):
+                raise NetworkBoundaryError(
+                    f"{label} container escapes the non-root/no-capabilities security envelope"
+                )
+    for volume in volumes:
+        if "hostPath" not in volume:
+            continue
+        host_path = volume.get("hostPath")
+        name = volume.get("name")
+        matching_mounts = [
+            mount
+            for container in containers
+            for mount in container.get("volumeMounts", [])
+            if isinstance(mount, Mapping) and mount.get("name") == name
+        ]
+        if (
+            set(volume) != {"name", "hostPath"}
+            or not isinstance(name, str)
+            or host_path
+            != {"path": REFERENCE_DATA_HOST_PATH, "type": "Directory"}
+            or not matching_mounts
+            or any(
+                mount.get("readOnly") is not True
+                or "mountPropagation" in mount
+                or "subPathExpr" in mount
+                for mount in matching_mounts
+            )
+        ):
+            raise NetworkBoundaryError(
+                f"{label} has a hostPath outside the exact read-only reference plane"
+            )
+
+
 class NetworkBoundaryAdmission:
     def __init__(
         self,
@@ -445,10 +588,9 @@ class NetworkBoundaryAdmission:
                 if workload_class == "public-acquisition"
                 else self.config.direct_job_writer
             )
-            if operation == "CREATE" and username != expected_writer:
+            if username != expected_writer:
                 raise NetworkBoundaryError("a direct Job requires its exact platform writer")
-            if operation == "CREATE":
-                self._authorize_identity(user_info, expected_writer)
+            self._authorize_identity(user_info, expected_writer)
             if operation == "UPDATE":
                 if _controller_owner(old_value) is not None:
                     raise NetworkBoundaryError("a direct Job cannot drop its controller owner")
@@ -459,10 +601,9 @@ class NetworkBoundaryAdmission:
         parent = self.config.parent_kinds().get((kind, owner_kind))
         if parent is None:
             raise NetworkBoundaryError("the controller owner kind is not admitted for this child")
-        if operation == "CREATE" and username not in parent.writers:
+        if username not in parent.writers:
             raise NetworkBoundaryError("the child request did not come from its exact Kubernetes controller")
-        if operation == "CREATE":
-            self._authorize_identity(user_info, username)
+        self._authorize_identity(user_info, username)
         if owner.get("apiVersion") != parent.api_version:
             raise NetworkBoundaryError("the child owner apiVersion is not exact")
         owner_name = owner.get("name")
@@ -822,6 +963,29 @@ class NetworkBoundaryAdmission:
         old_value = _mapping(request.get("oldObject") or {}, "AdmissionReview oldObject")
         if not isinstance(kind_value, str) or not isinstance(namespace, str) or not isinstance(username, str):
             raise NetworkBoundaryError("AdmissionReview identity is malformed")
+        profiled_kinds = {
+            "CronJob",
+            "DaemonSet",
+            "Deployment",
+            "Job",
+            "JobSet",
+            "Pod",
+            "ReplicaSet",
+            "ReplicationController",
+            "StatefulSet",
+        }
+        if (
+            operation in {"CREATE", "UPDATE"}
+            and namespace == self.config.model_namespace
+            and kind_value in profiled_kinds
+        ):
+            _workload_class, profile_name = _profile(value, kind_value)
+            for index, pod_spec in enumerate(_pod_specs(value, kind_value)):
+                _validate_pod_security(
+                    pod_spec,
+                    f"{kind_value} PodSpec[{index}]",
+                    allow_ipc_lock=profile_name.startswith("mx-"),
+                )
         if (
             operation in {"CREATE", "UPDATE"}
             and namespace == self.config.model_namespace
@@ -840,7 +1004,7 @@ class NetworkBoundaryAdmission:
                 value=value,
                 old_value=old_value,
             )
-        if operation == "CREATE" and namespace == self.config.model_namespace:
+        if operation in {"CREATE", "UPDATE"} and namespace == self.config.model_namespace:
             if kind_value in {"Deployment", "StatefulSet", "DaemonSet"}:
                 if username == self.config.model_controller_writer:
                     self._authorize_identity(user_info, self.config.model_controller_writer)

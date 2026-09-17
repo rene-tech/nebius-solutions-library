@@ -79,6 +79,46 @@ def labels(*, workload_class: str = CLASS, profile: str = PROFILE) -> dict[str, 
     }
 
 
+def secure_pod_spec() -> dict[str, Any]:
+    return {
+        "automountServiceAccountToken": False,
+        "securityContext": {
+            "runAsNonRoot": True,
+            "seccompProfile": {"type": "RuntimeDefault"},
+        },
+        "containers": [
+            {
+                "name": "runtime",
+                "securityContext": {
+                    "allowPrivilegeEscalation": False,
+                    "capabilities": {"drop": ["ALL"]},
+                },
+            }
+        ],
+    }
+
+
+def pod_template(workload_labels: dict[str, str]) -> dict[str, Any]:
+    return {
+        "metadata": {"labels": workload_labels},
+        "spec": secure_pod_spec(),
+    }
+
+
+def jobset_spec(workload_labels: dict[str, str]) -> dict[str, Any]:
+    return {
+        "replicatedJobs": [
+            {
+                "name": "worker",
+                "template": {
+                    "metadata": {"labels": workload_labels},
+                    "spec": {"template": pod_template(workload_labels)},
+                },
+            }
+        ]
+    }
+
+
 def review(
     *,
     kind: str,
@@ -130,7 +170,7 @@ def review(
 async def test_direct_public_acquisition_job_requires_normal_catalog_writer() -> None:
     job = {
         "metadata": {"name": "acquire", "labels": labels()},
-        "spec": {"template": {"metadata": {"labels": labels()}}},
+        "spec": {"template": pod_template(labels())},
     }
     writer = "system:serviceaccount:fs2-system:fs2-catalog-acquisition"
     result = await admission(FakeReader()).review(review(kind="Job", resource="jobs", value=job, username=writer))
@@ -156,7 +196,7 @@ async def test_direct_scientific_job_requires_distinct_writer_and_exact_groups()
     internal = labels(workload_class="internal-job", profile="job-internal-v1")
     job = {
         "metadata": {"name": "scientific", "labels": internal},
-        "spec": {"template": {"metadata": {"labels": internal}}},
+        "spec": {"template": pod_template(internal)},
     }
     result = await admission(FakeReader()).review(
         review(kind="Job", resource="jobs", value=job, username=SCIENTIFIC_WRITER)
@@ -178,7 +218,10 @@ async def test_direct_scientific_job_requires_distinct_writer_and_exact_groups()
 @pytest.mark.asyncio
 async def test_jobset_and_runtime_parent_require_separate_exact_writers() -> None:
     internal = labels(workload_class="internal-job", profile="job-internal-v1")
-    jobset = {"metadata": {"name": "scientific", "labels": internal}}
+    jobset = {
+        "metadata": {"name": "scientific", "labels": internal},
+        "spec": jobset_spec(internal),
+    }
     result = await admission(FakeReader()).review(
         review(
             kind="JobSet",
@@ -193,7 +236,7 @@ async def test_jobset_and_runtime_parent_require_separate_exact_writers() -> Non
     runtime = labels(workload_class="runtime", profile="gateway-dns-tcp-8000-v1")
     deployment = {
         "metadata": {"name": "runtime", "labels": runtime},
-        "spec": {"template": {"metadata": {"labels": runtime}}},
+        "spec": {"template": pod_template(runtime)},
     }
     controller = "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller"
     result = await admission(FakeReader()).review(
@@ -220,6 +263,117 @@ async def test_jobset_and_runtime_parent_require_separate_exact_writers() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (("hostNetwork", True), "host namespaces"),
+        (("hostPID", True), "host namespaces"),
+        (("hostIPC", True), "host namespaces"),
+        (("privileged", True), "security envelope"),
+        (("capabilities", {"drop": ["ALL"], "add": ["SYS_ADMIN"]}), "security envelope"),
+        (("capabilities", {"drop": ["ALL"], "add": ["IPC_LOCK"]}), "security envelope"),
+        (("hostPath", {"path": "/"}), "hostPath"),
+    ],
+)
+async def test_profiled_runtime_rejects_host_and_capability_escape(
+    mutation: tuple[str, object], message: str
+) -> None:
+    runtime = labels(workload_class="runtime", profile="gateway-dns-tcp-8000-v1")
+    spec = secure_pod_spec()
+    field, value = mutation
+    if field in {"privileged", "capabilities"}:
+        spec["containers"][0]["securityContext"][field] = value
+    elif field == "hostPath":
+        spec["volumes"] = [{"name": "host", "hostPath": value}]
+    else:
+        spec[field] = value
+    deployment = {
+        "metadata": {"name": "runtime", "labels": runtime},
+        "spec": {
+            "template": {"metadata": {"labels": runtime}, "spec": spec}
+        },
+    }
+    with pytest.raises(NetworkBoundaryError, match=message):
+        await admission(FakeReader()).review(
+            review(
+                kind="Deployment",
+                resource="deployments",
+                value=deployment,
+                username=(
+                    "system:serviceaccount:fs2-system:"
+                    "fs2-serve-control-plane-controller"
+                ),
+                group="apps",
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_only_modelexpress_profile_may_add_ipc_lock() -> None:
+    runtime = labels(workload_class="runtime", profile="mx-" + "a" * 60)
+    spec = secure_pod_spec()
+    spec["containers"][0]["securityContext"]["capabilities"]["add"] = [
+        "IPC_LOCK"
+    ]
+    deployment = {
+        "metadata": {"name": "modelexpress", "labels": runtime},
+        "spec": {"template": {"metadata": {"labels": runtime}, "spec": spec}},
+    }
+    result = await admission(FakeReader()).review(
+        review(
+            kind="Deployment",
+            resource="deployments",
+            value=deployment,
+            username=(
+                "system:serviceaccount:fs2-system:"
+                "fs2-serve-control-plane-controller"
+            ),
+            group="apps",
+        )
+    )
+    assert result["response"]["allowed"] is True
+
+
+@pytest.mark.asyncio
+async def test_profiled_runtime_allows_only_read_only_published_reference_plane() -> None:
+    runtime = labels(workload_class="runtime", profile="gateway-dns-tcp-8000-v1")
+    spec = secure_pod_spec()
+    spec["volumes"] = [
+        {
+            "name": "reference-data",
+            "hostPath": {
+                "path": "/mnt/fs2-reference-data/data",
+                "type": "Directory",
+            },
+        }
+    ]
+    spec["containers"][0]["volumeMounts"] = [
+        {
+            "name": "reference-data",
+            "mountPath": "/reference-data",
+            "readOnly": True,
+        }
+    ]
+    deployment = {
+        "metadata": {"name": "runtime", "labels": runtime},
+        "spec": {"template": {"metadata": {"labels": runtime}, "spec": spec}},
+    }
+    result = await admission(FakeReader()).review(
+        review(
+            kind="Deployment",
+            resource="deployments",
+            value=deployment,
+            username=(
+                "system:serviceaccount:fs2-system:"
+                "fs2-serve-control-plane-controller"
+            ),
+            group="apps",
+        )
+    )
+    assert result["response"]["allowed"] is True
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("field", ["apiVersion", "name", "uid"])
 async def test_replicaset_child_is_bound_to_exact_live_deployment(field: str) -> None:
     runtime_labels = labels(workload_class="runtime", profile="gateway-dns-tcp-8000-v1")
@@ -227,7 +381,7 @@ async def test_replicaset_child_is_bound_to_exact_live_deployment(field: str) ->
         "apiVersion": "apps/v1",
         "kind": "Deployment",
         "metadata": {"name": "runtime", "uid": "deployment-uid", "labels": runtime_labels},
-        "spec": {"template": {"metadata": {"labels": runtime_labels}}},
+        "spec": {"template": pod_template(runtime_labels)},
     }
     child = {
         "metadata": {
@@ -243,7 +397,7 @@ async def test_replicaset_child_is_bound_to_exact_live_deployment(field: str) ->
                 }
             ],
         },
-        "spec": {"template": {"metadata": {"labels": runtime_labels}}},
+        "spec": {"template": pod_template(runtime_labels)},
     }
     tampered = deepcopy(child)
     tampered["metadata"]["ownerReferences"][0][field] = "spoofed"
@@ -266,7 +420,7 @@ async def test_pod_profile_must_equal_live_parent_and_template() -> None:
         "apiVersion": "apps/v1",
         "kind": "ReplicaSet",
         "metadata": {"name": "runtime-rs", "uid": "rs-uid", "labels": runtime_labels},
-        "spec": {"template": {"metadata": {"labels": runtime_labels}}},
+        "spec": {"template": pod_template(runtime_labels)},
     }
     pod = {
         "metadata": {
@@ -281,7 +435,8 @@ async def test_pod_profile_must_equal_live_parent_and_template() -> None:
                     "controller": True,
                 }
             ],
-        }
+        },
+        "spec": secure_pod_spec(),
     }
     reader = FakeReader({"apis/apps/v1/namespaces/fs2-models/replicasets/runtime-rs": parent})
     with pytest.raises(NetworkBoundaryError, match="differs from its live parent"):
@@ -438,7 +593,7 @@ async def test_expired_transition_holder_cannot_authorize_profiled_parent() -> N
     )
     deployment = {
         "metadata": {"name": "runtime", "labels": runtime_labels},
-        "spec": {"template": {"metadata": {"labels": runtime_labels}}},
+        "spec": {"template": pod_template(runtime_labels)},
     }
     with pytest.raises(NetworkBoundaryError, match="expired transition holder"):
         await admission(reader, now=datetime(2026, 9, 17, 0, 2, tzinfo=UTC)).review(

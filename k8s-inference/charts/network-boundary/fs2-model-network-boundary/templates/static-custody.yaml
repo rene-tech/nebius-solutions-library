@@ -93,7 +93,7 @@ spec:
         variables.noExtras
     - name: transitionLeaseWriter
       expression: >-
-        request.operation in ['CREATE', 'UPDATE'] &&
+        request.operation == 'UPDATE' &&
         request.resource.group == 'coordination.k8s.io' &&
         request.resource.resource == 'leases' &&
         request.namespace == {{ .Values.systemNamespace | quote }} &&
@@ -173,8 +173,8 @@ metadata:
     app.kubernetes.io/component: static-custody
   annotations:
     fs2-serve.nebius.ai/custody-provider: nebius-iam
-    fs2-serve.nebius.ai/impersonation-capable-cluster-roles-sha256: {{ .Values.impersonationCapableClusterRoles | sortAlpha | toJson | sha256sum | quote }}
-    fs2-serve.nebius.ai/impersonation-capable-roles-sha256: {{ .Values.impersonationCapableRoles | sortAlpha | toJson | sha256sum | quote }}
+    fs2-serve.nebius.ai/privileged-capability-cluster-roles-sha256: {{ .Values.privilegedCapabilityClusterRoles | sortAlpha | toJson | sha256sum | quote }}
+    fs2-serve.nebius.ai/privileged-capability-roles-sha256: {{ .Values.privilegedCapabilityRoles | sortAlpha | toJson | sha256sum | quote }}
 spec:
   policyName: fs2-model-network-static-custody
   validationActions: [Deny]
@@ -224,11 +224,20 @@ spec:
            rule.apiGroups.exists(group, group in ['certificates.k8s.io', '*']) &&
            rule.resources.exists(resource,
              resource in ['certificatesigningrequests', 'certificatesigningrequests/approval', 'signers', '*'])) ||
-          (rule.verbs.exists(verb, verb in ['create', 'update', 'patch', '*']) &&
+          (rule.verbs.exists(verb, verb in ['create', 'get', 'list', 'watch', 'update', 'patch', '*']) &&
            ((rule.apiGroups.exists(group, group in ['', '*']) &&
              rule.resources.exists(resource, resource in ['serviceaccounts/token', 'secrets', '*'])) ||
             (rule.apiGroups.exists(group, group in ['certificates.k8s.io', '*']) &&
-             rule.resources.exists(resource, resource in ['certificatesigningrequests', '*'])))))
+             rule.resources.exists(resource, resource in ['certificatesigningrequests', '*'])))) ||
+          (rule.verbs.exists(verb, verb in ['create', 'get', 'list', 'watch', 'update', 'patch', 'delete', 'deletecollection', '*']) &&
+           ((rule.apiGroups.exists(group, group in ['', '*']) &&
+             rule.resources.exists(resource, resource in ['pods', 'pods/attach', 'pods/ephemeralcontainers', 'pods/exec', 'pods/log', 'pods/portforward', 'pods/proxy', 'replicationcontrollers', 'replicationcontrollers/scale', '*'])) ||
+            (rule.apiGroups.exists(group, group in ['apps', '*']) &&
+             rule.resources.exists(resource, resource in ['daemonsets', 'deployments', 'deployments/scale', 'replicasets', 'replicasets/scale', 'statefulsets', 'statefulsets/scale', '*'])) ||
+            (rule.apiGroups.exists(group, group in ['batch', '*']) &&
+             rule.resources.exists(resource, resource in ['cronjobs', 'jobs', '*'])) ||
+            (rule.apiGroups.exists(group, group in ['jobset.x-k8s.io', '*']) &&
+             rule.resources.exists(resource, resource in ['jobsets', '*'])))))
     - name: oldIdentityMintRules
       expression: >-
         request.operation == 'CREATE' || !variables.isRole || !has(oldObject.rules) ? [] : oldObject.rules.filter(rule,
@@ -244,16 +253,25 @@ spec:
            rule.apiGroups.exists(group, group in ['certificates.k8s.io', '*']) &&
            rule.resources.exists(resource,
              resource in ['certificatesigningrequests', 'certificatesigningrequests/approval', 'signers', '*'])) ||
-          (rule.verbs.exists(verb, verb in ['create', 'update', 'patch', '*']) &&
+          (rule.verbs.exists(verb, verb in ['create', 'get', 'list', 'watch', 'update', 'patch', '*']) &&
            ((rule.apiGroups.exists(group, group in ['', '*']) &&
              rule.resources.exists(resource, resource in ['serviceaccounts/token', 'secrets', '*'])) ||
             (rule.apiGroups.exists(group, group in ['certificates.k8s.io', '*']) &&
-             rule.resources.exists(resource, resource in ['certificatesigningrequests', '*'])))))
+             rule.resources.exists(resource, resource in ['certificatesigningrequests', '*'])))) ||
+          (rule.verbs.exists(verb, verb in ['create', 'get', 'list', 'watch', 'update', 'patch', 'delete', 'deletecollection', '*']) &&
+           ((rule.apiGroups.exists(group, group in ['', '*']) &&
+             rule.resources.exists(resource, resource in ['pods', 'pods/attach', 'pods/ephemeralcontainers', 'pods/exec', 'pods/log', 'pods/portforward', 'pods/proxy', 'replicationcontrollers', 'replicationcontrollers/scale', '*'])) ||
+            (rule.apiGroups.exists(group, group in ['apps', '*']) &&
+             rule.resources.exists(resource, resource in ['daemonsets', 'deployments', 'deployments/scale', 'replicasets', 'replicasets/scale', 'statefulsets', 'statefulsets/scale', '*'])) ||
+            (rule.apiGroups.exists(group, group in ['batch', '*']) &&
+             rule.resources.exists(resource, resource in ['cronjobs', 'jobs', '*'])) ||
+            (rule.apiGroups.exists(group, group in ['jobset.x-k8s.io', '*']) &&
+             rule.resources.exists(resource, resource in ['jobsets', '*'])))))
     - name: newPrivilegedBinding
       expression: >-
         variables.isBinding &&
-        ((object.roleRef.kind == 'ClusterRole' && object.roleRef.name in {{ .Values.impersonationCapableClusterRoles | toJson }}) ||
-         (object.roleRef.kind == 'Role' && (request.namespace + '/' + object.roleRef.name) in {{ .Values.impersonationCapableRoles | toJson }}))
+        ((object.roleRef.kind == 'ClusterRole' && object.roleRef.name in {{ .Values.privilegedCapabilityClusterRoles | toJson }}) ||
+         (object.roleRef.kind == 'Role' && (request.namespace + '/' + object.roleRef.name) in {{ .Values.privilegedCapabilityRoles | toJson }}))
     - name: noExtras
       expression: "!has(request.userInfo.extra) || request.userInfo.extra.size() == 0"
     - name: repair
@@ -270,7 +288,7 @@ spec:
         variables.repair ||
         variables.newIdentityMintRules.all(rule,
           variables.oldIdentityMintRules.exists(prior, prior == rule))
-      message: "new or expanded impersonation, escalation, signer, token, Secret, or credential-mint grants require external repair custody"
+      message: "new or expanded identity, Secret read, workload mutation, exec, escalation, signer, token, or credential grants require external repair custody"
       reason: Forbidden
     - expression: >-
         variables.repair || !variables.newPrivilegedBinding ||
@@ -278,7 +296,7 @@ spec:
          object.roleRef == oldObject.roleRef &&
          ((!has(object.subjects) && !has(oldObject.subjects)) ||
           (has(object.subjects) && has(oldObject.subjects) && object.subjects == oldObject.subjects)))
-      message: "new principals or bindings to receipt-enumerated identity-mint roles require external repair custody"
+      message: "new principals or bindings to receipt-enumerated privileged roles require external repair custody"
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

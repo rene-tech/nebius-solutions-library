@@ -170,9 +170,10 @@ variable "deployment" {
       # rollback removes the deny in one apply and permits Helm rollback only
       # after a second live absence receipt.
       network_policy = optional(object({
-        phase                       = optional(string, "prepare")
-        authority_trust_root_sha256 = optional(string, "")
-        provider_trust_root_sha256  = optional(string, "")
+        phase                              = optional(string, "prepare")
+        authority_trust_root_sha256        = optional(string, "")
+        provider_trust_root_sha256         = optional(string, "")
+        provider_gateway_egress_host_cidrs = optional(set(string), [])
         inventory_receipt = optional(object({
           schema          = string
           cluster_id      = string
@@ -818,6 +819,26 @@ variable "deployment" {
       (var.deployment.models.network_policy.provider_trust_root_sha256 == "")
     )
     error_message = "authority_trust_root_sha256 and the distinct provider_trust_root_sha256 must be supplied together or both omitted for offline source checks."
+  }
+
+  validation {
+    condition = (
+      var.deployment.models.network_policy.provider_trust_root_sha256 == "" ? (
+        length(var.deployment.models.network_policy.provider_gateway_egress_host_cidrs) == 0
+        ) : (
+        length(var.deployment.models.network_policy.provider_gateway_egress_host_cidrs) >= 2 &&
+        length(var.deployment.models.network_policy.provider_gateway_egress_host_cidrs) <= 8 &&
+        alltrue([
+          for cidr in var.deployment.models.network_policy.provider_gateway_egress_host_cidrs :
+          can(cidrhost(cidr, 0)) && (
+            strcontains(cidr, ":") ? endswith(cidr, "/128") : endswith(cidr, "/32")
+          )
+        ]) &&
+        var.deployment.models.network_policy.provider_gateway_egress_host_cidrs ==
+        var.deployment.cluster.control_plane_allowed_cidrs
+      )
+    )
+    error_message = "Live network-boundary custody requires two to eight exact provider-gateway /32 or /128 egress routes, and they must be the complete cluster control-plane allowlist; offline source checks require none."
   }
 
   validation {

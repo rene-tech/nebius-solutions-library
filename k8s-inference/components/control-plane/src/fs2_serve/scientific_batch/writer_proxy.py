@@ -38,6 +38,7 @@ WORKLOAD_LABEL = "fs2.nebius.ai/workload-id"
 ATTEMPT_LABEL = "fs2.nebius.ai/attempt-id"
 INTERNAL_PROFILE = "job-internal-v1"
 INTERNAL_CLASS = "internal-job"
+REFERENCE_DATA_HOST_PATH = "/mnt/fs2-reference-data/data"
 UUID_LABEL_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
@@ -254,12 +255,42 @@ class ScientificExecutionPolicy:
             or security.get("privileged", False) is not False
             or security.get("runAsUser") != uid
             or security.get("runAsGroup") != gid
+            or set(_mapping(security.get("capabilities"), "container capabilities"))
+            != {"drop"}
             or _mapping(security.get("capabilities"), "container capabilities").get("drop")
             != ["ALL"]
             or (tools and security.get("readOnlyRootFilesystem") is not True)
             or container.get("volumeDevices") not in (None, [])
         ):
             raise ScientificWriterError("scientific container security differs from execution policy")
+
+    @staticmethod
+    def _container_shape(
+        container: Mapping[str, Any], *, label: str, working_directory: bool
+    ) -> None:
+        allowed = {
+            "name",
+            "image",
+            "imagePullPolicy",
+            "command",
+            "env",
+            "resources",
+            "securityContext",
+            "volumeMounts",
+        }
+        if working_directory:
+            allowed.add("workingDir")
+        forbidden = {
+            "envFrom",
+            "lifecycle",
+            "startupProbe",
+            "livenessProbe",
+            "readinessProbe",
+        }
+        if set(container) - allowed or set(container) & forbidden:
+            raise ScientificWriterError(
+                f"{label} contains a container field absent from the reviewed renderer"
+            )
 
     @staticmethod
     def _literal_environment(container: Mapping[str, Any], *, label: str) -> Mapping[str, str]:
@@ -322,7 +353,8 @@ class ScientificExecutionPolicy:
             mount_path = item.get("mountPath")
             sub_path = item.get("subPath")
             if (
-                not isinstance(name, str)
+                bool(set(item) - {"name", "mountPath", "readOnly", "subPath"})
+                or not isinstance(name, str)
                 or name in names
                 or not isinstance(mount_path, str)
                 or not PurePosixPath(mount_path).is_absolute()
@@ -394,6 +426,24 @@ class ScientificExecutionPolicy:
         if not isinstance(model_id, str) or not isinstance(stage_id, str):
             raise ScientificWriterError("scientific Pod execution identity is malformed")
         spec = _mapping(pod.get("spec"), f"{label}.spec")
+        allowed_pod_fields = {
+            "affinity",
+            "automountServiceAccountToken",
+            "containers",
+            "enableServiceLinks",
+            "initContainers",
+            "nodeSelector",
+            "restartPolicy",
+            "securityContext",
+            "serviceAccountName",
+            "terminationGracePeriodSeconds",
+            "tolerations",
+            "volumes",
+        }
+        if set(spec) - allowed_pod_fields:
+            raise ScientificWriterError(
+                "scientific Pod contains a field absent from the reviewed renderer"
+            )
         uid = stage.get("workspace_uid")
         gid = stage.get("workspace_gid")
         if not isinstance(uid, int) or not isinstance(gid, int):
@@ -437,6 +487,12 @@ class ScientificExecutionPolicy:
         collector = by_name.get(COLLECTOR_CONTAINER_NAME)
         if not isinstance(stage_container, Mapping) or not isinstance(collector, Mapping):
             raise ScientificWriterError("scientific Pod lacks exact stage and collector containers")
+        self._container_shape(
+            stage_container, label="scientific stage", working_directory=True
+        )
+        self._container_shape(
+            collector, label="scientific collector", working_directory=False
+        )
         if stage_container.get("image") != stage.get("image") or collector.get("image") != self.tools_image:
             raise ScientificWriterError("scientific Pod image differs from the immutable execution map")
         self._container_security(stage_container, tools=False, uid=uid, gid=gid)
@@ -484,6 +540,11 @@ class ScientificExecutionPolicy:
             ):
                 raise ScientificWriterError("scientific init image differs from the immutable tools image")
             init_names.add(name)
+            self._container_shape(
+                container,
+                label=f"scientific init {name}",
+                working_directory=False,
+            )
             self._container_security(container, tools=True, uid=uid, gid=gid)
             init_command = self._command(container, label=f"scientific init {name}")
             allowed_prefix = (
@@ -534,9 +595,21 @@ class ScientificExecutionPolicy:
                     },
                 }
             elif source.get("host_path") is not None:
+                if (
+                    source.get("kind") != "reference"
+                    or source.get("claim_name") is not None
+                    or source.get("host_path") != REFERENCE_DATA_HOST_PATH
+                    or source.get("read_only") is not True
+                ):
+                    raise ScientificWriterError(
+                        "scientific hostPath is outside the exact read-only reference plane"
+                    )
                 expected_volume = {
                     "name": name,
-                    "hostPath": {"path": source.get("host_path"), "type": "Directory"},
+                    "hostPath": {
+                        "path": source.get("host_path"),
+                        "type": "Directory",
+                    },
                 }
             else:
                 raise ScientificWriterError("scientific volume source is not finite")

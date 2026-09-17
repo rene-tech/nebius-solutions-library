@@ -42,6 +42,27 @@ RELEASE_INVENTORY = [
 ]
 
 
+def secure_pod_spec() -> dict[str, object]:
+    return {
+        "automountServiceAccountToken": False,
+        "securityContext": {
+            "runAsNonRoot": True,
+            "seccompProfile": {"type": "RuntimeDefault"},
+        },
+        "containers": [
+            {
+                "name": "runtime",
+                "image": "registry.example.test/fs2/runtime@sha256:" + "c" * 64,
+                "securityContext": {
+                    "allowPrivilegeEscalation": False,
+                    "privileged": False,
+                    "capabilities": {"drop": ["ALL"]},
+                },
+            }
+        ],
+    }
+
+
 def prepare_contract() -> dict[str, object]:
     profiles = [PROFILE]
     policies = admission_policies()["items"]
@@ -109,7 +130,13 @@ def deployment(*, name: str = "qwen3-8b", profile: str = PROFILE) -> dict[str, o
             "generation": 2,
             "labels": labels,
         },
-        "spec": {"replicas": 1, "template": {"metadata": {"labels": labels}}},
+        "spec": {
+            "replicas": 1,
+            "template": {
+                "metadata": {"labels": labels},
+                "spec": secure_pod_spec(),
+            },
+        },
         "status": {
             "observedGeneration": 2,
             "updatedReplicas": 1,
@@ -151,6 +178,7 @@ def pod(
                 {"kind": "Deployment", "uid": owner_uid, "controller": True}
             ],
         },
+        "spec": secure_pod_spec(),
         "status": {
             "phase": "Running",
             "conditions": [{"type": "Ready", "status": "True"}],
@@ -395,7 +423,11 @@ def boundary_webhooks() -> dict[str, object]:
                                 "apiGroups": [""],
                                 "apiVersions": ["v1"],
                                 "operations": ["CREATE", "UPDATE"],
-                                "resources": ["pods", "replicationcontrollers"],
+                                "resources": [
+                                    "pods",
+                                    "pods/ephemeralcontainers",
+                                    "replicationcontrollers",
+                                ],
                                 "scope": "Namespaced",
                             },
                             {
@@ -672,8 +704,16 @@ def boundary_authority() -> dict[str, object]:
         },
         "external_custody": {
             "schema": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v3",
+            "policy_id": "network-boundary-test",
+            "policy_revision": "1",
             "provider_trust_root_sha256": "f" * 64,
             "attestation_sha256": "4" * 64,
+            "gateway_policy_sha256": "7" * 64,
+            "cluster_resource_version": 17,
+            "gateway_egress_host_cidrs": [
+                "192.0.2.10/32",
+                "192.0.2.11/32",
+            ],
             "freeze_transaction_id": "reviewer:1:" + "5" * 32,
             "freeze_expires_at": "2026-09-16T18:15:00Z",
             "frozen_resources_sha256": "6" * 64,
@@ -822,9 +862,18 @@ def test_inventory_covers_every_pod_producing_controller_kind() -> None:
             "status": status,
         }
 
-    runtime_template = {"metadata": {"labels": runtime_labels}, "spec": {}}
-    keeper_template = {"metadata": {"labels": keeper_labels}, "spec": {}}
-    job_template = {"metadata": {"labels": job_labels}, "spec": {}}
+    runtime_template = {
+        "metadata": {"labels": runtime_labels},
+        "spec": secure_pod_spec(),
+    }
+    keeper_template = {
+        "metadata": {"labels": keeper_labels},
+        "spec": secure_pod_spec(),
+    }
+    job_template = {
+        "metadata": {"labels": job_labels},
+        "spec": secure_pod_spec(),
+    }
     resources = workload_resources(deployment())
     resources["statefulsets"]["items"] = [
         item(

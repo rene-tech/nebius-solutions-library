@@ -32,12 +32,17 @@ themselves:
   wildcard roles remain operable, while the provider assertion and full RBAC
   census bind their exact live grants and bindings.
 
-Before installation, a distinct provider/IAM v3 assertion must prove a signed
-deny-except policy for the two VAPs, two bindings, and VWC. Exactly two distinct
-custodian/recovery SPIFFE principals may CREATE or UPDATE those five objects;
-DELETE and REPLACE are forbidden. This external control is the preventive
-boundary. The in-cluster objects provide additional enforcement and detective
-equality, never a self-custody claim.
+Before installation, the external gateway implementation in
+`components/control-plane/provider-custody/` must run on at least two
+provider-owned hosts behind its mTLS NGINX boundary. Those hosts' exact sorted
+`/32` or `/128` egress routes must be the complete managed-cluster public API
+allowlist. Its digest-pinned policy denies mutation of the signed full
+inventory before kube-apiserver and rejects unresolvable or collection-wide
+writes. The provider/IAM v3 assertion binds the live policy digest, gateway,
+firewall and endpoint-access resource IDs, cluster resourceVersion, host
+routes, six certificate principals, and status-challenge response. The
+in-cluster objects remain defense in depth and detective equality, never a
+self-custody claim.
 
 After the authority is installed and ready, and before either receipt snapshot,
 the provider must activate the assertion's bounded mutation transaction. Its
@@ -50,16 +55,19 @@ than a cooperative in-cluster convention.
 
 The signed authority v3 receipt must be no more than 15 minutes old. It binds every
 protected object's UID, resourceVersion and complete semantic hash; the full
-Role/ClusterRole and binding census; all impersonation-capable roles and the
-absence of bindings to them; exact credential username/group/extra/provider
+Role/ClusterRole and binding census; every role able to mint identity, read
+Secrets, read or mutate workloads, or use exec/attach/port-forward paths and
+every binding to those roles; exact credential username/group/extra/provider
 claims; the distinct acquisition and scientific writers; the exact run-scoped
 JobSet controller; the live authority image; both TLS Secrets; the exact webhook
 CA; the Service and Endpoints identity; and every distinct-node Pod's live
 readiness/served-certificate hash. The wrapper takes two identical projections
 and repeats full verification immediately before applying a saved plan.
-The chart does not create the external provider control: independent review
-must identify and validate that concrete provider policy/resource. A locally
-authored JSON assertion, even if schema-valid, is not rollout evidence.
+The chart does not provision the provider hosts or change cluster endpoint
+access. Independent review must validate the repository gateway source and the
+exact deployed resource IDs, policy digest, endpoint resourceVersion, host
+routes, mTLS status challenge, and direct-access denial. A locally authored
+JSON assertion, even if schema-valid, is not rollout evidence.
 
 Outside an active mutation transaction, break glass is non-destructive: the
 external recovery identity may update the
@@ -79,6 +87,25 @@ workloads, all `fs2-models` NetworkPolicies, the exact marker, both retained
 phase Leases, exact control-plane Helm storage/release objects, and mutations
 made by the three external release identities. They do not intercept
 unrelated namespaces or generic cluster resources.
+
+The API-server-native profile bindings additionally cover the entire
+`fs2-models` namespace so a controller cannot evade the webhook by omitting a
+profile. Every profiled parent and Pod must be token-free, non-root, use
+RuntimeDefault seccomp, disable hostNetwork/hostPID/hostIPC and hostPort,
+disable privilege escalation, drop `ALL` capabilities, and add no capability
+except reviewed ModelExpress `IPC_LOCK`. `hostPath` is rejected except for the
+single published `/mnt/fs2-reference-data/data` `Directory`, which must be
+mounted read-only without propagation; the immutable scientific execution map
+further binds each reference-data subPath. The inventory verifier checks the
+same envelope before default deny can be enforced.
+
+The transition and maintenance Leases are retained provider-precreated objects,
+not members of the zero-principal frozen inventory. They have a separate
+gateway channel: only the corresponding principal can submit exact JSON Patch,
+with one resourceVersion CAS and a bounded holder/duration. CREATE, DELETE,
+PUT, merge/strategic patches and unrecognized fields are denied. The phase
+wrapper fails closed if either Lease is absent and re-reads its resourceVersion
+before releasing the holder.
 
 The normal `maintenance` phase keeps the enforcement marker, apply fence,
 finite allow profiles, and `fs2-models/default-deny` live. A distinct random

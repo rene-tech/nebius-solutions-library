@@ -34,10 +34,10 @@ modelControllerWriterUsername: system:serviceaccount:fs2-system:fs2-serve-contro
 transitionHolder: ""
 maintenanceHolder: ""
 # This list is produced by the signed RBAC census. The static API-server guard
-# prevents any new binding to an already impersonation-capable role and
-# prevents any role from acquiring impersonate/* after the receipt is signed.
-impersonationCapableClusterRoles: [cluster-admin]
-impersonationCapableRoles: []
+# prevents a new binding to any role able to mint identity, read Secrets,
+# mutate/exec workloads, impersonate, bind/escalate, or sign credentials.
+privilegedCapabilityClusterRoles: [cluster-admin]
+privilegedCapabilityRoles: []
 # Installed only from an externally signed Platform-Security receipt. Each
 # entry is an exact API resource/name/namespace/operation tuple. Helm release
 # storage Secret names are enumerated explicitly for the one admitted revision.

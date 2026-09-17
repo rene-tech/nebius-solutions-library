@@ -1,0 +1,32 @@
+[Unit]
+Description=FS2 external model-network provider custody gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fs2-provider-custody
+Group=fs2-provider-custody
+EnvironmentFile=/etc/fs2-provider-custody/gateway.env
+ExecStart=/opt/fs2-provider-custody/bin/fs2-provider-custody-gateway
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

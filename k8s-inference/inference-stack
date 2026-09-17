@@ -8,10 +8,12 @@ import base64
 import binascii
 import fcntl
 import hashlib
+import ipaddress
 import json
 import os
 import re
 import secrets
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -20,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 
 SOLUTION_ROOT = Path(__file__).resolve().parent
@@ -49,6 +52,16 @@ STAGE_COMPLETION_OUTPUTS = {
 
 class DeploymentError(RuntimeError):
     """A bounded, user-actionable deployment failure."""
+
+
+def _is_exact_host_route(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        network = ipaddress.ip_network(value, strict=True)
+    except ValueError:
+        return False
+    return network.prefixlen == network.max_prefixlen
 
 
 def command_text(arguments: Sequence[str]) -> str:
@@ -2463,43 +2476,9 @@ def model_network_transition_lock(
     )
     now = datetime.now(UTC)
     if observed.returncode != 0:
-        diagnostic = (observed.stderr or observed.stdout).lower()
-        if "notfound" not in diagnostic and "not found" not in diagnostic:
-            raise DeploymentError(
-                "cannot inspect the model-network transition Lease: "
-                + (
-                    observed.stderr.strip()
-                    or observed.stdout.strip()
-                    or "unknown error"
-                )
-            )
-        lease = {
-            "apiVersion": "coordination.k8s.io/v1",
-            "kind": "Lease",
-            "metadata": {
-                "name": name,
-                "namespace": namespace,
-                "labels": {
-                    "app.kubernetes.io/part-of": "fs2-serve",
-                    "fs2-serve.nebius.ai/policy-owner": "network-transition",
-                },
-                "annotations": {
-                    "fs2-serve.nebius.ai/network-transition-writer": authenticated_username,
-                    "fs2-serve.nebius.ai/network-transition-holder": holder,
-                },
-            },
-            "spec": {
-                "holderIdentity": holder,
-                "leaseDurationSeconds": 7200,
-                "acquireTime": now.isoformat().replace("+00:00", "Z"),
-                "renewTime": now.isoformat().replace("+00:00", "Z"),
-                "leaseTransitions": 0,
-            },
-        }
-        run(
-            [*base, "create", "-f", "-"],
-            env=environment,
-            input_text=json.dumps(lease, separators=(",", ":")),
+        raise DeploymentError(
+            "the provider-owned model-network operation Lease is unavailable; "
+            "the phase writer may update it but can never create or delete it"
         )
     else:
         try:
@@ -2591,8 +2570,36 @@ def model_network_transition_lock(
     try:
         yield holder, authenticated_username
     finally:
+        release_observed = subprocess.run(
+            [*base, "-n", namespace, "get", "lease", name, "-o", "json"],
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        try:
+            release_resource_version = json.loads(release_observed.stdout)["metadata"][
+                "resourceVersion"
+            ]
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise DeploymentError(
+                "cannot reconstruct the operation Lease CAS before release"
+            ) from exc
+        if (
+            release_observed.returncode != 0
+            or not isinstance(release_resource_version, str)
+            or not release_resource_version
+        ):
+            raise DeploymentError(
+                "cannot read the operation Lease immediately before release"
+            )
         released_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         release_patch = [
+            {
+                "op": "test",
+                "path": "/metadata/resourceVersion",
+                "value": release_resource_version,
+            },
             {"op": "test", "path": "/spec/holderIdentity", "value": holder},
             {"op": "replace", "path": "/spec/holderIdentity", "value": ""},
             {"op": "replace", "path": "/spec/leaseDurationSeconds", "value": 1},
@@ -2730,7 +2737,7 @@ def _verified_provider_custody(
     *,
     cluster_id: str,
     provider_trust_root_sha256: str,
-) -> tuple[dict[str, Any], str]:
+) -> tuple[dict[str, Any], str, datetime]:
     """Verify the independent provider/IAM custody assertion.
 
     Kubernetes admission cannot match ValidatingAdmissionPolicy or its binding,
@@ -2837,6 +2844,13 @@ def _verified_provider_custody(
         )
         or len(set(mutation_freeze["protected_kubernetes_resources"]))
         != len(mutation_freeze["protected_kubernetes_resources"])
+        or mutation_freeze.get("protected_kubernetes_resource_prefixes")
+        != [
+            "clusterrolebindings.rbac.authorization.k8s.io/_cluster/",
+            "clusterroles.rbac.authorization.k8s.io/_cluster/",
+            "rolebindings.rbac.authorization.k8s.io/",
+            "roles.rbac.authorization.k8s.io/",
+        ]
         or freeze_active_from.tzinfo is None
         or freeze_active_until.tzinfo is None
         or freeze_active_from != observed_at
@@ -2848,18 +2862,165 @@ def _verified_provider_custody(
             "the external provider custody assertion is stale or outside its exact cluster contract"
         )
     credentials = attestation.get("credentials")
-    if not isinstance(credentials, dict) or set(credentials) != {
-        "authorizer",
-        "transition",
-        "maintenance",
-        "auditor",
-        "custodian",
-        "recovery",
-    }:
+    if (
+        not isinstance(credentials, dict)
+        or set(credentials)
+        != {
+            "authorizer",
+            "transition",
+            "maintenance",
+            "auditor",
+            "custodian",
+            "recovery",
+        }
+        or any(not isinstance(credential, dict) for credential in credentials.values())
+    ):
         raise DeploymentError(
             "the provider assertion must enumerate every separately issued credential"
         )
-    return attestation, _sha256_file(paths["attestation"])
+    operation_locks = attestation.get("operation_locks")
+    expected_gateway_principals = {
+        credential.get("client_certificate_sha256"): {
+            "principal_id": credential.get("provider_principal_id"),
+            "username": credential.get("username"),
+            "groups": credential.get("groups"),
+            "status_reader": name == "auditor",
+        }
+        for name, credential in credentials.items()
+        if isinstance(credential, dict)
+    }
+    if (
+        len(expected_gateway_principals) != 6
+        or None in expected_gateway_principals
+        or not all(
+            re.fullmatch(r"[a-f0-9]{64}", str(certificate_sha256))
+            for certificate_sha256 in expected_gateway_principals
+        )
+    ):
+        raise DeploymentError(
+            "provider custody credentials do not define six gateway certificate principals"
+        )
+    expected_operation_locks = {
+        "leases.coordination.k8s.io/fs2-system/fs2-model-network-transition": {
+            "principal_id": credentials["transition"].get("provider_principal_id"),
+            "operations": ["PATCH"],
+        },
+        "leases.coordination.k8s.io/fs2-system/fs2-model-network-maintenance": {
+            "principal_id": credentials["maintenance"].get("provider_principal_id"),
+            "operations": ["PATCH"],
+        },
+    }
+    if (
+        not isinstance(operation_locks, dict)
+        or operation_locks.get("enforcement")
+        != "provider-gateway-exact-object-resource-version-cas"
+        or operation_locks.get("maximum_lease_duration_seconds") != 7200
+        or operation_locks.get("delete_allowed") is not False
+        or operation_locks.get("create_allowed") is not False
+        or operation_locks.get("locks") != expected_operation_locks
+    ):
+        raise DeploymentError(
+            "provider custody must expose the exact non-deletable operation-lock channel"
+        )
+    gateway = attestation.get("provider_gateway")
+    if not isinstance(gateway, dict):
+        raise DeploymentError("provider custody has no concrete preventive gateway")
+    status_url = gateway.get("status_url")
+    parsed_status_url = urlsplit(status_url if isinstance(status_url, str) else "")
+    if (
+        parsed_status_url.scheme != "https"
+        or not parsed_status_url.hostname
+        or parsed_status_url.path != "/v1/custody/status"
+        or parsed_status_url.query
+        or parsed_status_url.fragment
+        or gateway.get("direct_control_plane_access")
+        != "provider-firewall-gateway-host-routes-only"
+        or not isinstance(gateway.get("provider_resource_ids"), dict)
+        or set(gateway["provider_resource_ids"])
+        != {"gateway", "gateway_firewall", "cluster_endpoint_access"}
+        or any(
+            not isinstance(resource_id, str) or not resource_id
+            for resource_id in gateway["provider_resource_ids"].values()
+        )
+        or not isinstance(gateway.get("cluster_resource_version"), int)
+        or isinstance(gateway.get("cluster_resource_version"), bool)
+        or gateway["cluster_resource_version"] < 0
+        or not isinstance(gateway.get("gateway_egress_host_cidrs"), list)
+        or not 2 <= len(gateway["gateway_egress_host_cidrs"]) <= 8
+        or len(set(gateway["gateway_egress_host_cidrs"]))
+        != len(gateway["gateway_egress_host_cidrs"])
+        or gateway["gateway_egress_host_cidrs"]
+        != sorted(gateway["gateway_egress_host_cidrs"])
+        or not all(_is_exact_host_route(cidr) for cidr in gateway["gateway_egress_host_cidrs"])
+        or not re.fullmatch(r"[a-f0-9]{64}", str(gateway.get("policy_sha256", "")))
+    ):
+        raise DeploymentError("provider custody gateway identity is incomplete")
+    gateway_paths = {
+        "CA": Path(os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_GATEWAY_CA", "")),
+        "client certificate": Path(
+            os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_GATEWAY_CLIENT_CERT", "")
+        ),
+        "client key": Path(
+            os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_GATEWAY_CLIENT_KEY", "")
+        ),
+    }
+    for label, path in gateway_paths.items():
+        if (
+            not path.is_absolute()
+            or path.is_symlink()
+            or not path.is_file()
+            or path.stat().st_mode & 0o077
+        ):
+            raise DeploymentError(
+                f"the provider custody gateway {label} must be an absolute mode-0600 regular file"
+            )
+    challenge = secrets.token_hex(32)
+    request_body = json.dumps(
+        {"challenge": challenge, "cluster_id": cluster_id},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    ssl_context = ssl.create_default_context(cafile=str(gateway_paths["CA"]))
+    ssl_context.load_cert_chain(
+        str(gateway_paths["client certificate"]),
+        str(gateway_paths["client key"]),
+    )
+    try:
+        with urlopen(
+            Request(
+                status_url,
+                data=request_body,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            ),
+            context=ssl_context,
+            timeout=5,
+        ) as response:
+            if response.status != 200 or response.headers.get_content_type() != "application/json":
+                raise DeploymentError("provider custody gateway status failed closed")
+            live_status = json.loads(response.read(262_145))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise DeploymentError("provider custody gateway status is unavailable") from exc
+    expected_live_status = {
+        "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v1",
+        "challenge": challenge,
+        "cluster_id": cluster_id,
+        "policy_id": attestation.get("policy_id"),
+        "policy_revision": attestation.get("policy_revision"),
+        "policy_sha256": gateway.get("policy_sha256"),
+        "provider_resource_ids": gateway.get("provider_resource_ids"),
+        "cluster_resource_version": gateway.get("cluster_resource_version"),
+        "control_plane_allowed_cidrs": gateway.get("gateway_egress_host_cidrs"),
+        "direct_control_plane_access": "provider-firewall-gateway-host-routes-only",
+        "principal_bindings": dict(sorted(expected_gateway_principals.items())),
+        "mutation_freeze": mutation_freeze,
+        "operation_locks": operation_locks,
+    }
+    if live_status != expected_live_status:
+        raise DeploymentError(
+            "live provider custody gateway state differs from the signed full-inventory freeze"
+        )
+    return attestation, _sha256_file(paths["attestation"]), freeze_active_until
 
 
 def _decode_kubeconfig_data(value: Any, label: str) -> bytes:
@@ -2949,19 +3110,34 @@ def _provider_bound_kubeconfig_identity(
         capture_output=True,
         check=False,
     )
+    normalized_certificate = subprocess.run(
+        [os.environ.get("FS2_OPENSSL", "openssl"), "x509", "-outform", "DER"],
+        env=clean_environment(),
+        input=certificate,
+        capture_output=True,
+        check=False,
+    )
     try:
         output = inspected.stdout.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
         raise DeploymentError("the client certificate SAN output is malformed") from exc
     principals = sorted(set(re.findall(r"URI:(spiffe://[^,\s]+)", output)))
-    if inspected.returncode != 0 or len(principals) != 1:
+    if (
+        inspected.returncode != 0
+        or normalized_certificate.returncode != 0
+        or not normalized_certificate.stdout
+        or len(principals) != 1
+    ):
         raise DeploymentError(
             "the client certificate must carry exactly one provider-issued SPIFFE principal"
         )
     return {
         "provider_principal_id": principals[0],
-        "client_certificate_sha256": hashlib.sha256(certificate).hexdigest(),
+        "client_certificate_sha256": hashlib.sha256(
+            normalized_certificate.stdout
+        ).hexdigest(),
         "issuer_ca_sha256": hashlib.sha256(issuer_ca).hexdigest(),
+        "server": str(cluster.get("server", "")),
     }
 
 
@@ -3131,7 +3307,11 @@ def model_network_boundary_authority_custody(
 ) -> dict[str, Any]:
     """Verify the externally signed authority receipt and every bound live object."""
 
-    provider_attestation, provider_attestation_sha256 = _verified_provider_custody(
+    (
+        provider_attestation,
+        provider_attestation_sha256,
+        freeze_active_until,
+    ) = _verified_provider_custody(
         cluster_id=cluster_id,
         provider_trust_root_sha256=provider_trust_root_sha256,
     )
@@ -3230,6 +3410,9 @@ def model_network_boundary_authority_custody(
         != reconstructed_identity["client_certificate_sha256"]
         or credential_claim.get("issuer_ca_sha256")
         != reconstructed_identity["issuer_ca_sha256"]
+        or credential_claim.get("gateway_server") != reconstructed_identity["server"]
+        or credential_claim.get("gateway_server")
+        != provider_attestation.get("provider_gateway", {}).get("api_server_url")
     ):
         raise DeploymentError(
             "the model-network credential is not the exact provider-issued X.509 identity in the signed custody receipt"
@@ -3269,6 +3452,7 @@ def model_network_boundary_authority_custody(
                     "provider_principal_id",
                     "client_certificate_sha256",
                     "issuer_ca_sha256",
+                    "gateway_server",
                 )
             )
         ):
@@ -3293,6 +3477,16 @@ def model_network_boundary_authority_custody(
         != provider_trust_root_sha256
         or external_custody.get("attestation_sha256")
         != provider_attestation_sha256
+        or external_custody.get("gateway_policy_sha256")
+        != provider_attestation.get("provider_gateway", {}).get("policy_sha256")
+        or external_custody.get("cluster_resource_version")
+        != provider_attestation.get("provider_gateway", {}).get(
+            "cluster_resource_version"
+        )
+        or external_custody.get("gateway_egress_host_cidrs")
+        != provider_attestation.get("provider_gateway", {}).get(
+            "gateway_egress_host_cidrs"
+        )
         or external_custody.get("freeze_transaction_id")
         != provider_attestation.get("mutation_freeze", {}).get("transaction_id")
         or external_custody.get("freeze_expires_at")
@@ -3304,7 +3498,10 @@ def model_network_boundary_authority_custody(
                     provider_attestation.get("mutation_freeze", {}).get(
                         "protected_kubernetes_resources", []
                     )
-                )
+                ),
+                "resource_prefixes": provider_attestation.get(
+                    "mutation_freeze", {}
+                ).get("protected_kubernetes_resource_prefixes", []),
             }
         )
         or sorted(provider_attestation.get("exclusive_break_glass_principals", []))
@@ -4018,7 +4215,7 @@ def model_network_boundary_authority_custody(
         ):
             raise DeploymentError(f"the signed {name} census is stale")
 
-    def grants_privileged_identity_mutation(item: Mapping[str, Any]) -> bool:
+    def grants_privileged_identity_or_workload_access(item: Mapping[str, Any]) -> bool:
         rules = item.get("rules", [])
         return isinstance(rules, list) and any(
             isinstance(rule, Mapping)
@@ -4076,7 +4273,7 @@ def model_network_boundary_authority_custody(
                 )
                 or (
                     any(
-                        verb in {"create", "update", "patch", "*"}
+                        verb in {"create", "get", "list", "watch", "update", "patch", "*"}
                         for verb in rule["verbs"]
                     )
                     and (
@@ -4100,6 +4297,78 @@ def model_network_boundary_authority_custody(
                         )
                     )
                 )
+                or (
+                    any(
+                        verb
+                        in {
+                            "create",
+                            "get",
+                            "list",
+                            "watch",
+                            "update",
+                            "patch",
+                            "delete",
+                            "deletecollection",
+                            "*",
+                        }
+                        for verb in rule["verbs"]
+                    )
+                    and (
+                        (
+                            any(group in {"", "*"} for group in rule["apiGroups"])
+                            and any(
+                                resource
+                                in {
+                                    "pods",
+                                    "pods/attach",
+                                    "pods/ephemeralcontainers",
+                                    "pods/exec",
+                                    "pods/log",
+                                    "pods/portforward",
+                                    "pods/proxy",
+                                    "replicationcontrollers",
+                                    "replicationcontrollers/scale",
+                                    "*",
+                                }
+                                for resource in rule["resources"]
+                            )
+                        )
+                        or (
+                            any(group in {"apps", "*"} for group in rule["apiGroups"])
+                            and any(
+                                resource
+                                in {
+                                    "daemonsets",
+                                    "deployments",
+                                    "deployments/scale",
+                                    "replicasets",
+                                    "replicasets/scale",
+                                    "statefulsets",
+                                    "statefulsets/scale",
+                                    "*",
+                                }
+                                for resource in rule["resources"]
+                            )
+                        )
+                        or (
+                            any(group in {"batch", "*"} for group in rule["apiGroups"])
+                            and any(
+                                resource in {"cronjobs", "jobs", "*"}
+                                for resource in rule["resources"]
+                            )
+                        )
+                        or (
+                            any(
+                                group in {"jobset.x-k8s.io", "*"}
+                                for group in rule["apiGroups"]
+                            )
+                            and any(
+                                resource in {"jobsets", "*"}
+                                for resource in rule["resources"]
+                            )
+                        )
+                    )
+                )
             )
             for rule in rules
         )
@@ -4107,26 +4376,28 @@ def model_network_boundary_authority_custody(
     capable_cluster_roles = sorted(
         item.get("metadata", {}).get("name")
         for item in collections["cluster_roles"]["items"]
-        if grants_privileged_identity_mutation(item)
+        if grants_privileged_identity_or_workload_access(item)
     )
     capable_roles = sorted(
         f"{item.get('metadata', {}).get('namespace')}/{item.get('metadata', {}).get('name')}"
         for item in collections["roles"]["items"]
-        if grants_privileged_identity_mutation(item)
+        if grants_privileged_identity_or_workload_access(item)
     )
     if (
-        capable_cluster_roles != census_claim.get("impersonation_capable_cluster_roles")
-        or capable_roles != census_claim.get("impersonation_capable_roles")
+        capable_cluster_roles != census_claim.get("privileged_capability_cluster_roles")
+        or capable_roles != census_claim.get("privileged_capability_roles")
     ):
-        raise DeploymentError("the signed impersonation-capable role census is incomplete")
-    bound_impersonation: list[str] = []
+        raise DeploymentError(
+            "the signed privileged identity, Secret-read, workload-mutation, and exec role census is incomplete"
+        )
+    bound_privileged_roles: list[str] = []
     privileged_bindings: list[dict[str, str]] = []
     for item in collections["cluster_role_bindings"]["items"]:
         role_ref = item.get("roleRef", {})
         if role_ref.get("kind") == "ClusterRole" and role_ref.get("name") in capable_cluster_roles:
             metadata = item.get("metadata", {})
             identifier = f"clusterrolebinding//{metadata.get('name')}"
-            bound_impersonation.append(identifier)
+            bound_privileged_roles.append(identifier)
             privileged_bindings.append(
                 {
                     "kind": "ClusterRoleBinding",
@@ -4156,7 +4427,7 @@ def model_network_boundary_authority_custody(
         )
         if capable:
             identifier = f"rolebinding/{metadata.get('namespace')}/{metadata.get('name')}"
-            bound_impersonation.append(identifier)
+            bound_privileged_roles.append(identifier)
             privileged_bindings.append(
                 {
                     "kind": "RoleBinding",
@@ -4171,19 +4442,21 @@ def model_network_boundary_authority_custody(
                     ),
                 }
             )
-    bound_impersonation.sort()
+    bound_privileged_roles.sort()
     privileged_bindings.sort(
         key=lambda item: (item["kind"], item["namespace"], item["name"])
     )
     if (
-        census_claim.get("bound_impersonation_roles") != bound_impersonation
+        census_claim.get("bound_privileged_capability_roles")
+        != bound_privileged_roles
         or census_claim.get("provider_authorized_privileged_bindings")
         != privileged_bindings
         or provider_attestation.get("authorized_privileged_bindings")
         != privileged_bindings
     ):
         raise DeploymentError(
-            "live identity-mint bindings differ from the provider-authorized finite inventory"
+            "live privileged identity, Secret, workload, and exec bindings differ "
+            "from the provider-authorized finite inventory"
         )
 
     static_binding = next(
@@ -4228,8 +4501,14 @@ def model_network_boundary_authority_custody(
     ).hexdigest()
     if (
         live_static.returncode != 0
-        or annotations.get("fs2-serve.nebius.ai/impersonation-capable-cluster-roles-sha256") != expected_cluster_hash
-        or annotations.get("fs2-serve.nebius.ai/impersonation-capable-roles-sha256") != expected_role_hash
+        or annotations.get(
+            "fs2-serve.nebius.ai/privileged-capability-cluster-roles-sha256"
+        )
+        != expected_cluster_hash
+        or annotations.get(
+            "fs2-serve.nebius.ai/privileged-capability-roles-sha256"
+        )
+        != expected_role_hash
     ):
         raise DeploymentError("the API-native impersonation guard is not bound to the live census")
 
@@ -4437,10 +4716,14 @@ def model_network_boundary_authority_custody(
             raise DeploymentError(
                 "the dedicated scientific writer is not live-bound or distinct"
             )
+    operation_lock_resources = {
+        "leases.coordination.k8s.io/fs2-system/fs2-model-network-transition",
+        "leases.coordination.k8s.io/fs2-system/fs2-model-network-maintenance",
+    }
     frozen_resources = {
         f"{resource}/{namespace or '_cluster'}/{name}"
         for resource, namespace, name in required
-    }
+    } - operation_lock_resources
     frozen_resources.add(
         f"deployments.apps/jobset-system/{jobset_match.group(1)}"
     )

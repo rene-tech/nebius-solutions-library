@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 PROFILE_LABEL = "fs2-serve.nebius.ai/network-profile"
+REFERENCE_DATA_HOST_PATH = "/mnt/fs2-reference-data/data"
 WORKLOAD_CLASS_LABEL = "fs2-serve.nebius.ai/network-workload-class"
 COMPONENT_LABEL = "app.kubernetes.io/component"
 PART_OF_LABEL = "app.kubernetes.io/part-of"
@@ -591,6 +592,109 @@ def _pod_template(item: dict[str, Any], kind: str) -> dict[str, Any]:
     return first
 
 
+def _validate_pod_security(
+    spec: dict[str, Any], label: str, *, allow_ipc_lock: bool
+) -> None:
+    if (
+        any(
+            spec.get(field, False) is not False
+            for field in ("hostNetwork", "hostPID", "hostIPC")
+        )
+        or spec.get("shareProcessNamespace", False) is not False
+        or spec.get("automountServiceAccountToken") is not False
+    ):
+        raise ReceiptError(f"{label} can reach host namespaces or a service-account token")
+    volumes = spec.get("volumes", [])
+    if not isinstance(volumes, list) or not all(
+        isinstance(volume, dict) for volume in volumes
+    ):
+        raise ReceiptError(f"{label} has a malformed volume")
+    pod_security = spec.get("securityContext", {})
+    if not isinstance(pod_security, dict):
+        raise ReceiptError(f"{label} Pod securityContext is malformed")
+    pod_non_root = pod_security.get("runAsNonRoot") is True
+    pod_seccomp = pod_security.get("seccompProfile", {})
+    pod_runtime_default = (
+        isinstance(pod_seccomp, dict) and pod_seccomp.get("type") == "RuntimeDefault"
+    )
+    collections = (
+        spec.get("containers"),
+        spec.get("initContainers", []),
+        spec.get("ephemeralContainers", []),
+    )
+    if not isinstance(collections[0], list) or not collections[0]:
+        raise ReceiptError(f"{label} has no containers")
+    containers: list[dict[str, Any]] = []
+    for collection in collections:
+        if not isinstance(collection, list):
+            raise ReceiptError(f"{label} container collection is malformed")
+        for container in collection:
+            if not isinstance(container, dict):
+                raise ReceiptError(f"{label} contains a malformed container")
+            containers.append(container)
+            security = container.get("securityContext")
+            if not isinstance(security, dict):
+                raise ReceiptError(f"{label} container securityContext is absent")
+            capabilities = security.get("capabilities")
+            container_seccomp = security.get("seccompProfile", {})
+            ports = container.get("ports", [])
+            if (
+                security.get("privileged", False) is not False
+                or security.get("allowPrivilegeEscalation") is not False
+                or not (pod_non_root or security.get("runAsNonRoot") is True)
+                or not isinstance(capabilities, dict)
+                or set(capabilities) - {"add", "drop"}
+                or capabilities.get("drop") != ["ALL"]
+                or capabilities.get("add", [])
+                not in ((None, [], ["IPC_LOCK"]) if allow_ipc_lock else (None, []))
+                or security.get("procMount", "Default") != "Default"
+                or not (
+                    pod_runtime_default
+                    or (
+                        isinstance(container_seccomp, dict)
+                        and container_seccomp.get("type") == "RuntimeDefault"
+                    )
+                )
+                or not isinstance(ports, list)
+                or container.get("volumeDevices") not in (None, [])
+                or any(
+                    not isinstance(port, dict)
+                    or port.get("hostPort", 0) not in (None, 0)
+                    for port in ports
+                )
+            ):
+                raise ReceiptError(
+                    f"{label} escapes the non-root/no-capabilities security envelope"
+                )
+    for volume in volumes:
+        if "hostPath" not in volume:
+            continue
+        host_path = volume.get("hostPath")
+        name = volume.get("name")
+        matching_mounts = [
+            mount
+            for container in containers
+            for mount in container.get("volumeMounts", [])
+            if isinstance(mount, dict) and mount.get("name") == name
+        ]
+        if (
+            set(volume) != {"name", "hostPath"}
+            or not isinstance(name, str)
+            or host_path
+            != {"path": REFERENCE_DATA_HOST_PATH, "type": "Directory"}
+            or not matching_mounts
+            or any(
+                mount.get("readOnly") is not True
+                or "mountPropagation" in mount
+                or "subPathExpr" in mount
+                for mount in matching_mounts
+            )
+        ):
+            raise ReceiptError(
+                f"{label} has a hostPath outside the exact read-only reference plane"
+            )
+
+
 def _workload_inventory(
     contract: dict[str, Any],
     resources: dict[str, dict[str, Any]],
@@ -616,6 +720,11 @@ def _workload_inventory(
                 contract, kind, metadata, f"{kind} {name}"
             )
             template = _pod_template(item, kind)
+            _validate_pod_security(
+                _object(template.get("spec"), f"{kind} {name} PodTemplate.spec"),
+                f"{kind} {name} PodTemplate",
+                allow_ipc_lock=profile.startswith("mx-"),
+            )
             template_metadata = _object(
                 template.get("metadata"),
                 f"{kind} {name} PodTemplate.metadata",
@@ -681,6 +790,22 @@ def _workload_inventory(
                             f"JobSet {name} replicated Job and workload network "
                             "identities differ"
                         )
+                    job_spec = _object(
+                        job_template.get("spec"),
+                        f"JobSet.replicatedJobs[{index}].template.spec",
+                    )
+                    pod_template = _object(
+                        job_spec.get("template"),
+                        f"JobSet.replicatedJobs[{index}].PodTemplate",
+                    )
+                    _validate_pod_security(
+                        _object(
+                            pod_template.get("spec"),
+                            f"JobSet.replicatedJobs[{index}].PodTemplate.spec",
+                        ),
+                        f"JobSet {name} replicated PodTemplate {index}",
+                        allow_ipc_lock=profile.startswith("mx-"),
+                    )
             if kind == "CronJob":
                 job_template = _object(
                     _object(item.get("spec"), "CronJob.spec").get("jobTemplate"),
@@ -760,6 +885,11 @@ def _pod_inventory(
                 raise ReceiptError(
                     f"Pod {name} public acquisition has the wrong service account"
                 )
+        _validate_pod_security(
+            _object(item.get("spec"), f"Pod {name}.spec"),
+            f"Pod {name}",
+            allow_ipc_lock=profile.startswith("mx-"),
+        )
         pods[name] = {
             "uid": uid,
             "profile": profile,

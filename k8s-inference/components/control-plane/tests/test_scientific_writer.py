@@ -412,6 +412,60 @@ async def test_create_rejects_resealed_arbitrary_command_and_secret_volume(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("envFrom", [{"secretRef": {"name": "unreviewed"}}], "container field"),
+        ("lifecycle", {"preStop": {"exec": {"command": ["true"]}}}, "container field"),
+        ("startupProbe", {"exec": {"command": ["true"]}}, "container field"),
+        ("livenessProbe", {"exec": {"command": ["true"]}}, "container field"),
+        ("readinessProbe", {"exec": {"command": ["true"]}}, "container field"),
+    ],
+)
+async def test_writer_rejects_unreviewed_container_fields_before_forwarding(
+    tmp_path: Path, field: str, value: object, message: str
+) -> None:
+    client = StubClient(token_review())
+    boundary = writer(tmp_path, client)
+    boundary.execution_policy = execution_policy()
+    manifest = submission_scientific_job()
+    manifest["spec"]["template"]["spec"]["containers"][0][field] = value
+    seal_submission(manifest)
+    with pytest.raises(ScientificWriterError, match=message):
+        await boundary.mutate(
+            Mutation(
+                method="POST",
+                path="/apis/batch/v1/namespaces/fs2-models/jobs",
+                body=manifest,
+            )
+        )
+    assert client.mutations == []
+
+
+@pytest.mark.asyncio
+async def test_writer_rejects_added_capabilities_before_forwarding(
+    tmp_path: Path,
+) -> None:
+    client = StubClient(token_review())
+    boundary = writer(tmp_path, client)
+    boundary.execution_policy = execution_policy()
+    manifest = submission_scientific_job()
+    manifest["spec"]["template"]["spec"]["containers"][0]["securityContext"][
+        "capabilities"
+    ]["add"] = ["SYS_ADMIN"]
+    seal_submission(manifest)
+    with pytest.raises(ScientificWriterError, match="security differs"):
+        await boundary.mutate(
+            Mutation(
+                method="POST",
+                path="/apis/batch/v1/namespaces/fs2-models/jobs",
+                body=manifest,
+            )
+        )
+    assert client.mutations == []
+
+
+@pytest.mark.asyncio
 async def test_spoofed_group_or_extra_fails_closed(tmp_path: Path) -> None:
     for claim in (
         token_review(groups=["system:authenticated"]),
