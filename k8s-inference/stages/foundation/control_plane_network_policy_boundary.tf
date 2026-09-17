@@ -15,7 +15,7 @@ locals {
   control_plane_network_policy_prior_bootstrap            = "fs2-np-security-bootstrap-${local.control_plane_network_policy_prior_suffix}"
   control_plane_network_policy_successor_owner            = "fs2-np-security-owner-${local.control_plane_network_policy_successor_suffix}"
   control_plane_network_policy_successor_bootstrap        = "fs2-np-security-bootstrap-${local.control_plane_network_policy_successor_suffix}"
-  control_plane_network_policy_provider_trust_anchor_path = "/etc/fs2/security/network-policy-provider-trust-anchor-v2.json"
+  control_plane_network_policy_provider_trust_anchor_path = "/etc/fs2/security/network-policy-provider-trust-anchor-v3.json"
   control_plane_network_policy_provider_adapter_path = abspath(
     "${path.module}/../../components/control-plane/scripts/network_policy_subject_provider_adapter.py"
   )
@@ -173,8 +173,20 @@ locals {
         data.external.control_plane_network_policy_security_preflight_v2.result.provider_adapter_sha256,
         null,
       )
+      provider_execution_sha256 = try(
+        data.external.control_plane_network_policy_security_preflight_v2.result.provider_execution_sha256,
+        null,
+      )
+      kubernetes_authentication_sha256 = try(
+        data.external.control_plane_network_policy_security_preflight_v2.result.kubernetes_authentication_sha256,
+        null,
+      )
       kubernetes_subject_inventory_sha256 = try(
         data.external.control_plane_network_policy_security_preflight_v2.result.kubernetes_subject_inventory_sha256,
+        null,
+      )
+      effective_rbac_subjects_sha256 = try(
+        data.external.control_plane_network_policy_security_preflight_v2.result.effective_rbac_subjects_sha256,
         null,
       )
       auditor_bootstrap_sha256 = try(
@@ -288,7 +300,10 @@ data "external" "control_plane_network_policy_security_preflight_v2" {
         can(regex("^[0-9a-f]{64}$", self.result.provider_snapshot_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.provider_trust_anchor_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.provider_adapter_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.provider_execution_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.kubernetes_authentication_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.kubernetes_subject_inventory_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.effective_rbac_subjects_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.auditor_bootstrap_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.external_role_bundle_sha256)) &&
         contains(["preapply", "resume", "postapply"], self.result.rotation_phase) &&
@@ -1082,6 +1097,11 @@ resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_aud
     api_groups = ["rbac.authorization.k8s.io"]
     resources  = ["roles", "clusterroles"]
     verbs      = ["get", "list"]
+  }
+  rule {
+    api_groups = ["rbac.authorization.k8s.io"]
+    resources  = ["rolebindings", "clusterrolebindings"]
+    verbs      = ["list"]
   }
   rule {
     api_groups = ["certificates.k8s.io"]

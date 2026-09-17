@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/contracts/network-policy-security-provider-trust-anchor-v3.schema.json",
+  "title": "Externally pinned provider directory and Kubernetes authentication trust anchor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "provider", "adapter", "directory_execution", "directory_query",
+    "kubernetes_authentication", "execution_sha256", "kubernetes_authentication_sha256",
+    "tenant_sha256", "query_sha256", "snapshot_public_key", "snapshot_signer_key_id",
+    "valid_from", "expires_at"
+  ],
+  "properties": {
+    "schema": { "const": "fs2-serve.nebius.ai/security-provider-trust-anchor/v3" },
+    "provider": { "const": "nebius-iam" },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sha256"],
+      "properties": {
+        "id": { "const": "fs2-serve.nebius.ai/nebius-iam-human-directory/v3" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "directory_execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cli_path", "cli_sha256", "config_path", "config_sha256", "credential_path",
+        "credential_sha256", "api_endpoint", "api_endpoint_sha256", "provider_issuer",
+        "provider_issuer_sha256", "principal_type", "principal_id"
+      ],
+      "properties": {
+        "cli_path": { "const": "/usr/local/bin/nebius" },
+        "cli_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "config_path": { "const": "/etc/fs2/security/nebius-directory-reader.yaml" },
+        "config_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "credential_path": { "const": "/etc/fs2/security/nebius-directory-reader-credential.json" },
+        "credential_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "api_endpoint": { "type": "string", "pattern": "^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?$" },
+        "api_endpoint_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "provider_issuer": { "type": "string", "pattern": "^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?$" },
+        "provider_issuer_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "principal_type": { "const": "service-account" },
+        "principal_id": { "type": "string", "pattern": "^serviceaccount-[A-Za-z0-9-]{8,128}$" }
+      }
+    },
+    "directory_query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cli_path", "config_path", "profile", "tenant_id", "page_size", "max_pages",
+        "max_records", "timeout_seconds", "snapshot_ttl_seconds", "consistency_passes"
+      ],
+      "properties": {
+        "cli_path": { "const": "/usr/local/bin/nebius" },
+        "config_path": { "const": "/etc/fs2/security/nebius-directory-reader.yaml" },
+        "profile": { "type": "string", "pattern": "^[A-Za-z0-9._-]{3,128}$" },
+        "tenant_id": { "type": "string", "pattern": "^tenant-[A-Za-z0-9-]{8,128}$" },
+        "page_size": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "max_pages": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "max_records": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "snapshot_ttl_seconds": { "type": "integer", "minimum": 300, "maximum": 3600 },
+        "consistency_passes": { "const": 2 }
+      }
+    },
+    "kubernetes_authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "oidc_issuer", "oidc_issuer_sha256", "audiences", "audiences_sha256",
+        "username_claim", "username_prefix", "groups_claim", "groups_prefix",
+        "provider_subject_field", "provider_email_field", "provider_group_field"
+      ],
+      "properties": {
+        "oidc_issuer": { "type": "string", "pattern": "^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?$" },
+        "oidc_issuer_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "audiences": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9._:/-]{3,253}$" }
+        },
+        "audiences_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "username_claim": { "enum": ["sub", "email"] },
+        "username_prefix": { "type": "string", "pattern": "^[A-Za-z0-9:@._+/-]{0,128}$" },
+        "groups_claim": { "const": "groups" },
+        "groups_prefix": { "type": "string", "pattern": "^[A-Za-z0-9:@._+/-]{0,128}$" },
+        "provider_subject_field": { "const": "tenant_user_account.metadata.id" },
+        "provider_email_field": { "const": "attributes.email" },
+        "provider_group_field": { "const": "metadata.name" }
+      }
+    },
+    "execution_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "kubernetes_authentication_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "tenant_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "query_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "snapshot_public_key": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+    "snapshot_signer_key_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "valid_from": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" }
+  }
+}

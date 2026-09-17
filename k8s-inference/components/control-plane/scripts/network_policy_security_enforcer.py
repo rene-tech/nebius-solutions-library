@@ -16,7 +16,8 @@ import stat
 import struct
 import subprocess
 import sys
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -45,6 +46,7 @@ RECOVERY_APPROVAL_SCHEMA = "fs2-serve.nebius.ai/network-policy-recovery-approval
 HANDOFF_SECONDS = 30
 MAX_REQUEST_BYTES = 1024 * 1024
 SOCKET_READ_SECONDS = 5.0
+SOCKET_CONNECTION_SECONDS = 10.0
 RELAXED_SELECTOR = {"fs2.nebius.ai/network-policy-deny-relaxed": "true"}
 ACTIVE_DENY_SPEC = {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": []}
 RELAXED_DENY_SPEC = {
@@ -551,7 +553,12 @@ class SecurityEnforcer:
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_subject_snapshot_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_trust_anchor_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_adapter_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_execution_sha256", "")))
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity.get("kubernetes_authentication_sha256", ""))
+            )
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("kubernetes_subject_inventory_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("effective_rbac_subjects_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("auditor_bootstrap_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("external_role_bundle_sha256", "")))
             or identity.get("plan_rotation_phase") not in {"preapply", "resume", "postapply"}
@@ -1365,9 +1372,18 @@ class SecurityEnforcer:
                 "provider_adapter_sha256": contract.get("security_handoff", {})
                 .get("identity_boundary", {})
                 .get("provider_adapter_sha256"),
+                "provider_execution_sha256": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("provider_execution_sha256"),
+                "kubernetes_authentication_sha256": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("kubernetes_authentication_sha256"),
                 "kubernetes_subject_inventory_sha256": contract.get("security_handoff", {})
                 .get("identity_boundary", {})
                 .get("kubernetes_subject_inventory_sha256"),
+                "effective_rbac_subjects_sha256": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("effective_rbac_subjects_sha256"),
                 "auditor_bootstrap_sha256": contract.get("security_handoff", {})
                 .get("identity_boundary", {})
                 .get("auditor_bootstrap_sha256"),
@@ -1388,16 +1404,30 @@ class SecurityEnforcer:
         return self._response(request, result)
 
 
-def serve_connection(connection: socket.socket, enforcer: SecurityEnforcer) -> None:
+def serve_connection(
+    connection: socket.socket,
+    enforcer: SecurityEnforcer,
+    *,
+    clock: Callable[[], float] = time.monotonic,
+) -> None:
     credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
     _pid, peer_uid, peer_gid = struct.unpack("3i", credentials)
     if peer_uid != enforcer.expected_peer_uid or peer_gid != enforcer.expected_peer_gid:
         raise EnforcerError("Unix peer UID/GID is not authorized")
-    connection.settimeout(SOCKET_READ_SECONDS)
+    deadline = clock() + SOCKET_CONNECTION_SECONDS
     chunks: list[bytes] = []
     size = 0
     while True:
-        chunk = connection.recv(65536)
+        remaining = deadline - clock()
+        if remaining <= 0:
+            raise EnforcerError("security handoff connection exceeded its absolute deadline")
+        connection.settimeout(min(SOCKET_READ_SECONDS, remaining))
+        try:
+            chunk = connection.recv(65536)
+        except TimeoutError as error:
+            raise EnforcerError("security handoff connection exceeded its absolute deadline") from error
+        if clock() > deadline:
+            raise EnforcerError("security handoff connection exceeded its absolute deadline")
         if not chunk:
             break
         size += len(chunk)

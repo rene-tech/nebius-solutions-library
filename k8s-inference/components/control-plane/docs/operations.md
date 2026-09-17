@@ -818,22 +818,28 @@ reruns it and binds its query hash into protected topology. Human coverage has
 two independent signatures. The source-fixed
 `network_policy_subject_provider_adapter.py` accepts no caller transcript: it
 uses a source-fixed Nebius CLI and root-owned, read-only provider configuration
+and credential from fixed paths
 to enumerate tenant users with attributes, groups and each user's memberships
 with bounded explicit pagination. Its source SHA-256, CLI/config paths,
+CLI/config/credential byte hashes, API endpoint, provider/OIDC issuer,
+non-human principal, Kubernetes audience and username/group claim mapping,
 dedicated directory public key, tenant, query, budgets and validity are pinned
 in the root-owned, mode-0400/0444
-`/etc/fs2/security/network-policy-provider-trust-anchor-v2.json`. Those values
+`/etc/fs2/security/network-policy-provider-trust-anchor-v3.json`. Those values
 are not Terraform inputs. The signed provider snapshot binds the exact trust
-anchor and adapter hashes plus a bounded contiguous page receipt, terminal
-cursor, counts and validity window. The separately recovery-signed cluster inventory
+anchor, adapter and executable/authentication hashes plus two byte-identical,
+bounded, terminal provider-directory sweeps. The adapter supplies an empty,
+fixed execution environment, explicit endpoint/config/profile and no stdin, so
+ambient CLI state cannot select another backend or principal. The separately recovery-signed cluster inventory
 must reproduce that provider snapshot's users, groups and provenance exactly
 while also binding the API-server hash, `kube-system` UID and rollback window.
 The two signing keys must differ. Release-operator subject lists and an
 unreconciled completeness assertion are not accepted. The preflight also reads
-all Namespaces, every namespace-local ServiceAccount and Role, all
-ClusterRoles, every RBAC rule and every CSR signer through bounded server
+all Namespaces, every namespace-local ServiceAccount, Role and RoleBinding, all
+ClusterRoles and ClusterRoleBindings, every RBAC rule and every CSR signer through bounded server
 pagination twice and rejects concurrent drift. Every provider-enumerated user
-and group, discovered ServiceAccount, Role/ClusterRole name, named RBAC grant
+and group, every subject from every live RBAC binding, discovered
+ServiceAccount, Role/ClusterRole name, named RBAC grant
 and custom signer is covered by unnamed and exact-name impersonation, token,
 signing and delegation negatives. Every provider-enumerated human
 and prior-epoch non-human tuple is checked through nonpersistent
@@ -877,7 +883,8 @@ and startup verifies its type, UID, GID and mode before listening. The parent is
 not group-writable. The separate recovery-approval private key is never present in either
 process. The enforcer
 checks `SO_PEERCRED` immediately after `accept` and before reading any bytes,
-rejects a supplementary-only GID, applies a five-second socket read deadline
+rejects a supplementary-only GID, applies both a five-second per-read timeout
+and a ten-second absolute frame deadline
 and one-MiB frame limit, verifies the coordinator signature, rereads the
 same-cluster topology, target UID/resourceVersion/state hash, Lease fence and
 durable receipt, and authorizes only the named semantic operations

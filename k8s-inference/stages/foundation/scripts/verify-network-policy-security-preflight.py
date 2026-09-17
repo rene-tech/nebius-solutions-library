@@ -20,8 +20,11 @@ from urllib.parse import quote
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-PROVIDER_ADAPTER_ID = "fs2-serve.nebius.ai/nebius-iam-human-directory/v2"
-PROVIDER_TRUST_ANCHOR_PATH = Path("/etc/fs2/security/network-policy-provider-trust-anchor-v2.json")
+PROVIDER_ADAPTER_ID = "fs2-serve.nebius.ai/nebius-iam-human-directory/v3"
+PROVIDER_TRUST_ANCHOR_PATH = Path("/etc/fs2/security/network-policy-provider-trust-anchor-v3.json")
+PROVIDER_CLI_PATH = Path("/usr/local/bin/nebius")
+PROVIDER_CONFIG_PATH = Path("/etc/fs2/security/nebius-directory-reader.yaml")
+PROVIDER_CREDENTIAL_PATH = Path("/etc/fs2/security/nebius-directory-reader-credential.json")
 
 
 class PreflightError(RuntimeError):
@@ -46,6 +49,8 @@ def descriptor_bytes(path: Path, *, maximum: int, label: str) -> tuple[bytes, os
                 size += len(chunk)
                 if size > maximum:
                     raise PreflightError(f"{label} exceeds its size bound")
+            if size != metadata.st_size:
+                raise PreflightError(f"{label} changed while it was read")
         finally:
             os.close(descriptor)
     except OSError as error:
@@ -55,6 +60,15 @@ def descriptor_bytes(path: Path, *, maximum: int, label: str) -> tuple[bytes, os
 
 def canonical(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def is_https_endpoint(value: Any) -> bool:
+    return isinstance(value, str) and bool(
+        re.fullmatch(
+            r"https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?",
+            value,
+        )
+    )
 
 
 def decode_base64url(value: Any, *, size: int) -> bytes:
@@ -140,57 +154,95 @@ def verified_provider_trust_anchor(
         raise PreflightError("provider adapter path is not source-fixed")
     try:
         trust_bytes, trust_metadata = descriptor_bytes(path, maximum=65536, label="provider trust anchor")
-        adapter_bytes, adapter_metadata = descriptor_bytes(
-            adapter_path,
-            maximum=1048576,
-            label="provider adapter",
+        adapter_bytes, adapter_metadata = descriptor_bytes(adapter_path, maximum=1048576, label="provider adapter")
+        cli_bytes, cli_metadata = descriptor_bytes(
+            PROVIDER_CLI_PATH, maximum=268435456, label="provider CLI executable"
+        )
+        config_bytes, config_metadata = descriptor_bytes(
+            PROVIDER_CONFIG_PATH, maximum=1048576, label="provider CLI configuration"
+        )
+        credential_bytes, credential_metadata = descriptor_bytes(
+            PROVIDER_CREDENTIAL_PATH, maximum=1048576, label="provider credential"
         )
         trust = json.loads(trust_bytes.decode("utf-8"))
+        config_text = config_bytes.decode("utf-8")
         adapter_sha256 = hashlib.sha256(adapter_bytes).hexdigest()
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise PreflightError("provider trust custody is unavailable") from error
+    if not isinstance(trust, dict):
+        raise PreflightError("provider trust anchor is not an object")
     expected_fields = {
-        "schema",
-        "provider",
-        "adapter",
-        "directory_query",
-        "tenant_sha256",
-        "query_sha256",
-        "snapshot_public_key",
-        "snapshot_signer_key_id",
-        "valid_from",
-        "expires_at",
+        "schema", "provider", "adapter", "directory_execution", "directory_query",
+        "kubernetes_authentication", "execution_sha256", "kubernetes_authentication_sha256",
+        "tenant_sha256", "query_sha256", "snapshot_public_key", "snapshot_signer_key_id",
+        "valid_from", "expires_at",
     }
+    execution_fields = {
+        "cli_path", "cli_sha256", "config_path", "config_sha256", "credential_path",
+        "credential_sha256", "api_endpoint", "api_endpoint_sha256", "provider_issuer",
+        "provider_issuer_sha256", "principal_type", "principal_id",
+    }
+    query_fields = {
+        "cli_path", "config_path", "profile", "tenant_id", "page_size", "max_pages",
+        "max_records", "timeout_seconds", "snapshot_ttl_seconds", "consistency_passes",
+    }
+    authentication_fields = {
+        "oidc_issuer", "oidc_issuer_sha256", "audiences", "audiences_sha256",
+        "username_claim", "username_prefix", "groups_claim", "groups_prefix",
+        "provider_subject_field", "provider_email_field", "provider_group_field",
+    }
+    execution = trust.get("directory_execution", {}) if isinstance(trust, dict) else {}
+    directory_query = trust.get("directory_query", {}) if isinstance(trust, dict) else {}
+    authentication = trust.get("kubernetes_authentication", {}) if isinstance(trust, dict) else {}
     now = dt.datetime.now(dt.UTC)
     valid_from = dt.datetime.fromisoformat(str(trust.get("valid_from", "")).replace("Z", "+00:00"))
     expires = dt.datetime.fromisoformat(str(trust.get("expires_at", "")).replace("Z", "+00:00"))
     public_key = trust.get("snapshot_public_key")
-    directory_query = trust.get("directory_query", {})
+    exact_root_files = (
+        (trust_metadata, {0o400, 0o444}),
+        (cli_metadata, {0o500, 0o550, 0o555, 0o700, 0o750, 0o755}),
+        (config_metadata, {0o400, 0o440}),
+        (credential_metadata, {0o400, 0o440}),
+    )
     if (
-        not stat.S_ISREG(trust_metadata.st_mode)
-        or trust_metadata.st_uid != 0
-        or trust_metadata.st_gid != 0
-        or stat.S_IMODE(trust_metadata.st_mode) not in {0o400, 0o444}
+        any(
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != 0
+            or metadata.st_gid != 0
+            or stat.S_IMODE(metadata.st_mode) not in modes
+            for metadata, modes in exact_root_files
+        )
         or not stat.S_ISREG(adapter_metadata.st_mode)
         or set(trust) != expected_fields
-        or trust.get("schema") != "fs2-serve.nebius.ai/security-provider-trust-anchor/v2"
+        or trust.get("schema") != "fs2-serve.nebius.ai/security-provider-trust-anchor/v3"
         or trust.get("provider") != "nebius-iam"
         or trust.get("adapter") != {"id": PROVIDER_ADAPTER_ID, "sha256": adapter_sha256}
-        or not isinstance(trust.get("directory_query"), dict)
-        or set(directory_query)
-        != {
-            "cli_path",
-            "config_path",
-            "profile",
-            "tenant_id",
-            "page_size",
-            "max_pages",
-            "max_records",
-            "timeout_seconds",
-            "snapshot_ttl_seconds",
-        }
-        or directory_query.get("cli_path") != "/usr/local/bin/nebius"
-        or directory_query.get("config_path") != "/etc/fs2/security/nebius-directory-reader.yaml"
+        or not isinstance(execution, dict)
+        or set(execution) != execution_fields
+        or not isinstance(directory_query, dict)
+        or set(directory_query) != query_fields
+        or not isinstance(authentication, dict)
+        or set(authentication) != authentication_fields
+        or execution.get("cli_path") != str(PROVIDER_CLI_PATH)
+        or execution.get("config_path") != str(PROVIDER_CONFIG_PATH)
+        or execution.get("credential_path") != str(PROVIDER_CREDENTIAL_PATH)
+        or execution.get("cli_sha256") != hashlib.sha256(cli_bytes).hexdigest()
+        or execution.get("config_sha256") != hashlib.sha256(config_bytes).hexdigest()
+        or execution.get("credential_sha256") != hashlib.sha256(credential_bytes).hexdigest()
+        or not is_https_endpoint(execution.get("api_endpoint"))
+        or not is_https_endpoint(execution.get("provider_issuer"))
+        or execution.get("api_endpoint_sha256")
+        != hashlib.sha256(str(execution.get("api_endpoint", "")).encode()).hexdigest()
+        or execution.get("provider_issuer_sha256")
+        != hashlib.sha256(str(execution.get("provider_issuer", "")).encode()).hexdigest()
+        or execution.get("principal_type") != "service-account"
+        or not re.fullmatch(r"serviceaccount-[A-Za-z0-9-]{8,128}", str(execution.get("principal_id", "")))
+        or execution.get("api_endpoint") not in config_text
+        or str(PROVIDER_CREDENTIAL_PATH) not in config_text
+        or execution.get("principal_id") not in config_text
+        or str(execution.get("principal_id", "")).encode() not in credential_bytes
+        or directory_query.get("cli_path") != str(PROVIDER_CLI_PATH)
+        or directory_query.get("config_path") != str(PROVIDER_CONFIG_PATH)
         or not re.fullmatch(r"[A-Za-z0-9._-]{3,128}", str(directory_query.get("profile", "")))
         or not re.fullmatch(r"tenant-[A-Za-z0-9-]{8,128}", str(directory_query.get("tenant_id", "")))
         or not isinstance(directory_query.get("page_size"), int)
@@ -203,12 +255,38 @@ def verified_provider_trust_anchor(
         or not 1 <= directory_query["timeout_seconds"] <= 120
         or not isinstance(directory_query.get("snapshot_ttl_seconds"), int)
         or not 300 <= directory_query["snapshot_ttl_seconds"] <= 3600
+        or directory_query.get("consistency_passes") != 2
+        or not is_https_endpoint(authentication.get("oidc_issuer"))
+        or authentication.get("oidc_issuer_sha256")
+        != hashlib.sha256(str(authentication.get("oidc_issuer", "")).encode()).hexdigest()
+        or authentication.get("oidc_issuer") != execution.get("provider_issuer")
+        or not isinstance(authentication.get("audiences"), list)
+        or not authentication["audiences"]
+        or len(authentication["audiences"]) != len(set(authentication["audiences"]))
+        or any(
+            not re.fullmatch(r"[A-Za-z0-9._:/-]{3,253}", str(value))
+            for value in authentication["audiences"]
+        )
+        or authentication.get("audiences_sha256")
+        != hashlib.sha256(canonical(sorted(authentication["audiences"])).encode()).hexdigest()
+        or authentication.get("username_claim") not in {"sub", "email"}
+        or not re.fullmatch(r"[A-Za-z0-9:@._+/-]{0,128}", str(authentication.get("username_prefix", "")))
+        or authentication.get("groups_claim") != "groups"
+        or not re.fullmatch(r"[A-Za-z0-9:@._+/-]{0,128}", str(authentication.get("groups_prefix", "")))
+        or authentication.get("provider_subject_field") != "tenant_user_account.metadata.id"
+        or authentication.get("provider_email_field") != "attributes.email"
+        or authentication.get("provider_group_field") != "metadata.name"
+        or trust.get("execution_sha256") != hashlib.sha256(canonical(execution).encode()).hexdigest()
+        or trust.get("kubernetes_authentication_sha256")
+        != hashlib.sha256(canonical(authentication).encode()).hexdigest()
         or trust.get("tenant_sha256")
-        != hashlib.sha256(str(trust["directory_query"].get("tenant_id", "")).encode()).hexdigest()
+        != hashlib.sha256(str(directory_query.get("tenant_id", "")).encode()).hexdigest()
         or trust.get("query_sha256")
-        != hashlib.sha256(canonical(trust["directory_query"]).encode()).hexdigest()
-        or not re.fullmatch(r"[0-9a-f]{64}", str(trust.get("tenant_sha256", "")))
-        or not re.fullmatch(r"[0-9a-f]{64}", str(trust.get("query_sha256", "")))
+        != hashlib.sha256(
+            canonical(
+                {"execution": execution, "query": directory_query, "authentication": authentication}
+            ).encode()
+        ).hexdigest()
         or not isinstance(public_key, str)
         or trust.get("snapshot_signer_key_id") != hashlib.sha256(public_key.encode()).hexdigest()
         or valid_from.tzinfo is None
@@ -217,7 +295,7 @@ def verified_provider_trust_anchor(
         or expires.astimezone(dt.UTC) <= now
         or int(expires.timestamp()) < rollback_valid_until
     ):
-        raise PreflightError("provider trust anchor is not exact, root-owned or rollback-valid")
+        raise PreflightError("provider trust anchor or executable/authentication custody is not exact")
     decode_base64url(public_key, size=32)
     return trust, hashlib.sha256(canonical(trust).encode()).hexdigest(), adapter_sha256
 
@@ -239,6 +317,11 @@ def verified_provider_snapshot(
         "provider",
         "adapter",
         "trust_anchor_sha256",
+        "execution_sha256",
+        "kubernetes_authentication_sha256",
+        "provider_principal",
+        "api_endpoint_sha256",
+        "provider_issuer_sha256",
         "tenant_sha256",
         "query_sha256",
         "complete",
@@ -255,12 +338,25 @@ def verified_provider_snapshot(
     captured = dt.datetime.fromisoformat(str(signed.get("captured_at", "")).replace("Z", "+00:00"))
     expires = dt.datetime.fromisoformat(str(signed.get("expires_at", "")).replace("Z", "+00:00"))
     if (
-        signed.get("schema") != "fs2-serve.nebius.ai/security-subject-provider-snapshot/v2"
+        signed.get("schema") != "fs2-serve.nebius.ai/security-subject-provider-snapshot/v3"
         or signed.get("complete") is not True
         or not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", str(signed.get("snapshot_id", "")))
         or signed.get("provider") != trust["provider"]
         or signed.get("adapter") != {"id": PROVIDER_ADAPTER_ID, "sha256": adapter_sha256}
         or signed.get("trust_anchor_sha256") != trust_anchor_sha256
+        or signed.get("execution_sha256") != trust["execution_sha256"]
+        or signed.get("kubernetes_authentication_sha256")
+        != trust["kubernetes_authentication_sha256"]
+        or signed.get("provider_principal")
+        != {
+            "type": trust["directory_execution"]["principal_type"],
+            "id": trust["directory_execution"]["principal_id"],
+            "credential_sha256": trust["directory_execution"]["credential_sha256"],
+        }
+        or signed.get("api_endpoint_sha256")
+        != trust["directory_execution"]["api_endpoint_sha256"]
+        or signed.get("provider_issuer_sha256")
+        != trust["directory_execution"]["provider_issuer_sha256"]
         or signed.get("tenant_sha256") != trust["tenant_sha256"]
         or signed.get("query_sha256") != trust["query_sha256"]
         or captured.tzinfo is None
@@ -273,47 +369,70 @@ def verified_provider_snapshot(
     users, groups = normalized_subjects(signed, forbidden_usernames=forbidden_usernames)
     pagination = signed.get("pagination")
     if not isinstance(pagination, dict) or set(pagination) != {
-        "page_size",
-        "page_count",
-        "record_count",
-        "subject_count",
-        "terminal_cursor",
-        "pages",
+        "page_size", "subject_count", "consistency", "collections"
     }:
         raise PreflightError("provider/IAM pagination receipt is not exact")
-    pages = pagination.get("pages")
-    page_count = pagination.get("page_count")
+    consistency = pagination.get("consistency")
+    collections = pagination.get("collections")
     if (
         not isinstance(pagination.get("page_size"), int)
         or not 1 <= pagination["page_size"] <= 1000
-        or not isinstance(page_count, int)
-        or not 1 <= page_count <= 10000
-        or not isinstance(pages, list)
-        or len(pages) != page_count
-        or pagination.get("terminal_cursor") != ""
         or pagination.get("subject_count") != len(users) + len(groups)
-        or not isinstance(pagination.get("record_count"), int)
-        or not pagination["subject_count"] <= pagination["record_count"] <= 100000
+        or not isinstance(consistency, dict)
+        or set(consistency) != {"mode", "passes", "collection_sha256"}
+        or consistency.get("mode") != "double-collect-byte-identical"
+        or consistency.get("passes") != 2
+        or not re.fullmatch(r"[0-9a-f]{64}", str(consistency.get("collection_sha256", "")))
+        or not isinstance(collections, list)
+        or len(collections) != 2
     ):
         raise PreflightError("provider/IAM pagination counts are incomplete")
-    expected_request = hashlib.sha256(b"").hexdigest()
-    for index, page in enumerate(pages):
+    collection_hashes: list[str] = []
+    collection_pages: list[list[dict[str, Any]]] = []
+    for collection_index, collection in enumerate(collections):
         if (
-            not isinstance(page, dict)
-            or set(page) != {"index", "request_cursor_sha256", "response_sha256", "next_cursor_sha256"}
-            or page.get("index") != index
-            or page.get("request_cursor_sha256") != expected_request
-            or not re.fullmatch(r"[0-9a-f]{64}", str(page.get("response_sha256", "")))
+            not isinstance(collection, dict)
+            or set(collection)
+            != {"index", "page_count", "record_count", "terminal_cursor", "pages", "sha256"}
+            or collection.get("index") != collection_index
+            or not isinstance(collection.get("page_count"), int)
+            or not 1 <= collection["page_count"] <= 10000
+            or not isinstance(collection.get("record_count"), int)
+            or not pagination["subject_count"] <= collection["record_count"] <= 100000
+            or collection.get("terminal_cursor") != ""
+            or not isinstance(collection.get("pages"), list)
+            or len(collection["pages"]) != collection["page_count"]
+            or not re.fullmatch(r"[0-9a-f]{64}", str(collection.get("sha256", "")))
         ):
-            raise PreflightError("provider/IAM pagination chain is invalid")
-        next_cursor = page.get("next_cursor_sha256")
-        if index + 1 == page_count:
-            if next_cursor != "":
-                raise PreflightError("provider/IAM pagination is not terminal")
-        elif not isinstance(next_cursor, str) or not re.fullmatch(r"[0-9a-f]{64}", next_cursor):
-            raise PreflightError("provider/IAM pagination cursor is invalid")
-        else:
-            expected_request = next_cursor
+            raise PreflightError("provider/IAM collection receipt is invalid")
+        expected_request = hashlib.sha256(b"").hexdigest()
+        pages = collection["pages"]
+        for page_index, page in enumerate(pages):
+            if (
+                not isinstance(page, dict)
+                or set(page)
+                != {"index", "request_cursor_sha256", "response_sha256", "next_cursor_sha256"}
+                or page.get("index") != page_index
+                or page.get("request_cursor_sha256") != expected_request
+                or not re.fullmatch(r"[0-9a-f]{64}", str(page.get("response_sha256", "")))
+            ):
+                raise PreflightError("provider/IAM pagination chain is invalid")
+            next_cursor = page.get("next_cursor_sha256")
+            if page_index + 1 == len(pages):
+                if next_cursor != "":
+                    raise PreflightError("provider/IAM pagination is not terminal")
+            elif not isinstance(next_cursor, str) or not re.fullmatch(r"[0-9a-f]{64}", next_cursor):
+                raise PreflightError("provider/IAM pagination cursor is invalid")
+            else:
+                expected_request = next_cursor
+        collection_hashes.append(collection["sha256"])
+        collection_pages.append(pages)
+    if (
+        len(set(collection_hashes)) != 1
+        or collection_hashes[0] != consistency["collection_sha256"]
+        or collection_pages[0] != collection_pages[1]
+    ):
+        raise PreflightError("provider/IAM repeat-stability fence is not byte-identical")
     snapshot_sha256 = hashlib.sha256(canonical(signed).encode()).hexdigest()
     return signed, users, groups, snapshot_sha256
 
@@ -354,10 +473,16 @@ def verified_subject_inventory(
         "provider": provider_signed["provider"],
         "adapter": provider_signed["adapter"],
         "trust_anchor_sha256": provider_signed["trust_anchor_sha256"],
+        "execution_sha256": provider_signed["execution_sha256"],
+        "kubernetes_authentication_sha256": provider_signed["kubernetes_authentication_sha256"],
+        "provider_principal": provider_signed["provider_principal"],
+        "api_endpoint_sha256": provider_signed["api_endpoint_sha256"],
+        "provider_issuer_sha256": provider_signed["provider_issuer_sha256"],
         "tenant_sha256": provider_signed["tenant_sha256"],
         "query_sha256": provider_signed["query_sha256"],
-        "page_count": provider_signed["pagination"]["page_count"],
-        "record_count": provider_signed["pagination"]["record_count"],
+        "collection_count": provider_signed["pagination"]["consistency"]["passes"],
+        "collection_sha256": provider_signed["pagination"]["consistency"]["collection_sha256"],
+        "record_count": provider_signed["pagination"]["collections"][0]["record_count"],
         "captured_at": provider_signed["captured_at"],
         "expires_at": provider_signed["expires_at"],
         "signer_key_id": provider_signed["signer_key_id"],
@@ -367,7 +492,7 @@ def verified_subject_inventory(
     expires = dt.datetime.fromisoformat(str(signed.get("expires_at", "")).replace("Z", "+00:00"))
     inventory_users, inventory_groups = normalized_subjects(signed, forbidden_usernames=forbidden_usernames)
     if (
-        signed.get("schema") != "fs2-serve.nebius.ai/security-subject-inventory/v2"
+        signed.get("schema") != "fs2-serve.nebius.ai/security-subject-inventory/v3"
         or not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", str(signed.get("inventory_id", "")))
         or signed.get("cluster") != expected_cluster
         or signed.get("provider_snapshot") != provider_binding
@@ -502,6 +627,7 @@ def paginated_collection(
     page_budget: list[int],
     object_budget: list[int],
     include_rbac_rules: bool = False,
+    include_rbac_binding: bool = False,
     include_csr_signer: bool = False,
 ) -> list[dict[str, Any]]:
     """Read one exact List snapshot with bounded Kubernetes pagination."""
@@ -554,6 +680,55 @@ def paginated_collection(
                     if not isinstance(aggregation_rule, dict):
                         raise PreflightError("Kubernetes RBAC aggregation is invalid")
                     projected["aggregationRule"] = aggregation_rule
+            if include_rbac_binding:
+                role_ref = item.get("roleRef")
+                subjects = item.get("subjects", [])
+                if (
+                    not isinstance(role_ref, dict)
+                    or set(role_ref) != {"apiGroup", "kind", "name"}
+                    or role_ref.get("apiGroup") != "rbac.authorization.k8s.io"
+                    or role_ref.get("kind") not in {"Role", "ClusterRole"}
+                    or not re.fullmatch(r"[A-Za-z0-9:@._/-]{1,253}", str(role_ref.get("name", "")))
+                    or not isinstance(subjects, list)
+                    or any(not isinstance(subject, dict) for subject in subjects)
+                ):
+                    raise PreflightError("Kubernetes RBAC binding inventory is invalid")
+                normalized_subjects = []
+                for subject in subjects:
+                    kind = subject.get("kind")
+                    name = subject.get("name")
+                    api_group = subject.get("apiGroup", "")
+                    subject_namespace = subject.get("namespace", "")
+                    expected_keys = (
+                        {"kind", "name", "namespace"}
+                        if kind == "ServiceAccount" and "apiGroup" not in subject
+                        else {"apiGroup", "kind", "name", "namespace"}
+                        if kind == "ServiceAccount"
+                        else {"apiGroup", "kind", "name"}
+                    )
+                    if (
+                        set(subject) != expected_keys
+                        or kind not in {"User", "Group", "ServiceAccount"}
+                        or not re.fullmatch(r"[A-Za-z0-9:@._+/-]{1,253}", str(name or ""))
+                        or (
+                            kind == "ServiceAccount"
+                            and (
+                                api_group not in {"", None}
+                                or not re.fullmatch(
+                                    r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?",
+                                    str(subject_namespace),
+                                )
+                            )
+                        )
+                        or (kind in {"User", "Group"} and api_group != "rbac.authorization.k8s.io")
+                    ):
+                        raise PreflightError("Kubernetes RBAC binding subject is invalid")
+                    normalized = {"kind": kind, "name": name}
+                    if kind == "ServiceAccount":
+                        normalized["namespace"] = subject_namespace
+                    normalized_subjects.append(normalized)
+                projected["roleRef"] = role_ref
+                projected["subjects"] = sorted(normalized_subjects, key=canonical)
             if include_csr_signer:
                 spec = item.get("spec", {})
                 signer_name = spec.get("signerName") if isinstance(spec, dict) else None
@@ -580,11 +755,14 @@ def kubernetes_subject_inventory(
 ) -> tuple[
     dict[str, list[dict[str, Any]]],
     dict[str, list[dict[str, Any]]],
+    dict[str, list[dict[str, Any]]],
+    list[dict[str, Any]],
     list[dict[str, Any]],
     list[str],
+    list[dict[str, Any]],
     str,
 ]:
-    """Enumerate every namespace, SA, Role, ClusterRole and CSR twice."""
+    """Enumerate every namespace, SA, Role, binding, ClusterRole and CSR twice."""
 
     def discover() -> dict[str, Any]:
         page_budget = [2048]
@@ -600,6 +778,7 @@ def kubernetes_subject_inventory(
             raise PreflightError("Kubernetes namespace inventory is empty or duplicated")
         service_account_inventory: dict[str, list[dict[str, str]]] = {}
         role_inventory: dict[str, list[dict[str, str]]] = {}
+        role_binding_inventory: dict[str, list[dict[str, Any]]] = {}
         for namespace in sorted(namespaces, key=lambda value: value["name"]):
             name = namespace["name"]
             service_accounts = paginated_collection(
@@ -621,8 +800,19 @@ def kubernetes_subject_inventory(
             )
             if len({item["name"] for item in roles}) != len(roles):
                 raise PreflightError("Kubernetes Role inventory contains duplicates")
+            role_bindings = paginated_collection(
+                kubeconfig,
+                context,
+                f"/apis/rbac.authorization.k8s.io/v1/namespaces/{quote(name, safe='')}/rolebindings",
+                page_budget=page_budget,
+                object_budget=object_budget,
+                include_rbac_binding=True,
+            )
+            if len({item["name"] for item in role_bindings}) != len(role_bindings):
+                raise PreflightError("Kubernetes RoleBinding inventory contains duplicates")
             service_account_inventory[name] = sorted(service_accounts, key=lambda value: value["name"])
             role_inventory[name] = sorted(roles, key=lambda value: value["name"])
+            role_binding_inventory[name] = sorted(role_bindings, key=lambda value: value["name"])
         cluster_roles = paginated_collection(
             kubeconfig,
             context,
@@ -633,6 +823,16 @@ def kubernetes_subject_inventory(
         )
         if len({item["name"] for item in cluster_roles}) != len(cluster_roles):
             raise PreflightError("Kubernetes ClusterRole inventory contains duplicates")
+        cluster_role_bindings = paginated_collection(
+            kubeconfig,
+            context,
+            "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings",
+            page_budget=page_budget,
+            object_budget=object_budget,
+            include_rbac_binding=True,
+        )
+        if len({item["name"] for item in cluster_role_bindings}) != len(cluster_role_bindings):
+            raise PreflightError("Kubernetes ClusterRoleBinding inventory contains duplicates")
         certificate_signing_requests = paginated_collection(
             kubeconfig,
             context,
@@ -645,7 +845,12 @@ def kubernetes_subject_inventory(
             "namespaces": sorted(namespaces, key=lambda value: value["name"]),
             "service_accounts": service_account_inventory,
             "roles": role_inventory,
+            "role_bindings": role_binding_inventory,
             "cluster_roles": sorted(cluster_roles, key=lambda value: value["name"]),
+            "cluster_role_bindings": sorted(
+                cluster_role_bindings,
+                key=lambda value: value["name"],
+            ),
             "certificate_signing_requests": sorted(
                 certificate_signing_requests,
                 key=lambda value: value["name"],
@@ -660,7 +865,56 @@ def kubernetes_subject_inventory(
     csr_signers = sorted(
         {item["signerName"] for item in first["certificate_signing_requests"]}
     )
-    return first["service_accounts"], first["roles"], first["cluster_roles"], csr_signers, digest
+    effective_subjects = rbac_binding_authorization_subjects(
+        first["role_bindings"],
+        first["cluster_role_bindings"],
+    )
+    return (
+        first["service_accounts"],
+        first["roles"],
+        first["role_bindings"],
+        first["cluster_roles"],
+        first["cluster_role_bindings"],
+        csr_signers,
+        effective_subjects,
+        digest,
+    )
+
+
+def rbac_binding_authorization_subjects(
+    role_bindings: dict[str, list[dict[str, Any]]],
+    cluster_role_bindings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Produce an exact SubjectAccessReview tuple for every bound RBAC subject."""
+    bindings = [
+        binding
+        for namespace_bindings in role_bindings.values()
+        for binding in namespace_bindings
+    ] + cluster_role_bindings
+    subjects: dict[str, dict[str, Any]] = {}
+    for binding in bindings:
+        for subject in binding.get("subjects", []):
+            kind = subject["kind"]
+            name = subject["name"]
+            if kind == "User":
+                review_subject = {"username": name, "groups": ["system:authenticated"]}
+            elif kind == "Group":
+                review_subject = {
+                    "username": f"fs2-rbac-group-probe-{hashlib.sha256(name.encode()).hexdigest()[:16]}",
+                    "groups": [name],
+                }
+            else:
+                namespace = subject["namespace"]
+                review_subject = {
+                    "username": f"system:serviceaccount:{namespace}:{name}",
+                    "groups": [
+                        "system:authenticated",
+                        "system:serviceaccounts",
+                        f"system:serviceaccounts:{namespace}",
+                    ],
+                }
+            subjects[canonical(review_subject)] = review_subject
+    return [subjects[key] for key in sorted(subjects)]
 
 
 def rbac_rule_authorization_targets(
@@ -847,6 +1101,11 @@ def auditor_bootstrap_contract(
             "apiGroups": ["rbac.authorization.k8s.io"],
             "resources": ["roles", "clusterroles"],
             "verbs": ["get", "list"],
+        },
+        {
+            "apiGroups": ["rbac.authorization.k8s.io"],
+            "resources": ["rolebindings", "clusterrolebindings"],
+            "verbs": ["list"],
         },
         {
             "apiGroups": ["certificates.k8s.io"],
@@ -1437,6 +1696,10 @@ def main() -> int:
                     rollback_valid_until=rollback_valid_until,
                 )
             )
+            provider_execution_sha256 = provider_trust["execution_sha256"]
+            kubernetes_authentication_sha256 = provider_trust[
+                "kubernetes_authentication_sha256"
+            ]
             if provider_trust["snapshot_public_key"] == query["recovery_public_key"]:
                 raise PreflightError("provider/IAM and recovery inventory authorities must be disjoint")
             provider_snapshot_bytes, provider_snapshot_metadata = descriptor_bytes(
@@ -1484,8 +1747,13 @@ def main() -> int:
             provider_snapshot_sha256 = hashlib.sha256(b"internal-only-provider").hexdigest()
             provider_trust_anchor_sha256 = hashlib.sha256(b"internal-only-trust-anchor").hexdigest()
             provider_adapter_sha256 = hashlib.sha256(b"internal-only-provider-adapter").hexdigest()
+            provider_execution_sha256 = hashlib.sha256(b"internal-only-provider-execution").hexdigest()
+            kubernetes_authentication_sha256 = hashlib.sha256(
+                b"internal-only-kubernetes-authentication"
+            ).hexdigest()
             auditor_bootstrap_sha256 = hashlib.sha256(b"internal-only-auditor-bootstrap").hexdigest()
             external_role_bundle_sha256 = hashlib.sha256(b"internal-only-role-bundle").hexdigest()
+            effective_rbac_subjects_sha256 = hashlib.sha256(b"internal-only-rbac-subjects").hexdigest()
 
         release = paths["release"]
         security = paths["security"]
@@ -1898,7 +2166,16 @@ def main() -> int:
         can_i(bootstrap, context, "yes", "list", "namespaces")
         can_i(bootstrap, context, "yes", "list", "serviceaccounts", "--all-namespaces")
         can_i(bootstrap, context, "yes", "list", "roles.rbac.authorization.k8s.io", "--all-namespaces")
+        can_i(
+            bootstrap,
+            context,
+            "yes",
+            "list",
+            "rolebindings.rbac.authorization.k8s.io",
+            "--all-namespaces",
+        )
         can_i(bootstrap, context, "yes", "list", "clusterroles.rbac.authorization.k8s.io")
+        can_i(bootstrap, context, "yes", "list", "clusterrolebindings.rbac.authorization.k8s.io")
         can_i(
             bootstrap,
             context,
@@ -1906,9 +2183,16 @@ def main() -> int:
             "list",
             "certificatesigningrequests.certificates.k8s.io",
         )
-        service_accounts, roles, cluster_roles, csr_signers, kubernetes_subject_inventory_sha256 = (
-            kubernetes_subject_inventory(bootstrap, context)
-        )
+        (
+            service_accounts,
+            roles,
+            _role_bindings,
+            cluster_roles,
+            _cluster_role_bindings,
+            csr_signers,
+            effective_rbac_subjects,
+            kubernetes_subject_inventory_sha256,
+        ) = kubernetes_subject_inventory(bootstrap, context)
         rule_impersonation_targets, rule_delegation_targets, rule_signers = (
             rbac_rule_authorization_targets(roles, cluster_roles)
         )
@@ -2058,7 +2342,16 @@ def main() -> int:
             for role, value in prior_expected.items()
             if role == "prior_bootstrap"
         ]
-        for subject in [*humans, *preapply_retired_subjects]:
+        authorization_subjects = {
+            canonical(subject): subject
+            for subject in [*humans, *effective_rbac_subjects, *preapply_retired_subjects]
+        }
+        if not effective_rbac_subjects:
+            raise PreflightError("Kubernetes effective RBAC subject closure is empty")
+        effective_rbac_subjects_sha256 = hashlib.sha256(
+            canonical(effective_rbac_subjects).encode()
+        ).hexdigest()
+        for subject in [authorization_subjects[key] for key in sorted(authorization_subjects)]:
             for resource, name, namespace in namespaced:
                 if resource.startswith("networkpolicies."):
                     group, short_resource = "networking.k8s.io", "networkpolicies"
@@ -2268,7 +2561,10 @@ def main() -> int:
                     "provider_snapshot_sha256": provider_snapshot_sha256,
                     "provider_trust_anchor_sha256": provider_trust_anchor_sha256,
                     "provider_adapter_sha256": provider_adapter_sha256,
+                    "provider_execution_sha256": provider_execution_sha256,
+                    "kubernetes_authentication_sha256": kubernetes_authentication_sha256,
                     "kubernetes_subject_inventory_sha256": kubernetes_subject_inventory_sha256,
+                    "effective_rbac_subjects_sha256": effective_rbac_subjects_sha256,
                     "auditor_bootstrap_sha256": auditor_bootstrap_sha256,
                     "external_role_bundle_sha256": external_role_bundle_sha256,
                     "rotation_phase": rotation_phase,
@@ -2285,7 +2581,10 @@ def main() -> int:
                     "provider_snapshot_sha256": provider_snapshot_sha256,
                     "provider_trust_anchor_sha256": provider_trust_anchor_sha256,
                     "provider_adapter_sha256": provider_adapter_sha256,
+                    "provider_execution_sha256": provider_execution_sha256,
+                    "kubernetes_authentication_sha256": kubernetes_authentication_sha256,
                     "kubernetes_subject_inventory_sha256": kubernetes_subject_inventory_sha256,
+                    "effective_rbac_subjects_sha256": effective_rbac_subjects_sha256,
                     "auditor_bootstrap_sha256": auditor_bootstrap_sha256,
                     "external_role_bundle_sha256": external_role_bundle_sha256,
                     "rotation_phase": rotation_phase,

@@ -25,13 +25,13 @@ BOUNDARY_PREFLIGHT = (
 )
 HANDOFF_SCHEMA = CONTROL_ROOT / "contracts" / "network-policy-security-handoff-v2.schema.json"
 SUBJECT_INVENTORY_SCHEMA = (
-    CONTROL_ROOT / "contracts" / "network-policy-security-subject-inventory-v2.schema.json"
+    CONTROL_ROOT / "contracts" / "network-policy-security-subject-inventory-v3.schema.json"
 )
 PROVIDER_SNAPSHOT_SCHEMA = (
-    CONTROL_ROOT / "contracts" / "network-policy-security-subject-provider-snapshot-v2.schema.json"
+    CONTROL_ROOT / "contracts" / "network-policy-security-subject-provider-snapshot-v3.schema.json"
 )
 PROVIDER_TRUST_ANCHOR_SCHEMA = (
-    CONTROL_ROOT / "contracts" / "network-policy-security-provider-trust-anchor-v2.schema.json"
+    CONTROL_ROOT / "contracts" / "network-policy-security-provider-trust-anchor-v3.schema.json"
 )
 PROVIDER_ADAPTER = CONTROL_ROOT / "scripts" / "network_policy_subject_provider_adapter.py"
 EPOCH_RETIREMENT = (
@@ -420,7 +420,10 @@ def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
                     "provider_subject_snapshot_sha256": "2" * 64,
                     "provider_trust_anchor_sha256": "6" * 64,
                     "provider_adapter_sha256": "7" * 64,
+                    "provider_execution_sha256": "8" * 64,
+                    "kubernetes_authentication_sha256": "9" * 64,
                     "kubernetes_subject_inventory_sha256": "3" * 64,
+                    "effective_rbac_subjects_sha256": "4" * 64,
                     "auditor_bootstrap_sha256": "8" * 64,
                     "external_role_bundle_sha256": "1" * 64,
                     "plan_rotation_phase": "preapply",
@@ -1852,6 +1855,8 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
     )[1].split('resource "kubernetes_cluster_role_binding_v1"', maxsplit=1)[0]
     assert 'resources  = ["namespaces", "serviceaccounts"]' in auditor
     assert 'resources  = ["roles", "clusterroles"]' in auditor
+    assert 'resources  = ["rolebindings", "clusterrolebindings"]' in auditor
+    assert 'verbs      = ["list"]' in auditor
     assert 'resources      = ["clusterrolebindings"]' in auditor
     assert 'verbs          = ["get"]' in auditor
     assert 'resources  = ["certificatesigningrequests"]' in auditor
@@ -1900,32 +1905,61 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
     provider_trust = {
         "provider": "nebius-iam",
         "adapter": {"id": PREFLIGHT.PROVIDER_ADAPTER_ID, "sha256": adapter_sha256},
+        "directory_execution": {
+            "principal_type": "service-account",
+            "principal_id": "serviceaccount-directory-reader-001",
+            "credential_sha256": "e" * 64,
+            "api_endpoint_sha256": "f" * 64,
+            "provider_issuer_sha256": "0" * 64,
+        },
+        "execution_sha256": "1" * 64,
+        "kubernetes_authentication_sha256": "2" * 64,
         "tenant_sha256": "a" * 64,
         "query_sha256": "b" * 64,
         "snapshot_public_key": provider_public_value,
     }
+    page_receipt = {
+        "index": 0,
+        "request_cursor_sha256": PREFLIGHT.hashlib.sha256(b"").hexdigest(),
+        "response_sha256": "c" * 64,
+        "next_cursor_sha256": "",
+    }
     provider_signed = {
-        "schema": "fs2-serve.nebius.ai/security-subject-provider-snapshot/v2",
+        "schema": "fs2-serve.nebius.ai/security-subject-provider-snapshot/v3",
         "snapshot_id": "provider-snapshot-epoch-001",
         "provider": "nebius-iam",
         "adapter": {"id": PREFLIGHT.PROVIDER_ADAPTER_ID, "sha256": adapter_sha256},
         "trust_anchor_sha256": trust_anchor_sha256,
+        "execution_sha256": "1" * 64,
+        "kubernetes_authentication_sha256": "2" * 64,
+        "provider_principal": {
+            "type": "service-account",
+            "id": "serviceaccount-directory-reader-001",
+            "credential_sha256": "e" * 64,
+        },
+        "api_endpoint_sha256": "f" * 64,
+        "provider_issuer_sha256": "0" * 64,
         "tenant_sha256": "a" * 64,
         "query_sha256": "b" * 64,
         "complete": True,
         "pagination": {
             "page_size": 200,
-            "page_count": 1,
-            "record_count": 2,
             "subject_count": 2,
-            "terminal_cursor": "",
-            "pages": [
+            "consistency": {
+                "mode": "double-collect-byte-identical",
+                "passes": 2,
+                "collection_sha256": "3" * 64,
+            },
+            "collections": [
                 {
-                    "index": 0,
-                    "request_cursor_sha256": PREFLIGHT.hashlib.sha256(b"").hexdigest(),
-                    "response_sha256": "c" * 64,
-                    "next_cursor_sha256": "",
+                    "index": index,
+                    "page_count": 1,
+                    "record_count": 2,
+                    "terminal_cursor": "",
+                    "pages": [page_receipt],
+                    "sha256": "3" * 64,
                 }
+                for index in range(2)
             ],
         },
         "human_users": users,
@@ -1938,6 +1972,9 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
         provider_private_key.sign(PREFLIGHT.canonical(provider_signed).encode())
     ).decode().rstrip("=")
     provider_envelope = PREFLIGHT.canonical({"signed": provider_signed, "signature": provider_signature})
+    Draft202012Validator(json.loads(PROVIDER_SNAPSHOT_SCHEMA.read_text())).validate(
+        json.loads(provider_envelope)
+    )
     verified_provider, provider_users, provider_groups, provider_hash = PREFLIGHT.verified_provider_snapshot(
         provider_envelope,
         provider_trust,
@@ -1947,7 +1984,7 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
         forbidden_usernames=set(),
     )
     signed = {
-        "schema": "fs2-serve.nebius.ai/security-subject-inventory/v2",
+        "schema": "fs2-serve.nebius.ai/security-subject-inventory/v3",
         "inventory_id": "security-inventory-epoch-001",
         "cluster": {
             "api_server_sha256": PREFLIGHT.hashlib.sha256(cluster[0].encode()).hexdigest(),
@@ -1959,9 +1996,17 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
             "provider": provider_signed["provider"],
             "adapter": provider_signed["adapter"],
             "trust_anchor_sha256": provider_signed["trust_anchor_sha256"],
+            "execution_sha256": provider_signed["execution_sha256"],
+            "kubernetes_authentication_sha256": provider_signed[
+                "kubernetes_authentication_sha256"
+            ],
+            "provider_principal": provider_signed["provider_principal"],
+            "api_endpoint_sha256": provider_signed["api_endpoint_sha256"],
+            "provider_issuer_sha256": provider_signed["provider_issuer_sha256"],
             "tenant_sha256": provider_signed["tenant_sha256"],
             "query_sha256": provider_signed["query_sha256"],
-            "page_count": 1,
+            "collection_count": 2,
+            "collection_sha256": "3" * 64,
             "record_count": 2,
             "captured_at": provider_signed["captured_at"],
             "expires_at": provider_signed["expires_at"],
@@ -1977,6 +2022,9 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
         recovery_private_key.sign(PREFLIGHT.canonical(signed).encode())
     ).decode().rstrip("=")
     envelope = PREFLIGHT.canonical({"signed": signed, "signature": signature})
+    Draft202012Validator(json.loads(SUBJECT_INVENTORY_SCHEMA.read_text())).validate(
+        json.loads(envelope)
+    )
 
     subjects, inventory_hash = PREFLIGHT.verified_subject_inventory(
         envelope,
@@ -2037,7 +2085,8 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert 'mutation_binding_states           = ["before", "target"]' in boundary
     assert "postapply_retirement_required" in boundary
     assert "preapply_retired_subjects" in preflight
-    assert 'for subject in [*humans, *preapply_retired_subjects]' in preflight
+    assert "*effective_rbac_subjects" in preflight
+    assert "rbac_binding_authorization_subjects" in preflight
     assert 'data "external" "control_plane_network_policy_epoch_retirement"' in boundary
     assert "prior_owner_kubeconfig" in retirement
     assert 'can_i(retired, query["context"], "no"' in retirement
@@ -2063,17 +2112,19 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert "live_identity_extra_keys" in preflight
     assert "delegation_targets" in preflight
     assert '"/apis/rbac.authorization.k8s.io/v1/clusterroles"' in preflight
+    assert '"/apis/rbac.authorization.k8s.io/v1/clusterrolebindings"' in preflight
     assert 'f"/apis/rbac.authorization.k8s.io/v1/namespaces/' in preflight
+    assert '}/rolebindings"' in preflight
     assert "paginated_collection" in preflight
     assert "Kubernetes subject inventory drifted" in preflight
     assert 'tuple(("users", user["username"], "") for user in provider_users)' in preflight
     assert 'for group in sorted(' in preflight
 
-    assert "security-subject-provider-snapshot/v2" in preflight
+    assert "security-subject-provider-snapshot/v3" in preflight
     assert "security_subject_provider_public_key" not in variables
     assert "security_subject_provider_tenant_sha256" not in variables
     assert "security_subject_provider_query_sha256" not in variables
-    assert 'Path("/etc/fs2/security/network-policy-provider-trust-anchor-v2.json")' in preflight
+    assert 'Path("/etc/fs2/security/network-policy-provider-trust-anchor-v3.json")' in preflight
     assert "path is not source-fixed" in preflight
     assert "trust_metadata.st_uid != 0" in preflight
     assert "trust_metadata.st_gid != 0" in preflight
@@ -2081,6 +2132,12 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert "PROVIDER_ADAPTER_ID" in provider_adapter
     assert "tenant-user-account-with-attributes" in provider_adapter
     assert "group-membership" in provider_adapter
+    assert '"consistency_passes") != 2' in provider_adapter
+    assert "provider directory changed across the required repeat-stability fence" in provider_adapter
+    assert '"--endpoint", execution["api_endpoint"]' in provider_adapter
+    assert '"HOME": "/var/empty"' in provider_adapter
+    assert '"NEBIUS_CONFIG": str(NEBIUS_CONFIG_PATH)' in provider_adapter
+    assert "credential_sha256" in provider_adapter
     assert "provider enumeration exceeded its page bound" in provider_adapter
     assert "json.load(sys.stdin)" not in provider_adapter
     assert "pagination chain is invalid" in preflight
@@ -2089,7 +2146,10 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert "provider_subject_snapshot_sha256" in workloads
     assert "provider_trust_anchor_sha256" in workloads
     assert "provider_adapter_sha256" in workloads
+    assert "provider_execution_sha256" in workloads
+    assert "kubernetes_authentication_sha256" in workloads
     assert "kubernetes_subject_inventory_sha256" in workloads
+    assert "effective_rbac_subjects_sha256" in workloads
     assert "auditor_bootstrap_sha256" in workloads
     assert 'import {\n  to = kubernetes_cluster_role_v1.control_plane_network_policy_security_auditor' in boundary
     assert (
@@ -2115,7 +2175,7 @@ def test_provider_trust_anchor_schema_pins_adapter_and_signing_custody() -> None
 
     assert properties["provider"] == {"const": "nebius-iam"}
     assert properties["adapter"]["properties"]["id"] == {
-        "const": "fs2-serve.nebius.ai/nebius-iam-human-directory/v2"
+        "const": "fs2-serve.nebius.ai/nebius-iam-human-directory/v3"
     }
     assert properties["adapter"]["properties"]["sha256"]["pattern"] == "^[0-9a-f]{64}$"
     assert properties["directory_query"]["properties"]["cli_path"] == {
@@ -2124,6 +2184,16 @@ def test_provider_trust_anchor_schema_pins_adapter_and_signing_custody() -> None
     assert properties["directory_query"]["properties"]["config_path"] == {
         "const": "/etc/fs2/security/nebius-directory-reader.yaml"
     }
+    execution = properties["directory_execution"]["properties"]
+    authentication = properties["kubernetes_authentication"]["properties"]
+    assert execution["cli_path"] == {"const": "/usr/local/bin/nebius"}
+    assert execution["credential_path"] == {
+        "const": "/etc/fs2/security/nebius-directory-reader-credential.json"
+    }
+    assert execution["api_endpoint_sha256"]["pattern"] == "^[0-9a-f]{64}$"
+    assert execution["provider_issuer_sha256"]["pattern"] == "^[0-9a-f]{64}$"
+    assert authentication["groups_claim"] == {"const": "groups"}
+    assert properties["directory_query"]["properties"]["consistency_passes"] == {"const": 2}
     assert properties["snapshot_public_key"]["pattern"] == "^[A-Za-z0-9_-]{43}$"
 
 
@@ -2138,16 +2208,38 @@ def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(m
         "max_records": 100,
         "timeout_seconds": 10,
         "snapshot_ttl_seconds": 900,
+        "consistency_passes": 2,
+    }
+    authentication = {
+        "username_claim": "email",
+        "username_prefix": "",
+        "groups_prefix": "",
     }
     trust = {
+        "directory_execution": {
+            "principal_type": "service-account",
+            "principal_id": "serviceaccount-directory-reader-001",
+            "credential_sha256": "e" * 64,
+            "api_endpoint_sha256": "f" * 64,
+            "provider_issuer_sha256": "0" * 64,
+        },
         "directory_query": query,
+        "kubernetes_authentication": authentication,
+        "execution_sha256": "1" * 64,
+        "kubernetes_authentication_sha256": "2" * 64,
         "tenant_sha256": "a" * 64,
         "query_sha256": "b" * 64,
         "snapshot_signer_key_id": "c" * 64,
     }
     monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_trust_anchor", lambda: (trust, "d" * 64))
 
-    def pages(_query: Any, command: list[str], operation: str, _budgets: Any) -> Any:
+    def pages(
+        _execution: Any,
+        _query: Any,
+        command: list[str],
+        operation: str,
+        _budgets: Any,
+    ) -> Any:
         receipt = [{
             "operation": operation,
             "request_token": "",
@@ -2181,7 +2273,87 @@ def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(m
     ]
     assert captured["human_groups"] == ["reviewers"]
     assert captured["complete"] is True
-    assert captured["adapter"]["id"].endswith("/v2")
+    assert captured["adapter"]["id"].endswith("/v3")
+    assert captured["pagination"]["consistency"]["passes"] == 2
+    assert len(captured["pagination"]["collections"]) == 2
+
+
+def test_kubernetes_rbac_binding_subjects_are_in_the_authorization_closure() -> None:
+    role_bindings = {
+        "tenant-a": [
+            {
+                "subjects": [
+                    {"kind": "User", "name": "user@example.invalid"},
+                    {"kind": "Group", "name": "platform-reviewers"},
+                    {"kind": "ServiceAccount", "name": "worker", "namespace": "tenant-a"},
+                ]
+            }
+        ]
+    }
+    cluster_role_bindings = [
+        {
+            "subjects": [
+                {"kind": "Group", "name": "system:authenticated"},
+                {"kind": "User", "name": "user@example.invalid"},
+            ]
+        }
+    ]
+
+    subjects = PREFLIGHT.rbac_binding_authorization_subjects(
+        role_bindings,
+        cluster_role_bindings,
+    )
+
+    assert {subject["username"] for subject in subjects} >= {
+        "user@example.invalid",
+        "system:serviceaccount:tenant-a:worker",
+    }
+    assert any(subject["groups"] == ["platform-reviewers"] for subject in subjects)
+    assert any(subject["groups"] == ["system:authenticated"] for subject in subjects)
+    service_account = next(
+        subject
+        for subject in subjects
+        if subject["username"] == "system:serviceaccount:tenant-a:worker"
+    )
+    assert service_account["groups"] == [
+        "system:authenticated",
+        "system:serviceaccounts",
+        "system:serviceaccounts:tenant-a",
+    ]
+    assert sum(subject["username"] == "user@example.invalid" for subject in subjects) == 1
+
+
+def test_provider_adapter_rejects_a_hybrid_directory_across_consistency_passes(
+    monkeypatch: Any,
+) -> None:
+    trust = {
+        "directory_query": {"consistency_passes": 2, "snapshot_ttl_seconds": 900},
+    }
+    monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_trust_anchor", lambda: (trust, "d" * 64))
+    collections = iter(
+        [
+            {
+                "users": [{"username": "first@example.invalid", "groups": ["reviewers"]}],
+                "groups": ["reviewers"],
+                "raw_pages": [{"response": {"items": ["first"]}}],
+                "receipts": [],
+                "record_count": 2,
+                "collection_sha256": "1" * 64,
+            },
+            {
+                "users": [{"username": "second@example.invalid", "groups": ["reviewers"]}],
+                "groups": ["reviewers"],
+                "raw_pages": [{"response": {"items": ["second"]}}],
+                "receipts": [],
+                "record_count": 2,
+                "collection_sha256": "2" * 64,
+            },
+        ]
+    )
+    monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_capture_directory", lambda _trust: next(collections))
+
+    with pytest.raises(PROVIDER_ADAPTER_MODULE.AdapterError, match="repeat-stability"):
+        PROVIDER_ADAPTER_MODULE.capture()
 
 
 def test_external_rbac_boundary_separates_runtime_audit_and_subject_rotation() -> None:

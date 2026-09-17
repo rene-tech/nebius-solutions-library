@@ -701,8 +701,15 @@ class Transition:
                 r"[0-9a-f]{64}", str(identity_boundary.get("provider_trust_anchor_sha256", ""))
             )
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("provider_adapter_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("provider_execution_sha256", "")))
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity_boundary.get("kubernetes_authentication_sha256", ""))
+            )
             or not re.fullmatch(
                 r"[0-9a-f]{64}", str(identity_boundary.get("kubernetes_subject_inventory_sha256", ""))
+            )
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity_boundary.get("effective_rbac_subjects_sha256", ""))
             )
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("auditor_bootstrap_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("external_role_bundle_sha256", "")))
@@ -759,7 +766,12 @@ class Transition:
             "provider_subject_snapshot_sha256": identity_boundary.get("provider_subject_snapshot_sha256"),
             "provider_trust_anchor_sha256": identity_boundary.get("provider_trust_anchor_sha256"),
             "provider_adapter_sha256": identity_boundary.get("provider_adapter_sha256"),
+            "provider_execution_sha256": identity_boundary.get("provider_execution_sha256"),
+            "kubernetes_authentication_sha256": identity_boundary.get(
+                "kubernetes_authentication_sha256"
+            ),
             "kubernetes_subject_inventory_sha256": identity_boundary.get("kubernetes_subject_inventory_sha256"),
+            "effective_rbac_subjects_sha256": identity_boundary.get("effective_rbac_subjects_sha256"),
             "auditor_bootstrap_sha256": identity_boundary.get("auditor_bootstrap_sha256"),
             "external_role_bundle_sha256": identity_boundary.get("external_role_bundle_sha256"),
             "plan_rotation_phase": identity_boundary.get("plan_rotation_phase"),

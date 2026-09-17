@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/contracts/network-policy-security-subject-provider-snapshot-v3.schema.json",
+  "title": "Byte-pinned repeat-stable provider/IAM subject snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["signed", "signature"],
+  "properties": {
+    "signed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema", "snapshot_id", "provider", "adapter", "trust_anchor_sha256",
+        "execution_sha256", "kubernetes_authentication_sha256", "provider_principal",
+        "api_endpoint_sha256", "provider_issuer_sha256", "tenant_sha256", "query_sha256",
+        "complete", "pagination", "human_users", "human_groups", "captured_at", "expires_at",
+        "signer_key_id"
+      ],
+      "properties": {
+        "schema": { "const": "fs2-serve.nebius.ai/security-subject-provider-snapshot/v3" },
+        "snapshot_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{8,128}$" },
+        "provider": { "const": "nebius-iam" },
+        "adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "sha256"],
+          "properties": {
+            "id": { "const": "fs2-serve.nebius.ai/nebius-iam-human-directory/v3" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        "trust_anchor_sha256": { "$ref": "#/$defs/sha256" },
+        "execution_sha256": { "$ref": "#/$defs/sha256" },
+        "kubernetes_authentication_sha256": { "$ref": "#/$defs/sha256" },
+        "provider_principal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "id", "credential_sha256"],
+          "properties": {
+            "type": { "const": "service-account" },
+            "id": { "type": "string", "pattern": "^serviceaccount-[A-Za-z0-9-]{8,128}$" },
+            "credential_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "api_endpoint_sha256": { "$ref": "#/$defs/sha256" },
+        "provider_issuer_sha256": { "$ref": "#/$defs/sha256" },
+        "tenant_sha256": { "$ref": "#/$defs/sha256" },
+        "query_sha256": { "$ref": "#/$defs/sha256" },
+        "complete": { "const": true },
+        "pagination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["subject_count", "page_size", "consistency", "collections"],
+          "properties": {
+            "subject_count": { "type": "integer", "minimum": 1, "maximum": 100000 },
+            "page_size": { "type": "integer", "minimum": 1, "maximum": 1000 },
+            "consistency": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "passes", "collection_sha256"],
+              "properties": {
+                "mode": { "const": "double-collect-byte-identical" },
+                "passes": { "const": 2 },
+                "collection_sha256": { "$ref": "#/$defs/sha256" }
+              }
+            },
+            "collections": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": { "$ref": "#/$defs/collection" }
+            }
+          }
+        },
+        "human_users": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["username", "groups"],
+            "properties": {
+              "username": { "type": "string", "pattern": "^[A-Za-z0-9:@._+/-]{3,253}$" },
+              "groups": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string", "pattern": "^[A-Za-z0-9:@._+/-]{1,253}$" }
+              }
+            }
+          }
+        },
+        "human_groups": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9:@._+/-]{1,253}$" }
+        },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "signer_key_id": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "request_cursor_sha256", "response_sha256", "next_cursor_sha256"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "request_cursor_sha256": { "$ref": "#/$defs/sha256" },
+        "response_sha256": { "$ref": "#/$defs/sha256" },
+        "next_cursor_sha256": {
+          "oneOf": [{ "$ref": "#/$defs/sha256" }, { "const": "" }]
+        }
+      }
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "page_count", "record_count", "terminal_cursor", "pages", "sha256"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "page_count": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "record_count": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "terminal_cursor": { "const": "" },
+        "pages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/page" }
+        },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

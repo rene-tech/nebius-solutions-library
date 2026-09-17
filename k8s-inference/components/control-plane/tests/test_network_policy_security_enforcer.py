@@ -200,7 +200,10 @@ def _fixture() -> tuple[
                 "provider_subject_snapshot_sha256": "1" * 64,
                 "provider_trust_anchor_sha256": "5" * 64,
                 "provider_adapter_sha256": "6" * 64,
+                "provider_execution_sha256": "a" * 64,
+                "kubernetes_authentication_sha256": "b" * 64,
                 "kubernetes_subject_inventory_sha256": "2" * 64,
+                "effective_rbac_subjects_sha256": "4" * 64,
                 "auditor_bootstrap_sha256": "7" * 64,
                 "external_role_bundle_sha256": "9" * 64,
                 "plan_rotation_phase": "preapply",
@@ -455,6 +458,9 @@ def test_enforcer_requires_peer_uid_and_client_signature_and_signs_response() ->
         SECURITY_USER_INFO
     )
     assert response["signed"]["result"]["auditor_bootstrap_sha256"] == "7" * 64
+    assert response["signed"]["result"]["effective_rbac_subjects_sha256"] == "4" * 64
+    assert response["signed"]["result"]["provider_execution_sha256"] == "a" * 64
+    assert response["signed"]["result"]["kubernetes_authentication_sha256"] == "b" * 64
     assert response["signed"]["result"]["external_role_bundle_sha256"] == "9" * 64
     assert response["signed"]["result"]["plan_rotation_phase"] == "preapply"
     assert api.patches == []
@@ -469,7 +475,7 @@ def test_enforcer_requires_peer_uid_and_client_signature_and_signs_response() ->
         enforcer.handle_envelope(tampered, peer_uid=1001, peer_gid=1002)
 
 
-def test_socket_rejects_peer_before_recv_and_sets_a_bounded_read_deadline() -> None:
+def test_socket_rejects_peer_before_recv_and_enforces_an_absolute_connection_deadline() -> None:
     _api, enforcer, client_key, _server_key, _recovery_key = _fixture()
 
     class Connection:
@@ -477,7 +483,7 @@ def test_socket_rejects_peer_before_recv_and_sets_a_bounded_read_deadline() -> N
             self.uid = uid
             self.gid = gid
             self.chunks = chunks
-            self.timeout: float | None = None
+            self.timeouts: list[float] = []
             self.recv_called = False
             self.response = b""
 
@@ -485,7 +491,7 @@ def test_socket_rejects_peer_before_recv_and_sets_a_bounded_read_deadline() -> N
             return struct.pack("3i", 999, self.uid, self.gid)
 
         def settimeout(self, value: float) -> None:
-            self.timeout = value
+            self.timeouts.append(value)
 
         def recv(self, _size: int) -> bytes:
             self.recv_called = True
@@ -498,19 +504,25 @@ def test_socket_rejects_peer_before_recv_and_sets_a_bounded_read_deadline() -> N
     with pytest.raises(ENFORCER.EnforcerError, match="peer UID/GID"):
         ENFORCER.serve_connection(rejected, enforcer)
     assert rejected.recv_called is False
-    assert rejected.timeout is None
+    assert rejected.timeouts == []
 
     payload = ENFORCER.canonical(_signed_request(client_key, "attest", {})).encode()
     accepted = Connection(1001, 1002, [payload, b""])
     ENFORCER.serve_connection(accepted, enforcer)
-    assert accepted.timeout == ENFORCER.SOCKET_READ_SECONDS
-    assert 0 < accepted.timeout < ENFORCER.HANDOFF_SECONDS
+    assert accepted.timeouts
+    assert all(0 < timeout <= ENFORCER.SOCKET_READ_SECONDS for timeout in accepted.timeouts)
     assert accepted.response.endswith(b"\n")
 
     oversized = Connection(1001, 1002, [b"x" * (ENFORCER.MAX_REQUEST_BYTES + 1)])
     with pytest.raises(ENFORCER.EnforcerError, match="byte bound"):
         ENFORCER.serve_connection(oversized, enforcer)
-    assert oversized.timeout == ENFORCER.SOCKET_READ_SECONDS
+    assert oversized.timeouts
+
+    slow_drip = Connection(1001, 1002, [b"{"])
+    clock_values = iter([0.0, 0.0, 9.0, 11.0])
+    with pytest.raises(ENFORCER.EnforcerError, match="absolute deadline"):
+        ENFORCER.serve_connection(slow_drip, enforcer, clock=lambda: next(clock_values))
+    assert slow_drip.recv_called is True
 
 
 def test_enforcer_rejects_a_peer_gid_shared_with_the_security_process(monkeypatch: Any) -> None:

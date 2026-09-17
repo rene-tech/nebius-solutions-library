@@ -20,12 +20,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ADAPTER_ID = "fs2-serve.nebius.ai/nebius-iam-human-directory/v2"
-SNAPSHOT_SCHEMA = "fs2-serve.nebius.ai/security-subject-provider-snapshot/v2"
-TRUST_SCHEMA = "fs2-serve.nebius.ai/security-provider-trust-anchor/v2"
-TRUST_ANCHOR_PATH = Path("/etc/fs2/security/network-policy-provider-trust-anchor-v2.json")
+ADAPTER_ID = "fs2-serve.nebius.ai/nebius-iam-human-directory/v3"
+SNAPSHOT_SCHEMA = "fs2-serve.nebius.ai/security-subject-provider-snapshot/v3"
+TRUST_SCHEMA = "fs2-serve.nebius.ai/security-provider-trust-anchor/v3"
+TRUST_ANCHOR_PATH = Path("/etc/fs2/security/network-policy-provider-trust-anchor-v3.json")
 NEBIUS_CLI_PATH = Path("/usr/local/bin/nebius")
 NEBIUS_CONFIG_PATH = Path("/etc/fs2/security/nebius-directory-reader.yaml")
+NEBIUS_CREDENTIAL_PATH = Path("/etc/fs2/security/nebius-directory-reader-credential.json")
 
 
 class AdapterError(RuntimeError):
@@ -34,6 +35,15 @@ class AdapterError(RuntimeError):
 
 def canonical(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def _is_https_endpoint(value: Any) -> bool:
+    return isinstance(value, str) and bool(
+        re.fullmatch(
+            r"https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?",
+            value,
+        )
+    )
 
 
 def _root_owned_file(
@@ -56,7 +66,19 @@ def _root_owned_file(
                 or metadata.st_size > maximum
             ):
                 raise AdapterError(f"{label} custody is not exact")
-            value = os.read(descriptor, maximum + 1)
+            chunks: list[bytes] = []
+            size = 0
+            while True:
+                chunk = os.read(descriptor, min(65536, maximum + 1 - size))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                size += len(chunk)
+                if size > maximum:
+                    raise AdapterError(f"{label} exceeds its bound")
+            value = b"".join(chunks)
+            if len(value) != metadata.st_size:
+                raise AdapterError(f"{label} changed while it was read")
         finally:
             os.close(descriptor)
     except OSError as error:
@@ -79,21 +101,42 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise AdapterError("provider trust anchor is invalid") from error
     expected = {
-        "schema", "provider", "adapter", "directory_query", "tenant_sha256", "query_sha256",
-        "snapshot_public_key", "snapshot_signer_key_id", "valid_from", "expires_at",
+        "schema", "provider", "adapter", "directory_execution", "directory_query",
+        "kubernetes_authentication", "execution_sha256", "kubernetes_authentication_sha256",
+        "tenant_sha256", "query_sha256", "snapshot_public_key", "snapshot_signer_key_id",
+        "valid_from", "expires_at",
+    }
+    execution_fields = {
+        "cli_path", "cli_sha256", "config_path", "config_sha256", "credential_path",
+        "credential_sha256", "api_endpoint", "api_endpoint_sha256", "provider_issuer",
+        "provider_issuer_sha256", "principal_type", "principal_id",
     }
     query_fields = {
         "cli_path", "config_path", "profile", "tenant_id", "page_size", "max_pages",
-        "max_records", "timeout_seconds", "snapshot_ttl_seconds",
+        "max_records", "timeout_seconds", "snapshot_ttl_seconds", "consistency_passes",
     }
+    authentication_fields = {
+        "oidc_issuer", "oidc_issuer_sha256", "audiences", "audiences_sha256",
+        "username_claim", "username_prefix", "groups_claim", "groups_prefix",
+        "provider_subject_field", "provider_email_field", "provider_group_field",
+    }
+    execution = trust.get("directory_execution", {}) if isinstance(trust, dict) else {}
     query = trust.get("directory_query", {}) if isinstance(trust, dict) else {}
+    authentication = trust.get("kubernetes_authentication", {}) if isinstance(trust, dict) else {}
     if (
         not isinstance(trust, dict)
         or set(trust) != expected
         or trust.get("schema") != TRUST_SCHEMA
         or trust.get("provider") != "nebius-iam"
+        or not isinstance(execution, dict)
+        or set(execution) != execution_fields
         or not isinstance(query, dict)
         or set(query) != query_fields
+        or not isinstance(authentication, dict)
+        or set(authentication) != authentication_fields
+        or execution.get("cli_path") != str(NEBIUS_CLI_PATH)
+        or execution.get("config_path") != str(NEBIUS_CONFIG_PATH)
+        or execution.get("credential_path") != str(NEBIUS_CREDENTIAL_PATH)
         or query.get("cli_path") != str(NEBIUS_CLI_PATH)
         or query.get("config_path") != str(NEBIUS_CONFIG_PATH)
         or not re.fullmatch(r"[A-Za-z0-9._-]{3,128}", str(query.get("profile", "")))
@@ -108,8 +151,42 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         or not 1 <= query["timeout_seconds"] <= 120
         or not isinstance(query.get("snapshot_ttl_seconds"), int)
         or not 300 <= query["snapshot_ttl_seconds"] <= 3600
+        or query.get("consistency_passes") != 2
+        or not _is_https_endpoint(execution.get("api_endpoint"))
+        or not _is_https_endpoint(execution.get("provider_issuer"))
+        or execution.get("api_endpoint_sha256")
+        != hashlib.sha256(str(execution.get("api_endpoint", "")).encode()).hexdigest()
+        or execution.get("provider_issuer_sha256")
+        != hashlib.sha256(str(execution.get("provider_issuer", "")).encode()).hexdigest()
+        or execution.get("principal_type") != "service-account"
+        or not re.fullmatch(r"serviceaccount-[A-Za-z0-9-]{8,128}", str(execution.get("principal_id", "")))
+        or not _is_https_endpoint(authentication.get("oidc_issuer"))
+        or authentication.get("oidc_issuer_sha256")
+        != hashlib.sha256(str(authentication.get("oidc_issuer", "")).encode()).hexdigest()
+        or authentication.get("oidc_issuer") != execution.get("provider_issuer")
+        or not isinstance(authentication.get("audiences"), list)
+        or not authentication["audiences"]
+        or len(authentication["audiences"]) != len(set(authentication["audiences"]))
+        or any(not re.fullmatch(r"[A-Za-z0-9._:/-]{3,253}", str(value)) for value in authentication["audiences"])
+        or authentication.get("audiences_sha256")
+        != hashlib.sha256(canonical(sorted(authentication["audiences"])).encode()).hexdigest()
+        or authentication.get("username_claim") not in {"sub", "email"}
+        or not isinstance(authentication.get("username_prefix"), str)
+        or not re.fullmatch(r"[A-Za-z0-9:@._+/-]{0,128}", authentication["username_prefix"])
+        or authentication.get("groups_claim") != "groups"
+        or not isinstance(authentication.get("groups_prefix"), str)
+        or not re.fullmatch(r"[A-Za-z0-9:@._+/-]{0,128}", authentication["groups_prefix"])
+        or authentication.get("provider_subject_field") != "tenant_user_account.metadata.id"
+        or authentication.get("provider_email_field") != "attributes.email"
+        or authentication.get("provider_group_field") != "metadata.name"
+        or trust.get("execution_sha256") != hashlib.sha256(canonical(execution).encode()).hexdigest()
+        or trust.get("kubernetes_authentication_sha256")
+        != hashlib.sha256(canonical(authentication).encode()).hexdigest()
         or trust.get("tenant_sha256") != hashlib.sha256(query["tenant_id"].encode()).hexdigest()
-        or trust.get("query_sha256") != hashlib.sha256(canonical(query).encode()).hexdigest()
+        or trust.get("query_sha256")
+        != hashlib.sha256(
+            canonical({"execution": execution, "query": query, "authentication": authentication}).encode()
+        ).hexdigest()
         or trust.get("adapter") != {
             "id": ADAPTER_ID,
             "sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -132,20 +209,55 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         or expires_at.astimezone(dt.UTC) <= now + dt.timedelta(seconds=query["snapshot_ttl_seconds"])
     ):
         raise AdapterError("provider trust anchor is not currently rollback-valid")
-    _root_owned_file(
+    cli_bytes = _root_owned_file(
+        NEBIUS_CLI_PATH,
+        modes={0o500, 0o550, 0o555, 0o700, 0o750, 0o755},
+        maximum=268435456,
+        label="provider CLI executable",
+        required_gid=0,
+    )
+    config_bytes = _root_owned_file(
         NEBIUS_CONFIG_PATH,
         modes={0o400, 0o440},
         maximum=1048576,
         label="read-only provider CLI configuration",
+        required_gid=0,
     )
+    credential_bytes = _root_owned_file(
+        NEBIUS_CREDENTIAL_PATH,
+        modes={0o400, 0o440},
+        maximum=1048576,
+        label="read-only provider credential",
+        required_gid=0,
+    )
+    try:
+        config_text = config_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise AdapterError("provider CLI configuration is not UTF-8") from error
+    if (
+        execution.get("cli_sha256") != hashlib.sha256(cli_bytes).hexdigest()
+        or execution.get("config_sha256") != hashlib.sha256(config_bytes).hexdigest()
+        or execution.get("credential_sha256") != hashlib.sha256(credential_bytes).hexdigest()
+        or execution["api_endpoint"] not in config_text
+        or str(NEBIUS_CREDENTIAL_PATH) not in config_text
+        or execution["principal_id"] not in config_text
+        or execution["principal_id"].encode() not in credential_bytes
+    ):
+        raise AdapterError("provider executable, configuration or credential bytes are not exact")
     return trust, hashlib.sha256(canonical(trust).encode()).hexdigest()
 
 
-def _provider_page(query: dict[str, Any], command: list[str], token: str) -> dict[str, Any]:
+def _provider_page(
+    execution: dict[str, Any],
+    query: dict[str, Any],
+    command: list[str],
+    token: str,
+) -> dict[str, Any]:
     arguments = [
         str(NEBIUS_CLI_PATH), *command,
         "--page-size", str(query["page_size"]), "--page-token", token,
         "--format", "json", "--config", str(NEBIUS_CONFIG_PATH), "--profile", query["profile"],
+        "--endpoint", execution["api_endpoint"],
         "--no-check-update", "--no-browser", "--color=false", "--retries", "1",
         "--timeout", f"{query['timeout_seconds']}s",
         "--auth-timeout", f"{query['timeout_seconds']}s",
@@ -155,6 +267,17 @@ def _provider_page(query: dict[str, Any], command: list[str], token: str) -> dic
             arguments,
             capture_output=True,
             check=False,
+            close_fds=True,
+            cwd="/",
+            env={
+                "HOME": "/var/empty",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "NEBIUS_CONFIG": str(NEBIUS_CONFIG_PATH),
+                "PATH": "/usr/bin:/bin",
+            },
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
             text=True,
             timeout=query["timeout_seconds"] + 5,
         )
@@ -177,7 +300,11 @@ def _provider_page(query: dict[str, Any], command: list[str], token: str) -> dic
 
 
 def _list_pages(
-    query: dict[str, Any], command: list[str], operation: str, budgets: dict[str, int]
+    execution: dict[str, Any],
+    query: dict[str, Any],
+    command: list[str],
+    operation: str,
+    budgets: dict[str, int],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     token = ""
     items: list[dict[str, Any]] = []
@@ -186,7 +313,7 @@ def _list_pages(
         budgets["pages"] -= 1
         if budgets["pages"] < 0:
             raise AdapterError("provider enumeration exceeded its page bound")
-        page = _provider_page(query, command, token)
+        page = _provider_page(execution, query, command, token)
         budgets["records"] -= len(page["items"])
         if budgets["records"] < 0 or len(page["items"]) > query["page_size"]:
             raise AdapterError("provider enumeration exceeded its record bound")
@@ -219,12 +346,14 @@ def _metadata_identity(value: Any, *, label: str) -> tuple[str, str]:
     return identifier, name
 
 
-def capture() -> dict[str, Any]:
-    trust, trust_sha256 = _trust_anchor()
+def _capture_directory(trust: dict[str, Any]) -> dict[str, Any]:
+    execution = trust["directory_execution"]
     query = trust["directory_query"]
+    authentication = trust["kubernetes_authentication"]
     budgets = {"pages": query["max_pages"], "records": query["max_records"]}
     raw_pages: list[dict[str, Any]] = []
     user_items, pages = _list_pages(
+        execution,
         query,
         ["iam", "tenant-user-account-with-attributes", "list", "--parent-id", query["tenant_id"]],
         "tenant-user-account-with-attributes.list",
@@ -232,6 +361,7 @@ def capture() -> dict[str, Any]:
     )
     raw_pages.extend(pages)
     group_items, pages = _list_pages(
+        execution,
         query,
         ["iam", "group", "list", "--parent-id", query["tenant_id"]],
         "group.list",
@@ -244,7 +374,9 @@ def capture() -> dict[str, Any]:
         account = item.get("tenant_user_account", {}) if isinstance(item, dict) else {}
         identifier, _ = _metadata_identity(account, label="tenant user")
         attributes = item.get("attributes", {}) if isinstance(item, dict) else {}
-        username = attributes.get("email") if isinstance(attributes, dict) else None
+        email = attributes.get("email") if isinstance(attributes, dict) else None
+        claim = identifier if authentication["username_claim"] == "sub" else email
+        username = f"{authentication['username_prefix']}{claim}" if isinstance(claim, str) else None
         if (
             not isinstance(username, str)
             or not re.fullmatch(r"[A-Za-z0-9:@._+/-]{3,253}", username)
@@ -257,12 +389,18 @@ def capture() -> dict[str, Any]:
     groups_by_id: dict[str, str] = {}
     for item in group_items:
         identifier, name = _metadata_identity(item, label="group")
-        if identifier in groups_by_id or name in groups_by_id.values():
+        mapped_name = f"{authentication['groups_prefix']}{name}"
+        if (
+            identifier in groups_by_id
+            or mapped_name in groups_by_id.values()
+            or not re.fullmatch(r"[A-Za-z0-9:@._+/-]{1,253}", mapped_name)
+        ):
             raise AdapterError("provider group inventory is duplicated")
-        groups_by_id[identifier] = name
+        groups_by_id[identifier] = mapped_name
 
     for user_id, user in sorted(users_by_id.items()):
         membership_items, pages = _list_pages(
+            execution,
             query,
             ["iam", "group-membership", "list-member-of", "--subject-id", user_id],
             f"group-membership.list-member-of:{hashlib.sha256(user_id.encode()).hexdigest()}",
@@ -283,7 +421,6 @@ def capture() -> dict[str, Any]:
 
     if not users_by_id or not groups_by_id or not raw_pages:
         raise AdapterError("provider human directory is empty")
-    now = dt.datetime.now(dt.UTC).replace(microsecond=0)
     logical_cursor = ""
     receipts: list[dict[str, Any]] = []
     for index, page in enumerate(raw_pages):
@@ -311,19 +448,69 @@ def capture() -> dict[str, Any]:
     if record_count < len(users) + len(groups):
         raise AdapterError("provider enumeration record count is incomplete")
     return {
+        "users": users,
+        "groups": groups,
+        "raw_pages": raw_pages,
+        "receipts": receipts,
+        "record_count": record_count,
+        "collection_sha256": transcript_sha256,
+    }
+
+
+def capture() -> dict[str, Any]:
+    trust, trust_sha256 = _trust_anchor()
+    query = trust["directory_query"]
+    collections = [_capture_directory(trust) for _ in range(query["consistency_passes"])]
+    baseline = collections[0]
+    if any(
+        collection["users"] != baseline["users"]
+        or collection["groups"] != baseline["groups"]
+        or collection["raw_pages"] != baseline["raw_pages"]
+        or collection["collection_sha256"] != baseline["collection_sha256"]
+        for collection in collections[1:]
+    ):
+        raise AdapterError("provider directory changed across the required repeat-stability fence")
+    now = dt.datetime.now(dt.UTC).replace(microsecond=0)
+    transcript_sha256 = baseline["collection_sha256"]
+    users = baseline["users"]
+    groups = baseline["groups"]
+    return {
         "schema": SNAPSHOT_SCHEMA,
         "snapshot_id": f"nebius-iam-{now.strftime('%Y%m%dT%H%M%SZ')}-{transcript_sha256[:16]}",
         "provider": "nebius-iam",
         "adapter": {"id": ADAPTER_ID, "sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()},
         "trust_anchor_sha256": trust_sha256,
+        "execution_sha256": trust["execution_sha256"],
+        "kubernetes_authentication_sha256": trust["kubernetes_authentication_sha256"],
+        "provider_principal": {
+            "type": trust["directory_execution"]["principal_type"],
+            "id": trust["directory_execution"]["principal_id"],
+            "credential_sha256": trust["directory_execution"]["credential_sha256"],
+        },
+        "api_endpoint_sha256": trust["directory_execution"]["api_endpoint_sha256"],
+        "provider_issuer_sha256": trust["directory_execution"]["provider_issuer_sha256"],
         "tenant_sha256": trust["tenant_sha256"],
         "query_sha256": trust["query_sha256"],
         "complete": True,
         "pagination": {
-            "page_size": query["page_size"], "page_count": len(receipts),
-            "record_count": record_count,
             "subject_count": len(users) + len(groups),
-            "terminal_cursor": "", "pages": receipts,
+            "page_size": query["page_size"],
+            "consistency": {
+                "mode": "double-collect-byte-identical",
+                "passes": len(collections),
+                "collection_sha256": transcript_sha256,
+            },
+            "collections": [
+                {
+                    "index": index,
+                    "page_count": len(collection["receipts"]),
+                    "record_count": collection["record_count"],
+                    "terminal_cursor": "",
+                    "pages": collection["receipts"],
+                    "sha256": collection["collection_sha256"],
+                }
+                for index, collection in enumerate(collections)
+            ],
         },
         "human_users": users,
         "human_groups": groups,

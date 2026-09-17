@@ -23,18 +23,21 @@ project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 # binding states with matching permissions. An
 # apply-deferred postflight requires both prior credentials to be denied after
 # the binding rotation.
-# Supply the recovery-signed v2 subject inventory plus the separately signed,
+# Supply the recovery-signed v3 subject inventory plus the separately signed,
 # mode-0600 provider/IAM snapshot named by
 # `security_subject_provider_snapshot_path`. Callers cannot supply the provider
 # key, tenant or query. External security pins them in the root-owned, mode-0400
-# `/etc/fs2/security/network-policy-provider-trust-anchor-v2.json`, including the
-# SHA-256 of the source-fixed Nebius IAM adapter and its root-owned read-only CLI
-# configuration. The adapter enumerates users, groups and memberships directly;
-# it never accepts a caller-provided transcript. The provider receipt includes
-# a complete bounded pagination chain; the recovery-signed inventory must match
+# `/etc/fs2/security/network-policy-provider-trust-anchor-v3.json`, including
+# exact adapter/CLI/config/credential hashes, provider endpoint and issuer,
+# non-human principal, and Kubernetes issuer/audience/claim mapping. The adapter
+# clears inherited environment state and enumerates users, groups and memberships
+# directly; it never accepts a caller-provided transcript. The provider receipt
+# includes two byte-identical complete bounded pagination sweeps; the
+# recovery-signed inventory must match
 # its users/groups and provenance byte-for-byte and remain valid through
 # rollback. Bootstrap paginates every live Namespace, ServiceAccount, Role,
-# ClusterRole and CSR twice, derives named targets from every RBAC rule, then
+# RoleBinding, ClusterRole, ClusterRoleBinding and CSR twice, includes every
+# bound User/Group/ServiceAccount in the authorization closure, derives named targets from every RBAC rule, then
 # checks exact token, signer, impersonation, namespace/finalize and exhaustive
 # RBAC-delegation denial.
 # The bootstrap credential only updates the externally preprovisioned permanent
