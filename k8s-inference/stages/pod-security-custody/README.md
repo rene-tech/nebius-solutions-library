@@ -100,6 +100,15 @@ The saved plan binds both role-specific attestation digests; the external
 acknowledgement signs both, and the apply-time verifier rechecks the plan-role
 attestation from its sealed descriptor while matching the independently signed
 external-role digest.
+The packaged external-ack executor validates the same exact v5 runtime claim
+set as the native launcher and worker, including their `launcher` and `worker`
+closures. The canonical
+`sai07-execution-interface-v5.fixture.json` is included in the deterministic
+source bundle and source lock; its static regression contract binds the native
+launcher, Python worker, zipapp dispatcher, and external executor seam. It is
+test data only and grants no runtime authority. The checked-in source-bundle
+digest remains null while activation is blocked because this task did not
+build or publish an executable bundle.
 The apply-time verifier
 reconstructs the plan contract and rejects any byte/config/variable/semantic
 change. It also authenticates the actual platform kubeconfig with the

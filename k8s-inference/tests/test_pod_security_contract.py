@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -585,6 +586,11 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
             "stages/pod-security-custody/launcher-builder-provenance-v1.schema.json"
         )
     )
+    execution_interface = json.loads(
+        _source(
+            "stages/pod-security-custody/sai07-execution-interface-v5.fixture.json"
+        )
+    )
 
     assert lock["activation"] == "blocked"
     assert capsule["activation"] == "blocked"
@@ -642,6 +648,7 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
         "effective_authority_v1",
         "effective_authority_v2",
         "execution_bundle_main_v4",
+        "execution_interface_fixture_v5",
         "external_execution_ack_v3",
         "external_execution_v3",
         "external_handoff",
@@ -888,6 +895,92 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert capsule["launcher"]["native_launch_grant_fd"] == 207
     assert capsule["launcher"]["worker_script_fd"] == 208
     assert capsule["launcher"]["runtime_attestation_schema"].endswith("/v5")
+    assert execution_interface == {
+        "bundle": {
+            "builder_source": "scripts/build_sai07_execution_bundle_v4.py",
+            "dispatcher_command": "external-execute",
+            "dispatcher_source": "scripts/sai07_execution_bundle_main_v4.py",
+            "executor_source": "scripts/run_sai07_external_execution_v3.py",
+            "fixture_archive_name": "sai07-execution-interface-v5.fixture.json",
+        },
+        "claims": {
+            "launcher_fields": [
+                "activation_contract_sha256",
+                "binary_sha256",
+                "build_contract_sha256",
+                "builder_receipt_sha256s",
+                "source_sha256",
+            ],
+            "required_claim_fields": [
+                "admission_objects",
+                "api",
+                "capsule_contract_sha256",
+                "expires_at",
+                "handoff",
+                "image",
+                "issued_at",
+                "launcher",
+                "nonce",
+                "pod",
+                "role",
+                "schema",
+                "signing_principal_id",
+                "worker",
+            ],
+            "role": "external-ack",
+            "runtime_schema": "fs2-serve.nebius.ai/sai07-execution-capsule-runtime-attestation/v5",
+            "worker_fields": [
+                "argv",
+                "python_sha256",
+                "script_sha256",
+                "source_bundle_sha256",
+            ],
+        },
+        "handoff": {
+            "native_launch_grant_fd": 207,
+            "runtime_attestation_fd": 184,
+            "worker_argv_prefix": ["external-ack"],
+            "worker_script_fd": 208,
+        },
+        "schema": "fs2-serve.nebius.ai/sai07-execution-interface-fixture/v1",
+        "status": "source-interface-only-not-runtime-authority",
+    }
+    assert "V5_RUNTIME_ATTESTATION_SCHEMA" in executor
+    assert "V5_RUNTIME_CLAIM_FIELDS" in executor
+    assert "set(V5_RUNTIME_CLAIM_FIELDS)" in executor
+    assert "V5_LAUNCHER_FIELDS" in executor
+    assert "V5_WORKER_FIELDS" in executor
+    assert 'worker_argv[0] != "external-ack"' in executor
+    native_worker_verifier = authorized_apply.split(
+        "def verify_native_attestation", 1
+    )[1].split("def verify_attestation", 1)[0]
+    external_worker_verifier = executor.split(
+        "def verify_external_capsule_live", 1
+    )[1].split("def run_owner_authority_audit", 1)[0]
+    for field in execution_interface["claims"]["required_claim_fields"]:
+        assert f'"{field}"' in native_worker_verifier
+        assert f'"{field}"' in external_worker_verifier
+        assert f'json:"{field}"' in native_launcher
+    for field in execution_interface["claims"]["launcher_fields"]:
+        assert f'"{field}"' in native_worker_verifier
+        assert f'"{field}"' in external_worker_verifier
+        assert f'json:"{field}"' in native_launcher
+    for field in execution_interface["claims"]["worker_fields"]:
+        assert f'"{field}"' in native_worker_verifier
+        assert f'"{field}"' in external_worker_verifier
+        assert f'json:"{field}"' in native_launcher
+    assert 'command == "external-execute"' in _source(
+        execution_interface["bundle"]["dispatcher_source"]
+    )
+    assert execution_interface["bundle"]["executor_source"] in bundle_builder
+    assert execution_interface["bundle"]["fixture_archive_name"] in bundle_builder
+    fixture_pin = source_lock["sources"]["execution_interface_fixture_v5"]
+    assert fixture_pin["path"] == (
+        "stages/pod-security-custody/sai07-execution-interface-v5.fixture.json"
+    )
+    assert fixture_pin["sha256"] == hashlib.sha256(
+        _source(fixture_pin["path"]).encode()
+    ).hexdigest()
     assert "os.Getpid() != 1" in native_launcher
     assert "verifyRuntimeAttestation" in native_launcher
     assert "verifyStaticLauncherELF" in native_launcher

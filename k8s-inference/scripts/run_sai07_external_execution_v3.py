@@ -66,6 +66,39 @@ V4_RUNTIME_ATTESTATION = Path("/proc/1/fd/184")
 V4_EPOCH_ADMISSION = Path("/proc/1/fd/188")
 V4_IMAGE_PROVENANCE = Path("/proc/1/fd/189")
 V4_IMAGE_SBOM = Path("/proc/1/fd/200")
+V5_RUNTIME_ATTESTATION_SCHEMA = (
+    "fs2-serve.nebius.ai/sai07-execution-capsule-runtime-attestation/v5"
+)
+V5_RUNTIME_CLAIM_FIELDS = frozenset(
+    {
+        "admission_objects",
+        "api",
+        "capsule_contract_sha256",
+        "expires_at",
+        "handoff",
+        "image",
+        "issued_at",
+        "launcher",
+        "nonce",
+        "pod",
+        "role",
+        "schema",
+        "signing_principal_id",
+        "worker",
+    }
+)
+V5_LAUNCHER_FIELDS = frozenset(
+    {
+        "activation_contract_sha256",
+        "binary_sha256",
+        "build_contract_sha256",
+        "builder_receipt_sha256s",
+        "source_sha256",
+    }
+)
+V5_WORKER_FIELDS = frozenset(
+    {"argv", "python_sha256", "script_sha256", "source_bundle_sha256"}
+)
 
 
 class ExecutionV3Error(ValueError):
@@ -973,30 +1006,119 @@ def verify_external_capsule_live(
     evidence.exact(attestation, {"claims", "signature"}, "external runtime attestation")
     claims = evidence.exact(
         attestation["claims"],
-        {
-            "admission_objects",
-            "api",
-            "capsule_contract_sha256",
-            "expires_at",
-            "handoff",
-            "image",
-            "issued_at",
-            "nonce",
-            "pod",
-            "role",
-            "schema",
-            "signing_principal_id",
-        },
+        set(V5_RUNTIME_CLAIM_FIELDS),
         "external runtime attestation claims",
     )
+    launcher = evidence.exact(
+        claims["launcher"],
+        set(V5_LAUNCHER_FIELDS),
+        "external runtime launcher claims",
+    )
+    worker = evidence.exact(
+        claims["worker"],
+        set(V5_WORKER_FIELDS),
+        "external runtime worker claims",
+    )
+    capsule_launcher = evidence.exact(
+        capsule.get("launcher"),
+        {
+            "activation_contract",
+            "binary",
+            "build_contract",
+            "builder_receipt_schema",
+            "native_launch_grant_fd",
+            "runtime_attestation_path",
+            "runtime_attestation_schema",
+            "worker_script",
+            "worker_script_fd",
+        },
+        "external capsule launcher contract",
+    )
+    capsule_activation = evidence.exact(
+        capsule_launcher["activation_contract"],
+        {"path", "sha256"},
+        "external capsule launcher activation pin",
+    )
+    capsule_binary = evidence.exact(
+        capsule_launcher["binary"],
+        {"path", "sha256"},
+        "external capsule launcher binary pin",
+    )
+    capsule_build = evidence.exact(
+        capsule_launcher["build_contract"],
+        {"path", "sha256"},
+        "external capsule launcher build pin",
+    )
+    capsule_worker = evidence.exact(
+        capsule_launcher["worker_script"],
+        {"path", "sha256"},
+        "external capsule worker pin",
+    )
+    capsule_runtime = capsule.get("runtime")
+    runtime_files = (
+        capsule_runtime.get("runtime_files")
+        if isinstance(capsule_runtime, dict)
+        else None
+    )
+    if not isinstance(runtime_files, dict):
+        raise ExecutionV3Error("external capsule runtime files are absent")
+    capsule_python = evidence.exact(
+        runtime_files.get("python"),
+        {"fd", "path", "sha256"},
+        "external capsule Python pin",
+    )
+    capsule_source_bundle = evidence.exact(
+        runtime_files.get("source_bundle"),
+        {"fd", "path", "sha256"},
+        "external capsule source-bundle pin",
+    )
+    builder_receipts = launcher["builder_receipt_sha256s"]
+    worker_argv = worker["argv"]
+    digest_fields = (
+        launcher["activation_contract_sha256"],
+        launcher["binary_sha256"],
+        launcher["build_contract_sha256"],
+        launcher["source_sha256"],
+        worker["python_sha256"],
+        worker["script_sha256"],
+        worker["source_bundle_sha256"],
+    )
     if (
-        claims["role"] != "external-ack"
+        claims["schema"] != V5_RUNTIME_ATTESTATION_SCHEMA
+        or claims["role"] != "external-ack"
         or claims["capsule_contract_sha256"]
         != hashlib.sha256(capsule_bytes).hexdigest()
         or hashlib.sha256(attestation_bytes).hexdigest()
         != os.environ.get("FS2_SAI07_RUNTIME_ATTESTATION_SHA256")
+        or capsule_launcher["runtime_attestation_schema"]
+        != V5_RUNTIME_ATTESTATION_SCHEMA
+        or capsule_launcher["native_launch_grant_fd"] != 207
+        or capsule_launcher["worker_script_fd"] != 208
+        or capsule_launcher["runtime_attestation_path"]
+        != "/opt/fs2-sai07/attestations/execution-capsule-runtime-attestation-v5.json"
+        or not isinstance(builder_receipts, list)
+        or len(builder_receipts) != 2
+        or builder_receipts != sorted(set(builder_receipts))
+        or any(
+            not isinstance(value, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", value)
+            or value == ZERO_SHA256
+            for value in (*digest_fields, *builder_receipts)
+        )
+        or not isinstance(worker_argv, list)
+        or not worker_argv
+        or worker_argv[0] != "external-ack"
+        or any(not isinstance(value, str) or not value for value in worker_argv)
+        or capsule_activation["sha256"] != launcher["activation_contract_sha256"]
+        or capsule_binary["sha256"] != launcher["binary_sha256"]
+        or capsule_build["sha256"] != launcher["build_contract_sha256"]
+        or capsule_worker["sha256"] != worker["script_sha256"]
+        or capsule_python["sha256"] != worker["python_sha256"]
+        or capsule_source_bundle["sha256"] != worker["source_bundle_sha256"]
     ):
-        raise ExecutionV3Error("external runtime attestation identity differs")
+        raise ExecutionV3Error(
+            "external runtime attestation launcher/worker closure differs"
+        )
     if not all(
         isinstance(claims[field], str) and claims[field].endswith("Z")
         for field in ("issued_at", "expires_at")

@@ -37,6 +37,7 @@ SOURCES = (
     "scripts/verify_sai07_custody_trust_v3.py",
     "scripts/verify_sai07_external_execution_ack_v3.py",
     "scripts/verify_sai07_external_handoff.py",
+    "stages/pod-security-custody/sai07-execution-interface-v5.fixture.json",
 )
 FIXED_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 

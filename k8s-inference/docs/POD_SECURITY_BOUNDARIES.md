@@ -429,6 +429,12 @@ metadata-only Secret handling, the phase-receipt verifier executed as a child
 process, and the v1 audit client imported by the v2 authority auditor; an
 unpinned direct or transitive helper cannot silently redefine the execution
 contract.
+The deterministic bundle also carries a source-only v5 execution-interface
+fixture. It requires the native launcher, measured Python worker, zipapp
+dispatcher, and packaged external-ack executor to agree on the exact runtime
+claim set, including `launcher` and `worker`, before an acknowledgement can be
+created. The fixture is source-locked but is not an activation receipt or an
+authority artifact.
 
 ### Retained rejected v2 archive (not operational)
 
