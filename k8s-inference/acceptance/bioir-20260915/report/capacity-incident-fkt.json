@@ -1,0 +1,324 @@
+{
+  "schema": "fs2-bioir-capacity-incident/v1",
+  "generated_at": "2026-09-15 22:40:59 UTC",
+  "scope": "Read-only provider/Kubernetes incident check; no infrastructure or workload mutations.",
+  "classification": {
+    "provider_state": "STOPPED",
+    "provider_deleted": false,
+    "provider_stop_confirmed": true,
+    "initiating_cause": "unresolved",
+    "preemption_proven": false,
+    "cuda_criu_driver_or_runtime_fault_proven": false,
+    "reason": "The instance still exists and reports STOPPED with spec.stopped=true. It is preemptible with on_preemption=STOP, but no explicit preemption reason or actor is present in the inspected operation records. The recorded Stop Instance operation starts after Kubernetes declared NodeStatusUnknown."
+  },
+  "provider": {
+    "cli_version": "0.12.206",
+    "profile": "sandbox",
+    "get_command": "/usr/local/bin/nebius --profile sandbox --no-browser --timeout 20s --retries 1 compute instance get --id computeinstance-e00fkt1bsa4ec657sn --format json",
+    "get_exit_code": 0,
+    "sanitized_instance": {
+      "metadata": {
+        "id": "computeinstance-e00fkt1bsa4ec657sn",
+        "parent_id": "project-e00rene",
+        "name": "mk8snodegroup-e00n67290jzpdmffbv-2klx8-ww2nz",
+        "resource_version": "67",
+        "created_at": "2026-09-09T18:19:50.827272Z"
+      },
+      "spec": {
+        "resources": {
+          "platform": "gpu-h100-sxm",
+          "preset": "1gpu-16vcpu-200gb"
+        },
+        "stopped": true,
+        "recovery_policy": "FAIL",
+        "preemptible": {
+          "on_preemption": "STOP",
+          "priority": 5
+        }
+      },
+      "status": {
+        "state": "STOPPED"
+      }
+    },
+    "operations_query": {
+      "command": "/usr/local/bin/nebius --profile sandbox --no-browser --timeout 20s --retries 1 compute instance list-operations-by-parent --parent-id project-e00rene --page-size 100 --format json",
+      "started": "2026-09-15 22:38:58 UTC",
+      "scope_note": "One latest-operation page was read within the explicitly scoped project; only affected-instance operations relevant to the incident are retained.",
+      "returned_page_entries": 100,
+      "more_history_available": true
+    },
+    "relevant_operations": [
+      {
+        "id": "computeoperation-e00s95b6p81cvzaxvj",
+        "description": "Stop Instance",
+        "created_at": "2026-09-15T22:36:41.490800Z",
+        "finished_at": "2026-09-15T22:36:54.551563Z",
+        "resource_id": "computeinstance-e00fkt1bsa4ec657sn",
+        "status": {},
+        "progress_tracker": {
+          "description": "Stopping instance",
+          "started_at": "2026-09-15T22:36:41.490800Z",
+          "finished_at": "2026-09-15T22:36:54.551563Z"
+        }
+      },
+      {
+        "id": "computeoperation-e00n1xsr7461f868m1",
+        "description": "Update Instance",
+        "created_at": "2026-09-15T22:33:09.071145Z",
+        "finished_at": "2026-09-15T22:33:37.230116Z",
+        "resource_id": "computeinstance-e00fkt1bsa4ec657sn",
+        "status": {},
+        "progress_tracker": {
+          "description": "Updating attached disks",
+          "started_at": "2026-09-15T22:33:09.071145Z",
+          "finished_at": "2026-09-15T22:33:37.230116Z"
+        }
+      },
+      {
+        "id": "computeoperation-e00csk3rhcpw6dgcpf",
+        "description": "Update Instance",
+        "created_at": "2026-09-15T22:32:47.285617Z",
+        "finished_at": "2026-09-15T22:33:07.066810Z",
+        "resource_id": "computeinstance-e00fkt1bsa4ec657sn",
+        "status": {},
+        "progress_tracker": {
+          "description": "Updating attached disks",
+          "started_at": "2026-09-15T22:32:47.285617Z",
+          "finished_at": "2026-09-15T22:33:07.066810Z"
+        }
+      }
+    ],
+    "evidence_note": "Instance fields are a sanitized transcription of the successful CLI response retained in this tool transcript. Cloud-init, network, attached-storage and service-account fields are intentionally omitted."
+  },
+  "kubernetes": {
+    "incident_node_observed_unix": 1789511807.2367046,
+    "node": {
+      "name": "computeinstance-e00fkt1bsa4ec657sn",
+      "uid": "1be19a1e-91b0-4929-a382-13446daa2815",
+      "provider_id": "nebius://computeinstance-e00fkt1bsa4ec657sn",
+      "conditions": [
+        {
+          "lastHeartbeatTime": "2026-09-15T22:33:17Z",
+          "lastTransitionTime": "2026-09-15T22:35:29Z",
+          "message": "Kubelet stopped posting node status.",
+          "reason": "NodeStatusUnknown",
+          "status": "Unknown",
+          "type": "Ready"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:33:17Z",
+          "lastTransitionTime": "2026-09-15T22:35:29Z",
+          "message": "Kubelet stopped posting node status.",
+          "reason": "NodeStatusUnknown",
+          "status": "Unknown",
+          "type": "DiskPressure"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:33:17Z",
+          "lastTransitionTime": "2026-09-15T22:35:29Z",
+          "message": "Kubelet stopped posting node status.",
+          "reason": "NodeStatusUnknown",
+          "status": "Unknown",
+          "type": "MemoryPressure"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:34:28Z",
+          "lastTransitionTime": "2026-09-15T21:06:58Z",
+          "message": "No monitored processes in D-state",
+          "reason": "ContainerRuntimeHealthy",
+          "status": "False",
+          "type": "NebiusContainerRuntimeError"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-09T18:21:35Z",
+          "lastTransitionTime": "2026-09-09T18:21:35Z",
+          "message": "Cilium is running on this node",
+          "reason": "CiliumIsUp",
+          "status": "False",
+          "type": "NetworkUnavailable"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:33:17Z",
+          "lastTransitionTime": "2026-09-15T22:35:29Z",
+          "message": "Kubelet stopped posting node status.",
+          "reason": "NodeStatusUnknown",
+          "status": "Unknown",
+          "type": "PIDPressure"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:32:36Z",
+          "lastTransitionTime": "2026-09-15T21:07:27Z",
+          "message": "No disk I/O error detected for vda disk",
+          "reason": "NoBootDiskIOError",
+          "status": "False",
+          "type": "NebiusBootDiskIOError"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:32:36Z",
+          "lastTransitionTime": "2026-09-15T21:07:27Z",
+          "message": "kernel has no deadlock",
+          "reason": "KernelHasNoDeadlock",
+          "status": "False",
+          "type": "KernelDeadlock"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:32:36Z",
+          "lastTransitionTime": "2026-09-15T21:07:27Z",
+          "message": "XFS has not shutdown",
+          "reason": "XfsHasNotShutDown",
+          "status": "False",
+          "type": "XfsShutdown"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:32:36Z",
+          "lastTransitionTime": "2026-09-15T21:07:27Z",
+          "message": "UEFI CPER has no fatal error",
+          "reason": "CperHardwareHasNoFatalError",
+          "status": "False",
+          "type": "CperHardwareErrorFatal"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:32:36Z",
+          "lastTransitionTime": "2026-09-15T21:07:27Z",
+          "message": "All checks have passed",
+          "reason": "NoGPUErrorMK8S",
+          "status": "False",
+          "type": "NebiusGPUError"
+        }
+      ],
+      "taints": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "value": "fs2-inference"
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "node.kubernetes.io/unreachable",
+          "timeAdded": "2026-09-15T22:35:29Z"
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "timeAdded": "2026-09-15T22:35:29Z"
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "node.cilium.io/agent-not-ready"
+        }
+      ]
+    },
+    "node_events": [
+      {
+        "reason": "NodeNotReady",
+        "message": "Node computeinstance-e00fkt1bsa4ec657sn status is now: NodeNotReady",
+        "firstTimestamp": "2026-09-11T10:50:31Z",
+        "lastTimestamp": "2026-09-15T22:35:29Z",
+        "type": "Normal",
+        "involved_uid": "1be19a1e-91b0-4929-a382-13446daa2815"
+      }
+    ],
+    "affected_pod": {
+      "name": "bir-protenix-snapshot-restore-3",
+      "uid": "0d9fd3ba-9a7a-429d-8a95-bb330bcc412f",
+      "node": "computeinstance-e00fkt1bsa4ec657sn",
+      "recorded_phase": "Running",
+      "container_started_at": "2026-09-15T22:33:38Z",
+      "reported_ready": true,
+      "interpretation": "Last reported Running/Ready pod status is stale after node heartbeat loss; not proof of restored inference completion."
+    }
+  },
+  "timeline": [
+    {
+      "at": "2026-09-15T22:32:47.285617Z",
+      "event": "Provider begins Updating attached disks",
+      "operation_id": "computeoperation-e00csk3rhcpw6dgcpf",
+      "completed_at": "2026-09-15T22:33:07.066810Z"
+    },
+    {
+      "at": "2026-09-15T22:33:09.071145Z",
+      "event": "Provider begins another Updating attached disks operation",
+      "operation_id": "computeoperation-e00n1xsr7461f868m1",
+      "completed_at": "2026-09-15T22:33:37.230116Z"
+    },
+    {
+      "at": "2026-09-15T22:33:17Z",
+      "event": "Last recorded Ready-condition kubelet heartbeat"
+    },
+    {
+      "at": "2026-09-15T22:33:38Z",
+      "event": "Last recorded start time of restore-3 container"
+    },
+    {
+      "at": "2026-09-15T22:34:28Z",
+      "event": "Last recorded runtime-monitor heartbeat still reports ContainerRuntimeHealthy"
+    },
+    {
+      "at": "2026-09-15T22:35:29Z",
+      "event": "Ready becomes Unknown / NodeStatusUnknown; node-controller emits NodeNotReady and unreachable taints"
+    },
+    {
+      "at": "2026-09-15T22:36:41.490800Z",
+      "event": "Provider Stop Instance operation starts",
+      "operation_id": "computeoperation-e00s95b6p81cvzaxvj",
+      "completed_at": "2026-09-15T22:36:54.551563Z"
+    }
+  ],
+  "replacement_verification": {
+    "node": "computeinstance-e00xjaw5jqexvvnpat",
+    "uid": "54fff439-0b80-434e-a60f-7edee7051c44",
+    "read_commands": [
+      "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s get node computeinstance-e00xjaw5jqexvvnpat -o json",
+      "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s get pods -A --field-selector spec.nodeName=computeinstance-e00xjaw5jqexvvnpat -o json",
+      "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s -n kube-system exec nebius-node-problem-detector-gpu-v2fp4 -- /usr/bin/nvidia-smi --query-gpu=name,uuid,driver_version,memory.used,utilization.gpu --format=csv,noheader",
+      "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s -n kube-system exec nebius-node-problem-detector-gpu-v2fp4 -- /usr/bin/nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory --format=csv,noheader"
+    ],
+    "ready": {
+      "status": "True",
+      "reason": "KubeletReady",
+      "lastHeartbeatTime": "2026-09-15T22:37:13Z",
+      "lastTransitionTime": "2026-09-15T21:06:45Z"
+    },
+    "gpu_condition": {
+      "status": "False",
+      "reason": "NoGPUErrorMK8S",
+      "lastHeartbeatTime": "2026-09-15T22:37:29Z"
+    },
+    "runtime_condition": {
+      "status": "False",
+      "reason": "ContainerRuntimeHealthy",
+      "lastHeartbeatTime": "2026-09-15T22:37:49Z"
+    },
+    "gpu_allocatable": 1,
+    "gpu_requesting_pods_at_check": [],
+    "observed_pods_count": 11,
+    "gpu_query_stdout": "NVIDIA H100 80GB HBM3, GPU-ca98bcbc-cf06-a4c2-e3bc-c27a0cba95bc, 580.159.04, 0 MiB, 0 %\n",
+    "compute_processes_stdout": "",
+    "free_gpu_verified": true,
+    "timestamp_note": "Verification occurred before the operations query and before the peer replacement launch; no standalone exact collection timestamp was captured for these four read-only commands.",
+    "availability_scope": "Verified idle for the authorized replacement. Parent subsequently reported that replacement evaluation is active; this is not a continuing free-capacity claim for another workload.",
+    "decision": "Existing authorized idle replacement was usable; no user input, provisioning, scaling, GPU reset or quota change required. Peer owns a fresh independent cohort; no cross-UUID snapshot reuse."
+  },
+  "limitations": [
+    "Preemptible eligibility plus STOPPED state does not prove preemption was the initiating event.",
+    "The Stop Instance operation begins about 72.49 seconds after NodeNotReady. It cannot by itself explain the earlier heartbeat loss; actor/reason is not exposed in the inspected operation entries.",
+    "Attached-disk operations overlap the last heartbeat/container start, but timing correlation does not establish disk, CSI, driver or snapshot causality.",
+    "Last GPU/runtime error conditions were healthy but stale; this does not exclude a later host/runtime failure.",
+    "No host, driver, CRIU or provider-log forensics were expanded after the manager accepted the bounded timeline.",
+    "Peer incident artifacts remain unchanged. Provider/Kubernetes commands were read-only; no restart, reset, force deletion, node provisioning, scaling, controller or quota mutation."
+  ],
+  "evidence_files_sha256": [
+    {
+      "sha256": "952b539726cd104a3b0c555fd02fac5d1e017185cd3fbadb3286c883c2aadd5b",
+      "path": "snapshot/protenix/incident/node.json"
+    },
+    {
+      "sha256": "c2b3f2b77bbf25623ca895a2857260f236ab7f313eb247ca57e05786a2b8d6b5",
+      "path": "snapshot/protenix/incident/node-events.json"
+    },
+    {
+      "sha256": "c7837c6005a051250d177a7ca428b7dbda7dc82e6fca8ad0e6dce645e33d4c27",
+      "path": "snapshot/protenix/incident/pod.json"
+    }
+  ]
+}

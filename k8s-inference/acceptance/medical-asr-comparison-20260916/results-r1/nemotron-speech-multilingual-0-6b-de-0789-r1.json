@@ -1,0 +1,107 @@
+{
+  "case": "de-0789",
+  "language": "de",
+  "audio_seconds": 10.65,
+  "source_sha256": "7467bfd5f34786b7c3f5e115e1942d7f6a5251e2524ba0769cb6ac42437f493b",
+  "reference": "normal gewesen, aber dann zum Mittagessen nicht mehr erschienen. Eine Pflegekraft habe sie sehr unruhig und aggressiv im Bett vorgefunden. Bei der Aufnahme war",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 789
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:41.907160+00:00",
+  "submit_status": 202,
+  "operation_id": "0b1d1a1a-42a3-4df3-b679-953091fed34a",
+  "operation": {
+    "id": "0b1d1a1a-42a3-4df3-b679-953091fed34a",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-751b4c36015e493f9449b2af63a68fa0",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:42.403320Z",
+    "available_at": "2026-09-16T21:46:42.403320Z",
+    "deadline_at": "2026-09-16T23:46:42.397648Z",
+    "activation_started_at": "2026-09-16T21:46:42.424627Z",
+    "ready_at": "2026-09-16T21:46:42.651626Z",
+    "started_at": "2026-09-16T21:46:42.660323Z",
+    "completed_at": "2026-09-16T21:46:43.582700Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:42.403320Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.248306,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 10.65
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.482521484605968,
+  "text": "normal gewesen, aber dann zum Mittagessen nicht mehr erschienen. Eine Pflegekraft habe sie sehr unruhig und aggressiv im Bett vorgefunden. Bei der Aufnahme",
+  "result_audio_seconds": 10.65,
+  "processing_seconds": 0.6510596519801766,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "1bf54539a9a62f1719f14264e135d7ac9a731e3d39ee3b3745ed60903e52d061",
+  "quality": {
+    "reference_words": 24,
+    "hypothesis_words": 23,
+    "wer": 0.041666666666666664,
+    "substitutions": 0,
+    "deletions": 1,
+    "insertions": 0,
+    "correct": 23,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 23,
+        "reference": "war"
+      }
+    ],
+    "reference_characters": 133,
+    "character_errors": 3,
+    "cer": 0.022556390977443608
+  },
+  "finished_at": "2026-09-16T21:46:44.390559+00:00"
+}

@@ -1,0 +1,125 @@
+{
+  "case": "de-0225",
+  "language": "de",
+  "audio_seconds": 17.34,
+  "source_sha256": "0046ee52825013bf7830a0b2a404c1aac0cf4f3fca57b04d04d1472938f6e124",
+  "reference": "Welt ihrer Leidenschaft nachgehen der Musik. Bad Arolsen, eine Kleinstadt in Nordhessen, nordwestlich von Kassel, hat rund 15.500 Einwohner. Umso erstaunlicher, dass hier",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 225
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:45:49.487319+00:00",
+  "submit_status": 202,
+  "operation_id": "c7dd4ba5-08b8-455d-bbd5-6c208482b75c",
+  "operation": {
+    "id": "c7dd4ba5-08b8-455d-bbd5-6c208482b75c",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-6f7118b3f9bb493ba0ccd83acf4d001e",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:45:50.004263Z",
+    "available_at": "2026-09-16T21:45:50.004263Z",
+    "deadline_at": "2026-09-16T23:45:49.998725Z",
+    "activation_started_at": "2026-09-16T21:45:50.030105Z",
+    "ready_at": "2026-09-16T21:45:50.196072Z",
+    "started_at": "2026-09-16T21:45:50.200674Z",
+    "completed_at": "2026-09-16T21:45:51.495535Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:45:50.004263Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.191809,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 17.34
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.52678912691772,
+  "text": "ihrer Leidenschaft nachgehen, der Musik Bad Arolsen, eine Kleinstadt in Nordhessen, nordwestlich von Kassel, hat rund fünfzehntausendfünfhundert Einwohner. Umso erstaunlicher, dass",
+  "result_audio_seconds": 17.34,
+  "processing_seconds": 0.9236400991212577,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "e39d347638e6d285330c97720b2e06c72e7cce2b0992bea4195a246f20fa1cb3",
+  "quality": {
+    "reference_words": 24,
+    "hypothesis_words": 21,
+    "wer": 0.16666666666666666,
+    "substitutions": 1,
+    "deletions": 3,
+    "insertions": 0,
+    "correct": 20,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 0,
+        "reference": "welt"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 17,
+        "reference": "15"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 18,
+        "reference": "500",
+        "recognized": "fünfzehntausendfünfhundert"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 23,
+        "reference": "hier"
+      }
+    ],
+    "reference_characters": 141,
+    "character_errors": 34,
+    "cer": 0.24113475177304963
+  },
+  "finished_at": "2026-09-16T21:45:52.015183+00:00"
+}

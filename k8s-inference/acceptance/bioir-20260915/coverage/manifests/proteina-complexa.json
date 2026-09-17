@@ -1,0 +1,164 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "fs2-bioir-coverage-proteina-complexa",
+    "namespace": "fs2-bioir-coverage",
+    "labels": {
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "coverage",
+      "benchmark-model": "proteina-complexa"
+    }
+  },
+  "spec": {
+    "restartPolicy": "Never",
+    "activeDeadlineSeconds": 14400,
+    "automountServiceAccountToken": false,
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00r9tdjfszjs3angk"
+    },
+    "tolerations": [
+      {
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference",
+        "effect": "NoSchedule"
+      }
+    ],
+    "securityContext": {
+      "runAsUser": 10001,
+      "runAsGroup": 10001,
+      "fsGroup": 10001,
+      "supplementalGroups": [
+        1000
+      ],
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "containers": [
+      {
+        "name": "runtime",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+        "imagePullPolicy": "IfNotPresent",
+        "command": [
+          "python",
+          "-c",
+          "import time; time.sleep(14400)"
+        ],
+        "resources": {
+          "limits": {
+            "cpu": "8000m",
+            "ephemeral-storage": "32Gi",
+            "memory": "96Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "requests": {
+            "cpu": "8000m",
+            "ephemeral-storage": "32Gi",
+            "memory": "96Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "work",
+            "mountPath": "/work"
+          },
+          {
+            "name": "eval",
+            "mountPath": "/eval",
+            "readOnly": true
+          },
+          {
+            "name": "complexa-protein",
+            "mountPath": "/opt/fs2/artifacts/complexa-protein",
+            "subPath": "scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+            "readOnly": true
+          },
+          {
+            "name": "complexa-ligand",
+            "mountPath": "/opt/fs2/artifacts/complexa-ligand",
+            "subPath": "scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+            "readOnly": true
+          },
+          {
+            "name": "complexa-ame",
+            "mountPath": "/opt/fs2/artifacts/complexa-ame",
+            "subPath": "scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+            "readOnly": true
+          },
+          {
+            "name": "rosettafold3-checkpoint",
+            "mountPath": "/opt/fs2/artifacts/rosettafold3-checkpoint",
+            "subPath": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+            "readOnly": true
+          },
+          {
+            "name": "alphafold2-params",
+            "mountPath": "/opt/fs2/artifacts/alphafold2-params",
+            "subPath": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+            "readOnly": true
+          }
+        ],
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        }
+      }
+    ],
+    "volumes": [
+      {
+        "name": "work",
+        "emptyDir": {
+          "sizeLimit": "32Gi"
+        }
+      },
+      {
+        "name": "eval",
+        "configMap": {
+          "name": "fs2-bioir-coverage-batch"
+        }
+      },
+      {
+        "name": "complexa-protein",
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        }
+      },
+      {
+        "name": "complexa-ligand",
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        }
+      },
+      {
+        "name": "complexa-ame",
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        }
+      },
+      {
+        "name": "rosettafold3-checkpoint",
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        }
+      },
+      {
+        "name": "alphafold2-params",
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        }
+      }
+    ]
+  }
+}

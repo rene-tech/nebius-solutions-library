@@ -1,0 +1,149 @@
+{
+  "case": "de-0193",
+  "language": "de",
+  "audio_seconds": 12.92,
+  "source_sha256": "476ddedbd48ab113371175a659dc2931ee25926364c961e47d415a9b9bed5b42",
+  "reference": "96, 110, 96. * Musik * Hallihallo. (Frau) Emily, falsches Zimmer.",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 193
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "empty-transcript",
+  "started_at": "2026-09-16T21:45:45.940917+00:00",
+  "submit_status": 202,
+  "operation_id": "c755b04b-32b6-4c9e-b35d-ceb12d33c358",
+  "operation": {
+    "id": "c755b04b-32b6-4c9e-b35d-ceb12d33c358",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-f4ea9f54cc5a4202a7f31632d0604afa",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:45:46.755179Z",
+    "available_at": "2026-09-16T21:45:46.755179Z",
+    "deadline_at": "2026-09-16T23:45:46.723158Z",
+    "activation_started_at": "2026-09-16T21:45:46.810568Z",
+    "ready_at": "2026-09-16T21:45:47.213201Z",
+    "started_at": "2026-09-16T21:45:47.218359Z",
+    "completed_at": "2026-09-16T21:45:48.300077Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:45:46.755180Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.458022,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 12.92
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.7547094393521547,
+  "text": "",
+  "result_audio_seconds": 12.92,
+  "processing_seconds": 0.6743914170656353,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "6bbdcfa12e2ccfadd5dcda25bb25fee7549b3f1214861a3dd0ced98cf66b32e3",
+  "quality": {
+    "reference_words": 9,
+    "hypothesis_words": 0,
+    "wer": 1.0,
+    "substitutions": 0,
+    "deletions": 9,
+    "insertions": 0,
+    "correct": 0,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 0,
+        "reference": "96"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 1,
+        "reference": "110"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 2,
+        "reference": "96"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 3,
+        "reference": "musik"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 4,
+        "reference": "hallihallo"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 5,
+        "reference": "frau"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 6,
+        "reference": "emily"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 7,
+        "reference": "falsches"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 8,
+        "reference": "zimmer"
+      }
+    ],
+    "reference_characters": 45,
+    "character_errors": 45,
+    "cer": 1.0
+  },
+  "finished_at": "2026-09-16T21:45:48.696226+00:00"
+}

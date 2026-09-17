@@ -1,0 +1,87 @@
+{
+  "integrity_passed": true,
+  "clinical_validation": false,
+  "key_revoked": true,
+  "cases": [
+    {
+      "case": "en-01",
+      "audio_seconds": 457.92,
+      "end_to_end_seconds": 87.11948409862816,
+      "facts": 36,
+      "uncertain_facts": 3,
+      "citation_repairs": 0,
+      "excluded_candidates": 0,
+      "questions": 5,
+      "verified_literal_spans": 44,
+      "asr_operation_id": "aa535dc3-9e1b-4ee2-804b-6b2b344faab3",
+      "usage": {
+        "prompt_tokens": 26840,
+        "completion_tokens": 4739
+      }
+    },
+    {
+      "case": "de-herzrasen",
+      "audio_seconds": 421.860125,
+      "end_to_end_seconds": 95.3219160689041,
+      "facts": 18,
+      "uncertain_facts": 0,
+      "citation_repairs": 0,
+      "excluded_candidates": 1,
+      "questions": 5,
+      "verified_literal_spans": 25,
+      "asr_operation_id": "3c105f47-5cc3-4c0f-9e2c-4daef59a7655",
+      "usage": {
+        "prompt_tokens": 20209,
+        "completion_tokens": 4417
+      }
+    },
+    {
+      "case": "en-02",
+      "audio_seconds": 559.2,
+      "end_to_end_seconds": 107.81070523988456,
+      "facts": 23,
+      "uncertain_facts": 0,
+      "citation_repairs": 0,
+      "excluded_candidates": 3,
+      "questions": 5,
+      "verified_literal_spans": 34,
+      "asr_operation_id": "d1054e30-b9ea-4341-9e43-7b2865e5c5d0",
+      "usage": {
+        "prompt_tokens": 30702,
+        "completion_tokens": 4190
+      }
+    },
+    {
+      "case": "de-grippaler-infekt",
+      "audio_seconds": 629.2608125,
+      "end_to_end_seconds": 131.08279056288302,
+      "facts": 24,
+      "uncertain_facts": 1,
+      "citation_repairs": 0,
+      "excluded_candidates": 3,
+      "questions": 2,
+      "verified_literal_spans": 31,
+      "asr_operation_id": "75c54bec-a102-469d-bdea-5084d11874c1",
+      "usage": {
+        "prompt_tokens": 33240,
+        "completion_tokens": 5733
+      }
+    },
+    {
+      "case": "de-polyarthritis",
+      "audio_seconds": 438.39275,
+      "end_to_end_seconds": 94.01950217410922,
+      "facts": 23,
+      "uncertain_facts": 0,
+      "citation_repairs": 0,
+      "excluded_candidates": 3,
+      "questions": 5,
+      "verified_literal_spans": 33,
+      "asr_operation_id": "ab125f31-3eac-4c3b-82c5-51d08ae9d626",
+      "usage": {
+        "prompt_tokens": 33555,
+        "completion_tokens": 6958
+      }
+    }
+  ]
+}

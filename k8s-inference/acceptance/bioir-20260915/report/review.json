@@ -1,0 +1,63 @@
+{
+  "schema": "fs2.bioir-manager-acceptance/v1",
+  "reviewed_at": "2026-09-15T23:36:21Z",
+  "passed": true,
+  "meaning": "The requested bounded evaluation and report are complete, including unsupported and failed candidates. This is not scientific noninferiority, a customer-load SLO, or production deployment approval.",
+  "production_promoted": false,
+  "required_models": 12,
+  "snapshot_models": 4,
+  "reviewer": "root manager, with one cross-lane consistency review after GPU experiments",
+  "review_document": "report/final-review.md",
+  "source_sha256": {
+    "boltz2/result.json": "159d305a95c43dc73ddfe6694775110de06f0d779028d2bc6e51846cd1fef3df",
+    "openfold/result.json": "7d7f68ec7f84da46cfa638a5e2f7d18bb49b94d3f71497b4f2041f530b3faf4a",
+    "coverage/result.json": "eaf9c1cd958397da4b95902b8b721ffe1a5299df4d1048981e85708db8c58a6f",
+    "protenix/result.json": "5d43e94db5741d5abf77a44a246d0f03b3dbe49f653569869e42597b0a4f16da",
+    "snapshot/result.json": "65d8a4d6146aa4cc0580036d1604cf2de800ea3a93558c178bb7fd74dbfb5064",
+    "snapshot/protenix/result.json": "8de68861df8ee9de63840438beda16e67140d3ee3e9580e2a5473002fba28977",
+    "snapshot/openfold3/result.json": "31b6f7c88dedcb38622c6c296902499c7693d06ea015047b05ba04f2214cb5b0",
+    "report/report.md": "4f1f3cf8b7d8c719250ca5614cd639e4dab8e98a5f66ab161aa9d9514860720d",
+    "report/final-review.md": "f12a851eef8d8f34f7067f68d0be84a18205a85afcb1a38dd037d30b4c7dbccc",
+    "report/final-cluster-state.json": "e64af280431e3975600b78ae5537f9be0a89e9248e7a5afd28eb30b3e0116c60",
+    "evidence-archives/manifest.json": "439b5be6a1fd749fd952fcc4e713abccc1722a9a9987ab2d4d2d056b56b90b5c"
+  },
+  "checks": {
+    "required_scope_complete": true,
+    "all_current_baselines_fresh": true,
+    "comparable_ratios_and_residency_precision_boundaries_explicit": true,
+    "failed_attempts_and_quality_regressions_preserved": true,
+    "three_restore_three_normal_and_fallback_in_each_final_snapshot_matrix": true,
+    "openfold3_application_failures_are_negative_results_not_passes": true,
+    "interrupted_protenix_cohorts_not_pooled": true,
+    "cached_fallback_single_observation_not_matched_speedup": true,
+    "all_task_pods_pvcs_configmaps_absent": true,
+    "desired_customer_model_deployments_ready": true
+  },
+  "validation": {
+    "offline_unit_tests": {
+      "command": "python3 -m unittest discover -s report -p 'test_*.py' -v",
+      "passed": 8,
+      "failed": 0
+    },
+    "syntax": {
+      "command": "python3 -m compileall -q -x '/(vendor|\\.venv)/' .",
+      "passed": true
+    },
+    "strict_json_summaries": 11,
+    "archive_roundtrip_checks": {
+      "archives": 7,
+      "members": 3329,
+      "compressed_bytes": 90512714,
+      "all_archive_and_member_sha256_verified": true
+    },
+    "publication_hygiene": "Known credential-prefix/private-key scan found no matches; this is not a general security audit."
+  },
+  "known_limits": [
+    "Small public fixture corpus, not broad biological efficacy or scientific noninferiority.",
+    "Internal runtime benchmark, not public multi-tenant ingress/queue/autoscaler acceptance.",
+    "Snapshot evidence is same-GPU identity; no cross-node/driver/multi-GPU portability claim.",
+    "Small Network SSD volumes and warm images do not establish best possible RAM/NVMe cold start.",
+    "Two in-study and one post-study preemptible-node capacity interruptions have unresolved initiating causes.",
+    "Exact scientific, feature, environment and quality holds are in model reports."
+  ]
+}

@@ -1,0 +1,370 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:22:48Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-evo2-40b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233277",
+        "uid": "206e7b4e-d204-4c46-9ee1-9b293c0516c8"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:22:48Z",
+      "message": "Successfully assigned fs2-models/fs2-bioir-coverage-evo2-40b to computeinstance-e00m0hsph76ajt9sdb",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:22:48Z",
+        "name": "fs2-bioir-coverage-evo2-40b.18d59b785c1f5097",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233280",
+        "uid": "d35a044e-eaf5-40ef-ae80-367dd9edd4a5"
+      },
+      "reason": "Scheduled",
+      "reportingComponent": "default-scheduler",
+      "reportingInstance": "",
+      "source": {
+        "component": "default-scheduler"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:22:49Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{model}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-evo2-40b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233278",
+        "uid": "206e7b4e-d204-4c46-9ee1-9b293c0516c8"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:22:49Z",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\"",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:22:49Z",
+        "name": "fs2-bioir-coverage-evo2-40b.18d59b789293d15a",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233316",
+        "uid": "c05bdb52-4194-4345-bab0-43d0571c6173"
+      },
+      "reason": "Pulling",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00m0hsph76ajt9sdb"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:26:48Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{model}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-evo2-40b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233278",
+        "uid": "206e7b4e-d204-4c46-9ee1-9b293c0516c8"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:26:48Z",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" in 3m58.927s (3m58.927s including waiting). Image size: 11114802666 bytes.",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:26:48Z",
+        "name": "fs2-bioir-coverage-evo2-40b.18d59bb033c5784d",
+        "namespace": "fs2-models",
+        "resourceVersion": "42243349",
+        "uid": "4396db20-8bb0-47d4-b776-5986e1a5d8cb"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00m0hsph76ajt9sdb"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:26:48Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{model}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-evo2-40b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233278",
+        "uid": "206e7b4e-d204-4c46-9ee1-9b293c0516c8"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:26:48Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:26:48Z",
+        "name": "fs2-bioir-coverage-evo2-40b.18d59bb03cafdf2d",
+        "namespace": "fs2-models",
+        "resourceVersion": "42243354",
+        "uid": "e02436ac-ea80-42c7-bcab-0955cdd6e603"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00m0hsph76ajt9sdb"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:26:49Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{model}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-evo2-40b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233278",
+        "uid": "206e7b4e-d204-4c46-9ee1-9b293c0516c8"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:26:49Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:26:49Z",
+        "name": "fs2-bioir-coverage-evo2-40b.18d59bb0704784ab",
+        "namespace": "fs2-models",
+        "resourceVersion": "42243387",
+        "uid": "7f1ddad1-71b9-4e12-bfd2-864509aff193"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00m0hsph76ajt9sdb"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:26:49Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{relay}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-evo2-40b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233278",
+        "uid": "206e7b4e-d204-4c46-9ee1-9b293c0516c8"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:26:49Z",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5\" already present on machine and can be accessed by the pod",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:26:49Z",
+        "name": "fs2-bioir-coverage-evo2-40b.18d59bb070506326",
+        "namespace": "fs2-models",
+        "resourceVersion": "42243389",
+        "uid": "80d2ec87-d8ba-4c83-a453-d96fa0c132e8"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00m0hsph76ajt9sdb"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:26:49Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{relay}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-evo2-40b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233278",
+        "uid": "206e7b4e-d204-4c46-9ee1-9b293c0516c8"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:26:49Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:26:49Z",
+        "name": "fs2-bioir-coverage-evo2-40b.18d59bb071fa8029",
+        "namespace": "fs2-models",
+        "resourceVersion": "42243390",
+        "uid": "cede1e3b-5bb5-4ca9-b61c-99f7425f9dc0"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00m0hsph76ajt9sdb"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:26:50Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{relay}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-evo2-40b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233278",
+        "uid": "206e7b4e-d204-4c46-9ee1-9b293c0516c8"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:26:50Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:26:50Z",
+        "name": "fs2-bioir-coverage-evo2-40b.18d59bb0abe0f556",
+        "namespace": "fs2-models",
+        "resourceVersion": "42243432",
+        "uid": "423f4e79-2db2-4eb9-924a-6950094bdba7"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00m0hsph76ajt9sdb"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 4,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:27:03Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{relay}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-evo2-40b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233278",
+        "uid": "206e7b4e-d204-4c46-9ee1-9b293c0516c8"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:27:48Z",
+      "message": "Startup probe failed: HTTP probe failed with statuscode: 503",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:27:03Z",
+        "name": "fs2-bioir-coverage-evo2-40b.18d59bb3cf2f0a56",
+        "namespace": "fs2-models",
+        "resourceVersion": "42245883",
+        "uid": "ece487cf-e96c-4a25-af87-6497edd90037"
+      },
+      "reason": "Unhealthy",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00m0hsph76ajt9sdb"
+      },
+      "type": "Warning"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 6,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:29:16Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{relay}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-evo2-40b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233278",
+        "uid": "206e7b4e-d204-4c46-9ee1-9b293c0516c8"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:30:36Z",
+      "message": "Readiness probe failed: Get \"http://10.6.82.121:8000/v1/health/ready\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:29:16Z",
+        "name": "fs2-bioir-coverage-evo2-40b.18d59bd2c90b5fdd",
+        "namespace": "fs2-models",
+        "resourceVersion": "42252950",
+        "uid": "08daa8ac-93a5-49eb-9dc0-ef7a4e87e7a3"
+      },
+      "reason": "Unhealthy",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00m0hsph76ajt9sdb"
+      },
+      "type": "Warning"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:29:21Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{relay}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-evo2-40b",
+        "namespace": "fs2-models",
+        "resourceVersion": "42233278",
+        "uid": "206e7b4e-d204-4c46-9ee1-9b293c0516c8"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:29:21Z",
+      "message": "Liveness probe failed: Get \"http://10.6.82.121:8000/v1/runtime\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:29:21Z",
+        "name": "fs2-bioir-coverage-evo2-40b.18d59bd3f2f2dcc2",
+        "namespace": "fs2-models",
+        "resourceVersion": "42249766",
+        "uid": "a39fdad4-4dd4-4dec-a8d9-ee027e52f20e"
+      },
+      "reason": "Unhealthy",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00m0hsph76ajt9sdb"
+      },
+      "type": "Warning"
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

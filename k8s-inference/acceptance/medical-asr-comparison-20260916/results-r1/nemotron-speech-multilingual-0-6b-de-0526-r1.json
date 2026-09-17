@@ -1,0 +1,142 @@
+{
+  "case": "de-0526",
+  "language": "de",
+  "audio_seconds": 15.9,
+  "source_sha256": "c361235aae6bcc2f8fc90217a1b8371d14e2cc2480ae1739be5996ff80f669db",
+  "reference": "Gastroenteritis. Seit gestern leichte Verwirrtheit und Tachykardie. Klinisch typische Zeichen der Dehydration, Oligurie, Elektrolyte im Normbereich bei erhöhtem Hämatokrit von 53 % … Und Frau Steffen, was hätten Sie vorgeschlagen?",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 526
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:18.341780+00:00",
+  "submit_status": 202,
+  "operation_id": "53dc67da-bd1c-4f64-8e24-9e4b800277bb",
+  "operation": {
+    "id": "53dc67da-bd1c-4f64-8e24-9e4b800277bb",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-7ec4c4d2f3014dbfb8c537360beef59c",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:18.696617Z",
+    "available_at": "2026-09-16T21:46:18.696617Z",
+    "deadline_at": "2026-09-16T23:46:18.653223Z",
+    "activation_started_at": "2026-09-16T21:46:18.715771Z",
+    "ready_at": "2026-09-16T21:46:18.879978Z",
+    "started_at": "2026-09-16T21:46:18.884282Z",
+    "completed_at": "2026-09-16T21:46:20.099632Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:18.696617Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.183361,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 15.9
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.276671312749386,
+  "text": "Gastroenteritis. Seit gestern leichte Verwirrtheit und Tarykadie klinisch typische Zeichen der Dehydration, Aligorie, Elektrolyte im Normbereich bei erhöhtem Hematokrit von drei und fünfzig ProzentUnd Frau Steffen, was hätten Sie vorgeschaut?",
+  "result_audio_seconds": 15.9,
+  "processing_seconds": 0.9355441648513079,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "e5241180b7164e3af0765f3abb52e7d800542db1716a8a593de76a54e972e558",
+  "quality": {
+    "reference_words": 28,
+    "hypothesis_words": 30,
+    "wer": 0.25,
+    "substitutions": 5,
+    "deletions": 0,
+    "insertions": 2,
+    "correct": 23,
+    "errors": [
+      {
+        "type": "substitution",
+        "reference_index": 6,
+        "reference": "tachykardie",
+        "recognized": "tarykadie"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 12,
+        "reference": "oligurie",
+        "recognized": "aligorie"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 18,
+        "reference": "hämatokrit",
+        "recognized": "hematokrit"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 20,
+        "reference": "53",
+        "recognized": "drei"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 22,
+        "recognized": "fünfzig"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 22,
+        "recognized": "prozentund"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 27,
+        "reference": "vorgeschlagen",
+        "recognized": "vorgeschaut"
+      }
+    ],
+    "reference_characters": 193,
+    "character_errors": 31,
+    "cer": 0.16062176165803108
+  },
+  "finished_at": "2026-09-16T21:46:20.619575+00:00"
+}

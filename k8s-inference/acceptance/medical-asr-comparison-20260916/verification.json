@@ -1,0 +1,96 @@
+{
+  "verification": "complete: all expected requests present, full decoded durations, hashes and operation receipts agree; temporary key revoked",
+  "started_at": "2026-09-16T21:39:09.717428+00:00",
+  "finished_at": "2026-09-16T21:55:27.918122+00:00",
+  "requests": 49,
+  "status_counts": {
+    "succeeded": 48,
+    "empty-transcript": 1
+  },
+  "transport_operation_status_counts": {
+    "succeeded": 49
+  },
+  "german_matching_historical_texts": 31,
+  "german_differing_cases": [],
+  "secondary_hesitation_normalized_english": {
+    "nemotron-speech-en-0-6b": {
+      "errors": 465,
+      "reference_words": 2901,
+      "wer": 0.16028955532574973
+    },
+    "nemotron-speech-multilingual-0-6b": {
+      "errors": 557,
+      "reference_words": 2901,
+      "wer": 0.19200275766976904
+    },
+    "parakeet-realtime-eou-120m-v1": {
+      "errors": 540,
+      "reference_words": 2901,
+      "wer": 0.18614270941054809
+    }
+  },
+  "worker_receipts": {
+    "nemotron-speech-en-0-6b": [
+      {
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-237a8e9f-8ab5-6eff-d4d6-1c02fdcbbc02"
+          ],
+          "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+          "pod_uid": "c7d2f95b-af74-432d-ab93-8bf2936d1c1a",
+          "preemptible": false
+        },
+        "requests": 4
+      },
+      {
+        "runtime": {
+          "gpu_count": 0,
+          "gpu_uuids": [],
+          "node_uid": null,
+          "pod_uid": null,
+          "preemptible": null
+        },
+        "requests": 2
+      }
+    ],
+    "nemotron-speech-multilingual-0-6b": [
+      {
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+          ],
+          "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+          "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+          "preemptible": false
+        },
+        "requests": 20
+      },
+      {
+        "runtime": {
+          "gpu_count": 0,
+          "gpu_uuids": [],
+          "node_uid": null,
+          "pod_uid": null,
+          "preemptible": null
+        },
+        "requests": 17
+      }
+    ],
+    "parakeet-realtime-eou-120m-v1": [
+      {
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-1e6143c2-cb17-b90d-45cb-1b99b7d07168"
+          ],
+          "node_uid": "4b19b820-2cd9-443c-803d-4d0dfd0fed09",
+          "pod_uid": "c0e1254f-210d-42e4-b608-b754465ccb95",
+          "preemptible": false
+        },
+        "requests": 6
+      }
+    ]
+  }
+}

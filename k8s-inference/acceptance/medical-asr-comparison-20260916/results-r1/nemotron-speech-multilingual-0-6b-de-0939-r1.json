@@ -1,0 +1,219 @@
+{
+  "case": "de-0939",
+  "language": "de",
+  "audio_seconds": 12.68,
+  "source_sha256": "28767f821ff854e606d3365518c4b54cd5eef783681e8977dfbbacf94ab552ae",
+  "reference": "Dementsprechend müssen wir das Bett hochfahren oder hochpumpen. Nicht erschrecken, wir machen jetzt Oberkörper ein Stück runter. Alles klar? - Ja.",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 939
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:55.567855+00:00",
+  "submit_status": 202,
+  "operation_id": "4fb738a6-1e0a-446f-a482-ca7ea9ded1e1",
+  "operation": {
+    "id": "4fb738a6-1e0a-446f-a482-ca7ea9ded1e1",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-193523227b964715b2917b972cb4f982",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:55.860167Z",
+    "available_at": "2026-09-16T21:46:55.860167Z",
+    "deadline_at": "2026-09-16T23:46:55.840139Z",
+    "activation_started_at": "2026-09-16T21:46:55.893957Z",
+    "ready_at": "2026-09-16T21:46:56.117234Z",
+    "started_at": "2026-09-16T21:46:56.127259Z",
+    "completed_at": "2026-09-16T21:46:57.285698Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:55.860167Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.257067,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 12.68
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.3185379011556506,
+  "text": "Dementsprechend müssen wir das Bett entweder hoch sein oder nicht public. Noch welche Allergie und weniger schrecken, wir machen jetzt Obergörter, diese Stückchen runter und haben irgendwas am ersten vier Segment alles klar.",
+  "result_audio_seconds": 12.68,
+  "processing_seconds": 0.7540802959999837,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "cd0a18388b870bb829f94a11affbcd7dfb8ca2b1645daec3499e9d88a534ed81",
+  "quality": {
+    "reference_words": 20,
+    "hypothesis_words": 33,
+    "wer": 1.1,
+    "substitutions": 7,
+    "deletions": 1,
+    "insertions": 14,
+    "correct": 12,
+    "errors": [
+      {
+        "type": "insertion",
+        "reference_index": 5,
+        "recognized": "entweder"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 5,
+        "recognized": "hoch"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 5,
+        "reference": "hochfahren",
+        "recognized": "sein"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 7,
+        "recognized": "nicht"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 7,
+        "recognized": "public"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 7,
+        "recognized": "noch"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 7,
+        "recognized": "welche"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 7,
+        "recognized": "allergie"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 7,
+        "reference": "hochpumpen",
+        "recognized": "und"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 8,
+        "reference": "nicht",
+        "recognized": "weniger"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 9,
+        "reference": "erschrecken",
+        "recognized": "schrecken"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 13,
+        "reference": "oberkörper",
+        "recognized": "obergörter"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 14,
+        "reference": "ein",
+        "recognized": "diese"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 15,
+        "reference": "stück",
+        "recognized": "stückchen"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 17,
+        "recognized": "und"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 17,
+        "recognized": "haben"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 17,
+        "recognized": "irgendwas"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 17,
+        "recognized": "am"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 17,
+        "recognized": "ersten"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 17,
+        "recognized": "vier"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 17,
+        "recognized": "segment"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 19,
+        "reference": "ja"
+      }
+    ],
+    "reference_characters": 120,
+    "character_errors": 90,
+    "cer": 0.75
+  },
+  "finished_at": "2026-09-16T21:46:57.887503+00:00"
+}
