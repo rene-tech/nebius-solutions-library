@@ -1,3 +1,9 @@
+{{- $releaseIdentities := list -}}
+{{- range $entry := .Values.releaseInventory -}}
+{{- range $operation := $entry.operations -}}
+{{- $releaseIdentities = append $releaseIdentities (printf "%s|%s|%s|%s|%s" $entry.group $entry.resource $entry.namespace $entry.name $operation) -}}
+{{- end -}}
+{{- end -}}
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
@@ -7,7 +13,9 @@ metadata:
     fs2-serve.nebius.ai/policy-owner: independent-network-boundary
   annotations:
     {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
-    cert-manager.io/inject-ca-from-secret: {{ .Values.authorityNamespace }}/{{ .Values.certificate.caSecretName }}
+    # caBundle rotation is an externally custodied exact-object update. The
+    # in-cluster cainjector intentionally has no VWC mutation credential.
+    fs2-serve.nebius.ai/ca-bundle-custody: external-provider
 webhooks:
   - name: children.network.fs2.nebius.ai
     admissionReviewVersions: [v1]
@@ -148,10 +156,11 @@ webhooks:
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["roles", "rolebindings"]
         scope: Namespaced
-  # These two hooks scope the otherwise broad Helm writer RBAC by authenticated
-  # identity. Only the release-writer identities invoke them; the distinct
-  # external recovery identity bypasses this Service and can repair authority
-  # objects under the API-server-native static-custody policy.
+  # This hook selects every exact signed release tuple regardless of the caller
+  # or caller-supplied labels. The authority then requires both the exact
+  # object digest and the phase-specific external identity/Lease. Release
+  # identities have no cluster mutation RBAC; excluded cluster guards use the
+  # provider/IAM custody path and detective live/source equality instead.
   - name: release-writers.network.fs2.nebius.ai
     admissionReviewVersions: [v1]
     sideEffects: None
@@ -162,30 +171,35 @@ webhooks:
     namespaceSelector:
       matchLabels: {kubernetes.io/metadata.name: {{ .Values.systemNamespace }}}
     matchConditions:
-      - name: exact-release-writer
-        expression: "request.userInfo.username in [{{ .Values.maintenanceWriterUsername | quote }}, {{ .Values.transitionWriterUsername | quote }}]"
+      - name: finite-signed-release-inventory
+        expression: {{ printf "%s.exists(identity, identity == request.resource.group + '|' + request.resource.resource + '|' + request.namespace + '|' + request.name + '|' + request.operation)" ($releaseIdentities | uniq | sortAlpha | toJson) | quote }}
     rules:
       - apiGroups: ["*"]
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["*"]
         scope: Namespaced
-  - name: release-writers-cluster.network.fs2.nebius.ai
+  # Conversely, route every write made with one of the three release
+  # credentials even when the submitted object omits all Helm/application
+  # labels. The authority rejects anything absent from the signed inventory.
+  - name: release-identities.network.fs2.nebius.ai
     admissionReviewVersions: [v1]
     sideEffects: None
     failurePolicy: Fail
     matchPolicy: Equivalent
     timeoutSeconds: 3
     clientConfig: *client
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: {{ .Values.systemNamespace }}}
     matchConditions:
-      - name: exact-release-writer
-        expression: "request.userInfo.username in [{{ .Values.maintenanceWriterUsername | quote }}, {{ .Values.transitionWriterUsername | quote }}]"
+      - name: exact-release-identity
+        expression: "request.userInfo.username in [{{ .Values.authorizerUsername | quote }}, {{ .Values.maintenanceWriterUsername | quote }}, {{ .Values.transitionWriterUsername | quote }}]"
     rules:
-      - apiGroups: ["admissionregistration.k8s.io", "gateway.networking.k8s.io", "rbac.authorization.k8s.io"]
+      - apiGroups: ["*"]
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["*"]
-        scope: Cluster
+        scope: Namespaced
   - name: lease.network.fs2.nebius.ai
     admissionReviewVersions: [v1]
     sideEffects: None

@@ -2,6 +2,7 @@
 {{- $writerAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "scientific-writer") }}
 {{- $runtimeAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
 {{- $namespaces := include "fs2-serve.scientificWorkloadNamespaces" . | fromJsonArray }}
+{{- $executionMapJson := .Values.scientificBatch.executionMap | toJson }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -52,9 +53,13 @@ spec:
             - {name: FS2_SCIENTIFIC_WRITER_CALLER_USERNAME, value: {{ printf "system:serviceaccount:%s:%s" .Release.Namespace $runtimeAccount | quote }}}
             - {name: FS2_SCIENTIFIC_WRITER_CALLER_AUDIENCE, value: {{ .Values.scientificBatch.writer.callerAudience | quote }}}
             - {name: FS2_SCIENTIFIC_WRITER_ALLOWED_NAMESPACES, value: {{ $namespaces | toJson | quote }}}
+            - {name: FS2_SCIENTIFIC_WRITER_EXECUTION_MAP_FILE, value: /etc/fs2-scientific-writer/{{ .Values.scientificBatch.executionMapKey }}}
+            - {name: FS2_SCIENTIFIC_WRITER_EXECUTION_MAP_SHA256, value: {{ $executionMapJson | sha256sum | quote }}}
+            - {name: FS2_SCIENTIFIC_WRITER_TOOLS_IMAGE, value: {{ include "fs2-serve.image" . | quote }}}
             - {name: FS2_SCIENTIFIC_BATCH_API_TIMEOUT_SECONDS, value: {{ .Values.scientificBatch.apiTimeoutSeconds | quote }}}
           volumeMounts:
             - {name: kubernetes, mountPath: /var/run/secrets/fs2-scientific-writer, readOnly: true}
+            - {name: execution-map, mountPath: /etc/fs2-scientific-writer, readOnly: true}
           startupProbe:
             httpGet: {path: /readyz, port: http}
             periodSeconds: 2
@@ -76,6 +81,11 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
       volumes:
+        - name: execution-map
+          configMap:
+            name: {{ include "fs2-serve.scientificExecutionMapName" . }}
+            defaultMode: 0444
+            items: [{key: {{ .Values.scientificBatch.executionMapKey }}, path: {{ .Values.scientificBatch.executionMapKey }}}]
         - name: kubernetes
           projected:
             defaultMode: 0400

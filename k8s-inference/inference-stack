@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import fcntl
 import hashlib
 import json
@@ -441,7 +443,6 @@ def validate_model_network_frozen_plan(
         .get("model_runtime_network_policy", {})
     )
     if not isinstance(transition, Mapping) or transition.get("phase") not in {
-        "prepare",
         "inventory",
         "enforce",
         "rollback-remove-deny",
@@ -2692,6 +2693,429 @@ def _json_sha256(value: Mapping[str, Any]) -> str:
     ).hexdigest()
 
 
+def _finite_release_match_conditions(
+    entries: list[Mapping[str, Any]],
+) -> list[dict[str, str]]:
+    if not entries or not all(isinstance(entry, Mapping) for entry in entries):
+        raise DeploymentError("the finite signed release inventory is malformed")
+    identities = sorted(
+        {
+            "|".join(
+                (
+                    str(entry.get("group", "")),
+                    str(entry.get("resource", "")),
+                    str(entry.get("namespace", "")),
+                    str(entry.get("name", "")),
+                    str(operation),
+                )
+            )
+            for entry in entries
+            for operation in entry.get("operations", [])
+        }
+    )
+    return [
+        {
+            "name": "finite-signed-release-inventory",
+            "expression": (
+                json.dumps(identities, separators=(",", ":"))
+                + ".exists(identity, identity == request.resource.group + '|' + "
+                "request.resource.resource + '|' + request.namespace + '|' + "
+                "request.name + '|' + request.operation)"
+            ),
+        }
+    ]
+
+
+def _verified_provider_custody(
+    *,
+    cluster_id: str,
+    provider_trust_root_sha256: str,
+) -> tuple[dict[str, Any], str]:
+    """Verify the independent provider/IAM custody assertion.
+
+    Kubernetes admission cannot match ValidatingAdmissionPolicy or its binding,
+    and an in-cluster webhook cannot safely protect its own serving chain.  This
+    assertion is therefore signed under a trust root distinct from the receipt
+    signer and is a mandatory external prerequisite, not an in-cluster claim.
+    """
+
+    paths = {
+        "attestation": Path(
+            os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_ATTESTATION", "")
+        ),
+        "signature": Path(
+            os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_SIGNATURE", "")
+        ),
+        "trust root": Path(
+            os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_TRUST_ROOT", "")
+        ),
+    }
+    for label, path in paths.items():
+        if not path.is_absolute() or path.is_symlink() or not path.is_file():
+            raise DeploymentError(
+                f"the external provider custody {label} must be an absolute regular file"
+            )
+    if not re.fullmatch(r"[a-f0-9]{64}", provider_trust_root_sha256):
+        raise DeploymentError(
+            "the root contract must pin the distinct provider custody trust root"
+        )
+    if _sha256_file(paths["trust root"]) != provider_trust_root_sha256:
+        raise DeploymentError(
+            "the provider custody signing key differs from the root-pinned digest"
+        )
+    verified = subprocess.run(
+        [
+            os.environ.get("FS2_OPENSSL", "openssl"),
+            "dgst",
+            "-sha256",
+            "-verify",
+            str(paths["trust root"]),
+            "-signature",
+            str(paths["signature"]),
+            str(paths["attestation"]),
+        ],
+        env=clean_environment(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if verified.returncode != 0 or verified.stdout.strip() != "Verified OK":
+        raise DeploymentError("the external provider custody signature is invalid")
+    try:
+        attestation = json.loads(paths["attestation"].read_text(encoding="utf-8"))
+        if not isinstance(attestation, dict):
+            raise TypeError("provider attestation is not an object")
+        payload = {
+            key: value
+            for key, value in attestation.items()
+            if key != "payload_sha256"
+        }
+        observed_at = datetime.fromisoformat(
+            attestation["observed_at"].replace("Z", "+00:00")
+        )
+        expires_at = datetime.fromisoformat(
+            attestation["expires_at"].replace("Z", "+00:00")
+        )
+        mutation_freeze = attestation["mutation_freeze"]
+        freeze_active_from = datetime.fromisoformat(
+            mutation_freeze["active_from"].replace("Z", "+00:00")
+        )
+        freeze_active_until = datetime.fromisoformat(
+            mutation_freeze["active_until"].replace("Z", "+00:00")
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError) as exc:
+        raise DeploymentError("the external provider custody assertion is malformed") from exc
+    now = datetime.now(UTC)
+    if (
+        attestation.get("schema")
+        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v3"
+        or attestation.get("cluster_id") != cluster_id
+        or attestation.get("payload_sha256") != _json_sha256(payload)
+        or observed_at.tzinfo is None
+        or expires_at.tzinfo is None
+        or expires_at - observed_at > timedelta(minutes=30)
+        or observed_at > now + timedelta(seconds=30)
+        or not (observed_at <= now < expires_at)
+        or not isinstance(mutation_freeze, dict)
+        or not isinstance(mutation_freeze.get("transaction_id"), str)
+        or re.fullmatch(
+            r"[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}",
+            mutation_freeze["transaction_id"],
+        )
+        is None
+        or mutation_freeze.get("enforcement")
+        != "deny-all-protected-kubernetes-mutations"
+        or mutation_freeze.get("allowed_principal_ids") != []
+        or not isinstance(
+            mutation_freeze.get("protected_kubernetes_resources"), list
+        )
+        or len(mutation_freeze["protected_kubernetes_resources"]) < 5
+        or len(mutation_freeze["protected_kubernetes_resources"]) > 128
+        or not all(
+            isinstance(resource, str) and 0 < len(resource) <= 512
+            for resource in mutation_freeze["protected_kubernetes_resources"]
+        )
+        or len(set(mutation_freeze["protected_kubernetes_resources"]))
+        != len(mutation_freeze["protected_kubernetes_resources"])
+        or freeze_active_from.tzinfo is None
+        or freeze_active_until.tzinfo is None
+        or freeze_active_from != observed_at
+        or freeze_active_until != expires_at
+        or not (freeze_active_from <= now < freeze_active_until)
+        or freeze_active_until - now < timedelta(minutes=15)
+    ):
+        raise DeploymentError(
+            "the external provider custody assertion is stale or outside its exact cluster contract"
+        )
+    credentials = attestation.get("credentials")
+    if not isinstance(credentials, dict) or set(credentials) != {
+        "authorizer",
+        "transition",
+        "maintenance",
+        "auditor",
+        "custodian",
+        "recovery",
+    }:
+        raise DeploymentError(
+            "the provider assertion must enumerate every separately issued credential"
+        )
+    return attestation, _sha256_file(paths["attestation"])
+
+
+def _decode_kubeconfig_data(value: Any, label: str) -> bytes:
+    if not isinstance(value, str) or not value:
+        raise DeploymentError(f"the kubeconfig has no embedded {label}")
+    try:
+        decoded = base64.b64decode(value, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise DeploymentError(f"the kubeconfig {label} is not strict base64") from exc
+    if not decoded:
+        raise DeploymentError(f"the kubeconfig {label} is empty")
+    return decoded
+
+
+def _provider_bound_kubeconfig_identity(
+    *, kubectl: str, kubeconfig: Path, context: str
+) -> dict[str, str]:
+    """Reconstruct certificate and provider principal facts from kubeconfig bytes."""
+
+    viewed = subprocess.run(
+        [
+            kubectl,
+            "--kubeconfig",
+            str(kubeconfig),
+            "--context",
+            context,
+            "config",
+            "view",
+            "--raw",
+            "--minify",
+            "--output",
+            "json",
+        ],
+        env=clean_environment(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    try:
+        document = json.loads(viewed.stdout)
+        users = document["users"]
+        clusters = document["clusters"]
+        user = users[0]["user"]
+        cluster = clusters[0]["cluster"]
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+        raise DeploymentError("the provider kubeconfig projection is malformed") from exc
+    forbidden_user_fields = {
+        "token",
+        "tokenFile",
+        "exec",
+        "auth-provider",
+        "username",
+        "password",
+        "as",
+        "as-groups",
+        "as-user-extra",
+    }
+    if (
+        viewed.returncode != 0
+        or not isinstance(user, dict)
+        or not isinstance(cluster, dict)
+        or forbidden_user_fields.intersection(user)
+        or set(user) != {"client-certificate-data", "client-key-data"}
+        or "certificate-authority-data" not in cluster
+        or cluster.get("insecure-skip-tls-verify") is True
+    ):
+        raise DeploymentError(
+            "the network-boundary kubeconfig must be embedded X.509 only, without impersonation or executable credentials"
+        )
+    certificate = _decode_kubeconfig_data(
+        user.get("client-certificate-data"), "client certificate"
+    )
+    _decode_kubeconfig_data(user.get("client-key-data"), "client key")
+    issuer_ca = _decode_kubeconfig_data(
+        cluster.get("certificate-authority-data"), "issuer CA"
+    )
+    inspected = subprocess.run(
+        [
+            os.environ.get("FS2_OPENSSL", "openssl"),
+            "x509",
+            "-noout",
+            "-ext",
+            "subjectAltName",
+        ],
+        env=clean_environment(),
+        input=certificate,
+        capture_output=True,
+        check=False,
+    )
+    try:
+        output = inspected.stdout.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise DeploymentError("the client certificate SAN output is malformed") from exc
+    principals = sorted(set(re.findall(r"URI:(spiffe://[^,\s]+)", output)))
+    if inspected.returncode != 0 or len(principals) != 1:
+        raise DeploymentError(
+            "the client certificate must carry exactly one provider-issued SPIFFE principal"
+        )
+    return {
+        "provider_principal_id": principals[0],
+        "client_certificate_sha256": hashlib.sha256(certificate).hexdigest(),
+        "issuer_ca_sha256": hashlib.sha256(issuer_ca).hexdigest(),
+    }
+
+
+def _authority_ready_endpoints(
+    *,
+    kubectl: str,
+    auditor: Path,
+    context: str,
+    serving_certificate_sha256: str,
+) -> dict[str, Any]:
+    """Capture one live Service endpoint/readiness projection.
+
+    This deliberately reads Endpoints, Pods and every Pod's HTTPS readiness
+    response as one fail-closed projection. Callers take the projection twice
+    and require exact equality, alongside the two protected-object/RBAC reads.
+    """
+
+    endpoints_result = subprocess.run(
+        [
+            kubectl,
+            "--kubeconfig",
+            str(auditor),
+            "--context",
+            context,
+            "--namespace",
+            "fs2-network-security",
+            "get",
+            "endpoints",
+            "fs2-model-network-boundary",
+            "--output",
+            "json",
+        ],
+        env=clean_environment(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    pods_result = subprocess.run(
+        [
+            kubectl,
+            "--kubeconfig",
+            str(auditor),
+            "--context",
+            context,
+            "--namespace",
+            "fs2-network-security",
+            "get",
+            "pods",
+            "--selector",
+            "app.kubernetes.io/name=fs2-model-network-boundary,app.kubernetes.io/instance=fs2-model-network-boundary,app.kubernetes.io/component=admission",
+            "--output",
+            "json",
+        ],
+        env=clean_environment(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    try:
+        endpoints_document = json.loads(endpoints_result.stdout)
+        endpoint_metadata = endpoints_document["metadata"]
+        pod_items = json.loads(pods_result.stdout)["items"]
+        addresses = [
+            address
+            for subset in endpoints_document.get("subsets", [])
+            for address in subset.get("addresses", [])
+        ]
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise DeploymentError("the boundary Service endpoint census is malformed") from exc
+    if endpoints_result.returncode != 0 or pods_result.returncode != 0:
+        raise DeploymentError("the boundary Service endpoint census is unavailable")
+    pods_by_uid = {
+        pod.get("metadata", {}).get("uid"): pod
+        for pod in pod_items
+        if isinstance(pod, dict)
+    }
+    ready_endpoints: list[dict[str, str]] = []
+    for address in addresses:
+        if not isinstance(address, dict):
+            raise DeploymentError("a boundary endpoint address is malformed")
+        target = address.get("targetRef", {})
+        if not isinstance(target, dict):
+            raise DeploymentError("a boundary endpoint targetRef is malformed")
+        pod = pods_by_uid.get(target.get("uid"))
+        if target.get("kind") != "Pod" or not isinstance(pod, dict):
+            raise DeploymentError(
+                "a boundary endpoint does not target one inventoried Pod"
+            )
+        pod_metadata = pod.get("metadata", {})
+        pod_spec = pod.get("spec", {})
+        pod_status = pod.get("status", {})
+        if (
+            target.get("name") != pod_metadata.get("name")
+            or address.get("ip") != pod_status.get("podIP")
+            or not isinstance(pod_spec.get("nodeName"), str)
+            or not pod_spec["nodeName"]
+        ):
+            raise DeploymentError("a boundary endpoint has no stable Pod/node identity")
+        readiness = subprocess.run(
+            [
+                kubectl,
+                "--kubeconfig",
+                str(auditor),
+                "--context",
+                context,
+                "get",
+                "--raw",
+                (
+                    "/api/v1/namespaces/fs2-network-security/pods/"
+                    f"https:{pod_metadata['name']}:8443/proxy/readyz"
+                ),
+            ],
+            env=clean_environment(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        try:
+            readiness_body = json.loads(readiness.stdout)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise DeploymentError(
+                f"boundary Pod {pod_metadata.get('name')} readiness is malformed"
+            ) from exc
+        if (
+            readiness.returncode != 0
+            or readiness_body.get("status") != "ok"
+            or readiness_body.get("serving_certificate_sha256")
+            != serving_certificate_sha256
+        ):
+            raise DeploymentError(
+                f"boundary Pod {pod_metadata.get('name')} is not API/TLS ready"
+            )
+        ready_endpoints.append(
+            {
+                "pod_name": str(pod_metadata.get("name", "")),
+                "pod_uid": str(pod_metadata.get("uid", "")),
+                "pod_resource_version": str(
+                    pod_metadata.get("resourceVersion", "")
+                ),
+                "node_name": str(pod_spec.get("nodeName", "")),
+                "ip": str(address.get("ip", "")),
+            }
+        )
+    ready_endpoints.sort(key=lambda item: item["pod_name"])
+    return {
+        "uid": str(endpoint_metadata.get("uid", "")),
+        "resource_version": str(endpoint_metadata.get("resourceVersion", "")),
+        "object_sha256": _json_sha256(
+            _semantic_kubernetes_object(endpoints_document)
+        ),
+        "ready_endpoints": ready_endpoints,
+    }
+
+
 def model_network_boundary_authority_custody(
     *,
     kubectl: str,
@@ -2700,10 +3124,22 @@ def model_network_boundary_authority_custody(
     credential: Path,
     credential_kind: str,
     expected_username: str,
+    expected_receipt_phase: str,
     observed_identity: Mapping[str, Any],
     trust_root_sha256: str,
+    provider_trust_root_sha256: str,
 ) -> dict[str, Any]:
     """Verify the externally signed authority receipt and every bound live object."""
+
+    provider_attestation, provider_attestation_sha256 = _verified_provider_custody(
+        cluster_id=cluster_id,
+        provider_trust_root_sha256=provider_trust_root_sha256,
+    )
+    reconstructed_identity = _provider_bound_kubeconfig_identity(
+        kubectl=kubectl,
+        kubeconfig=credential,
+        context=context,
+    )
 
     paths = {
         "receipt": Path(os.environ.get("FS2_NETWORK_BOUNDARY_AUTHORITY_RECEIPT", "")),
@@ -2767,7 +3203,8 @@ def model_network_boundary_authority_custody(
     now = datetime.now(UTC)
     if (
         receipt.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-authority/v2"
+        != "fs2-serve.nebius.ai/model-network-boundary-authority/v3"
+        or receipt.get("phase") != expected_receipt_phase
         or receipt.get("cluster_id") != cluster_id
         or receipt.get("authority_namespace") != "fs2-network-security"
         or receipt.get("payload_sha256") != _json_sha256(payload)
@@ -2786,15 +3223,13 @@ def model_network_boundary_authority_custody(
         or credential_claim.get("groups") != observed_identity.get("groups")
         or credential_claim.get("extras") != observed_identity.get("extras")
         or credential_claim.get("authentication_mode") != "x509-client-certificate"
-        or not isinstance(credential_claim.get("provider_principal_id"), str)
-        or not credential_claim["provider_principal_id"]
+        or credential_claim.get("provider_principal_id")
+        != reconstructed_identity["provider_principal_id"]
         or credential_claim.get("kubeconfig_sha256") != _sha256_file(credential)
-        or not re.fullmatch(
-            r"[a-f0-9]{64}", str(credential_claim.get("client_certificate_sha256", ""))
-        )
-        or not re.fullmatch(
-            r"[a-f0-9]{64}", str(credential_claim.get("issuer_ca_sha256", ""))
-        )
+        or credential_claim.get("client_certificate_sha256")
+        != reconstructed_identity["client_certificate_sha256"]
+        or credential_claim.get("issuer_ca_sha256")
+        != reconstructed_identity["issuer_ca_sha256"]
     ):
         raise DeploymentError(
             "the model-network credential is not the exact provider-issued X.509 identity in the signed custody receipt"
@@ -2813,8 +3248,10 @@ def model_network_boundary_authority_custody(
     provider_principals: set[str] = set()
     for name, (username, groups) in expected_credentials.items():
         claim = credentials.get(name)
+        provider_credential = provider_attestation["credentials"].get(name)
         if (
             not isinstance(claim, dict)
+            or not isinstance(provider_credential, dict)
             or claim.get("username") != username
             or claim.get("groups") != groups
             or claim.get("extras") != {}
@@ -2824,20 +3261,63 @@ def model_network_boundary_authority_custody(
             or not re.fullmatch(r"[a-f0-9]{64}", str(claim.get("kubeconfig_sha256", "")))
             or not re.fullmatch(r"[a-f0-9]{64}", str(claim.get("client_certificate_sha256", "")))
             or not re.fullmatch(r"[a-f0-9]{64}", str(claim.get("issuer_ca_sha256", "")))
+            or any(
+                claim.get(field) != provider_credential.get(field)
+                for field in (
+                    "username",
+                    "groups",
+                    "provider_principal_id",
+                    "client_certificate_sha256",
+                    "issuer_ca_sha256",
+                )
+            )
         ):
             raise DeploymentError(f"the signed {name} custody identity is incomplete")
         provider_principals.add(claim["provider_principal_id"])
     if len(provider_principals) != len(expected_credentials):
         raise DeploymentError("model-network custody credentials must use distinct provider principals")
     provider = receipt["custody"].get("provider", {})
+    external_custody = receipt.get("external_custody", {})
     if (
         not isinstance(provider, dict)
+        or not isinstance(external_custody, dict)
         or credentials["custodian"]["provider_principal_id"]
         != provider.get("custodian_principal_id")
         or credentials["recovery"]["provider_principal_id"]
         != provider.get("recovery_principal_id")
+        or external_custody.get("schema") != provider_attestation.get("schema")
+        or external_custody.get("policy_id") != provider_attestation.get("policy_id")
+        or external_custody.get("policy_revision")
+        != provider_attestation.get("policy_revision")
+        or external_custody.get("provider_trust_root_sha256")
+        != provider_trust_root_sha256
+        or external_custody.get("attestation_sha256")
+        != provider_attestation_sha256
+        or external_custody.get("freeze_transaction_id")
+        != provider_attestation.get("mutation_freeze", {}).get("transaction_id")
+        or external_custody.get("freeze_expires_at")
+        != provider_attestation.get("mutation_freeze", {}).get("active_until")
+        or external_custody.get("frozen_resources_sha256")
+        != _json_sha256(
+            {
+                "resources": sorted(
+                    provider_attestation.get("mutation_freeze", {}).get(
+                        "protected_kubernetes_resources", []
+                    )
+                )
+            }
+        )
+        or sorted(provider_attestation.get("exclusive_break_glass_principals", []))
+        != sorted(
+            [
+                credentials["custodian"]["provider_principal_id"],
+                credentials["recovery"]["provider_principal_id"],
+            ]
+        )
     ):
-        raise DeploymentError("custodian/recovery certificates are not bound to provider IAM custody")
+        raise DeploymentError(
+            "the authority receipt is not bound to the independent provider/IAM custody assertion"
+        )
 
     auditor_raw = os.environ.get("FS2_NETWORK_AUDITOR_KUBECONFIG", "")
     auditor = Path(auditor_raw)
@@ -3050,12 +3530,17 @@ def model_network_boundary_authority_custody(
         ),
         ("roles.rbac.authorization.k8s.io", "fs2-system", "fs2-model-network-helm-writer"),
         ("rolebindings.rbac.authorization.k8s.io", "fs2-system", "fs2-model-network-helm-maintenance"),
+        ("rolebindings.rbac.authorization.k8s.io", "fs2-system", "fs2-model-network-helm-prepare"),
         ("rolebindings.rbac.authorization.k8s.io", "fs2-system", "fs2-model-network-helm-rollback"),
         ("clusterroles.rbac.authorization.k8s.io", "", "fs2-model-network-helm-writer"),
         ("clusterrolebindings.rbac.authorization.k8s.io", "", "fs2-model-network-helm-maintenance"),
         ("clusterrolebindings.rbac.authorization.k8s.io", "", "fs2-model-network-helm-rollback"),
+        ("roles.rbac.authorization.k8s.io", "fs2-network-security", "fs2-model-network-certificate-writer"),
+        ("rolebindings.rbac.authorization.k8s.io", "fs2-network-security", "fs2-model-network-certificate-writer"),
         ("clusterroles.rbac.authorization.k8s.io", "", "fs2-model-network-rbac-auditor"),
         ("clusterrolebindings.rbac.authorization.k8s.io", "", "fs2-model-network-rbac-auditor"),
+        ("roles.rbac.authorization.k8s.io", "jobset-system", "fs2-model-network-jobset-auditor"),
+        ("rolebindings.rbac.authorization.k8s.io", "jobset-system", "fs2-model-network-jobset-auditor"),
         ("validatingadmissionpolicies.admissionregistration.k8s.io", "", "fs2-model-network-static-custody"),
         ("validatingadmissionpolicybindings.admissionregistration.k8s.io", "", "fs2-model-network-static-custody-binding"),
         ("validatingadmissionpolicies.admissionregistration.k8s.io", "", "fs2-model-network-impersonation-guard"),
@@ -3071,7 +3556,13 @@ def model_network_boundary_authority_custody(
     live_webhook_sha256 = ""
     live_webhook_ca_sha256 = ""
     live_authority_image = ""
+    live_authority_replicas = 0
+    live_authority_environment: dict[str, str] = {}
+    live_authority_annotations: dict[str, Any] = {}
     live_custody_annotations: dict[str, Any] = {}
+    live_service_object: dict[str, Any] = {}
+    live_serving_certificate_sha256 = ""
+    first_object_snapshot: dict[str, Any] = {}
     for item in protected:
         if not isinstance(item, dict):
             raise DeploymentError(
@@ -3134,6 +3625,11 @@ def model_network_boundary_authority_custody(
             raise DeploymentError(
                 f"signed authority object {resource}/{name} drifted after custody review"
             )
+        first_object_snapshot["/".join(key)] = {
+            "uid": metadata.get("uid"),
+            "resource_version": metadata.get("resourceVersion"),
+            "object_sha256": _json_sha256(_semantic_kubernetes_object(live)),
+        }
         if resource == "deployments.apps" and name == "fs2-model-network-boundary":
             try:
                 containers = live["spec"]["template"]["spec"]["containers"]
@@ -3143,6 +3639,16 @@ def model_network_boundary_authority_custody(
                     if container.get("name") == "admission"
                 ]
                 live_authority_image = admission_containers[0]["image"]
+                live_authority_replicas = live["spec"]["replicas"]
+                raw_environment = admission_containers[0].get("env", [])
+                live_authority_environment = {
+                    entry["name"]: entry["value"]
+                    for entry in raw_environment
+                    if isinstance(entry, dict)
+                    and isinstance(entry.get("name"), str)
+                    and isinstance(entry.get("value"), str)
+                }
+                live_authority_annotations = dict(metadata.get("annotations", {}))
             except (KeyError, IndexError, TypeError) as exc:
                 raise DeploymentError(
                     "the authority Deployment image is malformed"
@@ -3175,24 +3681,31 @@ def model_network_boundary_authority_custody(
                 "lease.network.fs2.nebius.ai",
                 "marker.network.fs2.nebius.ai",
                 "models.network.fs2.nebius.ai",
+                "release-identities.network.fs2.nebius.ai",
                 "release-writers.network.fs2.nebius.ai",
-                "release-writers-cluster.network.fs2.nebius.ai",
             }
             models_hook = by_name.get("models.network.fs2.nebius.ai", {})
             marker_hook = by_name.get("marker.network.fs2.nebius.ai", {})
             helm_hook = by_name.get("helm.network.fs2.nebius.ai", {})
             control_plane_hook = by_name.get("control-plane.network.fs2.nebius.ai", {})
             release_hook = by_name.get("release-writers.network.fs2.nebius.ai", {})
-            release_cluster_hook = by_name.get(
-                "release-writers-cluster.network.fs2.nebius.ai", {}
+            release_identity_hook = by_name.get(
+                "release-identities.network.fs2.nebius.ai", {}
             )
             lease_hook = by_name.get("lease.network.fs2.nebius.ai", {})
-            release_condition = [
+            release_claim = receipt.get("release_inventory", {})
+            release_entries = (
+                release_claim.get("entries", [])
+                if isinstance(release_claim, dict)
+                else []
+            )
+            release_condition = _finite_release_match_conditions(release_entries)
+            release_identity_condition = [
                 {
-                    "name": "exact-release-writer",
+                    "name": "exact-release-identity",
                     "expression": (
-                        'request.userInfo.username in ["fs2-model-network-maintenance", '
-                        '"fs2-model-network-transition"]'
+                        'request.userInfo.username in ["fs2-model-network-authorizer", '
+                        '"fs2-model-network-maintenance", "fs2-model-network-transition"]'
                     ),
                 }
             ]
@@ -3245,9 +3758,11 @@ def model_network_boundary_authority_custody(
                 != {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}
                 or release_hook.get("objectSelector", {}) != {}
                 or release_hook.get("matchConditions") != release_condition
-                or release_cluster_hook.get("namespaceSelector", {}) != {}
-                or release_cluster_hook.get("objectSelector", {}) != {}
-                or release_cluster_hook.get("matchConditions") != release_condition
+                or release_identity_hook.get("namespaceSelector")
+                != {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}
+                or release_identity_hook.get("objectSelector", {}) != {}
+                or release_identity_hook.get("matchConditions")
+                != release_identity_condition
                 or lease_hook.get("matchConditions")
                 != [
                     {
@@ -3270,9 +3785,99 @@ def model_network_boundary_authority_custody(
             ):
                 raise DeploymentError("the authority webhook CA bundle is inconsistent")
             live_webhook_ca_sha256 = _json_sha256({"caBundle": ca_bundles.pop()})
+        if resource == "services" and name == "fs2-model-network-boundary":
+            live_service_object = live
+        if resource == "secrets" and name == "fs2-model-network-boundary-tls":
+            try:
+                live_serving_certificate_sha256 = hashlib.sha256(
+                    base64.b64decode(live["data"]["tls.crt"], validate=True)
+                ).hexdigest()
+            except (KeyError, TypeError, ValueError, binascii.Error) as exc:
+                raise DeploymentError(
+                    "the live boundary serving certificate Secret is malformed"
+                ) from exc
     if observed_keys != required:
         raise DeploymentError(
             "the authority receipt must contain exactly every protected authority object"
+        )
+
+    provider_protected = sorted(
+        [
+            "validatingadmissionpolicies.admissionregistration.k8s.io/_cluster/fs2-model-network-impersonation-guard",
+            "validatingadmissionpolicies.admissionregistration.k8s.io/_cluster/fs2-model-network-static-custody",
+            "validatingadmissionpolicybindings.admissionregistration.k8s.io/_cluster/fs2-model-network-impersonation-guard-binding",
+            "validatingadmissionpolicybindings.admissionregistration.k8s.io/_cluster/fs2-model-network-static-custody-binding",
+            "validatingwebhookconfigurations.admissionregistration.k8s.io/_cluster/fs2-model-network-boundary",
+        ]
+    )
+    preventive_controls = provider_attestation.get("preventive_controls")
+    break_glass = sorted(
+        [
+            credentials["custodian"]["provider_principal_id"],
+            credentials["recovery"]["provider_principal_id"],
+        ]
+    )
+    if (
+        provider_attestation.get("protected_kubernetes_resources")
+        != provider_protected
+        or not isinstance(preventive_controls, list)
+        or len(preventive_controls) != len(provider_protected)
+        or sorted(
+            control.get("resource", "")
+            for control in preventive_controls
+            if isinstance(control, dict)
+        )
+        != provider_protected
+        or any(
+            not isinstance(control, dict)
+            or control.get("provider_policy_id")
+            != provider_attestation.get("policy_id")
+            or control.get("provider_policy_revision")
+            != provider_attestation.get("policy_revision")
+            or control.get("enforcement") != "deny-except"
+            or sorted(control.get("allowed_principal_ids", [])) != break_glass
+            or control.get("allowed_operations") != ["CREATE", "UPDATE"]
+            or control.get("denied_operations") != ["DELETE", "REPLACE"]
+            or control.get("freeze_enforcement")
+            != "DENY_CREATE_UPDATE_DELETE_REPLACE"
+            for control in preventive_controls
+        )
+    ):
+        raise DeploymentError(
+            "the external provider policy does not deny-except protect the five excluded admission guards"
+        )
+
+    release_claim = receipt.get("release_inventory")
+    try:
+        live_release_inventory = json.loads(
+            live_authority_environment[
+                "FS2_NETWORK_BOUNDARY_ADMISSION_RELEASE_INVENTORY"
+            ]
+        )
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise DeploymentError(
+            "the live boundary authority has no finite release inventory"
+        ) from exc
+    if (
+        not isinstance(release_claim, dict)
+        or not isinstance(live_release_inventory, list)
+        or not live_release_inventory
+        or release_claim.get("entries") != live_release_inventory
+        or release_claim.get("sha256")
+        != hashlib.sha256(
+            json.dumps(
+                live_release_inventory, sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
+        or provider_attestation.get("release_inventory_sha256")
+        != release_claim.get("sha256")
+        or live_authority_annotations.get(
+            "fs2-serve.nebius.ai/release-inventory-sha256"
+        )
+        != release_claim.get("sha256")
+    ):
+        raise DeploymentError(
+            "the finite Helm release inventory is not equal across provider, receipt, and live authority"
         )
 
     provider_claim = receipt.get("custody", {}).get("provider", {})
@@ -3289,8 +3894,38 @@ def model_network_boundary_authority_custody(
         != provider_claim.get("recovery_principal_id")
         or provider_claim.get("custodian_principal_id")
         == provider_claim.get("recovery_principal_id")
+        or live_custody_annotations.get(
+            "fs2-serve.nebius.ai/external-custody-policy-id"
+        )
+        != provider_attestation.get("policy_id")
+        or live_custody_annotations.get(
+            "fs2-serve.nebius.ai/external-custody-policy-revision"
+        )
+        != provider_attestation.get("policy_revision")
+        or live_custody_annotations.get(
+            "fs2-serve.nebius.ai/external-custody-policy-sha256"
+        )
+        != provider_attestation.get("payload_sha256")
+        or live_authority_annotations.get(
+            "fs2-serve.nebius.ai/external-custody-policy-id"
+        )
+        != provider_attestation.get("policy_id")
+        or live_authority_annotations.get(
+            "fs2-serve.nebius.ai/external-custody-policy-revision"
+        )
+        != provider_attestation.get("policy_revision")
+        or live_authority_annotations.get(
+            "fs2-serve.nebius.ai/external-custody-policy-sha256"
+        )
+        != provider_attestation.get("payload_sha256")
+        or live_authority_annotations.get(
+            "fs2-serve.nebius.ai/provider-trust-root-sha256"
+        )
+        != provider_trust_root_sha256
     ):
-        raise DeploymentError("the API-native custody guard is not bound to two distinct provider IAM principals")
+        raise DeploymentError(
+            "live authority annotations do not equal the external provider custody policy"
+        )
 
     tls_claim = receipt.get("tls")
     if not isinstance(tls_claim, dict):
@@ -3383,31 +4018,101 @@ def model_network_boundary_authority_custody(
         ):
             raise DeploymentError(f"the signed {name} census is stale")
 
-    def grants_impersonation(item: Mapping[str, Any]) -> bool:
+    def grants_privileged_identity_mutation(item: Mapping[str, Any]) -> bool:
         rules = item.get("rules", [])
         return isinstance(rules, list) and any(
             isinstance(rule, Mapping)
             and isinstance(rule.get("verbs"), list)
-            and any(verb in {"impersonate", "*"} for verb in rule["verbs"])
             and isinstance(rule.get("resources"), list)
-            and any(
-                resource in {"users", "groups", "serviceaccounts", "uids", "userextras", "*"}
-                for resource in rule["resources"]
-            )
             and isinstance(rule.get("apiGroups", []), list)
-            and any(group in {"", "authentication.k8s.io", "*"} for group in rule.get("apiGroups", []))
+            and (
+                (
+                    any(verb in {"impersonate", "*"} for verb in rule["verbs"])
+                    and any(
+                        group in {"", "authentication.k8s.io", "*"}
+                        for group in rule["apiGroups"]
+                    )
+                    and any(
+                        resource
+                        in {
+                            "users",
+                            "groups",
+                            "serviceaccounts",
+                            "uids",
+                            "userextras",
+                            "*",
+                        }
+                        or str(resource).startswith("userextras/")
+                        for resource in rule["resources"]
+                    )
+                )
+                or (
+                    any(verb in {"bind", "escalate", "*"} for verb in rule["verbs"])
+                    and any(
+                        group in {"rbac.authorization.k8s.io", "*"}
+                        for group in rule["apiGroups"]
+                    )
+                    and any(
+                        resource in {"roles", "clusterroles", "*"}
+                        for resource in rule["resources"]
+                    )
+                )
+                or (
+                    any(verb in {"approve", "sign", "*"} for verb in rule["verbs"])
+                    and any(
+                        group in {"certificates.k8s.io", "*"}
+                        for group in rule["apiGroups"]
+                    )
+                    and any(
+                        resource
+                        in {
+                            "certificatesigningrequests",
+                            "certificatesigningrequests/approval",
+                            "signers",
+                            "*",
+                        }
+                        for resource in rule["resources"]
+                    )
+                )
+                or (
+                    any(
+                        verb in {"create", "update", "patch", "*"}
+                        for verb in rule["verbs"]
+                    )
+                    and (
+                        (
+                            any(group in {"", "*"} for group in rule["apiGroups"])
+                            and any(
+                                resource
+                                in {"serviceaccounts/token", "secrets", "*"}
+                                for resource in rule["resources"]
+                            )
+                        )
+                        or (
+                            any(
+                                group in {"certificates.k8s.io", "*"}
+                                for group in rule["apiGroups"]
+                            )
+                            and any(
+                                resource in {"certificatesigningrequests", "*"}
+                                for resource in rule["resources"]
+                            )
+                        )
+                    )
+                )
+            )
             for rule in rules
         )
 
     capable_cluster_roles = sorted(
         item.get("metadata", {}).get("name")
         for item in collections["cluster_roles"]["items"]
-        if grants_impersonation(item)
+        if grants_privileged_identity_mutation(item)
     )
     capable_roles = sorted(
         f"{item.get('metadata', {}).get('namespace')}/{item.get('metadata', {}).get('name')}"
         for item in collections["roles"]["items"]
-        if grants_impersonation(item)
+        if grants_privileged_identity_mutation(item)
     )
     if (
         capable_cluster_roles != census_claim.get("impersonation_capable_cluster_roles")
@@ -3415,11 +4120,26 @@ def model_network_boundary_authority_custody(
     ):
         raise DeploymentError("the signed impersonation-capable role census is incomplete")
     bound_impersonation: list[str] = []
+    privileged_bindings: list[dict[str, str]] = []
     for item in collections["cluster_role_bindings"]["items"]:
         role_ref = item.get("roleRef", {})
         if role_ref.get("kind") == "ClusterRole" and role_ref.get("name") in capable_cluster_roles:
-            bound_impersonation.append(
-                f"clusterrolebinding/{item.get('metadata', {}).get('name')}"
+            metadata = item.get("metadata", {})
+            identifier = f"clusterrolebinding//{metadata.get('name')}"
+            bound_impersonation.append(identifier)
+            privileged_bindings.append(
+                {
+                    "kind": "ClusterRoleBinding",
+                    "namespace": "",
+                    "name": str(metadata.get("name", "")),
+                    "role_ref": (
+                        f"{role_ref.get('apiGroup', '')}/{role_ref.get('kind', '')}/"
+                        f"{role_ref.get('name', '')}"
+                    ),
+                    "object_sha256": _json_sha256(
+                        _semantic_kubernetes_object(item)
+                    ),
+                }
             )
     for item in collections["role_bindings"]["items"]:
         metadata = item.get("metadata", {})
@@ -3435,12 +4155,35 @@ def model_network_boundary_authority_custody(
             else referenced in capable_roles
         )
         if capable:
-            bound_impersonation.append(
-                f"rolebinding/{metadata.get('namespace')}/{metadata.get('name')}"
+            identifier = f"rolebinding/{metadata.get('namespace')}/{metadata.get('name')}"
+            bound_impersonation.append(identifier)
+            privileged_bindings.append(
+                {
+                    "kind": "RoleBinding",
+                    "namespace": str(metadata.get("namespace", "")),
+                    "name": str(metadata.get("name", "")),
+                    "role_ref": (
+                        f"{role_ref.get('apiGroup', '')}/{role_ref.get('kind', '')}/"
+                        f"{role_ref.get('name', '')}"
+                    ),
+                    "object_sha256": _json_sha256(
+                        _semantic_kubernetes_object(item)
+                    ),
+                }
             )
-    if bound_impersonation or census_claim.get("bound_impersonation_roles") != []:
+    bound_impersonation.sort()
+    privileged_bindings.sort(
+        key=lambda item: (item["kind"], item["namespace"], item["name"])
+    )
+    if (
+        census_claim.get("bound_impersonation_roles") != bound_impersonation
+        or census_claim.get("provider_authorized_privileged_bindings")
+        != privileged_bindings
+        or provider_attestation.get("authorized_privileged_bindings")
+        != privileged_bindings
+    ):
         raise DeploymentError(
-            "an impersonation-capable Role or ClusterRole remains bound; exact identities are not trustworthy"
+            "live identity-mint bindings differ from the provider-authorized finite inventory"
         )
 
     static_binding = next(
@@ -3525,6 +4268,107 @@ def model_network_boundary_authority_custody(
         raise DeploymentError(
             "the authority Deployment does not use its dedicated digest-pinned image"
         )
+    if (
+        not isinstance(live_authority_replicas, int)
+        or isinstance(live_authority_replicas, bool)
+        or live_authority_replicas < 2
+    ):
+        raise DeploymentError("the boundary authority must have at least two replicas")
+
+    jobset_writer = receipt.get("jobset_writer")
+    live_jobset_writer = live_authority_environment.get(
+        "FS2_NETWORK_BOUNDARY_ADMISSION_JOBSET_WRITER"
+    )
+    jobset_match = re.fullmatch(
+        r"system:serviceaccount:jobset-system:(fs2-[a-z][a-z0-9]{5,11}-jobset-controller)",
+        live_jobset_writer or "",
+    )
+    if not isinstance(jobset_writer, dict) or jobset_match is None:
+        raise DeploymentError("the live authority has no exact run-scoped JobSet writer")
+    jobset_deployment = subprocess.run(
+        [
+            kubectl,
+            "--kubeconfig",
+            str(auditor),
+            "--context",
+            context,
+            "--namespace",
+            "jobset-system",
+            "get",
+            "deployment.apps",
+            jobset_match.group(1),
+            "--output",
+            "json",
+        ],
+        env=clean_environment(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    try:
+        jobset_metadata = json.loads(jobset_deployment.stdout)["metadata"]
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise DeploymentError("the run-scoped JobSet controller is unavailable") from exc
+    if (
+        jobset_deployment.returncode != 0
+        or jobset_writer.get("username") != live_jobset_writer
+        or jobset_writer.get("deployment_uid") != jobset_metadata.get("uid")
+        or jobset_writer.get("deployment_resource_version")
+        != jobset_metadata.get("resourceVersion")
+    ):
+        raise DeploymentError(
+            "the authority JobSet writer differs from the live foundation controller"
+        )
+
+    service_claim = receipt.get("service")
+    service_matches = [
+        item
+        for item in protected
+        if item.get("resource") == "services"
+        and item.get("namespace") == "fs2-network-security"
+        and item.get("name") == "fs2-model-network-boundary"
+    ]
+    if (
+        not isinstance(service_claim, dict)
+        or len(service_matches) != 1
+        or any(
+            service_claim.get(field) != service_matches[0].get(field)
+            for field in (
+                "namespace",
+                "name",
+                "uid",
+                "resource_version",
+                "object_sha256",
+            )
+        )
+        or service_claim.get("serving_certificate_sha256")
+        != live_serving_certificate_sha256
+    ):
+        raise DeploymentError(
+            "the authority Service or serving certificate is not live-equal to its receipt"
+        )
+
+    service_endpoints = _authority_ready_endpoints(
+        kubectl=kubectl,
+        auditor=auditor,
+        context=context,
+        serving_certificate_sha256=live_serving_certificate_sha256,
+    )
+    ready_endpoints = service_endpoints["ready_endpoints"]
+    if (
+        len(ready_endpoints) != live_authority_replicas
+        or len({item["node_name"] for item in ready_endpoints})
+        != len(ready_endpoints)
+        or service_claim.get("endpoints_uid") != service_endpoints["uid"]
+        or service_claim.get("endpoints_resource_version")
+        != service_endpoints["resource_version"]
+        or service_claim.get("endpoints_object_sha256")
+        != service_endpoints["object_sha256"]
+        or service_claim.get("ready_endpoints") != ready_endpoints
+    ):
+        raise DeploymentError(
+            "every authority replica must be a distinct-node, TLS-current ready Service endpoint"
+        )
     acquisition_accounts = [
         item
         for item in protected
@@ -3565,24 +4409,185 @@ def model_network_boundary_authority_custody(
         capture_output=True,
         check=False,
     )
+    if scientific_account_result.returncode != 0:
+        if receipt.get("phase") != "bootstrap" or scientific_writer is not None:
+            raise DeploymentError(
+                "only bootstrap may omit a not-yet-created scientific writer"
+            )
+    else:
+        try:
+            scientific_metadata = json.loads(scientific_account_result.stdout)[
+                "metadata"
+            ]
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise DeploymentError(
+                "the dedicated scientific writer identity is unavailable"
+            ) from exc
+        if (
+            not isinstance(scientific_writer, dict)
+            or scientific_writer.get("username")
+            != "system:serviceaccount:fs2-system:fs2-scientific-job-writer"
+            or scientific_writer.get("service_account_uid")
+            != scientific_metadata.get("uid")
+            or scientific_writer.get("resource_version")
+            != scientific_metadata.get("resourceVersion")
+            or scientific_writer.get("username")
+            == acquisition_writer.get("username")
+        ):
+            raise DeploymentError(
+                "the dedicated scientific writer is not live-bound or distinct"
+            )
+    frozen_resources = {
+        f"{resource}/{namespace or '_cluster'}/{name}"
+        for resource, namespace, name in required
+    }
+    frozen_resources.add(
+        f"deployments.apps/jobset-system/{jobset_match.group(1)}"
+    )
+    if scientific_account_result.returncode == 0:
+        frozen_resources.add(
+            "serviceaccounts/fs2-system/fs2-scientific-job-writer"
+        )
+    if sorted(
+        provider_attestation.get("mutation_freeze", {}).get(
+            "protected_kubernetes_resources", []
+        )
+    ) != sorted(frozen_resources):
+        raise DeploymentError(
+            "the external provider mutation freeze does not cover every receipt-bound authority and writer object"
+        )
+    snapshot_projection = {
+        "protected_objects": first_object_snapshot,
+        "rbac_collections": {
+            name: {
+                "resource_version": value["resource_version"],
+                "items_sha256": value["items_sha256"],
+            }
+            for name, value in collections.items()
+        },
+        "ready_endpoints": ready_endpoints,
+        "service_endpoints": service_endpoints,
+        "serving_certificate_sha256": live_serving_certificate_sha256,
+        "jobset_writer": jobset_writer,
+        "acquisition_writer": acquisition_writer,
+        "scientific_writer": scientific_writer,
+        "provider_attestation_sha256": provider_attestation_sha256,
+        "release_inventory_sha256": release_claim["sha256"],
+    }
+    snapshot_sha256 = _json_sha256(snapshot_projection)
+    verification_window = receipt.get("verification_window")
     try:
-        scientific_metadata = json.loads(scientific_account_result.stdout)["metadata"]
-    except (KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise DeploymentError("the dedicated scientific writer identity is unavailable") from exc
+        first_observed_at = datetime.fromisoformat(
+            verification_window["first_observed_at"].replace("Z", "+00:00")
+        )
+        last_observed_at = datetime.fromisoformat(
+            verification_window["last_observed_at"].replace("Z", "+00:00")
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DeploymentError("the authority verification window is malformed") from exc
     if (
-        scientific_account_result.returncode != 0
-        or not isinstance(scientific_writer, dict)
-        or scientific_writer.get("username")
-        != "system:serviceaccount:fs2-system:fs2-scientific-job-writer"
-        or scientific_writer.get("service_account_uid")
-        != scientific_metadata.get("uid")
-        or scientific_writer.get("resource_version")
-        != scientific_metadata.get("resourceVersion")
-        or scientific_writer.get("username") == acquisition_writer.get("username")
+        not isinstance(verification_window, dict)
+        or first_observed_at.tzinfo is None
+        or last_observed_at.tzinfo is None
+        or not (
+            first_observed_at
+            <= last_observed_at
+            <= issued_at
+            <= expires_at
+        )
+        or last_observed_at - first_observed_at > timedelta(seconds=30)
+        or issued_at - last_observed_at > timedelta(seconds=30)
+        or verification_window.get("first_snapshot_sha256") != snapshot_sha256
+        or verification_window.get("last_snapshot_sha256") != snapshot_sha256
     ):
-        raise DeploymentError("the dedicated scientific writer is not live-bound or distinct")
-    if datetime.now(UTC) >= expires_at:
-        raise DeploymentError("the signed authority receipt expired during live verification")
+        raise DeploymentError(
+            "the signed authority receipt does not prove one stable two-read snapshot"
+        )
+
+    second_object_snapshot: dict[str, Any] = {}
+    for resource, namespace, name in sorted(required):
+        command = [
+            kubectl,
+            "--kubeconfig",
+            str(auditor),
+            "--context",
+            context,
+        ]
+        if namespace:
+            command.extend(["--namespace", namespace])
+        command.extend(["get", resource, name, "--output", "json"])
+        second = subprocess.run(
+            command,
+            env=clean_environment(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        try:
+            live = json.loads(second.stdout)
+            metadata = live["metadata"]
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise DeploymentError(
+                f"the second custody read for {resource}/{name} is malformed"
+            ) from exc
+        if second.returncode != 0:
+            raise DeploymentError(
+                f"the second custody read for {resource}/{name} failed"
+            )
+        second_object_snapshot["/".join((resource, namespace, name))] = {
+            "uid": metadata.get("uid"),
+            "resource_version": metadata.get("resourceVersion"),
+            "object_sha256": _json_sha256(_semantic_kubernetes_object(live)),
+        }
+    second_collections = {
+        "cluster_roles": audited_collection(
+            "clusterroles.rbac.authorization.k8s.io", all_namespaces=False
+        ),
+        "cluster_role_bindings": audited_collection(
+            "clusterrolebindings.rbac.authorization.k8s.io", all_namespaces=False
+        ),
+        "roles": audited_collection(
+            "roles.rbac.authorization.k8s.io", all_namespaces=True
+        ),
+        "role_bindings": audited_collection(
+            "rolebindings.rbac.authorization.k8s.io", all_namespaces=True
+        ),
+    }
+    second_service_endpoints = _authority_ready_endpoints(
+        kubectl=kubectl,
+        auditor=auditor,
+        context=context,
+        serving_certificate_sha256=live_serving_certificate_sha256,
+    )
+    second_snapshot_projection = {
+        **snapshot_projection,
+        "protected_objects": second_object_snapshot,
+        "rbac_collections": {
+            name: {
+                "resource_version": value["resource_version"],
+                "items_sha256": value["items_sha256"],
+            }
+            for name, value in second_collections.items()
+        },
+        "ready_endpoints": second_service_endpoints["ready_endpoints"],
+        "service_endpoints": second_service_endpoints,
+    }
+    if (
+        second_object_snapshot != first_object_snapshot
+        or _json_sha256(second_snapshot_projection) != snapshot_sha256
+    ):
+        raise DeploymentError(
+            "authority or RBAC state changed between the two custody reads"
+        )
+    completed_at = datetime.now(UTC)
+    if expires_at - completed_at < timedelta(minutes=5):
+        raise DeploymentError(
+            "the signed authority receipt has less than five minutes remaining after live verification"
+        )
+    if freeze_active_until - completed_at < timedelta(minutes=10):
+        raise DeploymentError(
+            "the external provider mutation freeze has less than ten minutes remaining before apply"
+        )
     return receipt
 
 
@@ -3594,6 +4599,7 @@ def model_network_boundary_credential(
     phase: str,
     cluster_id: str,
     trust_root_sha256: str,
+    provider_trust_root_sha256: str,
 ) -> tuple[str, str, dict[str, Any]]:
     """Require a signed, distinct X.509 credential and prove its live identity."""
 
@@ -3601,14 +4607,22 @@ def model_network_boundary_credential(
         environment_name = "FS2_NETWORK_AUTHORIZER_KUBECONFIG"
         expected_username = "fs2-model-network-authorizer"
         credential_kind = "authorizer"
+        expected_receipt_phase = "bootstrap"
+    elif phase == "prepare-transition":
+        environment_name = "FS2_NETWORK_TRANSITION_KUBECONFIG"
+        expected_username = "fs2-model-network-transition"
+        credential_kind = "transition"
+        expected_receipt_phase = "bootstrap"
     elif phase == "maintenance":
         environment_name = "FS2_NETWORK_MAINTENANCE_KUBECONFIG"
         expected_username = "fs2-model-network-maintenance"
         credential_kind = "maintenance"
+        expected_receipt_phase = "armed"
     else:
         environment_name = "FS2_NETWORK_TRANSITION_KUBECONFIG"
         expected_username = "fs2-model-network-transition"
         credential_kind = "transition"
+        expected_receipt_phase = "armed"
     raw_path = os.environ.get(environment_name, "")
     if not raw_path:
         raise DeploymentError(
@@ -3673,8 +4687,10 @@ def model_network_boundary_credential(
         credential=credential,
         credential_kind=credential_kind,
         expected_username=expected_username,
+        expected_receipt_phase=expected_receipt_phase,
         observed_identity=observed_identity,
         trust_root_sha256=trust_root_sha256,
+        provider_trust_root_sha256=provider_trust_root_sha256,
     )
     return str(credential.resolve()), expected_username, custody
 
@@ -3684,6 +4700,7 @@ def ensure_control_plane_helm_release_idle(
     kubectl: str,
     kubeconfig: str,
     context: str,
+    allow_absent: bool = False,
 ) -> None:
     """Reject a transition while the latest Helm release is pending."""
 
@@ -3723,10 +4740,9 @@ def ensure_control_plane_helm_release_idle(
             and item.get("metadata", {}).get("labels", {}).get("name")
             == "fs2-serve-control-plane"
         ]
-        latest = max(
-            releases,
-            key=lambda item: int(item["metadata"]["labels"]["version"]),
-        )
+        if not releases and allow_absent:
+            return
+        latest = max(releases, key=lambda item: int(item["metadata"]["labels"]["version"]))
         status = latest["metadata"]["labels"]["status"]
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise DeploymentError(
@@ -4133,6 +5149,9 @@ def apply_stack(
     transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
     transition_phase = transition.get("phase", "prepare")
     trust_root_sha256 = transition.get("authority_trust_root_sha256", "")
+    provider_trust_root_sha256 = transition.get(
+        "provider_trust_root_sha256", ""
+    )
     boundary_kubeconfig, boundary_username, authority_receipt = (
         model_network_boundary_credential(
             kubectl=args.kubectl,
@@ -4141,6 +5160,7 @@ def apply_stack(
             phase=transition_phase,
             cluster_id=dynamic["cluster_id"],
             trust_root_sha256=trust_root_sha256,
+            provider_trust_root_sha256=provider_trust_root_sha256,
         )
     )
 
@@ -4161,7 +5181,7 @@ def apply_stack(
             "TF_VAR_model_network_boundary_kubeconfig_path": boundary_kubeconfig,
             "TF_VAR_model_network_helm_kubeconfig_path": (
                 boundary_kubeconfig
-                if transition_phase in {"maintenance", "rollback-helm"}
+                if transition_phase in {"prepare", "maintenance", "rollback-helm"}
                 else dynamic["kubeconfig_path"]
             ),
             "TF_VAR_model_network_boundary_authority_receipt": json.dumps(
@@ -4173,6 +5193,7 @@ def apply_stack(
                 kubectl=args.kubectl,
                 kubeconfig=dynamic["kubeconfig_path"],
                 context=dynamic["kube_context"],
+                allow_absent=transition_phase == "prepare",
             )
         plan_path, workloads_plan, environment = plan_stage(
             args.terraform,
@@ -4190,6 +5211,26 @@ def apply_stack(
                 kubectl=args.kubectl,
                 kubeconfig=dynamic["kubeconfig_path"],
                 context=dynamic["kube_context"],
+                allow_absent=transition_phase == "prepare",
+            )
+        revalidated_kubeconfig, revalidated_username, revalidated_receipt = (
+            model_network_boundary_credential(
+                kubectl=args.kubectl,
+                shared_kubeconfig=dynamic["kubeconfig_path"],
+                context=dynamic["kube_context"],
+                phase=transition_phase,
+                cluster_id=dynamic["cluster_id"],
+                trust_root_sha256=trust_root_sha256,
+                provider_trust_root_sha256=provider_trust_root_sha256,
+            )
+        )
+        if (
+            revalidated_kubeconfig != boundary_kubeconfig
+            or revalidated_username != boundary_username
+            or revalidated_receipt != authority_receipt
+        ):
+            raise DeploymentError(
+                "the model-network custody snapshot changed after planning; discard the saved plan"
             )
         apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
         if operation_lock_identity:
@@ -4207,9 +5248,10 @@ def apply_stack(
                 kubectl=args.kubectl,
                 shared_kubeconfig=dynamic["kubeconfig_path"],
                 context=dynamic["kube_context"],
-                phase="inventory",
+                phase="prepare-transition",
                 cluster_id=dynamic["cluster_id"],
                 trust_root_sha256=trust_root_sha256,
+                provider_trust_root_sha256=provider_trust_root_sha256,
             )
         )
         if transition_receipt != authority_receipt:
@@ -4220,6 +5262,7 @@ def apply_stack(
             kubectl=args.kubectl,
             kubeconfig=dynamic["kubeconfig_path"],
             context=dynamic["kube_context"],
+            allow_absent=True,
         )
         with model_network_transition_lock(
             kubectl=args.kubectl,
@@ -4400,13 +5443,16 @@ def plan_stack(
             phase=transition_phase,
             cluster_id=dynamic["cluster_id"],
             trust_root_sha256=transition.get("authority_trust_root_sha256", ""),
+            provider_trust_root_sha256=transition.get(
+                "provider_trust_root_sha256", ""
+            ),
         )
     )
     workloads_overrides = {
         "TF_VAR_model_network_boundary_kubeconfig_path": boundary_kubeconfig,
         "TF_VAR_model_network_helm_kubeconfig_path": (
             boundary_kubeconfig
-            if transition_phase in {"maintenance", "rollback-helm"}
+            if transition_phase in {"prepare", "maintenance", "rollback-helm"}
             else dynamic["kubeconfig_path"]
         ),
         "TF_VAR_model_network_boundary_authority_receipt": json.dumps(

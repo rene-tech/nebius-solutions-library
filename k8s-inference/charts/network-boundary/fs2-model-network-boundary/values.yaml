@@ -17,7 +17,6 @@ custodyTrustDomain: ""
 custodianPrincipalId: ""
 recoveryPrincipalId: ""
 certificateWriterUsername: system:serviceaccount:cert-manager:cert-manager
-cainjectorUsername: system:serviceaccount:cert-manager:cert-manager-cainjector
 custodianGroups: [fs2:model-network-custodian, system:authenticated]
 recoveryGroups: [fs2:model-network-recovery, system:authenticated]
 auditorGroups: [fs2:model-network-auditor, system:authenticated]
@@ -25,11 +24,12 @@ authorizerGroups: [fs2:model-network-authorizer, system:authenticated]
 transitionWriterGroups: [fs2:model-network-transition, system:authenticated]
 maintenanceWriterGroups: [fs2:model-network-maintenance, system:authenticated]
 certificateWriterGroups: [system:serviceaccounts, system:serviceaccounts:cert-manager, system:authenticated]
-cainjectorGroups: [system:serviceaccounts, system:serviceaccounts:cert-manager, system:authenticated]
 acquisitionServiceAccountName: fs2-catalog-acquisition
 scientificWriterServiceAccountName: fs2-scientific-job-writer
 directJobWriterUsername: system:serviceaccount:fs2-system:fs2-scientific-job-writer
-jobsetWriterUsername: system:serviceaccount:jobset-system:jobset-controller
+# Required per cluster. The workload-stage receipt must repeat this exact
+# run-scoped ServiceAccount; there is intentionally no generic controller name.
+jobsetWriterUsername: ""
 modelControllerWriterUsername: system:serviceaccount:fs2-system:fs2-serve-control-plane-controller
 transitionHolder: ""
 maintenanceHolder: ""
@@ -38,6 +38,15 @@ maintenanceHolder: ""
 # prevents any role from acquiring impersonate/* after the receipt is signed.
 impersonationCapableClusterRoles: [cluster-admin]
 impersonationCapableRoles: []
+# Installed only from an externally signed Platform-Security receipt. Each
+# entry is an exact API resource/name/namespace/operation tuple. Helm release
+# storage Secret names are enumerated explicitly for the one admitted revision.
+releaseInventory: []
+externalCustody:
+  policyId: ""
+  policyRevision: ""
+  policySha256: ""
+  providerTrustRootSha256: ""
 kubernetesApiUrl: https://kubernetes.default.svc
 kubernetesApiCidrs: []
 apiTimeoutSeconds: "2"
@@ -62,19 +71,17 @@ nodeSelector: {}
 tolerations: []
 affinity:
   podAntiAffinity:
-    preferredDuringSchedulingIgnoredDuringExecution:
-      - weight: 100
-        podAffinityTerm:
-          topologyKey: kubernetes.io/hostname
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: fs2-model-network-boundary
-              app.kubernetes.io/instance: fs2-model-network-boundary
-              app.kubernetes.io/component: admission
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - topologyKey: kubernetes.io/hostname
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: fs2-model-network-boundary
+            app.kubernetes.io/instance: fs2-model-network-boundary
+            app.kubernetes.io/component: admission
 topologySpreadConstraints:
   - maxSkew: 1
     topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: ScheduleAnyway
+    whenUnsatisfiable: DoNotSchedule
     labelSelector:
       matchLabels:
         app.kubernetes.io/name: fs2-model-network-boundary
@@ -82,7 +89,7 @@ topologySpreadConstraints:
         app.kubernetes.io/component: admission
   - maxSkew: 1
     topologyKey: topology.kubernetes.io/zone
-    whenUnsatisfiable: ScheduleAnyway
+    whenUnsatisfiable: DoNotSchedule
     labelSelector:
       matchLabels:
         app.kubernetes.io/name: fs2-model-network-boundary

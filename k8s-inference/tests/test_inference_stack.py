@@ -281,6 +281,29 @@ class InferenceStackTests(unittest.TestCase):
                 context="test-context",
             )
 
+    @mock.patch.object(STACK.subprocess, "run")
+    def test_prepare_accepts_absent_helm_history_only_when_explicit(
+        self, subprocess_run: mock.Mock
+    ) -> None:
+        subprocess_run.return_value = subprocess.CompletedProcess(
+            args=["kubectl-test", "get", "secrets,configmaps"],
+            returncode=0,
+            stdout=json.dumps({"items": []}),
+            stderr="",
+        )
+        STACK.ensure_control_plane_helm_release_idle(
+            kubectl="kubectl-test",
+            kubeconfig="/read-only/kubeconfig",
+            context="test-context",
+            allow_absent=True,
+        )
+        with self.assertRaisesRegex(STACK.DeploymentError, "history is missing"):
+            STACK.ensure_control_plane_helm_release_idle(
+                kubectl="kubectl-test",
+                kubeconfig="/read-only/kubeconfig",
+                context="test-context",
+            )
+
     @mock.patch.object(STACK, "run")
     @mock.patch.object(STACK.subprocess, "run")
     def test_transition_lock_fails_closed_on_unauthorized_get(
@@ -567,7 +590,7 @@ class InferenceStackTests(unittest.TestCase):
     def test_active_boundary_rejects_any_control_plane_helm_change(self) -> None:
         current = contract()
         current["stages"]["workloads"]["model_runtime_network_policy"] = {
-            "phase": "prepare"
+            "phase": "inventory"
         }
         with self.assertRaisesRegex(STACK.DeploymentError, "already active"):
             STACK.validate_model_network_frozen_plan(
@@ -587,6 +610,23 @@ class InferenceStackTests(unittest.TestCase):
                     {
                         "address": "helm_release.control_plane",
                         "change": {"actions": ["no-op"]},
+                    }
+                ]
+            },
+            current,
+        )
+
+    def test_prepare_allows_the_finite_inventory_bootstrap_release(self) -> None:
+        current = contract()
+        current["stages"]["workloads"]["model_runtime_network_policy"] = {
+            "phase": "prepare"
+        }
+        STACK.validate_model_network_frozen_plan(
+            {
+                "resource_changes": [
+                    {
+                        "address": "helm_release.control_plane",
+                        "change": {"actions": ["update"]},
                     }
                 ]
             },

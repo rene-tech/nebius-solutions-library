@@ -10,6 +10,7 @@ from fs2_serve.network_boundary_admission import (
     NetworkBoundaryAdmission,
     NetworkBoundaryConfig,
     NetworkBoundaryError,
+    ReleaseInventoryEntry,
 )
 
 PROFILE = "job-public-acquisition-v1"
@@ -32,7 +33,12 @@ class FakeReader:
         return deepcopy(value) if value is not None else None
 
 
-def admission(reader: FakeReader, *, now: datetime | None = None) -> NetworkBoundaryAdmission:
+def admission(
+    reader: FakeReader,
+    *,
+    now: datetime | None = None,
+    release_inventory: tuple[ReleaseInventoryEntry, ...] = (),
+) -> NetworkBoundaryAdmission:
     return NetworkBoundaryAdmission(
         config=NetworkBoundaryConfig(
             model_namespace="fs2-models",
@@ -58,6 +64,7 @@ def admission(reader: FakeReader, *, now: datetime | None = None) -> NetworkBoun
                     "system:serviceaccounts:cert-manager",
                 }
             ),
+            release_inventory=release_inventory,
         ),
         reader=reader,  # type: ignore[arg-type]
         clock=(lambda: now) if now is not None else None,
@@ -514,8 +521,20 @@ async def test_dedicated_transition_writer_can_change_helm_only_after_deny_absen
         username="fs2-model-network-transition",
         namespace="fs2-system",
     )
+    inventory = (
+        ReleaseInventoryEntry(
+            group="",
+            resource="secrets",
+            namespace="fs2-system",
+            name="sh.helm.release.v1.fs2-serve-control-plane.v135",
+            operations=frozenset({"CREATE"}),
+            object_sha256=NetworkBoundaryAdmission._release_semantic_sha256(release),
+        ),
+    )
     now = datetime(2026, 9, 17, 0, 30, tzinfo=UTC)
-    result = await admission(FakeReader(base_objects), now=now).review(request)
+    result = await admission(
+        FakeReader(base_objects), now=now, release_inventory=inventory
+    ).review(request)
     assert result["response"]["allowed"] is True
 
     with_deny = deepcopy(base_objects)
@@ -523,4 +542,37 @@ async def test_dedicated_transition_writer_can_change_helm_only_after_deny_absen
         "metadata": {"name": "default-deny"}
     }
     with pytest.raises(NetworkBoundaryError):
-        await admission(FakeReader(with_deny), now=now).review(request)
+        await admission(
+            FakeReader(with_deny), now=now, release_inventory=inventory
+        ).review(request)
+
+
+@pytest.mark.asyncio
+async def test_signed_release_identity_cannot_be_bypassed_by_labels_or_another_writer() -> None:
+    release = {
+        "metadata": {
+            "name": "fs2-serve-control-plane-api",
+            "labels": {},
+        },
+        "spec": {"replicas": 2},
+    }
+    inventory = (
+        ReleaseInventoryEntry(
+            group="apps",
+            resource="deployments",
+            namespace="fs2-system",
+            name="fs2-serve-control-plane-api",
+            operations=frozenset({"CREATE"}),
+            object_sha256=NetworkBoundaryAdmission._release_semantic_sha256(release),
+        ),
+    )
+    request = review(
+        kind="Deployment",
+        resource="deployments",
+        value={**release, "spec": {"replicas": 99}},
+        username="unrelated-writer",
+        group="apps",
+        namespace="fs2-system",
+    )
+    with pytest.raises(NetworkBoundaryError, match="finite Helm release inventory"):
+        await admission(FakeReader(), release_inventory=inventory).review(request)

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["image", "replicaCount", "modelNamespace", "systemNamespace", "authorityNamespace", "authorizerUsername", "transitionWriterUsername", "maintenanceWriterUsername", "custodianUsername", "recoveryUsername", "auditorUsername", "custodyTrustDomain", "custodianPrincipalId", "recoveryPrincipalId", "certificateWriterUsername", "cainjectorUsername", "custodianGroups", "recoveryGroups", "auditorGroups", "authorizerGroups", "transitionWriterGroups", "maintenanceWriterGroups", "certificateWriterGroups", "cainjectorGroups", "acquisitionServiceAccountName", "scientificWriterServiceAccountName", "directJobWriterUsername", "jobsetWriterUsername", "modelControllerWriterUsername", "transitionHolder", "maintenanceHolder", "impersonationCapableClusterRoles", "impersonationCapableRoles", "kubernetesApiUrl", "kubernetesApiCidrs", "apiTimeoutSeconds", "tokenExpirationSeconds", "service", "certificate", "resources", "nodeSelector", "tolerations", "affinity", "topologySpreadConstraints"],
+  "required": ["image", "replicaCount", "modelNamespace", "systemNamespace", "authorityNamespace", "authorizerUsername", "transitionWriterUsername", "maintenanceWriterUsername", "custodianUsername", "recoveryUsername", "auditorUsername", "custodyTrustDomain", "custodianPrincipalId", "recoveryPrincipalId", "certificateWriterUsername", "custodianGroups", "recoveryGroups", "auditorGroups", "authorizerGroups", "transitionWriterGroups", "maintenanceWriterGroups", "certificateWriterGroups", "acquisitionServiceAccountName", "scientificWriterServiceAccountName", "directJobWriterUsername", "jobsetWriterUsername", "modelControllerWriterUsername", "transitionHolder", "maintenanceHolder", "impersonationCapableClusterRoles", "impersonationCapableRoles", "releaseInventory", "externalCustody", "kubernetesApiUrl", "kubernetesApiCidrs", "apiTimeoutSeconds", "tokenExpirationSeconds", "service", "certificate", "resources", "nodeSelector", "tolerations", "affinity", "topologySpreadConstraints"],
   "properties": {
     "image": {
       "type": "object",
@@ -27,7 +27,6 @@
     "custodianPrincipalId": {"type": "string", "minLength": 1, "maxLength": 253},
     "recoveryPrincipalId": {"type": "string", "minLength": 1, "maxLength": 253},
     "certificateWriterUsername": {"const": "system:serviceaccount:cert-manager:cert-manager"},
-    "cainjectorUsername": {"const": "system:serviceaccount:cert-manager:cert-manager-cainjector"},
     "custodianGroups": {"const": ["fs2:model-network-custodian", "system:authenticated"]},
     "recoveryGroups": {"const": ["fs2:model-network-recovery", "system:authenticated"]},
     "auditorGroups": {"const": ["fs2:model-network-auditor", "system:authenticated"]},
@@ -35,11 +34,10 @@
     "transitionWriterGroups": {"const": ["fs2:model-network-transition", "system:authenticated"]},
     "maintenanceWriterGroups": {"const": ["fs2:model-network-maintenance", "system:authenticated"]},
     "certificateWriterGroups": {"const": ["system:serviceaccounts", "system:serviceaccounts:cert-manager", "system:authenticated"]},
-    "cainjectorGroups": {"const": ["system:serviceaccounts", "system:serviceaccounts:cert-manager", "system:authenticated"]},
     "acquisitionServiceAccountName": {"const": "fs2-catalog-acquisition"},
     "scientificWriterServiceAccountName": {"const": "fs2-scientific-job-writer"},
     "directJobWriterUsername": {"const": "system:serviceaccount:fs2-system:fs2-scientific-job-writer"},
-    "jobsetWriterUsername": {"type": "string", "minLength": 1, "maxLength": 1024},
+    "jobsetWriterUsername": {"type": "string", "pattern": "^$|^system:serviceaccount:jobset-system:fs2-[a-z][a-z0-9]{5,11}-jobset-controller$"},
     "modelControllerWriterUsername": {"const": "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller"},
     "transitionHolder": {"type": "string", "pattern": "^$|^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$"},
     "maintenanceHolder": {"type": "string", "pattern": "^$|^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$"},
@@ -55,6 +53,39 @@
       "maxItems": 256,
       "uniqueItems": true,
       "items": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"}
+    },
+    "releaseInventory": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["group", "resource", "namespace", "name", "operations", "objectSha256"],
+        "properties": {
+          "group": {"type": "string", "maxLength": 253},
+          "resource": {"type": "string", "minLength": 1, "maxLength": 253},
+          "namespace": {"const": "fs2-system"},
+          "name": {"type": "string", "minLength": 1, "maxLength": 253},
+          "operations": {
+            "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true,
+            "items": {"enum": ["CREATE", "UPDATE", "DELETE"]}
+          },
+          "objectSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "externalCustody": {
+      "type": "object",
+      "required": ["policyId", "policyRevision", "policySha256", "providerTrustRootSha256"],
+      "properties": {
+        "policyId": {"type": "string", "minLength": 1, "maxLength": 253},
+        "policyRevision": {"type": "string", "minLength": 1, "maxLength": 253},
+        "policySha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "providerTrustRootSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
     },
     "kubernetesApiUrl": {"const": "https://kubernetes.default.svc"},
     "kubernetesApiCidrs": {

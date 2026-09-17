@@ -739,6 +739,12 @@ locals {
     admission_bindings        = var.model_runtime_network_policy.inventory_receipt.admission_bindings
     admission_webhook         = var.model_runtime_network_policy.inventory_receipt.admission_webhook
     boundary_authority_sha256 = var.model_runtime_network_policy.inventory_receipt.boundary_authority_sha256
+    boundary_service_sha256   = var.model_runtime_network_policy.inventory_receipt.boundary_service_sha256
+    boundary_endpoints_sha256 = var.model_runtime_network_policy.inventory_receipt.boundary_endpoints_sha256
+    boundary_ready_endpoints_sha256 = var.model_runtime_network_policy.inventory_receipt.boundary_ready_endpoints_sha256
+    boundary_serving_certificate_sha256 = var.model_runtime_network_policy.inventory_receipt.boundary_serving_certificate_sha256
+    provider_custody_attestation_sha256 = var.model_runtime_network_policy.inventory_receipt.provider_custody_attestation_sha256
+    jobset_writer_username = var.model_runtime_network_policy.inventory_receipt.jobset_writer_username
   }
   model_runtime_deny_absent_receipt_payload = var.model_runtime_network_policy.deny_absent_receipt == null ? null : {
     schema                     = var.model_runtime_network_policy.deny_absent_receipt.schema
@@ -809,6 +815,8 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     transition_writer_username    = local.model_runtime_transition_writer
     boundary_webhook_name         = local.model_runtime_boundary_webhook_name
     boundary_authority            = var.model_network_boundary_authority_receipt
+    provider_trust_root_sha256     = var.model_network_provider_trust_root_sha256
+    jobset_writer_username         = local.model_runtime_jobset_writer
     control_plane_image           = var.control_plane_image
     inventory_receipt_sha256      = try(var.model_runtime_network_policy.inventory_receipt.payload_sha256, null)
     deny_absent_receipt_sha256    = try(var.model_runtime_network_policy.deny_absent_receipt.payload_sha256, null)
@@ -822,7 +830,8 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     precondition {
       condition = nonsensitive(var.model_network_boundary_kubeconfig_path) == "/var/run/fs2-network-boundary/credential-required" || try(
         var.model_network_boundary_trust_root_sha256 != "" &&
-        var.model_network_boundary_authority_receipt.schema == "fs2-serve.nebius.ai/model-network-boundary-authority/v2" &&
+        var.model_network_boundary_authority_receipt.schema == "fs2-serve.nebius.ai/model-network-boundary-authority/v3" &&
+        var.model_network_boundary_authority_receipt.phase == (var.model_runtime_network_policy.phase == "prepare" ? "bootstrap" : "armed") &&
         var.model_network_boundary_authority_receipt.cluster_id == var.cluster_id &&
         var.model_network_boundary_authority_receipt.authority_namespace == "fs2-network-security" &&
         var.model_network_boundary_authority_receipt.webhook.name == local.model_runtime_boundary_webhook_name &&
@@ -834,12 +843,32 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         var.model_network_boundary_authority_receipt.acquisition_writer.username == local.model_runtime_acquisition_writer &&
         var.model_network_boundary_authority_receipt.acquisition_writer.username != local.model_runtime_scientific_writer &&
         var.model_network_boundary_authority_receipt.acquisition_writer.username != local.model_runtime_controller_writer &&
-        var.model_network_boundary_authority_receipt.scientific_writer.username == local.model_runtime_scientific_writer &&
-        var.model_network_boundary_authority_receipt.scientific_writer.username != local.model_runtime_acquisition_writer &&
-        var.model_network_boundary_authority_receipt.scientific_writer.username != local.model_runtime_controller_writer &&
+        (
+          var.model_runtime_network_policy.phase == "prepare" ?
+          (
+            var.model_network_boundary_authority_receipt.scientific_writer == null ||
+            var.model_network_boundary_authority_receipt.scientific_writer.username == local.model_runtime_scientific_writer
+          ) :
+          (
+            var.model_network_boundary_authority_receipt.scientific_writer.username == local.model_runtime_scientific_writer &&
+            var.model_network_boundary_authority_receipt.scientific_writer.username != local.model_runtime_acquisition_writer &&
+            var.model_network_boundary_authority_receipt.scientific_writer.username != local.model_runtime_controller_writer
+          )
+        ) &&
+        var.model_network_boundary_authority_receipt.jobset_writer.username == local.model_runtime_jobset_writer &&
         var.model_network_boundary_authority_receipt.custody.trust_root_sha256 == var.model_network_boundary_trust_root_sha256 &&
         var.model_network_boundary_authority_receipt.custody.provider.kind == "nebius-iam" &&
-        length(var.model_network_boundary_authority_receipt.rbac_census.bound_impersonation_roles) == 0 &&
+        var.model_network_boundary_authority_receipt.external_custody.schema == "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v3" &&
+        var.model_network_boundary_authority_receipt.external_custody.provider_trust_root_sha256 == var.model_network_provider_trust_root_sha256 &&
+        can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.attestation_sha256)) &&
+        can(regex("^[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}$", var.model_network_boundary_authority_receipt.external_custody.freeze_transaction_id)) &&
+        can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.frozen_resources_sha256)) &&
+        can(timecmp(var.model_network_boundary_authority_receipt.external_custody.freeze_expires_at, timestamp())) &&
+        timecmp(var.model_network_boundary_authority_receipt.external_custody.freeze_expires_at, timestamp()) > 0 &&
+        jsonencode(var.model_network_boundary_authority_receipt.rbac_census.bound_impersonation_roles) == jsonencode(sort([
+          for binding in var.model_network_boundary_authority_receipt.rbac_census.provider_authorized_privileged_bindings :
+          "${lower(binding.kind)}/${binding.namespace}/${binding.name}"
+        ])) &&
         length(var.model_network_boundary_authority_receipt.rbac_census.impersonation_capable_cluster_roles) > 0 &&
         var.model_network_boundary_authority_receipt.payload_sha256 == sha256(jsonencode({
           for key, value in var.model_network_boundary_authority_receipt : key => value
@@ -847,7 +876,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         })),
         false,
       )
-      error_message = "Every live model-network phase requires a signature-verified v2 external authority receipt bound to this cluster, live TLS/VWC/RBAC semantics, distinct acquisition and scientific writers, an empty impersonation-binding census, and the root-pinned provider custody key."
+      error_message = "Every live model-network phase requires a signature-verified v3 authority receipt, a separately signed provider/IAM custody assertion, live TLS/Service/VWC/RBAC semantics, an exact run-scoped JobSet writer, and phase-correct bootstrap or armed identities."
     }
 
     precondition {
@@ -888,7 +917,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         "rollback-remove-deny",
         "rollback-helm",
         ], var.model_runtime_network_policy.phase) || try(
-        var.model_runtime_network_policy.inventory_receipt.schema == "fs2-serve.nebius.ai/model-runtime-network-inventory/v6" &&
+        var.model_runtime_network_policy.inventory_receipt.schema == "fs2-serve.nebius.ai/model-runtime-network-inventory/v7" &&
         var.model_runtime_network_policy.inventory_receipt.cluster_id == var.cluster_id &&
         var.model_runtime_network_policy.inventory_receipt.namespace == "fs2-models" &&
         can(formatdate("YYYY-MM-DD'T'hh:mm:ssZ", var.model_runtime_network_policy.inventory_receipt.captured_at)) &&
@@ -916,10 +945,16 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         var.model_runtime_network_policy.inventory_receipt.admission_webhook.resource_version != "" &&
         can(regex("^[a-f0-9]{64}$", var.model_runtime_network_policy.inventory_receipt.admission_webhook.spec_sha256)) &&
         var.model_runtime_network_policy.inventory_receipt.boundary_authority_sha256 == var.model_network_boundary_authority_receipt.payload_sha256 &&
+        var.model_runtime_network_policy.inventory_receipt.boundary_service_sha256 == var.model_network_boundary_authority_receipt.service.object_sha256 &&
+        var.model_runtime_network_policy.inventory_receipt.boundary_endpoints_sha256 == var.model_network_boundary_authority_receipt.service.endpoints_object_sha256 &&
+        var.model_runtime_network_policy.inventory_receipt.boundary_ready_endpoints_sha256 == sha256(jsonencode({ ready_endpoints = var.model_network_boundary_authority_receipt.service.ready_endpoints })) &&
+        var.model_runtime_network_policy.inventory_receipt.boundary_serving_certificate_sha256 == var.model_network_boundary_authority_receipt.service.serving_certificate_sha256 &&
+        var.model_runtime_network_policy.inventory_receipt.provider_custody_attestation_sha256 == var.model_network_boundary_authority_receipt.external_custody.attestation_sha256 &&
+        var.model_runtime_network_policy.inventory_receipt.jobset_writer_username == local.model_runtime_jobset_writer &&
         var.model_runtime_network_policy.inventory_receipt.payload_sha256 == sha256(jsonencode(local.model_runtime_inventory_receipt_payload)),
         false,
       )
-      error_message = "Enforcement and deny removal require a valid v6 workload/Pod receipt for this cluster, the live digest-pinned model-controller, exact policy/binding/webhook UIDs, resourceVersions and full semantics, the signature-verified external authority digest, namespace, and finite profile catalog. Expected payload digest: ${sha256(jsonencode(local.model_runtime_inventory_receipt_payload))}."
+      error_message = "Enforcement and deny removal require a valid v7 workload/Pod receipt for this cluster, the live digest-pinned model-controller, exact admission semantics, stable ready authority Service/TLS, provider custody, run-scoped JobSet writer, namespace, and finite profile catalog. Expected payload digest: ${sha256(jsonencode(local.model_runtime_inventory_receipt_payload))}."
     }
 
     precondition {

@@ -6,7 +6,11 @@ import asyncio
 
 import uvicorn
 
-from .scientific_batch.writer_proxy import ScientificWriter, create_scientific_writer_app
+from .scientific_batch.writer_proxy import (
+    ScientificExecutionPolicy,
+    ScientificWriter,
+    create_scientific_writer_app,
+)
 from .settings import Settings
 
 
@@ -21,6 +25,11 @@ async def serve() -> None:
         caller_username=settings.scientific_writer_caller_username,
         caller_audience=settings.scientific_writer_caller_audience,
         allowed_namespaces=frozenset(settings.scientific_writer_allowed_namespaces),
+        execution_policy=ScientificExecutionPolicy.load(
+            settings.scientific_writer_execution_map_file,
+            expected_sha256=settings.scientific_writer_execution_map_sha256 or "",
+            tools_image=settings.scientific_writer_tools_image or "",
+        ),
         timeout_seconds=settings.scientific_batch_api_timeout_seconds,
     )
     server = uvicorn.Server(

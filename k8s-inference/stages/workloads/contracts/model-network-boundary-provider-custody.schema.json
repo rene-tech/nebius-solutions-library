@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-boundary-provider-custody/v3",
+  "title": "Provider-issued model-network boundary custody snapshot",
+  "type": "object",
+  "required": [
+    "schema", "cluster_id", "policy_id", "policy_revision", "observed_at",
+    "expires_at", "provider_trust_domain", "credentials",
+    "exclusive_break_glass_principals", "protected_kubernetes_resources",
+    "preventive_controls", "mutation_freeze",
+    "authorized_privileged_bindings", "release_inventory_sha256",
+    "payload_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v3"},
+    "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
+    "policy_id": {"type": "string", "minLength": 1, "maxLength": 253},
+    "policy_revision": {"type": "string", "minLength": 1, "maxLength": 253},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "provider_trust_domain": {"type": "string", "minLength": 1, "maxLength": 253},
+    "credentials": {
+      "type": "object",
+      "required": ["authorizer", "transition", "maintenance", "auditor", "custodian", "recovery"],
+      "properties": {
+        "authorizer": {"$ref": "#/$defs/credential"},
+        "transition": {"$ref": "#/$defs/credential"},
+        "maintenance": {"$ref": "#/$defs/credential"},
+        "auditor": {"$ref": "#/$defs/credential"},
+        "custodian": {"$ref": "#/$defs/credential"},
+        "recovery": {"$ref": "#/$defs/credential"}
+      },
+      "additionalProperties": false
+    },
+    "exclusive_break_glass_principals": {
+      "type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 253}
+    },
+    "protected_kubernetes_resources": {
+      "type": "array", "minItems": 5, "maxItems": 5, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 512}
+    },
+    "preventive_controls": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "items": {"$ref": "#/$defs/preventiveControl"}
+    },
+    "mutation_freeze": {
+      "type": "object",
+      "required": ["transaction_id", "active_from", "active_until", "enforcement", "allowed_principal_ids", "protected_kubernetes_resources"],
+      "properties": {
+        "transaction_id": {"type": "string", "pattern": "^[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}$"},
+        "active_from": {"type": "string", "format": "date-time"},
+        "active_until": {"type": "string", "format": "date-time"},
+        "enforcement": {"const": "deny-all-protected-kubernetes-mutations"},
+        "allowed_principal_ids": {"const": []},
+        "protected_kubernetes_resources": {
+          "type": "array", "minItems": 5, "maxItems": 128, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 512}
+        }
+      },
+      "additionalProperties": false
+    },
+    "authorized_privileged_bindings": {
+      "type": "array", "maxItems": 128, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/binding"}
+    },
+    "release_inventory_sha256": {"$ref": "#/$defs/sha256"},
+    "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "credential": {
+      "type": "object",
+      "required": ["username", "groups", "provider_principal_id", "client_certificate_sha256", "issuer_ca_sha256"],
+      "properties": {
+        "username": {"type": "string", "minLength": 1, "maxLength": 253},
+        "groups": {
+          "type": "array", "minItems": 2, "maxItems": 8, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 253}
+        },
+        "provider_principal_id": {"type": "string", "pattern": "^spiffe://[^\\s]+$"},
+        "client_certificate_sha256": {"$ref": "#/$defs/sha256"},
+        "issuer_ca_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "binding": {
+      "type": "object",
+      "required": ["kind", "namespace", "name", "role_ref", "object_sha256"],
+      "properties": {
+        "kind": {"enum": ["RoleBinding", "ClusterRoleBinding"]},
+        "namespace": {"type": "string", "maxLength": 63},
+        "name": {"type": "string", "minLength": 1, "maxLength": 253},
+        "role_ref": {"type": "string", "minLength": 1, "maxLength": 512},
+        "object_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "preventiveControl": {
+      "type": "object",
+      "required": ["resource", "provider_policy_id", "provider_policy_revision", "enforcement", "allowed_principal_ids", "allowed_operations", "denied_operations", "freeze_enforcement"],
+      "properties": {
+        "resource": {"type": "string", "minLength": 1, "maxLength": 512},
+        "provider_policy_id": {"type": "string", "minLength": 1, "maxLength": 253},
+        "provider_policy_revision": {"type": "string", "minLength": 1, "maxLength": 253},
+        "enforcement": {"const": "deny-except"},
+        "allowed_principal_ids": {
+          "type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^spiffe://[^\\s]+$"}
+        },
+        "allowed_operations": {"const": ["CREATE", "UPDATE"]},
+        "denied_operations": {"const": ["DELETE", "REPLACE"]},
+        "freeze_enforcement": {"const": "DENY_CREATE_UPDATE_DELETE_REPLACE"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

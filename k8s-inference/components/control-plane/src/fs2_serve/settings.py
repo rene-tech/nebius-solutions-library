@@ -7,7 +7,7 @@ import json
 import re
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import SplitResult, urlsplit
 
 from pydantic import Field, model_validator
@@ -278,6 +278,7 @@ class Settings(BaseSettings):
         "system:serviceaccounts:cert-manager",
         "system:authenticated",
     )
+    network_boundary_admission_release_inventory: tuple[dict[str, Any], ...] = ()
     network_boundary_admission_api_timeout_seconds: float = Field(default=2, ge=0.1, le=10)
     scientific_batch_enabled: bool = False
     scientific_batch_writes_enabled: bool = False
@@ -317,6 +318,17 @@ class Settings(BaseSettings):
         pattern=r"^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$",
     )
     scientific_writer_allowed_namespaces: tuple[str, ...] = ("fs2-models",)
+    scientific_writer_execution_map_file: Path = Path(
+        "/etc/fs2-scientific-writer/execution-map.json"
+    )
+    scientific_writer_execution_map_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    scientific_writer_tools_image: str | None = Field(
+        default=None,
+        pattern=r"^[^\s@]+@sha256:[a-f0-9]{64}$",
+    )
     scientific_batch_scheduling_contract_file: Path = Path("/etc/fs2-scientific-batch/kueue-scheduling.json")
     scientific_batch_scheduling_contract_schema: Literal["fs2-serve.nebius.ai/kueue-scheduling/v1"] = (
         "fs2-serve.nebius.ai/kueue-scheduling/v1"
@@ -547,6 +559,13 @@ class Settings(BaseSettings):
             )
         ):
             raise ValueError("scientific writer namespaces must be finite and canonical")
+        if self.scientific_writer_enabled and (
+            self.scientific_writer_execution_map_sha256 is None
+            or self.scientific_writer_tools_image is None
+        ):
+            raise ValueError(
+                "scientific writer requires the immutable execution-map digest and tools image"
+            )
         if not self.scientific_batch_kubernetes_api_url.startswith("https://"):
             raise ValueError("scientific batch Kubernetes API URL must use HTTPS")
         if self.scientific_batch_enabled and not self.scientific_artifacts_enabled:

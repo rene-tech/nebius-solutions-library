@@ -1127,6 +1127,7 @@ locals {
     model_runtime_overrides                  = var.deployment.models.runtime_overrides
     model_runtime_network_policy             = var.deployment.models.network_policy
     model_network_boundary_trust_root_sha256 = var.deployment.models.network_policy.authority_trust_root_sha256
+    model_network_provider_trust_root_sha256 = var.deployment.models.network_policy.provider_trust_root_sha256
     model_scaling_mode                       = var.deployment.models.scaling.mode
     hot_model_ids                            = sort(tolist(var.deployment.models.scaling.hot))
     model_scaling_overrides                  = var.deployment.models.scaling.overrides

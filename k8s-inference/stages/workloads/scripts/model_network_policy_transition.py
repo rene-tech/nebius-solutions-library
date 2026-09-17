@@ -28,7 +28,7 @@ COMPONENT_LABEL = "app.kubernetes.io/component"
 PART_OF_LABEL = "app.kubernetes.io/part-of"
 NAMESPACE = "fs2-models"
 SYSTEM_NAMESPACE = "fs2-system"
-INVENTORY_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-inventory/v6"
+INVENTORY_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-inventory/v7"
 DENY_ABSENT_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-deny-absent/v2"
 HOLDER_PATTERN = re.compile(r"^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$")
 WORKLOAD_RESOURCES = {
@@ -70,6 +70,39 @@ def _strings(value: Any, field: str) -> list[str]:
 def _sha256(payload: dict[str, Any]) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _finite_release_match_conditions(
+    entries: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    if not entries or not all(isinstance(entry, dict) for entry in entries):
+        raise ReceiptError("the finite signed release inventory is malformed")
+    identities = sorted(
+        {
+            "|".join(
+                (
+                    str(entry.get("group", "")),
+                    str(entry.get("resource", "")),
+                    str(entry.get("namespace", "")),
+                    str(entry.get("name", "")),
+                    str(operation),
+                )
+            )
+            for entry in entries
+            for operation in entry.get("operations", [])
+        }
+    )
+    return [
+        {
+            "name": "finite-signed-release-inventory",
+            "expression": (
+                json.dumps(identities, separators=(",", ":"))
+                + ".exists(identity, identity == request.resource.group + '|' + "
+                "request.resource.resource + '|' + request.namespace + '|' + "
+                "request.name + '|' + request.operation)"
+            ),
+        }
+    ]
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -216,7 +249,8 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
     )
     if (
         authority.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-authority/v2"
+        != "fs2-serve.nebius.ai/model-network-boundary-authority/v3"
+        or authority.get("phase") != "armed"
         or authority.get("cluster_id") != cluster_id
         or authority.get("authority_namespace") != "fs2-network-security"
     ):
@@ -228,6 +262,65 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
     }
     if authority.get("payload_sha256") != _sha256(authority_payload):
         raise ReceiptError("external boundary authority payload digest is inconsistent")
+    provider_root = contract.get("provider_trust_root_sha256")
+    external_custody = _object(
+        authority.get("external_custody"), "contract.boundary_authority.external_custody"
+    )
+    if (
+        not isinstance(provider_root, str)
+        or re.fullmatch(r"[a-f0-9]{64}", provider_root) is None
+        or external_custody.get("schema")
+        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v3"
+        or external_custody.get("provider_trust_root_sha256") != provider_root
+        or re.fullmatch(
+            r"[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}",
+            str(external_custody.get("freeze_transaction_id", "")),
+        )
+        is None
+        or not isinstance(external_custody.get("freeze_expires_at"), str)
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(external_custody.get("frozen_resources_sha256", "")),
+        )
+        is None
+    ):
+        raise ReceiptError("external provider custody is not root-contract pinned")
+    jobset_writer = _object(
+        authority.get("jobset_writer"), "contract.boundary_authority.jobset_writer"
+    )
+    if jobset_writer.get("username") != contract.get("jobset_writer_username"):
+        raise ReceiptError("live boundary JobSet writer differs from the workload contract")
+    service = _object(
+        authority.get("service"), "contract.boundary_authority.service"
+    )
+    ready_endpoints = service.get("ready_endpoints")
+    if (
+        not isinstance(ready_endpoints, list)
+        or len(ready_endpoints) < 2
+        or len(
+            {
+                endpoint.get("node_name")
+                for endpoint in ready_endpoints
+                if isinstance(endpoint, dict)
+            }
+        )
+        != len(ready_endpoints)
+        or any(
+            re.fullmatch(r"[a-f0-9]{64}", str(service.get(field, ""))) is None
+            for field in (
+                "object_sha256",
+                "endpoints_object_sha256",
+                "serving_certificate_sha256",
+            )
+        )
+        or not isinstance(service.get("endpoints_uid"), str)
+        or not service["endpoints_uid"]
+        or not isinstance(service.get("endpoints_resource_version"), str)
+        or not service["endpoints_resource_version"]
+    ):
+        raise ReceiptError(
+            "external boundary Service does not prove stable distinct-node TLS-ready endpoints"
+        )
     image = _object(contract.get("control_plane_image"), "contract.control_plane_image")
     if not isinstance(image.get("repository"), str) or not image["repository"]:
         raise ReceiptError("control-plane image repository is missing")
@@ -982,7 +1075,7 @@ def _boundary_webhook_state(
         "marker.network.fs2.nebius.ai",
         "models.network.fs2.nebius.ai",
         "release-writers.network.fs2.nebius.ai",
-        "release-writers-cluster.network.fs2.nebius.ai",
+        "release-identities.network.fs2.nebius.ai",
     }
     if set(by_name) != expected_names or len(raw) != len(expected_names):
         raise ReceiptError("boundary webhook does not contain the exact bounded hooks")
@@ -1012,7 +1105,9 @@ def _boundary_webhook_state(
         "release-writers.network.fs2.nebius.ai": {
             "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
         },
-        "release-writers-cluster.network.fs2.nebius.ai": {},
+        "release-identities.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
+        },
         "lease.network.fs2.nebius.ai": {
             "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
         },
@@ -1038,7 +1133,7 @@ def _boundary_webhook_state(
             "matchLabels": {"app.kubernetes.io/instance": "fs2-serve-control-plane"}
         },
         "release-writers.network.fs2.nebius.ai": {},
-        "release-writers-cluster.network.fs2.nebius.ai": {},
+        "release-identities.network.fs2.nebius.ai": {},
         "lease.network.fs2.nebius.ai": {
             "matchLabels": {"fs2-serve.nebius.ai/network-boundary-object": "true"}
         },
@@ -1054,21 +1149,15 @@ def _boundary_webhook_state(
         ],
         "helm.network.fs2.nebius.ai": [],
         "control-plane.network.fs2.nebius.ai": [],
-        "release-writers.network.fs2.nebius.ai": [
+        "release-writers.network.fs2.nebius.ai": _finite_release_match_conditions(
+            contract["boundary_authority"]["release_inventory"]["entries"]
+        ),
+        "release-identities.network.fs2.nebius.ai": [
             {
-                "name": "exact-release-writer",
+                "name": "exact-release-identity",
                 "expression": (
-                    'request.userInfo.username in ["fs2-model-network-maintenance", '
-                    '"fs2-model-network-transition"]'
-                ),
-            }
-        ],
-        "release-writers-cluster.network.fs2.nebius.ai": [
-            {
-                "name": "exact-release-writer",
-                "expression": (
-                    'request.userInfo.username in ["fs2-model-network-maintenance", '
-                    '"fs2-model-network-transition"]'
+                    'request.userInfo.username in ["fs2-model-network-authorizer", '
+                    '"fs2-model-network-maintenance", "fs2-model-network-transition"]'
                 ),
             }
         ],
@@ -1221,17 +1310,13 @@ def _boundary_webhook_state(
                 "scope": "Namespaced",
             }
         ],
-        "release-writers-cluster.network.fs2.nebius.ai": [
+        "release-identities.network.fs2.nebius.ai": [
             {
-                "apiGroups": [
-                    "admissionregistration.k8s.io",
-                    "gateway.networking.k8s.io",
-                    "rbac.authorization.k8s.io",
-                ],
+                "apiGroups": ["*"],
                 "apiVersions": ["*"],
                 "operations": ["CREATE", "UPDATE", "DELETE"],
                 "resources": ["*"],
-                "scope": "Cluster",
+                "scope": "Namespaced",
             }
         ],
         "lease.network.fs2.nebius.ai": [
@@ -1344,6 +1429,24 @@ def inventory_receipt(
         "admission_bindings": binding_inventory,
         "admission_webhook": _boundary_webhook_state(contract, boundary_webhooks),
         "boundary_authority_sha256": contract["boundary_authority"]["payload_sha256"],
+        "boundary_service_sha256": contract["boundary_authority"]["service"]["object_sha256"],
+        "boundary_endpoints_sha256": contract["boundary_authority"]["service"][
+            "endpoints_object_sha256"
+        ],
+        "boundary_ready_endpoints_sha256": _sha256(
+            {
+                "ready_endpoints": contract["boundary_authority"]["service"][
+                    "ready_endpoints"
+                ]
+            }
+        ),
+        "boundary_serving_certificate_sha256": contract["boundary_authority"]["service"][
+            "serving_certificate_sha256"
+        ],
+        "provider_custody_attestation_sha256": contract["boundary_authority"][
+            "external_custody"
+        ]["attestation_sha256"],
+        "jobset_writer_username": contract["jobset_writer_username"],
     }
     return {**payload, "payload_sha256": _sha256(payload)}
 

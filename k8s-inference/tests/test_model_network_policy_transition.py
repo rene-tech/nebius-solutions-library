@@ -30,6 +30,16 @@ IMAGE = {
     "repository": "registry.example.test/fs2/control-plane",
     "digest": "sha256:" + "a" * 64,
 }
+RELEASE_INVENTORY = [
+    {
+        "group": "apps",
+        "resource": "deployments",
+        "namespace": "fs2-system",
+        "name": "fs2-serve-control-plane-api",
+        "operations": ["CREATE", "UPDATE"],
+        "objectSha256": "5" * 64,
+    }
+]
 
 
 def prepare_contract() -> dict[str, object]:
@@ -76,6 +86,10 @@ def prepare_contract() -> dict[str, object]:
         "transition_writer_username": TRANSITION_WRITER,
         "boundary_webhook_name": "fs2-model-network-boundary",
         "boundary_authority": boundary_authority(),
+        "provider_trust_root_sha256": "f" * 64,
+        "jobset_writer_username": (
+            "system:serviceaccount:jobset-system:fs2-testrun-jobset-controller"
+        ),
         "control_plane_image": IMAGE,
         "inventory_receipt_sha256": None,
     }
@@ -551,16 +565,9 @@ def boundary_webhooks() -> dict[str, object]:
                         "namespaceSelector": {
                             "matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}
                         },
-                        "matchConditions": [
-                            {
-                                "name": "exact-release-writer",
-                                "expression": (
-                                    'request.userInfo.username in '
-                                    '["fs2-model-network-maintenance", '
-                                    '"fs2-model-network-transition"]'
-                                ),
-                            }
-                        ],
+                        "matchConditions": transition._finite_release_match_conditions(
+                            RELEASE_INVENTORY
+                        ),
                         "rules": [
                             {
                                 "apiGroups": ["*"],
@@ -573,28 +580,28 @@ def boundary_webhooks() -> dict[str, object]:
                     },
                     {
                         **common,
-                        "name": "release-writers-cluster.network.fs2.nebius.ai",
+                        "name": "release-identities.network.fs2.nebius.ai",
+                        "namespaceSelector": {
+                            "matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}
+                        },
                         "matchConditions": [
                             {
-                                "name": "exact-release-writer",
+                                "name": "exact-release-identity",
                                 "expression": (
                                     'request.userInfo.username in '
-                                    '["fs2-model-network-maintenance", '
+                                    '["fs2-model-network-authorizer", '
+                                    '"fs2-model-network-maintenance", '
                                     '"fs2-model-network-transition"]'
                                 ),
                             }
                         ],
                         "rules": [
                             {
-                                "apiGroups": [
-                                    "admissionregistration.k8s.io",
-                                    "gateway.networking.k8s.io",
-                                    "rbac.authorization.k8s.io",
-                                ],
+                                "apiGroups": ["*"],
                                 "apiVersions": ["*"],
                                 "operations": ["CREATE", "UPDATE", "DELETE"],
                                 "resources": ["*"],
-                                "scope": "Cluster",
+                                "scope": "Namespaced",
                             }
                         ],
                     },
@@ -637,7 +644,8 @@ def boundary_webhooks() -> dict[str, object]:
 def boundary_authority() -> dict[str, object]:
     webhook = boundary_webhooks()["items"][0]
     payload: dict[str, object] = {
-        "schema": "fs2-serve.nebius.ai/model-network-boundary-authority/v2",
+        "schema": "fs2-serve.nebius.ai/model-network-boundary-authority/v3",
+        "phase": "armed",
         "cluster_id": "mk8scluster-test",
         "authority_namespace": "fs2-network-security",
         "webhook": {
@@ -650,6 +658,38 @@ def boundary_authority() -> dict[str, object]:
             "webhook_ca_bundle_sha256": transition._sha256(
                 {"caBundle": "dGVzdC1jYQ=="}
             )
+        },
+        "service": {
+            "object_sha256": "1" * 64,
+            "endpoints_uid": "uid-boundary-endpoints",
+            "endpoints_resource_version": "rv-boundary-endpoints",
+            "endpoints_object_sha256": "2" * 64,
+            "ready_endpoints": [
+                {"node_name": "node-a"},
+                {"node_name": "node-b"},
+            ],
+            "serving_certificate_sha256": "3" * 64,
+        },
+        "external_custody": {
+            "schema": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v3",
+            "provider_trust_root_sha256": "f" * 64,
+            "attestation_sha256": "4" * 64,
+            "freeze_transaction_id": "reviewer:1:" + "5" * 32,
+            "freeze_expires_at": "2026-09-16T18:15:00Z",
+            "frozen_resources_sha256": "6" * 64,
+        },
+        "jobset_writer": {
+            "username": (
+                "system:serviceaccount:jobset-system:fs2-testrun-jobset-controller"
+            )
+        },
+        "release_inventory": {
+            "sha256": transition.hashlib.sha256(
+                json.dumps(
+                    RELEASE_INVENTORY, sort_keys=True, separators=(",", ":")
+                ).encode()
+            ).hexdigest(),
+            "entries": RELEASE_INVENTORY,
         },
     }
     return {**payload, "payload_sha256": transition._sha256(payload)}
@@ -682,7 +722,11 @@ def test_inventory_receipt_binds_workload_pod_controller_and_admission() -> None
     assert receipt["pods"]["qwen3-8b-pod"]["workload_class"] == "runtime"
     assert receipt["live_controller"]["deployment_uid"] == "uid-controller"
     assert receipt["transition_lock_uid"] == "uid-transition-lock"
-    assert receipt["schema"].endswith("/v6")
+    assert receipt["schema"].endswith("/v7")
+    assert receipt["boundary_endpoints_sha256"] == "2" * 64
+    assert receipt["boundary_ready_endpoints_sha256"] == transition._sha256(
+        {"ready_endpoints": [{"node_name": "node-a"}, {"node_name": "node-b"}]}
+    )
     assert (
         receipt["boundary_authority_sha256"]
         == prepare_contract()["boundary_authority"]["payload_sha256"]
@@ -1210,6 +1254,12 @@ def test_external_boundary_authority_is_separate_and_narrowly_scoped() -> None:
             / "stages/workloads/contracts/model-network-boundary-authority-receipt.schema.json"
         ).read_text()
     )
+    provider_schema = json.loads(
+        (
+            ROOT
+            / "stages/workloads/contracts/model-network-boundary-provider-custody.schema.json"
+        ).read_text()
+    )
 
     assert "enabled                   = false" in control_plane
     assert control_plane_schema["properties"]["networkBoundaryAdmission"]["properties"][
@@ -1221,7 +1271,8 @@ def test_external_boundary_authority_is_separate_and_narrowly_scoped() -> None:
     assert "helm.network.fs2.nebius.ai" in webhook
     assert "lease.network.fs2.nebius.ai" in webhook
     assert "release-writers.network.fs2.nebius.ai" in webhook
-    assert "release-writers-cluster.network.fs2.nebius.ai" in webhook
+    assert "release-identities.network.fs2.nebius.ai" in webhook
+    assert "release-writers-cluster.network.fs2.nebius.ai" not in webhook
     assert "custody.network.fs2.nebius.ai" not in webhook
     assert "cluster-custody.network.fs2.nebius.ai" not in webhook
     assert "admission.network.fs2.nebius.ai" not in webhook
@@ -1251,16 +1302,34 @@ def test_external_boundary_authority_is_separate_and_narrowly_scoped() -> None:
     assert "request.operation != 'DELETE'" in static_custody
     assert "certificateController" in static_custody
     assert "request.operation in ['CREATE', 'UPDATE']" in static_custody
-    assert "caBundleOnly" in static_custody
+    assert "caBundleOnly" not in static_custody
+    assert "variables.oldMetadata" in static_custody
     assert "fs2-model-network-helm-writer" in helm_writer
     assert "fs2-model-network-maintenance" in helm_writer
-    assert receipt_schema["properties"]["schema"]["const"].endswith("/v2")
+    assert receipt_schema["properties"]["schema"]["const"].endswith("/v3")
+    assert provider_schema["properties"]["schema"]["const"].endswith("/v3")
+    assert "protected_kubernetes_resources" in provider_schema["properties"][
+        "mutation_freeze"
+    ]["required"]
+    assert provider_schema["properties"]["mutation_freeze"]["properties"][
+        "allowed_principal_ids"
+    ] == {"const": []}
     assert {"serving_secret", "ca_secret", "webhook_ca_bundle_sha256"} == set(
         receipt_schema["properties"]["tls"]["required"]
     )
+    assert {
+        "endpoints_uid",
+        "endpoints_resource_version",
+        "endpoints_object_sha256",
+    }.issubset(receipt_schema["properties"]["service"]["required"])
     assert "expires_at - issued_at > timedelta(minutes=15)" in wrapper
     assert "observed_keys != required" in wrapper
-    assert "impersonation-capable Role or ClusterRole remains bound" in wrapper
+    assert "live identity-mint bindings differ" in wrapper
+    assert (
+        "mutation freeze does not cover every receipt-bound authority and writer object"
+        in wrapper
+    )
+    assert "revalidated_receipt != authority_receipt" in wrapper
 
 
 def test_terraform_enforcement_orders_apply_fence_before_default_deny() -> None:

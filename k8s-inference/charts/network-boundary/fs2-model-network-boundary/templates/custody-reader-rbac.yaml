@@ -123,6 +123,15 @@ rules:
       - {{ .Values.certificate.secretName }}
       - {{ .Values.certificate.caSecretName }}
     verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["endpoints", "pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/proxy"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -171,3 +180,35 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: fs2-model-network-rbac-auditor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-model-network-jobset-auditor
+  namespace: jobset-system
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-model-network-jobset-auditor
+  namespace: jobset-system
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+subjects:
+  - kind: User
+    name: {{ .Values.auditorUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-model-network-jobset-auditor

@@ -112,8 +112,14 @@ metadata:
     app.kubernetes.io/component: admission
   annotations:
     {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+    fs2-serve.nebius.ai/external-custody-policy-id: {{ .Values.externalCustody.policyId | quote }}
+    fs2-serve.nebius.ai/external-custody-policy-revision: {{ .Values.externalCustody.policyRevision | quote }}
+    fs2-serve.nebius.ai/external-custody-policy-sha256: {{ .Values.externalCustody.policySha256 | quote }}
+    fs2-serve.nebius.ai/provider-trust-root-sha256: {{ .Values.externalCustody.providerTrustRootSha256 | quote }}
+    fs2-serve.nebius.ai/release-inventory-sha256: {{ .Values.releaseInventory | toJson | sha256sum | quote }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  minReadySeconds: 10
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate
@@ -171,7 +177,7 @@ spec:
             - name: FS2_NETWORK_BOUNDARY_ADMISSION_DIRECT_JOB_WRITER
               value: {{ .Values.directJobWriterUsername | quote }}
             - name: FS2_NETWORK_BOUNDARY_ADMISSION_JOBSET_WRITER
-              value: {{ .Values.jobsetWriterUsername | quote }}
+              value: {{ required "jobsetWriterUsername must be the run-scoped JobSet controller identity" .Values.jobsetWriterUsername | quote }}
             - name: FS2_NETWORK_BOUNDARY_ADMISSION_MODEL_CONTROLLER_WRITER
               value: {{ .Values.modelControllerWriterUsername | quote }}
             - name: FS2_NETWORK_BOUNDARY_ADMISSION_TRANSITION_WRITER
@@ -188,6 +194,8 @@ spec:
               value: {{ .Values.maintenanceWriterGroups | toJson | quote }}
             - name: FS2_NETWORK_BOUNDARY_ADMISSION_CERTIFICATE_GROUPS
               value: {{ .Values.certificateWriterGroups | toJson | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_RELEASE_INVENTORY
+              value: {{ .Values.releaseInventory | toJson | quote }}
             - name: FS2_NETWORK_BOUNDARY_ADMISSION_API_TIMEOUT_SECONDS
               value: {{ .Values.apiTimeoutSeconds | quote }}
           volumeMounts:
@@ -240,14 +248,26 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
       affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.topologySpreadConstraints }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  {{- include "fs2-network-boundary.selectorLabels" . | nindent 18 }}
       topologySpreadConstraints:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "fs2-network-boundary.selectorLabels" . | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "fs2-network-boundary.selectorLabels" . | nindent 14 }}
 ---
 apiVersion: v1
 kind: Service
@@ -278,7 +298,7 @@ metadata:
   annotations:
     {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
 spec:
-  minAvailable: 1
+  minAvailable: 2
   selector:
     matchLabels:
       {{- include "fs2-network-boundary.selectorLabels" . | nindent 6 }}

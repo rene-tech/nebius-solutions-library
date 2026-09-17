@@ -1,7 +1,10 @@
-# This policy is evaluated by kube-apiserver itself. It deliberately does not
-# call the fs2-model-network-boundary Service, so a broken serving certificate,
-# Deployment, Service, or webhook can be repaired by the externally issued
-# recovery identity without weakening or deleting the static guard.
+# This policy is evaluated by kube-apiserver itself and protects only resource
+# kinds Kubernetes actually sends through ValidatingAdmissionPolicy. Kubernetes
+# deliberately excludes ValidatingAdmissionPolicy and its binding from both VAP
+# and validating-webhook matching. Those excluded objects are therefore guarded
+# by the external provider/IAM policy named in the signed custody receipt and
+# checked here only as detective live/source equality. This manifest must never
+# be described as self-protecting.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -14,7 +17,10 @@ metadata:
     fs2-serve.nebius.ai/custody-trust-domain: {{ .Values.custodyTrustDomain | quote }}
     fs2-serve.nebius.ai/custodian-principal-id: {{ .Values.custodianPrincipalId | quote }}
     fs2-serve.nebius.ai/recovery-principal-id: {{ .Values.recoveryPrincipalId | quote }}
-    fs2-serve.nebius.ai/break-glass-mode: update-only
+    fs2-serve.nebius.ai/break-glass-mode: externally-custodied-update-only
+    fs2-serve.nebius.ai/external-custody-policy-id: {{ .Values.externalCustody.policyId | quote }}
+    fs2-serve.nebius.ai/external-custody-policy-revision: {{ .Values.externalCustody.policyRevision | quote }}
+    fs2-serve.nebius.ai/external-custody-policy-sha256: {{ .Values.externalCustody.policySha256 | quote }}
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -55,22 +61,22 @@ spec:
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
         scope: "*"
-      - apiGroups: ["admissionregistration.k8s.io"]
-        apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings", "validatingwebhookconfigurations"]
-        scope: Cluster
   variables:
-    - name: targetMetadata
-      expression: "request.operation == 'DELETE' ? oldObject.metadata : object.metadata"
+    - name: newMetadata
+      expression: "request.operation == 'DELETE' ? null : object.metadata"
+    - name: oldMetadata
+      expression: "request.operation == 'CREATE' ? null : oldObject.metadata"
     - name: protectedObject
       expression: >-
-        (has(variables.targetMetadata.labels) &&
-         variables.targetMetadata.labels['fs2-serve.nebius.ai/network-boundary-authority'] == 'true') ||
-        (request.resource.group == 'admissionregistration.k8s.io' &&
-         variables.targetMetadata.name in ['fs2-model-network-boundary', 'fs2-model-network-static-custody', 'fs2-model-network-static-custody-binding', 'fs2-model-network-impersonation-guard', 'fs2-model-network-impersonation-guard-binding']) ||
+        (variables.newMetadata != null && has(variables.newMetadata.labels) &&
+         'fs2-serve.nebius.ai/network-boundary-authority' in variables.newMetadata.labels &&
+         variables.newMetadata.labels['fs2-serve.nebius.ai/network-boundary-authority'] == 'true') ||
+        (variables.oldMetadata != null && has(variables.oldMetadata.labels) &&
+         'fs2-serve.nebius.ai/network-boundary-authority' in variables.oldMetadata.labels &&
+         variables.oldMetadata.labels['fs2-serve.nebius.ai/network-boundary-authority'] == 'true') ||
         (request.resource.group == 'rbac.authorization.k8s.io' &&
-         variables.targetMetadata.name.startsWith('fs2-model-network-'))
+         ((variables.newMetadata != null && variables.newMetadata.name.startsWith('fs2-model-network-')) ||
+          (variables.oldMetadata != null && variables.oldMetadata.name.startsWith('fs2-model-network-'))))
     - name: noExtras
       expression: "!has(request.userInfo.extra) || request.userInfo.extra.size() == 0"
     - name: custodian
@@ -116,42 +122,45 @@ spec:
         request.userInfo.groups.all(group, group in {{ .Values.certificateWriterGroups | toJson }}) &&
         (!has(request.userInfo.extra) || request.userInfo.extra.all(key, key in ['authentication.kubernetes.io/credential-id', 'authentication.kubernetes.io/node-name', 'authentication.kubernetes.io/node-uid', 'authentication.kubernetes.io/pod-name', 'authentication.kubernetes.io/pod-uid'])) &&
         ((request.resource.group == '' && request.resource.resource == 'secrets' && request.name in [{{ .Values.certificate.secretName | quote }}, {{ .Values.certificate.caSecretName | quote }}]) ||
-         (request.resource.group == 'cert-manager.io' && request.resource.resource in ['certificates', 'certificates/status', 'issuers', 'issuers/status'] && request.name in ['fs2-model-network-boundary', {{ .Values.certificate.caCertificateName | quote }}, {{ .Values.certificate.bootstrapIssuerName | quote }}, {{ .Values.certificate.servingIssuerName | quote }}]))
-    - name: cainjector
+         (request.operation == 'UPDATE' && request.resource.group == 'cert-manager.io' &&
+          request.resource.resource in ['certificates', 'issuers'] && request.subResource == 'status' &&
+          request.name in ['fs2-model-network-boundary', {{ .Values.certificate.caCertificateName | quote }}, {{ .Values.certificate.bootstrapIssuerName | quote }}, {{ .Values.certificate.servingIssuerName | quote }}]))
+    - name: certificateSecretOnly
       expression: >-
-        request.operation == 'UPDATE' &&
-        request.resource.group == 'admissionregistration.k8s.io' &&
-        request.resource.resource == 'validatingwebhookconfigurations' &&
-        request.name == 'fs2-model-network-boundary' &&
-        request.userInfo.username == {{ .Values.cainjectorUsername | quote }} &&
-        request.userInfo.groups.size() == {{ len .Values.cainjectorGroups }} &&
-        request.userInfo.groups.all(group, group in {{ .Values.cainjectorGroups | toJson }}) &&
-        (!has(request.userInfo.extra) || request.userInfo.extra.all(key, key in ['authentication.kubernetes.io/credential-id', 'authentication.kubernetes.io/node-name', 'authentication.kubernetes.io/node-uid', 'authentication.kubernetes.io/pod-name', 'authentication.kubernetes.io/pod-uid']))
-    - name: caBundleOnly
+        !variables.certificateController || request.resource.group != '' || request.resource.resource != 'secrets' ||
+        (object.type == 'kubernetes.io/tls' &&
+         has(object.data) &&
+         'tls.crt' in object.data && 'tls.key' in object.data &&
+         object.data.keys().all(key, key in ['tls.crt', 'tls.key', 'ca.crt']) &&
+         has(object.metadata.labels) &&
+         'fs2-serve.nebius.ai/network-boundary-authority' in object.metadata.labels &&
+         object.metadata.labels['fs2-serve.nebius.ai/network-boundary-authority'] == 'true' &&
+         (request.operation == 'CREATE' ||
+          (oldObject.type == object.type &&
+           oldObject.metadata.name == object.metadata.name &&
+           oldObject.metadata.namespace == object.metadata.namespace &&
+           oldObject.metadata.labels == object.metadata.labels &&
+           oldObject.metadata.annotations == object.metadata.annotations)))
+    - name: certificateStatusOnly
       expression: >-
-        !variables.cainjector ||
-        (object.metadata.name == oldObject.metadata.name &&
+        !variables.certificateController || request.resource.group != 'cert-manager.io' ||
+        (request.operation == 'UPDATE' &&
+         request.resource.resource in ['certificates', 'issuers'] &&
+         request.subResource == 'status' &&
+         object.apiVersion == oldObject.apiVersion && object.kind == oldObject.kind &&
+         object.metadata.name == oldObject.metadata.name &&
+         object.metadata.namespace == oldObject.metadata.namespace &&
          object.metadata.labels == oldObject.metadata.labels &&
          object.metadata.annotations == oldObject.metadata.annotations &&
-         object.webhooks.size() == oldObject.webhooks.size() &&
-         object.webhooks.all(webhook,
-           oldObject.webhooks.exists(prior,
-             webhook.name == prior.name &&
-             webhook.admissionReviewVersions == prior.admissionReviewVersions &&
-             webhook.sideEffects == prior.sideEffects &&
-             webhook.failurePolicy == prior.failurePolicy &&
-             webhook.matchPolicy == prior.matchPolicy &&
-             webhook.timeoutSeconds == prior.timeoutSeconds &&
-             webhook.clientConfig.service == prior.clientConfig.service &&
-             webhook.namespaceSelector == prior.namespaceSelector &&
-             webhook.objectSelector == prior.objectSelector &&
-             ((!has(webhook.matchConditions) && !has(prior.matchConditions)) || webhook.matchConditions == prior.matchConditions) &&
-             webhook.rules == prior.rules)))
+         object.spec == oldObject.spec)
   validations:
     - expression: "!variables.protectedObject || request.operation != 'DELETE'"
       message: "network-boundary custody objects are update-only; recovery never deletes them"
       reason: Forbidden
-    - expression: "!variables.protectedObject || variables.custodian || variables.recovery || variables.transitionLeaseWriter || variables.maintenanceLeaseWriter || variables.certificateController || (variables.cainjector && variables.caBundleOnly)"
+    - expression: "!variables.certificateController || (variables.certificateSecretOnly && variables.certificateStatusOnly)"
+      message: "the certificate controller may rotate only exact TLS data or update status without changing spec or metadata"
+      reason: Forbidden
+    - expression: "!variables.protectedObject || variables.custodian || variables.recovery || variables.transitionLeaseWriter || variables.maintenanceLeaseWriter || (variables.certificateController && variables.certificateSecretOnly && variables.certificateStatusOnly)"
       message: "network-boundary custody requires the exact external identity and group set"
       reason: Forbidden
 ---
@@ -172,9 +181,10 @@ spec:
   matchResources:
     matchPolicy: Equivalent
 ---
-# RBAC cannot express a deny. This API-server-native policy closes that gap:
-# after the signed census proves the configured list complete, no role can gain
-# impersonate/* and no new binding can attach an already capable role.
+# RBAC cannot express a deny. This policy blocks newly introduced identity-mint
+# grants for ordinary writers. It is not self-custody: external provider/IAM
+# custody prevents changes to this excluded admission object, and the receipt
+# independently detects any drift in the complete stored policy/binding specs.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -199,22 +209,76 @@ spec:
       expression: "request.resource.resource in ['roles', 'clusterroles']"
     - name: isBinding
       expression: "request.resource.resource in ['rolebindings', 'clusterrolebindings']"
+    - name: newIdentityMintRules
+      expression: >-
+        !variables.isRole || !has(object.rules) ? [] : object.rules.filter(rule,
+          (rule.verbs.exists(verb, verb in ['impersonate', '*']) &&
+           rule.apiGroups.exists(group, group in ['', 'authentication.k8s.io', '*']) &&
+           rule.resources.exists(resource,
+             resource in ['users', 'groups', 'serviceaccounts', 'uids', 'userextras', '*'] ||
+             resource.startsWith('userextras/'))) ||
+          (rule.verbs.exists(verb, verb in ['bind', 'escalate', '*']) &&
+           rule.apiGroups.exists(group, group in ['rbac.authorization.k8s.io', '*']) &&
+           rule.resources.exists(resource, resource in ['roles', 'clusterroles', '*'])) ||
+          (rule.verbs.exists(verb, verb in ['approve', 'sign', '*']) &&
+           rule.apiGroups.exists(group, group in ['certificates.k8s.io', '*']) &&
+           rule.resources.exists(resource,
+             resource in ['certificatesigningrequests', 'certificatesigningrequests/approval', 'signers', '*'])) ||
+          (rule.verbs.exists(verb, verb in ['create', 'update', 'patch', '*']) &&
+           ((rule.apiGroups.exists(group, group in ['', '*']) &&
+             rule.resources.exists(resource, resource in ['serviceaccounts/token', 'secrets', '*'])) ||
+            (rule.apiGroups.exists(group, group in ['certificates.k8s.io', '*']) &&
+             rule.resources.exists(resource, resource in ['certificatesigningrequests', '*'])))))
+    - name: oldIdentityMintRules
+      expression: >-
+        request.operation == 'CREATE' || !variables.isRole || !has(oldObject.rules) ? [] : oldObject.rules.filter(rule,
+          (rule.verbs.exists(verb, verb in ['impersonate', '*']) &&
+           rule.apiGroups.exists(group, group in ['', 'authentication.k8s.io', '*']) &&
+           rule.resources.exists(resource,
+             resource in ['users', 'groups', 'serviceaccounts', 'uids', 'userextras', '*'] ||
+             resource.startsWith('userextras/'))) ||
+          (rule.verbs.exists(verb, verb in ['bind', 'escalate', '*']) &&
+           rule.apiGroups.exists(group, group in ['rbac.authorization.k8s.io', '*']) &&
+           rule.resources.exists(resource, resource in ['roles', 'clusterroles', '*'])) ||
+          (rule.verbs.exists(verb, verb in ['approve', 'sign', '*']) &&
+           rule.apiGroups.exists(group, group in ['certificates.k8s.io', '*']) &&
+           rule.resources.exists(resource,
+             resource in ['certificatesigningrequests', 'certificatesigningrequests/approval', 'signers', '*'])) ||
+          (rule.verbs.exists(verb, verb in ['create', 'update', 'patch', '*']) &&
+           ((rule.apiGroups.exists(group, group in ['', '*']) &&
+             rule.resources.exists(resource, resource in ['serviceaccounts/token', 'secrets', '*'])) ||
+            (rule.apiGroups.exists(group, group in ['certificates.k8s.io', '*']) &&
+             rule.resources.exists(resource, resource in ['certificatesigningrequests', '*'])))))
+    - name: newPrivilegedBinding
+      expression: >-
+        variables.isBinding &&
+        ((object.roleRef.kind == 'ClusterRole' && object.roleRef.name in {{ .Values.impersonationCapableClusterRoles | toJson }}) ||
+         (object.roleRef.kind == 'Role' && (request.namespace + '/' + object.roleRef.name) in {{ .Values.impersonationCapableRoles | toJson }}))
+    - name: noExtras
+      expression: "!has(request.userInfo.extra) || request.userInfo.extra.size() == 0"
+    - name: repair
+      expression: >-
+        ((request.userInfo.username == {{ .Values.custodianUsername | quote }} &&
+          request.userInfo.groups.size() == {{ len .Values.custodianGroups }} &&
+          request.userInfo.groups.all(group, group in {{ .Values.custodianGroups | toJson }})) ||
+         (request.userInfo.username == {{ .Values.recoveryUsername | quote }} &&
+          request.userInfo.groups.size() == {{ len .Values.recoveryGroups }} &&
+          request.userInfo.groups.all(group, group in {{ .Values.recoveryGroups | toJson }}))) &&
+        variables.noExtras
   validations:
     - expression: >-
-        !variables.isRole ||
-        !has(object.rules) ||
-        object.rules.all(rule,
-          !(rule.verbs.exists(verb, verb in ['impersonate', '*']) &&
-            rule.resources.exists(resource, resource in ['users', 'groups', 'serviceaccounts', 'uids', 'userextras', '*'])))
-      message: "impersonate users/groups/serviceaccounts/uids/userextras grants are forbidden while the model-network boundary is armed"
+        variables.repair ||
+        variables.newIdentityMintRules.all(rule,
+          variables.oldIdentityMintRules.exists(prior, prior == rule))
+      message: "new or expanded impersonation, escalation, signer, token, Secret, or credential-mint grants require external repair custody"
       reason: Forbidden
     - expression: >-
-        !variables.isBinding ||
-        ((object.roleRef.kind != 'ClusterRole' ||
-          !(object.roleRef.name in {{ .Values.impersonationCapableClusterRoles | toJson }})) &&
-         (object.roleRef.kind != 'Role' ||
-          !((request.namespace + '/' + object.roleRef.name) in {{ .Values.impersonationCapableRoles | toJson }})))
-      message: "bindings to a receipt-enumerated impersonation-capable Role or ClusterRole are forbidden"
+        variables.repair || !variables.newPrivilegedBinding ||
+        (request.operation == 'UPDATE' &&
+         object.roleRef == oldObject.roleRef &&
+         ((!has(object.subjects) && !has(oldObject.subjects)) ||
+          (has(object.subjects) && has(oldObject.subjects) && object.subjects == oldObject.subjects)))
+      message: "new principals or bindings to receipt-enumerated identity-mint roles require external repair custody"
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

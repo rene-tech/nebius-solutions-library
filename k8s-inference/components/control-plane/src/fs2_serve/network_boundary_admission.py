@@ -11,7 +11,9 @@ Terraform writers.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+import ssl
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -48,6 +50,44 @@ class ParentKind:
 
 
 @dataclass(frozen=True)
+class ReleaseInventoryEntry:
+    """One externally signed Helm mutation, with no label-derived authority."""
+
+    group: str
+    resource: str
+    namespace: str
+    name: str
+    operations: frozenset[str]
+    object_sha256: str
+
+    @classmethod
+    def from_value(cls, value: Mapping[str, Any]) -> ReleaseInventoryEntry:
+        operations = value.get("operations")
+        fields = {key: value.get(key) for key in ("group", "resource", "namespace", "name")}
+        digest = value.get("objectSha256")
+        if (
+            not all(isinstance(item, str) for item in fields.values())
+            or not fields["resource"]
+            or not fields["name"]
+            or not isinstance(operations, (list, tuple))
+            or not operations
+            or not all(item in {"CREATE", "UPDATE", "DELETE"} for item in operations)
+            or len(set(operations)) != len(operations)
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+        ):
+            raise NetworkBoundaryError("the signed Helm release inventory is malformed")
+        return cls(
+            group=fields["group"],
+            resource=fields["resource"],
+            namespace=fields["namespace"],
+            name=fields["name"],
+            operations=frozenset(operations),
+            object_sha256=digest,
+        )
+
+
+@dataclass(frozen=True)
 class NetworkBoundaryConfig:
     model_namespace: str
     system_namespace: str
@@ -64,6 +104,7 @@ class NetworkBoundaryConfig:
     transition_groups: frozenset[str]
     maintenance_groups: frozenset[str]
     certificate_groups: frozenset[str]
+    release_inventory: tuple[ReleaseInventoryEntry, ...] = ()
     controller_manager_writer: str = "system:kube-controller-manager"
 
     def parent_kinds(self) -> Mapping[tuple[str, str], ParentKind]:
@@ -262,6 +303,13 @@ class NetworkBoundaryAdmission:
         self.config = config
         self.reader = reader
         self.clock = clock or (lambda: datetime.now(UTC))
+        keys = [
+            (entry.group, entry.resource, entry.namespace, entry.name, operation)
+            for entry in config.release_inventory
+            for operation in entry.operations
+        ]
+        if len(keys) != len(set(keys)):
+            raise NetworkBoundaryError("the signed Helm release inventory has duplicate authorities")
 
     @staticmethod
     def _service_account_groups(username: str) -> frozenset[str] | None:
@@ -468,12 +516,6 @@ class NetworkBoundaryAdmission:
             and name == BOUNDARY_MARKER
         ):
             return True
-        if group == "admissionregistration.k8s.io" and plural in {
-            "validatingadmissionpolicies",
-            "validatingadmissionpolicybindings",
-            "validatingwebhookconfigurations",
-        }:
-            return name.startswith("fs2-model-network-")
         protected_namespaces = {
             self.config.model_namespace,
             self.config.system_namespace,
@@ -507,33 +549,28 @@ class NetworkBoundaryAdmission:
             return MAINTENANCE_LEASE, self.config.maintenance_writer
         return None
 
-    def _is_control_plane_helm_storage(
-        self,
-        resource: Mapping[str, Any],
-        namespace: str,
-        value: Mapping[str, Any],
-        old_value: Mapping[str, Any],
-    ) -> bool:
-        if (
-            resource.get("group", "") != ""
-            or resource.get("resource") not in {"configmaps", "secrets"}
-            or namespace != self.config.system_namespace
-        ):
-            return False
-        for candidate in (value, old_value):
-            metadata = candidate.get("metadata")
-            if not isinstance(metadata, Mapping):
-                continue
-            labels = metadata.get("labels")
-            if (
-                isinstance(labels, Mapping)
-                and labels.get("owner") == "helm"
-                and labels.get("name") == "fs2-serve-control-plane"
+    @staticmethod
+    def _release_semantic_sha256(value: Mapping[str, Any]) -> str:
+        document = json.loads(json.dumps(value))
+        document.pop("status", None)
+        metadata = document.get("metadata")
+        if isinstance(metadata, dict):
+            for field in (
+                "creationTimestamp",
+                "deletionGracePeriodSeconds",
+                "deletionTimestamp",
+                "generation",
+                "managedFields",
+                "resourceVersion",
+                "selfLink",
+                "uid",
             ):
-                return True
-        return False
+                metadata.pop(field, None)
+        return hashlib.sha256(
+            json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
 
-    def _is_control_plane_release_object(
+    def _claims_control_plane_release(
         self,
         resource: Mapping[str, Any],
         namespace: str,
@@ -549,12 +586,54 @@ class NetworkBoundaryAdmission:
             labels = metadata.get("labels")
             if (
                 isinstance(labels, Mapping)
-                and labels.get("app.kubernetes.io/instance") == "fs2-serve-control-plane"
-                and labels.get("app.kubernetes.io/part-of") == "fs2-serve"
-                and labels.get("app.kubernetes.io/managed-by") == "Helm"
+                and (
+                    (
+                        labels.get("owner") == "helm"
+                        and labels.get("name") == "fs2-serve-control-plane"
+                    )
+                    or labels.get("app.kubernetes.io/instance")
+                    == "fs2-serve-control-plane"
+                )
             ):
                 return True
         return False
+
+    def _is_control_plane_release_object(
+        self,
+        resource: Mapping[str, Any],
+        namespace: str,
+        name: str,
+        operation: str,
+        value: Mapping[str, Any],
+        old_value: Mapping[str, Any],
+    ) -> bool:
+        candidate = old_value if operation == "DELETE" else value
+        digest = self._release_semantic_sha256(candidate)
+        return any(
+            entry.group == resource.get("group", "")
+            and entry.resource == resource.get("resource")
+            and entry.namespace == namespace
+            and entry.name == name
+            and operation in entry.operations
+            and entry.object_sha256 == digest
+            for entry in self.config.release_inventory
+        )
+
+    def _matches_release_identity(
+        self,
+        resource: Mapping[str, Any],
+        namespace: str,
+        name: str,
+        operation: str,
+    ) -> bool:
+        return any(
+            entry.group == resource.get("group", "")
+            and entry.resource == resource.get("resource")
+            and entry.namespace == namespace
+            and entry.name == name
+            and operation in entry.operations
+            for entry in self.config.release_inventory
+        )
 
     async def _authorize_lease_mutation(
         self,
@@ -651,31 +730,45 @@ class NetworkBoundaryAdmission:
                 old_value=old_value,
             )
             return
-        helm_storage = self._is_control_plane_helm_storage(resource, namespace, value, old_value)
-        control_plane_release = self._is_control_plane_release_object(resource, namespace, value, old_value)
+        claims_release = self._claims_control_plane_release(resource, namespace, value, old_value)
+        release_identity = self._matches_release_identity(
+            resource, namespace, name, operation
+        )
+        control_plane_release = self._is_control_plane_release_object(
+            resource, namespace, name, operation, value, old_value
+        )
         protected = self._is_protected(resource, namespace, name, value, old_value)
-        if username in {self.config.maintenance_writer, self.config.transition_writer} and not (
-            helm_storage or control_plane_release or protected
+        release_writers = {
+            self.config.authorizer_writer,
+            self.config.maintenance_writer,
+            self.config.transition_writer,
+        }
+        if (claims_release or release_identity or username in release_writers) and not (
+            control_plane_release or protected
         ):
-            self._authorize_identity(user_info, username)
+            if username in release_writers:
+                self._authorize_identity(user_info, username)
             raise NetworkBoundaryError(
-                "the externally custodied release writer cannot mutate an object "
-                "outside the exact control-plane release"
+                "the mutation is absent from the externally signed finite Helm release inventory"
             )
-        if (
-            not helm_storage
-            and not control_plane_release
-            and not protected
-        ):
+        if not control_plane_release and not protected:
             return
         marker = await self.reader.get_optional(
             f"api/v1/namespaces/{quote(self.config.model_namespace, safe='')}/configmaps/{BOUNDARY_MARKER}"
         )
-        if helm_storage or control_plane_release:
+        if control_plane_release:
             default_deny = await self.reader.get_optional(
                 "apis/networking.k8s.io/v1/namespaces/"
                 f"{quote(self.config.model_namespace, safe='')}/networkpolicies/default-deny"
             )
+            if username == self.config.authorizer_writer:
+                self._authorize_identity(user_info, self.config.authorizer_writer)
+                await self._active_transition_holder()
+                if marker is None and default_deny is None:
+                    return
+                raise NetworkBoundaryError(
+                    "release bootstrap requires the transition fence with marker and default-deny absent"
+                )
             if username == self.config.maintenance_writer:
                 self._authorize_identity(user_info, self.config.maintenance_writer)
                 await self._active_maintenance_holder()
@@ -813,24 +906,45 @@ def create_network_boundary_app(
     admission: NetworkBoundaryAdmission,
     *,
     readiness_files: tuple[Path, ...] = (),
-    restart_on_change_files: tuple[Path, ...] = (),
+    reload_tls_files: tuple[Path, Path] | None = None,
 ) -> FastAPI:
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
-    startup_digests = {
-        path: hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in restart_on_change_files
-    }
+    loaded_certificate_sha256 = (
+        hashlib.sha256(reload_tls_files[0].read_bytes()).hexdigest()
+        if reload_tls_files is not None
+        else ""
+    )
+
+    def reload_tls() -> tuple[str, str | None]:
+        """Hot-load projected TLS files into Uvicorn's live SSLContext.
+
+        A projection race leaves the last valid certificate serving. Readiness
+        reports the loaded digest so the external receipt gate can refuse a
+        transition until every ready endpoint has converged, without killing
+        both replicas together.
+        """
+
+        nonlocal loaded_certificate_sha256
+        if reload_tls_files is None:
+            return loaded_certificate_sha256, None
+        certificate, key = reload_tls_files
+        desired = hashlib.sha256(certificate.read_bytes()).hexdigest()
+        if desired == loaded_certificate_sha256:
+            return desired, None
+        context = getattr(app.state, "tls_context", None)
+        if not isinstance(context, ssl.SSLContext):
+            return loaded_certificate_sha256, "live TLS context is unavailable"
+        try:
+            context.load_cert_chain(str(certificate), str(key))
+        except (OSError, ssl.SSLError) as exc:
+            return loaded_certificate_sha256, f"projected TLS reload is pending: {exc}"
+        loaded_certificate_sha256 = desired
+        return desired, None
 
     @app.get("/livez")
     async def livez() -> JSONResponse:
-        try:
-            if any(
-                hashlib.sha256(path.read_bytes()).hexdigest() != digest
-                for path, digest in startup_digests.items()
-            ):
-                raise NetworkBoundaryError("serving certificate rotated; restart required")
-        except (NetworkBoundaryError, OSError) as exc:
-            return JSONResponse({"status": "restart-required", "detail": str(exc)}, status_code=503)
+        # Certificate rotation never drives liveness. Killing both replicas on
+        # the same projected Secret update would defeat the admission boundary.
         return JSONResponse({"status": "ok"})
 
     @app.get("/readyz")
@@ -840,9 +954,16 @@ def create_network_boundary_app(
                 if not path.is_file() or path.stat().st_size < 1:
                     raise NetworkBoundaryError("a projected certificate or token is unavailable")
             await admission.ready()
+            digest, warning = reload_tls()
         except (NetworkBoundaryError, OSError, httpx.HTTPError) as exc:
             return JSONResponse({"status": "not-ready", "detail": str(exc)}, status_code=503)
-        return JSONResponse({"status": "ok"})
+        return JSONResponse(
+            {
+                "status": "ok" if warning is None else "serving-last-valid-certificate",
+                "serving_certificate_sha256": digest,
+                **({} if warning is None else {"detail": warning}),
+            }
+        )
 
     @app.post("/validate")
     async def validate(request: Request) -> JSONResponse:
@@ -873,5 +994,6 @@ __all__ = [
     "NetworkBoundaryAdmission",
     "NetworkBoundaryConfig",
     "NetworkBoundaryError",
+    "ReleaseInventoryEntry",
     "create_network_boundary_app",
 ]

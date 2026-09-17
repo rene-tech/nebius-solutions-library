@@ -837,6 +837,7 @@ class HttpScientificBatchCluster:
         return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        writer_ownership = kwargs.pop("writer_ownership", None)
         if method in {"POST", "DELETE"}:
             if self.writer_client is None or self.writer_token_file is None:
                 # A supplied in-memory client is the existing unit-test seam;
@@ -867,6 +868,7 @@ class HttpScientificBatchCluster:
                         "method": method,
                         "path": path,
                         "body": kwargs.get("json", {}),
+                        "ownership": writer_ownership,
                     },
                 )
             except httpx.HTTPError as error:
@@ -1589,6 +1591,13 @@ class HttpScientificBatchCluster:
                     "apiVersion": "v1",
                     "propagationPolicy": "Foreground",
                     "preconditions": {"uid": uid, "resourceVersion": resource_version},
+                },
+                writer_ownership={
+                    OPERATION_LABEL: str(labels.get(OPERATION_LABEL, "")),
+                    WORKLOAD_LABEL: str(labels.get(WORKLOAD_LABEL, "")),
+                    ATTEMPT_LABEL: str(labels.get(ATTEMPT_LABEL, "")),
+                    FENCE_ANNOTATION: str(annotations.get(FENCE_ANNOTATION, "")),
+                    MANIFEST_ANNOTATION: str(annotations.get(MANIFEST_ANNOTATION, "")),
                 },
             )
             if response.status_code in {200, 202, 404}:

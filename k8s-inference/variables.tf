@@ -172,6 +172,7 @@ variable "deployment" {
       network_policy = optional(object({
         phase                       = optional(string, "prepare")
         authority_trust_root_sha256 = optional(string, "")
+        provider_trust_root_sha256  = optional(string, "")
         inventory_receipt = optional(object({
           schema          = string
           cluster_id      = string
@@ -224,8 +225,14 @@ variable "deployment" {
             resource_version = string
             spec_sha256      = string
           })
-          boundary_authority_sha256 = string
-          payload_sha256            = string
+          boundary_authority_sha256           = string
+          boundary_service_sha256             = string
+          boundary_endpoints_sha256           = string
+          boundary_ready_endpoints_sha256     = string
+          boundary_serving_certificate_sha256 = string
+          provider_custody_attestation_sha256 = string
+          jobset_writer_username               = string
+          payload_sha256                       = string
         }), null)
         deny_absent_receipt = optional(object({
           schema                     = string
@@ -795,6 +802,22 @@ variable "deployment" {
       can(regex("^[a-f0-9]{64}$", var.deployment.models.network_policy.authority_trust_root_sha256))
     )
     error_message = "deployment.models.network_policy.authority_trust_root_sha256 must be empty for offline source checks or the exact SHA-256 of the independently custodied signing public key."
+  }
+
+  validation {
+    condition = (
+      var.deployment.models.network_policy.provider_trust_root_sha256 == "" ||
+      can(regex("^[a-f0-9]{64}$", var.deployment.models.network_policy.provider_trust_root_sha256))
+    )
+    error_message = "deployment.models.network_policy.provider_trust_root_sha256 must be empty for offline source checks or the exact SHA-256 of the provider custody signing public key."
+  }
+
+  validation {
+    condition = (
+      (var.deployment.models.network_policy.authority_trust_root_sha256 == "") ==
+      (var.deployment.models.network_policy.provider_trust_root_sha256 == "")
+    )
+    error_message = "authority_trust_root_sha256 and the distinct provider_trust_root_sha256 must be supplied together or both omitted for offline source checks."
   }
 
   validation {

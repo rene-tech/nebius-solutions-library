@@ -1,0 +1,52 @@
+# Dedicated certificate-controller grants for the network-boundary namespace.
+# The signed exhaustive RBAC census and provider assertion bind every live
+# privileged binding before a transition; they do not pretend default
+# cluster-admin or cert-manager grants are absent. Admission independently
+# constrains the two exact Secret data objects and status-only updates, while
+# the excluded webhook configuration remains under external provider custody.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-model-network-certificate-writer
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - {{ .Values.certificate.secretName }}
+      - {{ .Values.certificate.caSecretName }}
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "issuers"]
+    resourceNames:
+      - fs2-model-network-boundary
+      - {{ .Values.certificate.caCertificateName }}
+      - {{ .Values.certificate.bootstrapIssuerName }}
+      - {{ .Values.certificate.servingIssuerName }}
+    verbs: ["get"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates/status", "issuers/status"]
+    resourceNames:
+      - fs2-model-network-boundary
+      - {{ .Values.certificate.caCertificateName }}
+      - {{ .Values.certificate.bootstrapIssuerName }}
+      - {{ .Values.certificate.servingIssuerName }}
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-model-network-certificate-writer
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: cert-manager
+    namespace: cert-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-model-network-certificate-writer
