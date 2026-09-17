@@ -18,10 +18,11 @@
     "authority": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "generation", "manifestSha256", "priorHeadReceiptSha256", "iamInventoryReceiptSha256", "rbacInventoryReceiptSha256", "predecessorCompatibilitySha256", "boundaryPolicySha256", "workloadPolicySha256", "releaseValuesSha256", "providerIdentitySha256", "securityGroupId", "nodeGroupId", "nodeSelectorKey", "nodeSelectorValue", "taintKey", "taintValue", "taintEffect"],
+      "required": ["schema", "generation", "laneId", "manifestSha256", "priorHeadReceiptSha256", "iamInventoryReceiptSha256", "rbacInventoryReceiptSha256", "predecessorCompatibilitySha256", "boundaryPolicySha256", "workloadPolicySha256", "releaseValuesSha256", "providerIdentitySha256", "securityGroupId", "nodeGroupId", "nodeSelectorKey", "nodeSelectorValue", "taintKey", "taintValue", "taintEffect"],
       "properties": {
-        "schema": {"const": "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v5"},
+        "schema": {"const": "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v7"},
         "generation": {"type": "string", "pattern": "^g[0-9]{14}-[a-f0-9]{12}$"},
+        "laneId": {"type": "string", "pattern": "^l[0-9]{14}-[a-f0-9]{12}$"},
         "manifestSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "priorHeadReceiptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "iamInventoryReceiptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
@@ -33,10 +34,10 @@
         "providerIdentitySha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "securityGroupId": {"type": "string", "pattern": "^vpcsecuritygroup-[a-z0-9]+$"},
         "nodeGroupId": {"type": "string", "pattern": "^mk8snodegroup-[a-z0-9]+$"},
-        "nodeSelectorKey": {"const": "workload.fs2.nebius/customer-storage-egress"},
-        "nodeSelectorValue": {"type": "string", "pattern": "^g[0-9]{14}-[a-f0-9]{12}$"},
-        "taintKey": {"const": "workload.fs2.nebius/customer-storage-egress"},
-        "taintValue": {"type": "string", "pattern": "^g[0-9]{14}-[a-f0-9]{12}$"},
+        "nodeSelectorKey": {"type": "string", "pattern": "^workload\\.fs2\\.nebius/customer-storage-egress-[a-f0-9]{12}$"},
+        "nodeSelectorValue": {"type": "string", "pattern": "^l[0-9]{14}-[a-f0-9]{12}$"},
+        "taintKey": {"type": "string", "pattern": "^workload\\.fs2\\.nebius/customer-storage-egress-[a-f0-9]{12}$"},
+        "taintValue": {"type": "string", "pattern": "^l[0-9]{14}-[a-f0-9]{12}$"},
         "taintEffect": {"const": "NoSchedule"}
       }
     },

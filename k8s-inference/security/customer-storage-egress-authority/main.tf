@@ -46,6 +46,29 @@ locals {
   generations          = jsondecode(data.external.authority.result.generations_json)
   retained_generations = jsondecode(data.external.authority.result.retained_generations_json)
   all_generations      = merge(local.retained_generations, local.generations)
+  scheduling_keys = merge(
+    {
+      for generation in keys(local.retained_generations) :
+      generation => try(
+        local.retained_generations[generation].scheduling_key,
+        "workload.fs2.nebius/customer-storage-egress",
+      )
+    },
+    {
+      for generation, value in local.generations :
+      generation => value.scheduling_key
+    },
+  )
+  scheduling_values = merge(
+    {
+      for generation in keys(local.retained_generations) :
+      generation => try(local.retained_generations[generation].lane_id, generation)
+    },
+    {
+      for generation, value in local.generations :
+      generation => value.lane_id
+    },
+  )
   retained_authority_gate_generations = setunion(
     toset(jsondecode(data.external.authority.result.prior_authority_gate_generations_json)),
     toset(keys(local.generations)),
@@ -264,7 +287,11 @@ resource "nebius_mk8s_v1_node_group" "generation" {
   name             = "fs2-storage-egress-${each.key}"
   labels           = merge(local.common_labels, { generation = each.key })
   version          = local.authority.kubernetes_version
-  fixed_node_count = 1
+  fixed_node_count = null
+  autoscaling = {
+    min_node_count = try(each.value.min_node_count, 0)
+    max_node_count = try(each.value.max_node_count, 1)
+  }
 
   strategy = {
     max_surge       = { count = 1 }
@@ -274,14 +301,13 @@ resource "nebius_mk8s_v1_node_group" "generation" {
 
   template = {
     metadata = {
-      labels = {
-        "workload.fs2.nebius/customer-storage-egress" = each.key
-        "fs2.nebius.ai/authority-manifest-sha256"     = data.external.authority.result.manifest_sha256
-      }
+      labels = merge({
+        "fs2.nebius.ai/authority-manifest-sha256" = data.external.authority.result.manifest_sha256
+      }, { (local.scheduling_keys[each.key]) = local.scheduling_values[each.key] })
     }
     taints = [{
-      key    = "workload.fs2.nebius/customer-storage-egress"
-      value  = each.key
+      key    = local.scheduling_keys[each.key]
+      value  = local.scheduling_values[each.key]
       effect = "NO_SCHEDULE"
     }]
     boot_disk = {

@@ -13,39 +13,53 @@ variable "customer_storage" {
     auth_key_expires_at              = optional(string, "")
     egress_contract_json             = optional(string, "")
     egress_boundary = optional(object({
-      schema                        = optional(string, "")
-      generation                    = optional(string, "")
-      contract_sha256               = optional(string, "")
-      contract_config_map_name      = optional(string, "")
-      trust_config_map_name         = optional(string, "")
-      network_policy_name           = optional(string, "")
-      boundary_policy_name          = optional(string, "")
-      boundary_policy_sha256        = optional(string, "")
-      workload_policy_name          = optional(string, "")
-      workload_policy_sha256        = optional(string, "")
-      security_owner_group          = optional(string, "")
-      security_owner_subject_sha256 = optional(string, "")
-      workloads_subject_sha256      = optional(string, "")
-      identity_inventory_sha256     = optional(string, "")
+      schema                              = optional(string, "")
+      generation                          = optional(string, "")
+      contract_sha256                     = optional(string, "")
+      contract_config_map_name            = optional(string, "")
+      trust_config_map_name               = optional(string, "")
+      network_policy_name                 = optional(string, "")
+      boundary_policy_name                = optional(string, "")
+      boundary_policy_sha256              = optional(string, "")
+      workload_policy_name                = optional(string, "")
+      workload_policy_sha256              = optional(string, "")
+      security_owner_group                = optional(string, "")
+      security_owner_subject_sha256       = optional(string, "")
+      workloads_subject_sha256            = optional(string, "")
+      identity_inventory_sha256           = optional(string, "")
+      protected_observer_inventory_sha256 = optional(string, "")
+      protected_observer_live_sha256      = optional(string, "")
       provider_authority = optional(object({
-        schema                                            = optional(string, "")
-        generation                                        = optional(string, "")
-        authority_manifest_sha256                         = optional(string, "")
-        prior_head_receipt_sha256                         = optional(string, "")
-        predecessor_state_custody_sha256                  = optional(string, "")
-        predecessor_state_compatibility_sha256            = optional(string, "")
-        contract_sha256                                   = optional(string, "")
-        predecessor_compatibility_sha256                  = optional(string, "")
-        boundary_policy_sha256                            = optional(string, "")
-        workload_policy_sha256                            = optional(string, "")
-        release_values_sha256                             = optional(string, "")
-        security_group_id                                 = optional(string, "")
-        node_group_id                                     = optional(string, "")
-        node_selector_key                                 = optional(string, "")
-        node_selector_value                               = optional(string, "")
-        taint_key                                         = optional(string, "")
-        taint_value                                       = optional(string, "")
-        taint_effect                                      = optional(string, "")
+        schema                                 = optional(string, "")
+        generation                             = optional(string, "")
+        lane_id                                = optional(string, "")
+        authority_manifest_sha256              = optional(string, "")
+        prior_head_receipt_sha256              = optional(string, "")
+        predecessor_state_custody_sha256       = optional(string, "")
+        predecessor_state_compatibility_sha256 = optional(string, "")
+        contract_sha256                        = optional(string, "")
+        predecessor_compatibility_sha256       = optional(string, "")
+        boundary_policy_sha256                 = optional(string, "")
+        workload_policy_sha256                 = optional(string, "")
+        release_values_sha256                  = optional(string, "")
+        security_group_id                      = optional(string, "")
+        node_group_id                          = optional(string, "")
+        node_selector_key                      = optional(string, "")
+        node_selector_value                    = optional(string, "")
+        taint_key                              = optional(string, "")
+        taint_value                            = optional(string, "")
+        taint_effect                           = optional(string, "")
+        min_node_count                         = optional(number, -1)
+        max_node_count                         = optional(number, -1)
+        protected_observers = optional(map(object({
+          namespace             = string
+          name                  = string
+          uid                   = string
+          owner_username        = string
+          daemonset_spec        = any
+          daemonset_spec_sha256 = string
+        })), {})
+        protected_observer_inventory_sha256               = optional(string, "")
         provider_api_cidrs                                = optional(list(string), [])
         kubernetes_api_cidrs                              = optional(list(string), [])
         authority_service_account_sha256                  = optional(string, "")
@@ -149,7 +163,7 @@ variable "customer_storage" {
         timecmp(var.customer_storage.auth_key_expires_at, plantimestamp()) > 0 &&
         timecmp(var.customer_storage.auth_key_expires_at, timeadd(plantimestamp(), "2160h")) <= 0 &&
         var.customer_storage.egress_contract_json != "" &&
-        var.customer_storage.egress_boundary.schema == "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v6" &&
+        var.customer_storage.egress_boundary.schema == "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v8" &&
         can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.generation)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.contract_sha256)) &&
         endswith(var.customer_storage.egress_boundary.generation, substr(var.customer_storage.egress_boundary.contract_sha256, 0, 12)) &&
@@ -166,9 +180,12 @@ variable "customer_storage" {
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.workloads_subject_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.identity_inventory_sha256)) &&
         var.customer_storage.egress_boundary.security_owner_subject_sha256 != var.customer_storage.egress_boundary.workloads_subject_sha256 &&
-        var.customer_storage.egress_boundary.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v5" &&
+        var.customer_storage.egress_boundary.protected_observer_inventory_sha256 == var.customer_storage.egress_boundary.provider_authority.protected_observer_inventory_sha256 &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.protected_observer_live_sha256)) &&
+        var.customer_storage.egress_boundary.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v7" &&
         var.customer_storage.egress_boundary.provider_authority.contract_sha256 == var.customer_storage.egress_boundary.contract_sha256 &&
         can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.provider_authority.generation)) &&
+        can(regex("^l[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.provider_authority.lane_id)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.authority_manifest_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.prior_head_receipt_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.predecessor_state_custody_sha256)) &&
@@ -213,11 +230,32 @@ variable "customer_storage" {
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.sai10_independent_review_receipt_sha256)) &&
         can(regex("^vpcsecuritygroup-[a-z0-9]+$", var.customer_storage.egress_boundary.provider_authority.security_group_id)) &&
         can(regex("^mk8snodegroup-[a-z0-9]+$", var.customer_storage.egress_boundary.provider_authority.node_group_id)) &&
-        var.customer_storage.egress_boundary.provider_authority.node_selector_key == "workload.fs2.nebius/customer-storage-egress" &&
-        var.customer_storage.egress_boundary.provider_authority.node_selector_value == var.customer_storage.egress_boundary.provider_authority.generation &&
+        var.customer_storage.egress_boundary.provider_authority.node_selector_key == "workload.fs2.nebius/customer-storage-egress-${substr(var.customer_storage.egress_boundary.provider_authority.lane_id, -12, 12)}" &&
+        var.customer_storage.egress_boundary.provider_authority.node_selector_value == var.customer_storage.egress_boundary.provider_authority.lane_id &&
         var.customer_storage.egress_boundary.provider_authority.taint_key == var.customer_storage.egress_boundary.provider_authority.node_selector_key &&
-        var.customer_storage.egress_boundary.provider_authority.taint_value == var.customer_storage.egress_boundary.provider_authority.generation &&
+        var.customer_storage.egress_boundary.provider_authority.taint_value == var.customer_storage.egress_boundary.provider_authority.lane_id &&
         var.customer_storage.egress_boundary.provider_authority.taint_effect == "NoSchedule" &&
+        var.customer_storage.egress_boundary.provider_authority.min_node_count == 0 &&
+        var.customer_storage.egress_boundary.provider_authority.max_node_count == 1 &&
+        toset(keys(var.customer_storage.egress_boundary.provider_authority.protected_observers)) == toset(["otel-node", "gpu-allocation-observer"]) &&
+        alltrue([
+          for role, observer in var.customer_storage.egress_boundary.provider_authority.protected_observers :
+          observer.namespace == "kube-system" &&
+          observer.name == "fs2-${role}-${substr(var.customer_storage.egress_boundary.provider_authority.lane_id, -12, 12)}" &&
+          can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", observer.uid)) &&
+          sha256(jsonencode(observer.daemonset_spec)) == observer.daemonset_spec_sha256 &&
+          try(observer.daemonset_spec.selector.matchLabels, {}) == try(observer.daemonset_spec.template.metadata.labels, {}) &&
+          try(observer.daemonset_spec.template.metadata.labels["app.kubernetes.io/component"], "") == role &&
+          try(observer.daemonset_spec.template.metadata.labels["fs2.nebius.ai/protected-lane-id"], "") == var.customer_storage.egress_boundary.provider_authority.lane_id &&
+          try(observer.daemonset_spec.template.spec.nodeSelector, {}) == { (var.customer_storage.egress_boundary.provider_authority.node_selector_key) = var.customer_storage.egress_boundary.provider_authority.lane_id } &&
+          try(observer.daemonset_spec.template.spec.tolerations, []) == [{
+            key      = var.customer_storage.egress_boundary.provider_authority.taint_key
+            operator = "Equal"
+            value    = var.customer_storage.egress_boundary.provider_authority.taint_value
+            effect   = var.customer_storage.egress_boundary.provider_authority.taint_effect
+          }]
+        ]) &&
+        sha256(jsonencode(var.customer_storage.egress_boundary.provider_authority.protected_observers)) == var.customer_storage.egress_boundary.provider_authority.protected_observer_inventory_sha256 &&
         var.customer_storage.egress_boundary.provider_authority.provider_api_cidrs == jsondecode(var.customer_storage.egress_contract_json).cidrs &&
         length(var.customer_storage.egress_boundary.provider_authority.kubernetes_api_cidrs) > 0 &&
         var.customer_storage.egress_boundary.predecessor_compatibility.schema == "fs2-serve.nebius.ai/customer-storage-egress-predecessor/v1" &&

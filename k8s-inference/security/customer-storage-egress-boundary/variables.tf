@@ -332,24 +332,36 @@ variable "current_release_generation" {
 variable "provider_authority" {
   description = "Exact handoff from the independently approved Nebius VPC/node authority root."
   type = object({
-    schema                                            = string
-    generation                                        = string
-    authority_manifest_sha256                         = string
-    prior_head_receipt_sha256                         = string
-    predecessor_state_custody_sha256                  = string
-    predecessor_state_compatibility_sha256            = string
-    contract_sha256                                   = string
-    predecessor_compatibility_sha256                  = string
-    boundary_policy_sha256                            = string
-    workload_policy_sha256                            = string
-    release_values_sha256                             = string
-    security_group_id                                 = string
-    node_group_id                                     = string
-    node_selector_key                                 = string
-    node_selector_value                               = string
-    taint_key                                         = string
-    taint_value                                       = string
-    taint_effect                                      = string
+    schema                                 = string
+    generation                             = string
+    lane_id                                = string
+    authority_manifest_sha256              = string
+    prior_head_receipt_sha256              = string
+    predecessor_state_custody_sha256       = string
+    predecessor_state_compatibility_sha256 = string
+    contract_sha256                        = string
+    predecessor_compatibility_sha256       = string
+    boundary_policy_sha256                 = string
+    workload_policy_sha256                 = string
+    release_values_sha256                  = string
+    security_group_id                      = string
+    node_group_id                          = string
+    node_selector_key                      = string
+    node_selector_value                    = string
+    taint_key                              = string
+    taint_value                            = string
+    taint_effect                           = string
+    min_node_count                         = number
+    max_node_count                         = number
+    protected_observers = map(object({
+      namespace             = string
+      name                  = string
+      uid                   = string
+      owner_username        = string
+      daemonset_spec        = any
+      daemonset_spec_sha256 = string
+    }))
+    protected_observer_inventory_sha256               = string
     provider_api_cidrs                                = list(string)
     kubernetes_api_cidrs                              = list(string)
     authority_service_account_sha256                  = string
@@ -414,8 +426,9 @@ variable "provider_authority" {
 
   validation {
     condition = (
-      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v5" &&
+      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v7" &&
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.generation)) &&
+      can(regex("^l[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.lane_id)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.authority_manifest_sha256)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.prior_head_receipt_sha256)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.predecessor_state_custody_sha256)) &&
@@ -427,11 +440,35 @@ variable "provider_authority" {
       can(regex("^[a-f0-9]{64}$", var.provider_authority.release_values_sha256)) &&
       can(regex("^vpcsecuritygroup-[a-z0-9]+$", var.provider_authority.security_group_id)) &&
       can(regex("^mk8snodegroup-[a-z0-9]+$", var.provider_authority.node_group_id)) &&
-      var.provider_authority.node_selector_key == "workload.fs2.nebius/customer-storage-egress" &&
-      var.provider_authority.node_selector_value == var.provider_authority.generation &&
+      var.provider_authority.node_selector_key == "workload.fs2.nebius/customer-storage-egress-${substr(var.provider_authority.lane_id, -12, 12)}" &&
+      var.provider_authority.node_selector_value == var.provider_authority.lane_id &&
       var.provider_authority.taint_key == var.provider_authority.node_selector_key &&
-      var.provider_authority.taint_value == var.provider_authority.generation &&
+      var.provider_authority.taint_value == var.provider_authority.lane_id &&
       var.provider_authority.taint_effect == "NoSchedule" &&
+      var.provider_authority.min_node_count == 0 &&
+      var.provider_authority.max_node_count == 1 &&
+      toset(keys(var.provider_authority.protected_observers)) == toset(["otel-node", "gpu-allocation-observer"]) &&
+      alltrue([
+        for role, observer in var.provider_authority.protected_observers :
+        observer.namespace == "kube-system" &&
+        observer.name == "fs2-${role}-${substr(var.provider_authority.lane_id, -12, 12)}" &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", observer.uid)) &&
+        observer.owner_username != "" && !startswith(observer.owner_username, "system:") &&
+        can(regex("^[a-f0-9]{64}$", observer.daemonset_spec_sha256)) &&
+        sha256(jsonencode(observer.daemonset_spec)) == observer.daemonset_spec_sha256 &&
+        try(observer.daemonset_spec.selector.matchLabels, {}) == try(observer.daemonset_spec.template.metadata.labels, {}) &&
+        try(observer.daemonset_spec.template.metadata.labels["app.kubernetes.io/component"], "") == role &&
+        try(observer.daemonset_spec.template.metadata.labels["fs2.nebius.ai/protected-lane-id"], "") == var.provider_authority.lane_id &&
+        try(observer.daemonset_spec.template.spec.nodeSelector, {}) == { (var.provider_authority.node_selector_key) = var.provider_authority.lane_id } &&
+        try(observer.daemonset_spec.template.spec.tolerations, []) == [{
+          key      = var.provider_authority.taint_key
+          operator = "Equal"
+          value    = var.provider_authority.taint_value
+          effect   = var.provider_authority.taint_effect
+        }] &&
+        try(observer.daemonset_spec.template.spec.nodeName, "") == ""
+      ]) &&
+      sha256(jsonencode(var.provider_authority.protected_observers)) == var.provider_authority.protected_observer_inventory_sha256 &&
       length(var.provider_authority.provider_api_cidrs) > 0 &&
       length(var.provider_authority.kubernetes_api_cidrs) > 0 &&
       alltrue([
@@ -453,6 +490,7 @@ variable "provider_authority" {
           var.provider_authority.provider_authority_adapter_sha256,
           var.provider_authority.provider_state_custody_sha256,
           var.provider_authority.boundary_state_custody_sha256,
+          var.provider_authority.protected_observer_inventory_sha256,
           var.provider_authority.retained_admission_custody_sha256,
           var.provider_authority.workloads_service_account_sha256,
           var.provider_authority.sai10_independent_review_receipt_sha256,

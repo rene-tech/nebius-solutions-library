@@ -128,7 +128,7 @@ def test_workloads_root_only_reads_the_external_versioned_boundary() -> None:
         'data.kubernetes_config_map_v1.customer_storage_egress_trust[0].data["public-key.pem"]'
         in source
     )
-    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v6" in source
+    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v8" in source
     assert '"uv"' in source and '"--frozen"' in source
     assert "egress_contract_public_key_pem" not in source
 
@@ -363,6 +363,7 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     provider_backend = (
         PROVIDER_AUTHORITY_ROOT / "verify_backend_custody.py"
     ).read_text(encoding="utf-8")
+    provider = (PROVIDER_AUTHORITY_ROOT / "main.tf").read_text(encoding="utf-8")
     boundary = (SECURITY_ROOT / "main.tf").read_text(encoding="utf-8")
     boundary_variables = (SECURITY_ROOT / "variables.tf").read_text(
         encoding="utf-8"
@@ -428,7 +429,17 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert 'resource "terraform_data" "security_generation_v4"' in boundary
     assert "successor_workload_policy_generations" in boundary
     assert "protected_node_target_cel" in boundary
-    assert "protected_node_blanket_toleration_cel" not in boundary
+    assert 'data "external" "protected_lane_admission"' in boundary
+    assert "protected_lane_admission.py" in boundary
+    assert "old_pod_target_cel" in boundary
+    assert "old_template_target_cel" in boundary
+    assert "observer_daemonset_allow_cel" in boundary
+    assert "observer_pod_allow_cel" in boundary
+    assert "min_node_count = try(each.value.min_node_count, 0)" in provider
+    assert "max_node_count = try(each.value.max_node_count, 1)" in provider
+    assert "fixed_node_count = null" in provider
+    assert 'retained.get("min_node_count") != 0' in authority
+    assert 'entry.get("max_node_count") != 1' in authority
     assert "kube_system_daemon_pod_cel" not in boundary
     assert "protected_node_pod_spec_cel" not in boundary
     assert "inventory_role_name_cel" in boundary

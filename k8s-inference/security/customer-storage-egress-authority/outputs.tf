@@ -1,8 +1,9 @@
 output "current_handoff" {
   description = "Non-secret provider-enforced egress handoff for the additive compatibility-v3 reconciler."
   value = {
-    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v5"
+    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v7"
     generation                                        = local.authority.current_generation
+    lane_id                                           = local.generations[local.authority.current_generation].lane_id
     authority_manifest_sha256                         = data.external.authority.result.manifest_sha256
     prior_head_receipt_sha256                         = data.external.authority.result.prior_head_receipt_sha256
     predecessor_state_custody_sha256                  = data.external.authority.result.prior_live_custody_sha256
@@ -14,11 +15,15 @@ output "current_handoff" {
     release_values_sha256                             = local.generations[local.authority.current_generation].release_values_sha256
     security_group_id                                 = nebius_vpc_v1_security_group.generation[local.authority.current_generation].id
     node_group_id                                     = nebius_mk8s_v1_node_group.generation[local.authority.current_generation].id
-    node_selector_key                                 = "workload.fs2.nebius/customer-storage-egress"
-    node_selector_value                               = local.authority.current_generation
-    taint_key                                         = "workload.fs2.nebius/customer-storage-egress"
-    taint_value                                       = local.authority.current_generation
+    node_selector_key                                 = local.generations[local.authority.current_generation].scheduling_key
+    node_selector_value                               = local.generations[local.authority.current_generation].lane_id
+    taint_key                                         = local.generations[local.authority.current_generation].scheduling_key
+    taint_value                                       = local.generations[local.authority.current_generation].lane_id
     taint_effect                                      = "NoSchedule"
+    min_node_count                                    = local.generations[local.authority.current_generation].min_node_count
+    max_node_count                                    = local.generations[local.authority.current_generation].max_node_count
+    protected_observers                               = local.generations[local.authority.current_generation].protected_observers
+    protected_observer_inventory_sha256               = local.generations[local.authority.current_generation].protected_observer_inventory_sha256
     provider_api_cidrs                                = local.generations[local.authority.current_generation].provider_api_cidrs
     kubernetes_api_cidrs                              = local.generations[local.authority.current_generation].kubernetes_api_cidrs
     authority_service_account_sha256                  = sha256(data.external.authority.result.authority_service_account_id)
