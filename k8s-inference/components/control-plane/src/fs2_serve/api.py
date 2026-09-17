@@ -178,6 +178,13 @@ HEADER_VALUE_LIMITS = {
     b"x-fs2-wait-seconds": 32,
     b"x-fs2-deadline-seconds": 32,
 }
+MAX_JSON_DEPTH = 64
+
+
+class _RequestBodyTooLargeError(Exception):
+    """Signal a streamed body overflow to the outer ASGI size guard."""
+
+
 ADMIN_SESSION_COOKIE = "__Host-fs2_admin_session"
 
 
@@ -319,10 +326,7 @@ class TrustedEdgeMiddleware:
             if name.lower() == b"content-length":
                 try:
                     if int(value) > self.max_request_bytes:
-                        response = JSONResponse(
-                            {"error": {"type": "request_too_large", "message": "request body exceeds limit"}},
-                            status_code=413,
-                        )
+                        response = _error(413, "request_too_large", "request body exceeds limit")
                         await response(scope, receive, send)
                         return
                 except ValueError:
@@ -336,10 +340,14 @@ class TrustedEdgeMiddleware:
             if message["type"] == "http.request":
                 total += len(message.get("body", b""))
                 if total > self.max_request_bytes:
-                    raise HTTPException(status_code=413, detail="request body exceeds limit")
+                    raise _RequestBodyTooLargeError
             return message
 
-        await self.app(scope, bounded_receive, send)
+        try:
+            await self.app(scope, bounded_receive, send)
+        except _RequestBodyTooLargeError:
+            response = _error(413, "request_too_large", "request body exceeds limit")
+            await response(scope, receive, send)
 
 
 def _bearer(value: str | None) -> str:
@@ -354,6 +362,20 @@ def _error(status_code: int, kind: str, message: str) -> JSONResponse:
         status_code=status_code,
         headers={"cache-control": "no-store"},
     )
+
+
+def _require_bounded_json_depth(value: Any) -> None:
+    """Reject excessive JSON nesting without a recursive traversal."""
+
+    pending: list[tuple[Any, int]] = [(value, 1)]
+    while pending:
+        current, depth = pending.pop()
+        if not isinstance(current, (dict, list)):
+            continue
+        if depth > MAX_JSON_DEPTH:
+            raise ValueError("request body exceeds maximum JSON depth")
+        children = current.values() if isinstance(current, dict) else current
+        pending.extend((child, depth + 1) for child in children)
 
 
 def _public_gpu_class(model: OperationalModel, pool_accelerator_classes: Mapping[str, str] | None) -> str:
@@ -638,8 +660,6 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         return response
 
     async def principal(request: Request, authorization: Annotated[str | None, Header()] = None) -> Principal:
-        if runtime.scientific_apps is not None:
-            await runtime.scientific_apps.refresh()
         try:
             value = await runtime.tokens.verify(_bearer(authorization))
         except AuthenticationError:
@@ -650,6 +670,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 headers={"WWW-Authenticate": 'Bearer realm="fs2-serve"'},
             ) from None
         request.state.principal = value
+        if runtime.scientific_apps is not None:
+            await runtime.scientific_apps.refresh()
         return value
 
     async def bootstrap_failure() -> None:
@@ -1051,19 +1073,22 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             if not math.isfinite(deadline_seconds) or deadline_seconds <= 0 or deadline_seconds > 86400:
                 raise HTTPException(status_code=400, detail="deadline is outside the accepted bound")
             deadline_at = datetime.now(UTC) + timedelta(seconds=deadline_seconds)
-        admitted = await runtime.admission.admit(
-            identity,
-            AdmissionRequest(
-                model_id=model_id,
-                operation=operation,
-                protocol=protocol,
-                idempotency_key=idempotency_key,
-                request_body=body,
-                request_content_type=request.headers.get("content-type", "application/json").split(";", 1)[0],
-                traceparent=request.headers.get("traceparent"),
-                deadline_at=deadline_at,
-            ),
-        )
+        try:
+            admitted = await runtime.admission.admit(
+                identity,
+                AdmissionRequest(
+                    model_id=model_id,
+                    operation=operation,
+                    protocol=protocol,
+                    idempotency_key=idempotency_key,
+                    request_body=body,
+                    request_content_type=request.headers.get("content-type", "application/json").split(";", 1)[0],
+                    traceparent=request.headers.get("traceparent"),
+                    deadline_at=deadline_at,
+                ),
+            )
+        except (RecursionError, ValueError):
+            raise HTTPException(status_code=400, detail="request body is invalid") from None
         request.state.operation_id = admitted.id
         span = trace.get_current_span()
         span.set_attribute("fs2.operation.id", str(admitted.id))
@@ -1091,7 +1116,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         body = await request.body()
         try:
             payload = json.loads(body)
-        except json.JSONDecodeError:
+            _require_bounded_json_depth(payload)
+        except (RecursionError, ValueError):
             raise HTTPException(status_code=400, detail="request body must be JSON") from None
         if not isinstance(payload, dict) or not isinstance(payload.get("model"), str):
             raise HTTPException(status_code=400, detail="OpenAI-compatible request requires string model")
@@ -1189,6 +1215,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             raise HTTPException(status_code=400, detail="Idempotency-Key length is invalid")
         try:
             payload = json.loads(await request.body())
+            _require_bounded_json_depth(payload)
         except (RecursionError, ValueError):
             raise HTTPException(status_code=400, detail="request body must be JSON") from None
         result = await runtime.scientific_batches.submit(
