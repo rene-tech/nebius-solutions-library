@@ -50,6 +50,8 @@ def validate_contract(value: object) -> dict[str, Any]:
         "taint_effect",
         "protected_node_names",
         "protected_node_inventory_sha256",
+        "protected_node_scheduling_labels",
+        "protected_node_scheduling_labels_sha256",
         "daemonset_controller_username",
         "scheduler_username",
         "observers",
@@ -57,7 +59,7 @@ def validate_contract(value: object) -> dict[str, Any]:
     }
     if set(value) != expected:
         raise ValueError("protected-lane contract fields differ")
-    if value.get("schema") != "fs2-serve.nebius.ai/protected-lane-admission/v2":
+    if value.get("schema") != "fs2-serve.nebius.ai/protected-lane-admission/v3":
         raise ValueError("protected-lane contract schema differs")
     generation = _string(value.get("generation"), "generation")
     if not re.fullmatch(r"g[0-9]{14}-[a-f0-9]{12}", generation):
@@ -84,6 +86,26 @@ def validate_contract(value: object) -> dict[str, Any]:
         or digest(protected_node_names) != value.get("protected_node_inventory_sha256")
     ):
         raise ValueError("exact activated protected-node inventory differs")
+    scheduling_labels = value.get("protected_node_scheduling_labels")
+    if (
+        not isinstance(scheduling_labels, dict)
+        or set(scheduling_labels) != set(protected_node_names)
+        or any(
+            not isinstance(labels, dict)
+            or not labels
+            or any(
+                not isinstance(key, str)
+                or not key
+                or not isinstance(label_value, str)
+                for key, label_value in labels.items()
+            )
+            for labels in scheduling_labels.values()
+        )
+        or scheduling_labels[protected_node_names[0]].get(expected_key) != lane_id
+        or digest(scheduling_labels)
+        != value.get("protected_node_scheduling_labels_sha256")
+    ):
+        raise ValueError("complete protected-node scheduling-label projection differs")
     if value.get("daemonset_controller_username") != "system:controller:daemon-set-controller":
         raise ValueError("DaemonSet controller identity differs")
     if value.get("scheduler_username") != "system:kube-scheduler":
@@ -195,67 +217,86 @@ def _q(value: str) -> str:
     return json.dumps(value, ensure_ascii=True)
 
 
+def _requirement_cel(requirement: str, attributes: str) -> str:
+    key = f"{requirement}.key"
+    operator = f"{requirement}.operator"
+    values = f"{requirement}.values"
+    present = f"({key} in {attributes})"
+    numeric = "^-?[0-9]+$"
+    return " ".join(
+        [
+            "(",
+            f"({operator} == 'In' && has({values}) && {present} && {attributes}[{key}] in {values}) ||",
+            f"({operator} == 'NotIn' && has({values}) && (!{present} || !({attributes}[{key}] in {values}))) ||",
+            f"({operator} == 'Exists' && {present}) ||",
+            f"({operator} == 'DoesNotExist' && !{present}) ||",
+            f"({operator} == 'Gt' && has({values}) && size({values}) == 1 && {present} &&",
+            f"{attributes}[{key}].matches({_q(numeric)}) && {values}[0].matches({_q(numeric)}) &&",
+            f"int({attributes}[{key}]) > int({values}[0])) ||",
+            f"({operator} == 'Lt' && has({values}) && size({values}) == 1 && {present} &&",
+            f"{attributes}[{key}].matches({_q(numeric)}) && {values}[0].matches({_q(numeric)}) &&",
+            f"int({attributes}[{key}]) < int({values}[0]))",
+            ")",
+        ]
+    )
+
+
 def _target_cel(contract: dict[str, Any], path: str) -> str:
     key = _q(contract["taint_key"])
     value = _q(contract["taint_value"])
     effect = _q(contract["taint_effect"])
-    node_names = json.dumps(contract["protected_node_names"], separators=(",", ":"))
-    lane_affinity = " ".join(
+    node_name = _q(contract["protected_node_names"][0])
+    labels = json.dumps(
+        contract["protected_node_scheduling_labels"][
+            contract["protected_node_names"][0]
+        ],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    fields = json.dumps(
+        {"metadata.name": contract["protected_node_names"][0]},
+        separators=(",", ":"),
+    )
+    selector_matches = " ".join(
         [
-            f"(has({path}.affinity) && has({path}.affinity.nodeAffinity) &&",
-            f"has({path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution) &&",
-            f"has({path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms) &&",
-            f"{path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms.exists(term,",
-            "has(term.matchExpressions) && term.matchExpressions.exists(requirement,",
-            f"requirement.key == {key} && (",
-            f"(requirement.operator == 'In' && has(requirement.values) && {value} in requirement.values) ||",
-            "requirement.operator == 'Exists' ||",
-            f"(requirement.operator == 'NotIn' && (!has(requirement.values) || !({value} in requirement.values)))))))",
+            f"(!has({path}.nodeSelector) || {path}.nodeSelector.all(selectorKey, selectorValue,",
+            f"selectorKey in {labels} && {labels}[selectorKey] == selectorValue))",
         ]
     )
-    direct_affinity = " ".join(
+    required = f"{path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution"
+    term_matches = " ".join(
         [
-            f"(has({path}.affinity) && has({path}.affinity.nodeAffinity) &&",
-            f"has({path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution) &&",
-            f"has({path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms) &&",
-            f"{path}.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms.exists(term,",
-            "has(term.matchFields) && term.matchFields.exists(requirement,",
-            "requirement.key == 'metadata.name' && requirement.operator == 'In' &&",
-            f"has(requirement.values) && requirement.values.exists(nodeName, nodeName in {node_names}))))",
+            "((has(term.matchExpressions) && size(term.matchExpressions) > 0) ||",
+            "(has(term.matchFields) && size(term.matchFields) > 0)) &&",
+            f"(!has(term.matchExpressions) || term.matchExpressions.all(requirement, {_requirement_cel('requirement', labels)})) &&",
+            f"(!has(term.matchFields) || term.matchFields.all(requirement, {_requirement_cel('requirement', fields)}))",
         ]
     )
-    keyed_toleration = " ".join(
+    affinity_matches = " ".join(
+        [
+            f"(!has({path}.affinity) || !has({path}.affinity.nodeAffinity) ||",
+            f"!has({required}) ||",
+            f"(has({required}.nodeSelectorTerms) &&",
+            f"{required}.nodeSelectorTerms.exists(term, {term_matches})))",
+        ]
+    )
+    toleration_matches = " ".join(
         [
             f"(has({path}.tolerations) && {path}.tolerations.exists(toleration,",
-            f"has(toleration.key) && toleration.key == {key} &&",
             f"(!has(toleration.effect) || toleration.effect == '' || toleration.effect == {effect}) && (",
-            "(has(toleration.operator) && toleration.operator == 'Exists') ||",
+            "(has(toleration.operator) && toleration.operator == 'Exists' &&",
+            f"(!has(toleration.key) || toleration.key == '' || toleration.key == {key})) ||",
             "((!has(toleration.operator) || toleration.operator == '' || toleration.operator == 'Equal') &&",
+            f"has(toleration.key) && toleration.key == {key} &&",
             f"has(toleration.value) && toleration.value == {value}))))",
-        ]
-    )
-    blanket_toleration = " ".join(
-        [
-            f"(has({path}.tolerations) && {path}.tolerations.exists(toleration,",
-            "(!has(toleration.key) || toleration.key == '') &&",
-            "has(toleration.operator) && toleration.operator == 'Exists' &&",
-            f"(!has(toleration.effect) || toleration.effect == '' || toleration.effect == {effect})))",
-        ]
-    )
-    lane_selector = " ".join(
-        [
-            f"(has({path}.nodeSelector) && {key} in {path}.nodeSelector &&",
-            f"{path}.nodeSelector[{key}] == {value})",
         ]
     )
     return " ".join(
         [
             "(",
-            keyed_toleration,
-            "||",
-            f"(has({path}.nodeName) && {path}.nodeName in {node_names}) ||",
-            f"((({lane_selector}) || ({lane_affinity}) || ({direct_affinity})) &&",
-            f"({blanket_toleration})))",
+            f"(has({path}.nodeName) && {path}.nodeName != '' ? {path}.nodeName == {node_name} :",
+            f"(({selector_matches}) && ({affinity_matches}) && ({toleration_matches})))",
+            ")",
         ]
     )
 
@@ -369,75 +410,123 @@ def _spec(request: dict[str, Any], *, old: bool = False) -> dict[str, Any]:
     return source.get("spec", {}).get("template", {}).get("spec", {})
 
 
+def _requirement_matches(requirement: object, attributes: dict[str, str]) -> bool:
+    if not isinstance(requirement, dict):
+        return False
+    key = requirement.get("key")
+    operator = requirement.get("operator")
+    values = requirement.get("values")
+    if not isinstance(key, str) or not isinstance(operator, str):
+        return False
+    present = key in attributes
+    if operator == "In":
+        return isinstance(values, list) and present and attributes[key] in values
+    if operator == "NotIn":
+        return isinstance(values, list) and (
+            not present or attributes[key] not in values
+        )
+    if operator == "Exists":
+        return present
+    if operator == "DoesNotExist":
+        return not present
+    if operator in {"Gt", "Lt"}:
+        if (
+            not present
+            or not isinstance(values, list)
+            or len(values) != 1
+            or not isinstance(values[0], str)
+            or not re.fullmatch(r"-?[0-9]+", attributes[key])
+            or not re.fullmatch(r"-?[0-9]+", values[0])
+        ):
+            return False
+        observed = int(attributes[key])
+        threshold = int(values[0])
+        return observed > threshold if operator == "Gt" else observed < threshold
+    return False
+
+
+def _term_matches(term: object, *, labels: dict[str, str], node_name: str) -> bool:
+    if not isinstance(term, dict):
+        return False
+    expressions = term.get("matchExpressions", [])
+    fields = term.get("matchFields", [])
+    if not isinstance(expressions, list) or not isinstance(fields, list):
+        return False
+    if not expressions and not fields:
+        return False
+    return all(_requirement_matches(item, labels) for item in expressions) and all(
+        _requirement_matches(item, {"metadata.name": node_name}) for item in fields
+    )
+
+
+def _constraints_match(
+    spec: dict[str, Any], *, labels: dict[str, str], node_name: str
+) -> bool:
+    selector = spec.get("nodeSelector", {})
+    if not isinstance(selector, dict) or any(
+        not isinstance(key, str)
+        or not isinstance(expected, str)
+        or labels.get(key) != expected
+        for key, expected in selector.items()
+    ):
+        return False
+    affinity = spec.get("affinity")
+    if affinity is None:
+        return True
+    if not isinstance(affinity, dict):
+        return False
+    node_affinity = affinity.get("nodeAffinity")
+    if node_affinity is None:
+        return True
+    if not isinstance(node_affinity, dict):
+        return False
+    required = node_affinity.get("requiredDuringSchedulingIgnoredDuringExecution")
+    if required is None:
+        return True
+    if not isinstance(required, dict):
+        return False
+    terms = required.get("nodeSelectorTerms")
+    return isinstance(terms, list) and any(
+        _term_matches(term, labels=labels, node_name=node_name) for term in terms
+    )
+
+
+def _tolerates_protected_taint(spec: dict[str, Any], contract: dict[str, Any]) -> bool:
+    tolerations = spec.get("tolerations")
+    if not isinstance(tolerations, list):
+        return False
+    for toleration in tolerations:
+        if not isinstance(toleration, dict) or toleration.get("effect") not in {
+            None,
+            "",
+            contract["taint_effect"],
+        }:
+            continue
+        operator = toleration.get("operator")
+        key = toleration.get("key")
+        if operator == "Exists" and key in {None, "", contract["taint_key"]}:
+            return True
+        if (
+            operator in {None, "", "Equal"}
+            and key == contract["taint_key"]
+            and toleration.get("value") == contract["taint_value"]
+        ):
+            return True
+    return False
+
+
 def targets_lane(spec: object, contract: object) -> bool:
     value = validate_contract(contract)
     if not isinstance(spec, dict):
         return False
-    if spec.get("nodeName") in value["protected_node_names"]:
-        return True
-    selector = spec.get("nodeSelector")
-    lane_constraint = bool(
-        isinstance(selector, dict)
-        and selector.get(value["selector_key"]) == value["selector_value"]
+    node_name = value["protected_node_names"][0]
+    direct_name = spec.get("nodeName")
+    if direct_name not in {None, ""}:
+        return direct_name == node_name
+    labels = value["protected_node_scheduling_labels"][node_name]
+    return _constraints_match(spec, labels=labels, node_name=node_name) and (
+        _tolerates_protected_taint(spec, value)
     )
-    required = (
-        (spec.get("affinity") or {})
-        .get("nodeAffinity", {})
-        .get("requiredDuringSchedulingIgnoredDuringExecution", {})
-    )
-    terms = required.get("nodeSelectorTerms", []) if isinstance(required, dict) else []
-    direct_affinity = False
-    for term in terms if isinstance(terms, list) else []:
-        if not isinstance(term, dict):
-            continue
-        for requirement in term.get("matchExpressions", []):
-            if not isinstance(requirement, dict) or requirement.get("key") != value["selector_key"]:
-                continue
-            operator = requirement.get("operator")
-            values = requirement.get("values", [])
-            if (
-                operator == "Exists"
-                or (operator == "In" and value["selector_value"] in values)
-                or (operator == "NotIn" and value["selector_value"] not in values)
-            ):
-                lane_constraint = True
-        direct_affinity = direct_affinity or any(
-            isinstance(requirement, dict)
-            and requirement.get("key") == "metadata.name"
-            and requirement.get("operator") == "In"
-            and isinstance(requirement.get("values"), list)
-            and any(
-                node_name in value["protected_node_names"]
-                for node_name in requirement["values"]
-            )
-            for requirement in term.get("matchFields", [])
-        )
-    tolerations = spec.get("tolerations")
-    if not isinstance(tolerations, list):
-        return False
-    blanket = False
-    for toleration in tolerations:
-        if not isinstance(toleration, dict):
-            continue
-        if (
-            toleration.get("key") == value["taint_key"]
-            and toleration.get("effect") in {None, "", value["taint_effect"]}
-            and (
-                toleration.get("operator") == "Exists"
-                or (
-                    toleration.get("operator") in {None, "", "Equal"}
-                    and toleration.get("value") == value["taint_value"]
-                )
-            )
-        ):
-            return True
-        if (
-            toleration.get("key") in {None, ""}
-            and toleration.get("operator") == "Exists"
-            and toleration.get("effect") in {None, "", value["taint_effect"]}
-        ):
-            blanket = True
-    return blanket and (lane_constraint or direct_affinity)
 
 
 def request_targets_lane(request: dict[str, Any], contract: object) -> bool:

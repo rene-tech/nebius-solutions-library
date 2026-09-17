@@ -52,12 +52,13 @@ to the exact Secret allowlist, image and provider-protected node target.
 The same retained policy has no namespace exemption. Each successor uses a
 signed lane-unique selector and taint key plus an exact `Equal` toleration, so a
 retained policy cannot select or deny a later storage or observer generation.
-A keyless blanket `Exists` toleration is not treated as a lane selector by
-itself. Admission instead covers the lane's unique selector, satisfiable
-required affinity, keyed `Equal`/`Exists` tolerations with an empty or
-`NoSchedule` effect, direct `nodeName` equal to the exact activated protected
-node, and controller node affinity intersecting that signed node inventory and
-combined with blanket tolerance. The signed inventory binds the two additive lane
+A keyless blanket `Exists` toleration is guarded because, without an excluding
+selector or required affinity, it makes a Pod schedulable on the protected
+tainted node. Admission evaluates the complete signed scheduling-label and
+node-name projection: `nodeSelector` and each requirement within a term are
+ANDed, terms are ORed, and the resulting constraints must match together with
+the lane-taint tolerance. Direct `nodeName` is compared to the exact activated
+node. The signed inventory binds the two additive lane
 observers and the retained filesystem CSI, Prometheus node-exporter, and OTel
 node agents to exact namespaces, names, UIDs, specs, release owners and
 DaemonSet-controller child identities. This makes retained storage/telemetry

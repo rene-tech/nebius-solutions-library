@@ -364,6 +364,8 @@ variable "provider_authority" {
     protected_observer_inventory_sha256               = string
     protected_node_names                              = list(string)
     protected_node_inventory_sha256                   = string
+    protected_node_scheduling_labels                  = map(map(string))
+    protected_node_scheduling_labels_sha256           = string
     provider_api_cidrs                                = list(string)
     kubernetes_api_cidrs                              = list(string)
     authority_service_account_sha256                  = string
@@ -428,7 +430,7 @@ variable "provider_authority" {
 
   validation {
     condition = (
-      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v8" &&
+      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v9" &&
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.generation)) &&
       can(regex("^l[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.lane_id)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.authority_manifest_sha256)) &&
@@ -456,6 +458,13 @@ variable "provider_authority" {
         can(regex("^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$", node_name))
       ]) &&
       sha256(jsonencode(var.provider_authority.protected_node_names)) == var.provider_authority.protected_node_inventory_sha256 &&
+      toset(keys(var.provider_authority.protected_node_scheduling_labels)) == toset(var.provider_authority.protected_node_names) &&
+      alltrue([
+        for node_name, labels in var.provider_authority.protected_node_scheduling_labels :
+        length(labels) > 0 &&
+        try(labels[var.provider_authority.node_selector_key], "") == var.provider_authority.lane_id
+      ]) &&
+      sha256(jsonencode(var.provider_authority.protected_node_scheduling_labels)) == var.provider_authority.protected_node_scheduling_labels_sha256 &&
       toset(keys(var.provider_authority.protected_observers)) == toset(["otel-node", "gpu-allocation-observer", "filesystem-csi", "prometheus-node-exporter", "retained-otel-node"]) &&
       alltrue([
         for role, observer in var.provider_authority.protected_observers :
@@ -515,6 +524,7 @@ variable "provider_authority" {
           var.provider_authority.boundary_state_custody_sha256,
           var.provider_authority.protected_observer_inventory_sha256,
           var.provider_authority.protected_node_inventory_sha256,
+          var.provider_authority.protected_node_scheduling_labels_sha256,
           var.provider_authority.retained_admission_custody_sha256,
           var.provider_authority.workloads_service_account_sha256,
           var.provider_authority.sai10_independent_review_receipt_sha256,

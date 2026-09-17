@@ -69,7 +69,7 @@ LEGACY_GENERATION_FIELDS = {
     "boot_disk_type",
     "boot_disk_gib",
 }
-GENERATION_FIELDS = LEGACY_GENERATION_FIELDS | {
+PROTECTED_LANE_V2_GENERATION_FIELDS = LEGACY_GENERATION_FIELDS | {
     "lane_id",
     "scheduling_key",
     "protected_observers",
@@ -78,6 +78,10 @@ GENERATION_FIELDS = LEGACY_GENERATION_FIELDS | {
     "protected_node_inventory_sha256",
     "min_node_count",
     "max_node_count",
+}
+GENERATION_FIELDS = PROTECTED_LANE_V2_GENERATION_FIELDS | {
+    "protected_node_scheduling_labels",
+    "protected_node_scheduling_labels_sha256",
 }
 LANE_OBSERVER_ROLES = {"gpu-allocation-observer", "otel-node"}
 RETAINED_NODE_AGENT_ROLES = {
@@ -327,6 +331,33 @@ def protected_node_names(value: object) -> list[str]:
         or not re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?", value[0])
     ):
         raise ValueError("exact activated protected-node inventory is invalid")
+    return value
+
+
+def protected_node_scheduling_labels(
+    value: object,
+    *,
+    node_names: list[str],
+    scheduling_key: str,
+    lane_id: str,
+) -> dict[str, dict[str, str]]:
+    if (
+        not isinstance(value, dict)
+        or set(value) != set(node_names)
+        or any(
+            not isinstance(labels, dict)
+            or not labels
+            or any(
+                not isinstance(key, str)
+                or not key
+                or not isinstance(label_value, str)
+                for key, label_value in labels.items()
+            )
+            for labels in value.values()
+        )
+        or value[node_names[0]].get(scheduling_key) != lane_id
+    ):
+        raise ValueError("complete protected-node scheduling-label projection is invalid")
     return value
 
 
@@ -945,7 +976,11 @@ def verify(manifest_json: str) -> dict[str, str]:
         if (
             not isinstance(retained, dict)
             or frozenset(retained)
-            not in {frozenset(LEGACY_GENERATION_FIELDS), frozenset(GENERATION_FIELDS)}
+            not in {
+                frozenset(LEGACY_GENERATION_FIELDS),
+                frozenset(PROTECTED_LANE_V2_GENERATION_FIELDS),
+                frozenset(GENERATION_FIELDS),
+            }
             or retained.get("generation") != generation
         ):
             raise ValueError("provider retained-generation payload fields differ")
@@ -961,7 +996,10 @@ def verify(manifest_json: str) -> dict[str, str]:
             retained.get("bootstrap_https_cidrs"), "retained bootstrap HTTPS CIDRs"
         )
         private_routes(retained.get("private_cidrs"))
-        if set(retained) == GENERATION_FIELDS:
+        if frozenset(retained) in {
+            frozenset(PROTECTED_LANE_V2_GENERATION_FIELDS),
+            frozenset(GENERATION_FIELDS),
+        }:
             lane_id = retained.get("lane_id")
             if (
                 not isinstance(lane_id, str)
@@ -975,12 +1013,27 @@ def verify(manifest_json: str) -> dict[str, str]:
             )
             observers = protected_observers(retained.get("protected_observers"), lane_id)
             node_names = protected_node_names(retained.get("protected_node_names"))
+            node_labels = (
+                protected_node_scheduling_labels(
+                    retained.get("protected_node_scheduling_labels"),
+                    node_names=node_names,
+                    scheduling_key=expected_scheduling_key,
+                    lane_id=lane_id,
+                )
+                if set(retained) == GENERATION_FIELDS
+                else None
+            )
             if (
                 retained.get("scheduling_key") != expected_scheduling_key
                 or retained.get("protected_observer_inventory_sha256")
                 != hashlib.sha256(canonical(observers)).hexdigest()
                 or retained.get("protected_node_inventory_sha256")
                 != hashlib.sha256(canonical(node_names)).hexdigest()
+                or (
+                    node_labels is not None
+                    and retained.get("protected_node_scheduling_labels_sha256")
+                    != hashlib.sha256(canonical(node_labels)).hexdigest()
+                )
                 or not {
                     observer["owner_username"] for observer in observers.values()
                 }
@@ -1389,6 +1442,7 @@ def verify(manifest_json: str) -> dict[str, str]:
             "prior_live_custody_sha256",
             "accepted_sai10_review_sha256",
             "protected_observer_inventory_sha256",
+            "protected_node_scheduling_labels_sha256",
         ):
             value = entry.get(field)
             if (
@@ -1441,12 +1495,20 @@ def verify(manifest_json: str) -> dict[str, str]:
         )
         observers = protected_observers(entry.get("protected_observers"), lane_id)
         node_names = protected_node_names(entry.get("protected_node_names"))
+        node_labels = protected_node_scheduling_labels(
+            entry.get("protected_node_scheduling_labels"),
+            node_names=node_names,
+            scheduling_key=expected_scheduling_key,
+            lane_id=lane_id,
+        )
         if (
             entry.get("scheduling_key") != expected_scheduling_key
             or entry.get("protected_observer_inventory_sha256")
             != hashlib.sha256(canonical(observers)).hexdigest()
             or entry.get("protected_node_inventory_sha256")
             != hashlib.sha256(canonical(node_names)).hexdigest()
+            or entry.get("protected_node_scheduling_labels_sha256")
+            != hashlib.sha256(canonical(node_labels)).hexdigest()
             or not {
                 observer["owner_username"] for observer in observers.values()
             }

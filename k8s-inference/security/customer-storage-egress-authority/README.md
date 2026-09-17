@@ -44,7 +44,8 @@ inventory, its complete subject closure and its derived binding-to-rule
 effective-authority graph, deterministic Kubernetes-native groups, exact
 provider-bound controller identities, the exact signed OTel/GPU compatibility
 observer inventory, the retained filesystem CSI/Prometheus node-exporter/OTel
-node-agent inventory, the activated protected-node name, and every
+node-agent inventory, the activated protected-node name and complete live
+scheduling-label projection, and every
 content-named route/node generation. Every new
 node generation uses a separately signed lane-unique selector/taint key. The
 lane ID is independent of the final content-hashed authority generation so
@@ -55,10 +56,12 @@ live UIDs, canonical DaemonSet specs and non-system release owners. The provider
 generation is invalid until both additive observers exist and the three
 retained critical node agents have been read exactly. A successor node group is
 created with autoscaling bounded to zero through one node, then exactly one
-non-credentialed node is activated. Its canonical Kubernetes name is added to
-the independently signed generation before admission is installed; arbitrary
-`nodeName` or controller affinity on another node therefore does not enter the
-lane guard. The credential-bearing storage release remains blocked until that
+non-credentialed node is activated. Its canonical Kubernetes name and complete
+`.metadata.labels` map are added to the independently signed generation before
+admission is installed. Admission can therefore evaluate `nodeSelector` and
+required node-affinity term OR / requirement AND semantics against the exact
+node rather than treating one permissive expression as proof. The
+credential-bearing storage release remains blocked until that
 admission boundary is live. Canonical state uses a locked,
 versioned remote backend; local or omitted state is never an authority source.
 

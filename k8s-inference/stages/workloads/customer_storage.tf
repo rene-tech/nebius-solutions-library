@@ -62,6 +62,8 @@ variable "customer_storage" {
         protected_observer_inventory_sha256               = optional(string, "")
         protected_node_names                              = optional(list(string), [])
         protected_node_inventory_sha256                   = optional(string, "")
+        protected_node_scheduling_labels                  = optional(map(map(string)), {})
+        protected_node_scheduling_labels_sha256           = optional(string, "")
         provider_api_cidrs                                = optional(list(string), [])
         kubernetes_api_cidrs                              = optional(list(string), [])
         authority_service_account_sha256                  = optional(string, "")
@@ -165,7 +167,7 @@ variable "customer_storage" {
         timecmp(var.customer_storage.auth_key_expires_at, plantimestamp()) > 0 &&
         timecmp(var.customer_storage.auth_key_expires_at, timeadd(plantimestamp(), "2160h")) <= 0 &&
         var.customer_storage.egress_contract_json != "" &&
-        var.customer_storage.egress_boundary.schema == "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v8" &&
+        var.customer_storage.egress_boundary.schema == "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v9" &&
         can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.generation)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.contract_sha256)) &&
         endswith(var.customer_storage.egress_boundary.generation, substr(var.customer_storage.egress_boundary.contract_sha256, 0, 12)) &&
@@ -184,7 +186,7 @@ variable "customer_storage" {
         var.customer_storage.egress_boundary.security_owner_subject_sha256 != var.customer_storage.egress_boundary.workloads_subject_sha256 &&
         var.customer_storage.egress_boundary.protected_observer_inventory_sha256 == var.customer_storage.egress_boundary.provider_authority.protected_observer_inventory_sha256 &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.protected_observer_live_sha256)) &&
-        var.customer_storage.egress_boundary.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v8" &&
+        var.customer_storage.egress_boundary.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v9" &&
         var.customer_storage.egress_boundary.provider_authority.contract_sha256 == var.customer_storage.egress_boundary.contract_sha256 &&
         can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.provider_authority.generation)) &&
         can(regex("^l[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.provider_authority.lane_id)) &&
@@ -246,6 +248,13 @@ variable "customer_storage" {
           can(regex("^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$", node_name))
         ]) &&
         sha256(jsonencode(var.customer_storage.egress_boundary.provider_authority.protected_node_names)) == var.customer_storage.egress_boundary.provider_authority.protected_node_inventory_sha256 &&
+        toset(keys(var.customer_storage.egress_boundary.provider_authority.protected_node_scheduling_labels)) == toset(var.customer_storage.egress_boundary.provider_authority.protected_node_names) &&
+        alltrue([
+          for node_name, labels in var.customer_storage.egress_boundary.provider_authority.protected_node_scheduling_labels :
+          length(labels) > 0 &&
+          try(labels[var.customer_storage.egress_boundary.provider_authority.node_selector_key], "") == var.customer_storage.egress_boundary.provider_authority.lane_id
+        ]) &&
+        sha256(jsonencode(var.customer_storage.egress_boundary.provider_authority.protected_node_scheduling_labels)) == var.customer_storage.egress_boundary.provider_authority.protected_node_scheduling_labels_sha256 &&
         toset(keys(var.customer_storage.egress_boundary.provider_authority.protected_observers)) == toset(["otel-node", "gpu-allocation-observer", "filesystem-csi", "prometheus-node-exporter", "retained-otel-node"]) &&
         alltrue([
           for role, observer in var.customer_storage.egress_boundary.provider_authority.protected_observers :

@@ -87,14 +87,17 @@ Pods must keep the signed image, generation labels, protected node target,
 Secret and image-pull-secret allowlists; projected Secrets, host paths, PVCs,
 CSI volumes, `spec.nodeName`, and additional secret-backed environment sources
 are denied.
-The workload policy has no namespace exemption. It matches the signed lane's
-unique node selector, required node-affinity expressions, keyed `Equal` or
-`Exists` tolerations (including an omitted effect), and direct `nodeName` only
-when it equals the single activated node name committed by the signed provider
-generation. Controller-generated `metadata.name` affinity is matched only when
-it intersects that same node inventory and is combined with a blanket
-toleration. A keyless `Exists` toleration by itself is not a lane selector and
-is never used as the sole match predicate.
+The workload policy has no namespace exemption. It evaluates whether a Pod can
+reach the single signed protected node: direct `nodeName` must equal that node;
+otherwise every `nodeSelector` entry and every requirement in at least one
+required node-affinity term must match the complete signed scheduling-label and
+node-name projection, and the Pod must tolerate the lane's `NoSchedule` taint.
+Terms are ORed and their label/field requirements are ANDed with Kubernetes
+`In`, `NotIn`, `Exists`, `DoesNotExist`, `Gt`, and `Lt` semantics. Keyed
+`Equal`/`Exists` tolerations, omitted effects, and a keyless blanket `Exists`
+toleration are therefore all guarded when they make the exact node schedulable.
+Only the exact signed CSI, OTel, node-exporter, and lane-observer identities may
+use their inventoried blanket scheduling path.
 
 The provider ledger binds five exact DaemonSets: the lane-specific OTel and GPU
 observers plus the retained filesystem CSI, Prometheus node-exporter, and OTel
