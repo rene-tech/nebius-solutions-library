@@ -56,6 +56,7 @@ def test_container_imports_installed_packages_without_pythonpath_or_source_shado
         assert runtime_build_tool in dockerfile
     assert "'libcrypto3=3.5.8-r0'" in dockerfile
     assert "'libssl3=3.5.8-r0'" in dockerfile
+    assert "'libuuid=2.41.6-r0'" in dockerfile
     assert "'sqlite-libs=3.53.4-r0'" in dockerfile
     assert "k8s-inference/components/control-plane/uv.lock" in dockerfile
     assert ".venv/bin/fs2-serve --help >/dev/null" in dockerfile

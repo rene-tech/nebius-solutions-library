@@ -17,6 +17,16 @@ RUN npm run build \
 
 FROM nginxinc/nginx-unprivileged:1.31.3-alpine3.24@sha256:f972e5322b9797dc2a6b830030094426437b1ae7032e4644496395336ac6fdac
 
+# Refresh only the libraries named by SAI-24. This keeps the runtime surface
+# unchanged while allowing the pinned Alpine repository snapshot to provide
+# its security revisions. Release publication remains blocked until the exact
+# installed versions and image digest pass the repository scan policy.
+RUN apk add --no-cache --upgrade \
+      libcrypto3 \
+      libssl3 \
+      libexpat \
+      libuuid
+
 COPY --chown=101:101 k8s-inference/components/admin-console/nginx-main.conf /etc/nginx/nginx.conf
 COPY --chown=101:101 k8s-inference/components/admin-console/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder --chown=101:101 /workspace/k8s-inference/components/admin-console/dist /usr/share/nginx/html/admin

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Fail-closed typed model catalog, evidence validators, and Kubernetes adapters for fs2-serve"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["cryptography==41.0.7"]
+dependencies = ["cryptography==50.0.1"]
 
 [project.optional-dependencies]
 test = ["jsonschema==4.25.1"]

@@ -1,0 +1,80 @@
+name: 'Kubernetes Inference Image Security'
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'k8s-inference/components/control-plane/Dockerfile'
+      - 'k8s-inference/components/control-plane/uv.lock'
+      - 'k8s-inference/components/admin-console/Dockerfile'
+      - 'k8s-inference/components/admin-console/package-lock.json'
+      - 'k8s-inference/catalog/runtime/uv.lock'
+      - 'k8s-inference/security/image-security-policy.json'
+      - '.github/workflows/k8s-inference-image-security.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: k8s-inference-image-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan-first-party-images:
+    name: 'Build and scan first-party runtime images'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Build control-plane scan candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --file k8s-inference/components/control-plane/Dockerfile \
+            --tag fs2-control-plane:sai-24-scan \
+            --build-arg "FS2_SOURCE_COMMIT=${GITHUB_SHA}" \
+            --build-arg "FS2_SOURCE_TREE=$(git rev-parse HEAD^{tree})" \
+            --build-arg "FS2_UV_LOCK_SHA256=$(sha256sum k8s-inference/components/control-plane/uv.lock | awk '{print $1}')" \
+            --build-arg "FS2_DOCKERFILE_SHA256=$(sha256sum k8s-inference/components/control-plane/Dockerfile | awk '{print $1}')" \
+            --build-arg "FS2_CONTEXT_POLICY_SHA256=$(sha256sum k8s-inference/components/control-plane/Dockerfile.dockerignore | awk '{print $1}')" \
+            .
+
+      - name: Reject fixable critical/high or secret findings in control plane
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: 'fs2-control-plane:sai-24-scan'
+          scanners: 'vuln,secret'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
+          format: 'table'
+
+      - name: Build admin-console scan candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --file k8s-inference/components/admin-console/Dockerfile \
+            --tag fs2-admin-console:sai-24-scan \
+            --build-arg "FS2_SOURCE_COMMIT=${GITHUB_SHA}" \
+            --build-arg "FS2_SOURCE_TREE=$(git rev-parse HEAD^{tree})" \
+            --build-arg "FS2_PACKAGE_LOCK_SHA256=$(sha256sum k8s-inference/components/admin-console/package-lock.json | awk '{print $1}')" \
+            .
+
+      - name: Reject fixable critical/high or secret findings in admin console
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: 'fs2-admin-console:sai-24-scan'
+          scanners: 'vuln,secret'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
+          format: 'table'

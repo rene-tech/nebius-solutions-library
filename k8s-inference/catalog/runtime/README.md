@@ -239,7 +239,7 @@ the earlier of the earliest verified attestation expiry and the live
 activation-controller Lease expiry; gateway consumers must call
 `ServingBinding.valid_at()` per request or reload/remove the route before that
 instant. The attestation verifier requires the locked
-`cryptography==41.0.7` runtime package; deployment images must pin and scan the
+`cryptography==50.0.1` runtime package; deployment images must pin and scan the
 exact wheel they carry. Build or install it with `uv sync --locked` and
 `uv build --project k8s-inference/catalog/runtime`. The wheel includes the typed
 API, Kubernetes adapters, the reusable validators, digest-identical packaged

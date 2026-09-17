@@ -59,11 +59,12 @@ ENV PATH="/workspace/k8s-inference/components/control-plane/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
 # The digest-bound Python base predates these Alpine security fixes. Install
-# only the three exact packages; do not run apk upgrade or select a floating
+# only the four exact packages; do not run apk upgrade or select a floating
 # version during an application build.
 RUN apk add --no-cache \
     'libcrypto3=3.5.8-r0' \
     'libssl3=3.5.8-r0' \
+    'libuuid=2.41.6-r0' \
     'sqlite-libs=3.53.4-r0' \
     && rm -rf \
         /usr/local/bin/pip \

@@ -14,7 +14,7 @@ terraform {
     }
     nebius = {
       source  = "terraform-provider.storage.eu-north1.nebius.cloud/nebius/nebius"
-      version = ">= 0.5.232"
+      version = "= 0.5.232"
     }
     random = {
       source  = "hashicorp/random"

@@ -52,7 +52,7 @@ class DisposableTerraformContractTests(unittest.TestCase):
     def test_root_uses_local_backend_and_pinned_provider(self) -> None:
         self.assertIn('backend "local" {}', self.terraform)
         versions = (ROOT / "versions.tf").read_text(encoding="utf-8")
-        self.assertIn('version = ">= 0.5.232"', versions)
+        self.assertIn('version = "= 0.5.232"', versions)
 
     def test_resource_name_preserves_legacy_default_and_accepts_explicit_name(
         self,

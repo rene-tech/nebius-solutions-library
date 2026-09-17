@@ -52,6 +52,9 @@ release rule for customer, event, proof-of-concept and hackathon readiness. A
 component or synthetic pass may never be broadened into a customer-ready claim;
 the exact release, tenant policy, client integration, invocation path and workload
 shape must pass end to end.
+[Image vulnerability and dependency pinning](docs/IMAGE_SECURITY.md) defines
+the digest-bound image scan gate, remediation SLA, and the fail-closed state of
+third-party images that still require authorized registry resolution.
 [Optional scientific GPU snapshots](models/scientific-snapshot/ADMIN-STARTUP.md)
 explains Terraform bundle configuration, live admin startup selection, normal-load
 fallback, and the measured compatibility boundary for each qualified option.

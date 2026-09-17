@@ -35,6 +35,9 @@ task_loki=$(pull_chart loki)
 task_otel=$(pull_chart openTelemetryCollector)
 task_dcgm=$(pull_chart dcgmExporter)
 
+test "$(yq -r '.imagePolicy.deployment' "$task_lock")" = blocked-pending-image-digests
+test "$(yq -r '.imagePolicy.digestResolution' "$task_lock")" = required-before-integration
+
 helm lint "$task_kps" -f "$task_root/values/kube-prometheus-stack.yaml"
 helm lint "$task_loki" -f "$task_root/values/loki.yaml"
 helm lint "$task_otel" -f "$task_root/values/otel-gateway.yaml"
@@ -101,4 +104,4 @@ promtool check rules "$task_tmp/rules.yaml"
 bash -n "$task_root/scripts/"*.sh
 if command -v shellcheck >/dev/null; then shellcheck "$task_root/scripts/"*.sh; fi
 
-printf 'PASS charts=4 renders=5 dashboards=3 prometheus_rules=1 image_policy=official-chart-tags\n'
+printf 'PASS charts=4 renders=5 dashboards=3 prometheus_rules=1 image_policy=blocked-pending-image-digests\n'

@@ -1,0 +1,35 @@
+{
+  "schema": "fs2-serve.nebius.ai/image-security-policy/v1",
+  "schedule": {
+    "minimum_frequency": "daily",
+    "cron_utc": "17 3 * * *"
+  },
+  "release_gate": {
+    "scanners": [
+      "vulnerability",
+      "secret"
+    ],
+    "block_fixable_severities": [
+      "CRITICAL",
+      "HIGH"
+    ],
+    "maximum_secret_findings": 0,
+    "require_digest_bound_result": true
+  },
+  "remediation_sla": {
+    "critical_hours": 24,
+    "high_hours": 168,
+    "clock_start": "scanner_result_created_at"
+  },
+  "third_party_images": {
+    "inventory": "observability/versions.lock.yaml",
+    "promotion_status": "blocked_pending_digest_resolution",
+    "requirements": [
+      "resolve every rendered image to an immutable sha256 digest",
+      "record the registry, repository, tag, digest, and resolution timestamp",
+      "scan the digest with vulnerability and secret scanners",
+      "reject any fixable CRITICAL or HIGH finding",
+      "apply only the reviewed digest-bound values"
+    ]
+  }
+}

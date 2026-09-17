@@ -14,7 +14,7 @@ class PackagingContractTests(unittest.TestCase):
     def test_locked_installable_package_contains_runtime_and_validator_contracts(self) -> None:
         project = tomllib.loads((CATALOG_ROOT / "pyproject.toml").read_text())
         self.assertEqual("fs2-serve-catalog", project["project"]["name"])
-        self.assertEqual(["cryptography==41.0.7"], project["project"]["dependencies"])
+        self.assertEqual(["cryptography==50.0.1"], project["project"]["dependencies"])
         self.assertEqual(
             "fs2_serve_catalog.validators.validate_response:main",
             project["project"]["scripts"]["fs2-serve-validate-response"],
@@ -36,11 +36,12 @@ class PackagingContractTests(unittest.TestCase):
         lock = (CATALOG_ROOT / "uv.lock").read_text()
         self.assertIn('name = "fs2-serve-catalog"', lock)
         self.assertIn('name = "cryptography"', lock)
-        self.assertIn('version = "41.0.7"', lock)
+        self.assertIn('version = "50.0.1"', lock)
         self.assertIn(
-            'hash = "sha256:13f93ce9bea8016c253b34afc6bd6a75993e5c40672ed5405a9c832f0d4a00bc"',
+            'hash = "sha256:5dd9bda1c12b4162f6ff568eeb5e0ff956c28d14406e875cfe8a63a2d414ff20"',
             lock,
         )
+        self.assertNotIn('version = "41.0.7"', lock)
         self.assertTrue((CATALOG_ROOT / "validators" / "validate_response.py").is_file())
         for relative in (
             "pyproject.toml",
