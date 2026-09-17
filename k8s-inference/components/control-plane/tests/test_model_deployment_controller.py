@@ -86,6 +86,7 @@ from fs2_serve.model_deployment_controller import (
     _encoded_scale_gate_value,
     _field_manager_conflicts,
     _fixed_scale_handoff_targets,
+    _is_scale_gate_predecessor_evidence_identity,
     _model_deletion_fence,
     _model_write_fence,
     _scale_gate_allowance_value,
@@ -106,6 +107,7 @@ from fs2_serve.model_deployment_controller import (
     _scale_gate_target_key,
     _snapshot,
     _without_deployment_replicas,
+    _validated_desired_resources,
     build_status,
 )
 from fs2_serve.model_deployment_records import ModelDeploymentObservedStatus
@@ -443,12 +445,16 @@ class FakeApi(ModelControllerApi):
         return copy.deepcopy(self.model)
 
     async def discover(self, *, key: ModelKey, owner_uid: str, render: RenderPlan) -> Discovery:
+        desired_by_identity = _validated_desired_resources(render)
         self.calls.append(("discover", key.text))
-        desired_by_identity = {
-            f"{item.api_version}/{item.kind}/{item.namespace}/{item.name}": item for item in render.resources
-        }
         resources: list[ResourceSnapshot] = []
         for item in self.resources.values():
+            if _is_scale_gate_predecessor_evidence_identity(
+                item.observed.api_version,
+                item.observed.kind,
+                item.observed.name,
+            ):
+                continue
             desired = desired_by_identity.get(item.observed.identity)
             discovered = item.model_copy(deep=True)
             if desired is not None:
@@ -464,6 +470,12 @@ class FakeApi(ModelControllerApi):
         owner_uid: str,
         fence: LeaseFence,
     ) -> ResourceSnapshot:
+        if _is_scale_gate_predecessor_evidence_identity(
+            resource.api_version,
+            resource.kind,
+            resource.name,
+        ):
+            raise ControllerError("immutable scale-gate evidence is outside generic reconciliation")
         await self.assert_fence(fence)
         self.calls.append(("apply", resource.kind))
         identity = f"{resource.api_version}/{resource.kind}/{resource.namespace}/{resource.name}"
@@ -1034,6 +1046,9 @@ class FakeApi(ModelControllerApi):
         owner_uid: str,
         fence: LeaseFence,
     ) -> bool:
+        api_version, kind, _, name = identity.rsplit("/", 3)
+        if _is_scale_gate_predecessor_evidence_identity(api_version, kind, name):
+            raise KubernetesConflictError("immutable scale-gate evidence can never enter a delete path")
         await self.assert_fence(fence)
         self.calls.append(("delete", identity))
         current = self.resources.get(identity)
@@ -1126,6 +1141,74 @@ def test_bounded_queue_deduplicates_and_defers_overload() -> None:
     assert queue.put(ModelKey(namespace="fs2-models", name="b"))
     assert not queue.put(ModelKey(namespace="fs2-models", name="c"))
     assert queue.depth == 2 and queue.dropped == 1
+
+
+def _reserved_evidence_render_plan() -> tuple[RenderPlan, RenderPlan, RenderedResource]:
+    plan = renderer().render(
+        model_spec(),
+        RenderContext(
+            name="qwen-live",
+            namespace="fs2-models",
+            uid="cr-uid-1",
+            generation=1,
+            pool=envelope().pools["pool-b"],
+            eligible_pools=[envelope().pools[pool_ref] for pool_ref in model_spec().placement.pool_refs],
+            prometheus_server_address="http://prometheus:9090",
+        ),
+    )
+    source = next(item for item in plan.resources if item.api_version == "v1" and item.kind == "ConfigMap")
+    manifest = copy.deepcopy(source.manifest)
+    manifest["metadata"]["name"] = f"{SCALE_GATE_PREDECESSOR_EVIDENCE_CONFIG_MAP_PREFIX}injected"
+    reserved = source.model_copy(
+        update={
+            "name": manifest["metadata"]["name"],
+            "manifest": manifest,
+            "digest": canonical_digest(manifest),
+        }
+    )
+    return plan, plan.model_copy(update={"resources": [reserved]}), reserved
+
+
+@pytest.mark.asyncio
+async def test_production_and_fake_reject_reserved_evidence_render_before_any_api_action(
+    tmp_path: Path,
+) -> None:
+    safe_render, render, reserved = _reserved_evidence_render_plan()
+    key = ModelKey(namespace="fs2-models", name="qwen-live")
+    api = FakeApi(model_object())
+
+    with pytest.raises(ControllerError, match="collides with immutable scale-gate evidence"):
+        await api.discover(key=key, owner_uid="cr-uid-1", render=render)
+    with pytest.raises(ControllerError, match="outside generic reconciliation"):
+        await api.apply_resource(reserved, owner_uid="cr-uid-1", fence=fence())
+    identity = f"v1/ConfigMap/fs2-models/{reserved.name}"
+    with pytest.raises(KubernetesConflictError, match="can never enter a delete path"):
+        await api.delete_resource(identity, owner_uid="cr-uid-1", fence=fence())
+    assert api.calls == []
+    assert api.resources == {}
+    api.resources[f"v1/ConfigMap/fs2-models/{reserved.name}"] = snapshot(reserved)
+    filtered = await api.discover(key=key, owner_uid="cr-uid-1", render=safe_render)
+    assert filtered.resources == []
+    assert api.calls == [("discover", key.text)]
+
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(500, json={"kind": "Status", "reason": "UnexpectedRequest"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=tmp_path / "unused-token",
+        ca_file=tmp_path / "unused-ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    with pytest.raises(ControllerError, match="collides with immutable scale-gate evidence"):
+        await client.discover(key=key, owner_uid="cr-uid-1", render=render)
+    assert requests == []
+    await http.aclose()
 
 
 @pytest.mark.asyncio
@@ -7175,6 +7258,7 @@ def test_maximum_protocol_v2_predecessor_is_retained_once_by_bounded_canonical_d
         appliedScaler=checkpoint,
         predecessorEvidenceDigest=digest,
         predecessorEvidenceUID="evidence-uid",
+        predecessorEvidenceResourceVersion="1",
         phase="applied",
     )
     target = ScaleGateTargetIdentity(
@@ -7294,6 +7378,16 @@ def test_predecessor_evidence_shard_requires_ungarbage_collectable_stable_uid_id
             digest=digest,
             expected_uid=snapshot.uid,
         )
+    metadata_mutation_history = copy.deepcopy(shard)
+    metadata_mutation_history["metadata"]["resourceVersion"] = "8"
+    with pytest.raises(KubernetesConflictError, match="malformed or foreign"):
+        _scale_gate_predecessor_evidence_snapshot_from_config_map(
+            metadata_mutation_history,
+            target=target,
+            digest=digest,
+            expected_uid=snapshot.uid,
+            expected_resource_version=snapshot.resource_version,
+        )
 
 
 @pytest.mark.asyncio
@@ -7327,6 +7421,7 @@ async def test_tombstone_retains_evidence_uid_and_rejects_loss_recreation_and_de
         modelUID="cr-uid-1",
         predecessorEvidenceDigest=digest,
         predecessorEvidenceUID=evidence_uid,
+        predecessorEvidenceResourceVersion="1",
     )
     _TEST_SCALE_GATES[_scale_gate_target_key(target)] = _test_tombstone_value(desired, tombstone)
     requests: list[httpx.Request] = []
@@ -7352,6 +7447,11 @@ async def test_tombstone_retains_evidence_uid_and_rejects_loss_recreation_and_de
 
     exact_shard = _TEST_SCALE_GATE_EVIDENCE_SHARDS.pop(evidence_name)
     with pytest.raises(KubernetesConflictError, match="evidence shard is absent"):
+        await client._verified_scale_gate_authorization(gate, target)
+    metadata_mutated = copy.deepcopy(exact_shard)
+    metadata_mutated["metadata"]["resourceVersion"] = "2"
+    _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name] = metadata_mutated
+    with pytest.raises(KubernetesConflictError, match="malformed or foreign"):
         await client._verified_scale_gate_authorization(gate, target)
     recreated = copy.deepcopy(exact_shard)
     recreated["metadata"].update({"uid": "recreated-evidence-uid", "resourceVersion": "1"})
@@ -7471,6 +7571,9 @@ async def test_fixed_generation_closes_crashed_older_autoscaler_allowance_withou
     assert closed.predecessor_evidence_uid == _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name][
         "metadata"
     ]["uid"]
+    assert closed.predecessor_evidence_resource_version == _TEST_SCALE_GATE_EVIDENCE_SHARDS[
+        evidence_name
+    ]["metadata"]["resourceVersion"]
     assert closed.prior_scaler is None
     base_render = renderer().render(
         model_spec(),
@@ -7718,7 +7821,10 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
         update={
             "predecessor_evidence_uid": _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name][
                 "metadata"
-            ]["uid"]
+            ]["uid"],
+            "predecessor_evidence_resource_version": _TEST_SCALE_GATE_EVIDENCE_SHARDS[
+                evidence_name
+            ]["metadata"]["resourceVersion"],
         }
     )
     _TEST_SCALE_GATES[_test_gate_key(target_resource)] = _test_gate_value(target_resource, authorization)
@@ -8256,6 +8362,9 @@ async def test_c574_update_adoption_preserves_prior_and_survives_second_reconcil
     assert refreshed.predecessor_evidence_uid == _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name][
         "metadata"
     ]["uid"]
+    assert refreshed.predecessor_evidence_resource_version == _TEST_SCALE_GATE_EVIDENCE_SHARDS[
+        evidence_name
+    ]["metadata"]["resourceVersion"]
     assert _scale_gate_predecessor_evidence_from_config_map(
         _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name],
         target=target,

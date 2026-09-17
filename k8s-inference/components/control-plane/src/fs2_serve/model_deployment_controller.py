@@ -190,6 +190,12 @@ class ScaleHandoffReceipt(StrictModel):
         min_length=1,
         max_length=253,
     )
+    predecessor_evidence_resource_version: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceResourceVersion",
+        min_length=1,
+        max_length=128,
+    )
 
     def annotation_value(self) -> str:
         return self.model_dump_json(by_alias=True)
@@ -217,6 +223,12 @@ class ScaleInitializationReceipt(StrictModel):
         alias="predecessorEvidenceUID",
         min_length=1,
         max_length=253,
+    )
+    predecessor_evidence_resource_version: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceResourceVersion",
+        min_length=1,
+        max_length=128,
     )
 
     def annotation_value(self) -> str:
@@ -351,6 +363,12 @@ class ScaleGateReleaseAuthorization(StrictModel):
         min_length=1,
         max_length=253,
     )
+    predecessor_evidence_resource_version: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceResourceVersion",
+        min_length=1,
+        max_length=128,
+    )
     # Decode the brief rejected v3 lineage so it can be migrated in place.
     # New records never embed this potentially large object; they retain its
     # canonical bytes in a separately keyed, content-addressed gate entry.
@@ -390,6 +408,12 @@ class ScaleGateTombstone(StrictModel):
         alias="predecessorEvidenceUID",
         min_length=1,
         max_length=253,
+    )
+    predecessor_evidence_resource_version: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceResourceVersion",
+        min_length=1,
+        max_length=128,
     )
 
     def annotation_value(self) -> str:
@@ -1147,6 +1171,24 @@ def _is_scale_gate_predecessor_evidence_identity(
     )
 
 
+def _validated_desired_resources(render: RenderPlan) -> dict[str, RenderedResource]:
+    """Validate every rendered identity before discovery performs any I/O."""
+
+    desired: dict[str, RenderedResource] = {}
+    for item in render.resources:
+        if _is_scale_gate_predecessor_evidence_identity(
+            item.api_version,
+            item.kind,
+            item.name,
+        ):
+            raise ControllerError("rendered identity collides with immutable scale-gate evidence")
+        identity = f"{item.api_version}/{item.kind}/{item.namespace}/{item.name}"
+        if identity in desired:
+            raise ControllerError("render plan contains a duplicate resource identity")
+        desired[identity] = item
+    return desired
+
+
 def _scale_gate_predecessor_evidence_config_map(
     target: ScaleGateTargetIdentity,
     authorization: ScaleGateReleaseAuthorizationV2,
@@ -1247,6 +1289,7 @@ def _scale_gate_predecessor_evidence_snapshot_from_config_map(
     target: ScaleGateTargetIdentity,
     digest: str,
     expected_uid: str | None = None,
+    expected_resource_version: str | None = None,
 ) -> ScaleGatePredecessorEvidenceSnapshot:
     """Validate evidence bytes and its immutable API-server object identity."""
 
@@ -1268,6 +1311,8 @@ def _scale_gate_predecessor_evidence_snapshot_from_config_map(
         or len(resource_version) > 128
         or expected_uid is not None
         and uid != expected_uid
+        or expected_resource_version is not None
+        and resource_version != expected_resource_version
         or metadata.get("deletionTimestamp") is not None
         or metadata.get("deletionGracePeriodSeconds") is not None
         or metadata.get("ownerReferences") is not None
@@ -1369,10 +1414,13 @@ def _normalized_scale_gate_predecessor_reference(
         raise KubernetesConflictError("protocol-v2 predecessor evidence reference changed")
     if authorization.predecessor_evidence_uid not in (None, evidence.uid):
         raise KubernetesConflictError("protocol-v2 predecessor evidence UID changed")
+    if authorization.predecessor_evidence_resource_version not in (None, evidence.resource_version):
+        raise KubernetesConflictError("protocol-v2 predecessor evidence resourceVersion changed")
     return authorization.model_copy(
         update={
             "predecessor_evidence_digest": digest,
             "predecessor_evidence_uid": evidence.uid,
+            "predecessor_evidence_resource_version": evidence.resource_version,
             "predecessor_authorization": None,
         }
     )
@@ -1381,17 +1429,21 @@ def _normalized_scale_gate_predecessor_reference(
 def _scale_gate_evidence_reference(
     record: ScaleGateReleaseAuthorization | ScaleAuthorizationReceipt | ScaleGateTombstone,
     *,
-    allow_missing_uid: bool = False,
-) -> tuple[str, str | None] | None:
-    """Return a complete content/object identity pair or fail closed."""
+    allow_incomplete_identity: bool = False,
+) -> tuple[str, str | None, str | None] | None:
+    """Return a complete content/object/RV identity tuple or fail closed."""
 
     digest = record.predecessor_evidence_digest
     uid = record.predecessor_evidence_uid
-    if digest is None and uid is None:
+    resource_version = record.predecessor_evidence_resource_version
+    if digest is None and uid is None and resource_version is None:
         return None
-    if digest is None or uid is None and not allow_missing_uid:
+    if digest is None or (
+        (uid is None or resource_version is None)
+        and not allow_incomplete_identity
+    ):
         raise KubernetesConflictError("protocol-v2 predecessor evidence reference is incomplete")
-    return digest, uid
+    return digest, uid, resource_version
 
 
 def _scale_gate_successor_with_evidence(
@@ -1407,11 +1459,15 @@ def _scale_gate_successor_with_evidence(
     digest = _scale_gate_predecessor_evidence_digest(evidence.authorization)
     reference = _scale_gate_evidence_reference(
         record,
-        allow_missing_uid=isinstance(record, ScaleGateReleaseAuthorization),
+        # The caller supplied a freshly validated shard snapshot. This is the
+        # one safe adoption point for rejected digest/UID-only predecessors;
+        # the returned successor always persists the complete UID+RV tuple.
+        allow_incomplete_identity=True,
     )
     if reference is not None and (
         reference[0] != digest
         or reference[1] not in (None, evidence.uid)
+        or reference[2] not in (None, evidence.resource_version)
     ):
         raise KubernetesConflictError("successor evidence reference changed")
     if (
@@ -1432,6 +1488,7 @@ def _scale_gate_successor_with_evidence(
         update={
             "predecessor_evidence_digest": digest,
             "predecessor_evidence_uid": evidence.uid,
+            "predecessor_evidence_resource_version": evidence.resource_version,
             **(
                 {"predecessor_authorization": None}
                 if isinstance(record, ScaleGateReleaseAuthorization)
@@ -1460,6 +1517,7 @@ def _scale_gate_receipt_matches(
     empty_reference = {
         "predecessor_evidence_digest": None,
         "predecessor_evidence_uid": None,
+        "predecessor_evidence_resource_version": None,
     }
     return retained.model_copy(update=empty_reference) == receipt.model_copy(update=empty_reference)
 
@@ -2132,7 +2190,9 @@ class HttpKubernetesModelClient:
         return matches
 
     async def discover(self, *, key: ModelKey, owner_uid: str, render: RenderPlan) -> Discovery:
-        desired = {f"{item.api_version}/{item.kind}/{item.namespace}/{item.name}": item for item in render.resources}
+        # Security-reserved identities are rejected before the first LIST,
+        # exact GET, HPA re-add lookup, or Pod inventory request.
+        desired = _validated_desired_resources(render)
         bodies: dict[str, dict[str, Any]] = {}
         selector = f"{MODEL_DEPLOYMENT_LABEL}={bounded_label_value(key.name)}"
         for endpoint in RESOURCE_ENDPOINTS.values():
@@ -3748,6 +3808,7 @@ class HttpKubernetesModelClient:
             target=target,
             digest=digest,
             expected_uid=parsed.uid,
+            expected_resource_version=parsed.resource_version,
         )
         if confirmed_evidence.authorization != evidence:
             raise KubernetesConflictError("protocol-v2 predecessor evidence shard was not durable")
@@ -3817,9 +3878,7 @@ class HttpKubernetesModelClient:
                 raise KubernetesConflictError("protocol-v2 predecessor evidence shard is absent")
             reference = _scale_gate_evidence_reference(
                 authorization,
-                allow_missing_uid=(
-                    migrate_legacy and isinstance(authorization, ScaleGateReleaseAuthorization)
-                ),
+                allow_incomplete_identity=migrate_legacy,
             )
             assert reference is not None
             evidence = _scale_gate_predecessor_evidence_snapshot_from_config_map(
@@ -3827,6 +3886,7 @@ class HttpKubernetesModelClient:
                 target=target,
                 digest=digest,
                 expected_uid=reference[1],
+                expected_resource_version=reference[2],
             )
             if (
                 isinstance(authorization, ScaleGateReleaseAuthorization)
@@ -3850,7 +3910,10 @@ class HttpKubernetesModelClient:
             )
             authorization = _normalized_scale_gate_predecessor_reference(authorization, evidence)
             _scale_gate_predecessor_lineage(authorization, evidence.authorization)
-        elif authorization.predecessor_evidence_uid is not None:
+        elif (
+            authorization.predecessor_evidence_uid is not None
+            or authorization.predecessor_evidence_resource_version is not None
+        ):
             raise KubernetesConflictError("protocol-v2 predecessor evidence reference is incomplete")
         return authorization, evidence
 
