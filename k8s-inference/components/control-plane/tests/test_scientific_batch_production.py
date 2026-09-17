@@ -484,8 +484,8 @@ class FakeArtifactAccess:
             access_context=ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a"),
         )
 
-    async def validate_input(self, pointer, *, tenant_id: str) -> ScientificInputAdmission:
-        assert tenant_id == "tenant-a"
+    async def validate_input(self, pointer, *, principal: Principal) -> ScientificInputAdmission:
+        assert principal.tenant_id == "tenant-a"
         assert pointer == self.pointer
         return self.admission
 

@@ -533,7 +533,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         wait_poll_max_seconds=settings.wait_poll_max_seconds,
         route_refresh=refresh_routes,
         lifecycle=lifecycle,
-        artifact_inputs=ArtifactInputMaterializer(artifact_service) if artifact_service is not None else None,
+        artifact_inputs=ArtifactInputMaterializer(artifact_service, store) if artifact_service is not None else None,
         artifact_outputs=ServingOutputArtifactizer(artifact_service) if artifact_service is not None else None,
     )
     initial_configuration = (

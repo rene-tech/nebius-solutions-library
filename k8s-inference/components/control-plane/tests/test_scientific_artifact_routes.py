@@ -19,7 +19,11 @@ from test_scientific_artifacts import scheduling_snapshot as snapshot
 
 from fs2_serve.models import Principal, Scope
 from fs2_serve.scientific_artifact_routes import scientific_artifact_router
-from fs2_serve.scientific_artifacts import MemoryArtifactRepository, ScientificArtifactService
+from fs2_serve.scientific_artifacts import (
+    ArtifactNotFoundError,
+    MemoryArtifactRepository,
+    ScientificArtifactService,
+)
 
 NOW = datetime(2026, 9, 2, 20, 0, tzinfo=UTC)
 TENANT = "tenant-a"
@@ -28,6 +32,40 @@ WRITE_SCOPES = frozenset({str(Scope.ARTIFACTS_WRITE), str(Scope.OPERATIONS_RESUL
 
 def iso(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
+
+
+class RouteAccess:
+    def __init__(
+        self,
+        repository: MemoryArtifactRepository,
+        owners: dict[UUID, tuple[str, str, UUID]],
+    ) -> None:
+        self.repository = repository
+        self.owners = owners
+
+    async def require_operation_access(
+        self,
+        operation_id: UUID,
+        *,
+        principal: Principal,
+        scope: Scope,
+    ) -> None:
+        principal.require(scope)
+        owner = self.owners.get(operation_id)
+        if owner != (principal.tenant_id, principal.principal_id, principal.token_id):
+            raise ArtifactNotFoundError("scientific artifact was not found")
+
+    async def require_artifact_access(self, artifact_id: UUID, *, principal: Principal) -> None:
+        principal.require(Scope.OPERATIONS_RESULT)
+        try:
+            artifact = await self.repository.get_artifact(artifact_id, tenant_id=principal.tenant_id)
+        except ArtifactNotFoundError:
+            raise ArtifactNotFoundError("scientific artifact was not found") from None
+        await self.require_operation_access(
+            artifact.operation_id,
+            principal=principal,
+            scope=Scope.OPERATIONS_RESULT,
+        )
 
 
 class Harness:
@@ -41,14 +79,18 @@ class Harness:
             clock=lambda: NOW,
         )
         self.operation_id = uuid4()
+        self.token_id = uuid4()
+        self.principal_id = "principal-a"
         self.scopes = scopes
         self.tenant = tenant
+        self.owners = {self.operation_id: (self.tenant, self.principal_id, self.token_id)}
+        self.access = RouteAccess(self.repository, self.owners)
 
     async def principal(self) -> Principal:
         return Principal(
-            token_id=uuid4(),
+            token_id=self.token_id,
             token_prefix="fst_test",
-            principal_id="principal-a",
+            principal_id=self.principal_id,
             tenant_id=self.tenant,
             scopes=self.scopes,
             models=frozenset({"proteina-complexa"}),
@@ -66,7 +108,13 @@ class Harness:
                 content={"error": {"type": "permission_denied", "message": "request is outside token policy"}},
             )
 
-        app.include_router(scientific_artifact_router(service=self.service, principal_dependency=self.principal))
+        app.include_router(
+            scientific_artifact_router(
+                service=self.service,
+                access=self.access,
+                principal_dependency=self.principal,
+            )
+        )
         return TestClient(app, raise_server_exceptions=False)
 
 
@@ -341,3 +389,40 @@ async def test_download_returns_bearer_material_only_to_an_authorized_reader(har
     assert set(body) == {"artifact", "handle"}
     assert "tenant_id" not in json.dumps(body["artifact"])
     assert set(body["artifact"]) <= {"artifact_id", "sha256", "size_bytes", "media_type", "compression"}
+
+
+async def test_same_tenant_peer_cannot_use_internal_read_or_write_routes(harness) -> None:
+    with harness.client() as owner:
+        attempt_id = open_attempt(owner, harness.operation_id)
+        artifact_id = publish(harness, owner, attempt_id, b"ATOM  CA")
+
+    harness.principal_id = "principal-b"
+    harness.token_id = uuid4()
+    with harness.client() as peer:
+        denied_download = peer.get(f"/internal/scientific-artifacts/{artifact_id}:download")
+        denied_events = peer.get(f"/internal/scientific-artifacts/operations/{harness.operation_id}/events")
+        denied_result = peer.get(f"/internal/scientific-artifacts/operations/{harness.operation_id}:result")
+        denied_write = peer.post(
+            "/internal/scientific-artifacts/attempts",
+            json={
+                "attempt_id": str(uuid4()),
+                "operation_id": str(harness.operation_id),
+                "stage_id": "design",
+                "attempt_number": 1,
+                "started_at": iso(NOW),
+            },
+        )
+        unknown_download = peer.get(f"/internal/scientific-artifacts/{uuid4()}:download")
+
+    assert [
+        denied_download.status_code,
+        denied_events.status_code,
+        denied_result.status_code,
+        denied_write.status_code,
+    ] == [404, 404, 404, 404]
+    assert denied_download.json() == unknown_download.json() == {
+        "detail": {
+            "type": "artifact_not_found",
+            "message": "scientific artifact was not found",
+        }
+    }

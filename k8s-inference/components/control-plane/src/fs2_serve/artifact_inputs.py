@@ -12,14 +12,18 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Final, Literal
 from uuid import UUID
 
+from .auth import require_operation_access
 from .model_input_contracts import InputContractUnavailable, contract_for, packaged_input_fixture
+from .models import ClaimedOperation, Principal, Scope
 from .registry import OperationalModel
 from .runtime import RuntimeOperationError
-from .scientific_artifacts import ScientificArtifactControllerPort
+from .scientific_artifacts import ArtifactNotFoundError, ScientificArtifactControllerPort
 from .scientific_run_result import ArtifactRef, Compression
+from .store import NotFoundError, Store
 
 Materialization = Literal["utf-8", "base64", "data-url", "json"]
 PathPart = str | None
@@ -130,13 +134,49 @@ def _slots(value: Any, path: tuple[PathPart, ...]) -> list[tuple[Any, str | int]
 
 
 class ArtifactInputMaterializer:
-    """Resolve only explicitly transport-enabled fields for the owning tenant."""
+    """Resolve only explicitly transport-enabled fields for the owning principal."""
 
-    def __init__(self, artifacts: ScientificArtifactControllerPort) -> None:
+    def __init__(self, artifacts: ScientificArtifactControllerPort, store: Store) -> None:
         self._artifacts = artifacts
+        self._store = store
+
+    async def _principal(self, owner: ClaimedOperation) -> Principal:
+        """Rebuild the current token policy around the immutable operation owner."""
+
+        try:
+            token = await self._store.get_token(owner.token_id)
+        except NotFoundError:
+            raise ArtifactInputError("artifact input is unavailable") from None
+        if token.tenant_id != owner.tenant_id or token.principal_id != owner.principal_id:
+            raise ArtifactInputError("artifact input is unavailable")
+        scopes = frozenset(token.scopes)
+        now = datetime.now(UTC)
+        if (
+            token.revoked_at is not None
+            or token.rotated_at is not None
+            or (token.expires_at is not None and token.expires_at <= now)
+        ):
+            scopes = scopes - {Scope.TENANT_ADMIN.value}
+        return Principal(
+            token_id=owner.token_id,
+            token_prefix=token.prefix,
+            principal_id=owner.principal_id,
+            tenant_id=owner.tenant_id,
+            scopes=scopes,
+            models=frozenset(token.models),
+            expires_at=token.expires_at,
+            request_budget=token.request_budget,
+            gpu_seconds_budget=token.gpu_seconds_budget,
+            max_concurrency=token.max_concurrency,
+        )
 
     async def _artifact_bytes(
-        self, descriptor: dict[str, Any], *, tenant_id: str, rule: _Rule
+        self,
+        descriptor: dict[str, Any],
+        *,
+        owner: ClaimedOperation,
+        principal: Principal,
+        rule: _Rule,
     ) -> tuple[bytes, str]:
         try:
             reference = ArtifactRef.model_validate(descriptor)
@@ -147,7 +187,15 @@ class ArtifactInputMaterializer:
             raise ArtifactInputError("compressed model input artifacts are not supported")
         if reference.size_bytes > rule.max_bytes or reference.media_type not in rule.media_types:
             raise ArtifactInputError("artifact input metadata is outside the model field contract")
-        stream = await self._artifacts.open_content(artifact_id, tenant_id=tenant_id)
+        try:
+            stream = await self._artifacts.open_content(artifact_id, tenant_id=owner.tenant_id)
+            source_operation = await self._store.get_operation(
+                stream.artifact.operation_id,
+                tenant_id=owner.tenant_id,
+            )
+            require_operation_access(principal, source_operation)
+        except (ArtifactNotFoundError, NotFoundError):
+            raise ArtifactInputError("artifact input is unavailable") from None
         actual = stream.artifact.to_public_ref()
         if actual != reference:
             raise ArtifactInputError("artifact input metadata does not match stored content")
@@ -194,7 +242,7 @@ class ArtifactInputMaterializer:
         model: OperationalModel,
         protocol: str,
         *,
-        tenant_id: str,
+        owner: ClaimedOperation,
         request_body: bytes,
     ) -> bytes:
         if b'"artifact_id"' not in request_body and b'"fixture_id"' not in request_body:
@@ -209,6 +257,7 @@ class ArtifactInputMaterializer:
             contract = contract_for(model, protocol)
         except InputContractUnavailable as error:
             raise ArtifactInputError("artifact-backed input has no selected runtime contract") from error
+        principal: Principal | None = None
         matched = False
         for rule in _rules(contract.input_schema):
             for parent, key in _slots(payload, rule.path):
@@ -216,7 +265,14 @@ class ArtifactInputMaterializer:
                 if not isinstance(descriptor, dict):
                     continue
                 if "artifact_id" in descriptor:
-                    content, media_type = await self._artifact_bytes(descriptor, tenant_id=tenant_id, rule=rule)
+                    if principal is None:
+                        principal = await self._principal(owner)
+                    content, media_type = await self._artifact_bytes(
+                        descriptor,
+                        owner=owner,
+                        principal=principal,
+                        rule=rule,
+                    )
                 elif "fixture_id" in descriptor:
                     content, media_type = self._fixture_bytes(descriptor, rule=rule)
                 else:

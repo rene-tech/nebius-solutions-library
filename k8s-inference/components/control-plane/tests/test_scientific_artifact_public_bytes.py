@@ -421,13 +421,21 @@ async def test_same_tenant_peer_cannot_cancel_or_read_another_principals_artifac
         pointer = finalized.json()
 
     async with app.router.lifespan_context(app), _client(app, peer) as other:
-        denied = [
-            await other.delete(f"/v1/operations/{reservation['operation_id']}"),
-            await other.get(f"/v1/artifacts/{pointer['artifact_id']}"),
-            await other.get(f"/v1/artifacts/{pointer['artifact_id']}/download"),
-            await other.get(f"/v1/artifacts/{pointer['artifact_id']}/content"),
-        ]
-    assert [response.status_code for response in denied] == [404, 404, 404, 404]
+        denied_operation = await other.delete(f"/v1/operations/{reservation['operation_id']}")
+        denied = {
+            suffix: await other.get(f"/v1/artifacts/{pointer['artifact_id']}{suffix}")
+            for suffix in ("", "/download", "/content")
+        }
+        unknown_id = uuid4()
+        unknown = {
+            suffix: await other.get(f"/v1/artifacts/{unknown_id}{suffix}")
+            for suffix in ("", "/download", "/content")
+        }
+    assert denied_operation.status_code == 404
+    assert all(response.status_code == 404 for response in (*denied.values(), *unknown.values()))
+    assert {suffix: response.json() for suffix, response in denied.items()} == {
+        suffix: response.json() for suffix, response in unknown.items()
+    }
 
     server = build_mcp_server(runtime)
     context = Context(mcp_server=server, subscriptions=server._subscriptions)  # type: ignore[attr-defined]

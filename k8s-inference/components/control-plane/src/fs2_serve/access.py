@@ -30,13 +30,25 @@ from .store import NotFoundError, Store
 
 
 class AdminAccessService:
-    _ADMIN_ONLY_KEY_SCOPES = frozenset(
-        {
-            Scope.TOKENS_MANAGE,
-            Scope.AUDIT_READ,
-            Scope.TENANT_ADMIN,
-        }
-    )
+    # Keep non-admin issuance as an explicit safe allowlist. New scopes must be
+    # classified deliberately instead of becoming operator-issuable by default.
+    _KEY_SCOPES_BY_ROLE = {
+        OperatorRole.VIEWER: frozenset(),
+        OperatorRole.OPERATOR: frozenset(
+            {
+                Scope.CATALOG_READ,
+                Scope.INFERENCE_INVOKE,
+                Scope.MCP_INVOKE,
+                Scope.OPERATIONS_READ,
+                Scope.OPERATIONS_RESULT,
+                Scope.OPERATIONS_CANCEL,
+                Scope.OPERATIONS_ACKNOWLEDGE,
+                Scope.USE_NONCLINICAL,
+                Scope.USE_NONCOMMERCIAL,
+            }
+        ),
+        OperatorRole.ADMIN: frozenset(Scope),
+    }
 
     def __init__(self, store: Store, tokens: TokenService) -> None:
         self.store = store
@@ -428,12 +440,13 @@ class AdminAccessService:
         models: set[str] | list[str],
         action: str,
     ) -> None:
-        """Keep privilege-bearing PAT policy behind the admin role boundary."""
+        """Apply a role-safe PAT scope/model allowlist that fails closed."""
 
-        if identity.role is OperatorRole.ADMIN:
-            return
         requested_scopes = frozenset(str(scope) for scope in scopes)
-        if "*" in models or requested_scopes.intersection(str(scope) for scope in self._ADMIN_ONLY_KEY_SCOPES):
+        allowed_scopes = frozenset(str(scope) for scope in self._KEY_SCOPES_BY_ROLE[identity.role])
+        if not requested_scopes.issubset(allowed_scopes) or (
+            "*" in models and identity.role is not OperatorRole.ADMIN
+        ):
             await self._deny(identity, action=action, reason="admin_key_policy_required")
 
     async def _disclosure(self, issued: TokenIssued, *, tenant_id: str | None) -> AdminApiKeyDisclosure:

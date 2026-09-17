@@ -535,7 +535,7 @@ def test_operator_cannot_issue_or_assume_admin_key_policy(registry: Any, cipher:
                 headers=operator_headers,
                 json={**request, "scopes": [scope]},
             )
-            for scope in ("tenant.admin", "tokens.manage", "audit.read")
+            for scope in ("tenant.admin", "tokens.manage", "audit.read", "artifacts.write")
         ]
         refused.append(
             client.post(
@@ -551,7 +551,7 @@ def test_operator_cannot_issue_or_assume_admin_key_policy(registry: Any, cipher:
             json={
                 **request,
                 "name": "tenant-administrator",
-                "scopes": ["tenant.admin", "tokens.manage", "audit.read"],
+                "scopes": ["tenant.admin", "tokens.manage", "audit.read", "artifacts.write"],
                 "models": ["*"],
             },
         )
@@ -576,7 +576,7 @@ def test_operator_cannot_issue_or_assume_admin_key_policy(registry: Any, cipher:
         and event.outcome == "failed"
         and event.detail == {"reason": "admin_key_policy_required"}
         for event in runtime.store.audit
-    ) == 6
+    ) == 7
 
 
 def test_tenant_viewer_bootstraps_context_and_reads_only_own_ledger(registry: Any, cipher: Any, hasher: Any) -> None:

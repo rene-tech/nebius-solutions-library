@@ -12,9 +12,10 @@ from pydantic import Field
 
 from ..auth import require_operation_access
 from ..models import AdmissionRequest, OperationView, PendingScientificAdmission, Principal, Scope, StrictModel
+from ..scientific_artifacts import ArtifactNotFoundError
 from ..scientific_run_result import ArtifactRef, ScientificRunResult
 from ..scientific_run_result import SchedulingAdmission as PublicSchedulingAdmission
-from ..store import ConflictError, Store
+from ..store import ConflictError, NotFoundError, Store
 from .catalog_adapter import CatalogProfileAdapterError, scientific_plan_from_catalog_profile
 from .codec import state_from_value, state_to_value
 from .controller import ScientificBatchController
@@ -51,7 +52,12 @@ from .scheduling import SchedulingContractError, SchedulingContractResolver
 class ScientificArtifactAccess(Protocol):
     """Consumer seam implemented by the artifact-service owner."""
 
-    async def validate_input(self, pointer: Mapping[str, Any], *, tenant_id: str) -> ScientificInputAdmission: ...
+    async def validate_input(
+        self,
+        pointer: Mapping[str, Any],
+        *,
+        principal: Principal,
+    ) -> ScientificInputAdmission: ...
 
     async def require_artifact_access(self, artifact_id: UUID, *, principal: Principal) -> None: ...
 
@@ -500,9 +506,7 @@ class ScientificBatchService:
             # The store's idempotency check precedes the admission factory.
             # Today's policy cannot invalidate an already-frozen accepted run.
             startup_error = error
-        input_admission = await self.artifacts.validate_input(
-            validated["input_manifest"], tenant_id=principal.tenant_id
-        )
+        input_admission = await self.artifacts.validate_input(validated["input_manifest"], principal=principal)
         # Input artifacts are caller-owned scientific data, not license
         # credentials. Academic runtime authorization is deployment-bound and
         # projected from the reviewed execution handoff, never supplied by a
@@ -777,6 +781,22 @@ class ScientificBatchService:
             await self.artifacts.artifact_response(artifact_id, tenant_id=principal.tenant_id)
         )
         return artifact.model_dump(mode="json", exclude_unset=True)
+
+    async def require_operation_access(
+        self,
+        operation_id: UUID,
+        *,
+        principal: Principal,
+        scope: Scope,
+    ) -> None:
+        """Authorize internal artifact routes without exposing owner existence."""
+
+        self._authorize(principal, scope)
+        try:
+            operation = await self.store.get_operation(operation_id, tenant_id=principal.tenant_id)
+            require_operation_access(principal, operation)
+        except NotFoundError:
+            raise ArtifactNotFoundError("scientific artifact resource was not found") from None
 
     async def require_artifact_access(self, artifact_id: UUID, *, principal: Principal) -> None:
         """Resolve an artifact to its operation and enforce exact owner access."""

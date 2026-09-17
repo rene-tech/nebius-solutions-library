@@ -180,10 +180,13 @@ Kubernetes, GPU, database, artifact, or activation credential.
 Scientific model adapters additionally use `/internal/scientific-artifacts/*`,
 which is mounted only when `scientificArtifacts.enabled` is set and object
 storage is fully configured. Writes there require the `artifacts.write` scope
-and reads require `operations.result`; the tenant always comes from the bearer
-principal. Callers receive short-lived presigned handles and never a stored
-credential. See `docs/scientific-artifact-results.md` for the storage,
-retention and fencing contract.
+and reads require `operations.result`; every caller-supplied operation or
+artifact ID must also resolve to the exact bearer token and principal (or an
+explicit same-tenant `tenant.admin`). The tenant always comes from the bearer
+principal. The router remains unmounted when that owner resolver is absent.
+Callers receive short-lived presigned handles and never a stored credential.
+See `docs/scientific-artifact-results.md` for the storage, retention and
+fencing contract.
 
 ### Operator session and API-key workflow
 
@@ -225,8 +228,9 @@ than a tenant-safe catalog projection, and return 403 to tenant identities.
 Viewer can read scoped keys/audit/operations, operator can also issue,
 atomically rotate, and revoke keys, and admin can manage operator principals
 within the same tenant. Only a global admin can create or modify a global
-principal. Operator-issued keys are limited to named models and ordinary
-customer workload scopes. Wildcard model grants and the privilege-bearing
+principal. Operator-issued keys are limited to named models and an explicit
+safe allowlist of ordinary customer workload scopes. Unclassified scopes fail
+closed; `artifacts.write`, wildcard model grants, and the privilege-bearing
 `tenant.admin`, `tokens.manage`, and `audit.read` scopes require an admin role
 for issuance, policy changes, and secret-bearing rotation. Delete
 `/admin/api/v1/session` and securely remove the cookie jar at the end of an

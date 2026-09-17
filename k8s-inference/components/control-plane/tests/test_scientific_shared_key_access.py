@@ -65,13 +65,17 @@ class CustomerInputs:
         self.inputs[tenant] = FakeArtifactAccess(pointer)
         return pointer
 
-    async def validate_input(self, pointer, *, tenant_id):
-        owned = self.inputs.get(tenant_id)
+    async def validate_input(self, pointer, *, principal):
+        owned = self.inputs.get(principal.tenant_id)
         if owned is None or owned.pointer != pointer:
             raise ArtifactNotFoundError("input artifact does not exist")
         return replace(
             owned.admission,
-            access_context=ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id=tenant_id),
+            access_context=ArtifactAccessContext(
+                profile="public",
+                receipt_digest=None,
+                tenant_id=principal.tenant_id,
+            ),
         )
 
 

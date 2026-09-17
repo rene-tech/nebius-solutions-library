@@ -2301,10 +2301,11 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             )
         )
 
-    if runtime.artifact_service is not None:
+    if runtime.artifact_service is not None and runtime.scientific_batches is not None:
         app.include_router(
             scientific_artifact_router(
                 service=runtime.artifact_service,
+                access=runtime.scientific_batches,
                 principal_dependency=principal,
             )
         )

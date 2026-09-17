@@ -664,7 +664,7 @@ class AdmissionService:
                     request_body = await self.artifact_inputs.materialize(
                         model,
                         claimed.protocol,
-                        tenant_id=claimed.tenant_id,
+                        owner=claimed,
                         request_body=request_body,
                     )
                 invocation_started = datetime.now(UTC)

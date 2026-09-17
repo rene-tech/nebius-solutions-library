@@ -1,7 +1,8 @@
 """Authorized artifact routes with a deliberately narrow public boundary.
 
 Every route derives the tenant from the verified bearer principal, never from
-the request. Writes require ``artifacts.write``; reads require
+the request, and resolves the addressed artifact or operation through the
+shared exact-owner gate. Writes require ``artifacts.write``; reads require
 ``operations.result``. Only the two handle-issuing routes return bearer
 material, and no route ever serializes a storage key, a tenant identity, or a
 persistence record.
@@ -9,7 +10,7 @@ persistence record.
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Protocol
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
@@ -67,7 +68,8 @@ def _http_error(error: ArtifactServiceError) -> HTTPException:
         if isinstance(error, failure):
             status_code = code
             break
-    return HTTPException(status_code=status_code, detail={"type": error.code, "message": str(error)})
+    message = "scientific artifact was not found" if isinstance(error, ArtifactNotFoundError) else str(error)
+    return HTTPException(status_code=status_code, detail={"type": error.code, "message": message})
 
 
 def _compression(value: CompressionInput | None) -> ArtifactCompression | None:
@@ -373,9 +375,24 @@ class ArtifactEventPage(StrictModel):
     next_after_id: int
 
 
+class ScientificArtifactRouteAccess(Protocol):
+    """Principal-aware object authorization required by every internal route."""
+
+    async def require_operation_access(
+        self,
+        operation_id: UUID,
+        *,
+        principal: Principal,
+        scope: Scope,
+    ) -> None: ...
+
+    async def require_artifact_access(self, artifact_id: UUID, *, principal: Principal) -> None: ...
+
+
 def scientific_artifact_router(
     *,
     service: ScientificArtifactControllerPort,
+    access: ScientificArtifactRouteAccess,
     principal_dependency: Callable[..., Awaitable[Principal]],
 ) -> APIRouter:
     """Mount the authorized artifact surface for adapters and the controller."""
@@ -387,8 +404,12 @@ def scientific_artifact_router(
         request: OpenAttemptRequest,
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> "AttemptResponse":
-        principal.require(Scope.ARTIFACTS_WRITE)
         try:
+            await access.require_operation_access(
+                request.operation_id,
+                principal=principal,
+                scope=Scope.ARTIFACTS_WRITE,
+            )
             return AttemptResponse.of(await service.open_attempt(request.to_internal(principal)))
         except ArtifactServiceError as error:
             raise _http_error(error) from None
@@ -399,8 +420,12 @@ def scientific_artifact_router(
         attempt_id: Annotated[UUID, Path()],
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> "AttemptResponse":
-        principal.require(Scope.ARTIFACTS_WRITE)
         try:
+            await access.require_operation_access(
+                request.operation_id,
+                principal=principal,
+                scope=Scope.ARTIFACTS_WRITE,
+            )
             return AttemptResponse.of(await service.close_attempt(request.to_internal(attempt_id, principal)))
         except ArtifactServiceError as error:
             raise _http_error(error) from None
@@ -410,8 +435,12 @@ def scientific_artifact_router(
         request: ArtifactUploadBeginRequest,
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> ArtifactUploadBeginResponse:
-        principal.require(Scope.ARTIFACTS_WRITE)
         try:
+            await access.require_operation_access(
+                request.operation_id,
+                principal=principal,
+                scope=Scope.ARTIFACTS_WRITE,
+            )
             result = await service.begin_upload(request.to_internal(principal))
         except ArtifactServiceError as error:
             raise _http_error(error) from None
@@ -425,8 +454,12 @@ def scientific_artifact_router(
         upload_id: Annotated[UUID, Path()],
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> ArtifactRef:
-        principal.require(Scope.ARTIFACTS_WRITE)
         try:
+            await access.require_operation_access(
+                request.operation_id,
+                principal=principal,
+                scope=Scope.ARTIFACTS_WRITE,
+            )
             artifact = await service.finalize_upload(
                 FinalizeArtifactUpload(
                     upload_id=upload_id,
@@ -443,8 +476,8 @@ def scientific_artifact_router(
         artifact_id: Annotated[UUID, Path()],
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> ArtifactDownloadResponse:
-        principal.require(Scope.OPERATIONS_RESULT)
         try:
+            await access.require_artifact_access(artifact_id, principal=principal)
             result = await service.download(artifact_id, tenant_id=principal.tenant_id)
         except ArtifactServiceError as error:
             raise _http_error(error) from None
@@ -457,8 +490,12 @@ def scientific_artifact_router(
         request: CommitStageRequest,
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> "StageCommitResponse":
-        principal.require(Scope.ARTIFACTS_WRITE)
         try:
+            await access.require_operation_access(
+                request.operation_id,
+                principal=principal,
+                scope=Scope.ARTIFACTS_WRITE,
+            )
             return StageCommitResponse.of(await service.commit_stage(request.to_internal(principal)))
         except ArtifactServiceError as error:
             raise _http_error(error) from None
@@ -469,11 +506,18 @@ def scientific_artifact_router(
         stage_id: Annotated[str, Path(max_length=63)],
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> "StageCommitResponse":
-        principal.require(Scope.OPERATIONS_RESULT)
-        commit = await service.stage_commit(operation_id, stage_id=stage_id, tenant_id=principal.tenant_id)
-        if commit is None:
-            raise _http_error(ArtifactNotFoundError("stage commit not found"))
-        return StageCommitResponse.of(commit)
+        try:
+            await access.require_operation_access(
+                operation_id,
+                principal=principal,
+                scope=Scope.OPERATIONS_RESULT,
+            )
+            commit = await service.stage_commit(operation_id, stage_id=stage_id, tenant_id=principal.tenant_id)
+            if commit is None:
+                raise ArtifactNotFoundError("stage commit not found")
+            return StageCommitResponse.of(commit)
+        except ArtifactServiceError as error:
+            raise _http_error(error) from None
 
     @router.post(
         "/operations/{operation_id}:result",
@@ -485,8 +529,12 @@ def scientific_artifact_router(
         operation_id: Annotated[UUID, Path()],
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> "RunResultResponse":
-        principal.require(Scope.ARTIFACTS_WRITE)
         try:
+            await access.require_operation_access(
+                operation_id,
+                principal=principal,
+                scope=Scope.ARTIFACTS_WRITE,
+            )
             record = await service.commit_run_result(request.to_internal(operation_id, principal))
         except ArtifactServiceError as error:
             raise _http_error(error) from None
@@ -497,8 +545,12 @@ def scientific_artifact_router(
         operation_id: Annotated[UUID, Path()],
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> "RunResultResponse":
-        principal.require(Scope.OPERATIONS_RESULT)
         try:
+            await access.require_operation_access(
+                operation_id,
+                principal=principal,
+                scope=Scope.OPERATIONS_RESULT,
+            )
             record = await service.get_run_result(operation_id, tenant_id=principal.tenant_id)
         except ArtifactServiceError as error:
             raise _http_error(error) from None
@@ -511,8 +563,12 @@ def scientific_artifact_router(
         after_id: Annotated[int, Query(ge=0, le=2**62)] = 0,
         limit: Annotated[int, Query(ge=1, le=500)] = 200,
     ) -> ArtifactEventPage:
-        principal.require(Scope.OPERATIONS_RESULT)
         try:
+            await access.require_operation_access(
+                operation_id,
+                principal=principal,
+                scope=Scope.OPERATIONS_RESULT,
+            )
             events = await service.list_events(
                 operation_id, tenant_id=principal.tenant_id, after_id=after_id, limit=limit
             )

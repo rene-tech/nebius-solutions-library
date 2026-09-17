@@ -7,7 +7,7 @@ import tarfile
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -16,10 +16,12 @@ from jsonschema import Draft202012Validator
 from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBatchRepository
 
 from fs2_serve.crypto import KeyedHasher
+from fs2_serve.models import Principal, Scope
 from fs2_serve.scientific_artifacts import (
     ArtifactAccess,
     ArtifactAccessProfile,
     ArtifactDirection,
+    ArtifactNotFoundError,
     ArtifactRecord,
     artifact_storage_key,
 )
@@ -120,12 +122,29 @@ class ArtifactRecords:
         return record
 
 
+class OperationOwners:
+    def __init__(self, operation_id: UUID, *, token_id: UUID, principal_id: str, tenant_id: str) -> None:
+        self.operation_id = operation_id
+        self.owner = SimpleNamespace(
+            tenant_id=tenant_id,
+            token_id=token_id,
+            principal_id=principal_id,
+        )
+
+    async def get_operation(self, operation_id: UUID, *, tenant_id: str):
+        assert operation_id == self.operation_id
+        assert tenant_id == self.owner.tenant_id
+        return self.owner
+
+
 class BytesReader:
     def __init__(self, values: dict[UUID, bytes]) -> None:
         self.values = values
+        self.calls: list[UUID] = []
 
     async def read(self, artifact_id: UUID, *, tenant_id: str, maximum_bytes: int) -> bytes:
         assert tenant_id == "academic-poc"
+        self.calls.append(artifact_id)
         value = self.values[artifact_id]
         assert len(value) <= maximum_bytes
         return value
@@ -169,6 +188,15 @@ def artifact(
 @pytest.mark.asyncio
 async def test_input_manifest_resolves_and_verifies_contained_logical_artifacts() -> None:
     operation_id = uuid4()
+    token_id = uuid4()
+    principal = Principal(
+        token_id=token_id,
+        token_prefix="fst_owner",
+        principal_id="scientist-a",
+        tenant_id="academic-poc",
+        scopes=frozenset({Scope.INFERENCE_INVOKE.value}),
+        models=frozenset({"alphafold3"}),
+    )
     receipt = sha("academic-access")
     access = ArtifactAccess(profile=ArtifactAccessProfile.ACADEMIC, receipt_digest=receipt)
     request_id, a3m_id, manifest_id = uuid4(), uuid4(), uuid4()
@@ -203,12 +231,17 @@ async def test_input_manifest_resolves_and_verifies_contained_logical_artifacts(
         artifacts=ArtifactRecords((manifest_record, request_record, a3m_record)),  # type: ignore[arg-type]
         batches=object(),  # type: ignore[arg-type]
         profiles=ScientificProfileCatalog.load(CATALOG_ROOT),
-        store=object(),  # type: ignore[arg-type]
+        store=OperationOwners(
+            operation_id,
+            token_id=token_id,
+            principal_id=principal.principal_id,
+            tenant_id=principal.tenant_id,
+        ),  # type: ignore[arg-type]
         content_reader=BytesReader({manifest_id: manifest_bytes}),
     )
     admitted = await bridge.validate_input(
         manifest_record.to_public_ref().model_dump(mode="json", exclude_none=True),
-        tenant_id="academic-poc",
+        principal=principal,
     )
     assert admitted.access_context == ArtifactAccessContext(
         profile="academic", receipt_digest=receipt, tenant_id="academic-poc"
@@ -218,6 +251,50 @@ async def test_input_manifest_resolves_and_verifies_contained_logical_artifacts(
         "optional-a3m",
     )
     assert admitted.manifest.artifact("optional-a3m").artifact_id == a3m_id
+
+
+@pytest.mark.asyncio
+async def test_same_tenant_peer_manifest_is_rejected_before_bytes_are_read() -> None:
+    operation_id = uuid4()
+    owner_token_id = uuid4()
+    manifest_id = uuid4()
+    manifest_bytes = b'{"schema":"fs2-serve.nebius.ai/scientific-artifact-manifest/v1"}'
+    record = artifact(
+        operation_id,
+        manifest_id,
+        manifest_bytes,
+        "application/vnd.fs2.scientific-manifest+json",
+        ArtifactAccess(),
+    )
+    reader = BytesReader({manifest_id: manifest_bytes})
+    bridge = ArtifactServiceBridge(
+        artifacts=ArtifactRecords((record,)),  # type: ignore[arg-type]
+        batches=object(),  # type: ignore[arg-type]
+        profiles=ScientificProfileCatalog.load(CATALOG_ROOT),
+        store=OperationOwners(
+            operation_id,
+            token_id=owner_token_id,
+            principal_id="scientist-a",
+            tenant_id="academic-poc",
+        ),  # type: ignore[arg-type]
+        content_reader=reader,
+    )
+    peer = Principal(
+        token_id=uuid4(),
+        token_prefix="fst_peer",
+        principal_id="scientist-b",
+        tenant_id="academic-poc",
+        scopes=frozenset({Scope.INFERENCE_INVOKE.value}),
+        models=frozenset({"alphafold3"}),
+    )
+
+    with pytest.raises(ArtifactNotFoundError, match="scientific artifact was not found"):
+        await bridge.validate_input(
+            record.to_public_ref().model_dump(mode="json", exclude_none=True),
+            principal=peer,
+        )
+
+    assert reader.calls == []
 
 
 def runtime_profile() -> ScientificWorkloadProfile:

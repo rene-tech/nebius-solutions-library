@@ -29,7 +29,7 @@ from ..scientific_artifacts import (
 from ..scientific_artifacts import (
     AttemptStatus as ArtifactAttemptStatus,
 )
-from ..store import ConflictError, Store
+from ..store import ConflictError, NotFoundError, Store
 from .models import (
     ArtifactAccessContext,
     AttemptArtifactCommit,
@@ -144,12 +144,24 @@ class ArtifactServiceBridge:
         self.content_reader = content_reader
         self.service = service
 
-    async def validate_input(self, pointer: Mapping[str, Any], *, tenant_id: str) -> ScientificInputAdmission:
+    async def _owned_artifact(self, artifact_id: UUID, *, principal: Principal) -> Any:
+        """Resolve and authorize one artifact with an opaque not-found result."""
+
+        try:
+            artifact = await self.artifacts.get_artifact(artifact_id, tenant_id=principal.tenant_id)
+            operation = await self.store.get_operation(artifact.operation_id, tenant_id=principal.tenant_id)
+            require_operation_access(principal, operation)
+            return artifact
+        except (ArtifactNotFoundError, NotFoundError):
+            raise ArtifactNotFoundError("scientific artifact was not found") from None
+
+    async def validate_input(self, pointer: Mapping[str, Any], *, principal: Principal) -> ScientificInputAdmission:
+        tenant_id = principal.tenant_id
         try:
             artifact_id = UUID(str(pointer["artifact_id"]))
         except (KeyError, ValueError):
             raise ArtifactNotFoundError("input artifact does not exist") from None
-        artifact = await self.artifacts.get_artifact(artifact_id, tenant_id=tenant_id)
+        artifact = await self._owned_artifact(artifact_id, principal=principal)
         if not _pointer_matches(artifact, pointer):
             raise ArtifactNotFoundError("input artifact metadata does not match")
         if artifact.media_type != "application/vnd.fs2.scientific-manifest+json":
@@ -176,7 +188,7 @@ class ArtifactServiceBridge:
                 entry_id = UUID(str(ref["artifact_id"]))
             except ValueError:
                 raise ArtifactNotFoundError("input manifest entry artifact ID is not canonical") from None
-            entry = await self.artifacts.get_artifact(entry_id, tenant_id=tenant_id)
+            entry = await self._owned_artifact(entry_id, principal=principal)
             if not _pointer_matches(entry, ref) or entry.access != artifact.access:
                 raise ArtifactNotFoundError("input manifest entry metadata or access admission differs")
             entries.append(
@@ -215,9 +227,7 @@ class ArtifactServiceBridge:
     async def require_artifact_access(self, artifact_id: UUID, *, principal: Principal) -> None:
         """Bind artifact authorization to the exact principal-owned operation."""
 
-        artifact = await self.artifacts.get_artifact(artifact_id, tenant_id=principal.tenant_id)
-        operation = await self.store.get_operation(artifact.operation_id, tenant_id=principal.tenant_id)
-        require_operation_access(principal, operation)
+        await self._owned_artifact(artifact_id, principal=principal)
 
     def _require_service(self) -> ScientificArtifactControllerPort:
         if self.service is None:
