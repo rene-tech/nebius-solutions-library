@@ -33,7 +33,30 @@ locals {
     "verify_csi_readiness.py"         = file("${path.module}/../../reference-data/verify_csi_readiness.py")
   }
   pod_security_reference_tools_sha256 = sha256(jsonencode(local.pod_security_reference_tools_files))
-  reference_data_source_catalog       = jsondecode(file("${path.module}/../../reference-data/source-catalog.json"))
+  pod_security_successor_proof_source_files = {
+    "verify_checkpoint_durability.py" = file("${path.module}/../../reference-data/verify_checkpoint_durability.py")
+    "verify_csi_readiness.py"         = file("${path.module}/../../reference-data/verify_csi_readiness.py")
+  }
+  pod_security_successor_proof_source_sha256 = sha256(jsonencode(local.pod_security_successor_proof_source_files))
+  pod_security_active_proof_generation_id = try(
+    var.pod_security_successor_storage.proof_generation_ledger.active_generation,
+    strrep("0", 64),
+  )
+  pod_security_active_proof_generation = try(
+    var.pod_security_successor_storage.proof_generation_ledger.generations[local.pod_security_active_proof_generation_id],
+    {
+      sequence            = 0
+      attempt             = 0
+      dataset_id          = "prepare"
+      dataset_revision    = "prepare"
+      dataset_tree_sha256 = strrep("0", 64)
+      deployment_nonce    = "prepare"
+      probe_image         = "prepare.invalid@sha256:${strrep("0", 64)}"
+      tools_data          = local.pod_security_successor_proof_source_files
+      tools_data_sha256   = local.pod_security_successor_proof_source_sha256
+    },
+  )
+  reference_data_source_catalog = jsondecode(file("${path.module}/../../reference-data/source-catalog.json"))
   pod_security_receipt_context = {
     cluster_id       = var.cluster_id
     run_id           = var.run_id
@@ -44,8 +67,10 @@ locals {
       snapshot_policy_sha256 = filesha256("${path.module}/../foundation/pod_security_snapshot_admission.tf")
       rollout_manager        = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager"
       host_agent_images      = local.pod_security_host_agent_images
-      storage_probe_image    = coalesce(var.reference_data.status.image, "prepare.invalid@sha256:${strrep("0", 64)}")
-      storage_tools_config   = var.reference_data.enabled ? "fs2-reference-data-tools-${substr(local.pod_security_reference_tools_sha256, 0, 12)}" : "fs2-reference-data-tools-prepare"
+      storage_probe_image    = local.pod_security_active_proof_generation.probe_image
+      storage_tools_config   = "fs2-reference-data-tools-${substr(local.pod_security_active_proof_generation.tools_data_sha256, 0, 12)}"
+      storage_generation     = local.pod_security_active_proof_generation_id
+      storage_attempt        = local.pod_security_active_proof_generation.attempt
     }))
     psa_version           = var.pod_security_version
     scientific_namespaces = sort(tolist(var.pod_security_existing_scientific_namespaces))
@@ -113,7 +138,7 @@ locals {
     }
     storage_evidence = {
       read_proof_schema       = "fs2-serve.nebius.ai/reference-data-csi-readiness/v2"
-      checkpoint_proof_schema = "fs2-serve.nebius.ai/checkpoint-durability-proof/v1"
+      checkpoint_proof_schema = "fs2-serve.nebius.ai/checkpoint-durability-proof/v2"
       probe_image             = coalesce(var.reference_data.status.image, "prepare.invalid@sha256:${strrep("0", 64)}")
       tools_config_map        = var.reference_data.enabled ? "fs2-reference-data-tools-${substr(local.pod_security_reference_tools_sha256, 0, 12)}" : "fs2-reference-data-tools-prepare"
       tools_data_sha256       = var.reference_data.enabled ? local.pod_security_reference_tools_sha256 : strrep("0", 64)

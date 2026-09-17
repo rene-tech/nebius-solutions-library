@@ -27,7 +27,7 @@ from typing import Any, Protocol
 from urllib.parse import quote, urlencode
 
 BUNDLE_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-receipt/v4"
-LEDGER_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-ledger/v2"
+LEDGER_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-ledger/v3"
 LEDGER_DATA_KEYS = {
     "schema",
     "context_sha256",
@@ -39,6 +39,10 @@ LEDGER_DATA_KEYS = {
     "last_bundle_sha256",
     "last_receipt_id",
     "last_nonce",
+    "proof_generation_ids",
+    "proof_generation_ledger_sha256",
+    "proof_generation_sequence",
+    "proof_generation_active",
     "authorization_phase",
     "authorization_bundle_sha256",
     "authorization_nonce",
@@ -53,9 +57,7 @@ MAX_OBSERVATION_AGE = dt.timedelta(minutes=2)
 MAX_CLOCK_SKEW = dt.timedelta(seconds=30)
 MAX_OBJECTS = 2048
 MAX_INVENTORIES = 256
-EXPECTED_REFERENCE_HOST_PATHS = 103
-EXPECTED_BASELINE_INCOMPATIBLE_OBJECTS = 103
-EXPECTED_RESTRICTED_INCOMPATIBLE_OBJECTS = 716
+MAX_PROOF_GENERATIONS = 8
 
 PHASE_TRANSITIONS = {
     "bootstrap-baseline": ("unmanaged", "baseline-captured"),
@@ -129,8 +131,6 @@ BASELINE_INVENTORY_KINDS = {
     ("keda.sh/v1alpha1", "ScaledObject"),
     ("networking.k8s.io/v1", "NetworkPolicy"),
 }
-LEGACY_BASELINE_INVENTORY_KINDS = BASELINE_INVENTORY_KINDS - {("v1", "ConfigMap")}
-
 BASELINE_CAPABILITIES = {
     "AUDIT_WRITE",
     "CHOWN",
@@ -270,8 +270,135 @@ def _canonical(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+def _terraform_canonical(value: Any) -> bytes:
+    """Match Terraform jsonencode's historical HTML-safe JSON escaping."""
+    payload = _canonical(value).decode("utf-8")
+    for character, escaped in (
+        ("<", r"\u003c"),
+        (">", r"\u003e"),
+        ("&", r"\u0026"),
+        ("\u2028", r"\u2028"),
+        ("\u2029", r"\u2029"),
+    ):
+        payload = payload.replace(character, escaped)
+    return payload.encode("utf-8")
+
+
 def _sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
+
+
+def _proof_generations(context: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, dict[str, Any]]]:
+    storage = _object(context["successor_storage"], "context.successor_storage")
+    ledger = _object(storage["proof_generation_ledger"], "successor proof-generation ledger")
+    _exact_keys(
+        ledger,
+        {"schema", "maximum_generations", "active_generation", "generations"},
+        "successor proof-generation ledger",
+    )
+    if (
+        ledger["schema"] != "fs2-serve.nebius.ai/sai07-proof-generation-ledger/v1"
+        or ledger["maximum_generations"] != MAX_PROOF_GENERATIONS
+    ):
+        raise ReceiptError("successor proof-generation ledger contract is unsupported")
+    generations_raw = _object(ledger["generations"], "successor proof generations")
+    if not 1 <= len(generations_raw) <= MAX_PROOF_GENERATIONS:
+        raise ReceiptError("successor proof-generation ledger must retain one through eight generations")
+    active_id = _string(ledger["active_generation"], "active proof generation")
+    if not SHA256_RE.fullmatch(active_id) or active_id not in generations_raw:
+        raise ReceiptError("active proof generation is absent or malformed")
+    generations: dict[str, dict[str, Any]] = {}
+    sequences: list[int] = []
+    for generation_id, generation_raw in generations_raw.items():
+        if not isinstance(generation_id, str) or not SHA256_RE.fullmatch(generation_id):
+            raise ReceiptError("proof-generation identity is malformed")
+        generation = _object(generation_raw, f"proof generation {generation_id}")
+        _exact_keys(
+            generation,
+            {
+                "sequence",
+                "attempt",
+                "dataset_id",
+                "dataset_revision",
+                "dataset_tree_sha256",
+                "deployment_nonce",
+                "probe_image",
+                "tools_data",
+                "tools_data_sha256",
+            },
+            f"proof generation {generation_id}",
+        )
+        sequence = _integer(generation["sequence"], f"proof generation {generation_id} sequence", 1)
+        _integer(generation["attempt"], f"proof generation {generation_id} attempt", 1)
+        sequences.append(sequence)
+        for field in ("dataset_id", "dataset_revision", "deployment_nonce"):
+            if not IDENTIFIER_RE.fullmatch(_string(generation[field], f"proof generation {generation_id} {field}")):
+                raise ReceiptError(f"proof generation {generation_id} {field} is malformed")
+        if not SHA256_RE.fullmatch(
+            _string(generation["dataset_tree_sha256"], f"proof generation {generation_id} dataset tree")
+        ):
+            raise ReceiptError("proof-generation dataset tree is malformed")
+        if not re.fullmatch(
+            r"[^@\s]+@sha256:[a-f0-9]{64}",
+            _string(generation["probe_image"], f"proof generation {generation_id} image"),
+        ):
+            raise ReceiptError("proof-generation image must be digest pinned")
+        tools = _object(generation["tools_data"], f"proof generation {generation_id} tools")
+        if set(tools) != {"verify_checkpoint_durability.py", "verify_csi_readiness.py"} or not all(
+            isinstance(name, str) and isinstance(payload, str) and payload for name, payload in tools.items()
+        ):
+            raise ReceiptError("proof-generation tooling differs from the bounded source set")
+        if (
+            generation["tools_data_sha256"] != _sha256(_terraform_canonical(tools))
+            or generation_id != _sha256(_terraform_canonical(generation))
+        ):
+            raise ReceiptError("proof-generation identity or tooling digest differs")
+        generations[generation_id] = generation
+    if sorted(sequences) != list(range(1, len(sequences) + 1)):
+        raise ReceiptError("proof-generation sequences must be contiguous from one")
+    if len({generation_id[:12] for generation_id in generations}) != len(generations):
+        raise ReceiptError("proof-generation Kubernetes name prefixes must be unique")
+    tool_digests = {generation["tools_data_sha256"] for generation in generations.values()}
+    if len({digest[:12] for digest in tool_digests}) != len(tool_digests):
+        raise ReceiptError("proof-tool Kubernetes name prefixes must be unique")
+    active = generations[active_id]
+    if active["sequence"] != max(sequences):
+        raise ReceiptError("active proof generation is not the latest retained sequence")
+    return active_id, active, generations
+
+
+def _successor_tools_name(generation: dict[str, Any]) -> str:
+    return f"fs2-reference-data-tools-{generation['tools_data_sha256'][:12]}"
+
+
+def _proof_generation_state(context: dict[str, Any]) -> dict[str, Any]:
+    active_id, _active, generations = _proof_generations(context)
+    ordered_ids = [
+        generation_id
+        for generation_id, _generation in sorted(
+            generations.items(), key=lambda item: item[1]["sequence"]
+        )
+    ]
+    ledger = context["successor_storage"]["proof_generation_ledger"]
+    return {
+        "ids": ordered_ids,
+        "ledger_sha256": _sha256(_terraform_canonical(ledger)),
+        "sequence": generations[active_id]["sequence"],
+        "active": active_id,
+    }
+
+
+def _stable_context_sha256(context: dict[str, Any]) -> str:
+    stable = deepcopy(context)
+    storage = _object(stable["successor_storage"], "stable successor storage")
+    ledger = _object(storage["proof_generation_ledger"], "stable proof-generation ledger")
+    storage["proof_generation_ledger"] = {
+        "schema": ledger["schema"],
+        "maximum_generations": ledger["maximum_generations"],
+    }
+    stable["successor_storage_sha256"] = "proof-generations-bound-by-ledger-v3"
+    stable["exception_admission_sha256"] = "proof-generation-render-bound-by-signed-bundle"
+    return _sha256(_terraform_canonical(stable))
 
 
 def _instant(value: Any, label: str) -> dt.datetime:
@@ -505,7 +632,7 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
     )
     if storage_evidence["read_proof_schema"] != "fs2-serve.nebius.ai/reference-data-csi-readiness/v2":
         raise ReceiptError("context.storage_evidence.read_proof_schema is unsupported")
-    if storage_evidence["checkpoint_proof_schema"] != "fs2-serve.nebius.ai/checkpoint-durability-proof/v1":
+    if storage_evidence["checkpoint_proof_schema"] != "fs2-serve.nebius.ai/checkpoint-durability-proof/v2":
         raise ReceiptError("context.storage_evidence.checkpoint_proof_schema is unsupported")
     if not re.fullmatch(
         r"[^@\s]+@sha256:[a-f0-9]{64}",
@@ -521,14 +648,14 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
     ) or context["successor_storage_sha256"] == "0" * 64:
         raise ReceiptError("context.successor_storage_sha256 must bind a non-empty custody contract")
     successor_storage = _object(context["successor_storage"], "context.successor_storage")
-    if _sha256(_canonical(successor_storage)) != context["successor_storage_sha256"]:
+    if _sha256(_terraform_canonical(successor_storage)) != context["successor_storage_sha256"]:
         raise ReceiptError("context successor-storage custody contract digest differs")
     _exact_keys(
         successor_storage,
-        {"schema", "reference_source", "checkpoint_source"},
+        {"schema", "reference_source", "checkpoint_source", "proof_generation_ledger"},
         "context.successor_storage",
     )
-    if successor_storage["schema"] != "fs2-serve.nebius.ai/sai07-successor-storage/v1":
+    if successor_storage["schema"] != "fs2-serve.nebius.ai/sai07-successor-storage/v2":
         raise ReceiptError("context successor-storage schema is unsupported")
     reference_source = _object(successor_storage["reference_source"], "successor reference source")
     _exact_keys(
@@ -591,6 +718,15 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
         if not IDENTIFIER_RE.fullmatch(_string(reference_source[field], f"successor reference {field}")):
             raise ReceiptError(f"successor reference {field} is malformed")
 
+    _active_generation_id, active_generation, _generations = _proof_generations(context)
+    if (
+        active_generation["dataset_id"] != dataset["id"]
+        or active_generation["dataset_revision"] != dataset["revision"]
+        or active_generation["dataset_tree_sha256"] != dataset["tree_sha256"]
+        or active_generation["probe_image"] != storage_evidence["probe_image"]
+    ):
+        raise ReceiptError("active proof generation differs from the signed dataset or image")
+
     baseline = _object(context["baseline"], "context.baseline")
     _exact_keys(
         baseline,
@@ -604,10 +740,7 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
         },
         "context.baseline",
     )
-    if baseline["schema"] not in {
-        "fs2-serve.nebius.ai/sai07-baseline-inventory/v3",
-        "fs2-serve.nebius.ai/sai07-baseline-inventory/v4",
-    }:
+    if baseline["schema"] != "fs2-serve.nebius.ai/sai07-baseline-inventory/v4":
         raise ReceiptError("context.baseline.schema is unsupported")
     for field in ("artifact_sha256", "inventory_sha256"):
         if not SHA256_RE.fullmatch(_string(baseline[field], f"context.baseline.{field}")):
@@ -618,12 +751,6 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
         "restricted_incompatible_objects",
     ):
         _integer(baseline[field], f"context.baseline.{field}")
-    if baseline["schema"].endswith("/v3") and (
-        baseline["reference_host_paths"] != EXPECTED_REFERENCE_HOST_PATHS
-        or baseline["baseline_incompatible_objects"] != EXPECTED_BASELINE_INCOMPATIBLE_OBJECTS
-        or baseline["restricted_incompatible_objects"] != EXPECTED_RESTRICTED_INCOMPATIBLE_OBJECTS
-    ):
-        raise ReceiptError("legacy signed v3 baseline differs from preserved 103/103/716 evidence")
 
 
 def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> dict[str, Any]:
@@ -650,10 +777,7 @@ def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> dict
         "inventory_sha256",
     }
     _exact_keys(artifact, expected_fields, "baseline artifact")
-    if artifact["schema"] not in {
-        "fs2-serve.nebius.ai/sai07-baseline-inventory/v3",
-        "fs2-serve.nebius.ai/sai07-baseline-inventory/v4",
-    }:
+    if artifact["schema"] != "fs2-serve.nebius.ai/sai07-baseline-inventory/v4":
         raise ReceiptError("baseline artifact schema is unsupported")
     unsigned = dict(artifact)
     self_digest = unsigned.pop("inventory_sha256")
@@ -667,7 +791,7 @@ def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> dict
         "fs2-system",
         *context["scientific_namespaces"],
     ]
-    expected_kinds = BASELINE_INVENTORY_KINDS if artifact["schema"].endswith("/v4") else LEGACY_BASELINE_INVENTORY_KINDS
+    expected_kinds = BASELINE_INVENTORY_KINDS
     expected_collections = {
         (namespace, api_version, kind) for namespace in inspected_namespaces for api_version, kind in expected_kinds
     }
@@ -1050,6 +1174,7 @@ def _validate_observation_contract(
             "snapshot_checkpoint_durability_passed": True,
         }:
             raise ReceiptError("reference-data-ready assertions do not bind the exact dataset")
+        _active_generation_id, _active_generation, proof_generations = _proof_generations(context)
         required = {
             ("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx"),
             (
@@ -1084,7 +1209,8 @@ def _validate_observation_contract(
             ("v1", "PersistentVolume", "", SNAPSHOT_CHECKPOINT_VOLUME),
             *{("v1", "PersistentVolumeClaim", namespace, name) for namespace, name in REFERENCE_SUCCESSOR_CLAIMS},
             *{
-                ("v1", "ConfigMap", namespace, context["storage_evidence"]["tools_config_map"])
+                ("v1", "ConfigMap", namespace, _successor_tools_name(generation))
+                for generation in proof_generations.values()
                 for namespace, _name in REFERENCE_SUCCESSOR_CLAIMS
             },
             (
@@ -1098,8 +1224,9 @@ def _validate_observation_contract(
                     "batch/v1",
                     "Job",
                     SNAPSHOT_CHECKPOINT_CLAIM[0],
-                    _checkpoint_probe_name(mode, context),
+                    _checkpoint_probe_name(mode, context, generation_id),
                 )
+                for generation_id in proof_generations
                 for mode in ("read", "write")
             },
             *{
@@ -1107,8 +1234,9 @@ def _validate_observation_contract(
                     "batch/v1",
                     "Job",
                     namespace,
-                    _probe_name(f"{name}-read-probe", context),
+                    _successor_probe_name(f"{name}-read-probe", generation_id),
                 )
+                for generation_id in proof_generations
                 for namespace, name in REFERENCE_SUCCESSOR_CLAIMS
             },
         }
@@ -1411,7 +1539,12 @@ def _pod_security_findings(spec: dict[str, Any], annotations: dict[str, Any]) ->
     return bool(baseline), bool(restricted), host_paths
 
 
-def _job_completed_once(value: dict[str, Any], label: str) -> dict[str, Any]:
+def _job_completed_once(
+    value: dict[str, Any],
+    label: str,
+    *,
+    expected_backoff_limit: int,
+) -> dict[str, Any]:
     status = _object(value.get("status"), f"{label} status")
     if int(status.get("succeeded", 0) or 0) != 1 or not any(
         isinstance(condition, dict) and condition.get("type") == "Complete" and condition.get("status") == "True"
@@ -1419,6 +1552,14 @@ def _job_completed_once(value: dict[str, Any], label: str) -> dict[str, Any]:
     ):
         raise ReceiptError(f"{label} is not exactly completed")
     spec = _object(value.get("spec"), f"{label} spec")
+    if (
+        spec.get("backoffLimit") != expected_backoff_limit
+        or spec.get("activeDeadlineSeconds") != 900
+        or spec.get("completions") != 1
+        or spec.get("parallelism") != 1
+        or spec.get("manualSelector", False) is not False
+    ):
+        raise ReceiptError(f"{label} retry and completion bounds differ")
     template = _object(spec.get("template"), f"{label} template")
     return _object(template.get("spec"), f"{label} Pod spec")
 
@@ -1429,22 +1570,30 @@ def _probe_name(prefix: str, context: dict[str, Any]) -> str:
     return f"{prefix}-{tree[:12]}-{challenge_sha256[:12]}"
 
 
-def _checkpoint_probe_name(mode: str, context: dict[str, Any]) -> str:
-    challenge_sha256 = hashlib.sha256(context["deployment_nonce"].encode()).hexdigest()
-    return f"fs2-snapshot-checkpoints-durability-{mode}-{challenge_sha256[:12]}"
+def _successor_probe_name(prefix: str, generation_id: str) -> str:
+    if not SHA256_RE.fullmatch(generation_id):
+        raise ReceiptError("successor probe generation is malformed")
+    return f"{prefix}-{generation_id[:12]}"
+
+
+def _checkpoint_probe_name(mode: str, context: dict[str, Any], generation_id: str | None = None) -> str:
+    if generation_id is None:
+        generation_id, _generation, _generations = _proof_generations(context)
+    return _successor_probe_name(f"fs2-snapshot-checkpoints-durability-{mode}", generation_id)
 
 
 def _validate_storage_tooling(
     live_objects: dict[tuple[str, str, str, str], dict[str, Any]],
     namespace: str,
-    context: dict[str, Any],
+    *,
+    name: str,
+    data_sha256: str,
 ) -> None:
-    name = context["storage_evidence"]["tools_config_map"]
     config = live_objects.get(("v1", "ConfigMap", namespace, name))
     if config is None or config.get("immutable") is not True:
         raise ReceiptError(f"immutable storage proof tooling is absent from {namespace}")
     data = _object(config.get("data"), f"storage proof tooling in {namespace}")
-    if _sha256(_canonical(data)) != context["storage_evidence"]["tools_data_sha256"]:
+    if _sha256(_terraform_canonical(data)) != data_sha256:
         raise ReceiptError(f"storage proof tooling content differs in {namespace}")
 
 
@@ -1456,10 +1605,37 @@ def _validate_read_probe_execution(
     *,
     label: str,
     claim_name: str,
+    generation_id: str | None = None,
 ) -> None:
     job_metadata = _object(job.get("metadata"), f"{label} Job metadata")
     job_namespace = _string(job_metadata.get("namespace"), f"{label} Job namespace")
-    _validate_storage_tooling(live_objects, job_namespace, context)
+    if generation_id is None:
+        generation = None
+        dataset = context["dataset"]
+        challenge = context["deployment_nonce"]
+        probe_image = context["storage_evidence"]["probe_image"]
+        tools_name = context["storage_evidence"]["tools_config_map"]
+        tools_sha256 = context["storage_evidence"]["tools_data_sha256"]
+    else:
+        _active_id, _active_generation, generations = _proof_generations(context)
+        if generation_id not in generations:
+            raise ReceiptError(f"{label} proof generation is not retained in the signed ledger")
+        generation = generations[generation_id]
+        dataset = {
+            "id": generation["dataset_id"],
+            "revision": generation["dataset_revision"],
+            "tree_sha256": generation["dataset_tree_sha256"],
+        }
+        challenge = generation["deployment_nonce"]
+        probe_image = generation["probe_image"]
+        tools_name = _successor_tools_name(generation)
+        tools_sha256 = generation["tools_data_sha256"]
+    _validate_storage_tooling(
+        live_objects,
+        job_namespace,
+        name=tools_name,
+        data_sha256=tools_sha256,
+    )
     claim_metadata = _object(claim.get("metadata"), f"{label} claim metadata")
     claim_spec = _object(claim.get("spec"), f"{label} claim spec")
     claim_identity = {
@@ -1472,19 +1648,26 @@ def _validate_read_probe_execution(
     job_uid = _string(job_metadata.get("uid"), f"{label} Job UID")
     job_annotations = _object(job_metadata.get("annotations", {}), f"{label} Job annotations")
     expected_annotations = {
-        "reference-data.fs2.nebius.ai/tree-sha256": context["dataset"]["tree_sha256"],
+        "reference-data.fs2.nebius.ai/tree-sha256": dataset["tree_sha256"],
         "reference-data.fs2.nebius.ai/receipt": (
-            f"receipts/{context['dataset']['id']}/{context['dataset']['revision']}.json"
+            f"receipts/{dataset['id']}/{dataset['revision']}.json"
         ),
         "reference-data.fs2.nebius.ai/pvc-uid": claim_identity["uid"],
         "reference-data.fs2.nebius.ai/pvc-resource-version": claim_identity["resource_version"],
         "reference-data.fs2.nebius.ai/volume-name": claim_identity["volume_name"],
-        "reference-data.fs2.nebius.ai/proof-challenge": context["deployment_nonce"],
+        "reference-data.fs2.nebius.ai/proof-challenge": challenge,
     }
+    if generation is not None:
+        expected_annotations.update(
+            {
+                "security.fs2.nebius.ai/proof-generation": generation_id,
+                "security.fs2.nebius.ai/proof-attempt": str(generation["attempt"]),
+            }
+        )
     if any(job_annotations.get(key) != value for key, value in expected_annotations.items()):
         raise ReceiptError(f"{label} Job does not bind the signed PVC, dataset, and challenge")
 
-    pod_spec = _job_completed_once(job, label)
+    pod_spec = _job_completed_once(job, label, expected_backoff_limit=2 if generation is not None else 0)
     containers = pod_spec.get("containers")
     volumes = pod_spec.get("volumes")
     if not isinstance(containers, list) or len(containers) != 1 or not isinstance(volumes, list):
@@ -1498,11 +1681,11 @@ def _validate_read_probe_execution(
         "--receipt",
         expected_annotations["reference-data.fs2.nebius.ai/receipt"],
         "--bundle",
-        context["dataset"]["id"],
+        dataset["id"],
         "--revision",
-        context["dataset"]["revision"],
+        dataset["revision"],
         "--tree-sha256",
-        context["dataset"]["tree_sha256"],
+        dataset["tree_sha256"],
         "--pvc-uid",
         claim_identity["uid"],
         "--pvc-resource-version",
@@ -1510,14 +1693,15 @@ def _validate_read_probe_execution(
         "--volume-name",
         claim_identity["volume_name"],
         "--challenge",
-        context["deployment_nonce"],
-        "--proof-output",
-        "/dev/termination-log",
+        challenge,
     ]
+    if generation is not None:
+        expected_command.extend(["--generation", generation_id, "--attempt", str(generation["attempt"])])
+    expected_command.extend(["--proof-output", "/dev/termination-log"])
     if (
         pod_spec.get("automountServiceAccountToken") is not False
         or container.get("name") != "read-probe"
-        or container.get("image") != context["storage_evidence"]["probe_image"]
+        or container.get("image") != probe_image
         or container.get("command") != expected_command
         or container.get("terminationMessagePath") != "/dev/termination-log"
         or container.get("terminationMessagePolicy") != "File"
@@ -1532,7 +1716,7 @@ def _validate_read_probe_execution(
             isinstance(volume, dict)
             and volume.get("name") == "tools"
             and isinstance(volume.get("configMap"), dict)
-            and volume["configMap"].get("name") == context["storage_evidence"]["tools_config_map"]
+            and volume["configMap"].get("name") == tools_name
             for volume in volumes
         )
     ):
@@ -1553,62 +1737,82 @@ def _validate_read_probe_execution(
             for owner in owner_references
         ):
             owned_pods.append(pod)
-    if len(owned_pods) != 1:
-        raise ReceiptError(f"{label} must have exactly one live Pod owned by the exact Job UID")
-    pod = owned_pods[0]
-    live_pod_spec = _object(pod.get("spec"), f"{label} live Pod spec")
-    live_containers = live_pod_spec.get("containers")
-    statuses = _object(pod.get("status"), f"{label} live Pod status").get("containerStatuses")
-    if (
-        not isinstance(live_containers, list)
-        or len(live_containers) != 1
-        or not isinstance(statuses, list)
-        or len(statuses) != 1
-    ):
-        raise ReceiptError(f"{label} live Pod execution is ambiguous")
-    live_container = _object(live_containers[0], f"{label} live container")
-    status = _object(statuses[0], f"{label} live container status")
-    terminated = _object(
-        _object(status.get("state"), f"{label} container state").get("terminated"),
-        f"{label} termination",
-    )
-    image_digest = context["storage_evidence"]["probe_image"].split("@", 1)[1]
-    if (
-        live_container.get("image") != context["storage_evidence"]["probe_image"]
-        or live_container.get("command") != expected_command
-        or not _string(status.get("imageID"), f"{label} runtime image ID").endswith(image_digest)
-        or terminated.get("exitCode") != 0
-    ):
-        raise ReceiptError(f"{label} live Pod did not run the exact digest-pinned proof command")
-    try:
-        proof = _object(json.loads(_string(terminated.get("message"), f"{label} termination proof")), f"{label} proof")
-    except json.JSONDecodeError as error:
-        raise ReceiptError(f"{label} termination proof is not canonical JSON") from error
+    if not 1 <= len(owned_pods) <= 3:
+        raise ReceiptError(f"{label} must retain one through three retry Pods owned by the exact Job UID")
+    successful_proofs: list[dict[str, Any]] = []
+    image_digest = probe_image.split("@", 1)[1]
+    for index, pod in enumerate(owned_pods):
+        live_pod_spec = _object(pod.get("spec"), f"{label} live Pod[{index}] spec")
+        live_containers = live_pod_spec.get("containers")
+        statuses = _object(pod.get("status"), f"{label} live Pod[{index}] status").get("containerStatuses")
+        if (
+            not isinstance(live_containers, list)
+            or len(live_containers) != 1
+            or not isinstance(statuses, list)
+            or len(statuses) != 1
+        ):
+            raise ReceiptError(f"{label} live retry Pod execution is ambiguous")
+        live_container = _object(live_containers[0], f"{label} live Pod[{index}] container")
+        status = _object(statuses[0], f"{label} live Pod[{index}] container status")
+        terminated = _object(
+            _object(status.get("state"), f"{label} live Pod[{index}] state").get("terminated"),
+            f"{label} live Pod[{index}] termination",
+        )
+        if (
+            live_container.get("image") != probe_image
+            or live_container.get("command") != expected_command
+            or not _string(status.get("imageID"), f"{label} runtime image ID").endswith(image_digest)
+        ):
+            raise ReceiptError(f"{label} retry Pod did not run the exact digest-pinned proof command")
+        if terminated.get("exitCode") != 0:
+            continue
+        try:
+            successful_proofs.append(
+                _object(
+                    json.loads(_string(terminated.get("message"), f"{label} termination proof")),
+                    f"{label} proof",
+                )
+            )
+        except json.JSONDecodeError as error:
+            raise ReceiptError(f"{label} termination proof is not canonical JSON") from error
+    if len(successful_proofs) != 1:
+        raise ReceiptError(f"{label} must have exactly one successful retry proof")
+    proof = successful_proofs[0]
+    expected_proof_keys = {
+        "schema",
+        "bundle_id",
+        "revision",
+        "tree_sha256",
+        "receipt_sha256",
+        "manifest_sha256",
+        "read_probe_passed",
+        "pvc",
+        "challenge",
+        "proof_sha256",
+    }
+    if generation is not None:
+        expected_proof_keys.update({"generation", "attempt"})
     _exact_keys(
         proof,
-        {
-            "schema",
-            "bundle_id",
-            "revision",
-            "tree_sha256",
-            "receipt_sha256",
-            "manifest_sha256",
-            "read_probe_passed",
-            "pvc",
-            "challenge",
-            "proof_sha256",
-        },
+        expected_proof_keys,
         f"{label} proof",
     )
     proof_sha256 = proof.pop("proof_sha256")
+    expected_schema = (
+        "fs2-serve.nebius.ai/reference-data-csi-readiness/v3"
+        if generation is not None
+        else context["storage_evidence"]["read_proof_schema"]
+    )
     if (
-        proof.get("schema") != context["storage_evidence"]["read_proof_schema"]
-        or proof.get("bundle_id") != context["dataset"]["id"]
-        or proof.get("revision") != context["dataset"]["revision"]
-        or proof.get("tree_sha256") != context["dataset"]["tree_sha256"]
+        proof.get("schema") != expected_schema
+        or proof.get("bundle_id") != dataset["id"]
+        or proof.get("revision") != dataset["revision"]
+        or proof.get("tree_sha256") != dataset["tree_sha256"]
         or proof.get("read_probe_passed") is not True
         or proof.get("pvc") != claim_identity
-        or proof.get("challenge") != context["deployment_nonce"]
+        or proof.get("challenge") != challenge
+        or (generation is not None and proof.get("generation") != generation_id)
+        or (generation is not None and proof.get("attempt") != generation["attempt"])
         or not SHA256_RE.fullmatch(str(proof.get("receipt_sha256", "")))
         or not SHA256_RE.fullmatch(str(proof.get("manifest_sha256", "")))
         or proof_sha256 != _sha256(_canonical(proof))
@@ -1623,10 +1827,21 @@ def _validate_checkpoint_probe_execution(
     context: dict[str, Any],
     *,
     mode: str,
+    generation_id: str,
 ) -> dt.datetime:
     label = f"snapshot checkpoint {mode} proof"
     namespace = SNAPSHOT_CHECKPOINT_CLAIM[0]
-    _validate_storage_tooling(live_objects, namespace, context)
+    _active_id, _active_generation, generations = _proof_generations(context)
+    if generation_id not in generations:
+        raise ReceiptError(f"{label} generation is not retained in the signed ledger")
+    generation = generations[generation_id]
+    tools_name = _successor_tools_name(generation)
+    _validate_storage_tooling(
+        live_objects,
+        namespace,
+        name=tools_name,
+        data_sha256=generation["tools_data_sha256"],
+    )
     claim_metadata = _object(claim.get("metadata"), f"{label} claim metadata")
     claim_spec = _object(claim.get("spec"), f"{label} claim spec")
     claim_identity = {
@@ -1638,7 +1853,9 @@ def _validate_checkpoint_probe_execution(
         "security.fs2.nebius.ai/pvc-uid": claim_identity["uid"],
         "security.fs2.nebius.ai/pvc-resource-version": claim_identity["resource_version"],
         "security.fs2.nebius.ai/volume-name": claim_identity["volume_name"],
-        "security.fs2.nebius.ai/proof-challenge": context["deployment_nonce"],
+        "security.fs2.nebius.ai/proof-challenge": generation["deployment_nonce"],
+        "security.fs2.nebius.ai/proof-generation": generation_id,
+        "security.fs2.nebius.ai/proof-attempt": str(generation["attempt"]),
         "security.fs2.nebius.ai/proof-mode": mode,
     }
     job_metadata = _object(job.get("metadata"), f"{label} Job metadata")
@@ -1658,11 +1875,15 @@ def _validate_checkpoint_probe_execution(
         "--volume-name",
         claim_identity["volume_name"],
         "--challenge",
-        context["deployment_nonce"],
+        generation["deployment_nonce"],
+        "--generation",
+        generation_id,
+        "--attempt",
+        str(generation["attempt"]),
         "--proof-output",
         "/dev/termination-log",
     ]
-    pod_spec = _job_completed_once(job, label)
+    pod_spec = _job_completed_once(job, label, expected_backoff_limit=2)
     containers = pod_spec.get("containers")
     volumes = pod_spec.get("volumes")
     expected_read_only = mode == "read"
@@ -1672,7 +1893,7 @@ def _validate_checkpoint_probe_execution(
     if (
         pod_spec.get("automountServiceAccountToken") is not False
         or container.get("name") != "durability-proof"
-        or container.get("image") != context["storage_evidence"]["probe_image"]
+        or container.get("image") != generation["probe_image"]
         or container.get("command") != command
         or container.get("terminationMessagePath") != "/dev/termination-log"
         or container.get("terminationMessagePolicy") != "File"
@@ -1688,7 +1909,7 @@ def _validate_checkpoint_probe_execution(
             isinstance(volume, dict)
             and volume.get("name") == "tools"
             and isinstance(volume.get("configMap"), dict)
-            and volume["configMap"].get("name") == context["storage_evidence"]["tools_config_map"]
+            and volume["configMap"].get("name") == tools_name
             for volume in volumes
         )
     ):
@@ -1710,56 +1931,79 @@ def _validate_checkpoint_probe_execution(
             for owner in owners
         ):
             owned_pods.append(pod)
-    if len(owned_pods) != 1:
-        raise ReceiptError(f"{label} must have exactly one Pod owned by the exact Job UID")
-    pod = owned_pods[0]
-    live_containers = _object(pod.get("spec"), f"{label} live Pod spec").get("containers")
-    statuses = _object(pod.get("status"), f"{label} live Pod status").get("containerStatuses")
-    if (
-        not isinstance(live_containers, list)
-        or len(live_containers) != 1
-        or not isinstance(statuses, list)
-        or len(statuses) != 1
-    ):
-        raise ReceiptError(f"{label} live Pod execution is ambiguous")
-    if _object(live_containers[0], f"{label} live container").get("command") != command:
-        raise ReceiptError(f"{label} live Pod command differs")
-    status = _object(statuses[0], f"{label} container status")
-    terminated = _object(
-        _object(status.get("state"), f"{label} state").get("terminated"),
-        f"{label} termination",
-    )
-    image_digest = context["storage_evidence"]["probe_image"].split("@", 1)[1]
-    if (
-        not _string(status.get("imageID"), f"{label} image ID").endswith(image_digest)
-        or terminated.get("exitCode") != 0
-    ):
-        raise ReceiptError(f"{label} did not use the exact runtime image successfully")
-    try:
-        proof = _object(json.loads(_string(terminated.get("message"), f"{label} output")), f"{label} output")
-    except json.JSONDecodeError as error:
-        raise ReceiptError(f"{label} output is not canonical JSON") from error
+    if not 1 <= len(owned_pods) <= 3:
+        raise ReceiptError(f"{label} must retain one through three retry Pods owned by the exact Job UID")
+    successful: list[tuple[dict[str, Any], dt.datetime]] = []
+    image_digest = generation["probe_image"].split("@", 1)[1]
+    for index, pod in enumerate(owned_pods):
+        live_containers = _object(pod.get("spec"), f"{label} live Pod[{index}] spec").get("containers")
+        statuses = _object(pod.get("status"), f"{label} live Pod[{index}] status").get("containerStatuses")
+        if (
+            not isinstance(live_containers, list)
+            or len(live_containers) != 1
+            or not isinstance(statuses, list)
+            or len(statuses) != 1
+        ):
+            raise ReceiptError(f"{label} live retry Pod execution is ambiguous")
+        live_container = _object(live_containers[0], f"{label} live Pod[{index}] container")
+        status = _object(statuses[0], f"{label} live Pod[{index}] container status")
+        terminated = _object(
+            _object(status.get("state"), f"{label} live Pod[{index}] state").get("terminated"),
+            f"{label} live Pod[{index}] termination",
+        )
+        if (
+            live_container.get("image") != generation["probe_image"]
+            or live_container.get("command") != command
+            or not _string(status.get("imageID"), f"{label} image ID").endswith(image_digest)
+        ):
+            raise ReceiptError(f"{label} retry Pod did not use the exact runtime image and command")
+        if terminated.get("exitCode") != 0:
+            continue
+        try:
+            proof_value = _object(
+                json.loads(_string(terminated.get("message"), f"{label} output")),
+                f"{label} output",
+            )
+        except json.JSONDecodeError as error:
+            raise ReceiptError(f"{label} output is not canonical JSON") from error
+        successful.append((proof_value, _instant(terminated.get("finishedAt"), f"{label} finishedAt")))
+    if len(successful) != 1:
+        raise ReceiptError(f"{label} must have exactly one successful retry proof")
+    proof, finished_at = successful[0]
     _exact_keys(
         proof,
-        {"schema", "mode", "pvc", "challenge", "marker_sha256", "proof_sha256"},
+        {
+            "schema",
+            "mode",
+            "pvc",
+            "challenge",
+            "generation",
+            "attempt",
+            "marker_sha256",
+            "proof_sha256",
+        },
         f"{label} output",
     )
     proof_sha256 = proof.pop("proof_sha256")
     marker = {
-        "schema": "fs2-serve.nebius.ai/checkpoint-durability-marker/v1",
+        "schema": "fs2-serve.nebius.ai/checkpoint-durability-marker/v2",
         "pvc": claim_identity,
-        "challenge": context["deployment_nonce"],
+        "challenge": generation["deployment_nonce"],
+        "generation": generation_id,
+        "attempt": generation["attempt"],
     }
     if (
-        proof.get("schema") != context["storage_evidence"]["checkpoint_proof_schema"]
+        proof.get("schema") != "fs2-serve.nebius.ai/checkpoint-durability-proof/v2"
         or proof.get("mode") != mode
         or proof.get("pvc") != claim_identity
-        or proof.get("challenge") != context["deployment_nonce"]
+        or proof.get("challenge") != generation["deployment_nonce"]
+        or proof.get("generation") != generation_id
+        or proof.get("attempt") != generation["attempt"]
         or proof.get("marker_sha256") != _sha256(_canonical(marker) + b"\n")
         or proof_sha256 != _sha256(_canonical(proof))
     ):
         raise ReceiptError(f"{label} output does not bind the exact remounted content")
-    return _instant(terminated.get("finishedAt"), f"{label} finishedAt")
+    return finished_at
 
 
 def _validate_bound_retained_claim(
@@ -1788,6 +2032,7 @@ def _validate_storage_successors(
     context: dict[str, Any],
 ) -> None:
     tree = context["dataset"]["tree_sha256"]
+    active_generation_id, _active_generation, _generations = _proof_generations(context)
     custody = _object(context["successor_storage"], "successor storage custody")
     reference_source = _object(custody["reference_source"], "reference source custody")
     checkpoint_source = _object(custody["checkpoint_source"], "checkpoint source custody")
@@ -1829,7 +2074,7 @@ def _validate_storage_successors(
         volume_name = REFERENCE_SUCCESSOR_VOLUMES[(namespace, name)]
         volume = live_objects.get(("v1", "PersistentVolume", "", volume_name))
         claim = live_objects.get(("v1", "PersistentVolumeClaim", namespace, name))
-        probe_name = _probe_name(f"{name}-read-probe", context)
+        probe_name = _successor_probe_name(f"{name}-read-probe", active_generation_id)
         probe = live_objects.get(("batch/v1", "Job", namespace, probe_name))
         if volume is None or claim is None or probe is None:
             raise ReceiptError(f"{label} retained PV, claim, or content probe is absent")
@@ -1885,7 +2130,7 @@ def _validate_storage_successors(
             raise ReceiptError(f"{label} does not bind the exact dataset tree and custody")
         if _object(claim.get("spec"), f"{label} claim spec").get("volumeName") != volume_name:
             raise ReceiptError(f"{label} claim is not bound to its fixed retained PV")
-        pod_spec = _job_completed_once(probe, f"{label} read probe")
+        pod_spec = _job_completed_once(probe, f"{label} read probe", expected_backoff_limit=2)
         volumes = pod_spec.get("volumes")
         if (
             pod_spec.get("automountServiceAccountToken") is not False
@@ -1912,6 +2157,7 @@ def _validate_storage_successors(
             context,
             label=f"{label} read probe",
             claim_name=name,
+            generation_id=active_generation_id,
         )
 
     checkpoint_namespace, checkpoint_name = SNAPSHOT_CHECKPOINT_CLAIM
@@ -1980,7 +2226,12 @@ def _validate_storage_successors(
         raise ReceiptError("snapshot checkpoint claim is not bound to the exact retained PV and capacity")
     jobs = {
         mode: live_objects.get(
-            ("batch/v1", "Job", checkpoint_namespace, _checkpoint_probe_name(mode, context))
+            (
+                "batch/v1",
+                "Job",
+                checkpoint_namespace,
+                _checkpoint_probe_name(mode, context, active_generation_id),
+            )
         )
         for mode in ("write", "read")
     }
@@ -1992,6 +2243,7 @@ def _validate_storage_successors(
         jobs["write"],
         context,
         mode="write",
+        generation_id=active_generation_id,
     )
     read_finished = _validate_checkpoint_probe_execution(
         live_objects,
@@ -1999,6 +2251,7 @@ def _validate_storage_successors(
         jobs["read"],
         context,
         mode="read",
+        generation_id=active_generation_id,
     )
     if read_finished <= write_finished:
         raise ReceiptError("snapshot checkpoint remount-read proof did not finish after the writer")
@@ -2171,7 +2424,7 @@ def _validate_live_observations(
             if live.get("immutable") is not True:
                 raise ReceiptError("host-agent config is not immutable")
             data = _object(live.get("data"), "host-agent config data")
-            if _sha256(_canonical(data)) != config["data_sha256"]:
+            if _sha256(_terraform_canonical(data)) != config["data_sha256"]:
                 raise ReceiptError("host-agent config content differs from the signed context")
 
     if state == "reference-data-ready":
@@ -2383,9 +2636,10 @@ def _validate_bundle(
 
 
 def _initial_ledger(query: dict[str, Any]) -> dict[str, Any]:
+    proof_generations = _proof_generation_state(query["expected_context"])
     return {
         "schema": LEDGER_SCHEMA,
-        "context_sha256": _sha256(_canonical(query["expected_context"])),
+        "context_sha256": _stable_context_sha256(query["expected_context"]),
         "authority": {
             "key_id": query["expected_key_id"],
             "signer_identity": query["expected_signer_identity"],
@@ -2396,6 +2650,7 @@ def _initial_ledger(query: dict[str, Any]) -> dict[str, Any]:
         "last_bundle_sha256": None,
         "last_receipt_id": None,
         "last_nonce": None,
+        "proof_generations": proof_generations,
         "authorization": None,
     }
 
@@ -2415,8 +2670,23 @@ def _ledger_from_config_map(value: dict[str, Any], query: dict[str, Any]) -> dic
         raise ReceiptError("durable ledger ConfigMap has unexpected keys")
     try:
         sequence = int(data["sequence"])
+        proof_generation_sequence = int(data["proof_generation_sequence"])
     except ValueError as error:
         raise ReceiptError("durable ledger sequence is invalid") from error
+    try:
+        proof_generation_ids = json.loads(data["proof_generation_ids"])
+    except json.JSONDecodeError as error:
+        raise ReceiptError("durable proof-generation identity ledger is not JSON") from error
+    if (
+        not isinstance(proof_generation_ids, list)
+        or not 1 <= len(proof_generation_ids) <= MAX_PROOF_GENERATIONS
+        or not all(isinstance(item, str) and SHA256_RE.fullmatch(item) for item in proof_generation_ids)
+        or proof_generation_ids != list(dict.fromkeys(proof_generation_ids))
+        or proof_generation_sequence != len(proof_generation_ids)
+        or not SHA256_RE.fullmatch(data["proof_generation_ledger_sha256"])
+        or data["proof_generation_active"] != proof_generation_ids[-1]
+    ):
+        raise ReceiptError("durable proof-generation ledger is malformed")
     authorization = None
     if any(
         data[field]
@@ -2452,6 +2722,12 @@ def _ledger_from_config_map(value: dict[str, Any], query: dict[str, Any]) -> dic
         "last_bundle_sha256": data["last_bundle_sha256"] or None,
         "last_receipt_id": data["last_receipt_id"] or None,
         "last_nonce": data["last_nonce"] or None,
+        "proof_generations": {
+            "ids": proof_generation_ids,
+            "ledger_sha256": data["proof_generation_ledger_sha256"],
+            "sequence": proof_generation_sequence,
+            "active": data["proof_generation_active"],
+        },
         "authorization": authorization,
     }
     _exact_keys(
@@ -2465,6 +2741,7 @@ def _ledger_from_config_map(value: dict[str, Any], query: dict[str, Any]) -> dic
             "last_bundle_sha256",
             "last_receipt_id",
             "last_nonce",
+            "proof_generations",
             "authorization",
         },
         "ledger",
@@ -2477,6 +2754,14 @@ def _ledger_from_config_map(value: dict[str, Any], query: dict[str, Any]) -> dic
     ):
         raise ReceiptError("durable ledger context or authority differs")
     _integer(ledger["sequence"], "ledger.sequence")
+    stored_proof = _object(ledger["proof_generations"], "durable proof generations")
+    incoming_proof = _object(initial["proof_generations"], "incoming proof generations")
+    stored_ids = stored_proof["ids"]
+    incoming_ids = incoming_proof["ids"]
+    if incoming_ids[: len(stored_ids)] != stored_ids:
+        raise ReceiptError("signed proof-generation ledger does not append to durable custody")
+    if len(incoming_ids) == len(stored_ids) and incoming_proof != stored_proof:
+        raise ReceiptError("signed proof-generation ledger rewrites durable custody")
     return ledger
 
 
@@ -2507,6 +2792,12 @@ def _ledger_data(ledger: dict[str, Any]) -> dict[str, str]:
         "last_bundle_sha256": ledger["last_bundle_sha256"] or "",
         "last_receipt_id": ledger["last_receipt_id"] or "",
         "last_nonce": ledger["last_nonce"] or "",
+        "proof_generation_ids": json.dumps(
+            ledger["proof_generations"]["ids"], separators=(",", ":")
+        ),
+        "proof_generation_ledger_sha256": ledger["proof_generations"]["ledger_sha256"],
+        "proof_generation_sequence": str(ledger["proof_generations"]["sequence"]),
+        "proof_generation_active": ledger["proof_generations"]["active"],
         "authorization_phase": authorization["phase"],
         "authorization_bundle_sha256": authorization["bundle_sha256"],
         "authorization_nonce": authorization["nonce"],
@@ -2687,22 +2978,30 @@ def _validate_reference_data_postcondition(
         "",
         context["successor_storage"]["reference_source"]["persistent_volume_name"],
     )
+    _active_generation_id, _active_generation, proof_generations = _proof_generations(context)
     for namespace, name in REFERENCE_SUCCESSOR_CLAIMS:
         read("v1", "PersistentVolume", "", REFERENCE_SUCCESSOR_VOLUMES[(namespace, name)])
         read("v1", "PersistentVolumeClaim", namespace, name)
-        read("v1", "ConfigMap", namespace, tools_name)
-        read(
-            "batch/v1",
-            "Job",
-            namespace,
-            _probe_name(f"{name}-read-probe", context),
-        )
+        for generation_id, generation in proof_generations.items():
+            read("v1", "ConfigMap", namespace, _successor_tools_name(generation))
+            read(
+                "batch/v1",
+                "Job",
+                namespace,
+                _successor_probe_name(f"{name}-read-probe", generation_id),
+            )
         read_pods(namespace)
     checkpoint_namespace, checkpoint_name = SNAPSHOT_CHECKPOINT_CLAIM
     read("v1", "PersistentVolume", "", SNAPSHOT_CHECKPOINT_VOLUME)
     read("v1", "PersistentVolumeClaim", checkpoint_namespace, checkpoint_name)
-    for mode in ("write", "read"):
-        read("batch/v1", "Job", checkpoint_namespace, _checkpoint_probe_name(mode, context))
+    for generation_id in proof_generations:
+        for mode in ("write", "read"):
+            read(
+                "batch/v1",
+                "Job",
+                checkpoint_namespace,
+                _checkpoint_probe_name(mode, context, generation_id),
+            )
     read_pods(checkpoint_namespace)
     _validate_storage_successors(live_objects, context)
 
@@ -2738,7 +3037,7 @@ def _validate_phase_acknowledgement(
             if live is None or live.get("immutable") is not True:
                 raise ReceiptError("host-agent config acknowledgement is absent or mutable")
             data = _object(live.get("data"), "host-agent config data")
-            if _sha256(_canonical(data)) != config["data_sha256"]:
+            if _sha256(_terraform_canonical(data)) != config["data_sha256"]:
                 raise ReceiptError("host-agent config acknowledgement content differs")
         if scope == "downstream":
             _validate_reference_data_postcondition(client, context)
@@ -2822,7 +3121,7 @@ def _validate_phase_acknowledgement(
             live = client.get_object("v1", "ConfigMap", config["namespace"], config["name"])
             if live is None or live.get("immutable") is not True:
                 raise ReceiptError("retained host-agent config is absent or mutable after rollback")
-            if _sha256(_canonical(_object(live.get("data"), "retained host-agent config data"))) != config[
+            if _sha256(_terraform_canonical(_object(live.get("data"), "retained host-agent config data"))) != config[
                 "data_sha256"
             ]:
                 raise ReceiptError("retained host-agent config content differs after rollback")
@@ -2874,6 +3173,7 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
     if ledger_config_map is None:
         raise ReceiptError("durable rollout ledger is absent")
     ledger = _ledger_from_config_map(ledger_config_map, query)
+    incoming_proof_generations = _proof_generation_state(query["expected_context"])
     candidate_bundle_sha256 = _sha256(_canonical(bundle))
     exact_resume = ledger["last_bundle_sha256"] == candidate_bundle_sha256
     current_time = now or dt.datetime.now(dt.UTC)
@@ -2933,6 +3233,7 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
         and ledger["last_bundle_sha256"] == bundle_sha256
         and ledger["last_receipt_id"] == transition["receipt_id"]
         and ledger["last_nonce"] == transition["nonce"]
+        and ledger["proof_generations"] == incoming_proof_generations
         and authorization.get("phase") == phase
         and authorization.get("bundle_sha256") == bundle_sha256
         and authorization.get("nonce") == transition["nonce"]
@@ -2961,6 +3262,7 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
                     "last_bundle_sha256": bundle_sha256,
                     "last_receipt_id": transition["receipt_id"],
                     "last_nonce": transition["nonce"],
+                    "proof_generations": incoming_proof_generations,
                     "authorization": {
                         "phase": phase,
                         "bundle_sha256": bundle_sha256,

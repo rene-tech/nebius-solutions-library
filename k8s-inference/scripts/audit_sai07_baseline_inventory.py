@@ -27,11 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sai07_inventory_projection import ProjectionError, live_projection  # noqa: E402
 
 SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-inventory/v4"
-LEGACY_SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-inventory/v3"
 VERIFICATION_SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-verification/v1"
-EXPECTED_REFERENCE_HOST_PATHS = 103
-EXPECTED_BASELINE_INCOMPATIBLE_OBJECTS = 103
-EXPECTED_RESTRICTED_INCOMPATIBLE_OBJECTS = 716
 SCIENTIFIC_NAMESPACES = (
     "fs2-academic-poc",
     "fs2-bioir-boltz2",
@@ -310,7 +306,7 @@ def read_regular(path: Path, limit: int = 128 * 1024 * 1024) -> bytes:
 
 
 def validate_artifact(value: object) -> dict[str, Any]:
-    if not isinstance(value, dict) or value.get("schema") not in {SCHEMA, LEGACY_SCHEMA}:
+    if not isinstance(value, dict) or value.get("schema") != SCHEMA:
         raise InventoryError("baseline artifact schema is unsupported")
     required = {
         "schema",
@@ -339,9 +335,7 @@ def validate_artifact(value: object) -> dict[str, Any]:
         raise InventoryError("baseline artifact inspected namespace inventory differs")
     if not isinstance(value["objects"], list) or not isinstance(value["collections"], list):
         raise InventoryError("baseline artifact inventories must be lists")
-    collection_kinds = {
-        kind: contract for kind, contract in COLLECTIONS.items() if value["schema"] == SCHEMA or kind != "ConfigMap"
-    }
+    collection_kinds = COLLECTIONS
     expected_collections = {
         (namespace, api_version, kind)
         for namespace in BASELINE_NAMESPACES
@@ -388,12 +382,6 @@ def validate_artifact(value: object) -> dict[str, Any]:
     ):
         if not isinstance(value[field], int) or isinstance(value[field], bool) or value[field] < 0:
             raise InventoryError("baseline artifact finding counts are malformed")
-    if value["schema"] == LEGACY_SCHEMA and (
-        value["reference_host_paths"] != EXPECTED_REFERENCE_HOST_PATHS
-        or value["baseline_incompatible_objects"] != EXPECTED_BASELINE_INCOMPATIBLE_OBJECTS
-        or value["restricted_incompatible_objects"] != EXPECTED_RESTRICTED_INCOMPATIBLE_OBJECTS
-    ):
-        raise InventoryError("legacy v3 baseline does not equal its preserved 103/103/716 evidence")
     if not isinstance(value["legacy_controller_objects"], list):
         raise InventoryError("baseline artifact legacy controller inventory must be a list")
     if value["unauthorized_exception_objects"] != []:

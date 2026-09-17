@@ -121,11 +121,12 @@ The StorageClass is post-rendered to `Retain`; the chart release and PVC use
 capacity is at least the 1611 GiB request.
 
 A completed Job or mutable annotation is not storage evidence. Each reference
-claim proof has a challenge-derived name and must bind the live PVC UID,
+claim proof has a signed generation-derived name and must bind the live PVC UID,
 resourceVersion and volumeName, exact dataset tree, digest-pinned runtime, and
-content-addressed immutable tooling. The verifier re-reads the single Job-owned
-Pod and checks its exact command, runtime image ID, exit status, and self-hashed
-termination proof. Snapshot checkpoint durability requires two distinct Pods:
+content-addressed immutable tooling. The verifier re-reads the bounded set of
+Job-owned retry Pods, checks every exact command and runtime image ID, and
+requires exactly one successful self-hashed termination proof. Snapshot
+checkpoint durability requires separate writer and read-only remount Jobs:
 an exact writer followed by an exact read-only remount reader for the same
 challenge-bound marker. Missing namespace-local claims, immutable tooling,
 writer/reader Jobs, or their owned Pods keeps the rollout SOURCE/LIVE NO-GO;
@@ -149,9 +150,25 @@ directories or copying 1.6 TiB six times. A separate fixed `ReadWriteMany` PV/PV
 backs `fs2-snapshot-checkpoints`. Every PV and PVC uses `Retain` semantics and
 `prevent_destroy`; immutable proof tooling is replicated to every consumer
 namespace. The checkpoint writer Job must complete before the independently
-mounted read-only reader Job. Both exact Jobs and all six reference read probes
-are destruction-protected and bind the signed nonce plus live PVC UID,
-resourceVersion and volumeName.
+mounted read-only reader Job. Proof tooling is keyed by its content digest, and
+Jobs are keyed by the full signed proof-generation identity rather than a
+mutable single-instance address. The signed ledger retains one through eight
+unique, monotonically sequenced generations; each retry appends a new
+nonce/attempt generation, while every earlier ConfigMap and Job remains in
+Terraform state with `prevent_destroy`. Reaching eight generations fails closed
+pending a separately reviewed archival procedure. Within one generation, a
+failed Job may create at most three Pods; the checkpoint writer accepts an
+already-fsynced marker only when its exact bytes match, so a crash after durable
+write resumes without replacing or rewriting it. All six reference read probes
+and both checkpoint Jobs bind the generation, attempt, signed nonce, and live
+PVC UID, resourceVersion and volumeName.
+
+The rollout ConfigMap ledger separately persists the ordered generation IDs,
+latest sequence/active ID, and signed generation-ledger digest. Its CAS accepts
+only an append-only prefix extension and records that extension atomically with
+the authorized phase transition. Thus a failed probe can use a fresh signed
+nonce without resetting the rollout state, while removing, rewriting, reordering
+or replaying a prior generation fails before any acknowledgement.
 
 The snapshot admission policy has finite, non-privileged profiles for only the
 Job-controller-created snapshot reference probe and the two durability Pods.
@@ -174,8 +191,11 @@ inventory, PVC UID/resourceVersion/volume/class, dataset/revision/tree,
 retained filesystem, digest-pinned proof image, immutable tooling digest, and live
 observations. Each present observation carries the exact Kubernetes UID,
 resourceVersion, and canonical object hash; absence observations carry no
-substitutable identity. Baseline gates additionally bind complete live list
-hashes for every relevant workload kind in every frozen namespace.
+substitutable identity. Baseline gates accept v4 artifacts only and additionally
+bind complete live collection resourceVersions plus exact object
+UID/resourceVersion/hash sets and their aggregate digest for every relevant
+workload kind, including ConfigMaps, in every frozen namespace. Historical v3
+artifacts and fixed 103/103/716 counts cannot bootstrap a rollout.
 
 Receipt verification is an apply-time operation, never a replayable Terraform
 data source. The foundation consumer re-reads every signed object and inventory

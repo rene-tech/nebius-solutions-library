@@ -92,13 +92,29 @@ variable "pod_security_successor_storage" {
       provisioning_receipt_sha256 = string
       storage_owner               = string
     })
+    proof_generation_ledger = object({
+      schema              = string
+      maximum_generations = number
+      active_generation   = string
+      generations = map(object({
+        sequence            = number
+        attempt             = number
+        dataset_id          = string
+        dataset_revision    = string
+        dataset_tree_sha256 = string
+        deployment_nonce    = string
+        probe_image         = string
+        tools_data          = map(string)
+        tools_data_sha256   = string
+      }))
+    })
   })
   default  = null
   nullable = true
 
   validation {
-    condition = var.pod_security_successor_storage == null ? true : (
-      var.pod_security_successor_storage.schema == "fs2-serve.nebius.ai/sai07-successor-storage/v1" &&
+    condition = var.pod_security_successor_storage == null ? true : try(
+      var.pod_security_successor_storage.schema == "fs2-serve.nebius.ai/sai07-successor-storage/v2" &&
       var.pod_security_successor_storage.reference_source.csi_driver == "reference-data.mounted-fs-path.csi.nebius.ai" &&
       can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", var.pod_security_successor_storage.reference_source.capacity_quantity)) &&
       var.pod_security_successor_storage.reference_source.capacity_quantity == "${var.pod_security_successor_storage.reference_source.capacity_gib}Gi" &&
@@ -112,9 +128,53 @@ variable "pod_security_successor_storage" {
       floor(var.pod_security_successor_storage.checkpoint_source.requested_gib) == var.pod_security_successor_storage.checkpoint_source.requested_gib &&
       var.pod_security_successor_storage.checkpoint_source.capacity_gib >= var.pod_security_successor_storage.checkpoint_source.requested_gib &&
       var.pod_security_successor_storage.checkpoint_source.requested_gib >= 1 &&
-      can(regex("^[a-f0-9]{64}$", var.pod_security_successor_storage.checkpoint_source.provisioning_receipt_sha256))
+      can(regex("^[a-f0-9]{64}$", var.pod_security_successor_storage.checkpoint_source.provisioning_receipt_sha256)) &&
+      var.pod_security_successor_storage.proof_generation_ledger.schema == "fs2-serve.nebius.ai/sai07-proof-generation-ledger/v1" &&
+      var.pod_security_successor_storage.proof_generation_ledger.maximum_generations == 8 &&
+      length(var.pod_security_successor_storage.proof_generation_ledger.generations) >= 1 &&
+      length(var.pod_security_successor_storage.proof_generation_ledger.generations) <= 8 &&
+      contains(
+        keys(var.pod_security_successor_storage.proof_generation_ledger.generations),
+        var.pod_security_successor_storage.proof_generation_ledger.active_generation,
+      ) &&
+      sort([
+        for generation in values(var.pod_security_successor_storage.proof_generation_ledger.generations) : format("%08d", generation.sequence)
+      ]) == [for sequence in range(1, length(var.pod_security_successor_storage.proof_generation_ledger.generations) + 1) : format("%08d", sequence)] &&
+      length(distinct([
+        for generation in values(var.pod_security_successor_storage.proof_generation_ledger.generations) : generation.sequence
+      ])) == length(var.pod_security_successor_storage.proof_generation_ledger.generations) &&
+      length(distinct([
+        for generation_id in keys(var.pod_security_successor_storage.proof_generation_ledger.generations) : substr(generation_id, 0, 12)
+      ])) == length(var.pod_security_successor_storage.proof_generation_ledger.generations) &&
+      length(distinct([
+        for generation in values(var.pod_security_successor_storage.proof_generation_ledger.generations) : substr(generation.tools_data_sha256, 0, 12)
+        ])) == length(distinct([
+        for generation in values(var.pod_security_successor_storage.proof_generation_ledger.generations) : generation.tools_data_sha256
+      ])) &&
+      alltrue([
+        for generation_id, generation in var.pod_security_successor_storage.proof_generation_ledger.generations :
+        can(regex("^[a-f0-9]{64}$", generation_id)) &&
+        generation_id == sha256(jsonencode(generation)) &&
+        floor(generation.sequence) == generation.sequence && generation.sequence >= 1 &&
+        floor(generation.attempt) == generation.attempt && generation.attempt >= 1 &&
+        can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", generation.dataset_id)) &&
+        can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", generation.dataset_revision)) &&
+        can(regex("^[a-f0-9]{64}$", generation.dataset_tree_sha256)) &&
+        can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", generation.deployment_nonce)) &&
+        can(regex("^[^[:space:]@]+@sha256:[a-f0-9]{64}$", generation.probe_image)) &&
+        toset(keys(generation.tools_data)) == toset([
+          "verify_checkpoint_durability.py",
+          "verify_csi_readiness.py",
+        ]) &&
+        alltrue([for payload in values(generation.tools_data) : length(payload) > 0]) &&
+        generation.tools_data_sha256 == sha256(jsonencode(generation.tools_data))
+      ]) &&
+      var.pod_security_successor_storage.proof_generation_ledger.generations[var.pod_security_successor_storage.proof_generation_ledger.active_generation].sequence == max([
+        for generation in values(var.pod_security_successor_storage.proof_generation_ledger.generations) : generation.sequence
+      ]...),
+      false,
     )
-    error_message = "successor storage must bind the existing retained reference-data volume and a distinct independently receipted retained checkpoint volume."
+    error_message = "successor storage must bind retained CSI volumes and a bounded signed proof-generation ledger with immutable content-addressed generations."
   }
 }
 

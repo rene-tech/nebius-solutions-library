@@ -20,10 +20,27 @@ locals {
     "rollback-restore-host-agents" = 7
     "rollback-remove-exception"    = 8
   }
-  bundle_sha256 = local.receipt_required ? filesha256(var.receipt_bundle_path) : null
+  bundle_sha256           = local.receipt_required ? filesha256(var.receipt_bundle_path) : null
+  proof_generation_ledger = local.receipt_required ? var.expected_context.successor_storage.proof_generation_ledger : null
+  proof_generation_ids = local.receipt_required ? [
+    for sequence in range(1, length(local.proof_generation_ledger.generations) + 1) : one([
+      for generation_id, generation in local.proof_generation_ledger.generations : generation_id
+      if generation.sequence == sequence
+    ])
+  ] : []
+  stable_expected_context = local.receipt_required ? merge(var.expected_context, {
+    exception_admission_sha256 = "proof-generation-render-bound-by-signed-bundle"
+    successor_storage_sha256   = "proof-generations-bound-by-ledger-v3"
+    successor_storage = merge(var.expected_context.successor_storage, {
+      proof_generation_ledger = {
+        schema              = local.proof_generation_ledger.schema
+        maximum_generations = local.proof_generation_ledger.maximum_generations
+      }
+    })
+  }) : var.expected_context
   initial_ledger = {
-    schema         = "fs2-serve.nebius.ai/pod-security-rollout-ledger/v2"
-    context_sha256 = sha256(jsonencode(var.expected_context))
+    schema         = "fs2-serve.nebius.ai/pod-security-rollout-ledger/v3"
+    context_sha256 = sha256(jsonencode(local.stable_expected_context))
     authority = {
       key_id            = coalesce(var.receipt_key_id, "prepare")
       signer_identity   = coalesce(var.receipt_signer_identity, "prepare")
@@ -34,7 +51,13 @@ locals {
     last_bundle_sha256 = null
     last_receipt_id    = null
     last_nonce         = null
-    authorization      = null
+    proof_generations = local.receipt_required ? {
+      ids           = local.proof_generation_ids
+      ledger_sha256 = sha256(jsonencode(local.proof_generation_ledger))
+      sequence      = length(local.proof_generation_ids)
+      active        = local.proof_generation_ledger.active_generation
+    } : null
+    authorization = null
   }
   consume_query = local.receipt_required ? {
     mode = var.action == "acknowledge" ? (
@@ -83,6 +106,10 @@ resource "kubernetes_config_map_v1" "ledger" {
     last_bundle_sha256                    = ""
     last_receipt_id                       = ""
     last_nonce                            = ""
+    proof_generation_ids                  = jsonencode(local.initial_ledger.proof_generations.ids)
+    proof_generation_ledger_sha256        = local.initial_ledger.proof_generations.ledger_sha256
+    proof_generation_sequence             = tostring(local.initial_ledger.proof_generations.sequence)
+    proof_generation_active               = local.initial_ledger.proof_generations.active
     authorization_phase                   = ""
     authorization_bundle_sha256           = ""
     authorization_nonce                   = ""
@@ -118,7 +145,7 @@ resource "terraform_data" "verified" {
     consumer        = var.consumer_role
     action          = var.action
     bundle_sha256   = local.bundle_sha256
-    context_sha256  = sha256(jsonencode(var.expected_context))
+    context_sha256  = sha256(jsonencode(local.stable_expected_context))
     verifier_sha256 = filesha256("${path.module}/../../scripts/verify_pod_security_receipts.py")
   }
 

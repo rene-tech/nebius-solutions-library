@@ -130,7 +130,10 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert 'data "external"' not in gate
     assert 'operations  = ["UPDATE", "DELETE"]' in admission
     assert "The monotonic pod-security rollout ledger may not be deleted" in admission
-    assert "object.data.size() == 15" in admission
+    assert "object.data.size() == 19" in admission
+    assert "pod-security-rollout-ledger/v3" in admission
+    assert "proof_generation_ids" in admission
+    assert "Proof-generation custody may append only with a phase transition" in admission
     assert "int(object.data.sequence) == int(oldObject.data.sequence) + 1" in admission
     assert "authorization_owner_acknowledged == 'false'" in admission
     assert "authorization_downstream_acknowledged == 'false'" in admission
@@ -223,6 +226,17 @@ def test_non_test_iac_owns_every_retained_storage_successor_and_exact_proof() ->
     assert 'resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_write"' in source
     assert 'resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_read"' in source
     assert source.count("prevent_destroy = true") >= 8
+    assert "pod_security_successor_tool_instances" in source
+    assert "pod_security_reference_probe_instances" in source
+    assert "pod_security_checkpoint_probe_instances" in source
+    assert '"${generation_id}/${successor_key}"' in source
+    assert '"${generation_id}/${mode}"' in source
+    assert "backoff_limit           = 2" in source
+    assert '"--generation"' in source
+    assert '"--attempt"' in source
+    assert "proof_generation_ledger" in variables
+    assert "maximum_generations == 8" in variables
+    assert 'sai07-baseline-inventory/v3' not in verifier
     assert 'persistent_volume_reclaim_policy = "Retain"' in source
     assert 'reclaim_policy      = "Retain"' in source
     assert 'read_only         = true' in source

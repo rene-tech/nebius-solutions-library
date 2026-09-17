@@ -69,6 +69,9 @@ locals {
     "object.metadata.ownerReferences[0].name.matches('^fs2-snapshot-checkpoints-durability-(write|read)-[a-f0-9]{12}$')",
     "object.metadata.labels['batch.kubernetes.io/job-name'] == object.metadata.ownerReferences[0].name",
     "object.metadata.annotations['security.fs2.nebius.ai/proof-mode'] in ['write','read']",
+    "object.metadata.annotations['security.fs2.nebius.ai/proof-generation'] == '${var.pod_security_storage_proof_generation}'",
+    "object.metadata.annotations['security.fs2.nebius.ai/proof-attempt'] == '${var.pod_security_storage_proof_attempt}'",
+    "object.metadata.ownerReferences[0].name.endsWith('-${substr(var.pod_security_storage_proof_generation, 0, 12)}')",
     "object.metadata.ownerReferences[0].name.startsWith('fs2-snapshot-checkpoints-durability-' + object.metadata.annotations['security.fs2.nebius.ai/proof-mode'] + '-')",
     "object.spec.serviceAccountName == 'default' && object.spec.automountServiceAccountToken == false",
     "object.spec.restartPolicy == 'Never' && object.spec.enableServiceLinks == false",
@@ -82,9 +85,9 @@ locals {
     "!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.size() == 0",
     "object.spec.containers.size() == 1",
     "object.spec.containers[0].name == 'durability-proof' && object.spec.containers[0].image == '${var.pod_security_storage_probe_image}' && object.spec.containers[0].imagePullPolicy == 'IfNotPresent'",
-    "object.spec.containers[0].command.size() == 15",
+    "object.spec.containers[0].command.size() == 19",
     "object.spec.containers[0].command[0:5] == ['python','/opt/fs2/reference-data/verify_checkpoint_durability.py',object.metadata.annotations['security.fs2.nebius.ai/proof-mode'],'--root','/checkpoints']",
-    "object.spec.containers[0].command[5:15] == ['--pvc-uid',object.metadata.annotations['security.fs2.nebius.ai/pvc-uid'],'--pvc-resource-version',object.metadata.annotations['security.fs2.nebius.ai/pvc-resource-version'],'--volume-name',object.metadata.annotations['security.fs2.nebius.ai/volume-name'],'--challenge',object.metadata.annotations['security.fs2.nebius.ai/proof-challenge'],'--proof-output','/dev/termination-log']",
+    "object.spec.containers[0].command[5:19] == ['--pvc-uid',object.metadata.annotations['security.fs2.nebius.ai/pvc-uid'],'--pvc-resource-version',object.metadata.annotations['security.fs2.nebius.ai/pvc-resource-version'],'--volume-name',object.metadata.annotations['security.fs2.nebius.ai/volume-name'],'--challenge',object.metadata.annotations['security.fs2.nebius.ai/proof-challenge'],'--generation',object.metadata.annotations['security.fs2.nebius.ai/proof-generation'],'--attempt',object.metadata.annotations['security.fs2.nebius.ai/proof-attempt'],'--proof-output','/dev/termination-log']",
     "object.spec.containers[0].terminationMessagePath == '/dev/termination-log' && object.spec.containers[0].terminationMessagePolicy == 'File'",
     "object.spec.containers[0].resources.requests == {'cpu':quantity('50m'),'memory':quantity('64Mi'),'ephemeral-storage':quantity('64Mi')} && object.spec.containers[0].resources.limits == {'cpu':quantity('250m'),'memory':quantity('256Mi'),'ephemeral-storage':quantity('256Mi')}",
     "object.spec.containers[0].securityContext == {'allowPrivilegeEscalation':false,'capabilities':{'drop':['ALL']},'readOnlyRootFilesystem':true}",
@@ -95,14 +98,16 @@ locals {
   ])
   snapshot_reference_probe_pod_expression = join(" && ", [
     "object.metadata.namespace == '${local.snapshot_exception_namespace}'",
-    # The 59-character Job name is necessarily truncated by Job controller
-    # before the Pod suffix is appended. Its full identity remains exact in the
-    # ownerReference and job-name label validated below.
+    # The exact generation is retained in the untruncated ownerReference and
+    # job-name label even when Job controller truncates the Pod generateName.
     "object.metadata.name.startsWith('fs2-snapshot-reference-read-probe-') && object.metadata.name.matches('^[a-z0-9](?:[-a-z0-9]{0,55}[a-z0-9])?-[a-z0-9]{5}$')",
     "object.metadata.ownerReferences.size() == 1",
     "object.metadata.ownerReferences[0].apiVersion == 'batch/v1' && object.metadata.ownerReferences[0].kind == 'Job' && object.metadata.ownerReferences[0].controller == true",
-    "object.metadata.ownerReferences[0].name.matches('^fs2-snapshot-reference-read-probe-[a-f0-9]{12}-[a-f0-9]{12}$')",
+    "object.metadata.ownerReferences[0].name.matches('^fs2-snapshot-reference-read-probe-[a-f0-9]{12}$')",
     "object.metadata.labels['batch.kubernetes.io/job-name'] == object.metadata.ownerReferences[0].name",
+    "object.metadata.annotations['security.fs2.nebius.ai/proof-generation'] == '${var.pod_security_storage_proof_generation}'",
+    "object.metadata.annotations['security.fs2.nebius.ai/proof-attempt'] == '${var.pod_security_storage_proof_attempt}'",
+    "object.metadata.ownerReferences[0].name.endsWith('-${substr(var.pod_security_storage_proof_generation, 0, 12)}')",
     "object.spec.serviceAccountName == 'default' && object.spec.automountServiceAccountToken == false",
     "object.spec.restartPolicy == 'Never' && object.spec.enableServiceLinks == false",
     "(!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) && (!has(object.spec.hostPID) || object.spec.hostPID == false) && (!has(object.spec.hostIPC) || object.spec.hostIPC == false)",
@@ -116,8 +121,8 @@ locals {
     "!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.size() == 0",
     "object.spec.containers.size() == 1",
     "object.spec.containers[0].name == 'read-probe' && object.spec.containers[0].image == '${var.pod_security_storage_probe_image}' && object.spec.containers[0].imagePullPolicy == 'IfNotPresent'",
-    "object.spec.containers[0].command.size() == 22",
-    "object.spec.containers[0].command == ['python','/opt/fs2/reference-data/verify_csi_readiness.py','--root','/reference-data','--receipt',object.metadata.annotations['reference-data.fs2.nebius.ai/receipt'],'--bundle',object.metadata.annotations['reference-data.fs2.nebius.ai/bundle'],'--revision',object.metadata.annotations['reference-data.fs2.nebius.ai/revision'],'--tree-sha256',object.metadata.annotations['reference-data.fs2.nebius.ai/tree-sha256'],'--pvc-uid',object.metadata.annotations['reference-data.fs2.nebius.ai/pvc-uid'],'--pvc-resource-version',object.metadata.annotations['reference-data.fs2.nebius.ai/pvc-resource-version'],'--volume-name',object.metadata.annotations['reference-data.fs2.nebius.ai/volume-name'],'--challenge',object.metadata.annotations['reference-data.fs2.nebius.ai/proof-challenge'],'--proof-output','/dev/termination-log']",
+    "object.spec.containers[0].command.size() == 26",
+    "object.spec.containers[0].command == ['python','/opt/fs2/reference-data/verify_csi_readiness.py','--root','/reference-data','--receipt',object.metadata.annotations['reference-data.fs2.nebius.ai/receipt'],'--bundle',object.metadata.annotations['reference-data.fs2.nebius.ai/bundle'],'--revision',object.metadata.annotations['reference-data.fs2.nebius.ai/revision'],'--tree-sha256',object.metadata.annotations['reference-data.fs2.nebius.ai/tree-sha256'],'--pvc-uid',object.metadata.annotations['reference-data.fs2.nebius.ai/pvc-uid'],'--pvc-resource-version',object.metadata.annotations['reference-data.fs2.nebius.ai/pvc-resource-version'],'--volume-name',object.metadata.annotations['reference-data.fs2.nebius.ai/volume-name'],'--challenge',object.metadata.annotations['reference-data.fs2.nebius.ai/proof-challenge'],'--generation',object.metadata.annotations['security.fs2.nebius.ai/proof-generation'],'--attempt',object.metadata.annotations['security.fs2.nebius.ai/proof-attempt'],'--proof-output','/dev/termination-log']",
     "object.metadata.annotations['security.fs2.nebius.ai/verified-tree-sha256'] == object.metadata.annotations['reference-data.fs2.nebius.ai/tree-sha256']",
     "object.spec.containers[0].terminationMessagePath == '/dev/termination-log' && object.spec.containers[0].terminationMessagePolicy == 'File'",
     "object.spec.containers[0].resources.requests == {'cpu':quantity('50m'),'memory':quantity('64Mi'),'ephemeral-storage':quantity('64Mi')} && object.spec.containers[0].resources.limits == {'cpu':quantity('250m'),'memory':quantity('256Mi'),'ephemeral-storage':quantity('256Mi')}",

@@ -54,7 +54,7 @@ locals {
     }
     evidence = {
       read_proof_schema       = "fs2-serve.nebius.ai/reference-data-csi-readiness/v2"
-      checkpoint_proof_schema = "fs2-serve.nebius.ai/checkpoint-durability-proof/v1"
+      checkpoint_proof_schema = "fs2-serve.nebius.ai/checkpoint-durability-proof/v2"
       probe_image             = "prepare.invalid@sha256:${strrep("0", 64)}"
       tools_config_map        = "fs2-reference-data-tools-prepare"
       tools_data_sha256       = strrep("0", 64)
@@ -72,6 +72,8 @@ locals {
       host_agent_images      = var.pod_security_host_agent_images
       storage_probe_image    = var.pod_security_storage_probe_image
       storage_tools_config   = var.pod_security_storage_tools_config_map
+      storage_generation     = var.pod_security_storage_proof_generation
+      storage_attempt        = var.pod_security_storage_proof_attempt
     }))
     psa_version           = var.pod_security_version
     scientific_namespaces = local.pod_security_scientific_namespaces

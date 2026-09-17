@@ -36,8 +36,25 @@ def authority(tmp_path: Path) -> tuple[Path, Path]:
 
 @pytest.fixture()
 def context() -> dict[str, object]:
+    probe_image = "registry.invalid/fs2/reference-data@sha256:" + "f" * 64
+    proof_tools = {
+        "verify_checkpoint_durability.py": "def proof() -> None:\n    return None\n",
+        "verify_csi_readiness.py": "assert 0 < 1 and 'a&b'\n",
+    }
+    proof_generation = {
+        "sequence": 1,
+        "attempt": 1,
+        "dataset_id": "alphafold3-public-databases-v3.0",
+        "dataset_revision": "20230311",
+        "dataset_tree_sha256": "b" * 64,
+        "deployment_nonce": "sai07-test-20260916",
+        "probe_image": probe_image,
+        "tools_data": proof_tools,
+        "tools_data_sha256": hashlib.sha256(verifier._terraform_canonical(proof_tools)).hexdigest(),
+    }
+    proof_generation_id = hashlib.sha256(verifier._terraform_canonical(proof_generation)).hexdigest()
     successor_storage = {
-        "schema": "fs2-serve.nebius.ai/sai07-successor-storage/v1",
+        "schema": "fs2-serve.nebius.ai/sai07-successor-storage/v2",
         "reference_source": {
             "persistent_volume_name": "pv-reference-data-test",
             "uid": "pv-reference-data-uid",
@@ -59,6 +76,12 @@ def context() -> dict[str, object]:
             "requested_gib": 256,
             "provisioning_receipt_sha256": "d" * 64,
             "storage_owner": "platform-storage",
+        },
+        "proof_generation_ledger": {
+            "schema": "fs2-serve.nebius.ai/sai07-proof-generation-ledger/v1",
+            "maximum_generations": 8,
+            "active_generation": proof_generation_id,
+            "generations": {proof_generation_id: proof_generation},
         },
     }
     return {
@@ -146,12 +169,14 @@ def context() -> dict[str, object]:
         },
         "storage_evidence": {
             "read_proof_schema": "fs2-serve.nebius.ai/reference-data-csi-readiness/v2",
-            "checkpoint_proof_schema": "fs2-serve.nebius.ai/checkpoint-durability-proof/v1",
-            "probe_image": "registry.invalid/fs2/reference-data@sha256:" + "f" * 64,
+            "checkpoint_proof_schema": "fs2-serve.nebius.ai/checkpoint-durability-proof/v2",
+            "probe_image": probe_image,
             "tools_config_map": "fs2-reference-data-tools-test",
             "tools_data_sha256": hashlib.sha256(canonical({"verify": "content"})).hexdigest(),
         },
-        "successor_storage_sha256": hashlib.sha256(canonical(successor_storage)).hexdigest(),
+        "successor_storage_sha256": hashlib.sha256(
+            verifier._terraform_canonical(successor_storage)
+        ).hexdigest(),
         "successor_storage": successor_storage,
     }
 
@@ -217,10 +242,31 @@ def read_probe_objects(
     claim_name: str,
     prefix: str,
     ordinal: int,
+    generation_id: str | None = None,
 ) -> list[dict[str, object]]:
     dataset = context["dataset"]
     evidence = context["storage_evidence"]
     assert isinstance(dataset, dict) and isinstance(evidence, dict)
+    generation: dict[str, object] | None = None
+    if generation_id is not None:
+        storage = context["successor_storage"]
+        assert isinstance(storage, dict)
+        ledger = storage["proof_generation_ledger"]
+        assert isinstance(ledger, dict)
+        generations = ledger["generations"]
+        assert isinstance(generations, dict)
+        generation = generations[generation_id]
+        assert isinstance(generation, dict)
+        dataset = {
+            "id": generation["dataset_id"],
+            "revision": generation["dataset_revision"],
+            "tree_sha256": generation["dataset_tree_sha256"],
+        }
+        evidence = {
+            "probe_image": generation["probe_image"],
+            "tools_config_map": verifier._successor_tools_name(generation),
+            "read_proof_schema": "fs2-serve.nebius.ai/reference-data-csi-readiness/v3",
+        }
     claim_metadata = claim["metadata"]
     claim_spec = claim["spec"]
     assert isinstance(claim_metadata, dict) and isinstance(claim_spec, dict)
@@ -231,9 +277,18 @@ def read_probe_objects(
         "reference-data.fs2.nebius.ai/pvc-uid": claim_metadata["uid"],
         "reference-data.fs2.nebius.ai/pvc-resource-version": claim_metadata["resourceVersion"],
         "reference-data.fs2.nebius.ai/volume-name": claim_spec["volumeName"],
-        "reference-data.fs2.nebius.ai/proof-challenge": context["deployment_nonce"],
+        "reference-data.fs2.nebius.ai/proof-challenge": (
+            generation["deployment_nonce"] if generation is not None else context["deployment_nonce"]
+        ),
         "security.fs2.nebius.ai/verified-tree-sha256": dataset["tree_sha256"],
     }
+    if generation is not None:
+        annotations.update(
+            {
+                "security.fs2.nebius.ai/proof-generation": generation_id,
+                "security.fs2.nebius.ai/proof-attempt": str(generation["attempt"]),
+            }
+        )
     command = [
         "python",
         "/opt/fs2/reference-data/verify_csi_readiness.py",
@@ -254,10 +309,11 @@ def read_probe_objects(
         "--volume-name",
         claim_spec["volumeName"],
         "--challenge",
-        context["deployment_nonce"],
-        "--proof-output",
-        "/dev/termination-log",
+        generation["deployment_nonce"] if generation is not None else context["deployment_nonce"],
     ]
+    if generation is not None:
+        command.extend(["--generation", generation_id, "--attempt", str(generation["attempt"])])
+    command.extend(["--proof-output", "/dev/termination-log"])
     container = {
         "name": "read-probe",
         "image": evidence["probe_image"],
@@ -280,11 +336,23 @@ def read_probe_objects(
             },
         ],
     }
-    job = live_object("batch/v1", "Job", namespace, verifier._probe_name(prefix, context), ordinal)
+    job_name = (
+        verifier._successor_probe_name(prefix, generation_id)
+        if generation_id is not None
+        else verifier._probe_name(prefix, context)
+    )
+    job = live_object("batch/v1", "Job", namespace, job_name, ordinal)
     job_metadata = job["metadata"]
     assert isinstance(job_metadata, dict)
     job_metadata["annotations"] = annotations
-    job["spec"] = {"template": {"spec": pod_spec}}
+    job["spec"] = {
+        "backoffLimit": 2 if generation is not None else 0,
+        "activeDeadlineSeconds": 900,
+        "completions": 1,
+        "parallelism": 1,
+        "manualSelector": False,
+        "template": {"spec": pod_spec},
+    }
     job["status"] = {"succeeded": 1, "conditions": [{"type": "Complete", "status": "True"}]}
     proof: dict[str, object] = {
         "schema": evidence["read_proof_schema"],
@@ -299,10 +367,13 @@ def read_probe_objects(
             "resource_version": claim_metadata["resourceVersion"],
             "volume_name": claim_spec["volumeName"],
         },
-        "challenge": context["deployment_nonce"],
+        "challenge": generation["deployment_nonce"] if generation is not None else context["deployment_nonce"],
     }
+    if generation is not None:
+        proof["generation"] = generation_id
+        proof["attempt"] = generation["attempt"]
     proof["proof_sha256"] = hashlib.sha256(canonical(proof)).hexdigest()
-    pod = live_object("v1", "Pod", namespace, f"{verifier._probe_name(prefix, context)}-pod", ordinal + 1)
+    pod = live_object("v1", "Pod", namespace, f"{job_name}-pod", ordinal + 1)
     pod_metadata = pod["metadata"]
     assert isinstance(pod_metadata, dict)
     pod_metadata["ownerReferences"] = [
@@ -333,12 +404,32 @@ def read_probe_objects(
     return [job, pod]
 
 
-def storage_tools(context: dict[str, object], namespace: str, ordinal: int) -> dict[str, object]:
-    evidence = context["storage_evidence"]
-    assert isinstance(evidence, dict)
-    config = live_object("v1", "ConfigMap", namespace, str(evidence["tools_config_map"]), ordinal)
+def storage_tools(
+    context: dict[str, object],
+    namespace: str,
+    ordinal: int,
+    generation_id: str | None = None,
+) -> dict[str, object]:
+    if generation_id is None:
+        evidence = context["storage_evidence"]
+        assert isinstance(evidence, dict)
+        name = str(evidence["tools_config_map"])
+        data = {"verify": "content"}
+    else:
+        storage = context["successor_storage"]
+        assert isinstance(storage, dict)
+        ledger = storage["proof_generation_ledger"]
+        assert isinstance(ledger, dict)
+        generations = ledger["generations"]
+        assert isinstance(generations, dict)
+        generation = generations[generation_id]
+        assert isinstance(generation, dict)
+        name = verifier._successor_tools_name(generation)
+        data = generation["tools_data"]
+        assert isinstance(data, dict)
+    config = live_object("v1", "ConfigMap", namespace, name, ordinal)
     config["immutable"] = True
-    config["data"] = {"verify": "content"}
+    config["data"] = data
     return config
 
 
@@ -348,10 +439,18 @@ def checkpoint_probe_objects(
     mode: str,
     ordinal: int,
 ) -> list[dict[str, object]]:
-    evidence = context["storage_evidence"]
+    storage = context["successor_storage"]
+    assert isinstance(storage, dict)
+    ledger = storage["proof_generation_ledger"]
+    assert isinstance(ledger, dict)
+    generation_id = ledger["active_generation"]
+    generations = ledger["generations"]
+    assert isinstance(generation_id, str) and isinstance(generations, dict)
+    generation = generations[generation_id]
+    assert isinstance(generation, dict)
     claim_metadata = claim["metadata"]
     claim_spec = claim["spec"]
-    assert isinstance(evidence, dict) and isinstance(claim_metadata, dict) and isinstance(claim_spec, dict)
+    assert isinstance(claim_metadata, dict) and isinstance(claim_spec, dict)
     identity = {
         "uid": claim_metadata["uid"],
         "resource_version": claim_metadata["resourceVersion"],
@@ -370,13 +469,17 @@ def checkpoint_probe_objects(
         "--volume-name",
         identity["volume_name"],
         "--challenge",
-        context["deployment_nonce"],
+        generation["deployment_nonce"],
+        "--generation",
+        generation_id,
+        "--attempt",
+        str(generation["attempt"]),
         "--proof-output",
         "/dev/termination-log",
     ]
     container = {
         "name": "durability-proof",
-        "image": evidence["probe_image"],
+        "image": generation["probe_image"],
         "command": command,
         "terminationMessagePath": "/dev/termination-log",
         "terminationMessagePolicy": "File",
@@ -392,7 +495,7 @@ def checkpoint_probe_objects(
                     "readOnly": mode == "read",
                 },
             },
-            {"name": "tools", "configMap": {"name": evidence["tools_config_map"]}},
+            {"name": "tools", "configMap": {"name": verifier._successor_tools_name(generation)}},
         ],
     }
     job = live_object(
@@ -408,21 +511,34 @@ def checkpoint_probe_objects(
         "security.fs2.nebius.ai/pvc-uid": identity["uid"],
         "security.fs2.nebius.ai/pvc-resource-version": identity["resource_version"],
         "security.fs2.nebius.ai/volume-name": identity["volume_name"],
-        "security.fs2.nebius.ai/proof-challenge": context["deployment_nonce"],
+        "security.fs2.nebius.ai/proof-challenge": generation["deployment_nonce"],
+        "security.fs2.nebius.ai/proof-generation": generation_id,
+        "security.fs2.nebius.ai/proof-attempt": str(generation["attempt"]),
         "security.fs2.nebius.ai/proof-mode": mode,
     }
-    job["spec"] = {"template": {"spec": pod_spec}}
+    job["spec"] = {
+        "backoffLimit": 2,
+        "activeDeadlineSeconds": 900,
+        "completions": 1,
+        "parallelism": 1,
+        "manualSelector": False,
+        "template": {"spec": pod_spec},
+    }
     job["status"] = {"succeeded": 1, "conditions": [{"type": "Complete", "status": "True"}]}
     marker = {
-        "schema": "fs2-serve.nebius.ai/checkpoint-durability-marker/v1",
+        "schema": "fs2-serve.nebius.ai/checkpoint-durability-marker/v2",
         "pvc": identity,
-        "challenge": context["deployment_nonce"],
+        "challenge": generation["deployment_nonce"],
+        "generation": generation_id,
+        "attempt": generation["attempt"],
     }
     proof: dict[str, object] = {
-        "schema": evidence["checkpoint_proof_schema"],
+        "schema": "fs2-serve.nebius.ai/checkpoint-durability-proof/v2",
         "mode": mode,
         "pvc": identity,
-        "challenge": context["deployment_nonce"],
+        "challenge": generation["deployment_nonce"],
+        "generation": generation_id,
+        "attempt": generation["attempt"],
         "marker_sha256": hashlib.sha256(canonical(marker) + b"\n").hexdigest(),
     }
     proof["proof_sha256"] = hashlib.sha256(canonical(proof)).hexdigest()
@@ -450,8 +566,8 @@ def checkpoint_probe_objects(
         "containerStatuses": [
             {
                 "name": "durability-proof",
-                "image": evidence["probe_image"],
-                "imageID": "docker-pullable://" + str(evidence["probe_image"]),
+                "image": generation["probe_image"],
+                "imageID": "docker-pullable://" + str(generation["probe_image"]),
                 "state": {
                     "terminated": {
                         "exitCode": 0,
@@ -566,7 +682,10 @@ def successor_storage_objects(context: dict[str, object], start: int = 20) -> li
     assert isinstance(custody, dict)
     reference_source = custody["reference_source"]
     checkpoint_source = custody["checkpoint_source"]
-    assert isinstance(reference_source, dict) and isinstance(checkpoint_source, dict)
+    ledger = custody["proof_generation_ledger"]
+    assert isinstance(reference_source, dict) and isinstance(checkpoint_source, dict) and isinstance(ledger, dict)
+    generation_id = ledger["active_generation"]
+    assert isinstance(generation_id, str)
     values: list[dict[str, object]] = []
     checkpoint_class = live_object(
         "storage.k8s.io/v1",
@@ -628,7 +747,7 @@ def successor_storage_objects(context: dict[str, object], start: int = 20) -> li
                 "readOnly": True,
             },
         }
-        tools = storage_tools(context, namespace, ordinal)
+        tools = storage_tools(context, namespace, ordinal, generation_id)
         claim = live_object("v1", "PersistentVolumeClaim", namespace, name, ordinal + 1)
         claim["metadata"]["annotations"] = {  # type: ignore[index]
             "security.fs2.nebius.ai/content-tree-sha256": tree,
@@ -648,7 +767,15 @@ def successor_storage_objects(context: dict[str, object], start: int = 20) -> li
                 tools,
                 volume,
                 claim,
-                *read_probe_objects(context, claim, namespace, name, f"{name}-read-probe", ordinal + 2),
+                *read_probe_objects(
+                    context,
+                    claim,
+                    namespace,
+                    name,
+                    f"{name}-read-probe",
+                    ordinal + 2,
+                    generation_id,
+                ),
             ]
         )
         ordinal += 5
@@ -991,6 +1118,118 @@ def setup_case(
     ledger = initial_ledger(query_value)
     path = signed_bundle(tmp_path, private_key, query_value, ledger, objects)
     return query_value, FakeClient(objects, ledger), path, objects
+
+
+def test_receipt_context_rejects_legacy_v3_baseline(context: dict[str, object]) -> None:
+    context["baseline"] = {
+        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v3",
+        "artifact_sha256": "a" * 64,
+        "inventory_sha256": "b" * 64,
+        "reference_host_paths": 103,
+        "baseline_incompatible_objects": 103,
+        "restricted_incompatible_objects": 716,
+    }
+    with pytest.raises(verifier.ReceiptError, match="baseline.schema is unsupported"):
+        verifier._validate_context(context, deepcopy(context))
+
+
+def test_receipt_context_rejects_more_than_eight_proof_generations(
+    context: dict[str, object],
+) -> None:
+    context["baseline"] = {
+        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v4",
+        "artifact_sha256": "a" * 64,
+        "inventory_sha256": "b" * 64,
+        "reference_host_paths": 80,
+        "baseline_incompatible_objects": 91,
+        "restricted_incompatible_objects": 151,
+    }
+    storage = context["successor_storage"]
+    assert isinstance(storage, dict)
+    ledger = storage["proof_generation_ledger"]
+    assert isinstance(ledger, dict)
+    generations = ledger["generations"]
+    assert isinstance(generations, dict)
+    template = deepcopy(next(iter(generations.values())))
+    assert isinstance(template, dict)
+    for sequence in range(2, 10):
+        generation = deepcopy(template)
+        generation["sequence"] = sequence
+        generation["attempt"] = sequence
+        generation["deployment_nonce"] = f"retained-proof-{sequence}"
+        generations[hashlib.sha256(verifier._terraform_canonical(generation)).hexdigest()] = generation
+    context["successor_storage_sha256"] = hashlib.sha256(
+        verifier._terraform_canonical(storage)
+    ).hexdigest()
+    with pytest.raises(verifier.ReceiptError, match="one through eight generations"):
+        verifier._validate_context(context, deepcopy(context))
+
+
+def test_durable_ledger_accepts_only_append_only_proof_generation_history(
+    context: dict[str, object],
+) -> None:
+    ledger_query: dict[str, object] = {
+        "expected_context": deepcopy(context),
+        "expected_key_id": "sai07-review-authority",
+        "expected_signer_identity": "platform-security-reviewer",
+        "public_key_sha256": "e" * 64,
+        "ledger_namespace": "fs2-system",
+        "ledger_name": "fs2-pod-security-rollout-ledger",
+    }
+    durable = verifier._initial_ledger(ledger_query)
+    config_map: dict[str, object] = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {
+            "name": ledger_query["ledger_name"],
+            "namespace": ledger_query["ledger_namespace"],
+            "resourceVersion": "10",
+        },
+        "data": verifier._ledger_data(durable),
+    }
+
+    next_context = deepcopy(context)
+    storage = next_context["successor_storage"]
+    assert isinstance(storage, dict)
+    generation_ledger = storage["proof_generation_ledger"]
+    assert isinstance(generation_ledger, dict)
+    generations = generation_ledger["generations"]
+    assert isinstance(generations, dict)
+    successor = deepcopy(next(iter(generations.values())))
+    assert isinstance(successor, dict)
+    successor["sequence"] = 2
+    successor["attempt"] = 2
+    successor["deployment_nonce"] = "sai07-proof-retry-2"
+    successor_id = hashlib.sha256(verifier._terraform_canonical(successor)).hexdigest()
+    generations[successor_id] = successor
+    generation_ledger["active_generation"] = successor_id
+    next_context["successor_storage_sha256"] = hashlib.sha256(
+        verifier._terraform_canonical(storage)
+    ).hexdigest()
+    next_query = {**ledger_query, "expected_context": next_context}
+    observed = verifier._ledger_from_config_map(config_map, next_query)
+    assert observed["proof_generations"] == durable["proof_generations"]
+
+    rewritten_context = deepcopy(next_context)
+    rewritten_storage = rewritten_context["successor_storage"]
+    assert isinstance(rewritten_storage, dict)
+    rewritten_ledger = rewritten_storage["proof_generation_ledger"]
+    assert isinstance(rewritten_ledger, dict)
+    rewritten_generations = rewritten_ledger["generations"]
+    assert isinstance(rewritten_generations, dict)
+    first_id = next(iter(rewritten_generations))
+    first = rewritten_generations.pop(first_id)
+    assert isinstance(first, dict)
+    first["deployment_nonce"] = "rewritten-first-generation"
+    rewritten_generations[hashlib.sha256(verifier._terraform_canonical(first)).hexdigest()] = first
+    rewritten_context["successor_storage_sha256"] = hashlib.sha256(
+        verifier._terraform_canonical(rewritten_storage)
+    ).hexdigest()
+    with pytest.raises(verifier.ReceiptError, match="does not append"):
+        verifier._ledger_from_config_map(
+            config_map,
+            {**ledger_query, "expected_context": rewritten_context},
+        )
 
 
 def test_bootstrap_rejects_same_count_object_or_collection_drift(context: dict[str, object]) -> None:

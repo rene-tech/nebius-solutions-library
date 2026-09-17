@@ -96,6 +96,22 @@ variable "deployment" {
           provisioning_receipt_sha256 = string
           storage_owner               = string
         })
+        proof_generation_ledger = object({
+          schema              = string
+          maximum_generations = number
+          active_generation   = string
+          generations = map(object({
+            sequence            = number
+            attempt             = number
+            dataset_id          = string
+            dataset_revision    = string
+            dataset_tree_sha256 = string
+            deployment_nonce    = string
+            probe_image         = string
+            tools_data          = map(string)
+            tools_data_sha256   = string
+          }))
+        })
       }))
     }), {})
 
@@ -911,7 +927,7 @@ variable "deployment" {
   validation {
     condition = (
       var.deployment.pod_security.rollout_phase == "prepare" || try(
-        var.deployment.pod_security.successor_storage.schema == "fs2-serve.nebius.ai/sai07-successor-storage/v1" &&
+        var.deployment.pod_security.successor_storage.schema == "fs2-serve.nebius.ai/sai07-successor-storage/v2" &&
         var.deployment.pod_security.successor_storage.reference_source.persistent_volume_name != "" &&
         can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", var.deployment.pod_security.successor_storage.reference_source.uid)) &&
         can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", var.deployment.pod_security.successor_storage.reference_source.resource_version)) &&
@@ -933,11 +949,54 @@ variable "deployment" {
         var.deployment.pod_security.successor_storage.checkpoint_source.requested_gib >= 1 &&
         var.deployment.storage.reference_data.filesystem.size_gib >= 1611 + var.deployment.pod_security.successor_storage.checkpoint_source.capacity_gib &&
         can(regex("^[a-f0-9]{64}$", var.deployment.pod_security.successor_storage.checkpoint_source.provisioning_receipt_sha256)) &&
-        var.deployment.pod_security.successor_storage.checkpoint_source.storage_owner != "",
+        var.deployment.pod_security.successor_storage.checkpoint_source.storage_owner != "" &&
+        var.deployment.pod_security.successor_storage.proof_generation_ledger.schema == "fs2-serve.nebius.ai/sai07-proof-generation-ledger/v1" &&
+        var.deployment.pod_security.successor_storage.proof_generation_ledger.maximum_generations == 8 &&
+        length(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations) >= 1 &&
+        length(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations) <= 8 &&
+        contains(
+          keys(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations),
+          var.deployment.pod_security.successor_storage.proof_generation_ledger.active_generation,
+        ) &&
+        sort([
+          for generation in values(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations) : format("%08d", generation.sequence)
+        ]) == [for sequence in range(1, length(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations) + 1) : format("%08d", sequence)] &&
+        length(distinct([
+          for generation in values(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations) : generation.sequence
+        ])) == length(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations) &&
+        length(distinct([
+          for generation_id in keys(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations) : substr(generation_id, 0, 12)
+        ])) == length(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations) &&
+        length(distinct([
+          for generation in values(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations) : substr(generation.tools_data_sha256, 0, 12)
+          ])) == length(distinct([
+          for generation in values(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations) : generation.tools_data_sha256
+        ])) &&
+        alltrue([
+          for generation_id, generation in var.deployment.pod_security.successor_storage.proof_generation_ledger.generations :
+          can(regex("^[a-f0-9]{64}$", generation_id)) &&
+          generation_id == sha256(jsonencode(generation)) &&
+          floor(generation.sequence) == generation.sequence && generation.sequence >= 1 &&
+          floor(generation.attempt) == generation.attempt && generation.attempt >= 1 &&
+          can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", generation.dataset_id)) &&
+          can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", generation.dataset_revision)) &&
+          can(regex("^[a-f0-9]{64}$", generation.dataset_tree_sha256)) &&
+          can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", generation.deployment_nonce)) &&
+          can(regex("^[^[:space:]@]+@sha256:[a-f0-9]{64}$", generation.probe_image)) &&
+          toset(keys(generation.tools_data)) == toset([
+            "verify_checkpoint_durability.py",
+            "verify_csi_readiness.py",
+          ]) &&
+          alltrue([for payload in values(generation.tools_data) : length(payload) > 0]) &&
+          generation.tools_data_sha256 == sha256(jsonencode(generation.tools_data))
+        ]) &&
+        var.deployment.pod_security.successor_storage.proof_generation_ledger.generations[var.deployment.pod_security.successor_storage.proof_generation_ledger.active_generation].sequence == max([
+          for generation in values(var.deployment.pod_security.successor_storage.proof_generation_ledger.generations) : generation.sequence
+        ]...),
         false,
       )
     )
-    error_message = "Every post-prepare phase requires exact independently receipted reference and checkpoint CSI volume identities; the checkpoint must be a distinct retained volume."
+    error_message = "Every post-prepare phase requires exact independently receipted reference/checkpoint CSI identities and a bounded, content-addressed eight-entry proof-generation ledger whose active entry is the latest sequence."
   }
 
   validation {

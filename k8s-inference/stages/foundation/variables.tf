@@ -160,6 +160,27 @@ variable "pod_security_storage_tools_config_map" {
   }
 }
 
+variable "pod_security_storage_proof_generation" {
+  description = "Full content/tree/nonce-addressed active storage-proof generation digest."
+  type        = string
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.pod_security_storage_proof_generation))
+    error_message = "pod_security_storage_proof_generation must be a full sha256 generation identity."
+  }
+}
+
+variable "pod_security_storage_proof_attempt" {
+  description = "Positive active proof attempt, or zero only before the exception profile exists."
+  type        = number
+  validation {
+    condition = (
+      floor(var.pod_security_storage_proof_attempt) == var.pod_security_storage_proof_attempt &&
+      var.pod_security_storage_proof_attempt >= 0
+    )
+    error_message = "pod_security_storage_proof_attempt must be a non-negative integer."
+  }
+}
+
 variable "cluster_id" {
   description = "Exact Nebius Managed Kubernetes cluster ID emitted by the reviewed infrastructure state."
   type        = string

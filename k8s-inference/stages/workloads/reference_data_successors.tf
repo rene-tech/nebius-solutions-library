@@ -38,17 +38,42 @@ locals {
   pod_security_successor_contract_sha256 = local.pod_security_successor_storage_enabled ? sha256(
     jsonencode(var.pod_security_successor_storage)
   ) : strrep("0", 64)
-  pod_security_successor_probe_name_suffix = (
-    var.pod_security_rollout_receipt.deployment_nonce == null ?
-    "disabled" :
-    substr(sha256(var.pod_security_rollout_receipt.deployment_nonce), 0, 12)
-  )
-  pod_security_successor_tree_prefix = (
-    var.reference_data.expected_tree_sha256 == null ?
-    "disabled" :
-    substr(var.reference_data.expected_tree_sha256, 0, 12)
-  )
-  pod_security_successor_receipt = "receipts/${var.reference_data.pipeline.bundle_id}/${local.reference_data_source_catalog.bundles[var.reference_data.pipeline.bundle_id].revision}.json"
+  pod_security_proof_generations = local.pod_security_successor_storage_enabled ? (
+    var.pod_security_successor_storage.proof_generation_ledger.generations
+  ) : {}
+  # Resource addresses include immutable content or the full proof-generation
+  # identity. The signed ledger retains every prior key (maximum eight); adding
+  # a nonce/attempt creates new objects and never replaces a protected one.
+  pod_security_successor_tool_instances = local.pod_security_successor_storage_enabled ? merge([
+    for generation_id, generation in local.pod_security_proof_generations : {
+      for namespace in local.pod_security_successor_namespaces :
+      "${generation.tools_data_sha256}/${namespace}" => {
+        namespace         = namespace
+        tools_data        = generation.tools_data
+        tools_data_sha256 = generation.tools_data_sha256
+      }
+    }
+  ]...) : {}
+  pod_security_reference_probe_instances = local.pod_security_successor_storage_enabled ? merge([
+    for generation_id, generation in local.pod_security_proof_generations : {
+      for successor_key, successor in local.pod_security_reference_successors :
+      "${generation_id}/${successor_key}" => merge(successor, {
+        successor_key = successor_key
+        generation_id = generation_id
+        generation    = generation
+      })
+    }
+  ]...) : {}
+  pod_security_checkpoint_probe_instances = local.pod_security_successor_storage_enabled ? merge([
+    for generation_id, generation in local.pod_security_proof_generations : {
+      for mode in ["write", "read"] :
+      "${generation_id}/${mode}" => {
+        mode          = mode
+        generation_id = generation_id
+        generation    = generation
+      }
+    }
+  ]...) : {}
 }
 
 # Read the already retained canonical PV immediately before creating any alias.
@@ -108,9 +133,21 @@ resource "terraform_data" "pod_security_successor_storage_contract" {
         var.reference_data.expected_tree_sha256 != null &&
         var.reference_data.status.image != null &&
         var.pod_security_rollout_receipt.deployment_nonce != null &&
-        can(regex("^[^@[:space:]]+@sha256:[a-f0-9]{64}$", var.reference_data.status.image))
+        can(regex("^[^@[:space:]]+@sha256:[a-f0-9]{64}$", var.reference_data.status.image)) &&
+        local.pod_security_active_proof_generation_id == var.pod_security_successor_storage.proof_generation_ledger.active_generation &&
+        local.pod_security_active_proof_generation.dataset_id == var.reference_data.pipeline.bundle_id &&
+        local.pod_security_active_proof_generation.dataset_revision == local.reference_data_source_catalog.bundles[var.reference_data.pipeline.bundle_id].revision &&
+        local.pod_security_active_proof_generation.dataset_tree_sha256 == var.reference_data.expected_tree_sha256 &&
+        local.pod_security_active_proof_generation.probe_image == var.reference_data.status.image &&
+        local.pod_security_active_proof_generation.tools_data == local.pod_security_successor_proof_source_files &&
+        local.pod_security_active_proof_generation.tools_data_sha256 == local.pod_security_successor_proof_source_sha256 &&
+        alltrue([
+          for generation_id, generation in local.pod_security_proof_generations :
+          generation_id == sha256(jsonencode(generation)) &&
+          generation.tools_data_sha256 == sha256(jsonencode(generation.tools_data))
+        ])
       )
-      error_message = "Successor provisioning requires an exact dataset tree, digest-pinned proof image and signed deployment nonce."
+      error_message = "Successor provisioning requires an exact active source generation plus a self-consistent bounded signed history; retries append a new nonce/attempt generation rather than replacing retained objects."
     }
   }
 }
@@ -299,19 +336,19 @@ resource "kubernetes_persistent_volume_claim_v1" "pod_security_snapshot_checkpoi
 # The ConfigMaps are immutable and destruction-protected; a source generation
 # change must be introduced as a separately named additive generation.
 resource "kubernetes_config_map_v1" "pod_security_successor_tools" {
-  for_each = local.pod_security_successor_storage_enabled ? local.pod_security_successor_namespaces : []
+  for_each = local.pod_security_successor_tool_instances
 
   metadata {
-    name      = "fs2-reference-data-tools-${substr(local.pod_security_reference_tools_sha256, 0, 12)}"
-    namespace = data.kubernetes_namespace_v1.pod_security_successor[each.value].metadata[0].name
+    name      = "fs2-reference-data-tools-${substr(each.value.tools_data_sha256, 0, 12)}"
+    namespace = data.kubernetes_namespace_v1.pod_security_successor[each.value.namespace].metadata[0].name
     labels    = local.common_labels
     annotations = {
-      "reference-data.fs2.nebius.ai/source-sha256" = local.pod_security_reference_tools_sha256
+      "reference-data.fs2.nebius.ai/source-sha256" = each.value.tools_data_sha256
     }
   }
 
   immutable = true
-  data      = local.pod_security_reference_tools_files
+  data      = each.value.tools_data
 
   lifecycle {
     prevent_destroy = true
@@ -319,28 +356,30 @@ resource "kubernetes_config_map_v1" "pod_security_successor_tools" {
 }
 
 resource "kubernetes_job_v1" "pod_security_reference_successor_probe" {
-  for_each            = local.pod_security_successor_storage_enabled ? local.pod_security_reference_successors : {}
+  for_each            = local.pod_security_reference_probe_instances
   wait_for_completion = true
 
   metadata {
-    name      = "${each.value.claim}-read-probe-${local.pod_security_successor_tree_prefix}-${local.pod_security_successor_probe_name_suffix}"
+    name      = "${each.value.claim}-read-probe-${substr(each.value.generation_id, 0, 12)}"
     namespace = each.value.namespace
     labels = merge(local.common_labels, {
       "app.kubernetes.io/component" = "reference-data-successor-read-probe"
     })
     annotations = {
-      "reference-data.fs2.nebius.ai/tree-sha256"          = var.reference_data.expected_tree_sha256
-      "reference-data.fs2.nebius.ai/receipt"              = local.pod_security_successor_receipt
-      "reference-data.fs2.nebius.ai/pvc-uid"              = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.key].metadata[0].uid
-      "reference-data.fs2.nebius.ai/pvc-resource-version" = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.key].metadata[0].resource_version
-      "reference-data.fs2.nebius.ai/volume-name"          = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.key].spec[0].volume_name
-      "reference-data.fs2.nebius.ai/proof-challenge"      = var.pod_security_rollout_receipt.deployment_nonce
-      "security.fs2.nebius.ai/verified-tree-sha256"       = var.reference_data.expected_tree_sha256
+      "reference-data.fs2.nebius.ai/tree-sha256"          = each.value.generation.dataset_tree_sha256
+      "reference-data.fs2.nebius.ai/receipt"              = "receipts/${each.value.generation.dataset_id}/${each.value.generation.dataset_revision}.json"
+      "reference-data.fs2.nebius.ai/pvc-uid"              = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.value.successor_key].metadata[0].uid
+      "reference-data.fs2.nebius.ai/pvc-resource-version" = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.value.successor_key].metadata[0].resource_version
+      "reference-data.fs2.nebius.ai/volume-name"          = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.value.successor_key].spec[0].volume_name
+      "reference-data.fs2.nebius.ai/proof-challenge"      = each.value.generation.deployment_nonce
+      "security.fs2.nebius.ai/proof-generation"           = each.value.generation_id
+      "security.fs2.nebius.ai/proof-attempt"              = tostring(each.value.generation.attempt)
+      "security.fs2.nebius.ai/verified-tree-sha256"       = each.value.generation.dataset_tree_sha256
     }
   }
 
   spec {
-    backoff_limit           = 0
+    backoff_limit           = 2
     active_deadline_seconds = 900
     completions             = 1
     parallelism             = 1
@@ -352,15 +391,17 @@ resource "kubernetes_job_v1" "pod_security_reference_successor_probe" {
           "app.kubernetes.io/component" = "reference-data-successor-read-probe"
         })
         annotations = {
-          "reference-data.fs2.nebius.ai/tree-sha256"          = var.reference_data.expected_tree_sha256
-          "reference-data.fs2.nebius.ai/receipt"              = local.pod_security_successor_receipt
-          "reference-data.fs2.nebius.ai/bundle"               = var.reference_data.pipeline.bundle_id
-          "reference-data.fs2.nebius.ai/revision"             = local.reference_data_source_catalog.bundles[var.reference_data.pipeline.bundle_id].revision
-          "reference-data.fs2.nebius.ai/pvc-uid"              = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.key].metadata[0].uid
-          "reference-data.fs2.nebius.ai/pvc-resource-version" = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.key].metadata[0].resource_version
-          "reference-data.fs2.nebius.ai/volume-name"          = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.key].spec[0].volume_name
-          "reference-data.fs2.nebius.ai/proof-challenge"      = var.pod_security_rollout_receipt.deployment_nonce
-          "security.fs2.nebius.ai/verified-tree-sha256"       = var.reference_data.expected_tree_sha256
+          "reference-data.fs2.nebius.ai/tree-sha256"          = each.value.generation.dataset_tree_sha256
+          "reference-data.fs2.nebius.ai/receipt"              = "receipts/${each.value.generation.dataset_id}/${each.value.generation.dataset_revision}.json"
+          "reference-data.fs2.nebius.ai/bundle"               = each.value.generation.dataset_id
+          "reference-data.fs2.nebius.ai/revision"             = each.value.generation.dataset_revision
+          "reference-data.fs2.nebius.ai/pvc-uid"              = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.value.successor_key].metadata[0].uid
+          "reference-data.fs2.nebius.ai/pvc-resource-version" = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.value.successor_key].metadata[0].resource_version
+          "reference-data.fs2.nebius.ai/volume-name"          = kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.value.successor_key].spec[0].volume_name
+          "reference-data.fs2.nebius.ai/proof-challenge"      = each.value.generation.deployment_nonce
+          "security.fs2.nebius.ai/proof-generation"           = each.value.generation_id
+          "security.fs2.nebius.ai/proof-attempt"              = tostring(each.value.generation.attempt)
+          "security.fs2.nebius.ai/verified-tree-sha256"       = each.value.generation.dataset_tree_sha256
         }
       }
       spec {
@@ -386,19 +427,21 @@ resource "kubernetes_job_v1" "pod_security_reference_successor_probe" {
 
         container {
           name              = "read-probe"
-          image             = var.reference_data.status.image
+          image             = each.value.generation.probe_image
           image_pull_policy = "IfNotPresent"
           command = [
             "python", "/opt/fs2/reference-data/verify_csi_readiness.py",
             "--root", "/reference-data",
-            "--receipt", local.pod_security_successor_receipt,
-            "--bundle", var.reference_data.pipeline.bundle_id,
-            "--revision", local.reference_data_source_catalog.bundles[var.reference_data.pipeline.bundle_id].revision,
-            "--tree-sha256", var.reference_data.expected_tree_sha256,
-            "--pvc-uid", kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.key].metadata[0].uid,
-            "--pvc-resource-version", kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.key].metadata[0].resource_version,
-            "--volume-name", kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.key].spec[0].volume_name,
-            "--challenge", var.pod_security_rollout_receipt.deployment_nonce,
+            "--receipt", "receipts/${each.value.generation.dataset_id}/${each.value.generation.dataset_revision}.json",
+            "--bundle", each.value.generation.dataset_id,
+            "--revision", each.value.generation.dataset_revision,
+            "--tree-sha256", each.value.generation.dataset_tree_sha256,
+            "--pvc-uid", kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.value.successor_key].metadata[0].uid,
+            "--pvc-resource-version", kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.value.successor_key].metadata[0].resource_version,
+            "--volume-name", kubernetes_persistent_volume_claim_v1.pod_security_reference_successor[each.value.successor_key].spec[0].volume_name,
+            "--challenge", each.value.generation.deployment_nonce,
+            "--generation", each.value.generation_id,
+            "--attempt", tostring(each.value.generation.attempt),
             "--proof-output", "/dev/termination-log",
           ]
           termination_message_path   = "/dev/termination-log"
@@ -441,7 +484,7 @@ resource "kubernetes_job_v1" "pod_security_reference_successor_probe" {
         volume {
           name = "tools"
           config_map {
-            name         = kubernetes_config_map_v1.pod_security_successor_tools[each.value.namespace].metadata[0].name
+            name         = kubernetes_config_map_v1.pod_security_successor_tools["${each.value.generation.tools_data_sha256}/${each.value.namespace}"].metadata[0].name
             default_mode = "0555"
           }
         }
@@ -464,11 +507,14 @@ resource "kubernetes_job_v1" "pod_security_reference_successor_probe" {
 }
 
 resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_write" {
-  count               = local.pod_security_successor_storage_enabled ? 1 : 0
+  for_each = {
+    for generation_key, generation in local.pod_security_checkpoint_probe_instances :
+    generation_key => generation if generation.mode == "write"
+  }
   wait_for_completion = true
 
   metadata {
-    name      = "fs2-snapshot-checkpoints-durability-write-${local.pod_security_successor_probe_name_suffix}"
+    name      = "fs2-snapshot-checkpoints-durability-write-${substr(each.value.generation_id, 0, 12)}"
     namespace = "fs2-snapshot-operations"
     labels = merge(local.common_labels, {
       "app.kubernetes.io/component" = "snapshot-checkpoint-durability"
@@ -477,13 +523,15 @@ resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_write" {
       "security.fs2.nebius.ai/pvc-uid"              = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].uid
       "security.fs2.nebius.ai/pvc-resource-version" = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].resource_version
       "security.fs2.nebius.ai/volume-name"          = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].spec[0].volume_name
-      "security.fs2.nebius.ai/proof-challenge"      = var.pod_security_rollout_receipt.deployment_nonce
+      "security.fs2.nebius.ai/proof-challenge"      = each.value.generation.deployment_nonce
+      "security.fs2.nebius.ai/proof-generation"     = each.value.generation_id
+      "security.fs2.nebius.ai/proof-attempt"        = tostring(each.value.generation.attempt)
       "security.fs2.nebius.ai/proof-mode"           = "write"
     }
   }
 
   spec {
-    backoff_limit           = 0
+    backoff_limit           = 2
     active_deadline_seconds = 900
     completions             = 1
     parallelism             = 1
@@ -497,7 +545,9 @@ resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_write" {
           "security.fs2.nebius.ai/pvc-uid"              = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].uid
           "security.fs2.nebius.ai/pvc-resource-version" = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].resource_version
           "security.fs2.nebius.ai/volume-name"          = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].spec[0].volume_name
-          "security.fs2.nebius.ai/proof-challenge"      = var.pod_security_rollout_receipt.deployment_nonce
+          "security.fs2.nebius.ai/proof-challenge"      = each.value.generation.deployment_nonce
+          "security.fs2.nebius.ai/proof-generation"     = each.value.generation_id
+          "security.fs2.nebius.ai/proof-attempt"        = tostring(each.value.generation.attempt)
           "security.fs2.nebius.ai/proof-mode"           = "write"
         }
       }
@@ -522,7 +572,7 @@ resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_write" {
         }
         container {
           name              = "durability-proof"
-          image             = var.reference_data.status.image
+          image             = each.value.generation.probe_image
           image_pull_policy = "IfNotPresent"
           command = [
             "python", "/opt/fs2/reference-data/verify_checkpoint_durability.py", "write",
@@ -530,7 +580,9 @@ resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_write" {
             "--pvc-uid", kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].uid,
             "--pvc-resource-version", kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].resource_version,
             "--volume-name", kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].spec[0].volume_name,
-            "--challenge", var.pod_security_rollout_receipt.deployment_nonce,
+            "--challenge", each.value.generation.deployment_nonce,
+            "--generation", each.value.generation_id,
+            "--attempt", tostring(each.value.generation.attempt),
             "--proof-output", "/dev/termination-log",
           ]
           termination_message_path   = "/dev/termination-log"
@@ -565,7 +617,7 @@ resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_write" {
         volume {
           name = "tools"
           config_map {
-            name         = kubernetes_config_map_v1.pod_security_successor_tools["fs2-snapshot-operations"].metadata[0].name
+            name         = kubernetes_config_map_v1.pod_security_successor_tools["${each.value.generation.tools_data_sha256}/fs2-snapshot-operations"].metadata[0].name
             default_mode = "0555"
           }
         }
@@ -579,11 +631,14 @@ resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_write" {
 }
 
 resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_read" {
-  count               = local.pod_security_successor_storage_enabled ? 1 : 0
+  for_each = {
+    for generation_key, generation in local.pod_security_checkpoint_probe_instances :
+    generation_key => generation if generation.mode == "read"
+  }
   wait_for_completion = true
 
   metadata {
-    name      = "fs2-snapshot-checkpoints-durability-read-${local.pod_security_successor_probe_name_suffix}"
+    name      = "fs2-snapshot-checkpoints-durability-read-${substr(each.value.generation_id, 0, 12)}"
     namespace = "fs2-snapshot-operations"
     labels = merge(local.common_labels, {
       "app.kubernetes.io/component" = "snapshot-checkpoint-durability"
@@ -592,13 +647,15 @@ resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_read" {
       "security.fs2.nebius.ai/pvc-uid"              = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].uid
       "security.fs2.nebius.ai/pvc-resource-version" = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].resource_version
       "security.fs2.nebius.ai/volume-name"          = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].spec[0].volume_name
-      "security.fs2.nebius.ai/proof-challenge"      = var.pod_security_rollout_receipt.deployment_nonce
+      "security.fs2.nebius.ai/proof-challenge"      = each.value.generation.deployment_nonce
+      "security.fs2.nebius.ai/proof-generation"     = each.value.generation_id
+      "security.fs2.nebius.ai/proof-attempt"        = tostring(each.value.generation.attempt)
       "security.fs2.nebius.ai/proof-mode"           = "read"
     }
   }
 
   spec {
-    backoff_limit           = 0
+    backoff_limit           = 2
     active_deadline_seconds = 900
     completions             = 1
     parallelism             = 1
@@ -612,7 +669,9 @@ resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_read" {
           "security.fs2.nebius.ai/pvc-uid"              = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].uid
           "security.fs2.nebius.ai/pvc-resource-version" = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].resource_version
           "security.fs2.nebius.ai/volume-name"          = kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].spec[0].volume_name
-          "security.fs2.nebius.ai/proof-challenge"      = var.pod_security_rollout_receipt.deployment_nonce
+          "security.fs2.nebius.ai/proof-challenge"      = each.value.generation.deployment_nonce
+          "security.fs2.nebius.ai/proof-generation"     = each.value.generation_id
+          "security.fs2.nebius.ai/proof-attempt"        = tostring(each.value.generation.attempt)
           "security.fs2.nebius.ai/proof-mode"           = "read"
         }
       }
@@ -637,7 +696,7 @@ resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_read" {
         }
         container {
           name              = "durability-proof"
-          image             = var.reference_data.status.image
+          image             = each.value.generation.probe_image
           image_pull_policy = "IfNotPresent"
           command = [
             "python", "/opt/fs2/reference-data/verify_checkpoint_durability.py", "read",
@@ -645,7 +704,9 @@ resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_read" {
             "--pvc-uid", kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].uid,
             "--pvc-resource-version", kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].metadata[0].resource_version,
             "--volume-name", kubernetes_persistent_volume_claim_v1.pod_security_snapshot_checkpoints[0].spec[0].volume_name,
-            "--challenge", var.pod_security_rollout_receipt.deployment_nonce,
+            "--challenge", each.value.generation.deployment_nonce,
+            "--generation", each.value.generation_id,
+            "--attempt", tostring(each.value.generation.attempt),
             "--proof-output", "/dev/termination-log",
           ]
           termination_message_path   = "/dev/termination-log"
@@ -680,7 +741,7 @@ resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_read" {
         volume {
           name = "tools"
           config_map {
-            name         = kubernetes_config_map_v1.pod_security_successor_tools["fs2-snapshot-operations"].metadata[0].name
+            name         = kubernetes_config_map_v1.pod_security_successor_tools["${each.value.generation.tools_data_sha256}/fs2-snapshot-operations"].metadata[0].name
             default_mode = "0555"
           }
         }

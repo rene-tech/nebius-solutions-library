@@ -48,6 +48,8 @@ def validate(
     pvc_resource_version: str | None = None,
     volume_name: str | None = None,
     challenge: str | None = None,
+    generation: str | None = None,
+    attempt: int | None = None,
 ) -> dict[str, object]:
     if not SHA256.fullmatch(tree):
         raise ReadinessError("expected tree digest is malformed")
@@ -114,6 +116,19 @@ def validate(
             "volume_name": volume_name,
         }
         result["challenge"] = challenge
+        generation_fields = (generation, attempt)
+        if any(value is not None for value in generation_fields):
+            if (
+                not isinstance(generation, str)
+                or not SHA256.fullmatch(generation)
+                or not isinstance(attempt, int)
+                or isinstance(attempt, bool)
+                or attempt < 1
+            ):
+                raise ReadinessError("proof generation identity must be complete")
+            result["schema"] = "fs2-serve.nebius.ai/reference-data-csi-readiness/v3"
+            result["generation"] = generation
+            result["attempt"] = attempt
         result["proof_sha256"] = hashlib.sha256(
             json.dumps(result, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
@@ -131,6 +146,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--pvc-resource-version")
     result.add_argument("--volume-name")
     result.add_argument("--challenge")
+    result.add_argument("--generation")
+    result.add_argument("--attempt", type=int)
     result.add_argument("--proof-output", type=Path)
     return result
 
@@ -148,6 +165,8 @@ def main() -> int:
             pvc_resource_version=args.pvc_resource_version,
             volume_name=args.volume_name,
             challenge=args.challenge,
+            generation=args.generation,
+            attempt=args.attempt,
         )
         payload = json.dumps(result, sort_keys=True, separators=(",", ":"))
         if args.proof_output is not None:

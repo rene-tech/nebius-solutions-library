@@ -45,7 +45,7 @@ output "proof_contract" {
   description = "Content-addressed immutable tools and digest-pinned runtime required by storage execution proofs."
   value = {
     read_proof_schema       = "fs2-serve.nebius.ai/reference-data-csi-readiness/v2"
-    checkpoint_proof_schema = "fs2-serve.nebius.ai/checkpoint-durability-proof/v1"
+    checkpoint_proof_schema = "fs2-serve.nebius.ai/checkpoint-durability-proof/v2"
     probe_image             = var.status.image
     tools_config_map        = local.tools_config_map
     tools_data_sha256       = local.tools_sha256

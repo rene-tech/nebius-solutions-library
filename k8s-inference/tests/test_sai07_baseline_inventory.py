@@ -198,18 +198,14 @@ def test_inventory_covers_native_and_custom_workload_controllers() -> None:
     }.issubset(inventory.COLLECTIONS)
 
 
-def test_legacy_v3_preserves_103_103_716_without_blocking_v4_bootstrap() -> None:
+def test_legacy_v3_is_rejected_even_when_historical_counts_match() -> None:
     artifact = baseline_artifact(
-        inventory.LEGACY_SCHEMA,
+        "fs2-serve.nebius.ai/sai07-baseline-inventory/v3",
         reference_host_paths=103,
         baseline_incompatible_objects=103,
         restricted_incompatible_objects=716,
     )
-    artifact["restricted_incompatible_objects"] = 715
-    unsigned = dict(artifact)
-    unsigned.pop("inventory_sha256")
-    artifact["inventory_sha256"] = hashlib.sha256(inventory.canonical(unsigned)).hexdigest()
-    with pytest.raises(inventory.InventoryError, match="103/103/716"):
+    with pytest.raises(inventory.InventoryError, match="schema is unsupported"):
         inventory.validate_artifact(artifact)
 
     current = baseline_artifact()
