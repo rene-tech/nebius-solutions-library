@@ -1785,43 +1785,75 @@ async def test_all_control_char_within_cap_request_is_served_not_withheld():
     assert (await store.list()).items[0].request_redacted is False  # list agrees: served, not withheld
 
 
-def test_bound_debug_metadata_whole_or_withholds_oversized_fields():
-    """SAI-01 regression (blocker 2): non-body debug fields (headers/query/error) are ENFORCED to their
-    budgets at capture, whole-or-withhold with a disclosed marker, so the ceiling overhead is a true bound
-    not an assumption. Real (small) fields are untouched; a pathologically large field is withheld."""
+def test_bound_debug_metadata_bounds_every_field_and_is_idempotent():
+    """SAI-01 regression (blocker 1): EVERY non-body served/clear field is ENFORCED to its budget at capture
+    — the clear scalars (endpoint/method/model_id/tenant_id/principal_id/mcp_tool/error_type), the query
+    string, error_detail, BOTH header lists, and both bodies' content_type — whole-or-truncate with a
+    disclosed marker, so the WHOLE serialized exchange provably fits under _stored_payload_ceiling (the
+    ceiling overhead is enforced, not assumed). Real (small) fields are untouched, and re-bounding an
+    already-bounded exchange returns it unchanged (idempotent — safe on a re-queued retry). Authored; not
+    executed here."""
     from fs2_serve.request_debug import (
-        _MAX_DEBUG_HEADERS_BYTES,
+        _MAX_DEBUG_ERROR_BYTES,
         _MAX_DEBUG_QUERY_BYTES,
+        _META_SCALAR_BUDGETS,
         _bound_debug_metadata,
-        _json_len,
+        _serialized_size,
+        _stored_payload_ceiling,
     )
 
     small = row(request_headers=[("content-type", "application/json")], query_string="a=1", error_detail="boom")
     assert _bound_debug_metadata(small) is small  # nothing over budget -> same object, untouched
+
     big = row(
-        request_headers=[("x", "v" * (_MAX_DEBUG_HEADERS_BYTES + 100))],
+        endpoint="/v1/" + "p" * 200_000,  # attacker-influenced path, copied verbatim by the middleware
+        request_headers=[(f"h{i}", "v" * 4096) for i in range(50)],  # total far over the per-list budget
+        response_headers=[("set-cookie", "s" * 1_000_000)],  # single huge value -> value-level truncation
         query_string="q=" + "z" * (_MAX_DEBUG_QUERY_BYTES + 100),
         error_type="ValueError",
         error_detail="e" * (10 * 1024 * 1024),  # 10 MiB exception string
     )
     bounded = _bound_debug_metadata(big)
-    assert _json_len(bounded.request_headers) <= _MAX_DEBUG_HEADERS_BYTES  # within budget after whole-or-withhold
-    assert _json_len(bounded.query_string) <= _MAX_DEBUG_QUERY_BYTES
-    assert "withheld" in bounded.request_headers[0][1] and "withheld" in bounded.query_string
-    assert bounded.error_detail is not None and len(bounded.error_detail) < 1024  # error withheld to a marker
+    # The single true contract: the whole serialized exchange fits under the ceiling for the production cap.
+    assert _serialized_size(bounded) <= _stored_payload_ceiling(64 * 1024)
+    assert len(bounded.endpoint.encode()) <= _META_SCALAR_BUDGETS["endpoint"]  # scalar path bounded too
+    assert "truncated" in bounded.request_headers[-1][1]  # list cut with a disclosed marker pair
+    assert "truncated" in bounded.response_headers[0][1]  # huge single value truncated (disclosed)
+    assert "truncated" in bounded.query_string and len(bounded.query_string.encode()) <= _MAX_DEBUG_QUERY_BYTES
+    assert bounded.error_detail is not None and len(bounded.error_detail.encode()) <= _MAX_DEBUG_ERROR_BYTES
+    assert _bound_debug_metadata(bounded) is bounded  # idempotent: already within budget -> unchanged object
 
 
-async def test_persist_bounds_oversized_debug_metadata_at_capture():
-    """SAI-01 regression (blocker 2): persist_debug_exchange enforces the field budgets at the single
-    storage choke point, so a stored row's headers/query are within budget (the ceiling is a true bound),
-    without touching a normal small-header row. Authored; not executed here."""
-    from fs2_serve.request_debug import _MAX_DEBUG_HEADERS_BYTES, _json_len, persist_debug_exchange
+async def test_bounded_builder_bounds_metadata_off_loop_before_persist():
+    """SAI-01 regression (blocker 2): field budgets are enforced OFF the event loop, INSIDE the capture
+    offload, via _bounded_builder — the worker feeds this wrapped closure to offload_capture, so build AND
+    bound both run in the offload thread BEFORE the row is retained/persisted. persist_debug_exchange itself
+    performs NO on-loop metadata bounding; it stores the already-bounded exchange. A None build result passes
+    through untouched. Authored; not executed here."""
+    from fs2_serve.request_debug import (
+        _bounded_builder,
+        _serialized_size,
+        _stored_payload_ceiling,
+        persist_debug_exchange,
+    )
 
     store = InMemoryDebugStore(max_body_bytes=64 * 1024)
-    ex = row(request_headers=[("x", "v" * (_MAX_DEBUG_HEADERS_BYTES + 100))])
-    assert await persist_debug_exchange(store, ex) is True
+    ex = row(request_headers=[(f"h{i}", "v" * 4096) for i in range(50)], query_string="q=" + "z" * 100_000)
+
+    def _builder() -> DebugExchange:
+        return ex
+
+    built = _bounded_builder(_builder)()  # build+bound together, as they run in the offload thread
+    assert built is not None
+    assert _serialized_size(built) <= _stored_payload_ceiling(64 * 1024)  # bounded before it reaches the store
+    assert await persist_debug_exchange(store, built) is True
     stored = store.exchanges[ex.id]
-    assert _json_len(stored.request_headers) <= _MAX_DEBUG_HEADERS_BYTES  # bounded at capture (choke point)
+    assert _serialized_size(stored) <= _stored_payload_ceiling(64 * 1024)  # stored row within the true ceiling
+
+    def _none_builder() -> DebugExchange | None:
+        return None
+
+    assert _bounded_builder(_none_builder)() is None  # None (nothing captured) passes through
 
 
 async def test_in_memory_size_is_cached_at_record_not_serialized_on_read(monkeypatch):
@@ -2023,12 +2055,13 @@ async def test_legacy_huge_stored_response_is_not_bounded_even_when_redacted(mon
 
 
 async def test_in_memory_record_dual_index_add_is_fault_atomic():
-    """SAI-01 regression (blocker 2): record() adds the same row to two indexes — the dict (detail source
-    + list liveness authority) and the ordered list (list iteration). A fault BETWEEN the two must not
-    permanently desync them (a row visible on one path but not the other). The dict insert is done AFTER
-    the ordered append and rolled back on failure, and list() filters to rows present in the dict, so a
-    partial add is invisible on BOTH paths and a retry cleanly adds both with no duplicate. Authored; not
-    executed here."""
+    """SAI-01 regression (blocker 3): record() commits the same row to two coupled structures — the single
+    private authority dict `_entries` (id -> immutable (row, content-derived size) entry; the source for
+    get()/idempotency and the list() liveness filter) and the append-only ordered id list `_order` (list
+    iteration). A fault BETWEEN them must not permanently desync them (a row visible on one path but not the
+    other). The id is appended to `_order` FIRST, then the entry committed to `_entries` and rolled back on
+    failure, and list() filters to ids present in `_entries`, so a partial add is invisible on BOTH paths
+    and a retry cleanly adds both with no duplicate. Authored; not executed here."""
     real_setitem = dict.__setitem__
     calls = {"n": 0}
 
@@ -2040,21 +2073,21 @@ async def test_in_memory_record_dual_index_add_is_fault_atomic():
             real_setitem(self, key, value)
 
     store = InMemoryDebugStore()
-    store.exchanges = _FlakyDict()  # type: ignore[assignment]
+    store._entries = _FlakyDict()  # type: ignore[assignment]  # fault the private authority dict itself
     ex = row(id=uuid4())
     with pytest.raises(MemoryError):
-        await store.record(ex)  # dict insert fails AFTER the ordered append -> rollback
-    # Rolled back: neither index carries a partial entry (no orphan in _ordered, nothing in the dict).
-    assert len(store.exchanges) == 0 and store._ordered == []
+        await store.record(ex)  # the entry commit fails AFTER the ordered append -> rollback
+    # Rolled back: neither structure carries a partial entry (no orphan id in _order, nothing in _entries).
+    assert len(store._entries) == 0 and store._order == []
     assert (await store.list()).items == [] and await store.get(ex.id) is None
-    # Retry succeeds and adds to BOTH — the row is now visible on detail AND list, exactly once.
+    # Retry succeeds and commits BOTH — the row is now visible on detail AND list, exactly once.
     await store.record(ex)
-    assert list(store.exchanges) == [ex.id] and len(store._ordered) == 1
+    assert list(store._entries) == [ex.id] and len(store._order) == 1
     assert [item.id for item in (await store.list()).items] == [ex.id]
     assert (await store.get(ex.id)) is not None
     # A further retry is idempotent: no duplicate in the ordered list.
     await store.record(ex)
-    assert len(store._ordered) == 1
+    assert len(store._order) == 1
 
 
 async def test_bounded_legacy_row_rescrubbed_on_read_agrees_between_detail_and_list():

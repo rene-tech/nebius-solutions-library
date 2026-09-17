@@ -271,12 +271,18 @@ HTTP 0 or success.
   whole-exchange ceiling that is DISTINCT FROM and ABOVE the per-body cap and is a PROVABLE upper bound on
   a legitimate current exchange, not an assumption: it is the per-body cap times the 6x worst-case
   JSON-string escaping factor (a within-cap body of control bytes serializes to `\u00XX` = 6 chars/byte,
-  which dominates base64's 4/3), PLUS ENFORCED per-field byte budgets for the non-body debug fields, PLUS
-  the AES-GCM tag. Those non-body fields (request/response headers, query string, error_detail) are bounded
-  at CAPTURE (whole-or-withhold with a disclosed marker, off the request path, in `persist_debug_exchange`),
-  so the overhead is enforced rather than assumed — only a pathologically large field is withheld; real
-  headers/query/error are far under budget and untouched, and the customer's request/response processing is
-  unaffected. The size is measured in identical byte units in both stores (the encrypted store uses
+  which dominates base64's 4/3), PLUS ENFORCED per-field byte budgets for EVERY non-body debug field, PLUS
+  the AES-GCM tag. EVERY non-body field is bounded at CAPTURE — the clear scalar metadata
+  (endpoint, method, model_id, tenant_id, principal_id, mcp_tool, error_type), the query string,
+  error_detail, BOTH header lists, and both bodies' content_type — whole-or-truncate with a disclosed
+  marker, so the overhead is enforced rather than assumed. Only a pathologically large (often
+  attacker-influenced, e.g. an endpoint that copies the request path) field is truncated; real fields are far
+  under budget and untouched, and the customer's request/response processing is unaffected. This bounding
+  runs OFF the event loop, INSIDE the capture offload (build and bound happen together in the offload thread,
+  before the row is retained or persisted), with bounded, incremental per-field work — a huge structure is
+  never fully materialized or serialized on the loop just to be measured. `persist_debug_exchange` itself
+  performs no on-loop metadata bounding; it stores the already-bounded exchange. The size is measured in
+  identical byte units in both stores (the encrypted store uses
   `octet_length(ciphertext)`; the in-memory store computes the serialized-row byte length plus the same tag
   constant ONCE at record() and caches it, so a read never serializes a payload to measure it). This
   whole-exchange budget is used precisely so a legitimate near-cap request (its ciphertext = the within-cap
@@ -291,9 +297,12 @@ HTTP 0 or success.
   withheld) from its clear columns on both detail and list. On PostgreSQL both paths use ONE atomic query
   that returns the ciphertext only when `octet_length(ciphertext)` is within the ceiling (else NULL), and
   decode is lazy, so an over-ceiling payload is never even selected or decrypted (no check-then-fetch
-  window). So an arbitrarily large legacy payload is never fetched, decrypted, or served — even under an
-  unset cap. The stored ciphertext is never rewritten or deleted (the separately owned purge handles TTL),
-  so this is redaction on the way out only.
+  window). That same query ALSO bounds every attacker-influenced clear TEXT column in SQL (`left(col,
+  budget)` per field), so the metadata-only path never TRANSFERS unbounded clear metadata either — not even
+  for a legacy row whose clear columns predate the capture-time field budgets and whose ciphertext is over
+  the ceiling. So an arbitrarily large legacy payload OR clear column is never fetched unbounded, decrypted,
+  or served — even under an unset cap. The stored ciphertext is never rewritten or deleted (the separately
+  owned purge handles TTL), so this is redaction on the way out only.
 - Full detail documents are encrypted in PostgreSQL using the existing payload
   cipher/keyring. Searchable summary metadata is stored separately. Preserve the
   existing keyring needed to decrypt historical records; no key material enters

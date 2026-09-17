@@ -45,6 +45,7 @@ from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import cached_property
 from typing import Any, Literal, Protocol, TypeVar, get_args
 from urllib.parse import unquote_plus
 from uuid import UUID, uuid4
@@ -841,37 +842,51 @@ _GCM_TAG_BYTES = 16
 # base64's 4/3), and the ceiling MUST use 6x or a legitimate near-cap control-byte body would exceed it
 # and be wrongly withheld.
 _BODY_JSON_EXPANSION = 6
-# ENFORCED byte budgets for the non-body debug fields, applied at capture by ``_bound_debug_metadata``
-# (whole-or-withhold with a disclosed marker) so the ceiling is a TRUE bound, not an assumption. Generous
-# vs real headers/query/error (normally a few KB), so real captures are untouched; only a pathologically
-# large field is withheld (disclosed), and customer request/response processing is unaffected.
-_MAX_DEBUG_HEADERS_BYTES = 16 * 1024  # per header list (request, response), JSON-serialized
+# COMPLETE, ENFORCED byte budgets for EVERY non-body served/clear field, applied at capture by
+# ``_bound_debug_metadata`` (truncate/whole-or-withhold with a disclosed marker) so the ceiling is a TRUE
+# bound, not an assumption. Generous vs real values, so real captures are untouched; only a pathologically
+# large (attacker-influenced) field is truncated, and customer request/response processing is unaffected.
+_MAX_DEBUG_HEADERS_BYTES = 16 * 1024  # per header list (request, response), total after bounding
 _MAX_DEBUG_QUERY_BYTES = 8 * 1024
 _MAX_DEBUG_ERROR_BYTES = 8 * 1024  # error_detail is withheld on read anyway; this only bounds storage
-# Fixed allowance for the clear metadata fields, the response withheld-marker body, and the JSON
-# field-name/structure envelope of the serialized exchange (all bounded, small, structural).
-_METADATA_ENVELOPE_BYTES = 8 * 1024
+_MAX_DEBUG_CONTENT_TYPE_BYTES = 512  # request_body.content_type + response_body.content_type
+_MAX_HEADER_NAME_BYTES = 512
+_MAX_HEADER_VALUE_BYTES = 2 * 1024
+_HEADER_PAIR_JSON_OVERHEAD = 8  # approx per-pair JSON structure: ["","" ] plus a comma
+# Per-field byte budgets for the clear SCALAR metadata strings (some attacker-influenced, e.g. endpoint
+# copies the request path; model_id/mcp_tool derive from the request; content_type from a request header).
+_META_SCALAR_BUDGETS: dict[str, int] = {
+    "endpoint": 4 * 1024,
+    "method": 64,
+    "model_id": 1024,
+    "tenant_id": 1024,
+    "principal_id": 1024,
+    "mcp_tool": 1024,
+    "error_type": 512,
+}
+# Fixed allowance for the non-string clear fields (uuids, ints, bools, timestamps), the response
+# withheld-marker body, truncation markers, and the JSON field-name/structure envelope.
+_METADATA_ENVELOPE_BYTES = 4 * 1024
+_TRUNCATION_MARKER = "…[truncated]"
+_HEADERS_TRUNCATED_MARKER: tuple[str, str] = ("x-fs2-debug-headers", "[truncated: over debug capture bound]")
 
 
 def _stored_payload_ceiling(max_body_bytes: int | None) -> int:
     """The WHOLE-serialized-exchange work/decrypt ceiling — a budget DISTINCT FROM and ABOVE the per-body
     cap, and a PROVABLE upper bound on a legitimate current exchange (not an assumption). Comparing the
     whole ciphertext to the per-body cap would wrongly withhold a legitimate near-cap request (its
-    ciphertext = body + envelope always exceeds the body cap), so this is derived as:
-
-      request body:  ``_BODY_JSON_EXPANSION * cap``  (6x worst-case JSON control-char escaping of a
-                     within-cap raw body; the response body is always a withheld marker on the current
-                     contract, counted in the envelope)
-      + non-body debug fields, each ENFORCED to its budget at capture by ``_bound_debug_metadata``:
-        two header lists + query + error_detail + the metadata/marker/JSON-structure envelope
-      + the AES-GCM tag.
-
-    So every component of a current exchange is bounded and the sum is a true ceiling: a legitimate
-    near-cap request (any byte content) fits and is served; a legacy row whose COMBINED stored payload
-    exceeds this (e.g. a large raw response) is conservatively metadata-only, and the decrypt is bounded
-    to this ceiling — never an arbitrary legacy blob."""
+    ciphertext = body + envelope always exceeds the body cap), so this is the SUM of every component's
+    ENFORCED budget: the request body at ``_BODY_JSON_EXPANSION * cap`` (6x worst-case JSON control-char
+    escaping of a within-cap raw body; the response body is always a withheld marker on the current
+    contract, counted in the envelope) + every clear scalar metadata field + both bodies' content_type +
+    two header lists + query + error_detail + the metadata/marker/JSON-structure envelope + the AES-GCM
+    tag. EVERY field is bounded at capture by ``_bound_debug_metadata``, so the sum is a true ceiling: a
+    legitimate near-cap request (any byte content) fits and is served; a legacy row whose COMBINED stored
+    payload exceeds this is conservatively metadata-only, and the decrypt is bounded to this ceiling."""
     return (
         _BODY_JSON_EXPANSION * _effective_cap(max_body_bytes)
+        + sum(_META_SCALAR_BUDGETS.values())
+        + 2 * _MAX_DEBUG_CONTENT_TYPE_BYTES
         + 2 * _MAX_DEBUG_HEADERS_BYTES
         + _MAX_DEBUG_QUERY_BYTES
         + _MAX_DEBUG_ERROR_BYTES
@@ -880,35 +895,94 @@ def _stored_payload_ceiling(max_body_bytes: int | None) -> int:
     )
 
 
-# Disclosed markers substituted for a non-body debug field that exceeds its capture-time budget
-# (whole-or-withhold). They are tiny and fixed, so the bounded stored field is either <= its budget (kept)
-# or one of these markers — making the ceiling's per-field allowance a true upper bound.
-_HEADERS_OVER_BOUND: list[tuple[str, str]] = [("x-fs2-debug-headers", "[withheld: over debug capture bound]")]
-_QUERY_OVER_BOUND = "[query withheld: over debug capture bound]"
-_ERROR_OVER_BOUND = "[detail withheld: over debug capture bound]"
+def _summary_select_columns() -> str:
+    """The SELECT list for the clear summary columns, with each attacker-influenced clear TEXT column bounded
+    to its per-field budget IN SQL (``left(col, budget)``), so the metadata-only read path never TRANSFERS
+    unbounded clear metadata — not even for a legacy row whose ciphertext is over the ceiling (ciphertext
+    returned NULL) and is therefore rendered from these clear columns alone. This bounds every clear column
+    in ONE provable contract at READ, mirroring the capture-time field budgets (``_bound_debug_metadata``),
+    and applies whether or not the payload is fetched. ``left`` truncates by characters, so each column is at
+    most ``budget`` characters (<= 4*budget UTF-8 bytes) — a provable transfer bound regardless of what a
+    legacy row stored. Non-text clear columns (uuids/ints/bools/timestamps) are bounded by their type. The
+    column names are the fixed model fields and the budgets are fixed integer literals — no user input — so
+    the interpolation is injection-free (hence the S608 waiver at each call site)."""
+    return ",".join(
+        f"left({field},{_META_SCALAR_BUDGETS[field]}) AS {field}" if field in _META_SCALAR_BUDGETS else field
+        for field in DebugExchangeSummary.model_fields
+    )
 
 
-def _json_len(value: object) -> int:
-    """Serialized byte length of a debug field as it will appear in the stored exchange JSON."""
-    return len(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode())
+def _bounded_text(value: str, byte_limit: int) -> str:
+    """Truncate ``value`` to <= ``byte_limit`` UTF-8 bytes (disclosed marker) with BOUNDED work: an
+    over-budget string is sliced to the budget in CHARS first (O(budget), never touching the tail) and only
+    that bounded slice is encoded — a huge field is never fully encoded/serialized just to be measured."""
+    if len(value) <= byte_limit and len(value.encode()) <= byte_limit:
+        return value  # fast path: small string within budget, untouched
+    reserve = max(0, byte_limit - len(_TRUNCATION_MARKER.encode()))
+    head = value[:reserve].encode("utf-8")[:reserve].decode("utf-8", "ignore")
+    return head + _TRUNCATION_MARKER
+
+
+def _bounded_text_opt(value: str | None, byte_limit: int) -> str | None:
+    return None if value is None else _bounded_text(value, byte_limit)
+
+
+def _bound_headers(headers: list[tuple[str, str]], byte_limit: int) -> list[tuple[str, str]]:
+    """Bound a header list to <= ``byte_limit`` serialized bytes INCREMENTALLY: each name/value is first
+    truncated to its own bounded budget (so a single huge value is bounded work), then whole pairs are kept
+    until the running budget would be exceeded, at which point iteration STOPS and a disclosed marker pair
+    is appended. Never serializes the full list and never processes more than ~budget of it."""
+    out: list[tuple[str, str]] = []
+    used = 0
+    for name, value in headers:
+        bname = _bounded_text(name, _MAX_HEADER_NAME_BYTES)
+        bvalue = _bounded_text(value, _MAX_HEADER_VALUE_BYTES)
+        cost = len(bname.encode()) + len(bvalue.encode()) + _HEADER_PAIR_JSON_OVERHEAD
+        if used + cost > byte_limit:
+            out.append(_HEADERS_TRUNCATED_MARKER)
+            break
+        used += cost
+        out.append((bname, bvalue))
+    return out
+
+
+def _bound_body_content_type(body: DebugBody) -> DebugBody:
+    if body.content_type is None or len(body.content_type.encode()) <= _MAX_DEBUG_CONTENT_TYPE_BYTES:
+        return body
+    return body.model_copy(update={"content_type": _bounded_text(body.content_type, _MAX_DEBUG_CONTENT_TYPE_BYTES)})
 
 
 def _bound_debug_metadata(exchange: DebugExchange) -> DebugExchange:
-    """Enforce the per-field byte budgets on the NON-body debug fields at CAPTURE (off the request path,
-    in ``persist_debug_exchange``), whole-or-withhold with a disclosed marker, so the stored exchange's
-    serialized size is a provable fit under ``_stored_payload_ceiling`` (the ceiling's overhead allowance
-    is then enforced, not assumed). Only a pathologically large field is withheld — real headers/query/
-    error are far under budget and untouched — and this never alters the customer's request/response
-    processing (these are debug-capture fields only; bodies are governed separately by the per-body cap)."""
+    """Enforce the per-field byte budgets on EVERY non-body served/clear field at CAPTURE, so the stored
+    exchange's serialized size is a provable fit under ``_stored_payload_ceiling`` (the ceiling overhead is
+    enforced, not assumed). Each field is bounded with BOUNDED, INCREMENTAL work (no full JSON serialization
+    of any field) so a huge structure is never fully materialized/serialized just to be measured, and this
+    runs OFF the event loop (in the capture offload). Only pathologically large debug metadata is
+    truncated/withheld (disclosed via a marker); real fields are untouched and the customer's
+    request/response processing is unaffected (bodies are governed separately by the per-body cap)."""
     updates: dict[str, object] = {}
-    if _json_len(exchange.request_headers) > _MAX_DEBUG_HEADERS_BYTES:
-        updates["request_headers"] = list(_HEADERS_OVER_BOUND)
-    if _json_len(exchange.response_headers) > _MAX_DEBUG_HEADERS_BYTES:
-        updates["response_headers"] = list(_HEADERS_OVER_BOUND)
-    if _json_len(exchange.query_string) > _MAX_DEBUG_QUERY_BYTES:
-        updates["query_string"] = _QUERY_OVER_BOUND
-    if exchange.error_detail is not None and _json_len(exchange.error_detail) > _MAX_DEBUG_ERROR_BYTES:
-        updates["error_detail"] = _ERROR_OVER_BOUND
+    for field, budget in _META_SCALAR_BUDGETS.items():
+        bounded = _bounded_text_opt(getattr(exchange, field), budget)
+        if bounded != getattr(exchange, field):
+            updates[field] = bounded
+    query = _bounded_text(exchange.query_string, _MAX_DEBUG_QUERY_BYTES)
+    if query != exchange.query_string:
+        updates["query_string"] = query
+    error_detail = _bounded_text_opt(exchange.error_detail, _MAX_DEBUG_ERROR_BYTES)
+    if error_detail != exchange.error_detail:
+        updates["error_detail"] = error_detail
+    request_headers = _bound_headers(exchange.request_headers, _MAX_DEBUG_HEADERS_BYTES)
+    if request_headers != exchange.request_headers:
+        updates["request_headers"] = request_headers
+    response_headers = _bound_headers(exchange.response_headers, _MAX_DEBUG_HEADERS_BYTES)
+    if response_headers != exchange.response_headers:
+        updates["response_headers"] = response_headers
+    request_body = _bound_body_content_type(exchange.request_body)
+    if request_body is not exchange.request_body:
+        updates["request_body"] = request_body
+    response_body = _bound_body_content_type(exchange.response_body)
+    if response_body is not exchange.response_body:
+        updates["response_body"] = response_body
     return exchange.model_copy(update=updates) if updates else exchange
 
 
@@ -980,16 +1054,28 @@ def _read_view(
 
 
 def _serialized_size(exchange: DebugExchange) -> int:
-    """The IN-MEMORY store's whole-exchange stored size in the SAME byte unit the encrypted store uses.
-
-    The encrypted store measures ``octet_length(ciphertext)`` == len(serialized-row bytes) + the AES-GCM
-    tag. The in-memory store holds the plaintext row, so this is the EXACT serialized-row byte length
-    (``model_dump_json().encode()`` — real encoded bytes covering EVERYTHING: both bodies, headers, query,
-    error_detail, metadata and JSON structure) plus the same tag constant — a complete byte/work bound, not
-    a code-point count and not body-only. It is computed ONCE at record() time and CACHED, so a READ never
-    serializes an arbitrary (possibly huge legacy) payload just to measure it (Postgres avoids that with
-    server-side octet_length; the in-memory store avoids it with the cached size)."""
+    """The whole-exchange stored size in the SAME byte unit the encrypted store uses: the exact serialized
+    row length (``model_dump_json().encode()`` — real encoded bytes covering EVERYTHING: both bodies,
+    headers, query, error_detail, metadata and JSON structure) plus the AES-GCM tag (octet_length(ciphertext)
+    == len(serialized plaintext) + tag). A complete byte/work bound, not a code-point count and not
+    body-only. Used only inside ``_StoredEntry`` as a CONTENT-DERIVED property, so it can never be a separate
+    forgeable/settable/stale value."""
     return len(exchange.model_dump_json().encode()) + _GCM_TAG_BYTES
+
+
+@dataclass(frozen=True)
+class _StoredEntry:
+    """The in-memory store's single, immutable, tamper-proof unit: a stored row and its size coupled in one
+    frozen record. ``size`` is a CONTENT-DERIVED ``cached_property`` (computed from ``exchange`` itself, no
+    setter), so it can never be forged (a fabricated small size on a large row is impossible — the size is
+    computed from the content), never omitted (every entry has it), and never disagree with the content.
+    ``record()`` warms the cache once at write, so a READ reads it O(1) and never re-serializes a payload."""
+
+    exchange: DebugExchange
+
+    @cached_property
+    def size(self) -> int:
+        return _serialized_size(self.exchange)
 
 
 def _const_exchange(exchange: DebugExchange) -> Callable[[], DebugExchange]:
@@ -1026,42 +1112,44 @@ def _pagination(limit: int, cursor: str | None) -> tuple[datetime, UUID] | None:
 
 class InMemoryDebugStore:
     def __init__(self, *, max_body_bytes: int | None = None) -> None:
-        self.exchanges: dict[UUID, DebugExchange] = {}
-        # An APPEND-ONLY list holding the SAME row objects in insertion order (no data duplication, just
-        # extra references). list() iterates THIS off the loop feeding a bounded heap — a Python list is
-        # iterated by index and never raises "changed size during iteration" (unlike dict.values()), so a
-        # concurrent append is safe WITHOUT taking an O(N) snapshot copy. There is no deletion (no-delete
-        # retention), so it never holds stale entries and stays in lockstep with `exchanges`.
-        self._ordered: list[DebugExchange] = []
-        # Whole-exchange stored size per row, computed ONCE here at record() and read O(1) by list()/get()
-        # so a READ never serializes an arbitrary payload just to measure it (the encrypted store uses
-        # server-side octet_length; the in-memory store uses this cache).
-        self._sizes: dict[UUID, int] = {}
+        # SINGLE PRIVATE AUTHORITY: id -> _StoredEntry (row + content-derived size coupled in ONE immutable
+        # record). There is no public, separately-mutable row dict or size dict, so a size can never be
+        # forged, omitted, or drift from its row (blocker: tamper-proof size). Read-only views are exposed
+        # via the `exchanges` property (deep copies) so the stored rows can never be mutated from outside.
+        self._entries: dict[UUID, _StoredEntry] = {}
+        # Append-only insertion-ordered ids. list() iterates THIS off the loop feeding a bounded heap — a
+        # Python list is iterated by index and never raises "changed size during iteration" (unlike
+        # dict.values()), so a concurrent append is safe WITHOUT an O(N) snapshot copy. No deletion (no-delete
+        # retention), so it never holds stale ids and stays in lockstep with `_entries`.
+        self._order: list[UUID] = []
         # Current cap, used to withhold legacy request bodies over today's cap on the read/list path.
         self._max_body_bytes = max_body_bytes
+
+    @property
+    def exchanges(self) -> dict[UUID, DebugExchange]:
+        """READ-ONLY view for callers/tests: a fresh dict of DEEP COPIES of the stored rows. Mutating the
+        returned dict or its rows cannot affect the private authority or the content-derived cached size, so
+        the stored size can never be staled by outside mutation."""
+        return {row_id: entry.exchange.model_copy(deep=True) for row_id, entry in self._entries.items()}
 
     async def record(self, exchange: DebugExchange) -> None:
         # The exchange is already sanitized exactly once, off the event loop, by the
         # capturing middleware/runtime (offload_capture); the store never re-sanitizes.
-        if exchange.id in self.exchanges:
+        if exchange.id in self._entries:
             return  # idempotent: a fully-recorded row is never re-added or duplicated
-        copy = exchange.model_copy(deep=True)
-        size = _serialized_size(copy)  # computed ONCE at write; reads use the cache (no read-time serialize)
-        # FAULT-ATOMIC triple-index add: append to the ordered list FIRST, then commit the size cache and
-        # the dict entry (the dict is the AUTHORITY for get()/idempotency and the list() liveness filter,
-        # committed LAST). If any commit fails (e.g. MemoryError on resize), roll back the size cache and
-        # the just-appended entry so the indexes can never permanently diverge (no row on
-        # detail-but-not-list or vice versa) and a retry re-adds cleanly with no duplicate. list() also
-        # filters to rows present in `exchanges`, so even the transient window is invisible on BOTH paths
-        # until the add completes. Undoing our own just-failed partial insert restores the prior state — no
-        # committed/product row is removed (no-delete applies to persisted data, not error recovery).
-        self._ordered.append(copy)
+        entry = _StoredEntry(exchange=exchange.model_copy(deep=True))
+        assert entry.size >= 0  # warm the content-derived size cache ONCE at write; reads then read it O(1)
+        # FAULT-ATOMIC add: append the id FIRST, then commit the single coupled (row, size) entry (the
+        # AUTHORITY for get()/idempotency and the list() liveness filter). If the entry commit fails (e.g.
+        # MemoryError on resize), roll back the just-appended id so the two indexes can never permanently
+        # diverge and a retry re-adds cleanly with no duplicate. list() also filters to ids present in
+        # `_entries`, so the transient window is invisible on BOTH paths. Undoing our own just-failed partial
+        # insert restores the prior state — no committed/product row is removed.
+        self._order.append(exchange.id)
         try:
-            self._sizes[exchange.id] = size
-            self.exchanges[exchange.id] = copy  # authority committed LAST
+            self._entries[exchange.id] = entry
         except Exception:
-            self._sizes.pop(exchange.id, None)
-            self._ordered.pop()  # rollback the partial insert (the appended entry is the last; pop cannot raise)
+            self._order.pop()  # rollback the partial insert (the appended id is the last; pop cannot raise)
             raise
 
     async def list(
@@ -1077,24 +1165,24 @@ class InMemoryDebugStore:
     ) -> DebugExchangeList:
         after = _pagination(limit, cursor)
         cap = self._max_body_bytes
-        ordered = self._ordered  # O(1) reference to the append-only list; NO O(N) copy is ever taken
-        exchanges = self.exchanges  # authority for the liveness filter below
-        sizes = self._sizes  # cached whole-exchange sizes; NO read-time serialization of any payload
+        order = self._order  # O(1) reference to the append-only id list; NO O(N) copy is ever taken
+        entries = self._entries  # single authority: id -> immutable (row, content-derived size) entry
 
         def _derive() -> tuple[list[DebugExchangeSummary], bool]:
             # EVERYTHING runs OFF the event loop here, with NO O(N) auxiliary snapshot: we iterate the
-            # append-only list DIRECTLY (index-based iteration is safe under a concurrent append and never
+            # append-only id list DIRECTLY (index-based iteration is safe under a concurrent append and never
             # copies), feeding a BOUNDED top-k min-heap (size <= limit). Total auxiliary memory is O(limit)
-            # (the heap), and time is O(N log limit) — never an O(N) full list() copy or O(N)-sorted list.
-            # LIVENESS FILTER: skip any row not (yet) committed to `exchanges`, so a partial add (appended
-            # but dict not yet committed, or a rolled-back partial insert) is never surfaced — detail and
-            # list can never disagree. (dict `in` is a GIL-atomic membership check, safe under concurrent
-            # inserts; unlike dict ITERATION it never raises "changed size".)
-            heap: list[tuple[datetime, UUID, DebugExchange]] = []
+            # (the heap), and time is O(N log limit) — never an O(N) full copy or O(N)-sorted list. LIVENESS
+            # FILTER: skip any id not (yet) committed to `_entries` (a rolled-back/transient partial add), so
+            # detail and list can never disagree. Each row's size comes from its immutable entry (O(1), no
+            # serialization). (dict .get is a GIL-atomic lookup, safe under concurrent inserts.)
+            heap: list[tuple[datetime, UUID, _StoredEntry]] = []
             matched = 0
-            for row in ordered:
-                if row.id not in exchanges:
+            for row_id in order:
+                entry = entries.get(row_id)
+                if entry is None:
                     continue  # not-yet-committed / rolled-back partial add: invisible on both paths
+                row = entry.exchange
                 if not (
                     (model_id is None or row.model_id == model_id)
                     and (operation_id is None or row.operation_id == operation_id)
@@ -1105,17 +1193,17 @@ class InMemoryDebugStore:
                 ):
                     continue
                 matched += 1
-                # (started_at, id) is a total order (id is a unique UUID), so the DebugExchange third
-                # element is never reached in a heap comparison.
-                entry = (row.started_at, row.id, row)
+                # (started_at, id) is a total order (id is a unique UUID), so the _StoredEntry third element
+                # is never reached in a heap comparison.
+                heap_item = (row.started_at, row.id, entry)
                 if len(heap) < limit:
-                    heapq.heappush(heap, entry)
-                elif entry > heap[0]:
-                    heapq.heapreplace(heap, entry)
-            page = [row for _, _, row in sorted(heap, reverse=True)]  # newest first
+                    heapq.heappush(heap, heap_item)
+                elif heap_item > heap[0]:
+                    heapq.heapreplace(heap, heap_item)
+            page = [entry for _, _, entry in sorted(heap, reverse=True)]  # newest first
             out = [
-                _summary(_read_view(_summary(row), sizes[row.id], _const_exchange(row), cap))
-                for row in page
+                _summary(_read_view(_summary(e.exchange), e.size, _const_exchange(e.exchange), cap))
+                for e in page
             ]
             return out, matched > limit
 
@@ -1123,24 +1211,28 @@ class InMemoryDebugStore:
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if has_more else None)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
-        row = self.exchanges.get(exchange_id)
-        if row is None or (tenant_id is not None and row.tenant_id != tenant_id):
+        entry = self._entries.get(exchange_id)
+        if entry is None or (tenant_id is not None and entry.exchange.tenant_id != tenant_id):
             return None
         # Egress-sanitize on read via the SHARED per-row derivation, so detail and the list summary agree
         # and the hard ceiling applies here too: a BOUNDED row (stored payload within the effective
         # ceiling) is fully re-sanitized; a NON-bounded row (stored payload over the ceiling) is rendered
         # metadata-only WITHOUT serving its stored payload — even under a default cap=None, an oversized
-        # legacy body is never disclosed on detail. The stored size is read from the cache (no read-time
-        # serialization). Offloaded to keep the loop free; normalize returns a copy, so the row is unmutated.
+        # legacy body is never disclosed on detail. The stored size is the entry's content-derived property
+        # (no read-time serialization). Offloaded to keep the loop free; normalize returns a copy, unmutated.
         return await asyncio.to_thread(
-            _read_view, _summary(row), self._sizes[exchange_id], _const_exchange(row), self._max_body_bytes
+            _read_view, _summary(entry.exchange), entry.size, _const_exchange(entry.exchange), self._max_body_bytes
         )
 
     async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         # Cutoff is fixed at the 90-day TTL, never caller-supplied. tenant_id (when set)
         # scopes the aggregate to that tenant so a tenant-scoped admin sees only its own rows.
         cutoff = now - timedelta(seconds=DEBUG_RETENTION_SECONDS)
-        started = [row.started_at for row in self.exchanges.values() if tenant_id is None or row.tenant_id == tenant_id]
+        started = [
+            e.exchange.started_at
+            for e in self._entries.values()
+            if tenant_id is None or e.exchange.tenant_id == tenant_id
+        ]
         expired = sum(1 for timestamp in started if timestamp < cutoff)
         return RetentionPreflight(
             now=now,
@@ -1171,7 +1263,12 @@ class PostgresDebugStore:
                     exchange.operation_id,
                     exchange.tenant_id,
                 )
-                exchange = exchange.model_copy(update={"model_id": model_id})
+                # Bound the server-canonical backfill to the same per-field budget as every other stored
+                # field: this value bypasses _bounded_builder (it is looked up here at record), so bounding it
+                # keeps the "every stored field within budget" contract airtight and the ceiling a true bound.
+                exchange = exchange.model_copy(
+                    update={"model_id": _bounded_text_opt(model_id, _META_SCALAR_BUDGETS["model_id"])}
+                )
             # Already sanitized exactly once off the event loop (offload_capture); the
             # store never re-sanitizes. The model_id backfill above is a server-side
             # canonicalization from the operations table, not a re-scrub.
@@ -1208,7 +1305,7 @@ class PostgresDebugStore:
         # consistent read — no check-then-fetch window). key_id/nonce ride along for the lazy decode.
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
-                f"SELECT {','.join(DebugExchangeSummary.model_fields)},key_id,nonce,"  # noqa: S608 - fixed columns
+                f"SELECT {_summary_select_columns()},key_id,nonce,"  # noqa: S608 - fixed columns + literal budgets
                 "CASE WHEN octet_length(ciphertext) <= $8 THEN ciphertext END AS ciphertext "
                 "FROM fs2_request_debug "
                 "WHERE ($1::text IS NULL OR model_id=$1) AND ($2::uuid IS NULL OR operation_id=$2) "
@@ -1275,7 +1372,7 @@ class PostgresDebugStore:
         ceiling = _stored_payload_ceiling(self._max_body_bytes)
         async with self.pool.acquire() as connection:
             row = await connection.fetchrow(
-                f"SELECT {','.join(DebugExchangeSummary.model_fields)},key_id,nonce,"  # noqa: S608 - fixed columns
+                f"SELECT {_summary_select_columns()},key_id,nonce,"  # noqa: S608 - fixed columns + literal budgets
                 "CASE WHEN octet_length(ciphertext) <= $3 THEN ciphertext END AS ciphertext "
                 "FROM fs2_request_debug WHERE id=$1 AND ($2::text IS NULL OR tenant_id=$2)",
                 exchange_id,
@@ -1399,6 +1496,24 @@ def _const_builder(exchange: DebugExchange) -> Callable[[], DebugExchange | None
 
     def _build() -> DebugExchange | None:
         return exchange
+
+    return _build
+
+
+def _bounded_builder(builder: Callable[[], DebugExchange | None]) -> Callable[[], DebugExchange | None]:
+    """Wrap a build closure so it ALSO enforces the per-field debug-metadata budgets, in the SAME call.
+
+    The wrapped closure is what the worker hands to ``offload_capture``, so building AND bounding both
+    run in the offload thread — never on the event loop. The field budgets are therefore applied with
+    bounded, incremental work BEFORE the exchange is retained/materialized, so no complete unbounded
+    header/query/error structure is ever serialized on the loop. ``_bound_debug_metadata`` is idempotent
+    (re-bounding an already-bounded exchange yields it unchanged), so a re-queued ``_const_builder`` of an
+    already-bounded exchange is bounded again harmlessly on retry.
+    """
+
+    def _build() -> DebugExchange | None:
+        built = builder()
+        return None if built is None else _bound_debug_metadata(built)
 
     return _build
 
@@ -1597,7 +1712,11 @@ class DebugPersistQueue:
                 self._processing += 1
                 built: DebugExchange | None = None
                 try:
-                    built = await offload_capture(builder)
+                    # Build AND bound the debug metadata OFF the event loop (in the offload thread), so the
+                    # field budgets are enforced with bounded, incremental work before the row is retained —
+                    # never a synchronous full-serialize on the loop. Bounding is idempotent, so a re-queued
+                    # already-bounded exchange is unchanged on retry.
+                    built = await offload_capture(_bounded_builder(builder))
                     if built is not None:
                         await persist_debug_exchange(self._store, built, self._persist_timeout_seconds)
                 except asyncio.CancelledError:
@@ -1683,13 +1802,15 @@ async def persist_debug_exchange(
     exchange: DebugExchange,
     persist_timeout_seconds: float = 2.0,
 ) -> bool:
-    """Capture failure is observable but never replaces an inference response."""
+    """Capture failure is observable but never replaces an inference response.
+
+    The exchange handed here is ALREADY field-bounded: the worker builds and bounds it together in the
+    offload thread (``_bounded_builder``) before enqueue/persist, so its serialized size is a provable fit
+    under ``_stored_payload_ceiling`` and this path performs no on-loop metadata work. Re-bounding here is
+    intentionally avoided — it would put the (idempotent) field-budget pass back on the event loop.
+    """
     try:
-        # Enforce the per-field debug-metadata budgets at the single storage choke point (off the request
-        # path), so the stored exchange's serialized size is a provable fit under _stored_payload_ceiling —
-        # making the read ceiling a TRUE bound, not an assumption. Only pathologically large headers/query/
-        # error are whole-or-withheld (disclosed via a marker); the customer's request/response is untouched.
-        await asyncio.wait_for(store.record(_bound_debug_metadata(exchange)), timeout=persist_timeout_seconds)
+        await asyncio.wait_for(store.record(exchange), timeout=persist_timeout_seconds)
         return True
     except Exception as error:
         LOGGER.warning(

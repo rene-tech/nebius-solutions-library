@@ -13,7 +13,13 @@ from test_request_debug import NOW, row
 from test_users_apps_postgres import database, operation, token  # noqa: F401
 
 from fs2_serve.postgres import PostgresStore
-from fs2_serve.request_debug import PostgresDebugStore, _stored_payload_ceiling, body_capture, suppressed_body
+from fs2_serve.request_debug import (
+    _META_SCALAR_BUDGETS,
+    PostgresDebugStore,
+    _stored_payload_ceiling,
+    body_capture,
+    suppressed_body,
+)
 
 pytestmark = pytest.mark.postgres
 
@@ -114,6 +120,34 @@ async def test_oversized_stored_ciphertext_is_metadata_only_on_detail_and_list_w
     served = await store.get(current.id, "tenant-a")
     assert served is not None and served.request_body.data == '{"input":"served"}'  # request served
     assert served.response_body.data == "[REDACTED]"  # response withheld
+
+
+async def test_legacy_unbounded_clear_columns_are_truncated_on_read(debug_database):
+    """SAI-01 regression (blocker 1, PG clear columns): a LEGACY row whose CLEAR metadata columns were
+    stored unbounded (before capture-time field budgets existed) must never TRANSFER unbounded clear metadata
+    on read — not even when its ciphertext is over the ceiling and returned NULL (metadata-only view rendered
+    from the clear columns alone). The SELECT bounds every attacker-influenced clear TEXT column in SQL
+    (left(col, budget)), so the returned view is provably bounded regardless of what the row stored, and
+    detail and list agree. Proven by overwriting the clear endpoint column with a huge attacker path and
+    pushing the ciphertext over the ceiling. Postgres-marked; run by CI."""
+    db = debug_database
+    store = PostgresDebugStore(db.pool, db.cipher)
+    legacy = row(model_id="boltz2")
+    await store.record(legacy)
+    # Simulate a legacy/attacker row: a huge clear endpoint path AND a ciphertext over the ceiling so the
+    # read is metadata-only and must render the endpoint from the (now bounded-in-SQL) clear column.
+    await db.pool.execute(
+        "UPDATE fs2_request_debug SET endpoint=$2, ciphertext=$3 WHERE id=$1",
+        legacy.id,
+        "/v1/" + "p" * 500_000,
+        b"\x00" * (_stored_payload_ceiling(None) + 1),
+    )
+    budget = _META_SCALAR_BUDGETS["endpoint"]
+    detail = await store.get(legacy.id, "tenant-a")
+    assert detail is not None  # never decrypted the over-ceiling ciphertext
+    assert len(detail.endpoint) <= budget  # clear column truncated to <= budget chars in SQL (bounded transfer)
+    summary = (await store.list(tenant_id="tenant-a")).items[0]
+    assert summary.id == legacy.id and len(summary.endpoint) <= budget  # list agrees, also bounded
 
 
 async def test_actual_generated_runtime_role_can_insert_list_and_decrypt(debug_database):
