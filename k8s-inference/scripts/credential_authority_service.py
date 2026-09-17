@@ -57,6 +57,15 @@ READ_ONLY_OPERATIONS = frozenset(
         "state-migration-readiness",
     }
 )
+CALLER_PURPOSES = frozenset(
+    {
+        "release-automation",
+        "operator-read",
+        "operator-proxy",
+        "credential-delivery-general",
+        "credential-delivery-scientific",
+    }
+)
 CLIENT_FIELDS: dict[str, frozenset[str]] = {
     "custody-snapshot": frozenset(),
     "planned-generation-admission": frozenset({"phase"}),
@@ -202,6 +211,86 @@ def root_reader_file(
     return metadata
 
 
+def process_cgroup(pid: int) -> str:
+    """Return one exact unified-cgroup path for a kernel-authenticated peer."""
+
+    try:
+        lines = Path(f"/proc/{pid}/cgroup").read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise AuthorityServiceError("client cgroup identity is unavailable") from error
+    unified = [line[3:] for line in lines if line.startswith("0::/")]
+    if len(unified) != 1 or not unified[0].startswith("/"):
+        raise AuthorityServiceError("client does not have one exact unified cgroup")
+    return unified[0]
+
+
+def authorize_operation_caller(
+    *,
+    config: dict[str, Any],
+    operation: str,
+    pid: int,
+    uid: int,
+    gid: int,
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind an operation to a distinct UID/GID, cgroup and pinned client process."""
+
+    allowed = config["operation_callers"][operation]
+    matches = [
+        (caller_id, config["caller_identities"][caller_id])
+        for caller_id in allowed
+        if config["caller_identities"][caller_id]["uid"] == uid
+        and config["caller_identities"][caller_id]["gid"] == gid
+    ]
+    if len(matches) != 1:
+        raise AuthorityServiceError(
+            "client uid/gid is not authorized for this authority operation"
+        )
+    caller_id, caller = matches[0]
+    if process_cgroup(pid) != caller["cgroup_path"]:
+        raise AuthorityServiceError("client cgroup is not authorized for this operation")
+    try:
+        executable_path = Path(os.readlink(f"/proc/{pid}/exe")).resolve()
+        command = [
+            value.decode("utf-8")
+            for value in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+            if value
+        ]
+    except (OSError, UnicodeDecodeError) as error:
+        raise AuthorityServiceError("client process identity is unavailable") from error
+    expected_executable = Path(caller["executable_path"]).resolve()
+    expected_script = Path(caller["client_script_path"])
+    if (
+        executable_path != expected_executable
+        or file_sha256(executable_path) != caller["executable_sha256"]
+        or len(command) != 2
+        or Path(command[1]) != expected_script
+        or file_sha256(expected_script) != caller["client_script_sha256"]
+    ):
+        raise AuthorityServiceError(
+            "client executable/script identity is not authorized for this operation"
+        )
+    if operation == "scoped-credential-context":
+        expected_kind = {
+            "credential-delivery-general": "general-access",
+            "credential-delivery-scientific": "scientific-access",
+        }.get(caller_id)
+        if request.get("credential_kind") != expected_kind:
+            raise AuthorityServiceError(
+                "credential delivery caller is not authorized for this credential kind"
+            )
+    return {
+        "id": caller_id,
+        "purpose": caller["purpose"],
+        "uid": uid,
+        "gid": gid,
+        "pid": pid,
+        "cgroup_path": caller["cgroup_path"],
+        "executable_sha256": caller["executable_sha256"],
+        "client_script_sha256": caller["client_script_sha256"],
+    }
+
+
 def _validate_scoped_kubernetes_identity(
     identity: Any,
     *,
@@ -220,6 +309,7 @@ def _validate_scoped_kubernetes_identity(
         "namespace",
         "name",
         "uid",
+        "service_account_resource_version",
         "credential_id",
         "issuer",
         "audience",
@@ -231,6 +321,7 @@ def _validate_scoped_kubernetes_identity(
         "context_name",
         "reader_uid",
         "reader_gid",
+        "rbac_binding",
     }
     delivery_fields = {
         "credential_class",
@@ -240,6 +331,22 @@ def _validate_scoped_kubernetes_identity(
     }
     if delivery:
         fields |= delivery_fields
+    rbac = identity.get("rbac_binding") if isinstance(identity, dict) else None
+    rbac_fields = {
+        "namespace",
+        "role_name",
+        "role_uid",
+        "role_resource_version",
+        "role_rules_sha256",
+        "role_binding_name",
+        "role_binding_uid",
+        "role_binding_resource_version",
+        "role_ref_kind",
+        "role_ref_name",
+        "service_account_uid",
+        "service_account_resource_version",
+        "subjects_sha256",
+    }
     if (
         not isinstance(identity, dict)
         or set(identity) != fields
@@ -256,6 +363,7 @@ def _validate_scoped_kubernetes_identity(
                 "denied_permissions",
                 "reader_uid",
                 "reader_gid",
+                "rbac_binding",
             }
         )
         or not isinstance(identity.get("allowed_permissions"), list)
@@ -278,6 +386,15 @@ def _validate_scoped_kubernetes_identity(
         )
         or len(identity["denied_permissions"])
         != len(set(identity["denied_permissions"]))
+        or not isinstance(rbac, dict)
+        or set(rbac) != rbac_fields
+        or not all(isinstance(rbac.get(field), str) and rbac[field] for field in rbac_fields)
+        or rbac["namespace"] != identity["namespace"]
+        or rbac["service_account_uid"] != identity["uid"]
+        or rbac["service_account_resource_version"]
+        != identity["service_account_resource_version"]
+        or rbac["role_ref_kind"] != "Role"
+        or rbac["role_ref_name"] != rbac["role_name"]
     ):
         raise AuthorityServiceError(f"{label} identity contract is incomplete")
     if delivery:
@@ -365,8 +482,6 @@ def _validate_policy(policy: Any) -> None:
     required = {
         "schema",
         "project_id",
-        "authorized_reader_uid",
-        "authorized_reader_gid",
         "evidence_identity",
         "release_identity",
         "operator_identity",
@@ -385,6 +500,8 @@ def _validate_policy(policy: Any) -> None:
         "consumer_contracts_path",
         "provider_executables",
         "class_adapters",
+        "backend_access_identities",
+        "backend_access_identity_adapter",
         "backend_custody_adapter",
         "release_identity_adapter",
         "authorization_closure_adapter",
@@ -403,16 +520,66 @@ def _validate_policy(policy: Any) -> None:
             isinstance(policy.get(field), str) and policy[field]
             for field in ("project_id", "cluster_id")
         )
-        or not isinstance(policy.get("authorized_reader_uid"), int)
-        or policy["authorized_reader_uid"] < 1
-        or not isinstance(policy.get("authorized_reader_gid"), int)
-        or policy["authorized_reader_gid"] < 1
         or not isinstance(policy.get("namespaces"), list)
         or not policy["namespaces"]
         or not all(isinstance(item, str) and item for item in policy["namespaces"])
         or len(policy["namespaces"]) != len(set(policy["namespaces"]))
     ):
         raise AuthorityServiceError("authority production policy is incomplete")
+    backend_identities = policy.get("backend_access_identities")
+    backend_purposes = {"authority", *CALLER_PURPOSES}
+    backend_fields = {
+        "config_path",
+        "config_sha256",
+        "profile",
+        "project_id",
+        "service_account_id",
+        "credential_kind",
+        "audience",
+        "provider_issuer",
+        "token_exchange_source",
+        "maximum_lifetime_seconds",
+        "reader_uid",
+        "reader_gid",
+    }
+    if not isinstance(backend_identities, dict) or set(backend_identities) != backend_purposes:
+        raise AuthorityServiceError("purpose-bound backend identities are incomplete")
+    for purpose, identity in backend_identities.items():
+        if (
+            not isinstance(identity, dict)
+            or set(identity) != backend_fields
+            or identity.get("project_id") != policy["project_id"]
+            or identity.get("credential_kind") != "workload_identity_session"
+            or identity.get("audience") != f"terraform-backend:{purpose}"
+            or identity.get("maximum_lifetime_seconds") != 3600
+            or not all(
+                isinstance(identity.get(field), str) and identity[field]
+                for field in backend_fields
+                - {"maximum_lifetime_seconds", "reader_uid", "reader_gid"}
+            )
+            or not isinstance(identity.get("reader_uid"), int)
+            or not isinstance(identity.get("reader_gid"), int)
+            or (purpose != "authority" and identity["reader_uid"] < 1)
+            or (purpose != "authority" and identity["reader_gid"] < 1)
+        ):
+            raise AuthorityServiceError(
+                f"purpose-bound backend identity is malformed: {purpose}"
+            )
+        config_path = Path(identity["config_path"])
+        if purpose == "authority":
+            if identity["reader_uid"] != 0 or identity["reader_gid"] != 0:
+                raise AuthorityServiceError("authority backend identity must be root-only")
+            root_private_file(config_path, label="authority backend identity configuration")
+        else:
+            root_reader_file(
+                config_path,
+                label=f"{purpose} backend identity configuration",
+                reader_gid=identity["reader_gid"],
+            )
+        if file_sha256(config_path) != identity["config_sha256"]:
+            raise AuthorityServiceError(
+                f"purpose-bound backend identity config differs: {purpose}"
+            )
     automation = policy.get("evidence_identity")
     if (
         not isinstance(automation, dict)
@@ -508,8 +675,6 @@ def _validate_policy(policy: Any) -> None:
         or not isinstance(release.get("allowed_commands"), list)
         or set(release["allowed_commands"]) != {"preflight", "plan", "apply"}
         or release.get("maximum_lifetime_seconds") != 3600
-        or release.get("reader_uid") != policy["authorized_reader_uid"]
-        or release.get("reader_gid") != policy["authorized_reader_gid"]
     ):
         raise AuthorityServiceError("automation-only release identity is incomplete")
     release_path = Path(release["config_path"])
@@ -518,7 +683,7 @@ def _validate_policy(policy: Any) -> None:
     root_reader_file(
         release_path,
         label="release workload identity configuration",
-        reader_gid=policy["authorized_reader_gid"],
+        reader_gid=release["reader_gid"],
     )
     if file_sha256(release_path) != release["config_sha256"]:
         raise AuthorityServiceError("release workload identity configuration differs")
@@ -541,8 +706,6 @@ def _validate_policy(policy: Any) -> None:
         or operator.get("project_id") != policy["project_id"]
         or operator.get("credential_kind") != "auth_public_keys"
         or operator.get("maximum_lifetime_seconds") != 86400
-        or operator.get("reader_uid") != policy["authorized_reader_uid"]
-        or operator.get("reader_gid") != policy["authorized_reader_gid"]
         or not all(
             isinstance(operator.get(field), str) and operator[field]
             for field in operator_fields
@@ -554,21 +717,21 @@ def _validate_policy(policy: Any) -> None:
     root_reader_file(
         operator_kubeconfig,
         label="operator viewer kubeconfig",
-        reader_gid=policy["authorized_reader_gid"],
+        reader_gid=operator["reader_gid"],
     )
     if file_sha256(operator_kubeconfig) != operator["kubeconfig_sha256"]:
         raise AuthorityServiceError("operator viewer kubeconfig differs")
     _validate_scoped_kubernetes_identity(
         policy.get("operator_proxy_identity"),
         label="operator port-forward",
-        reader_uid=policy["authorized_reader_uid"],
-        reader_gid=policy["authorized_reader_gid"],
+        reader_uid=policy["operator_proxy_identity"].get("reader_uid", -1),
+        reader_gid=policy["operator_proxy_identity"].get("reader_gid", -1),
         audience="operator-proxy",
         allowed_permissions={
-            "pods:get",
-            "pods:list",
-            "pods/portforward:create",
-            "services:get",
+            "pods:get:fs2-system",
+            "pods:list:fs2-system",
+            "pods/portforward:create:fs2-system",
+            "services:get:fs2-system",
         },
         maximum_lifetime_seconds=900,
     )
@@ -586,8 +749,8 @@ def _validate_policy(policy: Any) -> None:
         _validate_scoped_kubernetes_identity(
             identity,
             label=f"{kind} credential delivery",
-            reader_uid=policy["authorized_reader_uid"],
-            reader_gid=policy["authorized_reader_gid"],
+            reader_uid=identity.get("reader_uid", -1),
+            reader_gid=identity.get("reader_gid", -1),
             audience=f"scoped-credential-delivery:{kind}",
             maximum_lifetime_seconds=300,
             delivery=True,
@@ -797,11 +960,23 @@ def _validate_policy(policy: Any) -> None:
             raise AuthorityServiceError(f"authority Terraform root is malformed: {name}")
         backend_config = Path(root["backend_config_path"])
         terraform_data_dir = Path(root["terraform_data_dir"])
-        root_reader_file(
-            backend_config,
-            label=f"{name} Terraform backend configuration",
-            reader_gid=policy["authorized_reader_gid"],
-        )
+        backend_metadata = backend_config.stat()
+        if (
+            backend_config.is_symlink()
+            or not backend_config.is_file()
+            or backend_metadata.st_uid != 0
+            or stat.S_IMODE(backend_metadata.st_mode) != 0o644
+            or any(
+                parent.is_symlink()
+                or not parent.is_dir()
+                or parent.stat().st_uid != 0
+                or stat.S_IMODE(parent.stat().st_mode) & 0o022
+                for parent in backend_config.parents
+            )
+        ):
+            raise AuthorityServiceError(
+                f"{name} Terraform backend configuration must be root-owned mode 0644"
+            )
         if (
             terraform_data_dir.is_symlink()
             or not terraform_data_dir.is_dir()
@@ -890,6 +1065,10 @@ def _validate_policy(policy: Any) -> None:
             label=f"credential class {credential_class}",
         )
     _validate_adapter(
+        policy.get("backend_access_identity_adapter"),
+        label="purpose-bound backend workload identity",
+    )
+    _validate_adapter(
         policy.get("backend_custody_adapter"), label="Terraform backend custody"
     )
     _validate_adapter(
@@ -975,14 +1154,121 @@ def _validate_policy(policy: Any) -> None:
         )
 
 
+def _validate_caller_identities(document: dict[str, Any]) -> None:
+    callers = document.get("caller_identities")
+    operation_callers = document.get("operation_callers")
+    if (
+        not isinstance(callers, dict)
+        or set(callers) != CALLER_PURPOSES
+        or not isinstance(operation_callers, dict)
+        or set(operation_callers) != READ_ONLY_OPERATIONS
+    ):
+        raise AuthorityServiceError("purpose-bound authority callers are incomplete")
+    uids: set[int] = set()
+    gids: set[int] = set()
+    cgroups: set[str] = set()
+    for caller_id, caller in callers.items():
+        fields = {
+            "purpose",
+            "uid",
+            "gid",
+            "cgroup_path",
+            "executable_path",
+            "executable_sha256",
+            "client_script_path",
+            "client_script_sha256",
+        }
+        if (
+            not isinstance(caller, dict)
+            or set(caller) != fields
+            or caller.get("purpose") != caller_id
+            or not isinstance(caller.get("uid"), int)
+            or caller["uid"] < 1
+            or not isinstance(caller.get("gid"), int)
+            or caller["gid"] < 1
+            or not isinstance(caller.get("cgroup_path"), str)
+            or not caller["cgroup_path"].startswith("/")
+            or any(
+                not isinstance(caller.get(field), str) or not caller[field]
+                for field in (
+                    "executable_path",
+                    "executable_sha256",
+                    "client_script_path",
+                    "client_script_sha256",
+                )
+            )
+        ):
+            raise AuthorityServiceError(f"authority caller is malformed: {caller_id}")
+        if (
+            caller["uid"] in uids
+            or caller["gid"] in gids
+            or caller["cgroup_path"] in cgroups
+        ):
+            raise AuthorityServiceError("authority caller identities must be distinct")
+        uids.add(caller["uid"])
+        gids.add(caller["gid"])
+        cgroups.add(caller["cgroup_path"])
+        for path_field, digest_field in (
+            ("executable_path", "executable_sha256"),
+            ("client_script_path", "client_script_sha256"),
+        ):
+            configured_path = Path(caller[path_field])
+            candidate = configured_path.resolve()
+            candidate_metadata = candidate.stat() if candidate.is_file() else None
+            if (
+                not candidate.is_absolute()
+                or configured_path.is_symlink()
+                or not candidate.is_file()
+                or candidate_metadata is None
+                or candidate_metadata.st_uid != 0
+                or stat.S_IMODE(candidate_metadata.st_mode) & 0o022
+                or len(caller[digest_field]) != 64
+                or file_sha256(candidate) != caller[digest_field]
+            ):
+                raise AuthorityServiceError(
+                    f"authority caller process pin differs: {caller_id}"
+                )
+    for operation, allowed in operation_callers.items():
+        if (
+            not isinstance(allowed, list)
+            or not allowed
+            or len(allowed) != len(set(allowed))
+            or not set(allowed) <= set(callers)
+        ):
+            raise AuthorityServiceError(
+                f"authority operation caller set is malformed: {operation}"
+            )
+    release_operations = READ_ONLY_OPERATIONS - {
+        "operator-read-context",
+        "operator-proxy-context",
+        "scoped-credential-context",
+    }
+    expected_operation_callers = {
+        **{operation: {"release-automation"} for operation in release_operations},
+        "operator-read-context": {"operator-read"},
+        "operator-proxy-context": {"operator-proxy"},
+        "scoped-credential-context": {
+            "credential-delivery-general",
+            "credential-delivery-scientific",
+        },
+    }
+    expected_operation_callers["backend-custody"] = set(CALLER_PURPOSES)
+    expected_operation_callers["state-migration-readiness"] = set(CALLER_PURPOSES)
+    if any(
+        set(operation_callers[operation]) != expected
+        for operation, expected in expected_operation_callers.items()
+    ):
+        raise AuthorityServiceError("authority operation-to-purpose map is not exact")
+
+
 def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
     root_private_file(path, label="authority configuration")
     document = json.loads(path.read_text(encoding="utf-8"))
     policy = document.get("policy") if isinstance(document, dict) else None
     required = {
         "schema",
-        "allowed_client_uids",
-        "allowed_client_gids",
+        "caller_identities",
+        "operation_callers",
         "operations",
         "configuration_id",
         "policy",
@@ -994,29 +1280,42 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
         not isinstance(document, dict)
         or set(document) != required
         or document.get("schema")
-        != "fs2-serve.nebius.ai/credential-authority-config/v2"
+        != "fs2-serve.nebius.ai/credential-authority-config/v3"
         or not isinstance(document.get("configuration_id"), str)
         or not document["configuration_id"]
-        or not isinstance(document.get("allowed_client_uids"), list)
-        or len(document["allowed_client_uids"]) != 1
-        or not isinstance(document["allowed_client_uids"][0], int)
-        or document["allowed_client_uids"][0] < 1
-        or not isinstance(document.get("allowed_client_gids"), list)
-        or len(document["allowed_client_gids"]) != 1
-        or not isinstance(document["allowed_client_gids"][0], int)
-        or document["allowed_client_gids"][0] < 1
         or not isinstance(policy, dict)
-        or policy.get("authorized_reader_uid")
-        != document["allowed_client_uids"][0]
-        or policy.get("authorized_reader_gid")
-        != document["allowed_client_gids"][0]
         or not isinstance(document.get("operations"), dict)
         or set(document["operations"]) != READ_ONLY_OPERATIONS
         or not isinstance(document.get("evidence_producer_key_id"), str)
         or not document["evidence_producer_key_id"]
     ):
         raise AuthorityServiceError("authority configuration is incomplete")
+    _validate_caller_identities(document)
     _validate_policy(policy)
+    expected_readers = {
+        "release-automation": policy["release_identity"],
+        "operator-read": policy["operator_identity"],
+        "operator-proxy": policy["operator_proxy_identity"],
+        "credential-delivery-general": policy["credential_delivery_identities"]["general-access"],
+        "credential-delivery-scientific": policy["credential_delivery_identities"]["scientific-access"],
+    }
+    for caller_id, identity in expected_readers.items():
+        caller = document["caller_identities"][caller_id]
+        if (caller["uid"], caller["gid"]) != (
+            identity["reader_uid"],
+            identity["reader_gid"],
+        ):
+            raise AuthorityServiceError(
+                f"authority caller does not own its purpose-scoped reader: {caller_id}"
+            )
+        backend_identity = policy["backend_access_identities"][caller_id]
+        if (caller["uid"], caller["gid"]) != (
+            backend_identity["reader_uid"],
+            backend_identity["reader_gid"],
+        ):
+            raise AuthorityServiceError(
+                f"authority caller does not own its backend reader: {caller_id}"
+            )
     for operation, adapter in document["operations"].items():
         _validate_adapter(adapter, label=operation)
     _validate_adapter(document["evidence_signer"], label="evidence signer")
@@ -1036,10 +1335,10 @@ def recv_exact(connection: socket.socket, length: int) -> bytes:
     return b"".join(chunks)
 
 
-def receive_request(connection: socket.socket) -> tuple[int, int, dict[str, Any]]:
+def receive_request(connection: socket.socket) -> tuple[int, int, int, dict[str, Any]]:
     if not hasattr(socket, "SO_PEERCRED"):
         raise AuthorityServiceError("kernel peer credentials are unavailable")
-    _pid, uid, gid = struct.unpack(
+    pid, uid, gid = struct.unpack(
         "3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
     )
     size = struct.unpack("!I", recv_exact(connection, 4))[0]
@@ -1062,7 +1361,7 @@ def receive_request(connection: socket.socket) -> tuple[int, int, dict[str, Any]
         or envelope["request"].get("request_nonce") != envelope["nonce"]
     ):
         raise AuthorityServiceError("authority request binding is invalid")
-    return uid, gid, envelope
+    return pid, uid, gid, envelope
 
 
 def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -1280,7 +1579,11 @@ def adapter_call(adapter: dict[str, Any], request: dict[str, Any], *, label: str
 
 
 def provider_call(
-    config: dict[str, Any], request: dict[str, Any], *, parameters: dict[str, Any]
+    config: dict[str, Any],
+    request: dict[str, Any],
+    *,
+    parameters: dict[str, Any],
+    caller_authorization: dict[str, Any],
 ) -> dict[str, Any]:
     operation = request["operation"]
     policy = config["policy"]
@@ -1289,6 +1592,7 @@ def provider_call(
         "operation": operation,
         "request_nonce": request["request_nonce"],
         "parameters": parameters,
+        "caller_authorization": caller_authorization,
         "policy": policy,
         "policy_sha256": canonical_sha256(policy),
     }
@@ -1303,6 +1607,7 @@ def provider_call(
         "schema",
         "operation",
         "policy_sha256",
+        "caller_authorization_sha256",
         "observed_at",
         "complete",
         "data_fields_returned",
@@ -1314,6 +1619,8 @@ def provider_call(
         != "fs2-serve.nebius.ai/credential-provider-observation/v2"
         or payload.get("operation") != operation
         or payload.get("policy_sha256") != canonical_sha256(policy)
+        or payload.get("caller_authorization_sha256")
+        != canonical_sha256(caller_authorization)
         or payload.get("complete") is not True
         or payload.get("data_fields_returned") != 0
         or not isinstance(payload.get("result"), dict)
@@ -1473,6 +1780,7 @@ def audit_event(
     config: dict[str, Any],
     uid: int,
     gid: int,
+    caller_authorization: dict[str, Any],
     request: dict[str, Any],
     evidence: dict[str, Any],
 ) -> None:
@@ -1498,6 +1806,9 @@ def audit_event(
         "configuration_sha256": canonical_sha256(config),
         "client_uid": uid,
         "client_gid": gid,
+        "caller_id": caller_authorization["id"],
+        "caller_purpose": caller_authorization["purpose"],
+        "caller_authorization_sha256": canonical_sha256(caller_authorization),
         "operation": request["operation"],
         "request_sha256": canonical_sha256(request),
         "evidence_id": evidence["claim"]["evidence_id"],
@@ -1518,24 +1829,37 @@ def audit_event(
 
 
 def handle(connection: socket.socket, config: dict[str, Any]) -> None:
-    uid, gid, envelope = receive_request(connection)
-    if (
-        len(config["allowed_client_uids"]) != 1
-        or uid != config["allowed_client_uids"][0]
-        or len(config["allowed_client_gids"]) != 1
-        or gid != config["allowed_client_gids"][0]
-    ):
-        raise AuthorityServiceError("client uid/gid is not authorized by root policy")
+    pid, uid, gid, envelope = receive_request(connection)
     request = envelope["request"]
+    caller_authorization = authorize_operation_caller(
+        config=config,
+        operation=request["operation"],
+        pid=pid,
+        uid=uid,
+        gid=gid,
+        request=request,
+    )
     parameters = normalized_parameters(request, config)
-    payload = provider_call(config, request, parameters=parameters)
+    payload = provider_call(
+        config,
+        request,
+        parameters=parameters,
+        caller_authorization=caller_authorization,
+    )
     response = externally_anchored_response(
         config=config,
         request=request,
         request_sha256=envelope["request_sha256"],
         payload=payload,
     )
-    audit_event(config=config, uid=uid, gid=gid, request=request, evidence=response)
+    audit_event(
+        config=config,
+        uid=uid,
+        gid=gid,
+        caller_authorization=caller_authorization,
+        request=request,
+        evidence=response,
+    )
     encoded = json.dumps(response, sort_keys=True, separators=(",", ":")).encode()
     if len(encoded) > MAX_MESSAGE_BYTES:
         raise AuthorityServiceError("authority response is too large")

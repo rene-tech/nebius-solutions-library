@@ -217,11 +217,21 @@ def checked_private_file(
     label: str,
     *,
     max_bytes: int = PRIVATE_FILE_MAX_BYTES,
+    expected_mode: int = 0o600,
+    expected_uid: int | None = None,
+    expected_gid: int | None = None,
 ) -> str:
     resolved = path.resolve(strict=True)
-    mode = stat.S_IMODE(resolved.stat().st_mode)
-    if mode != 0o600:
-        raise ValueError(f"{label} must have mode 0600")
+    metadata = resolved.stat()
+    mode = stat.S_IMODE(metadata.st_mode)
+    if (
+        mode != expected_mode
+        or (expected_uid is not None and metadata.st_uid != expected_uid)
+        or (expected_gid is not None and metadata.st_gid != expected_gid)
+    ):
+        raise ValueError(
+            f"{label} must have exact mode/owner/group custody"
+        )
     value = resolved.read_text(encoding="utf-8").strip()
     if not value or len(value.encode()) > max_bytes:
         raise ValueError(f"{label} is empty or exceeds {max_bytes // 1024} KiB")

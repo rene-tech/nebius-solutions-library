@@ -63,6 +63,7 @@ STAGE_COMPLETION_OUTPUTS = {
 ACTIVE_RELEASE_IDENTITY: dict[str, Any] | None = None
 ACTIVE_OPERATOR_IDENTITY: dict[str, Any] | None = None
 ACTIVE_CREDENTIAL_DELIVERY_IDENTITY: dict[str, Any] | None = None
+ACTIVE_BACKEND_IDENTITY: dict[str, Any] | None = None
 FIXED_EXECUTABLES = {
     "terraform": "/snap/bin/terraform",
     "kubectl": "/snap/bin/kubectl",
@@ -178,6 +179,8 @@ def clean_environment() -> dict[str, str]:
         for key, value in os.environ.items()
         if not key.startswith("TF_VAR_")
         and not key.startswith("TF_CLI_ARGS")
+        and not key.startswith("AWS_")
+        and not key.startswith("S3_")
         and key
         not in {
             "TF_DATA_DIR",
@@ -274,6 +277,48 @@ def attested_executables(document: Mapping[str, Any]) -> dict[str, str]:
     return result
 
 
+def attested_backend_identity(
+    document: Mapping[str, Any], purpose: str
+) -> dict[str, Any]:
+    identity = document.get("backend_access_identity")
+    try:
+        issued = datetime.fromisoformat(
+            str(identity["issued_at"]).replace("Z", "+00:00")
+        ).astimezone(UTC)
+        expires = datetime.fromisoformat(
+            str(identity["expires_at"]).replace("Z", "+00:00")
+        ).astimezone(UTC)
+    except (KeyError, TypeError, ValueError) as error:
+        raise DeploymentError("backend workload identity evidence is malformed") from error
+    now = datetime.now(UTC)
+    if (
+        not isinstance(identity, dict)
+        or identity.get("purpose") != purpose
+        or identity.get("audience") != f"terraform-backend:{purpose}"
+        or identity.get("credential_kind") != "workload_identity_session"
+        or identity.get("human_principal_allowed") is not False
+        or identity.get("impersonation_allowed") is not False
+        or issued > now
+        or expires <= now
+        or expires - issued > timedelta(hours=1)
+        or not isinstance(identity.get("profile"), str)
+        or not identity["profile"]
+        or not isinstance(identity.get("binding_sha256"), str)
+        or len(identity["binding_sha256"]) != 64
+    ):
+        raise DeploymentError("backend access is not a current purpose-bound session")
+    result = dict(identity)
+    result["config_path"] = attested_file(
+        identity.get("config_path"),
+        identity.get("config_sha256"),
+        label=f"{purpose} backend workload identity configuration",
+        private=True,
+        reader_uid=identity.get("reader_uid"),
+        reader_gid=identity.get("reader_gid"),
+    )
+    return result
+
+
 def release_identity(command: str) -> dict[str, Any]:
     """Obtain the provider-derived, externally anchored release identity.
 
@@ -287,6 +332,8 @@ def release_identity(command: str) -> dict[str, Any]:
             f"{command} is not authorized for the release automation identity"
         )
     document = authority_observation("release-identity")
+    if document.get("authorizedCallerPurpose") != "release-automation":
+        raise DeploymentError("release identity was not issued to release automation")
     try:
         identity = document["release_identity"]
         issued = datetime.fromisoformat(
@@ -333,6 +380,8 @@ def operator_read_identity() -> dict[str, Any]:
     """Obtain the expiring viewer used only for read-only status/validation."""
 
     document = authority_observation("operator-read-context")
+    if document.get("authorizedCallerPurpose") != "operator-read":
+        raise DeploymentError("operator read context was issued to another purpose")
     identity = document.get("operator_identity")
     denials = document.get("denials")
     if (
@@ -366,12 +415,14 @@ def operator_proxy_identity() -> dict[str, Any]:
     """Obtain a distinct short-lived identity limited to loopback port-forward."""
 
     document = authority_observation("operator-proxy-context")
+    if document.get("authorizedCallerPurpose") != "operator-proxy":
+        raise DeploymentError("operator proxy context was issued to another purpose")
     identity = document.get("operator_proxy_identity")
     required_allowed = {
-        "pods:get",
-        "pods:list",
-        "pods/portforward:create",
-        "services:get",
+        "pods:get:fs2-system",
+        "pods:list:fs2-system",
+        "pods/portforward:create:fs2-system",
+        "services:get:fs2-system",
     }
     required_denied = {
         "impersonate:*",
@@ -408,6 +459,13 @@ def operator_proxy_identity() -> dict[str, Any]:
         or issued > now
         or expires <= now
         or expires - issued > timedelta(minutes=15)
+        or identity.get("namespace") != "fs2-system"
+        or identity.get("rbac_binding", {}).get("namespace") != "fs2-system"
+        or identity.get("rbac_binding", {}).get("service_account_uid")
+        != identity.get("uid")
+        or identity.get("rbac_binding", {}).get("service_account_resource_version")
+        != identity.get("service_account_resource_version")
+        or identity.get("rbac_binding", {}).get("role_ref_kind") != "Role"
     ):
         raise DeploymentError(
             "operator proxy is not an active port-forward-only projected identity"
@@ -430,6 +488,13 @@ def credential_delivery_identity(kind: str) -> dict[str, Any]:
     document = authority_observation(
         "scoped-credential-context", credential_kind=kind
     )
+    expected_purpose = (
+        "credential-delivery-general"
+        if kind == "general-access"
+        else "credential-delivery-scientific"
+    )
+    if document.get("authorizedCallerPurpose") != expected_purpose:
+        raise DeploymentError("scoped credential context was issued to another purpose")
     identity = document.get("credential_delivery_identity")
     binding = document.get("secret_binding")
     if not isinstance(identity, dict) or not isinstance(binding, dict):
@@ -535,6 +600,12 @@ def terraform_environment(run_root: Path, stage: str) -> dict[str, str]:
     private_directory(data_directory)
     environment["TF_DATA_DIR"] = str(data_directory)
     environment["TF_IN_AUTOMATION"] = "1"
+    if ACTIVE_BACKEND_IDENTITY is None:
+        raise DeploymentError("Terraform requires a purpose-bound backend identity")
+    environment["AWS_CONFIG_FILE"] = ACTIVE_BACKEND_IDENTITY["config_path"]
+    environment["AWS_PROFILE"] = ACTIVE_BACKEND_IDENTITY["profile"]
+    environment["AWS_SDK_LOAD_CONFIG"] = "1"
+    environment["AWS_EC2_METADATA_DISABLED"] = "true"
     if ACTIVE_RELEASE_IDENTITY is not None:
         environment["NEBIUS_CONFIG"] = ACTIVE_RELEASE_IDENTITY["config_path"]
         environment["NEBIUS_PROFILE"] = ACTIVE_RELEASE_IDENTITY["profile"]
@@ -597,22 +668,15 @@ def terraform_init(
     if root_name is None:
         raise DeploymentError(f"Terraform root is not registered for remote state: {root}")
     backend_config = TERRAFORM_BACKEND_CONFIG_ROOT / f"{root_name}.s3.hcl"
-    active_reader = (
-        ACTIVE_RELEASE_IDENTITY
-        or ACTIVE_OPERATOR_IDENTITY
-        or ACTIVE_CREDENTIAL_DELIVERY_IDENTITY
-    )
     chain = [backend_config.parent, *backend_config.parent.parents]
     if (
         not backend_config.is_file()
         or backend_config.is_symlink()
         or backend_config.stat().st_uid != 0
-        or active_reader is None
-        or backend_config.stat().st_gid
-        != active_reader.get("reader_gid")
-        or os.geteuid() != active_reader.get("reader_uid")
-        or os.getegid() != backend_config.stat().st_gid
-        or stat.S_IMODE(backend_config.stat().st_mode) != 0o640
+        or ACTIVE_BACKEND_IDENTITY is None
+        or os.geteuid() != ACTIVE_BACKEND_IDENTITY.get("reader_uid")
+        or os.getegid() != ACTIVE_BACKEND_IDENTITY.get("reader_gid")
+        or stat.S_IMODE(backend_config.stat().st_mode) != 0o644
         or any(
             path.is_symlink()
             or not path.is_dir()
@@ -622,7 +686,7 @@ def terraform_init(
         )
     ):
         raise DeploymentError(
-            "root-custodied mode-0640 remote backend configuration for the exact release group is required at "
+            "root-owned non-secret mode-0644 remote backend configuration and a purpose-bound backend session are required at "
             f"{backend_config}; local state fallback is forbidden"
         )
     source = backend_config.read_text(encoding="utf-8")
@@ -640,12 +704,20 @@ def terraform_init(
     )
     if (
         migration.get("terraform_root_name") != root_name
+        or migration.get("authorizedCallerPurpose")
+        != ACTIVE_BACKEND_IDENTITY.get("purpose")
         or migration.get("status") != "copy-verified-source-retained"
         or migration.get("destination_object_present") is not True
         or not isinstance(migration.get("destination_object_version_id"), str)
         or not migration["destination_object_version_id"]
         or migration.get("source_retained") is not True
         or migration.get("overwrite_performed") is not False
+        or migration.get("backend_access_identity", {}).get("purpose")
+        != ACTIVE_BACKEND_IDENTITY.get("purpose")
+        or migration.get("backend_access_identity", {}).get(
+            "binding_sha256"
+        )
+        != ACTIVE_BACKEND_IDENTITY.get("binding_sha256")
         or migration.get("destination_canonical_state_sha256")
         != migration.get("source_canonical_state_sha256")
         or not isinstance(migration.get("source_lineage"), str)
@@ -674,6 +746,8 @@ def terraform_init(
         raise DeploymentError("backend custody evidence is invalid JSON") from error
     if (
         observation.get("terraform_root_name") != root_name
+        or observation.get("authorizedCallerPurpose")
+        != ACTIVE_BACKEND_IDENTITY.get("purpose")
         or observation.get("backend_type") != "s3"
         or observation.get("backend_config_sha256")
         != hashlib.sha256(backend_config.read_bytes()).hexdigest()
@@ -681,6 +755,12 @@ def terraform_init(
         or not observation.get("encryption", {}).get("kms_key_id")
         or observation.get("access_logging", {}).get("enabled") is not True
         or not observation.get("access_logging", {}).get("destination_bucket_id")
+        or observation.get("backend_access_identity", {}).get("purpose")
+        != ACTIVE_BACKEND_IDENTITY.get("purpose")
+        or observation.get("backend_access_identity", {}).get(
+            "binding_sha256"
+        )
+        != ACTIVE_BACKEND_IDENTITY.get("binding_sha256")
         or observation.get("versioning_enabled") is not True
         or not str(observation.get("endpoint", "")).startswith("https://")
     ):
@@ -4145,11 +4225,21 @@ def internal_proxy_command(
         or ACTIVE_OPERATOR_IDENTITY.get("context_name") != cluster_name
         or set(provider_identity.get("allowed_permissions", []))
         != {
-            "pods:get",
-            "pods:list",
-            "pods/portforward:create",
-            "services:get",
+            "pods:get:fs2-system",
+            "pods:list:fs2-system",
+            "pods/portforward:create:fs2-system",
+            "services:get:fs2-system",
         }
+        or provider_identity.get("namespace") != "fs2-system"
+        or provider_identity.get("rbac_binding", {}).get("namespace")
+        != "fs2-system"
+        or provider_identity.get("rbac_binding", {}).get("service_account_uid")
+        != provider_identity.get("uid")
+        or provider_identity.get("rbac_binding", {}).get(
+            "service_account_resource_version"
+        )
+        != provider_identity.get("service_account_resource_version")
+        or provider_identity.get("rbac_binding", {}).get("role_ref_kind") != "Role"
         or "secrets:get" not in provider_identity.get("denied_permissions", [])
     ):
         raise DeploymentError(
@@ -4271,6 +4361,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    global ACTIVE_BACKEND_IDENTITY
     global ACTIVE_CREDENTIAL_DELIVERY_IDENTITY
     global ACTIVE_OPERATOR_IDENTITY, ACTIVE_RELEASE_IDENTITY
     os.umask(0o077)
@@ -4279,12 +4370,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise DeploymentError(
             "caller-controlled Nebius profile/configuration is forbidden; use the provider-attested release identity"
         )
+    if any(key.startswith(("AWS_", "S3_")) for key in os.environ):
+        raise DeploymentError(
+            "caller-controlled AWS/S3 backend credentials are forbidden; use the provider-attested purpose identity"
+        )
     if args.command == "destroy":
         raise DeploymentError(
             "destroy is disabled while the program-wide no-delete constraint is active"
         )
     if args.command in {"preflight", "plan", "apply"}:
         ACTIVE_RELEASE_IDENTITY = release_identity(args.command)
+        ACTIVE_BACKEND_IDENTITY = attested_backend_identity(
+            ACTIVE_RELEASE_IDENTITY, "release-automation"
+        )
         args.terraform = ACTIVE_RELEASE_IDENTITY["executables"]["terraform"]
         args.kubectl = ACTIVE_RELEASE_IDENTITY["executables"]["kubectl"]
         args.nebius = ACTIVE_RELEASE_IDENTITY["executables"]["nebius"]
@@ -4293,6 +4391,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.nebius_config = ACTIVE_RELEASE_IDENTITY["config_path"]
     elif args.command == "proxy":
         ACTIVE_OPERATOR_IDENTITY = operator_proxy_identity()
+        ACTIVE_BACKEND_IDENTITY = attested_backend_identity(
+            ACTIVE_OPERATOR_IDENTITY, "operator-proxy"
+        )
         args.terraform = ACTIVE_OPERATOR_IDENTITY["executables"]["terraform"]
         args.kubectl = ACTIVE_OPERATOR_IDENTITY["executables"]["kubectl"]
         args.nebius = ACTIVE_OPERATOR_IDENTITY["executables"]["nebius"]
@@ -4305,6 +4406,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         ACTIVE_CREDENTIAL_DELIVERY_IDENTITY = credential_delivery_identity(
             args.credential_kind
         )
+        delivery_purpose = (
+            "credential-delivery-general"
+            if args.credential_kind == "general-access"
+            else "credential-delivery-scientific"
+        )
+        ACTIVE_BACKEND_IDENTITY = attested_backend_identity(
+            ACTIVE_CREDENTIAL_DELIVERY_IDENTITY, delivery_purpose
+        )
         args.terraform = ACTIVE_CREDENTIAL_DELIVERY_IDENTITY["executables"]["terraform"]
         args.kubectl = ACTIVE_CREDENTIAL_DELIVERY_IDENTITY["executables"]["kubectl"]
         args.nebius = ACTIVE_CREDENTIAL_DELIVERY_IDENTITY["executables"]["nebius"]
@@ -4313,6 +4422,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.nebius_config = None
     else:
         ACTIVE_OPERATOR_IDENTITY = operator_read_identity()
+        ACTIVE_BACKEND_IDENTITY = attested_backend_identity(
+            ACTIVE_OPERATOR_IDENTITY, "operator-read"
+        )
         args.terraform = ACTIVE_OPERATOR_IDENTITY["executables"]["terraform"]
         args.kubectl = ACTIVE_OPERATOR_IDENTITY["executables"]["kubectl"]
         args.nebius = ACTIVE_OPERATOR_IDENTITY["executables"]["nebius"]

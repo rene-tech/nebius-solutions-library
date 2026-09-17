@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from scripts.credential_authority_provider import generation_from_address
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -309,7 +311,10 @@ def test_authority_requires_source_trust_and_exact_automation_identity() -> None
     assert trust["accepted_trust_bundles"] == []
     assert trust["minimum_witnesses"] == 2
     assert "not accepted by checked source" in client
-    assert 'len(config["allowed_client_uids"]) != 1' in service
+    assert "def authorize_operation_caller" in service
+    assert 'process_cgroup(pid) != caller["cgroup_path"]' in service
+    assert 'set(callers) != CALLER_PURPOSES' in service
+    assert "authority operation-to-purpose map is not exact" in service
     assert "timedelta(hours=24)" in service
     assert "evidence_identity_proof" in provider
     assert "release_identity_proof" in provider
@@ -317,6 +322,26 @@ def test_authority_requires_source_trust_and_exact_automation_identity() -> None
     assert '"credential-release-automation"' in provider
     assert '(policy["project_id"], "viewer")' in provider
     assert 'policy["profile"]' not in provider
+
+
+def test_optional_addresses_gen1_and_composite_generations_fail_closed() -> None:
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    assert 'key.partition(":")[0]' in provider
+    assert '"uninstantiated_declared_addresses"' in provider
+    assert '"availability": "not-observed"' in provider
+    assert "state_binding.get(\"immutable\") is not True" in provider
+    assert "live.get(\"immutable\") is not True" in provider
+    assert "Historical fixed-v1 Secrets predate the annotations" in provider
+    assert "if missing_declared:" not in provider
+    assert generation_from_address('kubernetes_secret_v1.database_versioned["2:owner"]') == 2
+    assert generation_from_address('kubernetes_secret_v1.database_versioned["2:consumer"]') == 2
+    assert generation_from_address("kubernetes_secret_v1.database") == 1
+
+
+def test_expiry_is_future_valid_not_merely_present() -> None:
+    rotation = (ROOT / "scripts/credential_rotation.py").read_text()
+    assert "provider credential expiry is not future-valid" in rotation
+    assert rotation.count("parsed_expiry.astimezone(UTC) <= datetime.now(UTC)") >= 2
 
 
 def test_readiness_and_inventory_fail_closed_on_exact_live_bindings() -> None:
@@ -390,11 +415,12 @@ def test_authorized_reader_files_are_narrow_and_global_inventory_is_root_private
     schema = json.loads(
         (ROOT / "security/credential-authority-config.schema.json").read_text()
     )
-    assert "allowed_client_gids" in schema["required"]
+    assert "caller_identities" in schema["required"]
+    assert "operation_callers" in schema["required"]
     policy = schema["$defs"]["policy"]
     for field in (
-        "authorized_reader_uid",
-        "authorized_reader_gid",
+        "backend_access_identities",
+        "backend_access_identity_adapter",
         "kubeconfig_sha256",
         "cluster_inventory_identity",
         "cluster_authorization_adapter",
@@ -409,16 +435,20 @@ def test_authorized_reader_files_are_narrow_and_global_inventory_is_root_private
     assert 'os.geteuid() != reader_uid' in wrapper
 
 
-def test_registry_presence_and_secret_state_identity_are_mandatory() -> None:
+def test_configured_addresses_and_observed_secret_identity_are_mandatory() -> None:
     guard = (ROOT / "scripts/secret_migration_guard.py").read_text()
     provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
-    assert "authoritative Terraform state omits reviewed credential addresses" in guard
-    assert "authoritative Terraform states omit reviewed credential addresses" in provider
+    assert "state legitimately omits disabled optional" in guard
+    assert '"uninstantiated_declared_addresses"' in provider
+    assert "Kubernetes Secrets and " in provider
+    assert "Nebius IAM objects lack exact custody" in provider
     assert 'binding.get("immutable") is not True' in provider
     assert 'binding.get("uid") != item["metadata"]["uid"]' in provider
-    assert 'binding.get("credential_class") not in matching_classes' in provider
+    assert 'live_annotations["class"] not in matching_classes' in provider
+    assert "fixed_v1_without_complete_annotations" in provider
     assert 'values.get("immutable") is not True' in guard
-    assert 'binding["credential_class"] not in matching_classes' in guard
+    assert "fixed_v1_without_complete_annotations" in guard
+    assert "expected_generation = str(generation_from_address(address))" in guard
 
 
 def test_every_remote_init_requires_verified_additive_state_copy() -> None:

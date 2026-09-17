@@ -464,6 +464,8 @@ def exact_identity(document: Any) -> dict[str, Any]:
             raise RotationError("provider credential expiry is malformed") from error
         if parsed_expiry.tzinfo is None:
             raise RotationError("provider credential expiry must include a timezone")
+        if parsed_expiry.astimezone(UTC) <= datetime.now(UTC):
+            raise RotationError("provider credential expiry is not future-valid")
     if (
         not isinstance(readers, list)
         or not readers
@@ -482,8 +484,13 @@ def require_inventory_policy(identity: dict[str, Any], policy: dict[str, Any]) -
     expiry = policy.get("expiry")
     if not isinstance(expiry, dict) or not isinstance(expiry.get("required"), bool):
         raise RotationError("credential registry has a malformed expiry policy")
-    if expiry["required"] and identity["expires_at"] is None:
-        raise RotationError("provider credential lacks the required expiry")
+    if expiry["required"]:
+        expires_at = identity["expires_at"]
+        if expires_at is None:
+            raise RotationError("provider credential lacks the required expiry")
+        parsed_expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        if parsed_expiry.astimezone(UTC) <= datetime.now(UTC):
+            raise RotationError("provider credential expiry is not future-valid")
 
 
 def require_lineage(

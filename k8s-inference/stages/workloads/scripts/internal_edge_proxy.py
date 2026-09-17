@@ -76,7 +76,13 @@ def main() -> None:
         args.operator_proxy_port,
     )
     kubeconfig = args.kubeconfig.resolve(strict=True)
-    checked_private_file(kubeconfig, "kubeconfig")
+    checked_private_file(
+        kubeconfig,
+        "kubeconfig",
+        expected_mode=0o640,
+        expected_uid=0,
+        expected_gid=os.getegid(),
+    )
     expected_origin = f"http://localhost:{args.operator_proxy_port}"
     expected_urls = {
         "mcp_endpoint_url": f"{expected_origin}/mcp",

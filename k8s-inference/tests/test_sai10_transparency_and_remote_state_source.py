@@ -162,7 +162,7 @@ def test_operator_workflows_use_three_non_interchangeable_identities() -> None:
     assert 'authority_observation("operator-read-context")' in wrapper
     assert 'authority_observation("operator-proxy-context")' in wrapper
     assert '"scoped-credential-context", credential_kind=kind' in wrapper
-    assert '"pods/portforward:create"' in wrapper
+    assert '"pods/portforward:create:fs2-system"' in wrapper
     assert '"secrets:get" not in provider_identity.get("denied_permissions", [])' in proxy
     assert 'ACTIVE_CREDENTIAL_DELIVERY_IDENTITY = credential_delivery_identity(' in wrapper
     assert 'ACTIVE_OPERATOR_IDENTITY = operator_read_identity()' in wrapper
@@ -222,9 +222,61 @@ def test_viewer_denial_does_not_disable_the_distinct_proxy_tunnel() -> None:
     assert "def operator_read_identity()" in wrapper
     assert "def operator_proxy_identity()" in wrapper
     assert '"operator_proxy_identity": identity' in provider
-    assert '"pods/portforward:create"' in service
+    assert '"pods/portforward:create:fs2-system"' in service
+    assert 'rbac["role_ref_kind"] != "Role"' in service
+    assert '"service_account_resource_version"' in service
     assert "port_forward_command(" in proxy_script
     assert "distinct, provider-attested" in proxy_script
+
+
+def test_proxy_kubeconfig_and_rbac_are_exactly_namespace_bound() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    proxy = (ROOT / "stages/workloads/scripts/internal_edge_proxy.py").read_text()
+    acceptance = (
+        ROOT / "stages/workloads/scripts/internal_edge_acceptance.py"
+    ).read_text()
+    assert 'expected_mode=0o640' in proxy
+    assert 'expected_uid=0' in proxy
+    assert 'expected_gid=os.getegid()' in proxy
+    assert 'expected_mode: int = 0o600' in acceptance
+    assert 'provider_identity.get("namespace") != "fs2-system"' in wrapper
+    assert 'get("role_ref_kind") != "Role"' in wrapper
+
+
+def test_every_command_has_purpose_bound_backend_auth_and_no_ambient_profile() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    service = (ROOT / "scripts/credential_authority_service.py").read_text()
+    readme = (ROOT / "README.md").read_text()
+    assert 'not key.startswith("AWS_")' in wrapper
+    assert 'not key.startswith("S3_")' in wrapper
+    assert 'key.startswith(("AWS_", "S3_"))' in wrapper
+    assert 'environment["AWS_CONFIG_FILE"] = ACTIVE_BACKEND_IDENTITY["config_path"]' in wrapper
+    assert 'environment["AWS_PROFILE"] = ACTIVE_BACKEND_IDENTITY["profile"]' in wrapper
+    assert "def attested_backend_identity" in wrapper
+    for purpose in (
+        "release-automation",
+        "operator-read",
+        "operator-proxy",
+        "credential-delivery-general",
+        "credential-delivery-scientific",
+    ):
+        assert purpose in service
+    assert "def backend_access_identity_proof" in provider
+    assert '"caller_backend_identity_sha256"' in provider
+    assert "NEBIUS_PROFILE=sandbox" not in readme
+
+
+def test_authority_callers_are_kernel_and_process_purpose_bound() -> None:
+    client = (ROOT / "scripts/credential_provider_adapter.py").read_text()
+    service = (ROOT / "scripts/credential_authority_service.py").read_text()
+    assert "SO_PEERCRED" in service
+    assert 'Path(f"/proc/{pid}/cgroup")' in service
+    assert 'os.readlink(f"/proc/{pid}/exe")' in service
+    assert "len(command) != 2" in service
+    assert "client executable/script identity is not authorized" in service
+    assert "def authorize_local_caller" in client
+    assert "local caller is not purpose-bound for this operation" in client
 
 
 def test_scoped_output_is_bound_to_live_secret_uid_rv_and_content() -> None:

@@ -136,7 +136,7 @@ Prerequisites are Terraform 1.11 or newer (but older than 2.0), `kubectl`,
 `helm` 3.9 or newer for the digest-pinned OCI charts, `jq`,
 [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane),
 Git, and the root-installed credential authority described in
-[`docs/OPERATOR_ACCESS_HYGIENE_V5.md`](docs/OPERATOR_ACCESS_HYGIENE_V5.md).
+[`docs/OPERATOR_ACCESS_HYGIENE_V6.md`](docs/OPERATOR_ACCESS_HYGIENE_V6.md).
 The optional
 local Kueue and JobSet server tests additionally need
 [`kind`](https://kind.sigs.k8s.io/). Authentication is
@@ -148,6 +148,10 @@ root-owned policy; credential values never belong in Terraform variables.
 cd k8s-inference
 install -m 0600 terraform.tfvars.example terraform.tfvars
 
+# Run each command through its installed purpose-specific service account/unit.
+# Ambient Nebius, AWS and S3 profiles are rejected; the read-only authority
+# supplies short-lived release/operator/delivery and backend sessions.
+
 # The full_catalog profile needs Docker config JSON for its NVCR-hosted DCGM exporter.
 # NGC_API_KEY is additionally required only when the selected set contains an
 # NGC-backed NIM (currently MSA Search PDB70, OpenFold2, or OpenFold3).
@@ -158,12 +162,12 @@ export FS2_NGC_API_KEY='...'
 export FS2_GRAFANA_ADMIN_USERNAME='...'
 export FS2_GRAFANA_ADMIN_PASSWORD='...'
 
-NEBIUS_PROFILE=sandbox ./inference-stack validate --var-file terraform.tfvars
-NEBIUS_PROFILE=sandbox ./inference-stack plan --var-file terraform.tfvars
-NEBIUS_PROFILE=sandbox ./inference-stack apply --var-file terraform.tfvars
-NEBIUS_PROFILE=sandbox ./inference-stack status --var-file terraform.tfvars
+./inference-stack validate --var-file terraform.tfvars
+./inference-stack plan --var-file terraform.tfvars
+./inference-stack apply --var-file terraform.tfvars
+./inference-stack status --var-file terraform.tfvars
 install -d -m 0700 /a/private/operator-handoff
-NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars \
+./inference-stack output --var-file terraform.tfvars \
   --credential-kind general-access \
   --credential-expires-in-seconds 3600 \
   --credential-file /a/private/operator-handoff/general-access.json
@@ -333,7 +337,7 @@ database, registry, and Grafana generations are
 independent. Generation 1 retains the existing persisted resource addresses;
 later keyrings use new Secret names, retain every predecessor needed for reads,
 and trigger readiness-gated consumer rollouts from non-secret generation
-metadata. See [operator access and credential migration](docs/OPERATOR_ACCESS_HYGIENE_V5.md)
+metadata. See [operator access and credential migration](docs/OPERATOR_ACCESS_HYGIENE_V6.md)
 for the plan guard, encrypted-state retirement, scoped credential export, and
 rollback contract.
 
@@ -375,7 +379,7 @@ manifest procedure. A plaintext copy is never a rollback artifact.
 
 The Kubernetes API allowlist, viewer-only operator handoff identity, state and
 plan hygiene, rotation generations, and staged verification procedure are
-documented in [Operator access hygiene](docs/OPERATOR_ACCESS_HYGIENE_V5.md).
+documented in [Operator access hygiene](docs/OPERATOR_ACCESS_HYGIENE_V6.md).
 
 ## Configuration
 
@@ -693,13 +697,17 @@ the measured qualification boundaries.
 
 ## Destroy
 
+> The wrapper currently rejects `destroy` under the program-wide no-delete
+> constraint. The command below is historical workflow documentation only and
+> must not be run while that constraint is active.
+
 Destroy uses the reverse dependency order: workloads, foundation, then
 infrastructure. It skips absent states and retains local evidence under the run
 directory. Destroy never invokes `crane` or changes registry contents outside
 Terraform's removal of the run-owned target registry.
 
 ```bash
-NEBIUS_PROFILE=sandbox ./inference-stack destroy --var-file terraform.tfvars
+./inference-stack destroy --var-file terraform.tfvars
 ```
 
 Review the output and verify `status` before separately removing retained local

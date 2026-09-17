@@ -1041,6 +1041,25 @@ def base_resource_address(address: Any) -> str | None:
     return re.sub(r"\[[^\]]+\]$", "", address)
 
 
+def generation_from_address(address: str) -> int:
+    """Parse numeric and composite Terraform instance generations."""
+
+    match = re.search(r"\[([^\]]+)\]$", address)
+    if match is None:
+        return 1
+    try:
+        key = json.loads(match.group(1))
+    except json.JSONDecodeError as error:
+        raise GuardError(f"Terraform resource has an invalid instance key: {address}") from error
+    if isinstance(key, int) and not isinstance(key, bool) and key >= 1:
+        return key
+    if isinstance(key, str):
+        leading = key.partition(":")[0]
+        if leading.isdecimal() and int(leading) >= 1:
+            return int(leading)
+    return 1
+
+
 def credential_resource_type(address: Any) -> str | None:
     base = base_resource_address(address)
     if base is None:
@@ -1197,21 +1216,11 @@ def protected_state_fingerprints(
         if address in fingerprints:
             raise GuardError(f"protected state resource is duplicated: {address}")
         fingerprints[address] = canonical_sha256(values)
-    if registry is not None and terraform_root is not None:
-        required = registry_resource_addresses(
-            registry, terraform_root=terraform_root
-        )
-        observed = {
-            base
-            for address in fingerprints
-            if (base := base_resource_address(address)) is not None
-        }
-        missing = required - observed
-        if missing:
-            raise GuardError(
-                "authoritative Terraform state omits reviewed credential addresses: "
-                + ",".join(sorted(missing))
-            )
+    # The source configuration must declare every registry address, but state
+    # legitimately omits disabled optional/count/for_each instances and
+    # dependency-owned resources that have not landed.  Existing protected
+    # instances remain fingerprinted exactly; plan inspection separately
+    # rejects moves, deletes, replacement, and undeclared configuration.
     return dict(sorted(fingerprints.items()))
 
 
@@ -1310,17 +1319,18 @@ def live_secret_bindings(
             "uid": metadata["uid"],
             "resource_version": metadata["resourceVersion"],
             "content_sha256": authority_content,
+            "annotation_content": declared_content,
             "authority_evidence_id": authority_evidence_id,
             "authority_observed_at": authority_observed_at,
             "credential_class": (
-                annotations.get("fs2.nebius.ai/credential-class", "legacy-generation-1")
+                annotations.get("fs2.nebius.ai/credential-class")
                 if isinstance(annotations, dict)
-                else "legacy-generation-1"
+                else None
             ),
             "generation": (
-                annotations.get("fs2.nebius.ai/credential-generation", "1")
+                annotations.get("fs2.nebius.ai/credential-generation")
                 if isinstance(annotations, dict)
-                else "1"
+                else None
             ),
             "immutable": "true" if item.get("immutable") is True else "false",
         }
@@ -1342,6 +1352,7 @@ def live_secret_bindings(
         state_uid = metadata.get("uid")
         state_rv = metadata.get("resource_version")
         state_annotations = metadata.get("annotations")
+        declared_content = binding["annotation_content"]
         matching_classes = {
             entry["id"]
             for entry in registry["credentials"]
@@ -1351,24 +1362,73 @@ def live_secret_bindings(
                 for pattern in entry["address_regexes"]
             )
         }
+        if len(matching_classes) != 1:
+            raise GuardError(
+                f"protected Secret does not map to one credential class: {address}"
+            )
+        expected_class = next(iter(matching_classes))
+        expected_generation = str(generation_from_address(address))
+        state_class = (
+            state_annotations.get("fs2.nebius.ai/credential-class")
+            if isinstance(state_annotations, dict)
+            else None
+        )
+        state_generation = (
+            state_annotations.get("fs2.nebius.ai/credential-generation")
+            if isinstance(state_annotations, dict)
+            else None
+        )
+        state_content = (
+            state_annotations.get("fs2.nebius.ai/content-sha256")
+            if isinstance(state_annotations, dict)
+            else None
+        )
+        complete_annotations = all(
+            isinstance(value, str) and value
+            for value in (binding["credential_class"], binding["generation"], declared_content)
+        )
+        fixed_v1_without_complete_annotations = (
+            expected_generation == "1"
+            and state_class == binding["credential_class"]
+            and state_generation == binding["generation"]
+            and state_content == declared_content
+            and binding["credential_class"] in {None, expected_class}
+            and binding["generation"] in {None, "1"}
+            and declared_content in {None, binding["content_sha256"]}
+        )
         if (
             state_uid != binding["uid"]
             or str(state_rv) != binding["resource_version"]
-            or not isinstance(state_annotations, dict)
-            or state_annotations.get("fs2.nebius.ai/credential-class")
-            != binding["credential_class"]
-            or binding["credential_class"] not in matching_classes
-            or state_annotations.get("fs2.nebius.ai/credential-generation")
-            != binding["generation"]
-            or state_annotations.get("fs2.nebius.ai/content-sha256")
-            != binding["content_sha256"]
             or values.get("immutable") is not True
             or binding["immutable"] != "true"
+            or (
+                complete_annotations
+                and (
+                    binding["credential_class"] != expected_class
+                    or binding["generation"] != expected_generation
+                    or declared_content != binding["content_sha256"]
+                    or state_class != binding["credential_class"]
+                    or state_generation != binding["generation"]
+                    or state_content != declared_content
+                )
+            )
+            or (
+                not complete_annotations
+                and not fixed_v1_without_complete_annotations
+            )
         ):
             raise GuardError(
                 f"live Secret UID/RV/class/generation/content/immutable binding differs from Terraform state: {address}"
             )
-        bindings[address] = binding
+        bindings[address] = {
+            **{
+                key: value
+                for key, value in binding.items()
+                if key != "annotation_content"
+            },
+            "credential_class": expected_class,
+            "generation": expected_generation,
+        }
     return dict(sorted(bindings.items()))
 
 

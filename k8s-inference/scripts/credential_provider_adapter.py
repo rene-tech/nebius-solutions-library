@@ -53,6 +53,15 @@ READ_ONLY_OPERATIONS = frozenset(
         "state-migration-readiness",
     }
 )
+CALLER_PURPOSES = frozenset(
+    {
+        "release-automation",
+        "operator-read",
+        "operator-proxy",
+        "credential-delivery-general",
+        "credential-delivery-scientific",
+    }
+)
 
 
 class AuthorityError(RuntimeError):
@@ -73,15 +82,21 @@ def load_client_policy() -> dict[str, Any]:
         "trust_bundle_id",
         "evidence_public_key_sha256",
         "anchor_public_key_sha256",
+        "caller_identities",
+        "operation_callers",
     }
     if (
         not isinstance(document, dict)
         or set(document) != required
         or document.get("schema")
-        != "fs2-serve.nebius.ai/credential-authority-client-policy/v1"
+        != "fs2-serve.nebius.ai/credential-authority-client-policy/v2"
     ):
         raise AuthorityError("credential authority client policy is malformed")
-    for field in required - {"schema"}:
+    for field in {
+        "trust_bundle_id",
+        "evidence_public_key_sha256",
+        "anchor_public_key_sha256",
+    }:
         value = document.get(field)
         if (
             not isinstance(value, str)
@@ -186,7 +201,94 @@ def load_client_policy() -> dict[str, Any]:
         != bundle["anchor_public_key_sha256"]
     ):
         raise AuthorityError("source-owned trusted checkpoint is malformed")
+    callers = document["caller_identities"]
+    operation_callers = document["operation_callers"]
+    if (
+        not isinstance(callers, dict)
+        or set(callers) != CALLER_PURPOSES
+        or not isinstance(operation_callers, dict)
+        or set(operation_callers) != READ_ONLY_OPERATIONS
+    ):
+        raise AuthorityError("purpose-bound client policy is incomplete")
+    for caller_id, caller in callers.items():
+        if (
+            not isinstance(caller, dict)
+            or set(caller) != {"uid", "gid", "cgroup_path"}
+            or not isinstance(caller.get("uid"), int)
+            or caller["uid"] < 1
+            or not isinstance(caller.get("gid"), int)
+            or caller["gid"] < 1
+            or not isinstance(caller.get("cgroup_path"), str)
+            or not caller["cgroup_path"].startswith("/")
+        ):
+            raise AuthorityError(f"client caller identity is malformed: {caller_id}")
+    if (
+        len({item["uid"] for item in callers.values()}) != len(callers)
+        or len({item["gid"] for item in callers.values()}) != len(callers)
+        or len({item["cgroup_path"] for item in callers.values()}) != len(callers)
+    ):
+        raise AuthorityError("purpose-bound client identities must be distinct")
+    for operation, allowed in operation_callers.items():
+        if (
+            not isinstance(allowed, list)
+            or not allowed
+            or len(allowed) != len(set(allowed))
+            or not set(allowed) <= set(callers)
+        ):
+            raise AuthorityError(f"client operation caller set is malformed: {operation}")
+    release_operations = READ_ONLY_OPERATIONS - {
+        "operator-read-context",
+        "operator-proxy-context",
+        "scoped-credential-context",
+    }
+    expected = {
+        **{operation: {"release-automation"} for operation in release_operations},
+        "operator-read-context": {"operator-read"},
+        "operator-proxy-context": {"operator-proxy"},
+        "scoped-credential-context": {
+            "credential-delivery-general",
+            "credential-delivery-scientific",
+        },
+    }
+    expected["backend-custody"] = set(CALLER_PURPOSES)
+    expected["state-migration-readiness"] = set(CALLER_PURPOSES)
+    if any(set(operation_callers[operation]) != callers for operation, callers in expected.items()):
+        raise AuthorityError("client operation-to-purpose map is not exact")
     return {**document, "source_trust": bundle}
+
+
+def process_cgroup() -> str:
+    try:
+        lines = Path("/proc/self/cgroup").read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise AuthorityError("client cgroup identity is unavailable") from error
+    unified = [line[3:] for line in lines if line.startswith("0::/")]
+    if len(unified) != 1:
+        raise AuthorityError("client does not have one exact unified cgroup")
+    return unified[0]
+
+
+def authorize_local_caller(
+    policy: dict[str, Any], operation: str, request: dict[str, Any]
+) -> str:
+    matches = [
+        caller_id
+        for caller_id in policy["operation_callers"][operation]
+        if policy["caller_identities"][caller_id]["uid"] == os.geteuid()
+        and policy["caller_identities"][caller_id]["gid"] == os.getegid()
+        and policy["caller_identities"][caller_id]["cgroup_path"] == process_cgroup()
+    ]
+    if len(matches) != 1:
+        raise AuthorityError("local caller is not purpose-bound for this operation")
+    caller_id = matches[0]
+    if operation == "scoped-credential-context":
+        expected = {
+            "credential-delivery-general": "general-access",
+            "credential-delivery-scientific": "scientific-access",
+        }.get(caller_id)
+        if request.get("credential_kind") != expected:
+            raise AuthorityError("local delivery caller requested another credential kind")
+    return caller_id
 
 
 def _recv_exact(connection: socket.socket, length: int) -> bytes:
@@ -213,6 +315,7 @@ def authority_call(request: dict[str, Any]) -> dict[str, Any]:
     if not stat.S_ISSOCK(metadata.st_mode) or metadata.st_uid != 0:
         raise AuthorityError("credential authority must be a root-owned Unix socket")
     policy = load_client_policy()
+    caller_id = authorize_local_caller(policy, str(operation), request)
     nonce = uuid.uuid4().hex
     bound_request = {**request, "request_nonce": nonce}
     envelope = {
@@ -260,6 +363,8 @@ def authority_call(request: dict[str, Any]) -> dict[str, Any]:
         or payload.get("operation") != operation
         or payload.get("complete") is not True
         or payload.get("data_fields_returned") != 0
+        or not isinstance(payload.get("caller_authorization_sha256"), str)
+        or len(payload["caller_authorization_sha256"]) != 64
         or not isinstance(payload.get("result"), dict)
     ):
         raise AuthorityError("credential provider observation is incomplete")
@@ -270,6 +375,7 @@ def authority_call(request: dict[str, Any]) -> dict[str, Any]:
     observation = {key: value for key, value in payload.items() if key != "result"}
     return {
         **result,
+        "authorizedCallerPurpose": caller_id,
         "authorityObservation": observation,
         "externalEvidence": proof,
     }

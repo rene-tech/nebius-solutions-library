@@ -1,5 +1,9 @@
 # Provider lifecycle and purpose-scoped operator access v5
 
+> Superseded by [v6](OPERATOR_ACCESS_HYGIENE_V6.md), which binds authority
+> operations, namespace-scoped proxy RBAC, and remote-state sessions to
+> distinct kernel-authenticated purposes.
+
 This source-only successor refines v4 without treating any rejected predecessor
 as accepted. Integration and deployment remain disabled: the checked-in
 external trust allowlist is empty, production adapters are not configured,
