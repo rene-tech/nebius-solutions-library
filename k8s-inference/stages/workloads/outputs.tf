@@ -237,10 +237,12 @@ output "dynamic_model_contract" {
       local.model_controller_bootstrap_enabled ? local.model_controller_bootstrap_current_generation : null
     )
     bootstrap_current_retention_spec = (
-      local.model_controller_bootstrap_enabled ? local.model_controller_bootstrap_current_spec : null
+      null
     )
+    bootstrap_inventory_authority   = "kubernetes-provider-discovery-v1"
+    bootstrap_inventory_generations = local.model_controller_bootstrap_inventory_keys
     bootstrap_managed_generations  = sort(keys(local.model_controller_bootstrap_assertions))
-    bootstrap_retained_generations = sort(keys(var.release_identity_model_bootstrap_retained_assertions))
+    bootstrap_retained_generations = local.model_controller_bootstrap_inventory_keys
     unsupported_gvks_retained = sort(distinct([
       for document in values(local.terraform_owned_model_manifests) : "${document.manifest.apiVersion}/${document.manifest.kind}"
       if(

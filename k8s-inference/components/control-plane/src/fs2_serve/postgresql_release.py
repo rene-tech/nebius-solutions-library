@@ -106,6 +106,10 @@ EXPECTED_MIGRATIONS: Final = (
         "0032_session_exchange_buckets.sql",
         "8ab43b8cdbfd193cc45ed19791fc02edea794715fb6adec2d497c8450798f624",
     ),
+    (
+        "0033_session_exchange_sliding_window.sql",
+        "6f4b7fa39138c7998bdf499d9e21e9740181dba568f74d502838cb0f2dac2f5c",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

@@ -1066,7 +1066,7 @@ variable "release_identity_model_bootstrap_assertion_generation" {
 }
 
 variable "release_identity_model_bootstrap_retained_assertions" {
-  description = "Append-only prior model-bootstrap execution specs keyed by the first 32 hex characters of sha256(canonical identity). Full payload, implementation, image and public assertion identity make historical reconstruction byte-stable."
+  description = "Deprecated rejected caller-copy surface. Must remain empty; retained generations are discovered from Kubernetes and imported into Terraform state."
   type = map(object({
     assertion_generation = string
     secret_name          = string
@@ -1077,35 +1077,8 @@ variable "release_identity_model_bootstrap_retained_assertions" {
   default = {}
 
   validation {
-    condition = (
-      alltrue([
-        for generation_key, assertion in var.release_identity_model_bootstrap_retained_assertions :
-        can(regex("^[a-f0-9]{32}$", generation_key)) &&
-        can(regex("^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$", assertion.assertion_generation)) &&
-        can(regex(
-          "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$",
-          assertion.secret_name,
-        )) &&
-        assertion.secret_name == "fs2-release-model-bootstrap-${assertion.assertion_generation}" &&
-        length(assertion.payload_json) >= 64 && length(assertion.payload_json) <= 900000 &&
-        can(jsondecode(assertion.payload_json)) &&
-        try(jsondecode(assertion.payload_json).schema, null) == "fs2-serve.nebius.ai/model-bootstrap/v1" &&
-        try(jsondecode(assertion.payload_json).generation, null) == assertion.assertion_generation &&
-        length(assertion.bootstrap_script) >= 512 && length(assertion.bootstrap_script) <= 65536 &&
-        can(regex("@sha256:[a-f0-9]{64}$", assertion.runtime_image)) &&
-        generation_key == substr(sha256(jsonencode({
-          payload_sha256        = sha256(assertion.payload_json)
-          implementation_sha256 = sha256(assertion.bootstrap_script)
-          runtime_image         = assertion.runtime_image
-          assertion_generation  = assertion.assertion_generation
-          assertion_secret_name = assertion.secret_name
-        })), 0, 32)
-      ]) &&
-      length(distinct([
-        for assertion in values(var.release_identity_model_bootstrap_retained_assertions) : assertion.secret_name
-      ])) == length(var.release_identity_model_bootstrap_retained_assertions)
-    )
-    error_message = "Every retained model-bootstrap entry must contain its complete bounded historical spec, generation-derived immutable Secret name, and exact identity-derived key."
+    condition     = length(var.release_identity_model_bootstrap_retained_assertions) == 0
+    error_message = "release_identity_model_bootstrap_retained_assertions is deprecated and must be empty; provider-discovered immutable ConfigMap/Job history is authoritative."
   }
 }
 

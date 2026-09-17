@@ -1,22 +1,11 @@
-"""Shared fixed-window coordinates for operator session-exchange admission."""
+"""Shared bounds for exact operator session-exchange sliding-window admission."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
-from math import floor
+from datetime import datetime, timedelta
 
-SESSION_EXCHANGE_AGGREGATE_SHARDS = 16
-SESSION_EXCHANGE_SOURCE_SLOTS = 65536
-
-
-@dataclass(frozen=True)
-class SessionExchangeCoordinates:
-    source_slot_a: int
-    source_slot_b: int
-    aggregate_shard_count: int
-    aggregate_shard: int
-    aggregate_shard_quota: int
+SESSION_EXCHANGE_ADMISSION_SLOTS = 10000
+SESSION_EXCHANGE_EVIDENCE_SLOTS = 65536
 
 
 def validate_session_exchange_settings(
@@ -39,43 +28,26 @@ def validate_session_exchange_settings(
         raise ValueError("operator exchange aggregate limiter setting is invalid")
 
 
-def session_exchange_coordinates(
+def session_exchange_cutoff(
     source_fingerprint: str,
     *,
+    attempted_at: datetime,
     window_seconds: int,
     maximum_source_attempts: int,
     maximum_aggregate_attempts: int,
-) -> SessionExchangeCoordinates:
+) -> datetime:
     validate_session_exchange_settings(
         source_fingerprint,
         window_seconds=window_seconds,
         maximum_source_attempts=maximum_source_attempts,
         maximum_aggregate_attempts=maximum_aggregate_attempts,
     )
-    digest = bytes.fromhex(source_fingerprint)
-    slot_a = int.from_bytes(digest[0:4], "big") % SESSION_EXCHANGE_SOURCE_SLOTS
-    slot_b = int.from_bytes(digest[4:8], "big") % SESSION_EXCHANGE_SOURCE_SLOTS
-    if slot_b == slot_a:
-        slot_b = (slot_b + 1) % SESSION_EXCHANGE_SOURCE_SLOTS
-    shard_count = min(
-        SESSION_EXCHANGE_AGGREGATE_SHARDS,
-        max(1, maximum_aggregate_attempts // maximum_source_attempts),
-    )
-    shard = int.from_bytes(digest[8:10], "big") % shard_count
-    shard_quota = maximum_aggregate_attempts // shard_count
-    if shard < maximum_aggregate_attempts % shard_count:
-        shard_quota += 1
-    return SessionExchangeCoordinates(
-        source_slot_a=slot_a,
-        source_slot_b=slot_b,
-        aggregate_shard_count=shard_count,
-        aggregate_shard=shard,
-        aggregate_shard_quota=shard_quota,
-    )
-
-
-def session_exchange_window_start(attempted_at: datetime, window_seconds: int) -> datetime:
     if attempted_at.tzinfo is None or attempted_at.utcoffset() is None:
         raise ValueError("operator exchange timestamp must be timezone-aware")
-    epoch = floor(attempted_at.timestamp())
-    return datetime.fromtimestamp(epoch - epoch % window_seconds, tz=UTC)
+    return attempted_at - timedelta(seconds=window_seconds)
+
+
+def session_exchange_evidence_slot(source_fingerprint: str) -> int:
+    """Select bounded forensic state; collisions never influence admission."""
+
+    return int.from_bytes(bytes.fromhex(source_fingerprint)[0:4], "big") % SESSION_EXCHANGE_EVIDENCE_SLOTS

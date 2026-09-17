@@ -1404,8 +1404,31 @@ locals {
             raise RuntimeError("release model bootstrap returned an invalid model projection")
         print(f"model bootstrap projection: {model['name']} ({model['projection']})")
   PY
-  # Each retained value is a complete non-secret immutable execution spec.
-  # Its key is derived from this identity, never supplied as an opaque label.
+  # The identity includes every immutable Job input which is not derived from
+  # its own digest key. Historical Jobs are reconstructed from this cluster-
+  # retained object, never from the current image/origin or a copied tfvars map.
+  model_controller_bootstrap_current_job_contract = {
+    schema                      = "fs2-serve.nebius.ai/model-bootstrap-job/v1"
+    bootstrap_base_url          = "http://fs2-serve-control-plane.fs2-system.svc.cluster.local:8080"
+    bootstrap_public_origin     = local.public_base_url
+    command                     = ["python", "/bootstrap/bootstrap.py"]
+    backoff_limit               = 0
+    active_deadline_seconds     = 600
+    automount_service_account   = false
+    restart_policy              = "Never"
+    cpu_request                 = "25m"
+    memory_request              = "64Mi"
+    cpu_limit                   = "250m"
+    memory_limit                = "256Mi"
+    allow_privilege_escalation  = false
+    read_only_root_filesystem   = true
+    run_as_non_root             = true
+    run_as_user                 = 65532
+    capabilities_drop           = ["ALL"]
+    bootstrap_mount_path        = "/bootstrap"
+    assertion_mount_path        = "/var/run/fs2-release"
+    base_labels                 = local.common_labels
+  }
   model_controller_bootstrap_current_spec = {
     assertion_generation = var.release_identity_model_bootstrap_assertion_generation
     secret_name          = var.release_identity_model_bootstrap_assertion_secret_name
@@ -1414,31 +1437,234 @@ locals {
     runtime_image        = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
   }
   model_controller_bootstrap_current_identity = {
+    schema                = "fs2-serve.nebius.ai/model-bootstrap-identity/v2"
     payload_sha256        = sha256(local.model_controller_bootstrap_current_spec.payload_json)
     implementation_sha256 = sha256(local.model_controller_bootstrap_current_spec.bootstrap_script)
     runtime_image         = local.model_controller_bootstrap_current_spec.runtime_image
     assertion_generation  = local.model_controller_bootstrap_current_spec.assertion_generation
     assertion_secret_name = local.model_controller_bootstrap_current_spec.secret_name
+    job_contract          = local.model_controller_bootstrap_current_job_contract
   }
   model_controller_bootstrap_current_generation = substr(
     sha256(jsonencode(local.model_controller_bootstrap_current_identity)),
     0,
     32,
   )
-  model_controller_bootstrap_retained_specs = {
-    for generation_key, spec in var.release_identity_model_bootstrap_retained_assertions :
-    generation_key => merge(spec, {
-      identity = {
-        payload_sha256        = sha256(spec.payload_json)
-        implementation_sha256 = sha256(spec.bootstrap_script)
-        runtime_image         = spec.runtime_image
-        assertion_generation  = spec.assertion_generation
-        assertion_secret_name = spec.secret_name
-      }
-    })
+  model_controller_bootstrap_inventory_configmaps = [
+    for item in data.kubernetes_resources.model_controller_bootstrap_configmaps.objects : item
+    if try(startswith(item.metadata.name, "fs2-model-bootstrap-"), false)
+  ]
+  model_controller_bootstrap_inventory_jobs = [
+    for item in data.kubernetes_resources.model_controller_bootstrap_jobs.objects : item
+    if try(startswith(item.metadata.name, "fs2-model-bootstrap-"), false)
+  ]
+  model_controller_bootstrap_discovered_specs = {
+    for item in local.model_controller_bootstrap_inventory_configmaps :
+    trimprefix(item.metadata.name, "fs2-model-bootstrap-") => {
+      assertion_generation = try(jsondecode(item.data["bootstrap-identity.json"]).assertion_generation, "")
+      secret_name          = try(jsondecode(item.data["bootstrap-identity.json"]).assertion_secret_name, "")
+      payload_json         = try(item.data["bootstrap.json"], "")
+      bootstrap_script     = try(item.data["bootstrap.py"], "")
+      runtime_image        = try(jsondecode(item.data["bootstrap-identity.json"]).runtime_image, "")
+      identity             = try(jsondecode(item.data["bootstrap-identity.json"]), {})
+      observed_name        = try(item.metadata.name, "")
+      observed_labels      = try(item.metadata.labels, {})
+      observed_generation  = try(item.metadata.labels["fs2.nebius.ai/generation"], "")
+      observed_component   = try(item.metadata.labels["app.kubernetes.io/component"], "")
+      observed_immutable   = try(item.immutable, false)
+      observed_uid         = try(item.metadata.uid, "")
+    }
   }
+  model_controller_bootstrap_observed_jobs = {
+    for item in local.model_controller_bootstrap_inventory_jobs :
+    trimprefix(item.metadata.name, "fs2-model-bootstrap-") => {
+      observed_name       = try(item.metadata.name, "")
+      observed_labels     = try(item.metadata.labels, {})
+      observed_generation = try(item.metadata.labels["fs2.nebius.ai/generation"], "")
+      observed_component  = try(item.metadata.labels["app.kubernetes.io/component"], "")
+      observed_uid        = try(item.metadata.uid, "")
+      observed_template_labels = try({
+        for label, value in item.spec.template.metadata.labels : label => value
+        if !contains([
+          "batch.kubernetes.io/controller-uid",
+          "batch.kubernetes.io/job-name",
+          "controller-uid",
+          "job-name",
+        ], label)
+      }, {})
+      backoff_limit       = try(item.spec.backoffLimit, null)
+      active_deadline     = try(item.spec.activeDeadlineSeconds, null)
+      automount_token     = try(item.spec.template.spec.automountServiceAccountToken, null)
+      restart_policy      = try(item.spec.template.spec.restartPolicy, "")
+      container = try([
+        for container in item.spec.template.spec.containers : container
+        if container.name == "bootstrap"
+      ][0], {})
+      bootstrap_volume = try([
+        for volume in item.spec.template.spec.volumes : volume
+        if volume.name == "bootstrap"
+      ][0], {})
+      assertion_volume = try([
+        for volume in item.spec.template.spec.volumes : volume
+        if volume.name == "release-assertion"
+      ][0], {})
+      active    = coalesce(try(item.status.active, null), 0)
+      succeeded = coalesce(try(item.status.succeeded, null), 0)
+      failed    = coalesce(try(item.status.failed, null), 0)
+    }
+  }
+  model_controller_bootstrap_inventory_keys = sort(keys(local.model_controller_bootstrap_discovered_specs))
+  model_controller_bootstrap_job_keys       = sort(keys(local.model_controller_bootstrap_observed_jobs))
+  model_controller_bootstrap_discovered_job_specs = {
+    for generation_key, spec in local.model_controller_bootstrap_discovered_specs :
+    generation_key => spec
+    if contains(local.model_controller_bootstrap_job_keys, generation_key)
+  }
+  model_controller_bootstrap_inventory_valid = (
+    length(var.release_identity_model_bootstrap_retained_assertions) == 0 &&
+    length(local.model_controller_bootstrap_inventory_configmaps) == length(local.model_controller_bootstrap_discovered_specs) &&
+    length(local.model_controller_bootstrap_inventory_jobs) == length(local.model_controller_bootstrap_observed_jobs) &&
+    length(distinct([
+      for spec in values(local.model_controller_bootstrap_discovered_specs) : spec.secret_name
+    ])) == length(local.model_controller_bootstrap_discovered_specs) &&
+    (
+      length(setsubtract(
+        toset(local.model_controller_bootstrap_inventory_keys),
+        toset(local.model_controller_bootstrap_job_keys),
+      )) == 0 || (
+        local.model_controller_bootstrap_enabled &&
+        setsubtract(
+          toset(local.model_controller_bootstrap_inventory_keys),
+          toset(local.model_controller_bootstrap_job_keys),
+        ) == toset([local.model_controller_bootstrap_current_generation]) &&
+        try(
+          local.model_controller_bootstrap_discovered_specs[
+            local.model_controller_bootstrap_current_generation
+          ].identity == local.model_controller_bootstrap_current_identity,
+          false,
+        )
+      )
+    ) &&
+    length(setsubtract(
+      toset(local.model_controller_bootstrap_job_keys),
+      toset(local.model_controller_bootstrap_inventory_keys),
+    )) == 0 &&
+    alltrue([
+      for generation_key, spec in local.model_controller_bootstrap_discovered_specs : try(
+        can(regex("^[a-f0-9]{32}$", generation_key)) &&
+        spec.observed_name == "fs2-model-bootstrap-${generation_key}" &&
+        spec.observed_labels == merge(spec.identity.job_contract.base_labels, {
+          "app.kubernetes.io/component" = "model-bootstrap"
+          "fs2.nebius.ai/generation"     = generation_key
+        }) &&
+        spec.observed_generation == generation_key &&
+        spec.observed_component == "model-bootstrap" &&
+        spec.observed_immutable == true &&
+        length(spec.observed_uid) > 0 &&
+        spec.identity.schema == "fs2-serve.nebius.ai/model-bootstrap-identity/v2" &&
+        spec.identity == {
+          schema                = "fs2-serve.nebius.ai/model-bootstrap-identity/v2"
+          payload_sha256        = sha256(spec.payload_json)
+          implementation_sha256 = sha256(spec.bootstrap_script)
+          runtime_image         = spec.runtime_image
+          assertion_generation  = spec.assertion_generation
+          assertion_secret_name = spec.secret_name
+          job_contract          = spec.identity.job_contract
+        } &&
+        generation_key == substr(sha256(jsonencode(spec.identity)), 0, 32) &&
+        can(regex("@sha256:[a-f0-9]{64}$", spec.runtime_image)) &&
+        jsondecode(spec.payload_json).schema == "fs2-serve.nebius.ai/model-bootstrap/v1" &&
+        jsondecode(spec.payload_json).generation == spec.assertion_generation &&
+        spec.secret_name == "fs2-release-model-bootstrap-${spec.assertion_generation}" &&
+        spec.identity.job_contract.schema == "fs2-serve.nebius.ai/model-bootstrap-job/v1" &&
+        spec.identity.job_contract.backoff_limit == 0 &&
+        spec.identity.job_contract.active_deadline_seconds == 600 &&
+        spec.identity.job_contract.automount_service_account == false &&
+        spec.identity.job_contract.restart_policy == "Never" &&
+        spec.identity.job_contract.allow_privilege_escalation == false &&
+        spec.identity.job_contract.read_only_root_filesystem == true &&
+        spec.identity.job_contract.run_as_non_root == true &&
+        spec.identity.job_contract.run_as_user == 65532 &&
+        spec.identity.job_contract.capabilities_drop == ["ALL"] &&
+        (
+          !contains(local.model_controller_bootstrap_job_keys, generation_key) ? (
+            local.model_controller_bootstrap_enabled &&
+            generation_key == local.model_controller_bootstrap_current_generation &&
+            spec.identity == local.model_controller_bootstrap_current_identity
+          ) : (
+            local.model_controller_bootstrap_observed_jobs[generation_key].observed_name == "fs2-model-bootstrap-${generation_key}" &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].observed_labels == merge(spec.identity.job_contract.base_labels, {
+              "app.kubernetes.io/component" = "model-bootstrap"
+              "fs2.nebius.ai/generation"     = generation_key
+            }) &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].observed_template_labels == merge(spec.identity.job_contract.base_labels, {
+              "app.kubernetes.io/component" = "model-bootstrap"
+              "fs2.nebius.ai/generation"     = generation_key
+            }) &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].observed_generation == generation_key &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].observed_component == "model-bootstrap" &&
+            length(local.model_controller_bootstrap_observed_jobs[generation_key].observed_uid) > 0 &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].active == 0 &&
+            (
+              local.model_controller_bootstrap_observed_jobs[generation_key].succeeded > 0 ||
+              local.model_controller_bootstrap_observed_jobs[generation_key].failed > 0
+            ) &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].backoff_limit == spec.identity.job_contract.backoff_limit &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].active_deadline == spec.identity.job_contract.active_deadline_seconds &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].automount_token == spec.identity.job_contract.automount_service_account &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].restart_policy == spec.identity.job_contract.restart_policy &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].container.image == spec.runtime_image &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].container.command == spec.identity.job_contract.command &&
+            {
+              for environment in local.model_controller_bootstrap_observed_jobs[generation_key].container.env :
+              environment.name => environment.value
+            } == {
+              FS2_BOOTSTRAP_BASE_URL      = spec.identity.job_contract.bootstrap_base_url
+              FS2_BOOTSTRAP_PUBLIC_ORIGIN = spec.identity.job_contract.bootstrap_public_origin
+            } &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].container.resources.requests == {
+              cpu    = spec.identity.job_contract.cpu_request
+              memory = spec.identity.job_contract.memory_request
+            } &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].container.resources.limits == {
+              cpu    = spec.identity.job_contract.cpu_limit
+              memory = spec.identity.job_contract.memory_limit
+            } &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].container.securityContext.allowPrivilegeEscalation == spec.identity.job_contract.allow_privilege_escalation &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].container.securityContext.readOnlyRootFilesystem == spec.identity.job_contract.read_only_root_filesystem &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].container.securityContext.runAsNonRoot == spec.identity.job_contract.run_as_non_root &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].container.securityContext.runAsUser == spec.identity.job_contract.run_as_user &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].container.securityContext.capabilities.drop == spec.identity.job_contract.capabilities_drop &&
+            {
+              for mount in local.model_controller_bootstrap_observed_jobs[generation_key].container.volumeMounts :
+              mount.name => {
+                mount_path = mount.mountPath
+                read_only  = mount.readOnly
+              }
+            } == {
+              bootstrap = {
+                mount_path = spec.identity.job_contract.bootstrap_mount_path
+                read_only  = true
+              }
+              "release-assertion" = {
+                mount_path = spec.identity.job_contract.assertion_mount_path
+                read_only  = true
+              }
+            } &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].bootstrap_volume.configMap.name == "fs2-model-bootstrap-${generation_key}" &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].assertion_volume.secret.secretName == spec.secret_name &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].assertion_volume.secret.items == [{
+              key  = "assertion"
+              path = "assertion"
+            }]
+          )
+        ),
+        false,
+      )
+    ])
+  )
   model_controller_bootstrap_assertions = merge(
-    local.model_controller_bootstrap_retained_specs,
+    local.model_controller_bootstrap_discovered_specs,
     local.model_controller_bootstrap_enabled ? {
       (local.model_controller_bootstrap_current_generation) = merge(
         local.model_controller_bootstrap_current_spec,
@@ -1509,19 +1735,30 @@ resource "terraform_data" "model_controller_contract" {
     }
 
     precondition {
+      condition     = local.model_controller_bootstrap_inventory_valid
+      error_message = "Every retained model-bootstrap generation must be discovered from authoritative Kubernetes ConfigMap/Job inventory, remain terminal and one-to-one, and match its complete digest-bound immutable execution contract; caller-supplied retention maps are refused."
+    }
+
+    precondition {
       condition = !local.model_controller_bootstrap_enabled || (
         can(regex("^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$", var.release_identity_model_bootstrap_assertion_generation)) &&
         var.release_identity_model_bootstrap_assertion_secret_name == "fs2-release-model-bootstrap-${var.release_identity_model_bootstrap_assertion_generation}" &&
-        !contains(
-          keys(var.release_identity_model_bootstrap_retained_assertions),
-          local.model_controller_bootstrap_current_generation,
+        (
+          !contains(
+            keys(local.model_controller_bootstrap_discovered_specs),
+            local.model_controller_bootstrap_current_generation,
+          ) || try(
+            local.model_controller_bootstrap_discovered_specs[
+              local.model_controller_bootstrap_current_generation
+            ].identity == local.model_controller_bootstrap_current_identity,
+            false,
+          )
         ) &&
-        length(distinct(concat(
-          [var.release_identity_model_bootstrap_assertion_secret_name],
-          [for retained in values(var.release_identity_model_bootstrap_retained_assertions) : retained.secret_name],
-        ))) == 1 + length(var.release_identity_model_bootstrap_retained_assertions)
+        length(distinct([
+          for assertion in values(local.model_controller_bootstrap_assertions) : assertion.secret_name
+        ])) == length(local.model_controller_bootstrap_assertions)
       )
-      error_message = "Model bootstrap requires a new signed public assertion generation and its exact fs2-release-model-bootstrap-<generation> immutable Secret name; retain every prior full execution spec under its identity-derived key instead of replacing or deleting its Job."
+      error_message = "Model bootstrap requires an exact generation-named immutable assertion Secret and a complete identity which is either new or byte-identical to the provider-discovered retained generation."
     }
 
     # A measured elasticity receipt is status, not permission to configure
@@ -1578,7 +1815,7 @@ resource "kubernetes_config_map_v1" "model_controller_bootstrap" {
   metadata {
     name      = "fs2-model-bootstrap-${each.key}"
     namespace = "fs2-system"
-    labels = merge(local.common_labels, {
+    labels = merge(each.value.identity.job_contract.base_labels, {
       "app.kubernetes.io/component" = "model-bootstrap"
       "fs2.nebius.ai/generation"     = each.key
     })
@@ -1701,7 +1938,7 @@ resource "kubernetes_job_v1" "model_controller_bootstrap" {
   metadata {
     name      = "fs2-model-bootstrap-${each.key}"
     namespace = "fs2-system"
-    labels = merge(local.common_labels, {
+    labels = merge(each.value.identity.job_contract.base_labels, {
       "app.kubernetes.io/component" = "model-bootstrap"
       "fs2.nebius.ai/generation"     = each.key
     })
@@ -1712,49 +1949,55 @@ resource "kubernetes_job_v1" "model_controller_bootstrap" {
   spec {
     # A signed release assertion is single-use. Never replay it through an
     # automatic Job retry after an ambiguous response.
-    backoff_limit           = 0
-    active_deadline_seconds = 600
+    backoff_limit           = each.value.identity.job_contract.backoff_limit
+    active_deadline_seconds = each.value.identity.job_contract.active_deadline_seconds
     template {
       metadata {
-        labels = merge(local.common_labels, {
+        labels = merge(each.value.identity.job_contract.base_labels, {
           "app.kubernetes.io/component" = "model-bootstrap"
           "fs2.nebius.ai/generation"     = each.key
         })
       }
       spec {
-        automount_service_account_token = false
-        restart_policy                  = "Never"
+        automount_service_account_token = each.value.identity.job_contract.automount_service_account
+        restart_policy                  = each.value.identity.job_contract.restart_policy
         container {
           name    = "bootstrap"
           image   = each.value.runtime_image
-          command = ["python", "/bootstrap/bootstrap.py"]
+          command = each.value.identity.job_contract.command
           env {
             name  = "FS2_BOOTSTRAP_BASE_URL"
-            value = "http://fs2-serve-control-plane.fs2-system.svc.cluster.local:8080"
+            value = each.value.identity.job_contract.bootstrap_base_url
           }
           env {
             name  = "FS2_BOOTSTRAP_PUBLIC_ORIGIN"
-            value = local.public_base_url
+            value = each.value.identity.job_contract.bootstrap_public_origin
           }
           resources {
-            requests = { cpu = "25m", memory = "64Mi" }
-            limits   = { cpu = "250m", memory = "256Mi" }
+            requests = {
+              cpu    = each.value.identity.job_contract.cpu_request
+              memory = each.value.identity.job_contract.memory_request
+            }
+            limits = {
+              cpu    = each.value.identity.job_contract.cpu_limit
+              memory = each.value.identity.job_contract.memory_limit
+            }
           }
           security_context {
-            allow_privilege_escalation = false
-            read_only_root_filesystem  = true
-            run_as_non_root            = true
-            run_as_user                = 65532
-            capabilities { drop = ["ALL"] }
+            allow_privilege_escalation = each.value.identity.job_contract.allow_privilege_escalation
+            read_only_root_filesystem  = each.value.identity.job_contract.read_only_root_filesystem
+            run_as_non_root            = each.value.identity.job_contract.run_as_non_root
+            run_as_user                = each.value.identity.job_contract.run_as_user
+            capabilities { drop = each.value.identity.job_contract.capabilities_drop }
           }
           volume_mount {
             name       = "bootstrap"
-            mount_path = "/bootstrap"
+            mount_path = each.value.identity.job_contract.bootstrap_mount_path
             read_only  = true
           }
           volume_mount {
             name       = "release-assertion"
-            mount_path = "/var/run/fs2-release"
+            mount_path = each.value.identity.job_contract.assertion_mount_path
             read_only  = true
           }
         }

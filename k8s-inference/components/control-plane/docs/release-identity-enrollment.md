@@ -62,19 +62,22 @@ retries because an ambiguous response must not replay a single-use assertion.
 Existing model identities are preserved; new proposals still pass the ordinary
 preview, qualification, persistence, and projection services.
 
-Bootstrap recovery is append-only. Before rotating or replacing an assertion,
-changing the payload/runtime implementation, or disabling bootstrap,
-copy the prior generation key and complete `bootstrap_current_retention_spec`
-(payload JSON, exact runner implementation, digest-pinned image, assertion
-generation and Secret name) from the `dynamic_model_contract` output into
-`release_identity_model_bootstrap_retained_assertions`, then set a new Secret
-name and assertion generation. Each Secret name must be exactly
-`fs2-release-model-bootstrap-<generation>`. Terraform recomputes and verifies
-the retained key from the complete identity, creates a new immutable ConfigMap
-and zero-retry Job, while `prevent_destroy` retains every prior terminal Job.
-Removing a retained generation, mutating its immutable template, reusing a
-Secret name, or changing assertion bytes without changing the public generation
-fails closed. A fail-closed ValidatingAdmissionPolicy must be installed before
+Bootstrap recovery is append-only and inventory-driven. Before each plan,
+Terraform's Kubernetes provider discovers all generation-prefixed ConfigMaps
+and Jobs in `fs2-system`. The immutable ConfigMap contains the payload, exact
+runner, digest-pinned image, assertion identity, public endpoint, and complete
+Job execution/security contract. Terraform verifies that the generation key is
+the digest of that identity, compares the retained Job to it, and declaratively
+imports both resources if state was lost. The deprecated
+`release_identity_model_bootstrap_retained_assertions` input must be empty.
+
+To rotate or recover, supply a new assertion generation and its exact
+`fs2-release-model-bootstrap-<generation>` Secret; never copy history into
+tfvars. Terraform creates a new immutable ConfigMap and zero-retry Job while
+`prevent_destroy` protects prior terminal generations. Missing, mismatched,
+nonterminal, or one-sided historical inventory fails closed; the one allowed
+partial-apply recovery is the current digest-matching ConfigMap whose Job has
+not yet been created. A fail-closed ValidatingAdmissionPolicy must be installed before
 the release authority creates the Secret; it admits only immutable,
 generation-labeled, single-`assertion`-key Secrets. This is the supported
 fresh-install and recovery path; a mutable Secret behind a fixed Job name is

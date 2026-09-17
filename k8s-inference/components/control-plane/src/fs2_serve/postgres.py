@@ -91,7 +91,7 @@ from .models import (
 from .postgres_retry import retry_serialization
 from .postgresql_release import validate_migration_set
 from .runtime import sanitize_error_detail
-from .session_exchange import session_exchange_coordinates
+from .session_exchange import validate_session_exchange_settings
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -195,7 +195,7 @@ class _SessionExchangeThrottleCache:
 
     def __init__(self) -> None:
         self._sources: OrderedDict[tuple[str, int, int], float] = OrderedDict()
-        self._aggregate: OrderedDict[tuple[int, int, int, int], float] = OrderedDict()
+        self._aggregate: OrderedDict[tuple[int, int], float] = OrderedDict()
 
     @staticmethod
     def _active(cache: OrderedDict[Any, float], key: Any, now: float) -> bool:
@@ -218,7 +218,7 @@ class _SessionExchangeThrottleCache:
     def lookup(
         self,
         source_key: tuple[str, int, int],
-        aggregate_key: tuple[int, int, int, int],
+        aggregate_key: tuple[int, int],
     ) -> SessionExchangeAdmission | None:
         now = time.monotonic()
         if self._active(self._sources, source_key, now):
@@ -232,7 +232,7 @@ class _SessionExchangeThrottleCache:
         admission: SessionExchangeAdmission,
         *,
         source_key: tuple[str, int, int],
-        aggregate_key: tuple[int, int, int, int],
+        aggregate_key: tuple[int, int],
         retry_after_seconds: float,
     ) -> None:
         expires_at = time.monotonic() + max(0.001, retry_after_seconds)
@@ -253,8 +253,8 @@ def _session_exchange_cache_keys(
     window_seconds: int,
     maximum_source_attempts: int,
     maximum_aggregate_attempts: int,
-) -> tuple[tuple[str, int, int], tuple[int, int, int, int]]:
-    coordinates = session_exchange_coordinates(
+) -> tuple[tuple[str, int, int], tuple[int, int]]:
+    validate_session_exchange_settings(
         source_fingerprint,
         window_seconds=window_seconds,
         maximum_source_attempts=maximum_source_attempts,
@@ -262,12 +262,7 @@ def _session_exchange_cache_keys(
     )
     return (
         (source_fingerprint, window_seconds, maximum_source_attempts),
-        (
-            window_seconds,
-            maximum_source_attempts,
-            maximum_aggregate_attempts,
-            coordinates.aggregate_shard,
-        ),
+        (window_seconds, maximum_aggregate_attempts),
     )
 
 
@@ -554,6 +549,8 @@ class PostgresStore:
                     f"fs2_operation_events,fs2_audit_events,fs2_usage_facts,"
                     f"fs2_operator_principals,fs2_operator_credentials,fs2_operator_sessions,"
                     f"fs2_session_exchange_source_buckets,fs2_session_exchange_aggregate_buckets,"
+                    f"fs2_session_exchange_sliding_state,fs2_session_exchange_admissions,"
+                    f"fs2_session_exchange_rejection_evidence,"
                     f"fs2_release_identity_receipts,"
                     f"fs2_configuration_revisions,fs2_configuration_plans,"
                     f"fs2_configuration_reconciliation_events,"
@@ -597,6 +594,7 @@ class PostgresStore:
                     f"fs2_scientific_model_policy_forward(),"
                     f"fs2_scientific_dispatch_hold(text,text),"
                     f"fs2_consume_session_exchange(text,integer,integer,integer),"
+                    f"fs2_consume_session_exchange_sliding(text,integer,integer,integer),"
                     f"fs2_reject_telemetry_mutation() FROM {role}"
                 )
             await connection.execute(
@@ -613,7 +611,7 @@ class PostgresStore:
                 f"GRANT SELECT,INSERT ON fs2_release_identity_receipts TO {quoted_runtime}"
             )
             await connection.execute(
-                f"GRANT EXECUTE ON FUNCTION fs2_consume_session_exchange(text,integer,integer,integer) "
+                f"GRANT EXECUTE ON FUNCTION fs2_consume_session_exchange_sliding(text,integer,integer,integer) "
                 f"TO {quoted_runtime}"
             )
             await connection.execute(
@@ -859,8 +857,12 @@ class PostgresStore:
                             " AND has_table_privilege(current_user,"
                             "'public.fs2_release_identity_receipts','INSERT')"
                             " AND has_function_privilege('fs2_serve_runtime',"
-                            "'public.fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE')"
+                            "'public.fs2_consume_session_exchange_sliding(text,integer,integer,integer)','EXECUTE')"
                             " AND has_function_privilege(current_user,"
+                            "'public.fs2_consume_session_exchange_sliding(text,integer,integer,integer)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE')"
+                            " AND NOT has_function_privilege(current_user,"
                             "'public.fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE')"
                             " AND NOT has_table_privilege('fs2_serve_runtime',"
                             "'public.fs2_session_exchange_source_buckets','SELECT')"
@@ -870,6 +872,18 @@ class PostgresStore:
                             "'public.fs2_session_exchange_source_buckets','SELECT')"
                             " AND NOT has_table_privilege(current_user,"
                             "'public.fs2_session_exchange_aggregate_buckets','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_session_exchange_sliding_state','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_session_exchange_admissions','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_session_exchange_rejection_evidence','SELECT')"
+                            " AND NOT has_table_privilege(current_user,"
+                            "'public.fs2_session_exchange_sliding_state','SELECT')"
+                            " AND NOT has_table_privilege(current_user,"
+                            "'public.fs2_session_exchange_admissions','SELECT')"
+                            " AND NOT has_table_privilege(current_user,"
+                            "'public.fs2_session_exchange_rejection_evidence','SELECT')"
                             " AND has_function_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
                             " AND has_function_privilege(current_user,"
@@ -1899,9 +1913,9 @@ class PostgresStore:
     ) -> SessionExchangeAdmission:
         if attempted_at.tzinfo is None or attempted_at.utcoffset() is None:
             raise ValueError("operator exchange timestamp must be timezone-aware")
-        # Production bucket boundaries use the database clock inside the
-        # function. The injected timestamp exists so MemoryStore can use the
-        # identical aligned-window algorithm under a deterministic test clock.
+        # Production evaluates the same exclusive sliding cutoff against the
+        # database clock. The injected timestamp lets MemoryStore exercise the
+        # identical logical contract under a deterministic test clock.
         source_key, aggregate_key = _session_exchange_cache_keys(
             source_fingerprint,
             window_seconds=window_seconds,
@@ -1915,7 +1929,7 @@ class PostgresStore:
         decision_started_at = time.monotonic()
         async with self.pool.acquire() as connection, connection.transaction():
             decision = await connection.fetchrow(
-                "SELECT * FROM fs2_consume_session_exchange($1,$2,$3,$4)",
+                "SELECT * FROM fs2_consume_session_exchange_sliding($1,$2,$3,$4)",
                 source_fingerprint,
                 window_seconds,
                 maximum_source_attempts,
@@ -1926,21 +1940,25 @@ class PostgresStore:
             admission = SessionExchangeAdmission(str(decision["admission"]))
             if admission is SessionExchangeAdmission.ADMITTED or bool(decision["emit_audit"]):
                 detail: dict[str, Any] = {
-                    "limiter": "bounded-sharded-fixed-window-v1",
+                    "limiter": "bounded-exact-global-sliding-window-v2",
                     "window_seconds": window_seconds,
                     "maximum_source_attempts": maximum_source_attempts,
                     "maximum_aggregate_attempts": maximum_aggregate_attempts,
-                    "source_slot": int(decision["source_slot"]),
-                    "aggregate_shard": int(decision["aggregate_shard"]),
-                    "bucket_started_at": decision["bucket_started_at"].isoformat(),
+                    "decision_at": decision["decision_at"].isoformat(),
+                    "cutoff_exclusive": decision["cutoff_exclusive"].isoformat(),
+                    "anchor_sequence": int(decision["anchor_sequence"]),
                 }
-                if admission is not SessionExchangeAdmission.ADMITTED:
+                if admission is SessionExchangeAdmission.ADMITTED:
+                    detail["admission_slot"] = int(decision["admission_slot"])
+                else:
                     detail.update(
                         {
+                            "evidence_slot": int(decision["evidence_slot"]),
                             "evidence": "coalesced_transition",
                             "evidence_kind": str(decision["evidence_kind"]),
                             "rejections_observed": "one_or_more",
-                            "repeated_rejections_suppressed_until_bucket_rollover": True,
+                            "exact_rejection_count_available": False,
+                            "repeated_rejections_suppressed_until_oldest_admission_expires": True,
                         }
                     )
                 await self._audit(

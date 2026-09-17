@@ -304,15 +304,17 @@ dynamic_models = {
 ```
 
 `bootstrap_assertion_generation` is a signed assertion claim and the immutable
-Secret name must be exactly `fs2-release-model-bootstrap-<generation>`. A
-failed, expired, or consumed assertion is recovered by copying the complete
-`bootstrap_current_retention_spec` output (payload JSON, implementation,
-digest-pinned image and public assertion identity) into
-`bootstrap_retained_assertions`, keyed by `bootstrap_current_generation`, and
-supplying a new generation. Terraform recomputes each retained key from the
-full identity; generation-keyed Jobs are additive and `prevent_destroy`
-refuses a history-removing plan. The admission policy requires assertion
-Secrets to be immutable, generation-labeled, uniquely named and single-key.
+Secret name must be exactly `fs2-release-model-bootstrap-<generation>`.
+`bootstrap_retained_assertions` is a deprecated compatibility field and must
+remain empty. Before each plan the Kubernetes provider inventories every
+generation-prefixed immutable ConfigMap and terminal Job, verifies each key
+against its complete retained payload/implementation/image/assertion/Job
+identity, compares the Job spec, and imports that history into Terraform state.
+A failed, expired, or consumed assertion is recovered by supplying a new
+generation, never by copying an output to input. Generation-keyed Jobs are
+additive and `prevent_destroy` refuses a history-removing plan. The admission
+policy requires assertion Secrets to be immutable, generation-labeled,
+uniquely named and single-key.
 
 The exact retained H100 qualification for those two models is recorded in
 [`h100-qwen-cosmos-elasticity-qualification-20260902.json`](catalog/profiles/evidence/h100-qwen-cosmos-elasticity-qualification-20260902.json).

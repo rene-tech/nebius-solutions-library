@@ -545,13 +545,15 @@ dynamic_models = {
 
 The assertion generation is a signed claim and the immutable Secret name is
 exactly `fs2-release-model-bootstrap-<generation>`; neither is an assertion
-byte. Every retry or recovery uses a new generation. Before rotating, copy the
-full `bootstrap_current_retention_spec` from the workloads
-`dynamic_model_contract` output under its `bootstrap_current_generation` key.
-Terraform verifies that key from the retained payload, implementation,
-digest-pinned image and assertion identity, creates a new zero-retry Job, and
-refuses to destroy prior Job history. A fail-closed admission policy accepts
-only immutable, generation-labeled, single-key assertion Secrets.
+byte. Every retry or recovery uses a new generation, while
+`bootstrap_retained_assertions` remains empty. The Kubernetes provider
+discovers all retained generation-prefixed ConfigMaps and terminal Jobs,
+verifies each complete payload/implementation/image/assertion/Job identity,
+and imports them into Terraform state before creating the new zero-retry Job.
+No copied retention input is authoritative. Terraform refuses mismatched or
+one-sided history and refuses to destroy prior Jobs. A fail-closed admission
+policy accepts only immutable, generation-labeled, single-key assertion
+Secrets.
 
 Startup retention prevents already-requested capacity from being removed during
 initialization when a short request queue drains. It does not raise replica/node
