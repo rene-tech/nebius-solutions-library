@@ -107,61 +107,83 @@ requests, follows each unique continuation token, rejects repeated resources,
 tokens and empty continuation pages, and accepts only an observed terminal
 empty token. It never treats a one-page result or CLI `--all` convenience as
 pagination proof. Provider resource versions and canonical cluster/NodeGroup
-objects must remain unchanged across the sandwich. The current NodeGroup must
-be `RUNNING`, non-reconciling, fixed at the contracted count, have zero
-outdated nodes, meet its target/current/Ready counts, and carry the exact run
-scheduler labels in its Node template.
+objects must remain unchanged across the sandwich. A stable epoch requires a
+`RUNNING`, non-reconciling NodeGroup with zero outdated nodes. A signed
+prepare/cutover epoch permits only the contracted positive surge while the
+fixed desired count remains unchanged and all three signed serving Nodes stay
+eligible. Public mode now requires `maxUnavailable=0`; rollout cannot consume a
+serving domain while a joining Node waits for admission.
 
 Mutable scheduler labels, Kubernetes annotations, instance names, and name
 regexes confer no membership authority. Public planning first authenticates a
 canonical Ed25519 receipt from the source-owned membership issuer registry. The
 signed exact subject binds project, cluster, NodeGroup, run, expected count,
-minimum domains, and selector digest. Its provider relation binds the exact
-NodeGroup resource version, sorted Compute instance IDs, full managed Node
-controller authentication tuple, and provider-observer authority to the
-reopened bytes of an authoritative provider membership export. Controller
-authorization includes exact username, UID, sorted groups, authentication
-extras, authentication authority, a positive impersonation-prohibited fact,
-and the digest of the independent impersonation review. The same exact
-controller tuple must be enrolled beside the adapter in source; the membership
-signer alone cannot introduce a new controller. Both the production adapter
-registry and membership-issuer registry are intentionally empty until an
-independently approved observer/controller contract and issuer are enrolled,
-so caller inputs cannot manufacture this relation.
+minimum domains, maximum surge, selector digest, and sealed kubeconfig digest.
+Its provider relation binds the exact NodeGroup resource version, sorted
+Compute instance IDs, signed membership epoch, and provider-observer authority
+to reopened authoritative export bytes. No username, UID, group, authentication
+extra, opaque impersonation claim, SAR result, or admission-request identity is
+an authorization input.
 
-Terraform never launches a verifier source pathname directly. The only
-supported apply entrypoint is the fixed
-`/usr/local/libexec/fs2-public-edge-gate-launcher`, which integration must build
-as a static PIE from the checked-in C source, independently attest, install
-root-owned mode 0555, and place under a completely root-owned, non-writable
-directory chain. The launcher checks its fixed `/proc/self/exe` identity,
-rejects an ELF interpreter, clears the complete ambient environment before
-Python starts, sets only fixed locale/PATH/nonexistent-HOME values, and starts
-`/usr/bin/python3 -I -B`. It stable-reads the requested verifier, compares the
-in-memory bytes with Terraform's planned `filesha256`, and compiles only that
-verified snapshot. Consequently a source-path swap after hashing is not
-executed. Public `inference-stack apply` must itself enter through the same
-launcher in `--operator` mode before even the Terraform version probe; only the
-deployment contract's explicitly named secret references may be preserved.
-No ambient loader, Python, Terraform plugin/workspace, proxy, profile, or HOME
-state is inherited by Terraform or its provider children.
-The reviewed integration invocation has the following shape, where the source
-digest and every preserved name come from the accepted commit and deployment
-contract rather than ambient discovery:
+An epoch contains a monotonic sequence, exact predecessor payload digest,
+phase, and disjoint serving/joining/retiring sets whose sorted union equals both
+the admitted set and current provider membership. Stable contains exactly the
+three serving members. Prepare retains all three old serving members and admits
+at most the infrastructure surge bound; if a replacement Node races ahead, its
+CREATE is denied and kubelet registration retries while the old three remain
+because `maxUnavailable=0`. Cutover is accepted only after the new three-member
+serving set is provider-owned, Ready, schedulable, hard-taint-free, and spans
+three hostnames; the old bounded retiring member remains admitted for
+quiescence, deletion, or rollback. A rollback is another exact next epoch that
+restores the old serving set while retaining the other member as retiring.
+Genesis must be sequence one/stable/zero-predecessor. Every later policy update
+must be the exact next sequence and name the payload digest currently installed
+on the policy. The policy also records its exact serving, joining, and retiring
+sets. Terraform admits only these predecessor-relative transitions: stable may
+retain its exact serving set or enter prepare without changing it; prepare may
+roll back to that serving set or promote exactly its joining set while retaining
+only displaced old servers; cutover may finalize without changing its serving
+set or reverse within the same admitted union. Thus a fresh signed receipt
+cannot use a valid predecessor digest to jump directly to an unrelated serving
+set. The empty issuer and adapter registries remain external enrollment gates.
+
+Terraform never launches a verifier pathname. The fixed launcher accepts only
+logical source/mode pairs and chooses the canonical root-owned manifest,
+bootstrap, Python, source, tool, and provider bundle. Integration builds it as
+a static PIE and installs it root-owned mode 2755 to the dedicated no-member
+`fs2-public-edge-capsule` group. The manifest/bootstrap are unreadable to the
+ordinary caller. The launcher and bootstrap both prove the real/effective GID
+transition and absence of capsule-group membership; direct environment markers
+cannot reproduce it. The signed root-owned manifest binds exact accepted
+commit/tree, launcher/bootstrap digests, every regular release file, executable
+digests, a no-network Terraform provider mirror, and sealed CLI configuration.
+Every operator invocation re-enumerates and hashes that complete tree before
+source execution.
+
+`./inference-stack <command>` immediately re-execs the installed launcher before
+argument parsing, Terraform probing, or run-root creation. The accepted source
+then replaces apply-time Terraform, kubectl, Nebius, and crane arguments with
+manifest-pinned `/proc/self/fd` paths. All child calls preserve only the capsule
+descriptors and a fixed environment. Terraform external programs and every
+local-exec helper for edge evidence, JobSet, Kueue, and mutation fencing are
+finite logical capsule entries too; none starts through a caller shell,
+`/usr/bin/env`, or a caller path. The reviewed invocation shape is:
 
 ```text
-/usr/local/libexec/fs2-public-edge-gate-launcher /absolute/reviewed/inference-stack <sha256> --operator [--preserve-env=CONTRACT_SECRET_NAME ...] -- apply --var-file ... --run-root ... --nebius-profile ...
+/usr/local/libexec/fs2-public-edge-gate-launcher inference-stack operator [--preserve-env=CONTRACT_SECRET_NAME ...] -- apply --var-file ... --run-root ... --nebius-profile ...
 ```
 
 The membership receipt additionally binds the absolute path, resolved path,
-and SHA-256 of the running Python interpreter, provider observer, and kubectl.
+and SHA-256 of the capsule Python interpreter, provider observer, and kubectl.
 Each resolved binary and parent chain must be protected. The verifier stable-
 reads and hashes each opened executable, retains the descriptor, and invokes
 the observer and kubectl only through inherited `/proc/self/fd/<n>` names. It
 refuses any signed identity mismatch and never closes then reopens a command by
 its mutable pathname. Provider subprocesses receive only pinned descriptors
-plus `HOME=/nonexistent`, `/usr/bin:/bin`, `C.UTF-8`, and `/` as the fixed
-working directory. The exact run-owned mode-0600 kubeconfig is stable-read
+plus `HOME=/nonexistent`, the manifest-owned tool directory, `C.UTF-8`, and
+`/` as the fixed working directory. Membership and client-identity signature
+checks invoke manifest-pinned OpenSSL; signed kubectl must resolve to the same
+inode as capsule kubectl. The exact run-owned mode-0600 kubeconfig is stable-read
 once, its SHA-256 is bound into the signed Terraform subject, and its bytes are
 copied into a read-only sealed memfd. Kubectl receives only that sealed
 snapshot; later in-place writes or path replacement cannot change its content
@@ -180,8 +202,9 @@ add a Node to the provider set. The owner is either the exact group ID or that
 ID plus the provider's single five-character rollout generation; the Machine
 is exactly one bounded child generation below that owner. Arbitrary prefixes
 and additional suffixes fail. The two Node snapshots must retain identical
-UID/resourceVersion-bound eligibility projections and their instance-ID set
-must exactly equal the provider membership set. The terminal NodeList revision,
+UID/resourceVersion-bound eligibility projections. Their instance IDs must be
+a subset of exact provider membership and include the complete signed serving
+set; a prepare-phase joining instance may not have registered yet. The terminal NodeList revision,
 provider revisions, explicit pagination summaries, and non-secret projection
 digests are included in the mutation-fence receipt. A cordon, hard taint,
 replacement, label/annotation spoof, provider member change, provider rollout,
@@ -189,17 +212,18 @@ group move, incomplete enumeration, or stale saved plan therefore fails the
 protected mutation path; the scheduler then enforces the same placement facts
 at admission to a node. The final provider list/exact gets follow the second
 NodeList. After that read, a fail-closed `ValidatingAdmissionPolicy` and binding
-continuously reserve the five selector labels for the signed member IDs, require
-their exact `providerID`, and allow protected-field changes or new member Nodes
-only from the signed managed-node controller. Unrelated kubelet/status updates
-remain valid when protected values do not change. Membership transitions need a
-new signed receipt and policy update before a provider rollout; a mutable label
-cannot extend the accepted set during the read-to-mutation interval.
+continuously reserve the five selector labels for the signed epoch and require
+exact `providerID`. Protected fields are immutable for every identity. Only a
+signed joining member may monotonically initialize a previously absent field
+to its exact value; it cannot change or remove an initialized field. Ordinary
+status updates remain valid. The policy contains no `request.userInfo`
+authorization branch, so impersonating any controller tuple cannot extend
+membership.
 Each mutation fence also reads the exact ValidatingAdmissionPolicy and binding
 before the provider/Node sandwich and again after the terminal provider reads.
 It requires stable UID and resourceVersion plus an exact canonical hash match
-with the Terraform manifest, including the membership, controller,
-impersonation-review, and provider-adapter digest annotations. Removing,
+with the Terraform manifest, including membership payload/receipt, epoch,
+sequence, predecessor, and provider-adapter digest annotations. Removing,
 weakening, replacing, or racing either admission object therefore fails the
 StatefulSet or Helm lifecycle precondition rather than leaving an unprotected
 TOCTOU interval.
@@ -292,15 +316,22 @@ did not terminally hash the policy and binding, did not source-enroll the
 provider adapter, and authorized the controller by username without complete
 authentication/impersonation closure.
 
-This direct additive successor uses the protected static launcher, a sealed
-kubeconfig content snapshot, an empty source-owned observer/controller
-registry, a full controller tuple, and terminal exact admission-object hashes.
-It retains the signed provider membership relation, four-hour plan-identity
-bound plus fence-time observation, prerequisite ordering, fail-closed
-admission, public three-domain HA, and exact audio timeouts. The production
-provider-adapter, membership-issuer, and client-identity issuer registries all
-remain intentionally empty. This is a SOURCE candidate only until independent
-exact-commit review; it makes no integration or live claim.
+Exact `48a01d5f76532b230f4dde0a7d9fb3c4c118c8f7` (tree
+`91fbf0d0575727b91b909614940ec8b42e0958f4`) is preserved as rejected evidence.
+It still let a caller select matching source/digest pairs, ran caller-selected
+Terraform and provider tooling, depended on an undocumented external launcher
+installation for ordinary apply, asserted controller impersonation closure,
+and lacked a nondisruptive exact-member replacement epoch.
+
+This direct additive successor replaces those assertions with the accepted
+release capsule, documented build/install/re-exec contract, identity-free Node
+admission, and chained stable/prepare/cutover epochs with `maxUnavailable=0`.
+It retains sealed kubeconfig bytes, authoritative provider membership,
+four-hour plan identity plus fresh fence observation, terminal exact admission
+hashes, public three-domain HA, RLS fail-closed behavior, and exact audio
+timeouts. Capsule, provider-adapter, membership-issuer, and client-identity
+production registries remain intentionally empty. This is a SOURCE candidate
+only until independent exact review; it makes no integration or live claim.
 
 The provider authority adapter is based on the current primary contracts:
 
@@ -341,24 +372,36 @@ NodeGroup membership has a separate least-authority registry at
 this candidate. Its fixed role is
 `platform-security-public-edge-membership`. A receipt must reopen the exact
 mode-0600 `public-edge-provider-membership.json` bytes and bind the provider
-relation API, exact project/cluster/NodeGroup revision, member instance IDs,
-approved full managed-node controller identity, source-enrolled provider
-observer, sealed kubeconfig digest, and attested toolchain. The fixed
+relation API, exact project/cluster/NodeGroup revision, provider instance IDs,
+chained membership epoch, source-enrolled provider observer, sealed kubeconfig
+digest, and attested toolchain. The fixed
 mode-0600 receipt name is
 `public-edge-node-group-membership-receipt.json`. Neither path, trust key,
-member list, controller identity, executable digest, nor verification result is
+member list, epoch, executable digest, nor verification result is
 caller-configurable.
 
-Provider observation and controller identity have a separate source registry at
+Provider observation has a separate source registry at
 `stages/foundation/trusted-public-edge-provider-adapters.json`, also empty in
 this candidate. Every future entry must bind exactly one observer ID, Nebius
 endpoint, credential authority and subject, audience, configuration digest,
-adapter digest, executable digest, and full Node-controller tuple including the
-impersonation-review digest. The gate compares the planned hash of these exact
+adapter digest, and executable digest. The gate compares the planned hash of these exact
 registry bytes before accepting a receipt. Populating it is an external
 enrollment action requiring owner-approved provenance and independent review;
 ordinary tfvars, environment, signed evidence, and saved plans cannot add an
 entry.
+
+Accepted execution packages have a separate source registry at
+`stages/foundation/trusted-public-edge-capsule-issuers.json`, also empty. The
+offline package verifier requires both a valid Ed25519 installation receipt and
+fixed protected root-owned issuer and acceptance files under `/etc/fs2`. The
+acceptance file binds the registry digest, accepted commit/tree, manifest
+digest, launcher/bootstrap digests, and fixed package-verification OpenSSL
+digest; none is a verifier CLI input. The verifier checks the digest against
+the same stable manifest bytes it parsed and executes the pinned OpenSSL file
+descriptor. Runtime
+apply inputs cannot select an authority. Build, packaging, privileged
+installation, atomic activation, and rollback are specified in
+`public-edge-execution-capsule.md`.
 
 The receipt is canonical JSON followed by one newline and contains exactly the
 receipt schema, `ed25519` algorithm, payload, recomputed payload SHA-256, and
@@ -396,10 +439,11 @@ the coordinator's static-only boundary. A later reviewed integration must:
    receipt and digest, both apply-time provider/Kubernetes rereads, the
    prerequisite-compatible four-hour plan bound and fence-time timestamp, both
    deferred mutation fences, complete explicit provider pagination, signed
-   provider membership export, the root-owned/static/fixed-path launcher and
-   its independently attested binary digest, protected `inference-stack apply`
-   startup before Terraform, attested executables executed through retained
-   descriptors, a digest-bound sealed-memfd kubeconfig, a nonexistent-HOME
+   provider membership export, the signed accepted-release manifest, complete
+   root-owned release inventory, setgid/no-member child proof, static launcher
+   and independently attested binary digest, protected `inference-stack apply`
+   re-exec before parsing/Terraform, manifest-pinned executables/providers
+   executed through retained descriptors, a digest-bound sealed-memfd kubeconfig, a nonexistent-HOME
    allowlisted provider-command environment, stable
    cluster/NodeGroup/instance and NodeList revisions, `spec.providerID` equality
    with the exact signed Compute member set, terminal before/after exact hashes
@@ -413,20 +457,21 @@ the coordinator's static-only boundary. A later reviewed integration must:
 4. Stage the foundation store and prove one primary, two replicas, three
    agreeing Sentinels, quorum failover, and RLS recovery before enabling policy;
    retain the previous Helm revision and state-backed plan for rollback.
-5. Onboard the exact Platform Security client-identity and provider-membership
-   evidence-signing public keys and the exact provider-observer/controller
-   registry entry by reviewed source commit. Bind the observer endpoint,
-   credential authority/subject/audience, immutable configuration, adapter and
-   executable digests, plus controller UID/groups/extras/authentication
-   authority and independently reviewed absence of an impersonation path.
+5. Onboard the exact Platform Security capsule, client-identity, and
+   provider-membership signing public keys plus the exact provider-observer
+   entry by reviewed source commit. Bind the capsule package to the accepted
+   commit/tree, exhaustive release inventory, launcher/bootstrap/tool/provider
+   digests, and bind the observer endpoint, credential
+   authority/subject/audience, immutable configuration, adapter and executable
+   digests. Prove the admission policy contains no identity-based bypass.
    Produce a fresh
    authoritative NodeGroup membership export and signed membership receipt,
    then produce a fresh signed client-identity receipt from independent provider/LB,
    listener, backend, SG, route-table, XFF-mutation, and direct-access captures;
    store it mode 0600 at the fixed run-root path, and store the seven reopened
    raw inputs under the fixed mode-0700 evidence directory. Prove the provider
-   relation, executable identities, managed-node controller identity, and
-   derived client address cannot be forged.
+   relation, executable identities, chained epoch/predecessor, and derived
+   client address cannot be forged.
 6. Saturate client A's general and admin buckets while client B continues to
    receive non-429 responses, then repeat against HTTP redirect/ACME, website,
    API, admin, and Grafana routes.
@@ -441,8 +486,10 @@ the coordinator's static-only boundary. A later reviewed integration must:
    and receipt digests, every
    foundation UID remaining in the current workloads-stage eligible UID set
    with a current resource version and matching Nebius provider identity, zero untolerated
-   `NoSchedule`/`NoExecute` taints, `maxUnavailable <= 1`, positive surge, at
-   least two retained system nodes, and accepted traffic policies.
+   `NoSchedule`/`NoExecute` taints, `maxUnavailable = 0`, positive surge, all
+   three serving system nodes retained, a prepare epoch with bounded joining
+   member, cutover only after three-domain readiness, retiring-member
+   quiescence, and a rollback epoch, plus accepted traffic policies.
 9. Prove the existing Deployment/Service to StatefulSet/headless/Sentinel
    transition is a non-destructive staged migration: no old resource is deleted
    or replaced before the new single-primary/quorum contract is Ready, and no

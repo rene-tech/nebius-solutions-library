@@ -634,7 +634,7 @@ class DeploymentContractTests(unittest.TestCase):
                 )
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(
-                    "max_unavailable <= 1, max_surge >= 1",
+                    "max_unavailable = 0, max_surge >= 1",
                     f"{result.stdout}\n{result.stderr}",
                 )
 

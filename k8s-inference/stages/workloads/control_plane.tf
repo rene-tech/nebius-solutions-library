@@ -211,7 +211,7 @@ locals {
         "capacity.fs2.nebius/type"   = "regular"
         "capacity.fs2.nebius/pool"   = "system"
       }
-      eligibleNodeNames = local.public_edge_enabled ? data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.member_instance_ids : []
+      eligibleNodeNames = local.public_edge_enabled ? data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.serving_member_instance_ids : []
     }
     edgeClientIdentity = {
       verified                      = local.verified_edge_client_identity.verified

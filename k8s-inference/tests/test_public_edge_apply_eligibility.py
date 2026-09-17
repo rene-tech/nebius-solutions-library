@@ -120,6 +120,7 @@ def membership_subject() -> dict[str, object]:
         run_id=RUN_ID,
         expected_count=3,
         minimum_domains=3,
+        maximum_surge=1,
         selector=SELECTOR,
         kubeconfig_sha256=KUBECONFIG_SHA256,
     )
@@ -128,20 +129,14 @@ def membership_subject() -> dict[str, object]:
 def membership_receipt() -> tuple[
     dict[str, object], dict[str, object], dict[str, object], bytes
 ]:
-    controller = {
-        "username": "system:serviceaccount:provider:node-controller",
-        "uid": "00000000-0000-4000-8000-000000000099",
-        "groups": [
-            "system:authenticated",
-            "system:serviceaccounts",
-            "system:serviceaccounts:provider",
-        ],
-        "extra": {
-            "authentication.kubernetes.io/credential-id": ["JTI=controller-test"]
-        },
-        "authentication_authority": "provider-managed-node-controller",
-        "impersonation_prohibited": True,
-        "impersonation_review_sha256": "e" * 64,
+    epoch = {
+        "sequence": 1,
+        "phase": "stable",
+        "predecessor_payload_sha256": "0" * 64,
+        "serving_member_instance_ids": sorted(provider_member_set()),
+        "joining_member_instance_ids": [],
+        "retiring_member_instance_ids": [],
+        "admitted_member_instance_ids": sorted(provider_member_set()),
     }
     observer = {
         "id": "provider-observer-test",
@@ -154,7 +149,7 @@ def membership_receipt() -> tuple[
         "adapter_sha256": "a" * 64,
     }
     evidence = {
-        "schema": "fs2-serve.nebius.ai/provider-node-group-membership-export/v1",
+        "schema": "fs2-serve.nebius.ai/provider-node-group-membership-export/v2",
         "provider": "nebius",
         "project_id": "project-test123",
         "cluster_id": CLUSTER_ID,
@@ -162,7 +157,7 @@ def membership_receipt() -> tuple[
         "node_group_resource_version": "11",
         "relation_api": "nebius-managed-kubernetes-node-group-membership/v1",
         "member_instance_ids": sorted(provider_member_set()),
-        "kubernetes_node_controller": controller,
+        "membership_epoch": epoch,
         "provider_observer": observer,
         "collected_at": "2026-09-17T12:00:00Z",
         "adapter_sha256": "a" * 64,
@@ -193,7 +188,7 @@ def membership_receipt() -> tuple[
             "relation_api": "nebius-managed-kubernetes-node-group-membership/v1",
             "node_group_resource_version": "11",
             "member_instance_ids": sorted(provider_member_set()),
-            "kubernetes_node_controller": controller,
+            "membership_epoch": epoch,
             "provider_observer": observer,
         },
         "toolchain": toolchain,
@@ -225,7 +220,6 @@ def membership_receipt() -> tuple[
             {
                 **observer,
                 "executable_sha256": "b" * 64,
-                "kubernetes_node_controller": controller,
             }
         ],
     }
@@ -277,6 +271,8 @@ def test_current_provider_group_and_three_owned_ready_nodes_are_accepted() -> No
         cluster_id=CLUSTER_ID,
         group_id=GROUP_ID,
         expected_count=3,
+        maximum_surge=1,
+        membership_phase="stable",
         selector=SELECTOR,
     )
     node_revision, count, domains, node_digest = GATE.validate_nodes(
@@ -287,6 +283,7 @@ def test_current_provider_group_and_three_owned_ready_nodes_are_accepted() -> No
         run_id=RUN_ID,
         selector=SELECTOR,
         provider_member_ids=provider_member_set(),
+        serving_member_ids=provider_member_set(),
         expected_count=3,
         minimum_domains=3,
     )
@@ -298,6 +295,39 @@ def test_current_provider_group_and_three_owned_ready_nodes_are_accepted() -> No
     assert len(node_digest) == 64
 
 
+def test_prepare_epoch_keeps_old_serving_set_while_joiner_initializes() -> None:
+    joining_id = "computeinstance-test4"
+    partial_joiner = {
+        "metadata": {
+            "name": joining_id,
+            "uid": "00000000-0000-4000-8000-000000000004",
+            "resourceVersion": "104",
+            "annotations": {},
+            "labels": {"kubernetes.io/hostname": joining_id},
+        },
+        "spec": {"taints": []},
+        "status": {"conditions": []},
+    }
+    before = node_list("200")
+    before["items"].append(copy.deepcopy(partial_joiner))
+    after = copy.deepcopy(before)
+    after["metadata"]["resourceVersion"] = "201"
+    _revision, count, domains, _digest = GATE.validate_nodes(
+        before,
+        after,
+        cluster_id=CLUSTER_ID,
+        group_id=GROUP_ID,
+        run_id=RUN_ID,
+        selector=SELECTOR,
+        provider_member_ids={*provider_member_set(), joining_id},
+        serving_member_ids=provider_member_set(),
+        expected_count=3,
+        minimum_domains=3,
+        joining_member_ids={joining_id},
+    )
+    assert count == domains == 3
+
+
 def test_provider_members_are_enumerated_from_compute_and_exact_gets() -> None:
     members, digest = GATE.validate_provider_members(
         provider_instances(),
@@ -307,6 +337,7 @@ def test_provider_members_are_enumerated_from_compute_and_exact_gets() -> None:
         project_id="project-test123",
         signed_instance_ids=sorted(provider_member_set()),
         expected_count=3,
+        maximum_surge=1,
     )
     assert members == provider_member_set()
     assert len(digest) == 64
@@ -332,10 +363,83 @@ def test_signed_provider_relation_is_the_only_membership_authority(monkeypatch) 
         validation_time=datetime(2026, 9, 17, 12, 1, tzinfo=timezone.utc),
     )
 
-    assert result["member_instance_ids"] == sorted(provider_member_set())
+    assert result["provider_member_instance_ids"] == sorted(provider_member_set())
     assert result["node_group_resource_version"] == "11"
-    assert result["kubernetes_node_controller"]["username"].endswith("node-controller")
+    assert result["phase"] == "stable"
+    assert result["serving_member_instance_ids"] == sorted(provider_member_set())
     assert result["provider_observer"]["adapter_sha256"] == "a" * 64
+
+
+def test_prepare_epoch_keeps_all_serving_nodes_and_admits_only_bounded_surge() -> None:
+    serving = sorted(provider_member_set())
+    joining = ["computeinstance-test4"]
+    epoch = GATE.validate_membership_epoch(
+        {
+            "sequence": 2,
+            "phase": "prepare",
+            "predecessor_payload_sha256": "d" * 64,
+            "serving_member_instance_ids": serving,
+            "joining_member_instance_ids": joining,
+            "retiring_member_instance_ids": [],
+            "admitted_member_instance_ids": sorted([*serving, *joining]),
+        },
+        expected_count=3,
+        maximum_surge=1,
+        provider_member_ids=sorted([*serving, *joining]),
+    )
+    assert epoch["phase"] == "prepare"
+    assert epoch["serving_member_instance_ids"] == serving
+    assert len(epoch["epoch_id"]) == 64
+
+
+def test_cutover_epoch_retains_old_member_for_quiescence_and_rollback() -> None:
+    serving = [
+        "computeinstance-test2",
+        "computeinstance-test3",
+        "computeinstance-test4",
+    ]
+    retiring = ["computeinstance-test1"]
+    epoch = GATE.validate_membership_epoch(
+        {
+            "sequence": 3,
+            "phase": "cutover",
+            "predecessor_payload_sha256": "e" * 64,
+            "serving_member_instance_ids": serving,
+            "joining_member_instance_ids": [],
+            "retiring_member_instance_ids": retiring,
+            "admitted_member_instance_ids": sorted([*serving, *retiring]),
+        },
+        expected_count=3,
+        maximum_surge=1,
+        provider_member_ids=sorted([*serving, *retiring]),
+    )
+    assert epoch["retiring_member_instance_ids"] == retiring
+
+
+def test_transition_epoch_cannot_drop_a_serving_domain_or_exceed_surge() -> None:
+    serving = sorted(provider_member_set())
+    with pytest.raises(GATE.GateError, match="bounded joining surge"):
+        GATE.validate_membership_epoch(
+            {
+                "sequence": 2,
+                "phase": "prepare",
+                "predecessor_payload_sha256": "f" * 64,
+                "serving_member_instance_ids": serving,
+                "joining_member_instance_ids": [
+                    "computeinstance-test4",
+                    "computeinstance-test5",
+                ],
+                "retiring_member_instance_ids": [],
+                "admitted_member_instance_ids": sorted(
+                    [*serving, "computeinstance-test4", "computeinstance-test5"]
+                ),
+            },
+            expected_count=3,
+            maximum_surge=1,
+            provider_member_ids=sorted(
+                [*serving, "computeinstance-test4", "computeinstance-test5"]
+            ),
+        )
 
 
 def test_empty_source_issuer_registry_fails_closed() -> None:
@@ -367,12 +471,11 @@ def test_empty_provider_adapter_registry_fails_closed(monkeypatch) -> None:
         )
 
 
-def test_controller_identity_must_match_source_enrolled_adapter(monkeypatch) -> None:
+def test_identity_tuple_cannot_be_added_as_membership_authority(monkeypatch) -> None:
     receipt, trust, adapter_trust, evidence_raw = membership_receipt()
-    adapter_trust = copy.deepcopy(adapter_trust)
-    receipt["payload"]["provider_membership"]["kubernetes_node_controller"][
-        "uid"
-    ] = "00000000-0000-4000-8000-000000000100"
+    receipt["payload"]["provider_membership"]["kubernetes_node_controller"] = {
+        "username": "system:serviceaccount:forged:controller"
+    }
     receipt["payload_sha256"] = hashlib.sha256(
         GATE.canonical_bytes(receipt["payload"])
     ).hexdigest()
@@ -382,7 +485,7 @@ def test_controller_identity_must_match_source_enrolled_adapter(monkeypatch) -> 
         "checked_executable",
         lambda _record, name: sys.executable if name == "python3" else f"/usr/bin/{name}",
     )
-    with pytest.raises(GATE.GateError, match="source-enrolled adapter authority"):
+    with pytest.raises(GATE.GateError, match="must contain exactly"):
         GATE.validate_membership_receipt(
             receipt,
             trust,
@@ -409,7 +512,7 @@ def test_signed_relation_cannot_be_replaced_by_a_name_derived_member(monkeypatch
         "checked_executable",
         lambda _record, name: sys.executable if name == "python3" else f"/usr/bin/{name}",
     )
-    with pytest.raises(GATE.GateError, match="does not bind the signed exact relation"):
+    with pytest.raises(GATE.GateError, match="admission union must equal exact provider membership"):
         GATE.validate_membership_receipt(
             receipt,
             trust,
@@ -548,6 +651,7 @@ def test_provider_list_and_exact_get_must_have_the_same_revision() -> None:
             project_id="project-test123",
             signed_instance_ids=sorted(provider_member_set()),
             expected_count=3,
+            maximum_surge=1,
         )
 
 
@@ -567,6 +671,7 @@ def test_provider_membership_rejects_kubernetes_only_foreign_node() -> None:
             run_id=RUN_ID,
             selector=SELECTOR,
             provider_member_ids=provider_member_set(),
+            serving_member_ids=provider_member_set(),
             expected_count=3,
             minimum_domains=3,
         )
@@ -622,6 +727,7 @@ def test_spoofed_scheduler_labels_without_provider_membership_are_rejected() -> 
             run_id=RUN_ID,
             selector=SELECTOR,
             provider_member_ids=provider_member_set(),
+            serving_member_ids=provider_member_set(),
             expected_count=3,
             minimum_domains=3,
         )
@@ -644,6 +750,7 @@ def test_provider_rollout_machineset_suffix_remains_bound_to_exact_group() -> No
         run_id=RUN_ID,
         selector=SELECTOR,
         provider_member_ids=provider_member_set(),
+        serving_member_ids=provider_member_set(),
         expected_count=3,
         minimum_domains=3,
     )
@@ -662,6 +769,8 @@ def test_changed_provider_resource_version_is_rejected() -> None:
             cluster_id=CLUSTER_ID,
             group_id=GROUP_ID,
             expected_count=3,
+            maximum_surge=1,
+            membership_phase="stable",
             selector=SELECTOR,
         )
 
@@ -682,6 +791,7 @@ def test_no_schedule_taint_removes_node_from_current_eligible_capacity() -> None
             run_id=RUN_ID,
             selector=SELECTOR,
             provider_member_ids=provider_member_set(),
+            serving_member_ids=provider_member_set(),
             expected_count=3,
             minimum_domains=3,
         )
@@ -695,7 +805,7 @@ def test_final_admission_contract_is_stable_and_matches_exact_source_hash() -> N
             "name": "fs2-public-edge-node-authority",
             "uid": "00000000-0000-4000-8000-000000000777",
             "resourceVersion": "700",
-            "annotations": {"fs2.nebius.ai/controller-identity-sha256": "a" * 64},
+            "annotations": {"fs2.nebius.ai/membership-payload-sha256": "a" * 64},
         },
         "spec": {"failurePolicy": "Fail", "validations": [{"expression": "true"}]},
     }

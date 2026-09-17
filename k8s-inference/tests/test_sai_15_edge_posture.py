@@ -62,7 +62,7 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
     assert "required_during_scheduling_ignored_during_execution" in terraform
     assert "var.public_edge_availability_contract.node_selector" in terraform
     assert 'key      = "metadata.name"' in terraform
-    assert "local.public_edge_membership_authority.member_instance_ids" in terraform
+    assert "local.public_edge_membership_authority.serving_member_instance_ids" in terraform
 
     release = (ROOT / "stages/foundation/releases.tf").read_text(encoding="utf-8")
     assert "yamlencode(local.envoy_gateway_edge_availability_values)" in release
@@ -210,7 +210,7 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         ).read_text(encoding="utf-8")
     )
     protected_launcher = (
-        ROOT / "stages/foundation/scripts/public-edge-gate-launcher.c"
+        ROOT / "stages/foundation/scripts/public-edge-capsule-launcher.c"
     ).read_text(encoding="utf-8")
     node_authority = (
         ROOT / "stages/foundation/public_edge_node_authority.tf"
@@ -260,13 +260,15 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert "source-trusted authority" in adapter
     assert "provider listeners do not bind the exact Gateway listeners" in adapter
     assert "signed SG/routing facts do not exclude direct Envoy access" in adapter
+    assert "edge identity verifier lacks the accepted capsule proof" in adapter
+    assert '"edge-client-identity-verifier"' in adapter_contract
     assert "return len(chain)" in adapter
     assert trust_store == {
         "schema": "fs2-serve.nebius.ai/trusted-edge-evidence-issuers/v1",
         "issuers": [],
     }
     assert membership_trust_store == {
-        "schema": "fs2-serve.nebius.ai/trusted-public-edge-membership-issuers/v2",
+        "schema": "fs2-serve.nebius.ai/trusted-public-edge-membership-issuers/v3",
         "issuers": [],
     }
     assert provider_adapter_trust_store == {
@@ -323,16 +325,16 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert "key: metadata.name" in envoy_proxy_template
     assert ".Values.envoyProxy.tolerations" in envoy_proxy_template
     for variables in (foundation_variables, workloads_variables):
-        assert "update_strategy.max_unavailable <= 1" in variables
+        assert "update_strategy.max_unavailable == 0" in variables
         assert "update_strategy.max_surge >= 1" in variables
-        assert "update_strategy.minimum_available_nodes >= 2" in variables
+        assert "update_strategy.minimum_available_nodes >= 3" in variables
     assert 'var.public_edge_mode != "public" ||' in infrastructure_cluster
     assert "local.effective_system_pool.node_count >= 3" in infrastructure_cluster
-    assert "local.effective_system_pool.max_unavailable <= 1" in infrastructure_cluster
+    assert "local.effective_system_pool.max_unavailable == 0" in infrastructure_cluster
     assert "local.effective_system_pool.max_surge >= 1" in infrastructure_cluster
     assert 'var.deployment.edge.mode != "public" ||' in root_contract
     assert "local.effective_system_node_count >= 3" in root_contract
-    assert "local.effective_system_max_unavailable <= 1" in root_contract
+    assert "local.effective_system_max_unavailable == 0" in root_contract
     assert "local.effective_system_max_surge >= 1" in root_contract
     for apply_gate in (foundation_apply_gate, workloads_apply_gate):
         assert 'resource "terraform_data" "public_edge_apply_eligibility"' in apply_gate
@@ -343,7 +345,7 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         assert "FS2_EDGE_GATE_NODE_GROUP_ID" in apply_gate
         assert "FS2_EDGE_GATE_NODE_SELECTOR_JSON" in apply_gate
         assert "verify-public-edge-node-eligibility.py" in apply_gate
-        assert '"--external"' in apply_gate
+        assert '"external"' in apply_gate
         assert "gate_id" in apply_gate
         assert 'public_edge_gate_launcher_path = "/usr/local/libexec/fs2-public-edge-gate-launcher"' in apply_gate
         assert "public_edge_gate_verifier_sha256" in apply_gate
@@ -355,7 +357,8 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         assert '"/usr/bin/env"' not in apply_gate
     assert "launcher must be statically linked" in protected_launcher
     assert "clearenv()" in protected_launcher
-    assert "verified source digest mismatch" in protected_launcher
+    assert "expected a supported logical source and mode" in protected_launcher
+    assert "launcher must be root:capsule mode 2755" in protected_launcher
     assert 'child[output++] = "-I"' in protected_launcher
     assert 'child[output++] = "-B"' in protected_launcher
     assert protected_launcher.index("clearenv()") < protected_launcher.index(
@@ -408,10 +411,11 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert 'f"/proc/self/fd/{snapshot_descriptor}"' in apply_gate_verifier
     assert "pass_fds=PINNED_COMMAND_FDS" in apply_gate_verifier
     assert 'cwd="/"' in apply_gate_verifier
-    assert '"PATH": "/usr/bin:/bin"' in apply_gate_verifier
+    assert '"PATH": CAPSULE_TOOL_BIN or "/usr/bin:/bin"' in apply_gate_verifier
+    assert "signed kubectl differs from the accepted capsule executable" in apply_gate_verifier
     assert '"HOME": "/nonexistent"' in apply_gate_verifier
     assert "sealed_memfd(\"public-edge-kubeconfig\"" in apply_gate_verifier
-    assert "FS2_VERIFIED_SOURCE_SHA256" in apply_gate_verifier
+    assert "FS2_CAPSULE_SOURCE_SHA256" in apply_gate_verifier
     assert '"ValidatingAdmissionPolicy after"' in apply_gate_verifier
     assert '"ValidatingAdmissionPolicyBinding after"' in apply_gate_verifier
     assert "terraform_json_sha256(after_contract)" in apply_gate_verifier
@@ -426,13 +430,23 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert 'operations  = ["CREATE", "UPDATE"]' in node_authority
     assert "object.spec.providerID == 'nebius://' + object.metadata.name" in node_authority
     assert "public_edge_protected_labels_unchanged_cel" in node_authority
-    assert "public_edge_controller_identity_cel" in node_authority
-    assert "request.userInfo.uid" in node_authority
-    assert "request.userInfo.groups" in node_authority
-    assert "request.userInfo.extra" in node_authority
-    assert "impersonation_review_sha256" in node_authority
-    assert "controller identity are not one unique" in apply_gate_verifier
-    assert '"kubernetes_node_controller",' in apply_gate_verifier
+    assert "public_edge_joining_labels_monotonic_cel" in node_authority
+    assert "!(object.metadata.name in %s) && !(oldObject.metadata.name in %s)" in node_authority
+    assert "request.userInfo" not in node_authority
+    assert "membership-epoch-sequence" in node_authority
+    assert "predecessor_payload_sha256" in node_authority
+    assert "serving-member-instance-ids" in node_authority
+    assert "joining-member-instance-ids" in node_authority
+    assert "retiring-member-instance-ids" in node_authority
+    assert "public_edge_existing_serving_member_instance_ids" in node_authority
+    assert "public_edge_existing_joining_member_instance_ids" in node_authority
+    assert "public_edge_existing_retiring_member_instance_ids" in node_authority
+    assert "setsubtract(toset(local.public_edge_existing_serving_member_instance_ids)" in node_authority
+    assert "local.public_edge_existing_phase == \"prepare\"" in node_authority
+    assert "local.public_edge_existing_phase == \"cutover\"" in node_authority
+    assert '"prepare"' in node_authority
+    assert '"cutover"' in node_authority
+    assert '"kubernetes_node_controller",' not in apply_gate_verifier
     assert "public_edge_node_authority_policy_sha256" in node_authority
     assert "public_edge_node_authority_binding_sha256" in node_authority
     for prerequisite in (

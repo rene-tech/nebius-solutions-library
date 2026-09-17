@@ -239,7 +239,7 @@ locals {
             matchFields = [{
               key      = "metadata.name"
               operator = "In"
-              values   = local.public_edge_membership_authority.member_instance_ids
+              values   = local.public_edge_membership_authority.serving_member_instance_ids
             }]
           }]
         }
@@ -277,7 +277,7 @@ locals {
             matchFields = [{
               key      = "metadata.name"
               operator = "In"
-              values   = local.public_edge_membership_authority.member_instance_ids
+              values   = local.public_edge_membership_authority.serving_member_instance_ids
             }]
           }]
         }

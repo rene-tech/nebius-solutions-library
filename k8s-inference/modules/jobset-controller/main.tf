@@ -25,7 +25,11 @@ locals {
 data "external" "chart" {
   count = var.enabled ? 1 : 0
 
-  program = ["${path.module}/scripts/materialize-chart.sh"]
+  program = [
+    "/usr/local/libexec/fs2-public-edge-gate-launcher",
+    "jobset-chart-materializer",
+    "external",
+  ]
 
   query = {
     chart_ref      = local.chart_ref_base
@@ -112,8 +116,9 @@ resource "terraform_data" "crd_upgrade" {
   }
 
   provisioner "local-exec" {
-    command = "\"${path.module}/scripts/apply-jobset-crd.sh\""
-    quiet   = true
+    command     = "local-exec"
+    interpreter = ["/usr/local/libexec/fs2-public-edge-gate-launcher", "jobset-crd-upgrade"]
+    quiet       = true
 
     environment = {
       FS2_JOBSET_CHART_ARCHIVE        = local.chart_archive
@@ -145,8 +150,9 @@ resource "terraform_data" "artifacts_verified" {
   }
 
   provisioner "local-exec" {
-    command = "\"${path.module}/scripts/verify-jobset-release.sh\""
-    quiet   = true
+    command     = "local-exec"
+    interpreter = ["/usr/local/libexec/fs2-public-edge-gate-launcher", "jobset-release-verifier"]
+    quiet       = true
 
     environment = {
       FS2_JOBSET_CHART_REF            = local.chart_ref
@@ -227,8 +233,9 @@ resource "terraform_data" "api_ready" {
   }
 
   provisioner "local-exec" {
-    command = "\"${path.module}/scripts/wait-for-jobset-api.sh\""
-    quiet   = true
+    command     = "local-exec"
+    interpreter = ["/usr/local/libexec/fs2-public-edge-gate-launcher", "jobset-api-gate"]
+    quiet       = true
 
     environment = {
       FS2_JOBSET_KUBECONFIG       = abspath(var.kubeconfig_path)

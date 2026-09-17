@@ -42,10 +42,161 @@ STAGE_COMPLETION_OUTPUTS = {
     "foundation": "cluster_contract",
     "workloads": "deployment_contract",
 }
+CAPSULE_LAUNCHER = Path("/usr/local/libexec/fs2-public-edge-gate-launcher")
+CAPSULE_TOOL_NAMES = {
+    "crane",
+    "git",
+    "helm",
+    "kubectl",
+    "nebius",
+    "openssl",
+    "python3",
+    "sha256sum",
+    "tar",
+    "terraform",
+    "timeout",
+}
+CAPSULE_TOOL_PATHS: dict[str, str] = {}
+CAPSULE_PASS_FDS: tuple[int, ...] = ()
+CAPSULE_COMMANDS = {
+    "validate",
+    "preflight",
+    "plan",
+    "apply",
+    "destroy",
+    "status",
+    "output",
+    "proxy",
+}
 
 
 class DeploymentError(RuntimeError):
     """A bounded, user-actionable deployment failure."""
+
+
+def _safe_capsule_environment_name(name: str) -> bool:
+    """Match the launcher's bounded secret-reference name contract."""
+
+    return bool(re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", name)) and not (
+        name.startswith(("LD_", "DYLD_", "PYTHON", "TF_", "NEBIUS_", "FS2_CAPSULE_"))
+        or name in {"HOME", "PATH"}
+        or "PROXY" in name
+    )
+
+
+def enter_accepted_capsule(argv: Sequence[str]) -> None:
+    """Re-exec an apply through the installed, accepted release capsule.
+
+    This function performs no parsing, external execution, or run-root write.
+    The fixed launcher chooses the accepted source and all executable bytes.
+    The mutable checkout supplies only operator arguments and environment
+    *names*; the accepted source later reads only names selected by its exact
+    deployment contract.
+    """
+
+    if (
+        not argv
+        or argv[0] not in CAPSULE_COMMANDS
+        or os.environ.get("FS2_CAPSULE_LAUNCHER")
+    ):
+        return
+    if not CAPSULE_LAUNCHER.is_file():
+        raise DeploymentError(
+            "operator commands require the independently installed public-edge execution "
+            "capsule; follow docs/security/public-edge-execution-capsule.md"
+        )
+    forwarded = list(argv)
+    if not any(
+        value == "--var-file" or value.startswith("--var-file=")
+        for value in forwarded
+    ):
+        forwarded.extend(["--var-file", str(DEPLOY_ROOT / "terraform.tfvars")])
+    if not any(
+        value == "--nebius-profile" or value.startswith("--nebius-profile=")
+        for value in forwarded
+    ) and os.environ.get("NEBIUS_PROFILE"):
+        forwarded.extend(["--nebius-profile", os.environ["NEBIUS_PROFILE"]])
+    preserved_names = sorted(
+        name for name in os.environ if _safe_capsule_environment_name(name)
+    )
+    command = [
+        str(CAPSULE_LAUNCHER),
+        "inference-stack",
+        "operator",
+        *(f"--preserve-env={name}" for name in preserved_names),
+        "--",
+        *forwarded,
+    ]
+    try:
+        os.execv(command[0], command)
+    except OSError as exc:
+        raise DeploymentError("cannot enter the accepted public-edge capsule") from exc
+
+
+def load_capsule_contract() -> None:
+    """Validate the inherited capsule proof and pin subprocess descriptors."""
+
+    global CAPSULE_PASS_FDS
+    if os.environ.get("FS2_CAPSULE_LAUNCHER") != "fs2-public-edge-capsule-v1":
+        raise DeploymentError("accepted capsule launcher proof is absent")
+    if os.getegid() == os.getgid() or os.getegid() in os.getgroups():
+        raise DeploymentError("accepted capsule no-member setgid proof is absent")
+    accepted_commit = os.environ.get("FS2_CAPSULE_ACCEPTED_COMMIT", "")
+    accepted_tree = os.environ.get("FS2_CAPSULE_ACCEPTED_TREE", "")
+    manifest_sha256 = os.environ.get("FS2_CAPSULE_MANIFEST_SHA256", "")
+    source_sha256 = os.environ.get("FS2_CAPSULE_SOURCE_SHA256", "")
+    if not all(
+        re.fullmatch(pattern, value)
+        for pattern, value in (
+            (r"[a-f0-9]{40}", accepted_commit),
+            (r"[a-f0-9]{40}", accepted_tree),
+            (r"[a-f0-9]{64}", manifest_sha256),
+            (r"[a-f0-9]{64}", source_sha256),
+        )
+    ):
+        raise DeploymentError("accepted capsule identity is malformed")
+    if hashlib.sha256(Path(__file__).read_bytes()).hexdigest() != source_sha256:
+        raise DeploymentError("running inference-stack differs from accepted bytes")
+    try:
+        raw_paths = json.loads(os.environ["FS2_CAPSULE_TOOL_PATHS_JSON"])
+        raw_fds = os.environ["FS2_CAPSULE_PASS_FDS"].split(",")
+    except (KeyError, json.JSONDecodeError) as exc:
+        raise DeploymentError("accepted capsule descriptor contract is absent") from exc
+    if not isinstance(raw_paths, dict) or not CAPSULE_TOOL_NAMES.issubset(raw_paths):
+        raise DeploymentError("accepted capsule tool set is incomplete")
+    parsed_fds: list[int] = []
+    for value in raw_fds:
+        if not value.isdecimal() or int(value) < 3:
+            raise DeploymentError("accepted capsule descriptor set is malformed")
+        descriptor = int(value)
+        os.fstat(descriptor)
+        parsed_fds.append(descriptor)
+    for name in CAPSULE_TOOL_NAMES:
+        path = raw_paths[name]
+        if not isinstance(path, str) or not re.fullmatch(r"/proc/self/fd/[0-9]+", path):
+            raise DeploymentError(f"accepted capsule tool {name} is not descriptor-pinned")
+        if int(path.rsplit("/", 1)[1]) not in parsed_fds:
+            raise DeploymentError(f"accepted capsule tool {name} descriptor is not inherited")
+        CAPSULE_TOOL_PATHS[name] = path
+    cli_config = raw_paths.get("terraform_cli_config")
+    if not isinstance(cli_config, str) or not re.fullmatch(
+        r"/proc/self/fd/[0-9]+", cli_config
+    ):
+        raise DeploymentError("accepted Terraform CLI configuration is not sealed")
+    if int(cli_config.rsplit("/", 1)[1]) not in parsed_fds:
+        raise DeploymentError("accepted Terraform CLI descriptor is not inherited")
+    CAPSULE_TOOL_PATHS["terraform_cli_config"] = cli_config
+    tool_bin = raw_paths.get("tool_bin")
+    if not isinstance(tool_bin, str) or not tool_bin.startswith("/opt/fs2/"):
+        raise DeploymentError("accepted capsule tool bin is absent")
+    CAPSULE_TOOL_PATHS["tool_bin"] = tool_bin
+    CAPSULE_PASS_FDS = tuple(sorted(set(parsed_fds)))
+
+
+def capsule_subprocess_options() -> dict[str, object]:
+    """Keep accepted descriptors open across every capsule child process."""
+
+    return {"pass_fds": CAPSULE_PASS_FDS, "close_fds": True}
 
 
 def command_text(arguments: Sequence[str]) -> str:
@@ -70,6 +221,7 @@ def run(
             check=True,
             stdout=subprocess.PIPE if capture else sys.stderr,
             stderr=subprocess.PIPE if capture else None,
+            **capsule_subprocess_options(),
         )
     except FileNotFoundError as exc:
         raise DeploymentError(f"required executable not found: {arguments[0]}") from exc
@@ -125,16 +277,21 @@ def clean_environment() -> dict[str, str]:
     contract names them.
     """
 
-    return {
+    environment = {
         "HOME": "/nonexistent",
-        "PATH": "/usr/bin:/bin",
+        "PATH": CAPSULE_TOOL_PATHS.get("tool_bin", "/usr/bin:/bin"),
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
     }
+    if CAPSULE_TOOL_PATHS:
+        environment["TF_CLI_CONFIG_FILE"] = CAPSULE_TOOL_PATHS[
+            "terraform_cli_config"
+        ]
+    return environment
 
 
 def require_protected_apply_start() -> None:
-    """Reject an apply unless this source started behind the static gate."""
+    """Reject operator execution outside the installed accepted capsule."""
 
     source_bytes = Path(__file__).read_bytes()
     source_sha256 = hashlib.sha256(source_bytes).hexdigest()
@@ -150,16 +307,22 @@ def require_protected_apply_start() -> None:
         }
     )
     if (
-        os.environ.get("FS2_PROTECTED_LAUNCHER") != "fs2-public-edge-static-v1"
-        or os.environ.get("FS2_VERIFIED_SOURCE_SHA256") != source_sha256
+        os.environ.get("FS2_CAPSULE_LAUNCHER") != "fs2-public-edge-capsule-v1"
+        or os.environ.get("FS2_CAPSULE_SOURCE_ID") != "inference-stack"
+        or os.environ.get("FS2_CAPSULE_SOURCE_SHA256") != source_sha256
+        or os.getegid() == os.getgid()
+        or os.getegid() in os.getgroups()
+        or not CAPSULE_TOOL_NAMES.issubset(CAPSULE_TOOL_PATHS)
+        or not CAPSULE_PASS_FDS
         or sys.flags.isolated != 1
         or not sys.dont_write_bytecode
         or forbidden
     ):
         raise DeploymentError(
-            "apply requires the fixed root-owned static launcher, exact "
-            "verified inference-stack bytes, isolated/no-bytecode Python, and "
-            "no ambient loader/Python/Terraform plugin controls"
+            "operator execution requires the fixed root-owned accepted release capsule, "
+            "its no-member setgid child proof, exact source/tool/provider "
+            "descriptors, isolated/no-bytecode Python, and no ambient loader "
+            "or Terraform plugin controls"
         )
 
 
@@ -187,6 +350,7 @@ def require_terraform_version(terraform: str) -> tuple[int, int, int]:
         capture_output=True,
         text=True,
         env=clean_environment(),
+        **capsule_subprocess_options(),
     )
     if result.returncode != 0:
         raise DeploymentError(f"cannot determine the Terraform version using {terraform!r}")
@@ -301,6 +465,7 @@ def state_addresses(
         text=True,
         capture_output=True,
         check=False,
+        **capsule_subprocess_options(),
     )
     if result.returncode != 0:
         return []
@@ -367,6 +532,11 @@ def plan_changes_managed_resources_or_outputs(document: Mapping[str, Any]) -> bo
 
 
 def source_commit() -> str:
+    accepted = os.environ.get("FS2_CAPSULE_ACCEPTED_COMMIT")
+    if CAPSULE_TOOL_PATHS:
+        if accepted is None or re.fullmatch(r"[a-f0-9]{40}", accepted) is None:
+            raise DeploymentError("accepted capsule commit identity is absent")
+        return accepted
     result = run(
         ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD"],
         capture=True,
@@ -1377,6 +1547,7 @@ def crane_digest(
         text=True,
         capture_output=True,
         check=False,
+        **capsule_subprocess_options(),
     )
     if result.returncode != 0:
         missing_markers = (
@@ -1411,6 +1582,7 @@ def crane_copy(
         text=True,
         capture_output=True,
         check=False,
+        **capsule_subprocess_options(),
     )
     if result.returncode != 0:
         raise DeploymentError(
@@ -2502,6 +2674,7 @@ def state_ready(
         text=True,
         capture_output=True,
         check=False,
+        **capsule_subprocess_options(),
     )
     if result.returncode != 0:
         return False
@@ -3259,9 +3432,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="private state/evidence directory; defaults to an XDG state path bound to the tfvars path",
     )
-    parser.add_argument("--terraform", default="terraform")
-    parser.add_argument("--kubectl", default="kubectl")
-    parser.add_argument("--nebius", default="nebius")
+    parser.add_argument(
+        "--terraform",
+        default="terraform",
+        help="legacy compatibility argument; accepted operator execution always uses the capsule Terraform descriptor",
+    )
+    parser.add_argument(
+        "--kubectl",
+        default="kubectl",
+        help="legacy compatibility argument; accepted operator execution always uses the capsule kubectl descriptor",
+    )
+    parser.add_argument(
+        "--nebius",
+        default="nebius",
+        help="legacy compatibility argument; accepted operator execution always uses the capsule Nebius descriptor",
+    )
     parser.add_argument(
         "--crane",
         default="crane",
@@ -3277,12 +3462,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     os.umask(0o077)
-    args = parse_args(argv)
+    arguments = list(argv) if argv is not None else sys.argv[1:]
+    enter_accepted_capsule(arguments)
+    if os.environ.get("FS2_CAPSULE_LAUNCHER"):
+        load_capsule_contract()
+    args = parse_args(arguments)
     # This runs before Terraform, configuration parsing, provider startup, or
     # any run-root mutation. Public mode is learned from that later plan, so
-    # every apply takes the same protected path and public mode checks it again.
-    if args.command == "apply":
-        require_protected_apply_start()
+    # every operator command takes the same protected path and public mode
+    # checks it again.
+    require_protected_apply_start()
+    args.terraform = CAPSULE_TOOL_PATHS["terraform"]
+    args.kubectl = CAPSULE_TOOL_PATHS["kubectl"]
+    args.nebius = CAPSULE_TOOL_PATHS["nebius"]
+    args.crane = CAPSULE_TOOL_PATHS["crane"]
     require_terraform_version(args.terraform)
     variable_file = args.var_file.expanduser().resolve()
     if not variable_file.is_file():

@@ -1,12 +1,13 @@
 locals {
   public_edge_membership_expected_subject = {
-    schema                   = "fs2-serve.nebius.ai/public-edge-membership-terraform-subject/v2"
+    schema                   = "fs2-serve.nebius.ai/public-edge-membership-terraform-subject/v3"
     project_id               = nonsensitive(var.project_id)
     cluster_id               = var.cluster_id
     node_group_id            = var.public_edge_availability_contract.system_node_group_id
     run_id                   = var.run_id
     expected_node_count      = var.public_edge_availability_contract.system_node_count
     minimum_hostname_domains = var.public_edge_availability_contract.minimum_domains
+    maximum_surge_members     = var.public_edge_availability_contract.update_strategy.max_surge
     node_selector_sha256     = sha256(jsonencode(var.public_edge_availability_contract.node_selector))
     kubeconfig_sha256         = filesha256(abspath(var.kubeconfig_path))
   }
@@ -21,9 +22,8 @@ data "external" "public_edge_membership_contract" {
 
   program = [
     local.public_edge_gate_launcher_path,
-    local.public_edge_gate_verifier_path,
-    local.public_edge_gate_verifier_sha256,
-    "--receipt-contract",
+    "public-edge-verifier",
+    "receipt-contract",
   ]
 
   query = {
@@ -42,8 +42,15 @@ locals {
     receipt_sha256                      = try(one(data.external.public_edge_membership_contract[*].result.receipt_sha256), "")
     evidence_sha256                     = try(one(data.external.public_edge_membership_contract[*].result.evidence_sha256), "")
     node_group_resource_version         = try(one(data.external.public_edge_membership_contract[*].result.node_group_resource_version), "")
-    member_instance_ids                 = try(jsondecode(one(data.external.public_edge_membership_contract[*].result.member_instance_ids_json)), [])
-    kubernetes_node_controller          = try(jsondecode(one(data.external.public_edge_membership_contract[*].result.kubernetes_node_controller_json)), null)
+    provider_member_instance_ids        = try(jsondecode(one(data.external.public_edge_membership_contract[*].result.provider_member_instance_ids_json)), [])
+    epoch_id                            = try(one(data.external.public_edge_membership_contract[*].result.epoch_id), "")
+    epoch_sequence                      = try(tonumber(one(data.external.public_edge_membership_contract[*].result.epoch_sequence)), 0)
+    phase                               = try(one(data.external.public_edge_membership_contract[*].result.phase), "")
+    predecessor_payload_sha256          = try(one(data.external.public_edge_membership_contract[*].result.predecessor_payload_sha256), "")
+    serving_member_instance_ids         = try(jsondecode(one(data.external.public_edge_membership_contract[*].result.serving_member_instance_ids_json)), [])
+    joining_member_instance_ids         = try(jsondecode(one(data.external.public_edge_membership_contract[*].result.joining_member_instance_ids_json)), [])
+    retiring_member_instance_ids        = try(jsondecode(one(data.external.public_edge_membership_contract[*].result.retiring_member_instance_ids_json)), [])
+    admitted_member_instance_ids        = try(jsondecode(one(data.external.public_edge_membership_contract[*].result.admitted_member_instance_ids_json)), [])
     provider_observer                   = try(jsondecode(one(data.external.public_edge_membership_contract[*].result.provider_observer_json)), null)
   } : {
     verified                            = false
@@ -51,8 +58,15 @@ locals {
     receipt_sha256                      = ""
     evidence_sha256                     = ""
     node_group_resource_version         = ""
-    member_instance_ids                 = []
-    kubernetes_node_controller          = null
+    provider_member_instance_ids        = []
+    epoch_id                            = ""
+    epoch_sequence                      = 0
+    phase                               = ""
+    predecessor_payload_sha256          = ""
+    serving_member_instance_ids         = []
+    joining_member_instance_ids         = []
+    retiring_member_instance_ids        = []
+    admitted_member_instance_ids        = []
     provider_observer                   = null
   }
 
@@ -69,32 +83,53 @@ locals {
     for key in local.public_edge_protected_node_label_keys :
     "${jsonencode(key)} in object.metadata.labels && object.metadata.labels[${jsonencode(key)}] == ${jsonencode(var.public_edge_availability_contract.node_selector[key])}"
   ])
-  public_edge_controller_groups_cel = local.public_edge_enabled ? format(
-    "request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s)",
-    length(local.public_edge_membership_authority.kubernetes_node_controller.groups),
-    jsonencode(local.public_edge_membership_authority.kubernetes_node_controller.groups),
-  ) : "false"
-  public_edge_controller_extra_cel = local.public_edge_enabled ? join(" && ", concat(
-    [format(
-      "request.userInfo.extra.size() == %d",
-      length(local.public_edge_membership_authority.kubernetes_node_controller.extra),
-    )],
-    [for key in sort(keys(local.public_edge_membership_authority.kubernetes_node_controller.extra)) : format(
-      "%s in request.userInfo.extra && request.userInfo.extra[%s].size() == %d && request.userInfo.extra[%s].all(value, value in %s)",
-      jsonencode(key),
-      jsonencode(key),
-      length(local.public_edge_membership_authority.kubernetes_node_controller.extra[key]),
-      jsonencode(key),
-      jsonencode(local.public_edge_membership_authority.kubernetes_node_controller.extra[key]),
-    )],
-  )) : "false"
-  public_edge_controller_identity_cel = local.public_edge_enabled ? format(
-    "request.userInfo.username == %s && request.userInfo.uid == %s && (%s) && (%s)",
-    jsonencode(local.public_edge_membership_authority.kubernetes_node_controller.username),
-    jsonencode(local.public_edge_membership_authority.kubernetes_node_controller.uid),
-    local.public_edge_controller_groups_cel,
-    local.public_edge_controller_extra_cel,
-  ) : "false"
+  public_edge_joining_labels_monotonic_cel = join(" && ", [
+    for key in local.public_edge_protected_node_label_keys :
+    "((${jsonencode(key)} in oldObject.metadata.labels && ${jsonencode(key)} in object.metadata.labels && object.metadata.labels[${jsonencode(key)}] == oldObject.metadata.labels[${jsonencode(key)}]) || (!(${jsonencode(key)} in oldObject.metadata.labels) && (!(${jsonencode(key)} in object.metadata.labels) || object.metadata.labels[${jsonencode(key)}] == ${jsonencode(var.public_edge_availability_contract.node_selector[key])})))"
+  ])
+  public_edge_joining_labels_valid_cel = join(" && ", [
+    for key in local.public_edge_protected_node_label_keys :
+    "(!(${jsonencode(key)} in object.metadata.labels) || object.metadata.labels[${jsonencode(key)}] == ${jsonencode(var.public_edge_availability_contract.node_selector[key])})"
+  ])
+  public_edge_joining_provider_monotonic_cel = "((has(oldObject.spec.providerID) && has(object.spec.providerID) && object.spec.providerID == oldObject.spec.providerID) || (!has(oldObject.spec.providerID) && (!has(object.spec.providerID) || object.spec.providerID == 'nebius://' + object.metadata.name)))"
+}
+
+data "kubernetes_resources" "public_edge_existing_node_authority" {
+  count          = local.public_edge_enabled ? 1 : 0
+  api_version    = "admissionregistration.k8s.io/v1"
+  kind           = "ValidatingAdmissionPolicy"
+  field_selector = "metadata.name=fs2-public-edge-node-authority"
+}
+
+locals {
+  public_edge_existing_node_authority = local.public_edge_enabled ? try(
+    one(data.kubernetes_resources.public_edge_existing_node_authority[0].objects),
+    null,
+  ) : null
+  public_edge_existing_membership_payload_sha256 = try(
+    local.public_edge_existing_node_authority.metadata.annotations["fs2.nebius.ai/membership-payload-sha256"],
+    "",
+  )
+  public_edge_existing_epoch_sequence = try(
+    tonumber(local.public_edge_existing_node_authority.metadata.annotations["fs2.nebius.ai/membership-epoch-sequence"]),
+    0,
+  )
+  public_edge_existing_phase = try(
+    local.public_edge_existing_node_authority.metadata.annotations["fs2.nebius.ai/membership-phase"],
+    "",
+  )
+  public_edge_existing_serving_member_instance_ids = try(
+    jsondecode(local.public_edge_existing_node_authority.metadata.annotations["fs2.nebius.ai/serving-member-instance-ids"]),
+    [],
+  )
+  public_edge_existing_joining_member_instance_ids = try(
+    jsondecode(local.public_edge_existing_node_authority.metadata.annotations["fs2.nebius.ai/joining-member-instance-ids"]),
+    [],
+  )
+  public_edge_existing_retiring_member_instance_ids = try(
+    jsondecode(local.public_edge_existing_node_authority.metadata.annotations["fs2.nebius.ai/retiring-member-instance-ids"]),
+    [],
+  )
 }
 
 locals {
@@ -106,8 +141,13 @@ locals {
       annotations = {
         "fs2.nebius.ai/membership-payload-sha256"  = local.public_edge_membership_authority.payload_sha256
         "fs2.nebius.ai/membership-receipt-sha256"  = local.public_edge_membership_authority.receipt_sha256
-        "fs2.nebius.ai/controller-identity-sha256" = sha256(jsonencode(local.public_edge_membership_authority.kubernetes_node_controller))
-        "fs2.nebius.ai/impersonation-review-sha256" = try(local.public_edge_membership_authority.kubernetes_node_controller.impersonation_review_sha256, "")
+        "fs2.nebius.ai/membership-epoch"            = local.public_edge_membership_authority.epoch_id
+        "fs2.nebius.ai/membership-epoch-sequence"   = tostring(local.public_edge_membership_authority.epoch_sequence)
+        "fs2.nebius.ai/membership-phase"            = local.public_edge_membership_authority.phase
+        "fs2.nebius.ai/predecessor-payload-sha256"  = local.public_edge_membership_authority.predecessor_payload_sha256
+        "fs2.nebius.ai/serving-member-instance-ids" = jsonencode(local.public_edge_membership_authority.serving_member_instance_ids)
+        "fs2.nebius.ai/joining-member-instance-ids" = jsonencode(local.public_edge_membership_authority.joining_member_instance_ids)
+        "fs2.nebius.ai/retiring-member-instance-ids" = jsonencode(local.public_edge_membership_authority.retiring_member_instance_ids)
         "fs2.nebius.ai/provider-adapter-sha256"     = try(local.public_edge_membership_authority.provider_observer.adapter_sha256, "")
       }
     }
@@ -126,23 +166,28 @@ locals {
       validations = [
         {
           expression = format(
-            "request.operation != 'UPDATE' || (%s) || ((%s) && object.spec.providerID == oldObject.spec.providerID)",
-            local.public_edge_controller_identity_cel,
+            "request.operation != 'UPDATE' || (!(object.metadata.name in %s) && !(oldObject.metadata.name in %s)) || (((%s) && object.spec.providerID == oldObject.spec.providerID) || (object.metadata.name in %s && (%s) && (%s)))",
+            jsonencode(local.public_edge_membership_authority.admitted_member_instance_ids),
+            jsonencode(local.public_edge_membership_authority.admitted_member_instance_ids),
             local.public_edge_protected_labels_unchanged_cel,
+            jsonencode(local.public_edge_membership_authority.joining_member_instance_ids),
+            local.public_edge_joining_labels_monotonic_cel,
+            local.public_edge_joining_provider_monotonic_cel,
           )
-          message = "Only the signed non-impersonable managed-node controller identity may alter public-edge membership labels or providerID."
+          message = "Protected public-edge Node identity is immutable; a signed joining member may only initialize an absent field to its exact value."
           reason  = "Forbidden"
         },
         {
           expression = format(
-            "!((%s) || object.metadata.name in %s) || (object.metadata.name in %s && has(object.spec.providerID) && object.spec.providerID == 'nebius://' + object.metadata.name && (%s) && (request.operation != 'CREATE' || (%s)))",
-            local.public_edge_claims_protected_label_cel,
-            jsonencode(local.public_edge_membership_authority.member_instance_ids),
-            jsonencode(local.public_edge_membership_authority.member_instance_ids),
+            "(object.metadata.name in %s && (!has(object.spec.providerID) || object.spec.providerID == 'nebius://' + object.metadata.name) && (%s)) || (object.metadata.name in %s && has(object.spec.providerID) && object.spec.providerID == 'nebius://' + object.metadata.name && (%s)) || (!(object.metadata.name in %s) && !(%s))",
+            jsonencode(local.public_edge_membership_authority.joining_member_instance_ids),
+            local.public_edge_joining_labels_valid_cel,
+            jsonencode(sort(tolist(setsubtract(toset(local.public_edge_membership_authority.admitted_member_instance_ids), toset(local.public_edge_membership_authority.joining_member_instance_ids))))),
             local.public_edge_exact_selector_cel,
-            local.public_edge_controller_identity_cel,
+            jsonencode(local.public_edge_membership_authority.admitted_member_instance_ids),
+            local.public_edge_claims_protected_label_cel,
           )
-          message = "Public-edge labels are reserved for the exact signed NodeGroup member set, providerID join, and full controller authentication tuple."
+          message = "Public-edge labels are reserved for the signed epoch; identity tuples cannot authorize or extend membership."
           reason  = "Forbidden"
         },
       ]
@@ -169,10 +214,10 @@ locals {
 # A fresh fence cannot make mutable Node labels authoritative after it exits.
 # This fail-closed admission policy continuously freezes the signed member set,
 # providerID join, and exact scheduler labels. Ordinary kubelet/status updates
-# remain possible when those protected values do not change. New member Nodes
-# may be introduced only by the controller identity authenticated in the signed
-# provider receipt; membership transitions require a newly signed receipt and
-# reviewed policy update before the provider rollout.
+# remain possible when those protected values do not change. No username, UID,
+# group, authentication extra, or impersonation assertion grants an exception.
+# A signed prepare epoch keeps all old serving Nodes while admitting bounded
+# surge IDs; cutover keeps retiring IDs admitted through quiescence/rollback.
 resource "kubernetes_manifest" "public_edge_node_authority_policy" {
   count = local.public_edge_enabled ? 1 : 0
 
@@ -182,18 +227,84 @@ resource "kubernetes_manifest" "public_edge_node_authority_policy" {
     precondition {
       condition = (
         local.public_edge_membership_authority.verified &&
-        length(local.public_edge_membership_authority.member_instance_ids) == var.public_edge_availability_contract.system_node_count &&
-        length(toset(local.public_edge_membership_authority.member_instance_ids)) == length(local.public_edge_membership_authority.member_instance_ids) &&
+        length(local.public_edge_membership_authority.serving_member_instance_ids) == var.public_edge_availability_contract.system_node_count &&
+        length(toset(local.public_edge_membership_authority.admitted_member_instance_ids)) == length(local.public_edge_membership_authority.admitted_member_instance_ids) &&
+        toset(local.public_edge_membership_authority.admitted_member_instance_ids) == setunion(toset(local.public_edge_membership_authority.serving_member_instance_ids), toset(local.public_edge_membership_authority.joining_member_instance_ids), toset(local.public_edge_membership_authority.retiring_member_instance_ids)) &&
+        toset(local.public_edge_membership_authority.provider_member_instance_ids) == toset(local.public_edge_membership_authority.admitted_member_instance_ids) &&
+        length(local.public_edge_membership_authority.joining_member_instance_ids) <= var.public_edge_availability_contract.update_strategy.max_surge &&
+        length(local.public_edge_membership_authority.retiring_member_instance_ids) <= var.public_edge_availability_contract.update_strategy.max_surge &&
+        contains(["stable", "prepare", "cutover"], local.public_edge_membership_authority.phase) &&
+        local.public_edge_membership_authority.epoch_sequence >= 1 &&
+        can(regex("^[a-f0-9]{64}$", local.public_edge_membership_authority.epoch_id)) &&
+        can(regex("^[a-f0-9]{64}$", local.public_edge_membership_authority.predecessor_payload_sha256)) &&
+        (
+          (local.public_edge_membership_authority.phase == "stable" && length(local.public_edge_membership_authority.joining_member_instance_ids) == 0 && length(local.public_edge_membership_authority.retiring_member_instance_ids) == 0) ||
+          (local.public_edge_membership_authority.phase == "prepare" && length(local.public_edge_membership_authority.joining_member_instance_ids) > 0 && length(local.public_edge_membership_authority.retiring_member_instance_ids) == 0) ||
+          (local.public_edge_membership_authority.phase == "cutover" && length(local.public_edge_membership_authority.joining_member_instance_ids) == 0 && length(local.public_edge_membership_authority.retiring_member_instance_ids) > 0)
+        ) &&
         can(regex("^[1-9][0-9]*$", local.public_edge_membership_authority.node_group_resource_version)) &&
-        length(local.public_edge_membership_authority.kubernetes_node_controller.username) >= 3 &&
-        length(local.public_edge_membership_authority.kubernetes_node_controller.uid) > 0 &&
-        length(local.public_edge_membership_authority.kubernetes_node_controller.groups) > 0 &&
-        length(local.public_edge_membership_authority.kubernetes_node_controller.extra) > 0 &&
-        local.public_edge_membership_authority.kubernetes_node_controller.impersonation_prohibited &&
-        can(regex("^[a-f0-9]{64}$", local.public_edge_membership_authority.kubernetes_node_controller.impersonation_review_sha256)) &&
         can(regex("^[a-f0-9]{64}$", local.public_edge_membership_authority.provider_observer.adapter_sha256))
       )
-      error_message = "Public mode requires a source-trusted exact-subject provider membership receipt before installing continuous Node authority enforcement."
+      error_message = "Public mode requires a source-trusted exact-subject provider membership epoch with an exact stable/prepare/cutover set before installing continuous Node authority enforcement."
+    }
+
+    precondition {
+      condition = (
+        (
+          local.public_edge_existing_node_authority == null &&
+          local.public_edge_membership_authority.epoch_sequence == 1 &&
+          local.public_edge_membership_authority.phase == "stable" &&
+          local.public_edge_membership_authority.predecessor_payload_sha256 == strrep("0", 64)
+        ) ||
+        (
+          local.public_edge_existing_node_authority != null &&
+          local.public_edge_membership_authority.epoch_sequence == local.public_edge_existing_epoch_sequence + 1 &&
+          local.public_edge_membership_authority.predecessor_payload_sha256 == local.public_edge_existing_membership_payload_sha256 &&
+          (
+            (
+              local.public_edge_existing_phase == "stable" &&
+              local.public_edge_membership_authority.phase == "stable" &&
+              toset(local.public_edge_membership_authority.serving_member_instance_ids) == toset(local.public_edge_existing_serving_member_instance_ids)
+            ) ||
+            (
+              local.public_edge_existing_phase == "stable" &&
+              local.public_edge_membership_authority.phase == "prepare" &&
+              toset(local.public_edge_membership_authority.serving_member_instance_ids) == toset(local.public_edge_existing_serving_member_instance_ids)
+            ) ||
+            (
+              local.public_edge_existing_phase == "prepare" &&
+              local.public_edge_membership_authority.phase == "stable" &&
+              toset(local.public_edge_membership_authority.serving_member_instance_ids) == toset(local.public_edge_existing_serving_member_instance_ids)
+            ) ||
+            (
+              local.public_edge_existing_phase == "prepare" &&
+              local.public_edge_membership_authority.phase == "cutover" &&
+              length(setsubtract(toset(local.public_edge_membership_authority.retiring_member_instance_ids), toset(local.public_edge_existing_serving_member_instance_ids))) == 0 &&
+              toset(local.public_edge_membership_authority.serving_member_instance_ids) == setunion(
+                setsubtract(toset(local.public_edge_existing_serving_member_instance_ids), toset(local.public_edge_membership_authority.retiring_member_instance_ids)),
+                toset(local.public_edge_existing_joining_member_instance_ids),
+              )
+            ) ||
+            (
+              local.public_edge_existing_phase == "cutover" &&
+              local.public_edge_membership_authority.phase == "stable" &&
+              toset(local.public_edge_membership_authority.serving_member_instance_ids) == toset(local.public_edge_existing_serving_member_instance_ids)
+            ) ||
+            (
+              local.public_edge_existing_phase == "cutover" &&
+              local.public_edge_membership_authority.phase == "cutover" &&
+              setunion(
+                toset(local.public_edge_membership_authority.serving_member_instance_ids),
+                toset(local.public_edge_membership_authority.retiring_member_instance_ids),
+              ) == setunion(
+                toset(local.public_edge_existing_serving_member_instance_ids),
+                toset(local.public_edge_existing_retiring_member_instance_ids),
+              )
+            )
+          )
+        )
+      )
+      error_message = "The signed membership epoch must be genesis-stable or the exact next predecessor-bound stable/prepare/cutover transition; every prepare retains the prior serving set, cutover promotes only its signed joining set, and rollback/finalization remains within the installed admitted union."
     }
   }
 }

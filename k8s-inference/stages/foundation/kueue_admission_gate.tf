@@ -35,8 +35,9 @@ resource "terraform_data" "kueue_deployment_admission_ready" {
   # This is creation-only. Destroy removes the receipt from state without
   # contacting Kubernetes, then continues through the reverse Helm graph.
   provisioner "local-exec" {
-    command = "\"${path.module}/scripts/wait-for-kueue-deployment-admission.sh\""
-    quiet   = true
+    command     = "local-exec"
+    interpreter = [local.public_edge_gate_launcher_path, "kueue-admission-gate"]
+    quiet       = true
 
     environment = {
       FS2_GATE_KUBECONFIG      = abspath(var.kubeconfig_path)

@@ -153,7 +153,7 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
                   match_fields {
                     key      = "metadata.name"
                     operator = "In"
-                    values   = local.public_edge_membership_authority.member_instance_ids
+                    values   = local.public_edge_membership_authority.serving_member_instance_ids
                   }
                 }
               }

@@ -234,12 +234,12 @@ resource "nebius_mk8s_v1_node_group" "system" {
         var.public_edge_mode != "public" ||
         (
           local.effective_system_pool.node_count >= 3 &&
-          local.effective_system_pool.max_unavailable <= 1 &&
+          local.effective_system_pool.max_unavailable == 0 &&
           local.effective_system_pool.max_surge >= 1 &&
-          local.effective_system_pool.node_count - local.effective_system_pool.max_unavailable >= 2
+          local.effective_system_pool.node_count - local.effective_system_pool.max_unavailable >= 3
         )
       )
-      error_message = "public_edge_mode=public requires at least three fixed system nodes, max_unavailable <= 1, max_surge >= 1, and at least two retained nodes during update."
+      error_message = "public_edge_mode=public requires at least three fixed system nodes, max_unavailable = 0, max_surge >= 1, and all three serving nodes retained during membership prepare/cutover."
     }
   }
 

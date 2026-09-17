@@ -40,8 +40,9 @@ data "external" "edge_client_identity_receipt" {
   count = local.public_edge_enabled ? 1 : 0
 
   program = [
-    "python3",
-    "${path.module}/scripts/verify-edge-client-identity-receipt.py",
+    local.public_edge_gate_launcher_path,
+    "edge-client-identity-verifier",
+    "external",
   ]
 
   query = {

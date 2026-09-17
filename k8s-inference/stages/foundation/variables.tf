@@ -191,9 +191,9 @@ variable "public_edge_availability_contract" {
           var.public_edge_availability_contract.update_strategy.max_surge >= 1 &&
           floor(var.public_edge_availability_contract.update_strategy.max_unavailable) == var.public_edge_availability_contract.update_strategy.max_unavailable &&
           var.public_edge_availability_contract.update_strategy.max_unavailable >= 0 &&
-          var.public_edge_availability_contract.update_strategy.max_unavailable <= 1 &&
+          var.public_edge_availability_contract.update_strategy.max_unavailable == 0 &&
           var.public_edge_availability_contract.update_strategy.minimum_available_nodes == var.public_edge_availability_contract.system_node_count - var.public_edge_availability_contract.update_strategy.max_unavailable &&
-          var.public_edge_availability_contract.update_strategy.minimum_available_nodes >= 2 &&
+          var.public_edge_availability_contract.update_strategy.minimum_available_nodes >= 3 &&
           var.public_edge_availability_contract.node_selector == {
             "workload.fs2.nebius/system" = "true"
             "capacity.fs2.nebius/type"   = "regular"
@@ -205,7 +205,7 @@ variable "public_edge_availability_contract" {
       ),
       false,
     )
-    error_message = "A public edge requires the exact infrastructure-derived node-group/run selector, no tolerated NoSchedule/NoExecute taints, at least three fixed nodes/domains, max_unavailable <= 1, max_surge >= 1, and at least two retained nodes during update."
+    error_message = "A public edge requires the exact infrastructure-derived node-group/run selector, no tolerated NoSchedule/NoExecute taints, at least three fixed nodes/domains, max_unavailable = 0, max_surge >= 1, and all three serving nodes retained during membership prepare/cutover."
   }
 }
 

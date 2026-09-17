@@ -25,16 +25,16 @@ from typing import Any, Mapping, Sequence
 
 
 MEMBERSHIP_RECEIPT_SCHEMA = (
-    "fs2-serve.nebius.ai/public-edge-membership-receipt/v2"
+    "fs2-serve.nebius.ai/public-edge-membership-receipt/v3"
 )
 MEMBERSHIP_PAYLOAD_SCHEMA = (
-    "fs2-serve.nebius.ai/public-edge-membership-evidence/v2"
+    "fs2-serve.nebius.ai/public-edge-membership-evidence/v3"
 )
 MEMBERSHIP_SUBJECT_SCHEMA = (
-    "fs2-serve.nebius.ai/public-edge-membership-terraform-subject/v2"
+    "fs2-serve.nebius.ai/public-edge-membership-terraform-subject/v3"
 )
 MEMBERSHIP_TRUST_SCHEMA = (
-    "fs2-serve.nebius.ai/trusted-public-edge-membership-issuers/v2"
+    "fs2-serve.nebius.ai/trusted-public-edge-membership-issuers/v3"
 )
 PROVIDER_ADAPTER_TRUST_SCHEMA = (
     "fs2-serve.nebius.ai/trusted-public-edge-provider-adapters/v1"
@@ -57,6 +57,9 @@ SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 KEY_ID_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
 EXTERNAL_QUERY: Mapping[str, Any] | None = None
 PINNED_COMMAND_FDS: tuple[int, ...] = ()
+CAPSULE_COMMAND_FDS: tuple[int, ...] = ()
+CAPSULE_TOOL_PATHS: dict[str, str] = {}
+CAPSULE_TOOL_BIN = ""
 
 
 class GateError(RuntimeError):
@@ -207,6 +210,9 @@ def b64url(value: object, label: str, expected_size: int) -> bytes:
 
 
 def openssl_binary() -> str:
+    accepted = CAPSULE_TOOL_PATHS.get("openssl")
+    if accepted is not None:
+        return accepted
     for candidate in ("/usr/bin/openssl", "/bin/openssl"):
         try:
             details = os.stat(candidate, follow_symlinks=True)
@@ -268,9 +274,9 @@ def verify_ed25519(public_key: bytes, signature: bytes, message: bytes) -> None:
         + "\n-----END PUBLIC KEY-----\n"
     ).encode("ascii")
     descriptors = [
-        memfd("public-edge-membership-key", pem),
-        memfd("public-edge-membership-message", message),
-        memfd("public-edge-membership-signature", signature),
+        sealed_memfd("public-edge-membership-key", pem),
+        sealed_memfd("public-edge-membership-message", message),
+        sealed_memfd("public-edge-membership-signature", signature),
     ]
     result: subprocess.CompletedProcess[bytes] | None = None
     try:
@@ -293,8 +299,13 @@ def verify_ed25519(public_key: bytes, signature: bytes, message: bytes) -> None:
             stderr=subprocess.PIPE,
             check=False,
             close_fds=True,
-            pass_fds=tuple(descriptors),
-            env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+            pass_fds=tuple(sorted({*descriptors, *CAPSULE_COMMAND_FDS})),
+            env={
+                "HOME": "/nonexistent",
+                "PATH": CAPSULE_TOOL_BIN or "/usr/bin:/bin",
+                "LANG": "C",
+                "LC_ALL": "C",
+            },
         )
     finally:
         for descriptor in descriptors:
@@ -358,7 +369,6 @@ def trusted_provider_observer(
     trust_store: object,
     observer: object,
     executable: object,
-    controller_identity: object,
 ) -> dict[str, str]:
     store = exact_object(
         trust_store, {"schema", "adapters"}, "provider observer trust store"
@@ -429,7 +439,6 @@ def trusted_provider_observer(
                 "configuration_sha256",
                 "adapter_sha256",
                 "executable_sha256",
-                "kubernetes_node_controller",
             },
             f"trusted provider observer {index}",
         )
@@ -447,19 +456,14 @@ def trusted_provider_observer(
             item["executable_sha256"],
             f"trusted provider observer {index} executable digest",
         )
-        enrolled_controller = validate_controller_identity(
-            item["kubernetes_node_controller"]
-        )
         if (
             candidate == normalized
             and enrolled_executable == executable_sha256
-            and enrolled_controller == controller_identity
         ):
             matches.append(normalized)
     if len(matches) != 1:
         fail(
-            "provider observer and controller identity are not one unique "
-            "source-enrolled adapter authority"
+            "provider observer is not one unique source-enrolled adapter authority"
         )
     return matches[0]
 
@@ -609,6 +613,7 @@ def validate_membership_subject(value: object) -> dict[str, Any]:
             "run_id",
             "expected_node_count",
             "minimum_hostname_domains",
+            "maximum_surge_members",
             "node_selector_sha256",
             "kubeconfig_sha256",
         },
@@ -632,64 +637,98 @@ def validate_membership_subject(value: object) -> dict[str, Any]:
         < 3
     ):
         fail("membership subject does not require public HA capacity")
+    maximum_surge = integer_value(
+        subject["maximum_surge_members"], "membership maximum surge"
+    )
+    if maximum_surge < 1:
+        fail("membership subject must retain positive rollout surge")
     digest(subject["node_selector_sha256"], "membership selector digest")
     digest(subject["kubeconfig_sha256"], "membership kubeconfig digest")
     return subject
 
 
-def validate_controller_identity(value: object) -> dict[str, object]:
-    identity = exact_object(
+def member_ids(value: object, label: str) -> list[str]:
+    values = [
+        string_value(item, label, r"computeinstance-[a-z0-9]+")
+        for item in list_value(value, label)
+    ]
+    if values != sorted(set(values)):
+        fail(f"{label} must be sorted and unique")
+    return values
+
+
+def validate_membership_epoch(
+    value: object,
+    *,
+    expected_count: int,
+    maximum_surge: int,
+    provider_member_ids: Sequence[str],
+) -> dict[str, object]:
+    epoch = exact_object(
         value,
         {
-            "username",
-            "uid",
-            "groups",
-            "extra",
-            "authentication_authority",
-            "impersonation_prohibited",
-            "impersonation_review_sha256",
+            "sequence",
+            "phase",
+            "predecessor_payload_sha256",
+            "serving_member_instance_ids",
+            "joining_member_instance_ids",
+            "retiring_member_instance_ids",
+            "admitted_member_instance_ids",
         },
-        "signed Kubernetes Node controller identity",
+        "signed membership epoch",
     )
-    groups = [
-        string_value(item, "controller group")
-        for item in list_value(identity["groups"], "controller groups")
-    ]
-    if not groups or groups != sorted(set(groups)):
-        fail("controller groups must be non-empty, sorted, and unique")
-    raw_extra = object_value(identity["extra"], "controller authentication extras")
-    extra: dict[str, list[str]] = {}
-    for key in sorted(raw_extra):
-        values = [
-            string_value(item, f"controller authentication extra {key}")
-            for item in list_value(
-                raw_extra[key], f"controller authentication extra {key}"
-            )
-        ]
-        if not values or values != sorted(set(values)):
-            fail("controller authentication extras must be sorted and unique")
-        extra[string_value(key, "controller authentication extra key")] = values
-    if not extra or identity["impersonation_prohibited"] is not True:
-        fail("controller identity requires exact authentication extras and impersonation closure")
-    return {
-        "username": string_value(
-            identity["username"],
-            "controller username",
-            r"[A-Za-z0-9:@._/-]{3,253}",
-        ),
-        "uid": string_value(identity["uid"], "controller UID"),
-        "groups": groups,
-        "extra": extra,
-        "authentication_authority": string_value(
-            identity["authentication_authority"],
-            "controller authentication authority",
-        ),
-        "impersonation_prohibited": True,
-        "impersonation_review_sha256": digest(
-            identity["impersonation_review_sha256"],
-            "controller impersonation review digest",
-        ),
+    sequence = integer_value(epoch["sequence"], "membership epoch sequence")
+    if sequence < 1:
+        fail("membership epoch sequence must be positive")
+    phase = string_value(epoch["phase"], "membership epoch phase")
+    if phase not in {"stable", "prepare", "cutover"}:
+        fail("membership epoch phase is unsupported")
+    predecessor = string_value(
+        epoch["predecessor_payload_sha256"],
+        "membership predecessor payload digest",
+        SHA256_RE.pattern,
+    )
+    if phase != "stable" and predecessor == "0" * 64:
+        fail("a transition epoch must bind a non-genesis predecessor")
+    serving = member_ids(
+        epoch["serving_member_instance_ids"], "serving member ID"
+    )
+    joining = member_ids(
+        epoch["joining_member_instance_ids"], "joining member ID"
+    )
+    retiring = member_ids(
+        epoch["retiring_member_instance_ids"], "retiring member ID"
+    )
+    admitted = member_ids(
+        epoch["admitted_member_instance_ids"], "admitted member ID"
+    )
+    if len(serving) != expected_count:
+        fail("membership epoch must retain the full serving-node count")
+    if set(serving) & set(joining) or set(serving) & set(retiring) or set(joining) & set(retiring):
+        fail("membership epoch sets must be disjoint")
+    union = sorted({*serving, *joining, *retiring})
+    if admitted != union or list(provider_member_ids) != admitted:
+        fail("membership epoch admission union must equal exact provider membership")
+    if phase == "stable" and (joining or retiring):
+        fail("stable membership epoch cannot contain transition members")
+    if phase == "prepare" and (
+        not joining or retiring or len(joining) > maximum_surge
+    ):
+        fail("prepare membership epoch requires bounded joining surge only")
+    if phase == "cutover" and (
+        joining or not retiring or len(retiring) > maximum_surge
+    ):
+        fail("cutover membership epoch requires bounded retiring members only")
+    normalized = {
+        "sequence": sequence,
+        "phase": phase,
+        "predecessor_payload_sha256": predecessor,
+        "serving_member_instance_ids": serving,
+        "joining_member_instance_ids": joining,
+        "retiring_member_instance_ids": retiring,
+        "admitted_member_instance_ids": admitted,
     }
+    return {**normalized, "epoch_id": canonical_sha256(normalized)}
 
 
 def validate_membership_receipt(
@@ -765,7 +804,7 @@ def validate_membership_receipt(
             "relation_api",
             "node_group_resource_version",
             "member_instance_ids",
-            "kubernetes_node_controller",
+            "membership_epoch",
             "provider_observer",
         },
         "signed provider membership",
@@ -777,20 +816,18 @@ def validate_membership_receipt(
         "signed NodeGroup resource version",
         r"[1-9][0-9]*",
     )
-    raw_member_ids = list_value(
-        authority["member_instance_ids"], "signed provider member IDs"
+    member_ids_value = member_ids(
+        authority["member_instance_ids"], "signed provider member ID"
     )
-    member_ids = [
-        string_value(item, "signed provider member ID", r"computeinstance-[a-z0-9]+")
-        for item in raw_member_ids
-    ]
-    if (
-        member_ids != sorted(set(member_ids))
-        or len(member_ids) != subject["expected_node_count"]
-    ):
-        fail("signed provider member IDs must be sorted, unique, and exact-count")
-    controller_identity = validate_controller_identity(
-        authority["kubernetes_node_controller"]
+    epoch = validate_membership_epoch(
+        authority["membership_epoch"],
+        expected_count=integer_value(
+            subject["expected_node_count"], "membership expected count"
+        ),
+        maximum_surge=integer_value(
+            subject["maximum_surge_members"], "membership maximum surge"
+        ),
+        provider_member_ids=member_ids_value,
     )
     toolchain = exact_object(
         payload["toolchain"],
@@ -801,7 +838,6 @@ def validate_membership_receipt(
         provider_adapter_trust_store,
         authority["provider_observer"],
         toolchain["provider_observer"],
-        controller_identity,
     )
     tools = {
         name: checked_executable(toolchain[name], name)
@@ -829,7 +865,7 @@ def validate_membership_receipt(
             "node_group_resource_version",
             "relation_api",
             "member_instance_ids",
-            "kubernetes_node_controller",
+            "membership_epoch",
             "provider_observer",
             "collected_at",
             "adapter_sha256",
@@ -839,15 +875,26 @@ def validate_membership_receipt(
     if evidence_raw_sha256 != evidence_digest:
         fail("reopened provider membership export bytes do not match the signed digest")
     if evidence_object != {
-        "schema": "fs2-serve.nebius.ai/provider-node-group-membership-export/v1",
+        "schema": "fs2-serve.nebius.ai/provider-node-group-membership-export/v2",
         "provider": "nebius",
         "project_id": subject["project_id"],
         "cluster_id": subject["cluster_id"],
         "node_group_id": subject["node_group_id"],
         "node_group_resource_version": group_revision,
         "relation_api": authority["relation_api"],
-        "member_instance_ids": member_ids,
-        "kubernetes_node_controller": controller_identity,
+        "member_instance_ids": member_ids_value,
+        "membership_epoch": {
+            key: epoch[key]
+            for key in (
+                "sequence",
+                "phase",
+                "predecessor_payload_sha256",
+                "serving_member_instance_ids",
+                "joining_member_instance_ids",
+                "retiring_member_instance_ids",
+                "admitted_member_instance_ids",
+            )
+        },
         "provider_observer": provider_observer,
         "collected_at": evidence_object["collected_at"],
         "adapter_sha256": provider_observer["adapter_sha256"],
@@ -864,8 +911,15 @@ def validate_membership_receipt(
         "payload_sha256": payload_digest,
         "issuer_key_id": payload["issuer"]["key_id"],
         "node_group_resource_version": group_revision,
-        "member_instance_ids": member_ids,
-        "kubernetes_node_controller": controller_identity,
+        "provider_member_instance_ids": member_ids_value,
+        "epoch_id": epoch["epoch_id"],
+        "epoch_sequence": epoch["sequence"],
+        "phase": epoch["phase"],
+        "predecessor_payload_sha256": epoch["predecessor_payload_sha256"],
+        "serving_member_instance_ids": epoch["serving_member_instance_ids"],
+        "joining_member_instance_ids": epoch["joining_member_instance_ids"],
+        "retiring_member_instance_ids": epoch["retiring_member_instance_ids"],
+        "admitted_member_instance_ids": epoch["admitted_member_instance_ids"],
         "provider_observer": provider_observer,
         "tools": tools,
         "toolchain": toolchain,
@@ -947,13 +1001,57 @@ def environment(name: str) -> str:
 
 
 def require_verified_source(expected: object) -> str:
+    global CAPSULE_COMMAND_FDS, CAPSULE_TOOL_BIN
     expected_digest = digest(expected, "planned verifier digest")
-    if os.environ.get("FS2_PROTECTED_LAUNCHER") != "fs2-public-edge-static-v1":
-        fail("public-edge verifier was not started by the protected static launcher")
-    if os.environ.get("FS2_VERIFIED_SOURCE_SHA256") != expected_digest:
-        fail("executing verifier bytes differ from the planned digest")
+    if (
+        os.environ.get("FS2_CAPSULE_LAUNCHER") != "fs2-public-edge-capsule-v1"
+        or os.environ.get("FS2_CAPSULE_SOURCE_ID") != "public-edge-verifier"
+        or os.environ.get("FS2_CAPSULE_SOURCE_SHA256") != expected_digest
+        or os.getegid() == os.getgid()
+        or os.getegid() in os.getgroups()
+        or not re.fullmatch(
+            r"[a-f0-9]{40}", os.environ.get("FS2_CAPSULE_ACCEPTED_COMMIT", "")
+        )
+        or not re.fullmatch(
+            r"[a-f0-9]{64}", os.environ.get("FS2_CAPSULE_MANIFEST_SHA256", "")
+        )
+    ):
+        fail("public-edge verifier lacks the accepted no-member capsule proof")
+    if hashlib.sha256(Path(__file__).read_bytes()).hexdigest() != expected_digest:
+        fail("executing verifier bytes differ from the accepted manifest and plan")
     if sys.flags.isolated != 1 or not sys.dont_write_bytecode:
         fail("public-edge verifier Python is not isolated and no-bytecode")
+    try:
+        raw_paths = json.loads(os.environ["FS2_CAPSULE_TOOL_PATHS_JSON"])
+        descriptors = tuple(
+            int(value) for value in os.environ["FS2_CAPSULE_PASS_FDS"].split(",")
+        )
+    except (KeyError, ValueError, json.JSONDecodeError) as exc:
+        raise GateError("capsule tool descriptor contract is absent") from exc
+    required_tools = {"kubectl", "nebius", "openssl", "python3"}
+    if not isinstance(raw_paths, dict) or not required_tools.issubset(raw_paths):
+        fail("capsule tool descriptor contract is incomplete")
+    for name in required_tools:
+        path = raw_paths[name]
+        if (
+            not isinstance(path, str)
+            or re.fullmatch(r"/proc/self/fd/[0-9]+", path) is None
+            or int(path.rsplit("/", 1)[1]) not in descriptors
+        ):
+            fail(f"capsule tool {name} is not descriptor-pinned")
+    tool_bin = raw_paths.get("tool_bin")
+    if not isinstance(tool_bin, str) or not tool_bin.startswith("/opt/fs2/"):
+        fail("capsule tool directory is absent")
+    for descriptor in descriptors:
+        if descriptor < 3:
+            fail("capsule descriptor set is malformed")
+        os.fstat(descriptor)
+    CAPSULE_TOOL_PATHS.clear()
+    CAPSULE_TOOL_PATHS.update(
+        {name: str(raw_paths[name]) for name in required_tools}
+    )
+    CAPSULE_COMMAND_FDS = tuple(sorted(set(descriptors)))
+    CAPSULE_TOOL_BIN = tool_bin
     return expected_digest
 
 
@@ -1043,7 +1141,7 @@ def run_json(command: Sequence[str], label: str) -> Mapping[str, Any]:
             pass_fds=PINNED_COMMAND_FDS,
             env={
                 "HOME": "/nonexistent",
-                "PATH": "/usr/bin:/bin",
+                "PATH": CAPSULE_TOOL_BIN or "/usr/bin:/bin",
                 "LANG": "C.UTF-8",
                 "LC_ALL": "C.UTF-8",
             },
@@ -1226,6 +1324,8 @@ def validate_node_group(
     cluster_id: str,
     group_id: str,
     expected_count: int,
+    maximum_surge: int,
+    membership_phase: str,
     selector: Mapping[str, str],
 ) -> tuple[str, str]:
     matches_by_observation: list[Mapping[str, Any]] = []
@@ -1290,13 +1390,22 @@ def validate_node_group(
     status_value = object_value(group_after.get("status"), "node-group.status")
     if integer_value(specification.get("fixed_node_count"), "node-group.spec.fixed_node_count") != expected_count:
         fail("NodeGroup fixed count differs from the infrastructure contract")
-    if status_value.get("state") != "RUNNING" or status_value.get("reconciling") is not False:
-        fail("NodeGroup is not RUNNING and fully reconciled")
+    if status_value.get("state") != "RUNNING":
+        fail("NodeGroup is not RUNNING")
+    if membership_phase == "stable" and status_value.get("reconciling") is not False:
+        fail("stable membership requires a fully reconciled NodeGroup")
     for field in ("target_node_count", "node_count", "ready_node_count"):
-        if integer_value(status_value.get(field), f"node-group.status.{field}") < expected_count:
+        observed = integer_value(status_value.get(field), f"node-group.status.{field}")
+        if observed < expected_count or observed > expected_count + maximum_surge:
             fail(f"NodeGroup {field} is below the public-edge requirement")
-    if integer_value(status_value.get("outdated_node_count"), "node-group.status.outdated_node_count") != 0:
-        fail("NodeGroup still contains outdated nodes")
+    outdated = integer_value(
+        status_value.get("outdated_node_count"),
+        "node-group.status.outdated_node_count",
+    )
+    if outdated < 0 or outdated > maximum_surge or (
+        membership_phase == "stable" and outdated != 0
+    ):
+        fail("NodeGroup outdated-node count exceeds the signed rollout epoch")
 
     template = object_value(specification.get("template"), "node-group.spec.template")
     template_metadata = object_value(template.get("metadata"), "node-group.spec.template.metadata")
@@ -1405,6 +1514,7 @@ def validate_provider_members(
     project_id: str,
     signed_instance_ids: Sequence[str],
     expected_count: int,
+    maximum_surge: int,
 ) -> tuple[set[str], str]:
     before_ids = provider_member_ids(
         instance_list_before,
@@ -1416,7 +1526,11 @@ def validate_provider_members(
         project_id=project_id,
         signed_instance_ids=signed_instance_ids,
     )
-    if before_ids != after_ids or len(after_ids) != expected_count:
+    if (
+        before_ids != after_ids
+        or len(after_ids) < expected_count
+        or len(after_ids) > expected_count + maximum_surge
+    ):
         fail("provider NodeGroup member instance set changed or has the wrong size")
     if set(instance_gets_before) != set(before_ids) or set(instance_gets_after) != set(after_ids):
         fail("exact provider member gets do not cover the complete enumerated set")
@@ -1481,6 +1595,7 @@ def project_owned_nodes(
     run_id: str,
     selector: Mapping[str, str],
     provider_member_ids: set[str],
+    joining_member_ids: set[str],
 ) -> tuple[str, list[dict[str, object]]]:
     list_revision = string_value(
         metadata(node_list, "NodeList").get("resourceVersion"),
@@ -1507,8 +1622,26 @@ def project_owned_nodes(
         name = string_value(
             name_value, "Node.metadata.name", r"computeinstance-[a-z0-9]+"
         )
+        specification = object_value(node.get("spec"), "Node.spec")
+        raw_provider_id = specification.get("providerID")
+        expected_provider_id = f"nebius://{name}"
+        if name in joining_member_ids:
+            if raw_provider_id not in {None, "", expected_provider_id}:
+                fail("a joining provider member advertises a different providerID")
+            if any(
+                key in labels and labels.get(key) != value
+                for key, value in selector.items()
+            ):
+                fail("a joining provider member advertises a different protected label")
+            # Managed registration may exist before every protected field and
+            # corroborating Cluster API annotation has arrived. The signed
+            # prepare epoch retains the old serving set and never schedules
+            # onto this incomplete Node. The admission policy permits only
+            # monotonic initialization to the exact signed values.
+            if raw_provider_id != expected_provider_id or not matches_selector:
+                continue
         provider_id = string_value(
-            object_value(node.get("spec"), "Node.spec").get("providerID"),
+            raw_provider_id,
             "Node.spec.providerID",
             r"nebius://computeinstance-[a-z0-9]+",
         )
@@ -1530,17 +1663,19 @@ def project_owned_nodes(
         # no Kubernetes label or annotation can add a Node to this set.
         if name not in provider_member_ids or provider_id != f"nebius://{name}":
             fail("a Node claiming the system group is absent from provider membership")
-        if not (
+        ownership_complete = (
             annotations.get("cluster.x-k8s.io/cluster-name") == cluster_id
             and annotations.get("cluster.x-k8s.io/owner-kind") == "MachineSet"
             and owner_matches_group
             and machine_matches_owner
-        ):
+        )
+        if not ownership_complete and name in joining_member_ids:
+            continue
+        if not ownership_complete:
             fail("a provider member Node lacks corroborating Cluster API ownership")
         if not matches_selector or labels.get("lifecycle.fs2.nebius/run") != run_id:
             fail("a provider-owned system Node lacks the exact run scheduler labels")
 
-        specification = object_value(node.get("spec"), "Node.spec")
         hard_taints = sorted(
             canonical_sha256(
                 {
@@ -1588,9 +1723,12 @@ def validate_nodes(
     run_id: str,
     selector: Mapping[str, str],
     provider_member_ids: set[str],
+    serving_member_ids: set[str],
     expected_count: int,
     minimum_domains: int,
+    joining_member_ids: set[str] | None = None,
 ) -> tuple[str, int, int, str]:
+    joining = joining_member_ids or set()
     _before_revision, before = project_owned_nodes(
         node_list_before,
         cluster_id=cluster_id,
@@ -1598,6 +1736,7 @@ def validate_nodes(
         run_id=run_id,
         selector=selector,
         provider_member_ids=provider_member_ids,
+        joining_member_ids=joining,
     )
     after_revision, after = project_owned_nodes(
         node_list_after,
@@ -1606,15 +1745,22 @@ def validate_nodes(
         run_id=run_id,
         selector=selector,
         provider_member_ids=provider_member_ids,
+        joining_member_ids=joining,
     )
     if before != after:
         fail("system Node identities or eligibility facts changed during observation")
-    if {str(node["provider_instance_id"]) for node in after} != provider_member_ids:
-        fail("Kubernetes Node provider IDs do not equal the provider member set")
+    observed_ids = {str(node["provider_instance_id"]) for node in after}
+    if not observed_ids.issubset(provider_member_ids) or not serving_member_ids.issubset(
+        observed_ids
+    ):
+        fail("Kubernetes Nodes do not contain the complete signed serving set")
     eligible = [
         node
         for node in after
-        if node["ready"] and not node["unschedulable"] and not node["hard_taints"]
+        if str(node["provider_instance_id"]) in serving_member_ids
+        and node["ready"]
+        and not node["unschedulable"]
+        and not node["hard_taints"]
     ]
     domains = {str(node["hostname_sha256"]) for node in eligible}
     if len(eligible) < expected_count:
@@ -1632,6 +1778,7 @@ def membership_subject(
     run_id: str,
     expected_count: int,
     minimum_domains: int,
+    maximum_surge: int,
     selector: Mapping[str, str],
     kubeconfig_sha256: str,
 ) -> dict[str, object]:
@@ -1643,6 +1790,7 @@ def membership_subject(
         "run_id": run_id,
         "expected_node_count": expected_count,
         "minimum_hostname_domains": minimum_domains,
+        "maximum_surge_members": maximum_surge,
         "node_selector_sha256": canonical_sha256(selector),
         "kubeconfig_sha256": digest(kubeconfig_sha256, "kubeconfig snapshot digest"),
     }
@@ -1693,11 +1841,26 @@ def receipt_contract_main() -> int:
                 "node_group_resource_version": str(
                     result["node_group_resource_version"]
                 ),
-                "member_instance_ids_json": json.dumps(
-                    result["member_instance_ids"], separators=(",", ":")
+                "provider_member_instance_ids_json": json.dumps(
+                    result["provider_member_instance_ids"], separators=(",", ":")
                 ),
-                "kubernetes_node_controller_json": json.dumps(
-                    result["kubernetes_node_controller"], separators=(",", ":")
+                "epoch_id": str(result["epoch_id"]),
+                "epoch_sequence": str(result["epoch_sequence"]),
+                "phase": str(result["phase"]),
+                "predecessor_payload_sha256": str(
+                    result["predecessor_payload_sha256"]
+                ),
+                "serving_member_instance_ids_json": json.dumps(
+                    result["serving_member_instance_ids"], separators=(",", ":")
+                ),
+                "joining_member_instance_ids_json": json.dumps(
+                    result["joining_member_instance_ids"], separators=(",", ":")
+                ),
+                "retiring_member_instance_ids_json": json.dumps(
+                    result["retiring_member_instance_ids"], separators=(",", ":")
+                ),
+                "admitted_member_instance_ids_json": json.dumps(
+                    result["admitted_member_instance_ids"], separators=(",", ":")
                 ),
                 "provider_observer_json": json.dumps(
                     result["provider_observer"], separators=(",", ":")
@@ -1738,8 +1901,14 @@ def main() -> int:
     )
     expected_count = int(environment("FS2_EDGE_GATE_EXPECTED_NODE_COUNT"))
     minimum_domains = int(environment("FS2_EDGE_GATE_MINIMUM_DOMAINS"))
+    maximum_surge = int(environment("FS2_EDGE_GATE_MAXIMUM_SURGE_MEMBERS"))
     maximum_age = int(environment("FS2_EDGE_GATE_MAX_PLAN_AGE_SECONDS"))
-    if expected_count < 3 or minimum_domains < 3 or maximum_age != 14400:
+    if (
+        expected_count < 3
+        or minimum_domains < 3
+        or maximum_surge < 1
+        or maximum_age != 14400
+    ):
         fail("public-edge count/domain/plan-window contract is invalid")
     selector_raw = json.loads(environment("FS2_EDGE_GATE_NODE_SELECTOR_JSON"))
     selector_object = object_value(selector_raw, "node selector")
@@ -1785,6 +1954,7 @@ def main() -> int:
             run_id=run_id,
             expected_count=expected_count,
             minimum_domains=minimum_domains,
+            maximum_surge=maximum_surge,
             selector=selector,
             kubeconfig_sha256=kubeconfig_sha256,
         ),
@@ -1798,9 +1968,22 @@ def main() -> int:
     signed_member_ids = [
         string_value(item, "signed provider member ID", r"computeinstance-[a-z0-9]+")
         for item in list_value(
-            membership["member_instance_ids"], "signed provider member IDs"
+            membership["provider_member_instance_ids"],
+            "signed provider member IDs",
         )
     ]
+    serving_member_ids = {
+        string_value(item, "serving member ID", r"computeinstance-[a-z0-9]+")
+        for item in list_value(
+            membership["serving_member_instance_ids"], "serving member IDs"
+        )
+    }
+    joining_member_ids = {
+        string_value(item, "joining member ID", r"computeinstance-[a-z0-9]+")
+        for item in list_value(
+            membership["joining_member_instance_ids"], "joining member IDs"
+        )
+    }
     signed_toolchain = object_value(membership["toolchain"], "signed toolchain")
     pinned_tools = {
         name: pin_executable(signed_toolchain[name], name)
@@ -1808,9 +1991,23 @@ def main() -> int:
     }
     if pinned_tools["python3"][1] != str(Path(sys.executable).resolve(strict=True)):
         fail("running Python interpreter differs from the signed toolchain")
-    PINNED_COMMAND_FDS = (
-        kubeconfig_descriptor,
-        *(details[2] for details in pinned_tools.values()),
+    capsule_kubectl_fd = int(CAPSULE_TOOL_PATHS["kubectl"].rsplit("/", 1)[1])
+    signed_kubectl_fd = pinned_tools["kubectl"][2]
+    capsule_kubectl_stat = os.fstat(capsule_kubectl_fd)
+    signed_kubectl_stat = os.fstat(signed_kubectl_fd)
+    if (capsule_kubectl_stat.st_dev, capsule_kubectl_stat.st_ino) != (
+        signed_kubectl_stat.st_dev,
+        signed_kubectl_stat.st_ino,
+    ):
+        fail("signed kubectl differs from the accepted capsule executable")
+    PINNED_COMMAND_FDS = tuple(
+        sorted(
+            {
+                kubeconfig_descriptor,
+                *(details[2] for details in pinned_tools.values()),
+                *CAPSULE_COMMAND_FDS,
+            }
+        )
     )
     observer_authority = object_value(
         membership["provider_observer"], "provider observer authority"
@@ -1978,6 +2175,8 @@ def main() -> int:
         cluster_id=cluster_id,
         group_id=group_id,
         expected_count=expected_count,
+        maximum_surge=maximum_surge,
+        membership_phase=str(membership["phase"]),
         selector=selector,
     )
     if group_revision != membership["node_group_resource_version"]:
@@ -1990,6 +2189,7 @@ def main() -> int:
         project_id=project_id,
         signed_instance_ids=signed_member_ids,
         expected_count=expected_count,
+        maximum_surge=maximum_surge,
     )
     node_revision, eligible_count, domain_count, nodes_sha = validate_nodes(
         nodes_before,
@@ -1999,8 +2199,10 @@ def main() -> int:
         run_id=run_id,
         selector=selector,
         provider_member_ids=provider_ids,
+        serving_member_ids=serving_member_ids,
         expected_count=expected_count,
         minimum_domains=minimum_domains,
+        joining_member_ids=joining_member_ids,
     )
     policy_revision, policy_uid, policy_sha256 = validate_admission_contract(
         policy_before,
@@ -2036,6 +2238,11 @@ def main() -> int:
             "membership_payload_sha256": membership["payload_sha256"],
             "membership_receipt_sha256": membership["receipt_sha256"],
             "membership_evidence_sha256": membership["evidence_sha256"],
+            "membership_epoch_id": membership["epoch_id"],
+            "membership_phase": membership["phase"],
+            "membership_predecessor_payload_sha256": membership[
+                "predecessor_payload_sha256"
+            ],
             "provider_members_sha256": provider_members_sha,
             "provider_member_count": len(provider_ids),
             "node_group_list_pagination": group_list_after["pagination"],
@@ -2074,6 +2281,8 @@ def main() -> int:
         "hostname_domain_count": str(domain_count),
         "membership_payload_sha256": str(membership["payload_sha256"]),
         "membership_receipt_sha256": str(membership["receipt_sha256"]),
+        "membership_epoch_id": str(membership["epoch_id"]),
+        "membership_phase": str(membership["phase"]),
         "receipt_sha256": receipt_sha,
     }
     if sys.argv[1:] == ["--external"]:
@@ -2116,6 +2325,7 @@ if __name__ == "__main__":
                 "FS2_EDGE_GATE_RUN_ID",
                 "FS2_EDGE_GATE_EXPECTED_NODE_COUNT",
                 "FS2_EDGE_GATE_MINIMUM_DOMAINS",
+                "FS2_EDGE_GATE_MAXIMUM_SURGE_MEMBERS",
                 "FS2_EDGE_GATE_NODE_SELECTOR_JSON",
                 "FS2_EDGE_GATE_POLICY_SHA256",
                 "FS2_EDGE_GATE_BINDING_SHA256",

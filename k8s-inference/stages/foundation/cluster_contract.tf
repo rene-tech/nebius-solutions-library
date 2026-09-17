@@ -67,8 +67,9 @@ resource "terraform_data" "cluster_contract" {
   # teardown and leaves this receipt in state for a reviewed retry.
   provisioner "local-exec" {
     when    = destroy
-    command = "\"${self.input.kueue_teardown_cleanup.script_path}\""
-    quiet   = true
+    command     = "local-exec"
+    interpreter = [local.public_edge_gate_launcher_path, "kueue-destroy-cleanup"]
+    quiet       = true
 
     environment = {
       FS2_CLEANUP_CLUSTER_ID      = self.input.kueue_teardown_cleanup.cluster_id

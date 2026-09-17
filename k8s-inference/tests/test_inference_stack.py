@@ -525,7 +525,7 @@ class InferenceStackTests(unittest.TestCase):
         configuration["stages"]["infrastructure"]["public_edge_mode"] = "public"
         with (
             mock.patch.dict(os.environ, {}, clear=True),
-            self.assertRaisesRegex(STACK.DeploymentError, "static launcher"),
+            self.assertRaisesRegex(STACK.DeploymentError, "accepted release capsule"),
         ):
             STACK.require_public_edge_protected_start(configuration)
 
@@ -541,6 +541,16 @@ class InferenceStackTests(unittest.TestCase):
                 STACK,
                 "require_protected_apply_start",
                 side_effect=lambda: events.append("protected-start"),
+            ),
+            mock.patch.dict(
+                STACK.CAPSULE_TOOL_PATHS,
+                {
+                    "terraform": "/proc/self/fd/40",
+                    "kubectl": "/proc/self/fd/41",
+                    "nebius": "/proc/self/fd/42",
+                    "crane": "/proc/self/fd/43",
+                },
+                clear=True,
             ),
             mock.patch.object(
                 STACK,

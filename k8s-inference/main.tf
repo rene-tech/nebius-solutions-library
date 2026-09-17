@@ -7,12 +7,12 @@ resource "terraform_data" "deployment_contract" {
         var.deployment.edge.mode != "public" ||
         (
           local.effective_system_node_count >= 3 &&
-          local.effective_system_max_unavailable <= 1 &&
+          local.effective_system_max_unavailable == 0 &&
           local.effective_system_max_surge >= 1 &&
-          local.effective_system_node_count - local.effective_system_max_unavailable >= 2
+          local.effective_system_node_count - local.effective_system_max_unavailable >= 3
         )
       )
-      error_message = "Public edge mode requires at least three fixed system nodes, max_unavailable <= 1, max_surge >= 1, and at least two retained nodes during update so the proxy, controller, rate-limit service, Redis, and Sentinel availability contracts remain effective."
+      error_message = "Public edge mode requires at least three fixed system nodes, max_unavailable = 0, max_surge >= 1, and all three serving nodes retained during membership prepare/cutover so the proxy, controller, rate-limit service, Redis, and Sentinel availability contracts remain effective."
     }
 
     precondition {

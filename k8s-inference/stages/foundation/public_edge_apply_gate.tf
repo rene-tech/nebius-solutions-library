@@ -26,6 +26,7 @@ resource "terraform_data" "public_edge_apply_eligibility" {
     system_node_group_id      = var.public_edge_availability_contract.system_node_group_id
     expected_node_count       = var.public_edge_availability_contract.system_node_count
     minimum_hostname_domains  = var.public_edge_availability_contract.minimum_domains
+    maximum_surge_members     = var.public_edge_availability_contract.update_strategy.max_surge
     node_selector_sha256      = sha256(jsonencode(var.public_edge_availability_contract.node_selector))
     verifier_sha256           = local.public_edge_gate_verifier_sha256
   }
@@ -43,8 +44,8 @@ resource "terraform_data" "public_edge_apply_eligibility" {
   # The verifier lists/gets the exact provider NodeGroup and Kubernetes Nodes;
   # it never creates, patches, labels, cordons, drains, or deletes an object.
   provisioner "local-exec" {
-    command     = "--local-exec"
-    interpreter = [local.public_edge_gate_launcher_path, local.public_edge_gate_verifier_path, self.input.verifier_sha256]
+    command     = "local-exec"
+    interpreter = [local.public_edge_gate_launcher_path, "public-edge-verifier"]
     quiet       = true
 
     environment = {
@@ -61,6 +62,7 @@ resource "terraform_data" "public_edge_apply_eligibility" {
       FS2_EDGE_GATE_RUN_ID                 = var.run_id
       FS2_EDGE_GATE_EXPECTED_NODE_COUNT    = tostring(self.input.expected_node_count)
       FS2_EDGE_GATE_MINIMUM_DOMAINS        = tostring(self.input.minimum_hostname_domains)
+      FS2_EDGE_GATE_MAXIMUM_SURGE_MEMBERS  = tostring(self.input.maximum_surge_members)
       FS2_EDGE_GATE_NODE_SELECTOR_JSON     = jsonencode(var.public_edge_availability_contract.node_selector)
       FS2_EDGE_GATE_VERIFIER_SHA256        = self.input.verifier_sha256
       FS2_EDGE_GATE_POLICY_SHA256          = local.public_edge_node_authority_policy_sha256
@@ -94,9 +96,8 @@ data "external" "public_edge_mutation_fence" {
 
   program = [
     local.public_edge_gate_launcher_path,
-    local.public_edge_gate_verifier_path,
-    local.public_edge_gate_verifier_sha256,
-    "--external",
+    "public-edge-verifier",
+    "external",
   ]
 
   query = {
@@ -115,6 +116,7 @@ data "external" "public_edge_mutation_fence" {
     FS2_EDGE_GATE_RUN_ID                      = var.run_id
     FS2_EDGE_GATE_EXPECTED_NODE_COUNT         = tostring(terraform_data.public_edge_apply_eligibility[0].output.expected_node_count)
     FS2_EDGE_GATE_MINIMUM_DOMAINS             = tostring(terraform_data.public_edge_apply_eligibility[0].output.minimum_hostname_domains)
+    FS2_EDGE_GATE_MAXIMUM_SURGE_MEMBERS       = tostring(terraform_data.public_edge_apply_eligibility[0].output.maximum_surge_members)
     FS2_EDGE_GATE_NODE_SELECTOR_JSON          = jsonencode(var.public_edge_availability_contract.node_selector)
     FS2_EDGE_GATE_POLICY_SHA256                = local.public_edge_node_authority_policy_sha256
     FS2_EDGE_GATE_BINDING_SHA256               = local.public_edge_node_authority_binding_sha256

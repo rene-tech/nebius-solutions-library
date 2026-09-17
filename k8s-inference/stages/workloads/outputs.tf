@@ -28,7 +28,7 @@ output "public_edge_membership_evidence" {
     receipt_sha256              = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.receipt_sha256
     evidence_sha256             = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.evidence_sha256
     node_group_resource_version = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.node_group_resource_version
-    member_count                = length(data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.member_instance_ids)
+    member_count                = length(data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.serving_member_instance_ids)
   } : null
 }
 

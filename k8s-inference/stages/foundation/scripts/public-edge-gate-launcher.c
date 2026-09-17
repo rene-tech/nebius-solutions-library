@@ -8,6 +8,7 @@
  * environment before Python starts, and executes only a SHA-256-verified
  * in-memory snapshot of the requested Python source.
  */
+#error "obsolete caller-selected launcher; build public-edge-capsule-launcher.c only"
 #define _GNU_SOURCE
 
 #include <elf.h>

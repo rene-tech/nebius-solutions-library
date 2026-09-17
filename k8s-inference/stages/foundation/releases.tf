@@ -111,7 +111,11 @@ resource "helm_release" "envoy_gateway" {
 }
 
 data "external" "kueue_chart" {
-  program = ["${path.module}/../../modules/jobset-controller/scripts/materialize-chart.sh"]
+  program = [
+    local.public_edge_gate_launcher_path,
+    "jobset-chart-materializer",
+    "external",
+  ]
 
   query = {
     chart_ref      = local.kueue_release.chart_ref
@@ -134,8 +138,9 @@ resource "terraform_data" "kueue_release_verified" {
   }
 
   provisioner "local-exec" {
-    command = "\"${path.module}/scripts/materialize-kueue-release.sh\""
-    quiet   = true
+    command     = "local-exec"
+    interpreter = [local.public_edge_gate_launcher_path, "kueue-materializer"]
+    quiet       = true
 
     environment = {
       FS2_KUEUE_CHART_REF            = local.kueue_release.chart_ref

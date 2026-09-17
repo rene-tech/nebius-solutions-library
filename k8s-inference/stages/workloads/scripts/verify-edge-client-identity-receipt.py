@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import fcntl
 import hashlib
 import ipaddress
 import json
@@ -53,6 +54,9 @@ KUBERNETES_UID_RE = re.compile(
     r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
 )
 TRUST_STORE = Path(__file__).resolve().parents[1] / "contracts" / "trusted-edge-evidence-issuers.json"
+CAPSULE_COMMAND_FDS: tuple[int, ...] = ()
+CAPSULE_OPENSSL: str | None = None
+CAPSULE_TOOL_BIN = ""
 
 
 class ReceiptError(ValueError):
@@ -247,6 +251,8 @@ def _b64url(value: Any, label: str, expected_size: int) -> bytes:
 
 
 def _openssl_binary() -> str:
+    if CAPSULE_OPENSSL is not None:
+        return CAPSULE_OPENSSL
     for candidate in ("/usr/bin/openssl", "/bin/openssl"):
         try:
             details = os.stat(candidate, follow_symlinks=True)
@@ -266,6 +272,28 @@ def _memfd(name: str, content: bytes) -> int:
     return descriptor
 
 
+def _sealed_memfd(name: str, content: bytes) -> int:
+    descriptor = os.memfd_create(
+        name, os.MFD_CLOEXEC | getattr(os, "MFD_ALLOW_SEALING", 0)
+    )
+    try:
+        os.write(descriptor, content)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        seals = (
+            fcntl.F_SEAL_SEAL
+            | fcntl.F_SEAL_SHRINK
+            | fcntl.F_SEAL_GROW
+            | fcntl.F_SEAL_WRITE
+        )
+        fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, seals)
+        if fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & seals != seals:
+            raise ReceiptError("edge evidence memfd is not fully sealed")
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
 def _verify_ed25519(public_key: bytes, signature: bytes, message: bytes) -> None:
     # RFC 8410 SubjectPublicKeyInfo prefix for one raw 32-byte Ed25519 key.
     der = bytes.fromhex("302a300506032b6570032100") + public_key
@@ -274,9 +302,9 @@ def _verify_ed25519(public_key: bytes, signature: bytes, message: bytes) -> None
         encoded[index : index + 64] for index in range(0, len(encoded), 64)
     ) + "\n-----END PUBLIC KEY-----\n").encode("ascii")
     descriptors = [
-        _memfd("edge-evidence-key", pem),
-        _memfd("edge-evidence-message", message),
-        _memfd("edge-evidence-signature", signature),
+        _sealed_memfd("edge-evidence-key", pem),
+        _sealed_memfd("edge-evidence-message", message),
+        _sealed_memfd("edge-evidence-signature", signature),
     ]
     result: subprocess.CompletedProcess[bytes] | None = None
     try:
@@ -300,8 +328,13 @@ def _verify_ed25519(public_key: bytes, signature: bytes, message: bytes) -> None
             stderr=subprocess.PIPE,
             check=False,
             close_fds=True,
-            pass_fds=tuple(descriptors),
-            env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+            pass_fds=tuple(sorted({*descriptors, *CAPSULE_COMMAND_FDS})),
+            env={
+                "HOME": "/nonexistent",
+                "PATH": CAPSULE_TOOL_BIN or "/usr/bin:/bin",
+                "LANG": "C",
+                "LC_ALL": "C",
+            },
         )
     finally:
         for descriptor in descriptors:
@@ -601,6 +634,7 @@ def verify_receipt(
 
 def main() -> int:
     try:
+        _require_capsule_source()
         query = json.load(sys.stdin, object_pairs_hook=_no_duplicate_object)
         query = _exact(query, {"receipt_path", "expected_subject_json"}, "Terraform external query")
         receipt_path = Path(_text(query["receipt_path"], "receipt path"))
@@ -625,6 +659,45 @@ def main() -> int:
     except (OSError, ReceiptError, TypeError, ValueError) as exc:
         sys.stderr.write(f"edge client identity receipt rejected: {exc}\n")
         return 1
+
+
+def _require_capsule_source() -> None:
+    """Bind production execution to the accepted no-member capsule."""
+
+    global CAPSULE_COMMAND_FDS, CAPSULE_OPENSSL, CAPSULE_TOOL_BIN
+    source_sha256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    if (
+        os.environ.get("FS2_CAPSULE_LAUNCHER") != "fs2-public-edge-capsule-v1"
+        or os.environ.get("FS2_CAPSULE_SOURCE_ID")
+        != "edge-client-identity-verifier"
+        or os.environ.get("FS2_CAPSULE_SOURCE_SHA256") != source_sha256
+        or os.getegid() == os.getgid()
+        or os.getegid() in os.getgroups()
+    ):
+        raise ReceiptError("edge identity verifier lacks the accepted capsule proof")
+    try:
+        paths = json.loads(os.environ["FS2_CAPSULE_TOOL_PATHS_JSON"])
+        descriptors = tuple(
+            int(value) for value in os.environ["FS2_CAPSULE_PASS_FDS"].split(",")
+        )
+    except (KeyError, ValueError, json.JSONDecodeError) as exc:
+        raise ReceiptError("edge identity capsule descriptor contract is absent") from exc
+    openssl = paths.get("openssl") if isinstance(paths, dict) else None
+    tool_bin = paths.get("tool_bin") if isinstance(paths, dict) else None
+    if (
+        not isinstance(openssl, str)
+        or re.fullmatch(r"/proc/self/fd/[0-9]+", openssl) is None
+        or int(openssl.rsplit("/", 1)[1]) not in descriptors
+        or any(descriptor < 3 for descriptor in descriptors)
+        or not isinstance(tool_bin, str)
+        or not tool_bin.startswith("/opt/fs2/")
+    ):
+        raise ReceiptError("edge identity OpenSSL is not capsule-pinned")
+    for descriptor in descriptors:
+        os.fstat(descriptor)
+    CAPSULE_COMMAND_FDS = tuple(sorted(set(descriptors)))
+    CAPSULE_OPENSSL = openssl
+    CAPSULE_TOOL_BIN = tool_bin
 
 
 if __name__ == "__main__":

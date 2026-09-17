@@ -141,6 +141,19 @@ local Kueue and JobSet server tests additionally need
 runtime context, not desired state, so select it with `NEBIUS_PROFILE` or
 `--nebius-profile` rather than putting credentials in Terraform variables.
 
+Operator commands have one additional prerequisite: install the independently accepted
+execution capsule described in
+[`docs/security/public-edge-execution-capsule.md`](docs/security/public-edge-execution-capsule.md).
+The capsule is required for validation, planning, apply, destroy, status,
+output, and proxy flows because edge mode and provider inputs are not trusted
+until the accepted Terraform configuration has been evaluated.
+It binds an exact accepted commit/tree, complete root-owned source inventory,
+CLI binaries, Terraform CLI configuration, and provider mirror. The production
+capsule-issuer registry is intentionally empty in source; Platform Security
+must enroll and sign an exact package before installation. The public command
+surface and arguments remain unchanged; non-apply commands retain their prior
+read-only behavior while using the same accepted source and tool custody.
+
 ```bash
 cd k8s-inference
 install -m 0600 terraform.tfvars.example terraform.tfvars
@@ -161,6 +174,13 @@ NEBIUS_PROFILE=sandbox ./inference-stack apply --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack status --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars
 ```
+
+The `./inference-stack <command>` entry point performs no Terraform probe or
+run-directory write before `exec` into the fixed capsule launcher. The launcher
+selects the accepted installed source by logical name; the working copy cannot
+supply a source path, source digest, Terraform executable, provider plugin, or
+trust registry. If the accepted capsule has not been installed, the command fails
+with the installation-document path instead of silently using caller tools.
 
 After a deployment, `apply` and `status` print all non-secret customer entry
 points as top-level JSON fields:
