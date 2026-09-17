@@ -27,6 +27,7 @@ PathPart = str | None
 _MATERIALIZATION_KEY: Final = "x-fs2-artifact-materialization"
 _MAX_BYTES_KEY: Final = "x-fs2-artifact-max-bytes"
 _MEDIA_TYPES_KEY: Final = "x-fs2-artifact-media-types"
+_REQUEST_MAX_BYTES_KEY: Final = "x-fs2-artifact-request-max-bytes"
 
 
 class ArtifactInputError(RuntimeOperationError):
@@ -76,6 +77,19 @@ def _rules(schema: dict[str, Any]) -> tuple[_Rule, ...]:
                 raise ArtifactInputError("artifact input schema has invalid media types")
             rule = _Rule(path, mode, maximum, frozenset(media_types))
             previous = found.get(path)
+            if (
+                previous is not None
+                and previous.path == rule.path
+                and previous.materialization == rule.materialization
+                and previous.max_bytes == rule.max_bytes
+            ):
+                found[path] = _Rule(
+                    path,
+                    mode,
+                    maximum,
+                    previous.media_types | rule.media_types,
+                )
+                return
             if previous is not None and previous != rule:
                 raise ArtifactInputError("artifact input schema has conflicting transports")
             found[path] = rule
@@ -90,11 +104,31 @@ def _rules(schema: dict[str, Any]) -> tuple[_Rule, ...]:
         items = value.get("items")
         if isinstance(items, dict):
             visit(items, path + (None,), active_refs)
+        elif isinstance(items, list):
+            for child in items:
+                visit(child, path + (None,), active_refs)
+        prefix_items = value.get("prefixItems")
+        if isinstance(prefix_items, list):
+            for child in prefix_items:
+                visit(child, path + (None,), active_refs)
         for keyword in ("allOf", "anyOf", "oneOf"):
             alternatives = value.get(keyword)
             if isinstance(alternatives, list):
                 for child in alternatives:
                     visit(child, path, active_refs)
+        for keyword in (
+            "if",
+            "then",
+            "else",
+            "not",
+            "contains",
+            "additionalProperties",
+            "unevaluatedProperties",
+            "unevaluatedItems",
+        ):
+            child = value.get(keyword)
+            if isinstance(child, dict):
+                visit(child, path, active_refs)
 
     visit(schema, (), frozenset())
     return tuple(found[path] for path in sorted(found, key=lambda item: tuple("*" if x is None else x for x in item)))
@@ -127,6 +161,29 @@ def _slots(value: Any, path: tuple[PathPart, ...]) -> list[tuple[Any, str | int]
         elif isinstance(parent, dict) and key in parent:
             result.append((parent, key))
     return result
+
+
+def _enforce_request_budget(payload: dict[str, Any], schema: dict[str, Any]) -> None:
+    """Reject declared artifact sets before opening or buffering any stream."""
+
+    maximum = schema.get(_REQUEST_MAX_BYTES_KEY)
+    if maximum is None:
+        return
+    if not isinstance(maximum, int) or maximum < 1:
+        raise ArtifactInputError("artifact input schema has an invalid request byte limit")
+    total = 0
+    for rule in _rules(schema):
+        for parent, key in _slots(payload, rule.path):
+            descriptor = parent[key]
+            if not isinstance(descriptor, dict) or "artifact_id" not in descriptor:
+                continue
+            try:
+                reference = ArtifactRef.model_validate(descriptor)
+            except (TypeError, ValueError) as error:
+                raise ArtifactInputError("artifact input reference is invalid") from error
+            total += reference.size_bytes
+            if total > maximum:
+                raise ArtifactInputError("artifact inputs exceed the model request byte limit")
 
 
 class ArtifactInputMaterializer:
@@ -197,6 +254,18 @@ class ArtifactInputMaterializer:
         tenant_id: str,
         request_body: bytes,
     ) -> bytes:
+        if b"\\u" in request_body:
+            try:
+                escaped_payload = json.loads(request_body)
+                request_body = json.dumps(
+                    escaped_payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode("utf-8")
+            except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise ArtifactInputError("artifact-backed model input must be canonical JSON") from error
         if b'"artifact_id"' not in request_body and b'"fixture_id"' not in request_body:
             return request_body
         try:
@@ -209,6 +278,7 @@ class ArtifactInputMaterializer:
             contract = contract_for(model, protocol)
         except InputContractUnavailable as error:
             raise ArtifactInputError("artifact-backed input has no selected runtime contract") from error
+        _enforce_request_budget(payload, contract.input_schema)
         matched = False
         for rule in _rules(contract.input_schema):
             for parent, key in _slots(payload, rule.path):

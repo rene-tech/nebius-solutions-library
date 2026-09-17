@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -629,6 +630,33 @@ class RuntimeClient:
                         raise RuntimeProtocolError("runtime response exceeded configured maximum")
                 if isinstance(capture, _UpstreamCapture):
                     capture.finished()
+                model_ref = (
+                    model.dynamic_policy.publication.source_model_ref
+                    if model.dynamic_policy
+                    else model.id
+                )
+                if (
+                    operation.protocol == "native"
+                    and model_ref == "cosmos3-nano"
+                    and content_type in {"video/mp4", "application/mp4"}
+                ):
+                    media = bytes(content)
+                    if len(media) < 16 or b"ftyp" not in media[:32]:
+                        raise RuntimeProtocolError("Cosmos runtime returned an invalid MP4 container")
+                    digest = self._header(response, "x-fs2-output-sha256", maximum=64)
+                    length = self._header(response, "x-fs2-output-bytes", maximum=32)
+                    if digest != hashlib.sha256(media).hexdigest() or length != str(len(media)):
+                        raise RuntimeProtocolError("Cosmos runtime media identity headers are invalid")
+                    runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
+                    return RuntimeResult(
+                        status_code=response.status_code,
+                        body=media,
+                        content_type="video/mp4",
+                        elapsed_seconds=time.monotonic() - started,
+                        runtime=runtime,
+                        semantic_outcome="protocol_valid",
+                        lifecycle=lifecycle,
+                    )
                 semantic = self._semantic_outcome(operation.protocol, bytes(content))
                 runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
                 return RuntimeResult(

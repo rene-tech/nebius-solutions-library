@@ -43,6 +43,7 @@ data:
     import fcntl
     import hashlib
     import json
+    import mimetypes
     import os
     import shutil
     import stat
@@ -754,12 +755,15 @@ data:
     import time
     import uuid
     from contextlib import asynccontextmanager
+    from pathlib import Path
+    from typing import Any
     from typing import Annotated, Literal, Union
 
     import httpx
     import uvicorn
     from fastapi import FastAPI, Request
     from fastapi.responses import JSONResponse, PlainTextResponse
+    from fastapi.responses import Response
     from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -770,6 +774,13 @@ data:
     MAX_RAW_BYTES = 64 * 1024 * 1024
     MAX_ENCODED_BYTES = 90 * 1024 * 1024
     MAX_IMAGE_RESPONSE_BYTES = MAX_ENCODED_BYTES + (1024 * 1024)
+    MAX_REFERENCE_BYTES = 24 * 1024 * 1024
+    MAX_CONTROL_BYTES = 4 * 1024 * 1024
+    MAX_REQUEST_REFERENCE_BYTES = 32 * 1024 * 1024
+    UPSTREAM_TMP = Path("/cosmos-control-tmp")
+    UPSTREAM_VISIBLE_TMP = Path("/cosmos-control-tmp")
+    IMAGE_MEDIA_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
+    VIDEO_MEDIA_TYPES = frozenset({"video/mp4", "application/mp4"})
     BACKEND_ID = os.getenv("POD_NAME", "unknown")
 
     RESULTS = {
@@ -842,6 +853,167 @@ data:
 
     GenerateRequest = Annotated[
         Union[TextToImageRequest, TextToVideoRequest],
+        Field(discriminator="mode"),
+    ]
+
+
+    def validate_materialized_reference(value: str) -> None:
+        metadata, separator, encoded = value.partition(",")
+        if (
+            separator != ","
+            or not metadata.startswith("data:")
+            or not metadata.lower().endswith(";base64")
+            or not encoded
+        ):
+            raise ValueError("media references must be platform-materialized base64 data URLs")
+
+
+    class MediaTextToVideoRequest(CommonRequest):
+        mode: Literal["text-to-video"]
+        size: str = Field(default="448x256", min_length=7, max_length=9)
+        num_frames: int = Field(default=25, ge=5, le=400)
+        fps: int = Field(default=24, ge=1, le=30)
+        generate_sound: bool = False
+        sound_duration: float | None = Field(default=None, gt=0.0, le=30.0)
+        output_format: Literal["mp4"] = "mp4"
+        output_delivery: Literal["inline-base64", "artifact"] = "inline-base64"
+
+        @model_validator(mode="after")
+        def media_video_is_consistent(self) -> "MediaTextToVideoRequest":
+            self.validate_size(self.size)
+            if self.sound_duration is not None and not self.generate_sound:
+                raise ValueError("sound_duration requires generate_sound=true")
+            return self
+
+
+    TextToVideoRequest = MediaTextToVideoRequest
+
+
+    class ReferencedVideoRequest(CommonRequest):
+        input_reference: str | None = None
+        vision_path: str | None = None
+        size: str = Field(default="448x256", min_length=7, max_length=9)
+        num_frames: int = Field(default=25, ge=5, le=400)
+        fps: int = Field(default=24, ge=1, le=30)
+        output_format: Literal["mp4"] = "mp4"
+        output_delivery: Literal["artifact"] = "artifact"
+
+        @model_validator(mode="after")
+        def materialized_reference_is_bounded(self) -> "ReferencedVideoRequest":
+            self.validate_size(self.size)
+            if self.input_reference is not None and self.vision_path is not None:
+                raise ValueError("provide input_reference or vision_path, not both")
+            if self.input_reference is None:
+                self.input_reference = self.vision_path
+            if self.input_reference is None:
+                raise ValueError("input_reference is required")
+            validate_materialized_reference(self.input_reference)
+            return self
+
+
+    class ImageToVideoRequest(ReferencedVideoRequest):
+        mode: Literal["image-to-video"]
+        generate_sound: bool = False
+        sound_duration: float | None = Field(default=None, gt=0.0, le=30.0)
+
+        @model_validator(mode="after")
+        def sound_is_consistent(self) -> "ImageToVideoRequest":
+            if self.sound_duration is not None and not self.generate_sound:
+                raise ValueError("sound_duration requires generate_sound=true")
+            return self
+
+
+    class VideoToVideoRequest(ReferencedVideoRequest):
+        mode: Literal["video-to-video"]
+        condition_frame_indexes_vision: list[int] = Field(
+            default_factory=lambda: [0, 1],
+            min_length=1,
+            max_length=16,
+        )
+        condition_video_keep: Literal["first", "last"] = "first"
+
+        @model_validator(mode="after")
+        def condition_indexes_are_valid(self) -> "VideoToVideoRequest":
+            values = self.condition_frame_indexes_vision
+            if any(value < 0 or value > 100 for value in values):
+                raise ValueError("condition_frame_indexes_vision values must be in [0,100]")
+            if len(set(values)) != len(values):
+                raise ValueError("condition_frame_indexes_vision values must be unique")
+            return self
+
+
+    class TransferControl(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+
+        control_type: Literal["edge", "blur", "depth", "seg", "wsm"]
+        reference: str | None = None
+        control_weight: float = Field(default=1.0, ge=0.0, le=100.0)
+        edge_threshold: Literal["none", "very_low", "low", "medium", "high", "very_high"] | None = None
+        blur_strength: Literal["none", "very_low", "low", "medium", "high", "very_high"] | None = None
+
+        @model_validator(mode="after")
+        def materialized_control_is_consistent(self) -> "TransferControl":
+            if self.reference is not None:
+                validate_materialized_reference(self.reference)
+            if self.control_type in {"depth", "seg", "wsm"} and self.reference is None:
+                raise ValueError(f"{self.control_type} requires a control reference")
+            if self.edge_threshold is not None and self.control_type != "edge":
+                raise ValueError("edge_threshold is valid only for edge control")
+            if self.blur_strength is not None and self.control_type != "blur":
+                raise ValueError("blur_strength is valid only for blur control")
+            return self
+
+
+    class TransferVideoRequest(CommonRequest):
+        mode: Literal["transfer-video"]
+        input_reference: str | None = None
+        vision_path: str | None = None
+        controls: list[TransferControl] = Field(min_length=1, max_length=5)
+        size: str = Field(default="448x256", min_length=7, max_length=9)
+        num_frames: int = Field(default=25, ge=5, le=400)
+        fps: int = Field(default=24, ge=1, le=30)
+        resolution: Literal[256, 480, 704, 720] = 480
+        control_guidance: float = Field(default=1.5, ge=0.0, le=20.0)
+        control_guidance_interval: tuple[float, float] | None = None
+        num_video_frames_per_chunk: int = Field(default=93, ge=5, le=400)
+        num_conditional_frames: int = Field(default=1, ge=1, le=16)
+        num_first_chunk_conditional_frames: int = Field(default=0, ge=0, le=16)
+        share_vision_temporal_positions: bool = True
+        emphasize_control_in_prompt: bool = True
+        output_format: Literal["mp4"] = "mp4"
+        output_delivery: Literal["artifact"] = "artifact"
+
+        @model_validator(mode="after")
+        def transfer_is_consistent(self) -> "TransferVideoRequest":
+            self.validate_size(self.size)
+            if self.input_reference is not None and self.vision_path is not None:
+                raise ValueError("provide input_reference or vision_path, not both")
+            if self.input_reference is None:
+                self.input_reference = self.vision_path
+            if self.input_reference is not None:
+                validate_materialized_reference(self.input_reference)
+            kinds = [item.control_type for item in self.controls]
+            if len(set(kinds)) != len(kinds):
+                raise ValueError("each transfer control_type may be selected only once")
+            if not any(item.control_weight > 0 for item in self.controls):
+                raise ValueError("at least one transfer control must have positive weight")
+            if any(item.reference is None for item in self.controls) and self.input_reference is None:
+                raise ValueError("derived edge/blur controls require input_reference")
+            if self.control_guidance_interval is not None:
+                lower, upper = self.control_guidance_interval
+                if not 0.0 <= lower <= upper <= 1.0:
+                    raise ValueError("control_guidance_interval must be ordered within [0,1]")
+            return self
+
+
+    GenerateRequest = Annotated[
+        Union[
+            TextToImageRequest,
+            TextToVideoRequest,
+            ImageToVideoRequest,
+            VideoToVideoRequest,
+            TransferVideoRequest,
+        ],
         Field(discriminator="mode"),
     ]
 
@@ -1120,6 +1292,269 @@ data:
         return raw, "video/mp4"
 
 
+    def _reference_media(raw: bytes, media_type: str, *, expected: str) -> str:
+        media_type = media_type.split(";", 1)[0].strip().lower()
+        image = (
+            raw.startswith(b"\x89PNG\r\n\x1a\n")
+            or raw.startswith(b"\xff\xd8\xff")
+            or (len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP")
+        )
+        video = len(raw) >= 16 and b"ftyp" in raw[:32]
+        if expected == "image" and (media_type not in IMAGE_MEDIA_TYPES or not image):
+            raise AdapterError(422, "invalid_input_media", "input artifact is not a supported image", False)
+        if expected == "video" and (media_type not in VIDEO_MEDIA_TYPES or not video):
+            raise AdapterError(422, "invalid_input_media", "input artifact is not an MP4 video", False)
+        if expected == "image-or-video" and not (
+            (media_type in IMAGE_MEDIA_TYPES and image) or (media_type in VIDEO_MEDIA_TYPES and video)
+        ):
+            raise AdapterError(422, "invalid_input_media", "control artifact is not supported media", False)
+        return "video/mp4" if video else media_type
+
+
+    def decode_materialized_reference(
+        value: str,
+        *,
+        expected: Literal["image", "video", "image-or-video"],
+        limit: int,
+    ) -> tuple[bytes, str]:
+        validate_materialized_reference(value)
+        metadata, _, encoded = value.partition(",")
+        media_type = metadata[5:].split(";", 1)[0].lower()
+        if len(encoded) > 4 * (limit // 3 + 1) + 4:
+            raise AdapterError(413, "input_too_large", "materialized input exceeds its byte limit", False)
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except (ValueError, UnicodeEncodeError, binascii.Error):
+            raise AdapterError(422, "invalid_input_reference", "materialized input is invalid", False) from None
+        if len(raw) > limit:
+            raise AdapterError(413, "input_too_large", "materialized input exceeds its byte limit", False)
+        return raw, _reference_media(raw, media_type, expected=expected)
+
+
+    def _reference_filename(media_type: str) -> str:
+        extension = mimetypes.guess_extension(media_type, strict=False)
+        if extension is None:
+            extension = ".mp4" if media_type.startswith("video/") else ".bin"
+        return f"reference{extension}"
+
+
+    def _write_control_file(raw: bytes, media_type: str) -> tuple[Path, str]:
+        extension = mimetypes.guess_extension(media_type, strict=False) or ".bin"
+        filename = f"fs2-cosmos-control-{uuid.uuid4().hex}{extension}"
+        adapter_path = UPSTREAM_TMP / filename
+        upstream_path = str(UPSTREAM_VISIBLE_TMP / filename)
+        descriptor = os.open(adapter_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(raw)
+        except BaseException:
+            adapter_path.unlink(missing_ok=True)
+            raise
+        return adapter_path, upstream_path
+
+
+    def _media_video_fields(body: Any, extra_params: dict[str, Any]) -> dict[str, str]:
+        fields = {
+            "model": MODEL_REPOSITORY,
+            "prompt": body.prompt,
+            "negative_prompt": body.negative_prompt,
+            "size": body.size,
+            "num_frames": str(body.num_frames),
+            "fps": str(body.fps),
+            "seed": str(body.seed),
+            "num_inference_steps": str(body.num_inference_steps),
+            "guidance_scale": str(body.guidance_scale),
+            "max_sequence_length": "4096",
+            "flow_shift": "10.0",
+            "extra_params": json.dumps(extra_params, separators=(",", ":")),
+        }
+        if getattr(body, "generate_sound", False):
+            fields["generate_sound"] = "true"
+            fields["sound_duration"] = str(body.sound_duration or (body.num_frames / body.fps))
+        return fields
+
+
+    async def generate_media_video(
+        client: httpx.AsyncClient,
+        body: TextToVideoRequest | ImageToVideoRequest | VideoToVideoRequest | TransferVideoRequest,
+    ) -> tuple[bytes, str]:
+        extra_params: dict[str, Any] = {
+            "use_resolution_template": False,
+            "use_duration_template": False,
+            "guardrails": False,
+        }
+        multipart_files: dict[str, tuple[Any, ...]] = {}
+        cleanup_paths: list[Path] = []
+        total_reference_bytes = 0
+        reference = getattr(body, "input_reference", None)
+        try:
+            if reference is not None:
+                expected = "image" if isinstance(body, ImageToVideoRequest) else "video"
+                raw_reference, media_type = decode_materialized_reference(
+                    reference,
+                    expected=expected,
+                    limit=MAX_REFERENCE_BYTES,
+                )
+                total_reference_bytes += len(raw_reference)
+                multipart_files["input_reference"] = (
+                    _reference_filename(media_type),
+                    raw_reference,
+                    media_type,
+                )
+            if isinstance(body, VideoToVideoRequest):
+                extra_params.update(
+                    {
+                        "condition_frame_indexes_vision": body.condition_frame_indexes_vision,
+                        "condition_video_keep": body.condition_video_keep,
+                    }
+                )
+            elif isinstance(body, TransferVideoRequest):
+                for control in body.controls:
+                    value: Any = True
+                    if control.reference is not None:
+                        raw, media_type = decode_materialized_reference(
+                            control.reference,
+                            expected="image-or-video",
+                            limit=MAX_CONTROL_BYTES,
+                        )
+                        total_reference_bytes += len(raw)
+                        if total_reference_bytes > MAX_REQUEST_REFERENCE_BYTES:
+                            raise AdapterError(
+                                413,
+                                "input_too_large",
+                                "combined materialized inputs exceed the request byte limit",
+                                False,
+                            )
+                        local_path, upstream_path = _write_control_file(raw, media_type)
+                        cleanup_paths.append(local_path)
+                        value = {
+                            "control_path": upstream_path,
+                            "control_weight": control.control_weight,
+                        }
+                    elif control.control_weight != 1.0:
+                        value = {"control_weight": control.control_weight}
+                    if isinstance(value, dict) and control.edge_threshold is not None:
+                        value["preset_edge_threshold"] = control.edge_threshold
+                    if isinstance(value, dict) and control.blur_strength is not None:
+                        value["preset_blur_strength"] = control.blur_strength
+                    extra_params[control.control_type] = value
+                extra_params.update(
+                    {
+                        "resolution": body.resolution,
+                        "control_guidance": body.control_guidance,
+                        "control_guidance_interval": body.control_guidance_interval,
+                        "num_video_frames_per_chunk": body.num_video_frames_per_chunk,
+                        "num_conditional_frames": body.num_conditional_frames,
+                        "num_first_chunk_conditional_frames": body.num_first_chunk_conditional_frames,
+                        "max_frames": body.num_frames,
+                        "share_vision_temporal_positions": body.share_vision_temporal_positions,
+                        "emphasize_control_in_prompt": body.emphasize_control_in_prompt,
+                    }
+                )
+            if total_reference_bytes > MAX_REQUEST_REFERENCE_BYTES:
+                raise AdapterError(
+                    413,
+                    "input_too_large",
+                    "combined materialized inputs exceed the request byte limit",
+                    False,
+                )
+            fields = _media_video_fields(body, extra_params)
+            multipart: dict[str, tuple[Any, ...]] = {
+                **{name: (None, value) for name, value in fields.items()},
+                **multipart_files,
+            }
+            async with client.stream(
+                "POST",
+                f"{UPSTREAM_BASE_URL}/v1/videos/sync",
+                files=multipart,
+                headers={"Accept": "video/mp4"},
+            ) as response:
+                content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                if response.status_code < 400 and content_type not in VIDEO_MEDIA_TYPES:
+                    raise AdapterError(
+                        502,
+                        "invalid_upstream_media",
+                        "model runtime returned an unexpected video content type",
+                        False,
+                    )
+                raw = await read_limited(response, MAX_RAW_BYTES)
+            if len(raw) < 16 or b"ftyp" not in raw[:32]:
+                raise AdapterError(
+                    502,
+                    "invalid_upstream_media",
+                    "model runtime did not return a valid MP4 container",
+                    False,
+                )
+            return raw, "video/mp4"
+        finally:
+            for path in cleanup_paths:
+                path.unlink(missing_ok=True)
+
+
+    def media_video_response(
+        body: TextToVideoRequest | ImageToVideoRequest | VideoToVideoRequest | TransferVideoRequest,
+        raw: bytes,
+        mime_type: str,
+        *,
+        request_id: str,
+        queue_seconds: float,
+        upstream_seconds: float,
+        total_seconds: float,
+    ) -> Response:
+        global OUTPUT_BYTES, OUTPUT_FRAMES
+        DURATIONS["upstream"]["count"] += 1
+        DURATIONS["upstream"]["sum"] += upstream_seconds
+        DURATIONS["total"]["count"] += 1
+        DURATIONS["total"]["sum"] += total_seconds
+        RESULTS["completed"] += 1
+        OUTPUT_BYTES += len(raw)
+        OUTPUT_FRAMES += body.num_frames
+        headers = {
+            "X-Backend-Id": BACKEND_ID,
+            "X-Request-Id": request_id,
+        }
+        if body.output_delivery == "artifact":
+            headers.update(
+                {
+                    "X-FS2-Output-SHA256": hashlib.sha256(raw).hexdigest(),
+                    "X-FS2-Output-Bytes": str(len(raw)),
+                    "X-FS2-Output-Frames": str(body.num_frames),
+                    "X-FS2-Output-FPS": str(body.fps),
+                }
+            )
+            return Response(status_code=200, headers=headers, content=raw, media_type=mime_type)
+        encoding_started = time.monotonic()
+        encoded = base64.b64encode(raw).decode("ascii")
+        encoding_seconds = time.monotonic() - encoding_started
+        if len(encoded) > MAX_ENCODED_BYTES:
+            raise AdapterError(502, "encoded_output_too_large", "encoded media exceeds the inline limit", False)
+        DURATIONS["encoding"]["count"] += 1
+        DURATIONS["encoding"]["sum"] += encoding_seconds
+        width_text, height_text = body.size.split("x", 1)
+        return JSONResponse(
+            status_code=200,
+            headers=headers,
+            content={
+                "model": MODEL_REPOSITORY,
+                "revision": MODEL_REVISION,
+                "mode": body.mode,
+                "mime_type": mime_type,
+                "data_base64": encoded,
+                "bytes": len(raw),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "width": int(width_text),
+                "height": int(height_text),
+                "frames": body.num_frames,
+                "fps": body.fps,
+                "timings_ms": {
+                    "queue": queue_seconds * 1000.0,
+                    "upstream": upstream_seconds * 1000.0,
+                    "total": total_seconds * 1000.0,
+                },
+            },
+        )
+
+
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
@@ -1210,6 +1645,30 @@ data:
         DURATIONS["queue"]["sum"] += queue_seconds
         upstream_started = time.monotonic()
         try:
+            if isinstance(
+                body,
+                (
+                    MediaTextToVideoRequest,
+                    ImageToVideoRequest,
+                    VideoToVideoRequest,
+                    TransferVideoRequest,
+                ),
+            ):
+                raw, mime_type = await generate_media_video(
+                    request.app.state.client,
+                    body,
+                )
+                upstream_seconds = time.monotonic() - upstream_started
+                total_seconds = time.monotonic() - total_started
+                return media_video_response(
+                    body,
+                    raw,
+                    mime_type,
+                    request_id=request_id,
+                    queue_seconds=queue_seconds,
+                    upstream_seconds=upstream_seconds,
+                    total_seconds=total_seconds,
+                )
             width_text, height_text = body.size.split("x", 1)
             width, height = int(width_text), int(height_text)
             if isinstance(body, TextToImageRequest):
@@ -1497,6 +1956,8 @@ spec:
             periodSeconds: 15
             timeoutSeconds: 3
           volumeMounts:
+            - mountPath: /cosmos-control-tmp
+              name: cosmos-control-tmp
             - mountPath: /model-cache
               name: model-cache
               readOnly: true
@@ -1563,6 +2024,8 @@ spec:
             - mountPath: /adapter
               name: adapter
               readOnly: true
+            - mountPath: /cosmos-control-tmp
+              name: cosmos-control-tmp
             - mountPath: /tmp
               name: adapter-tmp
       volumes:
@@ -1573,6 +2036,9 @@ spec:
         - emptyDir:
             sizeLimit: 2Gi
           name: adapter-tmp
+        - emptyDir:
+            sizeLimit: 32Mi
+          name: cosmos-control-tmp
         - name: model-cache
           persistentVolumeClaim:
             claimName: cosmos3-nano-cache

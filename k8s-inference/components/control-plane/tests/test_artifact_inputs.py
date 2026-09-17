@@ -8,8 +8,10 @@ from uuid import UUID, uuid4
 import pytest
 from conftest import CATALOG_ROOT
 from test_api_mcp import bound_model_registry
+from test_model_input_contracts import selected
 
 from fs2_serve.artifact_inputs import ArtifactInputError, ArtifactInputMaterializer
+from fs2_serve.cosmos_media_security import enforce_cosmos_runtime_payload_policy
 from fs2_serve.registry import Registry
 from fs2_serve.scientific_artifacts import ArtifactContentStream
 from fs2_serve.scientific_run_result import ArtifactRef
@@ -139,3 +141,110 @@ async def test_rejects_reference_metadata_that_does_not_match_stored_artifact(re
                 {"protein": supplied.model_dump(mode="json"), "ligand": "CC"}
             ).encode(),
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "field", "content", "media_type"),
+    [
+        ("image-to-video", "input_reference", b"\x89PNG\r\n\x1a\nsynthetic", "image/png"),
+        ("video-to-video", "vision_path", b"\x00\x00\x00\x18ftypmp42synthetic", "video/mp4"),
+    ],
+)
+async def test_cosmos_actual_primary_paths_materialize_only_owned_artifacts(
+    registry,
+    mode,
+    field,
+    content,
+    media_type,
+):
+    reference = _reference(content, media_type=media_type)
+    artifacts = _Artifacts(content, reference)
+    materializer = ArtifactInputMaterializer(artifacts)  # type: ignore[arg-type]
+    model = selected(registry, "cosmos3-nano")
+
+    body = await materializer.materialize(
+        model,
+        "native",
+        tenant_id="tenant-a",
+        request_body=json.dumps(
+            {
+                "mode": mode,
+                "prompt": "Synthetic media",
+                field: reference.model_dump(mode="json"),
+            }
+        ).encode(),
+    )
+
+    materialized = json.loads(body)
+    assert materialized[field].startswith(f"data:{media_type};base64,")
+    enforce_cosmos_runtime_payload_policy(model, "native", body)
+    assert artifacts.calls == [(UUID(reference.artifact_id), "tenant-a")]
+
+
+@pytest.mark.asyncio
+async def test_cosmos_actual_transfer_control_path_materializes_owned_artifact(registry):
+    content = b"\x89PNG\r\n\x1a\nsynthetic-control"
+    reference = _reference(content, media_type="image/png")
+    artifacts = _Artifacts(content, reference)
+    materializer = ArtifactInputMaterializer(artifacts)  # type: ignore[arg-type]
+    model = selected(registry, "cosmos3-nano")
+
+    body = await materializer.materialize(
+        model,
+        "native",
+        tenant_id="tenant-a",
+        request_body=json.dumps(
+            {
+                "mode": "transfer-video",
+                "prompt": "Synthetic control",
+                "controls": [
+                    {
+                        "control_type": "depth",
+                        "reference": reference.model_dump(mode="json"),
+                    }
+                ],
+            }
+        ).encode(),
+    )
+
+    materialized = json.loads(body)
+    assert materialized["controls"][0]["reference"].startswith("data:image/png;base64,")
+    enforce_cosmos_runtime_payload_policy(model, "native", body)
+    assert artifacts.calls == [(UUID(reference.artifact_id), "tenant-a")]
+
+
+@pytest.mark.asyncio
+async def test_cosmos_aggregate_budget_fails_before_any_artifact_stream_is_opened(registry):
+    content = b"unused"
+    stored = _reference(content, media_type="video/mp4")
+    artifacts = _Artifacts(content, stored)
+    materializer = ArtifactInputMaterializer(artifacts)  # type: ignore[arg-type]
+    model = selected(registry, "cosmos3-nano")
+    primary = stored.model_copy(update={"size_bytes": 24 * 1024 * 1024})
+    control = stored.model_copy(
+        update={"size_bytes": 4 * 1024 * 1024, "media_type": "image/png"}
+    )
+
+    with pytest.raises(ArtifactInputError, match="request byte limit"):
+        await materializer.materialize(
+            model,
+            "native",
+            tenant_id="tenant-a",
+            request_body=json.dumps(
+                {
+                    "mode": "transfer-video",
+                    "prompt": "Synthetic over-budget request",
+                    "input_reference": primary.model_dump(mode="json"),
+                    "controls": [
+                        {
+                            "control_type": kind,
+                            "reference": control.model_dump(mode="json"),
+                        }
+                        for kind in ("depth", "seg", "wsm")
+                    ],
+                }
+            ).encode(),
+        )
+
+    assert artifacts.calls == []

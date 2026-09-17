@@ -1,5 +1,7 @@
 """Durable T0 admission, deadline-aware retries, and fenced HA workers."""
 
+# ruff: noqa: I001 -- SAI-23 is an additive-only correction over a sealed import.
+
 from __future__ import annotations
 
 import asyncio
@@ -21,6 +23,11 @@ from .activation_contract import ActivationContractError, ScaleContract
 from .artifact_inputs import ArtifactInputError, ArtifactInputMaterializer
 from .artifact_outputs import ServingOutputArtifactizer
 from .cosmos_media_security import enforce_cosmos_media_reference_policy
+from .cosmos_media_security import (
+    CosmosMediaReferenceError,
+    enforce_cosmos_dispatch_policy,
+    enforce_cosmos_runtime_payload_policy,
+)
 from .lifecycle import (
     LifecycleClock,
     LifecycleCorrelation,
@@ -662,6 +669,12 @@ class AdmissionService:
             )
             try:
                 model = await self._current_model(claimed)
+                try:
+                    enforce_cosmos_dispatch_policy(model, claimed.protocol, request_body)
+                except CosmosMediaReferenceError as error:
+                    raise ArtifactInputError(
+                        "retained Cosmos media input violates the artifact-only boundary"
+                    ) from error
                 if self.artifact_inputs is not None:
                     request_body = await self.artifact_inputs.materialize(
                         model,
@@ -669,6 +682,12 @@ class AdmissionService:
                         tenant_id=claimed.tenant_id,
                         request_body=request_body,
                     )
+                try:
+                    enforce_cosmos_runtime_payload_policy(model, claimed.protocol, request_body)
+                except CosmosMediaReferenceError as error:
+                    raise ArtifactInputError(
+                        "Cosmos media input was not safely materialized for runtime dispatch"
+                    ) from error
                 invocation_started = datetime.now(UTC)
                 with self._tracer.start_as_current_span("fs2.runtime.invoke", kind=SpanKind.CLIENT) as span:
                     span.set_attribute("fs2.operation.id", str(claimed.id))

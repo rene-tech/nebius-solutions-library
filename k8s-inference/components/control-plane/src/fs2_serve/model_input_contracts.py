@@ -32,6 +32,11 @@ _PROTEIN = "ACDEFGHIKLMNPQRSTVWY"
 _SEQUENCE = "ACDEFGHIKLMNPQRSTVWY"
 _ARTIFACT_ID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
+COSMOS_IMAGE_MEDIA_TYPES = ("image/jpeg", "image/png", "image/webp")
+COSMOS_VIDEO_MEDIA_TYPES = ("video/mp4", "application/mp4")
+COSMOS_PRIMARY_MAX_BYTES = 24 * 1024 * 1024
+COSMOS_CONTROL_MAX_BYTES = 4 * 1024 * 1024
+COSMOS_REQUEST_MAX_BYTES = 32 * 1024 * 1024
 
 
 class InputContractUnavailable(ValueError):  # noqa: N818 - published adapter interface
@@ -47,6 +52,30 @@ class ModelInputContract:
     protocol: str
 
     def __post_init__(self) -> None:
+        if self.model_ref == "cosmos3-nano" and self.protocol == "native" and not self.source_refs:
+            # Synthetic and future schema composition still exercises the
+            # generic, reference-aware hardening pass. Production contracts
+            # carry exact source refs and take the complete mode contract below.
+            object.__setattr__(
+                self,
+                "input_schema",
+                _secure_cosmos_media_references_v2(self.input_schema),
+            )
+            return
+        if self.model_ref == "cosmos3-nano" and self.protocol == "native":
+            # The media feature is pre-merge, so keep its complete qualified
+            # mode surface here with the SAI-23 artifact-only boundary already
+            # applied. This avoids testing a synthetic schema that does not
+            # match the runtime candidate.
+            object.__setattr__(self, "input_schema", _cosmos_media_contract())
+            return
+        if self.model_ref == "cosmos3-nano":
+            object.__setattr__(
+                self,
+                "input_schema",
+                _secure_cosmos_media_references_v2(self.input_schema),
+            )
+            return
         # Cosmos contracts may also be assembled by specialized MCP builders.
         # Enforce the artifact-only boundary at the shared contract DTO so a
         # new media workflow cannot accidentally republish a fetchable URL.
@@ -205,6 +234,92 @@ def _secure_cosmos_media_references(schema: Schema) -> Schema:
                     visit(child, path)
 
     visit(secured, ())
+    return secured
+
+
+def _secure_cosmos_media_references_v2(schema: Schema) -> Schema:
+    """Secure Cosmos locators through local references and every schema branch."""
+
+    secured = copy.deepcopy(schema)
+    media_types = COSMOS_IMAGE_MEDIA_TYPES + COSMOS_VIDEO_MEDIA_TYPES
+
+    def resolve(reference: str) -> Any:
+        if not reference.startswith("#/"):
+            raise InputContractUnavailable("Cosmos media schema contains a non-local reference")
+        target: Any = secured
+        for raw in reference[2:].split("/"):
+            part = raw.replace("~1", "/").replace("~0", "~")
+            if not isinstance(target, dict) or part not in target:
+                raise InputContractUnavailable("Cosmos media schema contains an unresolved reference")
+            target = target[part]
+        return target
+
+    def visit(
+        value: Any,
+        path: tuple[str, ...],
+        active_references: frozenset[str],
+    ) -> None:
+        if not isinstance(value, dict):
+            return
+        reference = value.get("$ref")
+        if isinstance(reference, str) and reference not in active_references:
+            visit(resolve(reference), path, active_references | {reference})
+        properties = value.get("properties")
+        if isinstance(properties, dict):
+            for name, child in tuple(properties.items()):
+                child_path = path + (name,)
+                if name in {"input_reference", "vision_path"}:
+                    properties[name] = _artifact_only_input(
+                        "Caller-owned source image or video.",
+                        media_types=media_types,
+                        max_bytes=COSMOS_PRIMARY_MAX_BYTES,
+                    )
+                    continue
+                if name == "reference" and "controls" in path:
+                    properties[name] = _artifact_only_input(
+                        "Caller-owned control image or video.",
+                        media_types=media_types,
+                        max_bytes=COSMOS_CONTROL_MAX_BYTES,
+                    )
+                    continue
+                visit(child, child_path, active_references)
+        for keyword in ("$defs", "definitions", "patternProperties", "dependentSchemas"):
+            children = value.get(keyword)
+            if isinstance(children, dict):
+                for child in children.values():
+                    visit(child, path, active_references)
+        items = value.get("items")
+        if isinstance(items, dict):
+            visit(items, path, active_references)
+        elif isinstance(items, list):
+            for child in items:
+                visit(child, path, active_references)
+        prefix_items = value.get("prefixItems")
+        if isinstance(prefix_items, list):
+            for child in prefix_items:
+                visit(child, path, active_references)
+        for keyword in ("allOf", "anyOf", "oneOf"):
+            alternatives = value.get(keyword)
+            if isinstance(alternatives, list):
+                for child in alternatives:
+                    visit(child, path, active_references)
+        for keyword in (
+            "if",
+            "then",
+            "else",
+            "not",
+            "contains",
+            "additionalProperties",
+            "unevaluatedProperties",
+            "unevaluatedItems",
+            "propertyNames",
+        ):
+            child = value.get(keyword)
+            if isinstance(child, dict):
+                visit(child, path, active_references)
+
+    visit(secured, (), frozenset())
+    secured["x-fs2-artifact-request-max-bytes"] = COSMOS_REQUEST_MAX_BYTES
     return secured
 
 
@@ -659,6 +774,365 @@ def _cosmos() -> Schema:
             "else": {"properties": {"output_format": {"const": "mp4"}}},
         }
     ]
+    return schema
+
+
+_COSMOS_MEDIA_MODES = (
+    "text-to-image",
+    "text-to-video",
+    "image-to-video",
+    "video-to-video",
+    "transfer-video",
+)
+
+
+def _cosmos_media_reference(
+    description: str,
+    *,
+    media_types: tuple[str, ...],
+    max_bytes: int,
+) -> Schema:
+    return _artifact_only_input(
+        description,
+        media_types=media_types,
+        max_bytes=max_bytes,
+    )
+
+
+def _cosmos_media_control() -> Schema:
+    schema = _object(
+        {
+            "control_type": _field(
+                "string",
+                "Transfer representation supplied to Cosmos.",
+                enum=["edge", "blur", "depth", "seg", "wsm"],
+            ),
+            "reference": _cosmos_media_reference(
+                "Optional control image or video. Depth, segmentation and WSM require one.",
+                media_types=COSMOS_IMAGE_MEDIA_TYPES + COSMOS_VIDEO_MEDIA_TYPES,
+                max_bytes=COSMOS_CONTROL_MAX_BYTES,
+            ),
+            "control_weight": _field(
+                "number",
+                "Nonnegative relative control weight; at least one selected control must be positive.",
+                minimum=0,
+                maximum=100,
+                default=1,
+            ),
+            "edge_threshold": _field(
+                "string",
+                "Edge extraction preset; valid only for edge control.",
+                enum=["none", "very_low", "low", "medium", "high", "very_high"],
+            ),
+            "blur_strength": _field(
+                "string",
+                "Blur extraction preset; valid only for blur control.",
+                enum=["none", "very_low", "low", "medium", "high", "very_high"],
+            ),
+        },
+        ("control_type",),
+        "One typed transfer control. Control types may not repeat in a request.",
+    )
+    schema["allOf"] = [
+        {
+            "if": {
+                "properties": {"control_type": {"enum": ["depth", "seg", "wsm"]}},
+                "required": ["control_type"],
+            },
+            "then": {"required": ["reference"]},
+        },
+        {
+            "if": {
+                "properties": {"control_type": {"not": {"const": "edge"}}},
+                "required": ["control_type"],
+            },
+            "then": {"not": {"required": ["edge_threshold"]}},
+        },
+        {
+            "if": {
+                "properties": {"control_type": {"not": {"const": "blur"}}},
+                "required": ["control_type"],
+            },
+            "then": {"not": {"required": ["blur_strength"]}},
+        },
+    ]
+    return schema
+
+
+def _cosmos_media_properties() -> Schema:
+    media_types = COSMOS_IMAGE_MEDIA_TYPES + COSMOS_VIDEO_MEDIA_TYPES
+    return {
+        "model": _constant(
+            "nvidia/Cosmos3-Nano@7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+            "Exact pinned model identity; omit to use this fixed deployment.",
+        ),
+        "mode": _field(
+            "string",
+            "Exact qualified Cosmos workflow.",
+            enum=list(_COSMOS_MEDIA_MODES),
+        ),
+        "prompt": _field(
+            "string",
+            "Scene description or robotics instruction.",
+            minLength=1,
+            maxLength=4096,
+        ),
+        "negative_prompt": _field(
+            "string",
+            "Content and artifacts to avoid.",
+            maxLength=4096,
+            default="",
+        ),
+        "seed": _field(
+            "integer",
+            "Deterministic sampling seed.",
+            minimum=0,
+            maximum=4294967295,
+            default=0,
+        ),
+        "num_inference_steps": _integer("Denoising steps.", 1, 50, 30),
+        "guidance_scale": _field(
+            "number",
+            "Prompt guidance strength.",
+            minimum=0,
+            maximum=20,
+            default=7,
+        ),
+        "size": _field(
+            "string",
+            "WIDTHxHEIGHT; multiples of 16, width 256-1280, height 256-720, area <=921600.",
+            pattern=r"^[0-9]+x[0-9]+$",
+            minLength=7,
+            maxLength=9,
+        ),
+        "num_frames": _integer("Generated video frames.", 5, 400, 25),
+        "fps": _integer("Generated video frames per second.", 1, 30, 24),
+        "input_reference": _cosmos_media_reference(
+            "Caller-owned source image or video selected by mode.",
+            media_types=media_types,
+            max_bytes=COSMOS_PRIMARY_MAX_BYTES,
+        ),
+        "vision_path": _cosmos_media_reference(
+            "Deprecated compatibility alias for input_reference.",
+            media_types=media_types,
+            max_bytes=COSMOS_PRIMARY_MAX_BYTES,
+        ),
+        "generate_sound": _field(
+            "boolean",
+            "Generate synchronized AAC audio for text-to-video or image-to-video.",
+            default=False,
+        ),
+        "sound_duration": _field(
+            "number",
+            "Generated audio seconds; requires generate_sound=true.",
+            exclusiveMinimum=0,
+            maximum=30,
+        ),
+        "condition_frame_indexes_vision": _array(
+            _field("integer", "Nonnegative conditioned latent-frame index.", minimum=0, maximum=100),
+            "Clean reference-video latent frames used for video-to-video conditioning.",
+            minItems=1,
+            maxItems=16,
+            uniqueItems=True,
+        ),
+        "condition_video_keep": _field(
+            "string",
+            "Decode needed reference frames from the beginning or end.",
+            enum=["first", "last"],
+            default="first",
+        ),
+        "controls": _array(
+            _cosmos_media_control(),
+            "One or more typed transfer controls.",
+            minItems=1,
+            maxItems=5,
+        ),
+        "resolution": _field(
+            "integer",
+            "Pinned Cosmos transfer resolution bucket.",
+            enum=[256, 480, 704, 720],
+            default=480,
+        ),
+        "control_guidance": _field(
+            "number",
+            "Transfer control guidance strength.",
+            minimum=0,
+            maximum=20,
+            default=1.5,
+        ),
+        "control_guidance_interval": _array(
+            _field("number", "Inclusive denoising fraction.", minimum=0, maximum=1),
+            "Ordered start/end transfer-guidance interval.",
+            minItems=2,
+            maxItems=2,
+        ),
+        "num_video_frames_per_chunk": _integer("Transfer chunk size.", 5, 400, 93),
+        "num_conditional_frames": _integer("Conditional frames per transfer chunk.", 1, 16, 1),
+        "num_first_chunk_conditional_frames": _integer(
+            "Additional first-chunk conditional frames.",
+            0,
+            16,
+            0,
+        ),
+        "share_vision_temporal_positions": _field(
+            "boolean",
+            "Share control and target temporal positions in transfer mode.",
+            default=True,
+        ),
+        "emphasize_control_in_prompt": _field(
+            "boolean",
+            "Append the pinned control-adherence directive in transfer mode.",
+            default=True,
+        ),
+        "output_format": _field(
+            "string",
+            "Mode-specific output format.",
+            enum=["png", "mp4"],
+        ),
+        "output_delivery": _field(
+            "string",
+            "Large media is returned through the operation artifact store.",
+            enum=["inline-base64", "artifact"],
+        ),
+    }
+
+
+def _cosmos_media_mode_schema(mode: str) -> Schema:
+    properties = _cosmos_media_properties()
+    common = (
+        "model",
+        "prompt",
+        "negative_prompt",
+        "seed",
+        "num_inference_steps",
+        "guidance_scale",
+    )
+    allowed: dict[str, tuple[str, ...]] = {
+        "text-to-image": common + ("size",),
+        "text-to-video": common
+        + ("size", "num_frames", "fps", "generate_sound", "sound_duration"),
+        "image-to-video": common
+        + (
+            "size",
+            "num_frames",
+            "fps",
+            "input_reference",
+            "vision_path",
+            "generate_sound",
+            "sound_duration",
+        ),
+        "video-to-video": common
+        + (
+            "size",
+            "num_frames",
+            "fps",
+            "input_reference",
+            "vision_path",
+            "condition_frame_indexes_vision",
+            "condition_video_keep",
+        ),
+        "transfer-video": common
+        + (
+            "size",
+            "num_frames",
+            "fps",
+            "input_reference",
+            "vision_path",
+            "controls",
+            "resolution",
+            "control_guidance",
+            "control_guidance_interval",
+            "num_video_frames_per_chunk",
+            "num_conditional_frames",
+            "num_first_chunk_conditional_frames",
+            "share_vision_temporal_positions",
+            "emphasize_control_in_prompt",
+        ),
+    }
+    selected = {name: properties[name] for name in allowed[mode]}
+    selected["mode"] = _constant(mode, f"Select the {mode} Cosmos workflow.")
+    if mode == "text-to-image":
+        selected["output_format"] = _constant("png", "PNG output only.")
+        selected["output_delivery"] = _constant(
+            "inline-base64",
+            "Return the bounded PNG response inline.",
+        )
+    elif mode == "text-to-video":
+        selected["output_format"] = _constant("mp4", "MP4 output only.")
+        selected["output_delivery"] = _field(
+            "string",
+            "Return bounded inline base64 or an operation artifact.",
+            enum=["inline-base64", "artifact"],
+        )
+    else:
+        selected["output_format"] = _constant("mp4", "MP4 output only.")
+        selected["output_delivery"] = _constant(
+            "artifact",
+            "Store the MP4 as a tenant-owned operation artifact.",
+        )
+    required = ["prompt", "mode"]
+    if mode in {"image-to-video", "video-to-video"}:
+        required.append("input_reference")
+    if mode == "transfer-video":
+        required.append("controls")
+    schema = _object(
+        selected,
+        tuple(required),
+        f"Typed {mode} inputs for the pinned Cosmos3 Nano runtime.",
+    )
+    schema["additionalProperties"] = True
+    if mode in {"image-to-video", "video-to-video"}:
+        schema["required"].remove("input_reference")
+        schema["oneOf"] = [
+            {"required": ["input_reference"]},
+            {"required": ["vision_path"]},
+        ]
+        expected_types = COSMOS_IMAGE_MEDIA_TYPES if mode == "image-to-video" else COSMOS_VIDEO_MEDIA_TYPES
+        schema["properties"]["input_reference"] = _cosmos_media_reference(
+            "Caller-owned source media selected by mode.",
+            media_types=expected_types,
+            max_bytes=COSMOS_PRIMARY_MAX_BYTES,
+        )
+        schema["properties"]["vision_path"] = _cosmos_media_reference(
+            "Deprecated compatibility alias for input_reference.",
+            media_types=expected_types,
+            max_bytes=COSMOS_PRIMARY_MAX_BYTES,
+        )
+    if mode == "transfer-video":
+        schema.setdefault("allOf", []).append(
+            {"not": {"required": ["input_reference", "vision_path"]}}
+        )
+    if "sound_duration" in schema["properties"]:
+        schema.setdefault("allOf", []).append(
+            {
+                "if": {"required": ["sound_duration"]},
+                "then": {
+                    "properties": {"generate_sound": {"const": True}},
+                    "required": ["generate_sound"],
+                },
+            }
+        )
+    disallowed = sorted(set(properties) - set(schema["properties"]))
+    if disallowed:
+        schema.setdefault("allOf", []).append(
+            {"not": {"anyOf": [{"required": [field]} for field in disallowed]}}
+        )
+    return schema
+
+
+def _cosmos_media_contract() -> Schema:
+    schema = _object(
+        _cosmos_media_properties(),
+        ("prompt", "mode"),
+        "Pinned Cosmos3 Nano media API. Media inputs are finalized tenant artifacts; external locations are denied.",
+    )
+    schema["oneOf"] = [_cosmos_media_mode_schema(mode) for mode in _COSMOS_MEDIA_MODES]
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    schema["x-fs2-artifact-request-max-bytes"] = COSMOS_REQUEST_MAX_BYTES
+    schema["x-fs2-source-candidate"] = {
+        "feature_commit": "722fdc7239ca6c8d42831a58e56ad8c99adf440a",
+        "qualified_modes": list(_COSMOS_MEDIA_MODES),
+    }
     return schema
 
 
