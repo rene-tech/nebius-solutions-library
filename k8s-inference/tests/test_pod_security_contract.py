@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -102,7 +103,7 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     verifier = _source("scripts/verify_pod_security_receipts.py")
     gate = _source("modules/pod-security-rollout-gate/main.tf")
     active_gate = gate.split("*/", 1)[1]
-    handoff = _source("scripts/verify_sai07_external_handoff.py")
+    handoff = _source("scripts/verify_sai07_external_handoff_v2.py")
     admission = _source("stages/foundation/pod_security_admission.tf")
     expected = {
         "bootstrap-baseline": "baseline-captured",
@@ -144,10 +145,15 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "FS2_POD_SECURITY_CUSTODY_USER" not in active_gate
     assert "FS2_CUSTODY_OWNER_KUBECONFIG" not in active_gate
     assert 'data "external" "verified_handoff"' in active_gate
-    assert "verify_sai07_external_handoff.py" in active_gate
-    assert "platform_authority_audit" in handoff
-    assert "owner_authority_audit" in handoff
-    assert "PartialObjectMetadataList" in handoff
+    assert "verify_sai07_external_handoff_v2.py" in active_gate
+    assert "trust_lock_path" in active_gate
+    assert "handoff_public_key_path" not in active_gate
+    assert "authority_audits" in handoff
+    assert "inactive-owner" in handoff
+    assert "receipt-service-account" in handoff
+    assert "metadata-reader" in handoff
+    assert "self_subject_rules_reviews" in handoff
+    assert "self_subject_access_reviews" in handoff
     assert "receipt_token_request" in handoff
     assert "metadata_token_request" in handoff
     assert "bound_object_ref" in handoff
@@ -434,6 +440,10 @@ def test_custody_provider_is_distinct_and_legacy_objects_are_adopted_without_del
     custody_variables = _source("stages/pod-security-custody/variables.tf")
     state_handoff = _source("stages/foundation/pod_security_custody_state_handoff.tf")
     manifest_verifier = _source("scripts/verify_sai07_custody_manifest_bundle.py")
+    manifest_verifier_v2 = _source("scripts/verify_sai07_custody_manifest_bundle_v2.py")
+    trust_verifier = _source("scripts/verify_sai07_custody_trust.py")
+    versions = _source("stages/pod-security-custody/versions.tf")
+    trust_lock = json.loads(_source("stages/pod-security-custody/custody-trust-lock.json"))
 
     assert 'alias = "pod_security_custody"' not in providers
     assert "custody_owner_kubeconfig_path" not in providers
@@ -441,10 +451,22 @@ def test_custody_provider_is_distinct_and_legacy_objects_are_adopted_without_del
     assert "owner_kubeconfig_path" in custody_variables
     assert "platform_kubeconfig" not in custody_variables
     assert "receipt_kubeconfig" not in custody_variables
-    assert "iam_boundary_sha256" in custody_variables
+    assert "iam_boundary_receipt_path" in custody_variables
+    assert "backend_custody_receipt_path" in custody_variables
+    assert "owner_username" not in custody_variables
+    assert "manifest_public_key_sha256" not in custody_variables
+    assert 'backend "s3"' in versions
+    assert "use_lockfile = true" in versions
+    assert trust_lock["activation"] == "blocked"
+    assert "repository-pinned external custody trust is not active" in trust_verifier
     assert 'field_manager {' in custody and "force_conflicts = false" in custody
     assert "prevent_destroy = true" in custody
-    assert state_handoff.count("destroy = false") >= 30
+    assert 'resource "kubernetes_secret_v1" "token_anchor"' in custody
+    assert "typed POST create rather than an SSA PATCH" in custody
+    assert "kubernetes_secret_v1.token_anchor" in custody
+    active_state_handoff = state_handoff.split("/*", 1)[0] + state_handoff.rsplit("*/", 1)[1]
+    assert "removed {" not in active_state_handoff
+    assert "no state address is relinquished" in state_handoff
     assert "fs2-pod-security-token-anchor" in manifest_verifier
     assert "immutable empty token-anchor Secret" in manifest_verifier
     assert "fs2-pod-security-rollout-custodian" in manifest_verifier
@@ -455,10 +477,33 @@ def test_custody_provider_is_distinct_and_legacy_objects_are_adopted_without_del
         not in manifest_verifier
     )
     assert "REQUIRED_OBJECTS" in manifest_verifier
+    assert "DaemonSet" in manifest_verifier
+    assert "STATIC_STATE" in manifest_verifier_v2
+    assert "DYNAMIC_ADDRESS_RE" in manifest_verifier_v2
+    assert "present_addresses != set(by_address)" in manifest_verifier_v2
+    assert "live object changed before SSA" in manifest_verifier_v2
+    assert 'metadata["resourceVersion"]' in manifest_verifier_v2
+
+
+def test_external_custody_pipeline_is_remote_attested_exact_and_non_destructive() -> None:
+    pipeline = _source("scripts/run_sai07_external_custody_pipeline.py")
+    handoff = _source("scripts/verify_sai07_external_handoff_v2.py")
+
+    assert "verify_sai07_custody_trust.py" in pipeline
+    assert "verify_sai07_custody_manifest_bundle_v2.py" in pipeline
+    assert "verify_sai07_external_handoff_v2.py" in pipeline
+    assert "verify_pod_security_receipts.py" in pipeline
+    assert '"delete" in actions' in pipeline
+    assert "overwrite is forbidden" in pipeline
+    assert "state_lineage" in handoff and "state_serial" in handoff
+    assert "pre_objects_sha256" in handoff and "post_objects_sha256" in handoff
+    assert "STATIC_STATE" in handoff and "DYNAMIC_ADDRESS_RE" in handoff
+    assert "adoption omits a static platform-owned custody address" in handoff
 
 
 def test_secret_inventory_is_metadata_only_and_bound_to_a_short_lived_actor() -> None:
     collector = _source("scripts/collect_sai07_secret_metadata.py")
+    anchor_collector = _source("scripts/collect_sai07_token_anchor_metadata.py")
     baseline = _source("scripts/audit_sai07_baseline_inventory.py")
     cleanup = _source("scripts/cleanup_sai07_legacy_resources.py")
 
@@ -466,6 +511,8 @@ def test_secret_inventory_is_metadata_only_and_bound_to_a_short_lived_actor() ->
     assert '"Accept": MEDIA_TYPE' in collector
     assert "token_bound_object_ref" in collector
     assert 'kubernetes.get("secret")' in collector
+    assert "MEDIA_TYPE" in anchor_collector
+    assert "token-anchor response contains Secret payload fields" in anchor_collector
     assert 'client.raw("/api/v1/namespaces/fs2-models/secrets")' not in baseline
     assert 'client.raw(f"/api/v1/namespaces/{NAMESPACE}/secrets")' not in cleanup
     assert "--secret-metadata-artifact" in baseline
@@ -473,13 +520,34 @@ def test_secret_inventory_is_metadata_only_and_bound_to_a_short_lived_actor() ->
 
 
 def test_effective_authority_audit_covers_cluster_and_every_live_namespace() -> None:
-    audit = _source("scripts/audit_sai07_effective_authority.py")
-    handoff = _source("scripts/verify_sai07_external_handoff.py")
+    audit = _source("scripts/audit_sai07_effective_authority_v2.py")
+    handoff = _source("scripts/verify_sai07_external_handoff_v2.py")
 
     assert 'client.raw("/api/v1/namespaces")' in audit
     assert "for namespace in namespaces" in audit
+    assert "self_subject_rules_reviews" in audit
+    assert "self_subject_access_reviews" in audit
+    assert "expected_reviews" in audit
+    for profile in (
+        "platform",
+        "inactive-owner",
+        "token-issuer",
+        "receipt-service-account",
+        "metadata-reader",
+    ):
+        assert profile in audit
+        assert profile in handoff
     for boundary in (
         "secrets",
+        "serviceaccounts",
+        "configmaps",
+        "daemonsets",
+        "deployments",
+        "persistentvolumeclaims",
+        "persistentvolumes",
+        "customresourcedefinitions",
+        "certificatesigningrequests",
+        "userextras",
         "pods/proxy",
         "services/proxy",
         "rolebindings",

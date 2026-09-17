@@ -21,6 +21,7 @@ SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 MAX_SIZE = 8 * 1024 * 1024
 MAX_OBJECTS = 256
 ALLOWED_KINDS = {
+    ("apps/v1", "DaemonSet"),
     ("v1", "ConfigMap"),
     ("v1", "Secret"),
     ("v1", "ServiceAccount"),
@@ -59,6 +60,18 @@ REQUIRED_OBJECTS = {
         "RoleBinding",
         "fs2-models",
         "fs2-pod-security-secret-metadata-reader",
+    ),
+    (
+        "rbac.authorization.k8s.io/v1",
+        "Role",
+        "fs2-system",
+        "fs2-pod-security-token-anchor-metadata-reader",
+    ),
+    (
+        "rbac.authorization.k8s.io/v1",
+        "RoleBinding",
+        "fs2-system",
+        "fs2-pod-security-token-anchor-metadata-reader",
     ),
     (
         "rbac.authorization.k8s.io/v1",
@@ -343,7 +356,7 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
         if not isinstance(labels, dict) or labels.get("security.fs2.nebius.ai/custody-owner") != "external":
             raise BundleError("every custody manifest must carry the external-owner label")
         if kind == "Secret":
-            if identity not in REQUIRED_OBJECTS or manifest.get("immutable") is not True or manifest.get("data", {}) != {} or "stringData" in manifest:
+            if identity not in REQUIRED_OBJECTS or manifest.get("immutable") is not True or manifest.get("type") != "Opaque" or manifest.get("data", {}) != {} or "stringData" in manifest:
                 raise BundleError("only the immutable empty token-anchor Secret is permitted")
         if kind == "ServiceAccount" and (
             manifest.get("automountServiceAccountToken") is not False
@@ -360,6 +373,15 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
             {"apiGroups": [""], "resources": ["secrets"], "verbs": ["list"]}
         ]:
             raise BundleError("metadata reader Role must grant only Secret list")
+        if identity == (
+            "rbac.authorization.k8s.io/v1",
+            "Role",
+            "fs2-system",
+            "fs2-pod-security-token-anchor-metadata-reader",
+        ) and manifest.get("rules") != [
+            {"apiGroups": [""], "resources": ["secrets"], "verbs": ["list"]}
+        ]:
+            raise BundleError("token-anchor metadata Role must grant only Secret list")
         if identity == (
             "rbac.authorization.k8s.io/v1",
             "Role",
@@ -410,6 +432,28 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
             ]
         ):
             raise BundleError("Secret metadata RoleBinding subject or role differs")
+        if identity == (
+            "rbac.authorization.k8s.io/v1",
+            "RoleBinding",
+            "fs2-system",
+            "fs2-pod-security-token-anchor-metadata-reader",
+        ) and (
+            manifest.get("roleRef")
+            != {
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "Role",
+                "name": "fs2-pod-security-token-anchor-metadata-reader",
+            }
+            or manifest.get("subjects")
+            != [
+                {
+                    "kind": "ServiceAccount",
+                    "name": "fs2-pod-security-metadata-reader",
+                    "namespace": "fs2-system",
+                }
+            ]
+        ):
+            raise BundleError("token-anchor metadata RoleBinding subject or role differs")
         if identity == (
             "rbac.authorization.k8s.io/v1",
             "RoleBinding",
@@ -466,12 +510,20 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
                 api_groups = set(rule.get("apiGroups", []))
                 if "*" in verbs | resources | api_groups or verbs & {"impersonate", "bind", "escalate"}:
                     raise BundleError("custody RBAC may not contain wildcard or pivot authority")
-                if "secrets" in resources and identity != (
-                    "rbac.authorization.k8s.io/v1",
-                    "Role",
-                    "fs2-models",
-                    "fs2-pod-security-secret-metadata-reader",
-                ):
+                if "secrets" in resources and identity not in {
+                    (
+                        "rbac.authorization.k8s.io/v1",
+                        "Role",
+                        "fs2-models",
+                        "fs2-pod-security-secret-metadata-reader",
+                    ),
+                    (
+                        "rbac.authorization.k8s.io/v1",
+                        "Role",
+                        "fs2-system",
+                        "fs2-pod-security-token-anchor-metadata-reader",
+                    ),
+                }:
                     raise BundleError("only the bounded metadata reader may list Secrets")
                 if "serviceaccounts/token" in resources and not rule.get("resourceNames"):
                     raise BundleError("TokenRequest authority must be exact-name bounded")

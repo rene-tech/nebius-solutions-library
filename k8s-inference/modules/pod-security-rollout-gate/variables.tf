@@ -126,7 +126,7 @@ variable "external_handoff_path" {
 }
 
 variable "external_handoff_public_key_path" {
-  description = "Descriptor-fenced Ed25519 public key for external-custody handoffs."
+  description = "Deprecated and ignored. Handoff authority is pinned only by the repository custody trust lock."
   type        = string
   default     = null
   nullable    = true
@@ -134,7 +134,7 @@ variable "external_handoff_public_key_path" {
 }
 
 variable "external_handoff_public_key_sha256" {
-  description = "Reviewed SHA-256 of the external-custody handoff public key."
+  description = "Deprecated and ignored. Handoff authority is pinned only by the repository custody trust lock."
   type        = string
   default     = null
   nullable    = true
@@ -148,7 +148,7 @@ variable "external_handoff_public_key_sha256" {
 }
 
 variable "external_handoff_key_id" {
-  description = "Exact independent custody signing key identifier."
+  description = "Deprecated and ignored. Handoff authority is pinned only by the repository custody trust lock."
   type        = string
   default     = null
   nullable    = true

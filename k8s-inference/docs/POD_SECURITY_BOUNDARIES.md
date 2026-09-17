@@ -239,10 +239,38 @@ v3/v4 artifacts and fixed 103/103/716 counts cannot bootstrap a rollout.
 
 Live receipt verification and ledger mutation run only in the separately
 administered custody pipeline, never inside platform Terraform. The standalone
-`stages/pod-security-custody` root has a distinct backend, owner identity, and
-provider graph; it accepts no platform, receipt-reader, or metadata-reader
-kubeconfig. It re-reads every signed object and inventory immediately before an
-atomic ConfigMap resourceVersion compare-and-swap. Platform Terraform receives
+`stages/pod-security-custody` root declares a partial encrypted, lock-enabled
+S3 backend and a single owner provider graph; it accepts no platform,
+receipt-reader, or metadata-reader kubeconfig. A canonical repository trust
+lock—not ordinary Terraform variables—pins the external Ed25519 authority,
+provider tenant/project and principal identities, exact exclusion set, backend
+bucket/key/region, remote-state lineage/serial/object version/ETag/hash, and
+separately signed provider-IAM and backend receipts. The checked-in lock is
+deliberately inactive because those independently owned facts have not been
+issued or reviewed. This revision therefore cannot plan, apply, consume a
+handoff, or claim custody activation.
+
+Before any future SSA, the external pipeline must prove a one-to-one inventory
+of every static platform state address and every dynamic retained
+NetworkPolicy, ServiceAccount, and DaemonSet instance. It immediately re-reads
+each live object under the authenticated owner and compares UID,
+resourceVersion, and canonical full-object hash. Present objects carry those
+exact values as SSA preconditions. The new empty immutable token anchor is not
+created by SSA: a typed Secret resource uses Kubernetes POST create, so a
+same-name race fails atomically instead of adopting or patching the object.
+After creation, the bound metadata reader proves its exact UID/resourceVersion
+through `PartialObjectMetadataList` without retrieving Secret data. Missing, additional,
+duplicate, stale, or unsupported addresses fail. The platform root retains
+every current address: the predecessor `removed { destroy=false }` design is
+archived inside an HCL comment and performs no state forgetting. A later
+independently reviewed source commit is required even after complete adoption.
+
+`scripts/run_sai07_external_custody_pipeline.py` is the source-owned external
+entrypoint. It verifies provider/backend trust, rejects an existing saved-plan
+path, refuses delete/replacement actions, performs exact adoption, then stops
+for independently signed post-SSA rereads. Its separate authorization mode
+verifies the v2 handoff before invoking the existing resourceVersion CAS. This
+task did not execute either mode. Platform Terraform receives
 only a descriptor-fenced, whole-file signed handoff binding the exact context,
 bundle, phase, action, ledger UID/resourceVersion/sequence/nonce, adopted object
 aggregate, authority audits, and metadata-only Secret inventory. It cannot
@@ -256,16 +284,20 @@ ledger updates all fail closed. A digest-shaped string or a valid signature
 without successful live reconciliation and ledger consumption has no authority.
 
 Kubernetes admission cannot self-protect its own ValidatingAdmissionPolicy or
-binding objects, so this design makes no such claim. Preventive custody comes
-from a separately issued IAM/backend/provider boundary receipt and group
-exclusion outside the platform root. Before each handoff, exhaustive live
-SelfSubjectRulesReview plus named SelfSubjectAccessReviews cover every namespace
-and cluster-scoped edge. They deny Secret reads, Pod/Service proxy access,
-unrelated RoleBinding and ClusterRoleBinding creation, RBAC bind/escalate,
-admission-policy mutation, ledger mutation, token minting, and user/group/
-ServiceAccount impersonation for both the platform and inactive owner
-identities. The signed handoff binds the complete namespace inventory and both
-authority-audit digests.
+binding objects, so this design makes no such claim. Preventive custody can
+come only from the separately issued, provider-evidenced IAM/backend boundary
+and exact platform-principal exclusion outside the platform root. Before each
+handoff, five full live audits cover the platform, inactive owner, token issuer,
+receipt ServiceAccount, and metadata-reader ServiceAccount. Each artifact binds
+the authenticated username, exact groups, and, for short-lived ServiceAccounts,
+the token JTI. It carries—not merely hashes—every namespace's complete
+SelfSubjectRulesReview and the exhaustive SelfSubjectAccessReview matrix for
+Secrets, token minting, anchors, ConfigMaps, RBAC mutation/bind/escalate,
+admission, quarantine objects, workloads, storage, proxy/exec/attach/
+port-forward, webhooks, CRDs, CSRs, authentication/authorization reviews, and
+user/group/ServiceAccount/userextras impersonation. The v2 handoff recomputes
+the full-evidence hashes and requires the exact allow/deny matrix for every
+identity across one identical namespace inventory.
 
 The two short-lived automation identities are tokenless ServiceAccounts.
 Their distinct TokenRequest credentials use exactly the Kubernetes API

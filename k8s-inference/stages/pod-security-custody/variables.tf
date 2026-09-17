@@ -12,46 +12,25 @@ variable "owner_context" {
   type = string
 }
 
-variable "owner_username" {
-  type = string
-}
-variable "owner_group" {
-  type    = string
-  default = "fs2-pod-security-custody-owners"
-}
-variable "platform_username" {
-  type = string
-}
-variable "platform_group" {
-  type    = string
-  default = "fs2-platform-terraform"
-}
-variable "cluster_id" {
-  type = string
-}
-
-variable "kube_system_uid" {
-  type = string
-}
-
 variable "manifest_bundle_path" {
   type      = string
   sensitive = true
 }
 
-variable "manifest_public_key_path" {
+variable "secret_metadata_artifact_path" {
+  description = "Deprecated and ignored for pre-SSA admission. The anchor uses atomic typed POST creation; metadata-only evidence is collected after creation."
+  type        = string
+  default     = null
+  nullable    = true
+  sensitive   = true
+}
+
+variable "iam_boundary_receipt_path" {
   type      = string
   sensitive = true
 }
 
-variable "manifest_public_key_sha256" {
-  type = string
-}
-
-variable "manifest_key_id" {
-  type = string
-}
-variable "iam_boundary_sha256" {
-  description = "Digest of the independently issued IAM/group-exclusion receipt; this root cannot issue its own boundary."
-  type        = string
+variable "backend_custody_receipt_path" {
+  type      = string
+  sensitive = true
 }

@@ -1,3 +1,18 @@
+# REJECTED SAI-07 STATE-FORGETTING DESIGN (retained as negative evidence).
+#
+# This entire file is deliberately a block comment.  No `removed` block may be
+# active while the source cannot prove an exhaustive, exact, freshly reread
+# adoption of every static and dynamic state instance.  In particular,
+# `destroy = false` is not a safe substitute for adoption: an omitted instance
+# would be forgotten by the platform state without becoming owned elsewhere.
+# A future, independently reviewed commit may replace this archive only after
+# the external custody pipeline has pinned the platform state lineage/serial,
+# compared every UID/resourceVersion/object hash before and after SSA, and
+# produced a complete signed adoption acknowledgement.  Under the current
+# no-delete constraint the platform root continues to own every existing
+# object and no state address is relinquished.
+/*
+
 # Non-destructive state handoff to stages/pod-security-custody.
 #
 # The independently signed external handoff consumed by
@@ -171,3 +186,5 @@ removed {
   from = kubernetes_labels.pod_security_legacy_daemonset_quarantine
   lifecycle { destroy = false }
 }
+
+*/

@@ -228,23 +228,24 @@ locals {
 # The platform invocation has no custody provider and receives no receipt,
 # owner, or token-minting kubeconfig.  It can only validate a short-lived,
 # whole-file signed handoff emitted by the independently administered custody
-# root after that root has completed live reads, authority audits and ledger
-# CAS.  This verifier is offline and cannot mutate Kubernetes.
+# root after that root has completed live reads, full identity-bound authority
+# audits, exact adoption and ledger CAS. The signing key and provider/backend
+# trust facts come only from the repository trust lock; legacy key variables are
+# ignored and cannot select authority. This verifier is offline and cannot
+# mutate Kubernetes.
 data "external" "verified_handoff" {
-  program = ["python3", "${path.module}/../../scripts/verify_sai07_external_handoff.py"]
+  program = ["python3", "${path.module}/../../scripts/verify_sai07_external_handoff_v2.py"]
 
   query = {
-    handoff_path              = var.external_handoff_path
-    handoff_public_key_path   = var.external_handoff_public_key_path
-    handoff_public_key_sha256 = var.external_handoff_public_key_sha256
-    handoff_key_id            = var.external_handoff_key_id
-    receipt_bundle_sha256     = local.expected_bundle_sha256
-    expected_context_sha256   = sha256(jsonencode(var.expected_context))
-    expected_phase            = var.phase
-    expected_consumer         = var.consumer_role
-    expected_action           = var.action
-    cluster_id                = var.expected_context.cluster_id
-    kube_system_uid           = var.expected_context.kube_system_uid
+    handoff_path            = var.external_handoff_path
+    trust_lock_path         = "${path.module}/../../stages/pod-security-custody/custody-trust-lock.json"
+    receipt_bundle_sha256   = local.expected_bundle_sha256
+    expected_context_sha256 = sha256(jsonencode(var.expected_context))
+    expected_phase          = var.phase
+    expected_consumer       = var.consumer_role
+    expected_action         = var.action
+    cluster_id              = var.expected_context.cluster_id
+    kube_system_uid         = var.expected_context.kube_system_uid
   }
 }
 
@@ -255,9 +256,6 @@ resource "terraform_data" "verified" {
     precondition {
       condition = (
         var.external_handoff_path != null &&
-        var.external_handoff_public_key_path != null &&
-        var.external_handoff_public_key_sha256 != null &&
-        var.external_handoff_key_id != null &&
         data.external.verified_handoff.result.valid == "true" &&
         data.external.verified_handoff.result.handoff_sha256 == local.external_handoff_sha256 &&
         data.external.verified_handoff.result.bundle_sha256 == local.expected_bundle_sha256 &&
