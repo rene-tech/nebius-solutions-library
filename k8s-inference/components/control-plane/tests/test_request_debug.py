@@ -1890,7 +1890,10 @@ def test_real_httpx_request_query_is_sliced_before_public_property_materializati
     from fs2_serve.request_debug import _MAX_DEBUG_QUERY_BYTES
     from fs2_serve.runtime import _bounded_httpx_query
 
-    request = httpx.Request("GET", "https://runtime.invalid/invoke?token=" + "x" * 1_000_000)
+    request = httpx.Request(
+        "GET",
+        "https://runtime.invalid/invoke?token=" + "x" * (2 * _MAX_DEBUG_QUERY_BYTES),
+    )
 
     def public_query_must_not_be_read(_url):
         raise AssertionError("HTTPX URL.query materializes the complete query")
