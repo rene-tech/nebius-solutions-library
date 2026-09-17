@@ -18,9 +18,9 @@
     "authority": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "generation", "manifestSha256", "priorHeadReceiptSha256", "iamInventoryReceiptSha256", "rbacInventoryReceiptSha256", "predecessorCompatibilitySha256", "boundaryPolicySha256", "releaseValuesSha256", "providerIdentitySha256", "securityGroupId", "nodeGroupId", "nodeSelectorKey", "nodeSelectorValue", "taintKey", "taintValue", "taintEffect"],
+      "required": ["schema", "generation", "manifestSha256", "priorHeadReceiptSha256", "iamInventoryReceiptSha256", "rbacInventoryReceiptSha256", "predecessorCompatibilitySha256", "boundaryPolicySha256", "workloadPolicySha256", "releaseValuesSha256", "providerIdentitySha256", "securityGroupId", "nodeGroupId", "nodeSelectorKey", "nodeSelectorValue", "taintKey", "taintValue", "taintEffect"],
       "properties": {
-        "schema": {"const": "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v1"},
+        "schema": {"const": "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v2"},
         "generation": {"type": "string", "pattern": "^g[0-9]{14}-[a-f0-9]{12}$"},
         "manifestSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "priorHeadReceiptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
@@ -28,6 +28,7 @@
         "rbacInventoryReceiptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "predecessorCompatibilitySha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "boundaryPolicySha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "workloadPolicySha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "releaseValuesSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "providerIdentitySha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "securityGroupId": {"type": "string", "pattern": "^vpcsecuritygroup-[a-z0-9]+$"},

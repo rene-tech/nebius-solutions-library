@@ -24,33 +24,73 @@ locals {
     for generation in var.boundary_generations :
     generation => "fs2-customer-storage-egress-boundary-${generation}"
   }
-  v2_pod_labels = {
-    "app.kubernetes.io/name"      = "fs2-serve-control-plane"
-    "app.kubernetes.io/instance"  = "fs2-serve-control-plane"
-    "app.kubernetes.io/component" = "storage-reconciler-v2"
+  workload_policy_names = {
+    for generation in var.workload_policy_generations :
+    generation => "fs2-customer-storage-egress-boundary-workload-${generation}"
   }
-  v2_pod_labels_cel = jsonencode(local.v2_pod_labels)
-  v2_dynamic_label_keys_cel = jsonencode([
-    "fs2.nebius.ai/storage-egress-generation",
-    "fs2.nebius.ai/storage-rollout-generation",
-  ])
+  v2_pod_labels = {
+    "app.kubernetes.io/name"                   = "fs2-serve-control-plane"
+    "app.kubernetes.io/instance"               = "fs2-serve-control-plane"
+    "app.kubernetes.io/component"              = "storage-reconciler-v2"
+    "fs2.nebius.ai/storage-egress-generation"  = var.current_generation
+    "fs2.nebius.ai/storage-rollout-generation" = var.current_release_generation
+  }
+  v2_pod_labels_cel        = jsonencode(local.v2_pod_labels)
+  v2_runtime_label_key_cel = "pod-template-hash"
   v2_selector_matches_object_cel = join(" ", [
     "(!has(object.spec.podSelector.matchLabels) ||",
     "object.spec.podSelector.matchLabels.all(key, value,",
-    "(key in ${local.v2_pod_labels_cel} && ${local.v2_pod_labels_cel}[key] == value) ||",
-    "key in ${local.v2_dynamic_label_keys_cel})) &&",
+    "(key in ${local.v2_pod_labels_cel} && ${local.v2_pod_labels_cel}[key] == value) || key == '${local.v2_runtime_label_key_cel}')) &&",
     "(!has(object.spec.podSelector.matchExpressions) ||",
     "object.spec.podSelector.matchExpressions.all(term,",
-    "(term.operator == 'In' && ((term.key in ${local.v2_pod_labels_cel} && term.values.exists(value, ${local.v2_pod_labels_cel}[term.key] == value)) || (term.key in ${local.v2_dynamic_label_keys_cel} && size(term.values) > 0))) ||",
-    "(term.operator == 'NotIn' && ((term.key in ${local.v2_pod_labels_cel} && !term.values.exists(value, ${local.v2_pod_labels_cel}[term.key] == value)) || term.key in ${local.v2_dynamic_label_keys_cel} || (!(term.key in ${local.v2_pod_labels_cel}) && !(term.key in ${local.v2_dynamic_label_keys_cel})))) ||",
-    "(term.operator == 'Exists' && (term.key in ${local.v2_pod_labels_cel} || term.key in ${local.v2_dynamic_label_keys_cel})) ||",
-    "(term.operator == 'DoesNotExist' && !(term.key in ${local.v2_pod_labels_cel}) && !(term.key in ${local.v2_dynamic_label_keys_cel}))))",
+    "(term.operator == 'In' && ((term.key in ${local.v2_pod_labels_cel} && term.values.exists(value, ${local.v2_pod_labels_cel}[term.key] == value)) || (term.key == '${local.v2_runtime_label_key_cel}' && size(term.values) > 0))) ||",
+    "(term.operator == 'NotIn' && (term.key == '${local.v2_runtime_label_key_cel}' || !(term.key in ${local.v2_pod_labels_cel}) || !term.values.exists(value, ${local.v2_pod_labels_cel}[term.key] == value))) ||",
+    "(term.operator == 'Exists' && (term.key in ${local.v2_pod_labels_cel} || term.key == '${local.v2_runtime_label_key_cel}')) ||",
+    "(term.operator == 'DoesNotExist' && !(term.key in ${local.v2_pod_labels_cel}) && term.key != '${local.v2_runtime_label_key_cel}'))) ",
   ])
   v2_selector_matches_old_object_cel = replace(
     local.v2_selector_matches_object_cel,
     "object.spec.podSelector",
     "oldObject.spec.podSelector",
   )
+  current_network_policy_spec = {
+    podSelector = { matchLabels = {
+      "app.kubernetes.io/name"                  = "fs2-serve-control-plane"
+      "app.kubernetes.io/instance"              = "fs2-serve-control-plane"
+      "app.kubernetes.io/component"             = "storage-reconciler-v2"
+      "fs2.nebius.ai/storage-egress-generation" = var.current_generation
+    } }
+    policyTypes = ["Ingress", "Egress"]
+    ingress     = []
+    egress = [
+      {
+        to = [{
+          namespaceSelector = { matchLabels = { "kubernetes.io/metadata.name" = "kube-system" } }
+          podSelector = { matchLabels = {
+            "app.kubernetes.io/instance" = "coredns"
+            "app.kubernetes.io/name"     = "coredns"
+            "k8s-app"                    = "coredns"
+          } }
+        }]
+        ports = [{ port = 53, protocol = "UDP" }, { port = 53, protocol = "TCP" }]
+      },
+      {
+        to = [{
+          namespaceSelector = { matchLabels = { "kubernetes.io/metadata.name" = "fs2-data" } }
+          podSelector       = { matchLabels = { "cnpg.io/cluster" = "fs2-control-db" } }
+        }]
+        ports = [{ port = 5432, protocol = "TCP" }]
+      },
+      {
+        to    = [for cidr in sort(jsondecode(local.current_contract.contract_json).cidrs) : { ipBlock = { cidr = cidr } }]
+        ports = [{ port = 443, protocol = "TCP" }]
+      },
+      {
+        to    = [for cidr in sort(tolist(local.current_contract.kubernetes_api_cidrs)) : { ipBlock = { cidr = cidr } }]
+        ports = [{ port = 443, protocol = "TCP" }]
+      },
+    ]
+  }
   boundary_policy_spec = {
     failurePolicy = "Fail"
     matchConstraints = {
@@ -83,6 +123,13 @@ locals {
           resources   = ["roles", "rolebindings"]
           scope       = "Namespaced"
         },
+        {
+          apiGroups   = ["apps"]
+          apiVersions = ["v1"]
+          operations  = ["UPDATE", "DELETE"]
+          resources   = ["deployments"]
+          scope       = "Namespaced"
+        },
       ]
     }
     matchConditions = [{
@@ -92,6 +139,8 @@ locals {
         "request.name.startsWith('fs2-customer-storage-egress-boundary-')) ||",
         "(request.resource.group == 'rbac.authorization.k8s.io' && request.namespace == '${local.namespace}' &&",
         "request.name.startsWith('fs2-storage-v2-')) ||",
+        "(request.resource.group == 'apps' && request.namespace == '${local.namespace}' &&",
+        "request.name == 'fs2-serve-control-plane-storage-reconciler') ||",
         "(request.namespace == '${local.namespace}' &&",
         "request.name.startsWith('fs2-customer-storage-egress-')) ||",
         "(request.resource.group == 'networking.k8s.io' && request.namespace == '${local.namespace}' &&",
@@ -102,12 +151,29 @@ locals {
     }]
     validations = [
       {
-        expression = "request.operation == 'CREATE'"
+        expression = "request.resource.group != 'apps'"
+        message    = "The receipted predecessor Deployment is frozen before the successor workload is admitted."
+        reason     = "Forbidden"
+      },
+      {
+        expression = join(" ", [
+          "request.resource.group != 'networking.k8s.io' ||",
+          "(request.operation == 'CREATE' &&",
+          "object.metadata.name == '${local.network_policy_names[var.current_generation]}' &&",
+          "has(object.metadata.annotations) &&",
+          "object.metadata.annotations['fs2.nebius.ai/storage-egress-contract-sha256'] == '${local.contract_digests[var.current_generation]}' &&",
+          "object.spec == ${jsonencode(local.current_network_policy_spec)})",
+        ])
+        message = "Only the exact externally bound NetworkPolicy may enter the frozen effective union."
+        reason  = "Forbidden"
+      },
+      {
+        expression = "request.resource.group == 'networking.k8s.io' || request.resource.group == 'apps' || request.operation == 'CREATE'"
         message    = "Customer-storage egress security generations are create-only and cannot be updated or deleted."
         reason     = "Forbidden"
       },
       {
-        expression = "request.userInfo.groups.exists(group, group == '${var.security_owner_group}')"
+        expression = "request.resource.group == 'apps' || request.userInfo.groups.exists(group, group == '${var.security_owner_group}')"
         message    = "Only the separately authenticated customer-storage security owner may change this boundary."
         reason     = "Forbidden"
       },
@@ -137,6 +203,201 @@ locals {
       action_timeout_seconds           = release.action_timeout_seconds
     }
   }
+  current_release      = var.release_generations[var.current_release_generation]
+  current_release_name = local.release_names[var.current_release_generation]
+  allowed_secret_names = sort([
+    local.current_release.crypto_secret_name,
+    local.current_release.database_secret_name,
+    local.current_release.resource_credentials_secret_name,
+    local.current_release.iam_credentials_secret_name,
+  ])
+  allowed_secret_names_cel = jsonencode(local.allowed_secret_names)
+  expected_pull_secrets_cel = jsonencode([
+    for name in local.current_release.image_pull_secrets : { name = name }
+  ])
+  expected_container_env_cel = jsonencode([
+    { name = "FS2_DATABASE_URL", valueFrom = { secretKeyRef = { name = local.current_release.database_secret_name, key = "url" } } },
+    { name = "FS2_USER_STORAGE_KEYRING_FILE", value = "/var/run/secrets/fs2-serve/customer-storage-crypto/keyring.json" },
+    { name = "FS2_USER_STORAGE_NAME_KEYRING_FILE", value = "/var/run/secrets/fs2-serve/customer-storage-crypto/name-keyring.json" },
+    { name = "FS2_USER_STORAGE_ENABLED", value = "true" },
+    { name = "FS2_USER_STORAGE_PROJECT_ID", value = local.current_release.storage_project_id },
+    { name = "FS2_USER_STORAGE_REGION", value = local.current_release.storage_region },
+    { name = "FS2_USER_STORAGE_DEFAULT_MODE", value = "user" },
+    { name = "FS2_USER_STORAGE_QUOTA_BYTES", value = tostring(local.current_release.quota_bytes) },
+    { name = "FS2_USER_STORAGE_EXCLUDED_TENANTS", value = jsonencode(sort(tolist(local.current_release.excluded_tenants))) },
+    { name = "FS2_USER_STORAGE_POLL_SECONDS", value = "5" },
+    { name = "FS2_USER_STORAGE_KEY_TTL_DAYS", value = tostring(local.current_release.key_ttl_days) },
+    { name = "FS2_USER_STORAGE_ROTATION_WINDOW_DAYS", value = tostring(local.current_release.rotation_window_days) },
+    { name = "FS2_USER_STORAGE_ACTION_TIMEOUT_SECONDS", value = tostring(local.current_release.action_timeout_seconds) },
+    { name = "FS2_USER_STORAGE_RESOURCE_CREDENTIALS_FILE", value = "/var/run/secrets/fs2-serve/customer-storage/resource/credentials.json" },
+    { name = "FS2_USER_STORAGE_IAM_CREDENTIALS_FILE", value = "/var/run/secrets/fs2-serve/customer-storage/iam/credentials.json" },
+  ])
+  expected_init_args_cel = jsonencode([
+    "--contract", "/verify/contract.json",
+    "--public-key", "/verify/public-key.pem",
+    "--expected-kubernetes-api-cidrs", "/verify/kubernetes-api-cidrs.json",
+    "--kubernetes-network-policy-set", local.namespace,
+    "--pod-label", "app.kubernetes.io/name=fs2-serve-control-plane",
+    "--pod-label", "app.kubernetes.io/instance=fs2-serve-control-plane",
+    "--pod-label", "app.kubernetes.io/component=storage-reconciler-v2",
+    "--pod-label", "fs2.nebius.ai/storage-egress-generation=${var.current_generation}",
+    "--pod-label", "fs2.nebius.ai/storage-rollout-generation=${var.current_release_generation}",
+  ])
+  expected_container_mounts_cel = jsonencode([
+    { name = "customer-storage-crypto", mountPath = "/var/run/secrets/fs2-serve/customer-storage-crypto", readOnly = true },
+    { name = "database-ca", mountPath = "/tls", readOnly = true },
+    { name = "customer-storage-resource", mountPath = "/var/run/secrets/fs2-serve/customer-storage/resource", readOnly = true },
+    { name = "customer-storage-iam", mountPath = "/var/run/secrets/fs2-serve/customer-storage/iam", readOnly = true },
+  ])
+  expected_init_mounts_cel = jsonencode([
+    { name = "egress-contract", mountPath = "/verify/contract.json", subPath = "contract.json", readOnly = true },
+    { name = "egress-trust", mountPath = "/verify/public-key.pem", subPath = "public-key.pem", readOnly = true },
+    { name = "egress-contract", mountPath = "/verify/kubernetes-api-cidrs.json", subPath = "kubernetes-api-cidrs.json", readOnly = true },
+    { name = "kubernetes-api", mountPath = "/var/run/secrets/kubernetes.io/serviceaccount", readOnly = true },
+  ])
+  workload_pod_spec_template_cel = join(" ", [
+    "POD.serviceAccountName == '${local.current_release_name}' &&",
+    "has(POD.automountServiceAccountToken) && POD.automountServiceAccountToken == false &&",
+    "has(POD.enableServiceLinks) && POD.enableServiceLinks == false &&",
+    "POD.nodeSelector == {'${var.provider_authority.node_selector_key}':'${var.provider_authority.node_selector_value}'} &&",
+    "size(POD.tolerations) == 1 && POD.tolerations[0].key == '${var.provider_authority.taint_key}' &&",
+    "POD.tolerations[0].operator == 'Equal' && POD.tolerations[0].value == '${var.provider_authority.taint_value}' &&",
+    "POD.tolerations[0].effect == '${var.provider_authority.taint_effect}' &&",
+    "(!has(POD.hostNetwork) || POD.hostNetwork == false) &&",
+    "(!has(POD.hostPID) || POD.hostPID == false) &&",
+    "(!has(POD.hostIPC) || POD.hostIPC == false) &&",
+    "(!has(POD.shareProcessNamespace) || POD.shareProcessNamespace == false) &&",
+    "size(POD.containers) == 1 && size(POD.initContainers) == 1 &&",
+    "POD.containers[0].name == 'storage-reconciler' &&",
+    "POD.initContainers[0].name == 'verify-effective-egress' &&",
+    "POD.containers[0].image == '${local.current_release.image_repository}@${local.current_release.image_digest}' &&",
+    "POD.initContainers[0].image == '${local.current_release.image_repository}@${local.current_release.image_digest}' &&",
+    "POD.containers[0].args == ['storage-reconciler'] && (!has(POD.containers[0].command) || size(POD.containers[0].command) == 0) &&",
+    "POD.initContainers[0].command == ['python', '-m', 'fs2_serve.storage_egress_contract'] && POD.initContainers[0].args == ${local.expected_init_args_cel} &&",
+    "POD.containers[0].env == ${local.expected_container_env_cel} &&",
+    "POD.containers[0].volumeMounts == ${local.expected_container_mounts_cel} && POD.initContainers[0].volumeMounts == ${local.expected_init_mounts_cel} &&",
+    "(!has(POD.containers[0].envFrom) || size(POD.containers[0].envFrom) == 0) &&",
+    "(!has(POD.initContainers[0].env) || size(POD.initContainers[0].env) == 0) &&",
+    "(!has(POD.initContainers[0].envFrom) || size(POD.initContainers[0].envFrom) == 0) &&",
+    "has(POD.securityContext) && POD.securityContext.runAsNonRoot == true && POD.securityContext.runAsUser == 65532 && POD.securityContext.runAsGroup == 65532 && POD.securityContext.fsGroup == 65532 && POD.securityContext.seccompProfile.type == 'RuntimeDefault' &&",
+    "[POD.containers[0], POD.initContainers[0]].all(container, has(container.securityContext) && container.securityContext.allowPrivilegeEscalation == false && container.securityContext.readOnlyRootFilesystem == true && container.securityContext.capabilities.drop == ['ALL'] && (!has(container.securityContext.privileged) || container.securityContext.privileged == false)) &&",
+    "(!has(POD.ephemeralContainers) || size(POD.ephemeralContainers) == 0) &&",
+    "(!has(POD.imagePullSecrets) || POD.imagePullSecrets == ${local.expected_pull_secrets_cel}) &&",
+    "size(POD.volumes) == 7 && POD.volumes.all(volume, volume.name in ['egress-contract', 'egress-trust', 'kubernetes-api', 'customer-storage-crypto', 'database-ca', 'customer-storage-resource', 'customer-storage-iam']) &&",
+    "size(POD.volumes.filter(volume, has(volume.secret))) == size(${local.allowed_secret_names_cel}) &&",
+    "POD.volumes.filter(volume, has(volume.secret)).all(volume, volume.secret.secretName in ${local.allowed_secret_names_cel}) &&",
+    "${local.allowed_secret_names_cel}.all(secretName, POD.volumes.exists(volume, has(volume.secret) && volume.secret.secretName == secretName)) &&",
+    "POD.volumes.exists(volume, volume.name == 'customer-storage-crypto' && has(volume.secret) && volume.secret.secretName == '${local.current_release.crypto_secret_name}') &&",
+    "POD.volumes.exists(volume, volume.name == 'database-ca' && has(volume.secret) && volume.secret.secretName == '${local.current_release.database_secret_name}') &&",
+    "POD.volumes.exists(volume, volume.name == 'customer-storage-resource' && has(volume.secret) && volume.secret.secretName == '${local.current_release.resource_credentials_secret_name}') &&",
+    "POD.volumes.exists(volume, volume.name == 'customer-storage-iam' && has(volume.secret) && volume.secret.secretName == '${local.current_release.iam_credentials_secret_name}') &&",
+    "POD.volumes.exists(volume, volume.name == 'egress-contract' && has(volume.configMap) && volume.configMap.name == '${local.contract_names[var.current_generation]}') &&",
+    "POD.volumes.exists(volume, volume.name == 'egress-trust' && has(volume.configMap) && volume.configMap.name == '${local.trust_names[local.current_contract.trust_generation]}') &&",
+    "POD.volumes.filter(volume, has(volume.projected)).all(volume,",
+    "volume.name == 'kubernetes-api' && size(volume.projected.sources) == 2 &&",
+    "volume.projected.sources.exists(source, has(source.serviceAccountToken) && source.serviceAccountToken.audience == 'kubernetes.default.svc' && source.serviceAccountToken.expirationSeconds == 600 && source.serviceAccountToken.path == 'token') &&",
+    "volume.projected.sources.exists(source, has(source.configMap) && source.configMap.name == 'kube-root-ca.crt') &&",
+    "volume.projected.sources.all(source, has(source.serviceAccountToken) || (has(source.configMap) && source.configMap.name == 'kube-root-ca.crt'))) &&",
+    "size(POD.volumes.filter(volume, has(volume.hostPath) || has(volume.persistentVolumeClaim) || has(volume.csi))) == 0",
+  ])
+  deployment_pod_spec_cel = replace(
+    local.workload_pod_spec_template_cel,
+    "POD",
+    "object.spec.template.spec",
+  )
+  pod_spec_cel = replace(
+    local.workload_pod_spec_template_cel,
+    "POD",
+    "object.spec",
+  )
+  workload_policy_spec = {
+    failurePolicy = "Fail"
+    matchConstraints = {
+      resourceRules = [
+        {
+          apiGroups   = [""]
+          apiVersions = ["v1"]
+          operations  = ["CREATE", "UPDATE"]
+          resources   = ["pods", "serviceaccounts"]
+          scope       = "Namespaced"
+        },
+        {
+          apiGroups   = ["apps"]
+          apiVersions = ["v1"]
+          operations  = ["CREATE", "UPDATE"]
+          resources   = ["deployments", "daemonsets", "statefulsets", "replicasets"]
+          scope       = "Namespaced"
+        },
+        {
+          apiGroups   = ["batch"]
+          apiVersions = ["v1"]
+          operations  = ["CREATE", "UPDATE"]
+          resources   = ["jobs", "cronjobs"]
+          scope       = "Namespaced"
+        },
+      ]
+    }
+    matchConditions = [{
+      name = "customer-storage-successor-workload"
+      expression = join(" ", [
+        "request.namespace == '${local.namespace}' &&",
+        "(request.userInfo.username == '${var.non_owner_identities[var.release_identity_name].username}' ||",
+        "request.name.startsWith('fs2-storage-v2-') ||",
+        "(request.operation == 'UPDATE' ?",
+        "(has(oldObject.metadata.labels) && 'app.kubernetes.io/component' in oldObject.metadata.labels && oldObject.metadata.labels['app.kubernetes.io/component'] == 'storage-reconciler-v2') :",
+        "(has(object.metadata.labels) && 'app.kubernetes.io/component' in object.metadata.labels && object.metadata.labels['app.kubernetes.io/component'] == 'storage-reconciler-v2')))",
+      ])
+    }]
+    validations = [
+      {
+        expression = "request.resource.resource in ['pods', 'serviceaccounts', 'deployments']"
+        message    = "Customer-storage release authority cannot create Job, CronJob, DaemonSet, StatefulSet or ReplicaSet workloads."
+        reason     = "Forbidden"
+      },
+      {
+        expression = join(" ", [
+          "request.resource.resource == 'pods' ||",
+          "(request.operation == 'CREATE' && request.userInfo.username == '${var.non_owner_identities[var.release_identity_name].username}')",
+        ])
+        message = "Only the exact release identity may create the generation-named ServiceAccount or Deployment."
+        reason  = "Forbidden"
+      },
+      {
+        expression = join(" ", [
+          "request.resource.resource != 'serviceaccounts' ||",
+          "(request.operation == 'CREATE' && object.metadata.name == '${local.current_release_name}' &&",
+          "has(object.automountServiceAccountToken) && object.automountServiceAccountToken == false &&",
+          "(!has(object.secrets) || size(object.secrets) == 0) &&",
+          "(!has(object.imagePullSecrets) || size(object.imagePullSecrets) == 0))",
+        ])
+        message = "The release ServiceAccount must be token-blind and exact."
+        reason  = "Forbidden"
+      },
+      {
+        expression = join(" ", [
+          "request.resource.resource != 'deployments' ||",
+          "(request.operation == 'CREATE' && object.metadata.name == '${local.current_release_name}' &&",
+          "object.metadata.labels == ${local.v2_pod_labels_cel} &&",
+          "object.spec.replicas == 1 && object.spec.selector.matchLabels == ${local.v2_pod_labels_cel} &&",
+          "object.spec.template.metadata.labels == ${local.v2_pod_labels_cel} &&",
+          "(${local.deployment_pod_spec_cel}))",
+        ])
+        message = "The release Deployment differs from the signed generation, Secret allowlist, or protected scheduling contract."
+        reason  = "Forbidden"
+      },
+      {
+        expression = join(" ", [
+          "request.resource.resource != 'pods' ||",
+          "(object.metadata.labels.all(key, value, (key in ${local.v2_pod_labels_cel} && ${local.v2_pod_labels_cel}[key] == value) || key == 'pod-template-hash') &&",
+          "${local.v2_pod_labels_cel}.all(key, value, key in object.metadata.labels && object.metadata.labels[key] == value) &&",
+          "(${local.pod_spec_cel}))",
+        ])
+        message = "A successor Pod differs from the signed generation, Secret allowlist, or protected scheduling contract."
+        reason  = "Forbidden"
+      },
+    ]
+  }
+  workload_policy_sha256 = sha256(jsonencode(local.workload_policy_spec))
   release_values = {
     for generation, release in var.release_generations : generation => {
       image = {
@@ -154,7 +415,8 @@ locals {
         rbacInventoryReceiptSha256     = var.provider_authority.kubernetes_rbac_inventory_receipt_sha256
         predecessorCompatibilitySha256 = var.provider_authority.predecessor_compatibility_sha256
         boundaryPolicySha256           = var.provider_authority.boundary_policy_sha256
-        releaseValuesSha256             = var.provider_authority.release_values_sha256
+        workloadPolicySha256           = var.provider_authority.workload_policy_sha256
+        releaseValuesSha256            = var.provider_authority.release_values_sha256
         providerIdentitySha256         = var.provider_authority.provider_identity_sha256
         securityGroupId                = var.provider_authority.security_group_id
         nodeGroupId                    = var.provider_authority.node_group_id
@@ -174,7 +436,7 @@ locals {
       }
       rollout = { generation = generation }
       predecessor = {
-        schema                = "fs2-serve.nebius.ai/customer-storage-egress-predecessor/v1"
+        schema               = "fs2-serve.nebius.ai/customer-storage-egress-predecessor/v1"
         receiptSha256        = local.predecessor_compatibility_sha256
         deploymentUid        = data.kubernetes_resource.predecessor_deployment.object.metadata.uid
         deploymentSpecSha256 = sha256(jsonencode(data.kubernetes_resource.predecessor_deployment.object.spec))
@@ -203,9 +465,9 @@ locals {
         databaseSecretName            = release.database_secret_name
         cryptoSecretName              = release.crypto_secret_name
         storageGeneration             = release.storage_generation
-        keyTtlDays                     = release.key_ttl_days
-        rotationWindowDays             = release.rotation_window_days
-        actionTimeoutSeconds            = release.action_timeout_seconds
+        keyTtlDays                    = release.key_ttl_days
+        rotationWindowDays            = release.rotation_window_days
+        actionTimeoutSeconds          = release.action_timeout_seconds
       }
       resources = {
         requests = { cpu = "50m", memory = "128Mi" }
@@ -284,24 +546,28 @@ data "external" "identity_separation" {
     identity_inventory_json = jsonencode(merge(
       {
         owner = {
-          kubeconfig_path      = var.security_owner_kubeconfig_path
-          kube_context         = var.security_owner_kube_context
-          username             = var.security_owner_username
-          category             = "owner"
-          credential_sha256    = var.security_owner_credential_sha256
+          kubeconfig_path       = var.security_owner_kubeconfig_path
+          kube_context          = var.security_owner_kube_context
+          username              = var.security_owner_username
+          groups                = var.security_owner_groups
+          category              = "owner"
+          credential_sha256     = var.security_owner_credential_sha256
           provider_principal_id = var.security_owner_provider_principal_id
         }
         workloads = {
-          kubeconfig_path      = var.workloads_kubeconfig_path
-          kube_context         = var.workloads_kube_context
-          username             = var.workloads_username
-          category             = "workloads"
-          credential_sha256    = var.workloads_credential_sha256
+          kubeconfig_path       = var.workloads_kubeconfig_path
+          kube_context          = var.workloads_kube_context
+          username              = var.workloads_username
+          groups                = var.workloads_groups
+          category              = "workloads"
+          credential_sha256     = var.workloads_credential_sha256
           provider_principal_id = var.workloads_provider_principal_id
         }
       },
       var.non_owner_identities,
     ))
+    service_account_inventory_json = jsonencode(var.kubernetes_service_account_inventory)
+    system_subject_inventory_json  = jsonencode(var.kubernetes_system_subject_inventory)
     protected_names_json = jsonencode({
       boundary_policy = local.boundary_policy_names[var.current_boundary_generation]
       contract        = local.contract_names[var.current_generation]
@@ -327,17 +593,36 @@ data "external" "integration_dependencies" {
   query = {
     dependency_record_path = "${path.module}/../sai-08-integration-dependencies.json"
     expected_dependencies_json = jsonencode({
-      sai_10_accepted_commit                              = var.provider_authority.accepted_sai10_commit
-      sai_10_accepted_tree                                = var.provider_authority.accepted_sai10_tree
-      sai_10_independent_review_receipt_sha256             = var.provider_authority.sai10_independent_review_receipt_sha256
-      provider_authority_manifest_sha256                   = var.provider_authority.authority_manifest_sha256
-      provider_authority_prior_head_receipt_sha256         = var.provider_authority.prior_head_receipt_sha256
-      provider_project_iam_inventory_receipt_sha256        = var.provider_authority.provider_project_iam_inventory_receipt_sha256
-      kubernetes_rbac_inventory_receipt_sha256              = var.provider_authority.kubernetes_rbac_inventory_receipt_sha256
-      predecessor_state_custody_sha256                     = var.provider_authority.predecessor_state_custody_sha256
-      live_predecessor_compatibility_handoff_sha256        = local.predecessor_compatibility_sha256
+      sai_10_accepted_commit                            = var.provider_authority.accepted_sai10_commit
+      sai_10_accepted_tree                              = var.provider_authority.accepted_sai10_tree
+      sai_10_independent_review_receipt_sha256          = var.provider_authority.sai10_independent_review_receipt_sha256
+      provider_authority_manifest_sha256                = var.provider_authority.authority_manifest_sha256
+      provider_authority_prior_head_receipt_sha256      = var.provider_authority.prior_head_receipt_sha256
+      provider_project_iam_inventory_receipt_sha256     = var.provider_authority.provider_project_iam_inventory_receipt_sha256
+      provider_effective_authority_graph_receipt_sha256 = var.provider_authority.provider_effective_authority_graph_receipt_sha256
+      provider_state_custody_sha256                     = var.provider_authority.provider_state_custody_sha256
+      boundary_state_custody_sha256                     = var.provider_authority.boundary_state_custody_sha256
+      kubernetes_rbac_inventory_receipt_sha256          = var.provider_authority.kubernetes_rbac_inventory_receipt_sha256
+      kubernetes_service_account_inventory_sha256       = var.provider_authority.kubernetes_service_account_inventory_sha256
+      kubernetes_system_subject_inventory_sha256        = var.provider_authority.kubernetes_system_subject_inventory_sha256
+      workload_policy_sha256                            = var.provider_authority.workload_policy_sha256
+      predecessor_state_custody_sha256                  = var.provider_authority.predecessor_state_custody_sha256
+      live_predecessor_compatibility_handoff_sha256     = local.predecessor_compatibility_sha256
     })
   }
+}
+
+data "external" "backend_custody" {
+  program = [
+    "uv",
+    "run",
+    "--frozen",
+    "--project",
+    "${path.module}/../../components/control-plane",
+    "python",
+    "${path.module}/verify_backend_custody.py",
+  ]
+  query = { module_path = path.module }
 }
 
 # Read the fixed predecessor objects exactly as compatibility inputs. They are
@@ -384,27 +669,32 @@ data "kubernetes_resource" "predecessor_deployment" {
 
 resource "terraform_data" "separate_security_owner" {
   input = {
-    current_generation             = var.current_generation
-    current_boundary_generation    = var.current_boundary_generation
-    current_release_generation     = var.current_release_generation
-    current_contract_sha256        = data.external.current_contract.result.contract_sha256
-    security_owner_group           = var.security_owner_group
-    security_owner_subject         = data.external.identity_separation.result.security_owner_subject_sha256
-    workloads_subject              = data.external.identity_separation.result.workloads_subject_sha256
-    identity_inventory             = data.external.identity_separation.result.identity_inventory_sha256
-    rbac_inventory                 = data.external.identity_separation.result.rbac_inventory_sha256
-    provider_authority_generation  = var.provider_authority.generation
-    provider_authority_manifest    = var.provider_authority.authority_manifest_sha256
-    integration_dependency_record  = data.external.integration_dependencies.result.dependency_record_sha256
-    predecessor_state_custody      = var.provider_authority.predecessor_state_custody_sha256
-    predecessor_compatibility      = local.predecessor_compatibility_sha256
-    provider_security_group_id     = var.provider_authority.security_group_id
-    provider_node_group_id         = var.provider_authority.node_group_id
-    predecessor_network_policy_uid = data.kubernetes_resource.predecessor_network_policy.object.metadata.uid
-    predecessor_contract_uid       = data.kubernetes_resource.predecessor_contract.object.metadata.uid
-    predecessor_policy_uid         = data.kubernetes_resource.predecessor_policy.object.metadata.uid
-    predecessor_binding_uid        = data.kubernetes_resource.predecessor_binding.object.metadata.uid
-    predecessor_deployment_uid     = data.kubernetes_resource.predecessor_deployment.object.metadata.uid
+    current_generation                 = var.current_generation
+    current_boundary_generation        = var.current_boundary_generation
+    current_workload_policy_generation = var.current_workload_policy_generation
+    current_release_generation         = var.current_release_generation
+    current_contract_sha256            = data.external.current_contract.result.contract_sha256
+    security_owner_group               = var.security_owner_group
+    security_owner_subject             = data.external.identity_separation.result.security_owner_subject_sha256
+    workloads_subject                  = data.external.identity_separation.result.workloads_subject_sha256
+    identity_inventory                 = data.external.identity_separation.result.identity_inventory_sha256
+    rbac_inventory                     = data.external.identity_separation.result.rbac_inventory_sha256
+    provider_authority_generation      = var.provider_authority.generation
+    provider_authority_manifest        = var.provider_authority.authority_manifest_sha256
+    integration_dependency_record      = data.external.integration_dependencies.result.dependency_record_sha256
+    predecessor_state_custody          = var.provider_authority.predecessor_state_custody_sha256
+    predecessor_compatibility          = local.predecessor_compatibility_sha256
+    provider_security_group_id         = var.provider_authority.security_group_id
+    provider_node_group_id             = var.provider_authority.node_group_id
+    predecessor_network_policy_uid     = data.kubernetes_resource.predecessor_network_policy.object.metadata.uid
+    predecessor_contract_uid           = data.kubernetes_resource.predecessor_contract.object.metadata.uid
+    predecessor_policy_uid             = data.kubernetes_resource.predecessor_policy.object.metadata.uid
+    predecessor_binding_uid            = data.kubernetes_resource.predecessor_binding.object.metadata.uid
+    predecessor_deployment_uid         = data.kubernetes_resource.predecessor_deployment.object.metadata.uid
+    boundary_backend_config            = data.external.backend_custody.result.backend_config_sha256
+    boundary_backend_lineage           = data.external.backend_custody.result.backend_lineage
+    boundary_state_lineage             = data.external.backend_custody.result.state_lineage
+    boundary_state_serial              = data.external.backend_custody.result.state_serial
   }
 
   lifecycle {
@@ -417,8 +707,14 @@ resource "terraform_data" "separate_security_owner" {
       error_message = "SAI-08 integration dependencies are not externally bound to accepted source and custody."
     }
     precondition {
+      condition     = data.external.backend_custody.result.authorized == "true"
+      error_message = "The initialized Terraform backend is not the separately anchored workloads-state lineage."
+    }
+    precondition {
       condition = (
         data.external.identity_separation.result.identity_inventory_sha256 == var.provider_authority.kubernetes_identity_inventory_sha256 &&
+        sha256(jsonencode(var.kubernetes_service_account_inventory)) == var.provider_authority.kubernetes_service_account_inventory_sha256 &&
+        sha256(jsonencode(var.kubernetes_system_subject_inventory)) == var.provider_authority.kubernetes_system_subject_inventory_sha256 &&
         data.external.identity_separation.result.rbac_inventory_sha256 == var.provider_authority.kubernetes_rbac_inventory_sha256 &&
         sha256(var.security_owner_provider_principal_id) == var.provider_authority.authority_service_account_sha256 &&
         sha256(var.workloads_provider_principal_id) == var.provider_authority.workloads_service_account_sha256
@@ -439,6 +735,17 @@ resource "terraform_data" "separate_security_owner" {
         endswith(var.current_boundary_generation, substr(local.boundary_policy_sha256, 0, 12))
       )
       error_message = "The current admission generation is not content-bound to the externally signed policy spec."
+    }
+    precondition {
+      condition     = local.workload_policy_sha256 == var.provider_authority.workload_policy_sha256
+      error_message = "The exhaustive workload admission contract differs from the externally signed provider generation."
+    }
+    precondition {
+      condition = (
+        contains(var.workload_policy_generations, var.current_workload_policy_generation) &&
+        endswith(var.current_workload_policy_generation, substr(local.workload_policy_sha256, 0, 12))
+      )
+      error_message = "The current workload admission generation is not append-only and content-bound."
     }
     precondition {
       condition     = contains(keys(var.release_generations), var.current_release_generation)
@@ -519,6 +826,7 @@ resource "kubernetes_manifest" "boundary_policy" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = all
   }
 
   depends_on = [terraform_data.separate_security_owner]
@@ -551,9 +859,79 @@ resource "kubernetes_manifest" "boundary_binding" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = all
   }
 
   depends_on = [kubernetes_manifest.boundary_policy]
+}
+
+# This companion policy constrains every workload-producing kind that the
+# release identity or a delegated controller could use. Jobs, CronJobs,
+# DaemonSets, StatefulSets and ReplicaSets are denied; the single Deployment,
+# ServiceAccount and its generated Pods must retain the exact Secret allowlist,
+# immutable generation labels, image digest and provider-enforced node target.
+resource "kubernetes_manifest" "workload_policy" {
+  for_each = local.workload_policy_names
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name = each.value
+      labels = {
+        "app.kubernetes.io/managed-by"      = "fs2-security-owner"
+        "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
+        "fs2.nebius.ai/security-generation" = each.key
+      }
+      annotations = {
+        "fs2.nebius.ai/workload-policy-sha256" = local.workload_policy_sha256
+      }
+    }
+    spec = local.workload_policy_spec
+  }
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-customer-storage-security-owner"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+  depends_on = [kubernetes_manifest.boundary_binding]
+}
+
+resource "kubernetes_manifest" "workload_binding" {
+  for_each = local.workload_policy_names
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name = each.value
+      labels = {
+        "app.kubernetes.io/managed-by"      = "fs2-security-owner"
+        "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
+        "fs2.nebius.ai/security-generation" = each.key
+      }
+    }
+    spec = {
+      policyName        = each.value
+      validationActions = ["Deny"]
+    }
+  }
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-customer-storage-security-owner"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+  depends_on = [kubernetes_manifest.workload_policy]
 }
 
 resource "kubernetes_config_map_v1" "trust" {
@@ -580,7 +958,7 @@ resource "kubernetes_config_map_v1" "trust" {
     prevent_destroy = true
   }
 
-  depends_on = [kubernetes_manifest.boundary_binding]
+  depends_on = [kubernetes_manifest.workload_binding]
 }
 
 resource "kubernetes_config_map_v1" "contract" {
@@ -612,6 +990,7 @@ resource "kubernetes_config_map_v1" "contract" {
 
   depends_on = [
     kubernetes_manifest.boundary_binding,
+    kubernetes_manifest.workload_binding,
     kubernetes_config_map_v1.trust,
   ]
 }
@@ -730,9 +1109,9 @@ resource "kubernetes_role_v1" "reconciler_inventory" {
     name      = local.release_names[each.key]
     namespace = local.namespace
     labels = {
-      "app.kubernetes.io/managed-by"       = "fs2-security-owner"
-      "fs2.nebius.ai/security-owner"       = "customer-storage-egress"
-      "fs2.nebius.ai/release-generation"   = each.key
+      "app.kubernetes.io/managed-by"     = "fs2-security-owner"
+      "fs2.nebius.ai/security-owner"     = "customer-storage-egress"
+      "fs2.nebius.ai/release-generation" = each.key
     }
   }
 
@@ -753,9 +1132,9 @@ resource "kubernetes_role_binding_v1" "reconciler_inventory" {
     name      = local.release_names[each.key]
     namespace = local.namespace
     labels = {
-      "app.kubernetes.io/managed-by"       = "fs2-security-owner"
-      "fs2.nebius.ai/security-owner"       = "customer-storage-egress"
-      "fs2.nebius.ai/release-generation"   = each.key
+      "app.kubernetes.io/managed-by"     = "fs2-security-owner"
+      "fs2.nebius.ai/security-owner"     = "customer-storage-egress"
+      "fs2.nebius.ai/release-generation" = each.key
     }
   }
 
@@ -814,8 +1193,8 @@ resource "helm_release" "storage_reconciler_v2" {
             custodyCommit = var.provider_authority.accepted_sai10_commit
             custodyTree   = var.provider_authority.accepted_sai10_tree
             custodyReview = var.provider_authority.sai10_independent_review_receipt_sha256
-            image          = each.value.image_digest
-            releaseValues  = var.provider_authority.release_values_sha256
+            image         = each.value.image_digest
+            releaseValues = var.provider_authority.release_values_sha256
           })), 0, 12),
         )
       )
@@ -825,6 +1204,7 @@ resource "helm_release" "storage_reconciler_v2" {
 
   depends_on = [
     kubernetes_manifest.boundary_binding,
+    kubernetes_manifest.workload_binding,
     kubernetes_config_map_v1.trust,
     kubernetes_config_map_v1.contract,
     kubernetes_network_policy_v1.contract,

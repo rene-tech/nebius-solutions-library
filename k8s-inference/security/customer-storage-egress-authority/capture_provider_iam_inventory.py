@@ -16,26 +16,25 @@ def main() -> int:
     parser.add_argument("--profile", required=True)
     args = parser.parse_args()
     registry = strict_json(safe_root_read(REGISTRY_PATH), "authority registry")
-    identities = registry.get("kubernetes_identity_inventory")
+    graph = registry.get("provider_effective_authority_graph_receipt")
+    identities = graph.get("principals") if isinstance(graph, dict) else None
     if not isinstance(identities, list) or not identities:
-        parser.error("authority registry has no Kubernetes identity inventory")
+        parser.error("authority registry has no provider-native authority graph")
     principal_ids = {
-        str(item.get("provider_principal_id"))
+        str(item.get("id"))
         for item in identities
-        if isinstance(item, dict) and item.get("provider_principal_id")
+        if isinstance(item, dict) and item.get("id")
     }
     if len(principal_ids) != len(identities):
         parser.error("authority registry identity principals are incomplete or duplicated")
     receipt = {
-        "schema": "fs2-serve.nebius.ai/provider-project-iam-inventory/v1",
+        "schema": "fs2-serve.nebius.ai/provider-project-iam-inventory/v2",
         "project_id": registry["authority_project_id"],
         "inventory": _project_inventory(
             args.profile,
             registry["authority_project_id"],
             principal_ids,
         ),
-        "cluster_access_principal_ids": sorted(principal_ids),
-        "mutating_principal_ids": [registry["authority_group_id"]],
         "observed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }
     print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))

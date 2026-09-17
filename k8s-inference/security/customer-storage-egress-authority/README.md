@@ -11,13 +11,20 @@ registry from `/etc/fs2-security-ro/authority/` and the signed prior-head
 checkpoint from `/var/lib/fs2-security-checkpoints-ro/`. Both must be private,
 root-owned, `O_NOFOLLOW` files on distinct read-only filesystems. Independent
 keys sign the manifest and checkpoint. The new manifest must extend the
-checkpoint's prior head and exact live/state custody digest; an alternate
-local file or Terraform state cannot start another history.
+checkpoint's prior manifest and generation heads plus exact live/provider-state
+custody digests. The first generation therefore cannot restart its predecessor
+at `null`. The root also descriptor-reads the initialized backend metadata and
+requires its complete S3 configuration digest, lock setting, backend lineage,
+state lineage/serial/version, snapshot digest and exact managed-address set to
+match the separately anchored receipt; an alternate local state cannot start
+another history.
 
 The signed manifest fixes provider version `0.5.232`, the exact target cluster,
-complete image/storage release
-values, accepted SAI-10 commit/tree/review custody, exact project IAM inventory,
-the fresh signed target-cluster RBAC inventory, and every content-named
+complete image/storage release values, content-bound NetworkPolicy and
+workload admission specs, accepted SAI-10 commit/tree/review custody, exact
+project IAM inventory, a provider-native effective-authority graph covering
+inherited/federated/external principals, the fresh signed target-cluster RBAC
+inventory and its complete subject closure, and every content-named
 route/node generation. Canonical state uses a locked,
 versioned remote backend; local or omitted state is never an authority source.
 
@@ -27,10 +34,10 @@ that its authority group has exactly that one member, that the group's permits
 equal the non-admin registry set, and that its exact public-key inventory is
 unexpired and bounded to 90 days. It also inventories every project group,
 membership, service account, public key and principal access permit and
-requires exact equality with the independently signed project receipt. That
-receipt must name the Kubernetes identity inventory as the exact
-provider-approved cluster-access principal set and the singleton authority
-group as the only mutating principal.
+requires exact equality with the independently signed project receipt. The
+separate provider-native authority-graph receipt, rather than candidate
+declarations, must derive the exact cluster-access and mutating principal sets;
+the singleton authority group must be the only mutator.
 `capture_provider_iam_inventory.py` emits the canonical unsigned receipt body
 using only paginated read-only API calls; the separate checkpoint owner signs
 and installs that body on the read-only authority anchor.

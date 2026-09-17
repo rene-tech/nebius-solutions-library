@@ -28,6 +28,19 @@ data "external" "provider_identity" {
   }
 }
 
+data "external" "backend_custody" {
+  program = [
+    "uv",
+    "run",
+    "--frozen",
+    "--project",
+    "${path.module}/../../components/control-plane",
+    "python",
+    "${path.module}/verify_backend_custody.py",
+  ]
+  query = { module_path = path.module }
+}
+
 locals {
   authority   = jsondecode(data.external.authority.result.manifest_json)
   generations = jsondecode(data.external.authority.result.generations_json)
@@ -40,19 +53,28 @@ locals {
 
 resource "terraform_data" "external_authority" {
   input = {
-    manifest_sha256                 = data.external.authority.result.manifest_sha256
-    prior_head_receipt_sha256       = data.external.authority.result.prior_head_receipt_sha256
-    authority_project_id            = data.external.authority.result.authority_project_id
-    authority_service_account_id    = data.external.authority.result.authority_service_account_id
-    authority_group_id              = data.external.authority.result.authority_group_id
-    workloads_service_account_id    = data.external.authority.result.workloads_service_account_id
-    kubernetes_identity_inventory   = data.external.authority.result.kubernetes_identity_inventory_sha256
-    kubernetes_rbac_inventory       = data.external.authority.result.kubernetes_rbac_inventory_sha256
-    kubernetes_rbac_receipt         = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256
-    accepted_sai10_commit           = data.external.authority.result.accepted_sai10_commit
-    accepted_sai10_tree             = data.external.authority.result.accepted_sai10_tree
-    sai10_review_receipt_sha256     = data.external.authority.result.sai10_independent_review_receipt_sha256
-    provider_identity_sha256        = data.external.provider_identity.result.provider_identity_sha256
+    manifest_sha256               = data.external.authority.result.manifest_sha256
+    prior_head_receipt_sha256     = data.external.authority.result.prior_head_receipt_sha256
+    authority_project_id          = data.external.authority.result.authority_project_id
+    authority_service_account_id  = data.external.authority.result.authority_service_account_id
+    authority_group_id            = data.external.authority.result.authority_group_id
+    workloads_service_account_id  = data.external.authority.result.workloads_service_account_id
+    kubernetes_identity_inventory = data.external.authority.result.kubernetes_identity_inventory_sha256
+    kubernetes_service_accounts   = data.external.authority.result.kubernetes_service_account_inventory_sha256
+    kubernetes_system_subjects    = data.external.authority.result.kubernetes_system_subject_inventory_sha256
+    kubernetes_rbac_inventory     = data.external.authority.result.kubernetes_rbac_inventory_sha256
+    kubernetes_rbac_receipt       = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256
+    accepted_sai10_commit         = data.external.authority.result.accepted_sai10_commit
+    accepted_sai10_tree           = data.external.authority.result.accepted_sai10_tree
+    sai10_review_receipt_sha256   = data.external.authority.result.sai10_independent_review_receipt_sha256
+    provider_identity_sha256      = data.external.provider_identity.result.provider_identity_sha256
+    provider_authority_graph      = data.external.authority.result.provider_effective_authority_graph_receipt_sha256
+    provider_state_custody        = data.external.authority.result.provider_state_custody_sha256
+    boundary_state_custody        = data.external.authority.result.boundary_state_custody_sha256
+    provider_backend_config       = data.external.backend_custody.result.backend_config_sha256
+    provider_backend_lineage      = data.external.backend_custody.result.backend_lineage
+    provider_state_lineage        = data.external.backend_custody.result.state_lineage
+    provider_state_serial         = data.external.backend_custody.result.state_serial
   }
 
   lifecycle {
@@ -63,6 +85,10 @@ resource "terraform_data" "external_authority" {
     precondition {
       condition     = data.external.provider_identity.result.authorized == "true"
       error_message = "The Nebius provider profile is not the exact narrow external authority."
+    }
+    precondition {
+      condition     = data.external.backend_custody.result.authorized == "true"
+      error_message = "The initialized Terraform backend is not the externally custodied provider-state lineage."
     }
     precondition {
       condition     = local.authority.authority_project_id == data.external.authority.result.authority_project_id

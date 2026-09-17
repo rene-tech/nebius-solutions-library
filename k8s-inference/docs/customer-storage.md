@@ -30,12 +30,18 @@ approved `security/customer-storage-egress-authority` root adds a dedicated
 tainted node group to the exact target cluster; the group's only VPC security
 group has the signed provider/API routes and no default-route egress. Two
 independently signed, read-only filesystem anchors
-pin the prior ledger head, exact provider IAM inventory, accepted custody and
-complete Kubernetes credential inventory plus a fresh exact RBAC inventory. A
+pin the prior manifest and generation heads, canonical provider/workloads state
+lineages and managed addresses, exact provider IAM inventory, a
+provider-native effective-authority graph including inherited/external
+principals, accepted custody and complete Kubernetes credential inventory plus
+a fresh exact RBAC object/subject inventory. A
 second security-owner root adds immutable,
 generation-named contract, trust and NetworkPolicy objects as defense in depth.
 The reconciler verifies the signed bytes, freshness, live DNS, and the effective
 union of every NetworkPolicy selecting its full label set before readiness.
+Admission continuously permits only the exact content-bound selecting policy;
+an additional signed policy constrains every Pod or workload-producing object
+to the exact Secret allowlist, image and provider-protected node target.
 Public runtime NetworkPolicies do not contain a customer-storage HTTPS
 exception.
 
@@ -151,8 +157,9 @@ contents in this module.
 The additive chart remains fail-closed until it receives an independently
 accepted SAI-10 commit, tree and immutable review receipt from the signed
 provider authority. The rejected SAI-10 commit
-in this branch's preserved history and any unreviewed successor are not valid
-custody inputs.
+or any of its descendants are not valid custody inputs. The integration head
+itself must also exclude that ancestry; preserved task-branch commits must be
+transplanted onto the accepted clean lineage rather than rewritten in place.
 
 ### Existing-state adoption
 

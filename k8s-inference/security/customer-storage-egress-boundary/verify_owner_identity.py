@@ -134,10 +134,11 @@ def _can_i(path: Path, context: str, *arguments: str) -> bool:
     return _kubectl(path, context, "auth", "can-i", *arguments) == "yes"
 
 
-def _rbac_inventory_sha256(path: Path, context: str) -> str:
-    """Hash every live RBAC object, including subjects and exact resource versions."""
+def _rbac_inventory(path: Path, context: str) -> tuple[str, list[dict[str, str]]]:
+    """Hash every RBAC object and return its exact deduplicated subject closure."""
 
     inventory: list[dict[str, Any]] = []
+    subjects: set[tuple[str, str, str]] = set()
     for resource, namespaced in (
         ("roles.rbac.authorization.k8s.io", True),
         ("rolebindings.rbac.authorization.k8s.io", True),
@@ -170,6 +171,24 @@ def _rbac_inventory_sha256(path: Path, context: str) -> str:
             for field in ("aggregationRule", "roleRef", "rules", "subjects"):
                 if field in item:
                     projection[field] = item[field]
+            for subject in item.get("subjects", []):
+                if not isinstance(subject, dict):
+                    raise ValueError("Kubernetes RBAC subject is invalid")
+                kind = subject.get("kind")
+                name = subject.get("name")
+                namespace = subject.get("namespace", "")
+                if kind == "ServiceAccount" and not namespace:
+                    namespace = metadata.get("namespace", "")
+                if (
+                    kind not in {"User", "Group", "ServiceAccount"}
+                    or not isinstance(name, str)
+                    or not name
+                    or not isinstance(namespace, str)
+                    or (kind == "ServiceAccount" and not namespace)
+                    or (kind != "ServiceAccount" and namespace)
+                ):
+                    raise ValueError("Kubernetes RBAC subject identity is incomplete")
+                subjects.add((kind, namespace, name))
             if any(
                 not isinstance(projection["metadata"].get(field), str)
                 or not projection["metadata"][field]
@@ -184,9 +203,17 @@ def _rbac_inventory_sha256(path: Path, context: str) -> str:
             item["metadata"]["name"],
         )
     )
-    return hashlib.sha256(
+    inventory_sha256 = hashlib.sha256(
         json.dumps(inventory, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+    return inventory_sha256, [
+        {"kind": kind, "namespace": namespace, "name": name}
+        for kind, namespace, name in sorted(subjects)
+    ]
+
+
+def _rbac_inventory_sha256(path: Path, context: str) -> str:
+    return _rbac_inventory(path, context)[0]
 
 
 def _dangerous_permissions(path: Path, context: str) -> list[str]:
@@ -240,7 +267,13 @@ def _dangerous_permissions(path: Path, context: str) -> list[str]:
         "pods/portforward": ("create",),
         "pods/ephemeralcontainers": ("update", "patch"),
         "serviceaccounts": ("create", "update", "patch", "delete", "deletecollection"),
+        "pods": ("create", "update", "patch", "delete", "deletecollection"),
         "deployments.apps": ("create", "update", "patch", "delete", "deletecollection"),
+        "replicasets.apps": ("create", "update", "patch", "delete", "deletecollection"),
+        "daemonsets.apps": ("create", "update", "patch", "delete", "deletecollection"),
+        "statefulsets.apps": ("create", "update", "patch", "delete", "deletecollection"),
+        "jobs.batch": ("create", "update", "patch", "delete", "deletecollection"),
+        "cronjobs.batch": ("create", "update", "patch", "delete", "deletecollection"),
         "networkpolicies.networking.k8s.io": (
             "update",
             "patch",
@@ -386,7 +419,14 @@ def verify(query: dict[str, str]) -> dict[str, str]:
     owner_group = query["security_owner_group"]
     names = json.loads(query["protected_names_json"])
     declared_identities = json.loads(query["identity_inventory_json"])
-    if not isinstance(names, dict) or not isinstance(declared_identities, dict):
+    declared_service_accounts = json.loads(query["service_account_inventory_json"])
+    declared_system_subjects = json.loads(query["system_subject_inventory_json"])
+    if (
+        not isinstance(names, dict)
+        or not isinstance(declared_identities, dict)
+        or not isinstance(declared_service_accounts, list)
+        or not isinstance(declared_system_subjects, list)
+    ):
         raise ValueError("identity inventory or protected names are invalid")
     checked: list[dict[str, str]] = []
     categories: list[str] = []
@@ -399,11 +439,25 @@ def verify(query: dict[str, str]) -> dict[str, str]:
                 "kubeconfig_path",
                 "kube_context",
                 "username",
+                "groups",
                 "category",
                 "credential_sha256",
                 "provider_principal_id",
             }
-            or any(not isinstance(value, str) or not value for value in item.values())
+            or any(
+                not isinstance(item.get(field), str) or not item[field]
+                for field in (
+                    "kubeconfig_path",
+                    "kube_context",
+                    "username",
+                    "category",
+                    "credential_sha256",
+                    "provider_principal_id",
+                )
+            )
+            or not isinstance(item.get("groups"), list)
+            or not item["groups"]
+            or item["groups"] != sorted(set(item["groups"]))
             or item["category"]
             not in {"owner", "workloads", "release", "human", "break-glass", "other"}
         ):
@@ -415,6 +469,8 @@ def verify(query: dict[str, str]) -> dict[str, str]:
         identity = _identity(path, context)
         if identity["username"] != item["username"]:
             raise ValueError(f"{name} identity differs from its declared username")
+        if sorted(identity["groups"]) != item["groups"]:
+            raise ValueError(f"{name} authenticated groups differ from the signed inventory")
         protected = _protected_permissions(path, context, names)
         dangerous = _dangerous_permissions(path, context)
         if item["category"] == "owner":
@@ -483,7 +539,11 @@ def verify(query: dict[str, str]) -> dict[str, str]:
                 "update-configmaps",
                 "patch-configmaps",
             }
-            dangerous = [permission for permission in dangerous if permission not in release_read_create]
+            dangerous = [
+                permission
+                for permission in dangerous
+                if permission not in release_read_create
+            ]
         if dangerous:
             raise ValueError(f"{name} identity has dangerous authority: {dangerous[0]}")
         categories.append(item["category"])
@@ -492,6 +552,7 @@ def verify(query: dict[str, str]) -> dict[str, str]:
                 "name": name,
                 "category": item["category"],
                 "username": identity["username"],
+                "groups": item["groups"],
                 "credential_sha256": item["credential_sha256"],
                 "provider_principal_id": item["provider_principal_id"],
             }
@@ -516,12 +577,62 @@ def verify(query: dict[str, str]) -> dict[str, str]:
         for item in declared_identities.values()
         if item["category"] == "owner"
     )
-    rbac_inventory_sha256 = _rbac_inventory_sha256(
+    rbac_inventory_sha256, rbac_subjects = _rbac_inventory(
         Path(owner_declaration["kubeconfig_path"]),
         owner_declaration["kube_context"],
     )
     if rbac_inventory_sha256 != query["expected_rbac_inventory_sha256"]:
         raise ValueError("live cluster RBAC inventory differs from the signed receipt")
+
+    authorized_users = {item["username"] for item in checked}
+    authorized_groups = {group for item in checked for group in item["groups"]}
+    authorized_service_accounts: set[tuple[str, str]] = set()
+    for subject in declared_service_accounts:
+        if (
+            not isinstance(subject, dict)
+            or set(subject) != {"namespace", "name", "owner", "groups"}
+            or any(
+                not isinstance(subject.get(field), str) or not subject[field]
+                for field in ("namespace", "name", "owner")
+            )
+            or not isinstance(subject.get("groups"), list)
+            or subject["groups"] != sorted(set(subject["groups"]))
+        ):
+            raise ValueError("signed ServiceAccount inventory is malformed")
+        authorized_service_accounts.add((subject["namespace"], subject["name"]))
+        authorized_groups.update(subject["groups"])
+    if len(authorized_service_accounts) != len(declared_service_accounts):
+        raise ValueError("signed ServiceAccount inventory contains duplicate subjects")
+    seen_system_subjects: set[tuple[str, str]] = set()
+    for subject in declared_system_subjects:
+        if (
+            not isinstance(subject, dict)
+            or set(subject) != {"kind", "name", "namespace", "owner"}
+            or subject.get("kind") not in {"User", "Group"}
+            or not isinstance(subject.get("name"), str)
+            or not subject["name"].startswith("system:")
+            or subject.get("namespace") != ""
+            or not isinstance(subject.get("owner"), str)
+            or not subject["owner"]
+        ):
+            raise ValueError("signed Kubernetes system-subject inventory is malformed")
+        identity = (subject["kind"], subject["name"])
+        if identity in seen_system_subjects:
+            raise ValueError("signed Kubernetes system-subject inventory has duplicates")
+        seen_system_subjects.add(identity)
+        if subject["kind"] == "User":
+            authorized_users.add(subject["name"])
+        else:
+            authorized_groups.add(subject["name"])
+    for subject in rbac_subjects:
+        if subject["kind"] == "User" and subject["name"] not in authorized_users:
+            raise ValueError("live RBAC has an undeclared User subject")
+        if subject["kind"] == "Group" and subject["name"] not in authorized_groups:
+            raise ValueError("live RBAC has an undeclared Group subject")
+        if subject["kind"] == "ServiceAccount" and (
+            subject["namespace"], subject["name"]
+        ) not in authorized_service_accounts:
+            raise ValueError("live RBAC has an undeclared ServiceAccount subject")
 
     return {
         "authorized": "true",
@@ -535,6 +646,9 @@ def verify(query: dict[str, str]) -> dict[str, str]:
             json.dumps(checked, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest(),
         "rbac_inventory_sha256": rbac_inventory_sha256,
+        "rbac_subjects_sha256": hashlib.sha256(
+            json.dumps(rbac_subjects, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
     }
 
 

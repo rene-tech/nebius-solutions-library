@@ -128,7 +128,7 @@ def test_workloads_root_only_reads_the_external_versioned_boundary() -> None:
         'data.kubernetes_config_map_v1.customer_storage_egress_trust[0].data["public-key.pem"]'
         in source
     )
-    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v2" in source
+    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v3" in source
     assert '"uv"' in source and '"--frozen"' in source
     assert "egress_contract_public_key_pem" not in source
 
@@ -145,8 +145,7 @@ def test_separate_security_owner_is_append_only_and_credential_isolated() -> Non
     assert "var.security_owner_kubeconfig_path" in providers
     assert '"uv"' in source and '"--frozen"' in source
     assert "workloads_kubeconfig_path" in variables
-    assert "filesha256(pathexpand(var.security_owner_kubeconfig_path))" in source
-    assert "filesha256(pathexpand(var.workloads_kubeconfig_path))" in source
+    assert "_credential_sha256(path)" in identity
     assert 'resource "kubernetes_manifest" "boundary_policy"' in source
     assert 'resource "kubernetes_manifest" "boundary_binding"' in source
     assert 'resource "kubernetes_config_map_v1" "contract"' in source
@@ -180,7 +179,7 @@ def test_separate_security_owner_is_append_only_and_credential_isolated() -> Non
         "deployments.apps",
     ):
         assert probe in identity
-    assert "security-owner credential can mutate or delete" in identity
+    assert "security-owner credential can update or delete" in identity
     assert source.count("prevent_destroy = true") >= 6
     assert "for_each = var.contract_generations" in source
     assert "for_each = var.trust_generations" in source
@@ -220,7 +219,10 @@ def test_provider_authority_is_external_content_bound_and_non_destructive() -> N
     assert 'NEBIUS_TERRAFORM_PROVIDER_VERSION = "0.5.232"' in verifier
     assert "kubernetes_rbac_inventory_receipt" in verifier
     assert "cluster_access_principal_ids" in verifier
-    assert 'mutating_principal_ids") != [registry["authority_group_id"]]' in verifier
+    assert "provider_effective_authority_graph_receipt" in verifier
+    assert "graph_mutating_ids != [registry[\"authority_group_id\"]]" in verifier
+    assert "head_generation_sha256" in verifier
+    assert "provider_state_custody" in verifier
     assert "boundary_policy_sha256" in verifier
     assert "nebius_terraform_provider_version" in verifier
     assert "predecessor_sha256" in verifier
@@ -308,6 +310,7 @@ def test_v2_chart_is_additive_selector_safe_and_effective_policy_gated() -> None
     assert 'resource "kubernetes_role_v1" "reconciler_inventory"' in boundary
     assert 'resource "kubernetes_role_binding_v1" "reconciler_inventory"' in boundary
     assert "boundary_policy_sha256 = sha256(jsonencode(local.boundary_policy_spec))" in boundary
+    assert "workload_policy_sha256 = sha256(jsonencode(local.workload_policy_spec))" in boundary
     assert "type: Recreate" not in template
     assert "fixed predecessor" in readme
     assert "storage-egress-generation" not in legacy_helpers.split(
@@ -332,6 +335,72 @@ def test_security_owner_contract_rotation_is_versioned_and_overlapping() -> None
         in TERRAFORM.read_text(encoding="utf-8")
     )
     assert "append-only" in readme
+
+
+def test_sai08_external_authority_workload_and_state_closure_regression() -> None:
+    authority = (PROVIDER_AUTHORITY_ROOT / "verify_authority_ledger.py").read_text(
+        encoding="utf-8"
+    )
+    provider_identity = (
+        PROVIDER_AUTHORITY_ROOT / "verify_provider_identity.py"
+    ).read_text(encoding="utf-8")
+    provider_backend = (
+        PROVIDER_AUTHORITY_ROOT / "verify_backend_custody.py"
+    ).read_text(encoding="utf-8")
+    boundary = (SECURITY_ROOT / "main.tf").read_text(encoding="utf-8")
+    owner = (SECURITY_ROOT / "verify_owner_identity.py").read_text(
+        encoding="utf-8"
+    )
+    boundary_backend = (SECURITY_ROOT / "verify_backend_custody.py").read_text(
+        encoding="utf-8"
+    )
+    dependency = (
+        Path(__file__).parents[1] / "security/verify_sai08_integration_dependencies.py"
+    ).read_text(encoding="utf-8")
+    control_plane = (TERRAFORM.parent / "control_plane.tf").read_text(
+        encoding="utf-8"
+    )
+
+    assert "_is_ancestor(REJECTED_SAI10, commit)" in dependency
+    assert '_is_ancestor(REJECTED_SAI10, "HEAD")' in dependency
+    assert "provider-effective-authority-graph/v1" in authority
+    assert "origin_resource_ids" in authority
+    assert "graph_cluster_access_ids" in authority
+    assert "graph_mutating_ids" in authority
+    assert "effective_principal_ids" in provider_identity
+    assert "provider_principal_ids" not in (
+        PROVIDER_AUTHORITY_ROOT / "capture_provider_iam_inventory.py"
+    ).read_text(encoding="utf-8")
+    assert "head_generation_sha256" in authority
+    assert 'predecessor = prior_head["head_generation_sha256"]' in authority
+    for verifier in (provider_backend, boundary_backend):
+        assert "O_NOFOLLOW" in verifier
+        assert 'backend.get("type") != "s3"' in verifier
+        assert 'config.get("use_lockfile") is not True' in verifier
+
+    for resource in (
+        '"pods"',
+        '"serviceaccounts"',
+        '"deployments"',
+        '"daemonsets"',
+        '"statefulsets"',
+        '"replicasets"',
+        '"jobs"',
+        '"cronjobs"',
+    ):
+        assert resource in boundary
+    assert "secretKeyRef" in boundary
+    assert "allowed_secret_names_cel" in boundary
+    assert "provider_authority.node_selector_value" in boundary
+    assert "object.spec == ${jsonencode(local.current_network_policy_spec)}" in boundary
+    assert 'resource "kubernetes_manifest" "workload_policy"' in boundary
+    assert 'resource "kubernetes_manifest" "workload_binding"' in boundary
+    assert "rbac_subjects" in owner
+    assert "undeclared ServiceAccount subject" in owner
+    assert 'resource "helm_release" "control_plane"' in control_plane
+    assert "prevent_destroy = true" in control_plane
+    assert "atomic           = false" in control_plane
+    assert "cleanup_on_fail  = false" in control_plane
 
 
 def test_predecessor_vap_compatibility_is_signed_and_selector_disjoint() -> None:
