@@ -282,6 +282,28 @@ async def test_cosmos_typed_tools_preserve_mode_specific_runtime_defaults(regist
             "output_format": "png" if mode == "text-to-image" else "mp4",
         }
 
+        if mode == "text-to-image":
+            for delivery in ("inline-base64", "artifact"):
+                with pytest.raises(MCPError) as rejected_delivery:
+                    await client.call_tool(
+                        model.binding.mcp_tool_name + "_native",
+                        {
+                            **payload,
+                            "output_delivery": delivery,
+                            "idempotency_key": "cosmos-t2i-reject-delivery-" + delivery,
+                        },
+                    )
+                assert rejected_delivery.value.code == -32602
+                assert rejected_delivery.value.data["type"] == "model_input_validation"
+                assert len(runtime.store.operations) == 1
+
+            # The legacy opaque route remains compatible with the same valid T2I request.
+            generic = _data(await client.call_tool(
+                "invoke_model", {"model_id": "cosmos3-nano", "protocol": "native", "payload": payload,
+                           "idempotency_key": "cosmos-t2i-generic-valid-0001"},
+            ))
+            assert generic["status"] == "queued"
+
         with pytest.raises(MCPError) as missing_reference:
             await client.call_tool(
                 "cosmos3_nano_video_to_video",
@@ -292,7 +314,7 @@ async def test_cosmos_typed_tools_preserve_mode_specific_runtime_defaults(regist
             )
         assert missing_reference.value.code == -32602
         assert missing_reference.value.data["type"] == "model_input_validation"
-        assert len(runtime.store.operations) == 1
+        assert len(runtime.store.operations) == (2 if mode == "text-to-image" else 1)
 
 
 @pytest.mark.asyncio

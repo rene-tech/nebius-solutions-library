@@ -484,7 +484,7 @@ def cosmos_adapter_request():
 @pytest.mark.parametrize(
     "mode", ["text-to-image", "text-to-video", "image-to-video", "video-to-video", "transfer-video"]
 )
-def test_cosmos_specialized_defaults_validate_against_actual_adapter(registry, mode):
+def test_cosmos_specialized_and_generic_contracts_match_actual_adapter(registry, mode):
     contract, defaults = next(
         (contract, defaults)
         for _, contract, defaults, _, _ in cosmos_specialized_contracts(selected(registry, "cosmos3-nano"))
@@ -496,6 +496,8 @@ def test_cosmos_specialized_defaults_validate_against_actual_adapter(registry, m
         payload["input_reference"] = "https://media.example.test/fixture.mp4"
     for control in payload.get("controls", []):
         control["reference"] = "https://media.example.test/control.mp4"
+    generic = contract_for(selected(registry, "cosmos3-nano"), "native")
+    Draft202012Validator(generic.input_schema).validate(payload)
     parsed = cosmos_adapter_request().validate_python(payload)
     assert parsed.mode == mode
     if mode == "text-to-image":
@@ -504,3 +506,19 @@ def test_cosmos_specialized_defaults_validate_against_actual_adapter(registry, m
         assert "output_delivery" not in parsed.model_dump()
     else:
         assert parsed.output_delivery == "artifact" and parsed.output_format == "mp4"
+
+
+@pytest.mark.parametrize("delivery", ["inline-base64", "artifact"])
+def test_cosmos_generic_t2i_rejects_delivery_but_t2v_keeps_legacy_compatibility(registry, delivery):
+    generic = Draft202012Validator(contract_for(selected(registry, "cosmos3-nano"), "native").input_schema)
+    adapter = cosmos_adapter_request()
+    t2i = {"mode": "text-to-image", "prompt": "Synthetic image", "output_format": "png"}
+    generic.validate(t2i)
+    adapter.validate_python(t2i)
+    assert not generic.is_valid(t2i | {"output_delivery": delivery})
+    with pytest.raises(pydantic.ValidationError) as failure:
+        adapter.validate_python(t2i | {"output_delivery": delivery})
+    assert failure.value.errors()[0]["loc"] == ("text-to-image", "output_delivery")
+    t2v = {"mode": "text-to-video", "prompt": "Synthetic video", "output_delivery": delivery}
+    generic.validate(t2v)
+    assert adapter.validate_python(t2v).output_delivery == delivery

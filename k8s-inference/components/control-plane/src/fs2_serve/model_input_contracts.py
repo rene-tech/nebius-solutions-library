@@ -745,7 +745,8 @@ def _cosmos_properties() -> Schema:
         "output_format": _field("string", "Mode-specific output format.", enum=["png", "mp4"]),
         "output_delivery": _field(
             "string",
-            "Large media is returned through the operation artifact store; the legacy small-media path remains inline.",
+            "Video delivery only: use the operation artifact store or legacy inline text-to-video. "
+            "Omit for text-to-image, which returns the legacy PNG JSON envelope.",
             enum=["inline-base64", "artifact"],
         ),
     }
@@ -863,7 +864,6 @@ def _cosmos_generic_mode_schema(mode: str) -> Schema:
     schema["required"].append("mode")
     if mode == "text-to-image":
         properties["output_format"] = _constant("png", "PNG output only.")
-        properties["output_delivery"] = _constant("inline-base64", "Legacy bounded inline PNG envelope.")
     elif mode == "text-to-video":
         properties["output_format"] = _constant("mp4", "MP4 output only.")
         properties["output_delivery"] = _field(
