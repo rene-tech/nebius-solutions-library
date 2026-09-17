@@ -612,17 +612,18 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             self.assertIn('data "external" "credential_migration_gate"', gate)
             self.assertIn("secret_migration_guard.py", gate)
             if root == ROOT / "reference-data/terraform":
-                self.assertIn(
-                    "for_each = var.credential_migration_gate_managed_by_parent ? toset([]) : setunion(var.credential_migration_gate_history, toset([var.credential_migration_gate_receipt_sha256]))",
+                self.assertNotIn(
+                    'resource "terraform_data" "credential_apply_gate_generation"',
                     gate,
                 )
+                self.assertNotIn("apply-saved-plan-gate", gate)
             else:
                 self.assertIn(
                     "for_each = setunion(var.credential_migration_gate_history, toset([var.credential_migration_gate_receipt_sha256]))",
                     gate,
                 )
+                self.assertIn("apply-saved-plan-gate", gate)
             self.assertIn("prevent_destroy = true", gate)
-            self.assertIn("apply-saved-plan-gate", gate)
 
         with (
             mock.patch.dict(os.environ, {}, clear=True),
@@ -911,6 +912,12 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             (configuration / "main.tf").write_text(
                 'resource "terraform_data" "safe" {}\n', encoding="utf-8"
             )
+            root_patch = mock.patch.dict(
+                GUARD.SUPPORTED_TERRAFORM_CONFIGURATION_ROOTS,
+                {"workloads": configuration},
+            )
+            root_patch.start()
+            self.addCleanup(root_patch.stop)
             receipt_path = receipts / "gate.json"
             raw_state = {
                 "version": 4,
@@ -940,6 +947,19 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 )["status"],
                 "pass",
             )
+            hostile = owner / "hostile-embedding"
+            hostile.mkdir(mode=0o700)
+            (hostile / "main.tf").write_text(
+                (configuration / "main.tf").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                GUARD.GuardError, "registered workloads root"
+            ):
+                GUARD.validate_native_gate(
+                    {**query, "terraform_configuration": str(hostile)},
+                    authoritative_state_document=raw_state,
+                )
             with self.assertRaises(GUARD.GuardError):
                 GUARD.validate_native_gate(
                     {**query, "receipt_path": ""},
@@ -984,6 +1004,17 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                     source_commit="a" * 40,
                     path=receipts / "moved.json",
                 )
+
+    def test_reference_data_standalone_has_no_wrapper_or_guard_cli_route(
+        self,
+    ) -> None:
+        standalone = ROOT / "reference-data/terraform"
+        with self.assertRaisesRegex(STACK.DeploymentError, "not registered"):
+            STACK.terraform_root_name(standalone)
+        with self.assertRaises(SystemExit):
+            GUARD.parse_args(
+                ["plan", "-", "--terraform-root", "reference-data"]
+            )
 
     def test_retirement_canary_requires_no_plaintext_plan_or_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1111,6 +1142,12 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             (configuration / "main.tf").write_text(
                 'resource "terraform_data" "safe" {}\n', encoding="utf-8"
             )
+            root_patch = mock.patch.dict(
+                GUARD.SUPPORTED_TERRAFORM_CONFIGURATION_ROOTS,
+                {"workloads": configuration},
+            )
+            root_patch.start()
+            self.addCleanup(root_patch.stop)
             identity_path = owner / "identity.json"
             identity = GUARD.write_identity_receipt(
                 state,

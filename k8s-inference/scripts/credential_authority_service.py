@@ -969,7 +969,6 @@ def _validate_policy(policy: Any) -> None:
         "foundation",
         "infrastructure",
         "model-artifacts",
-        "reference-data",
         "workloads",
     }
     if not isinstance(roots, dict) or set(roots) != required_roots:

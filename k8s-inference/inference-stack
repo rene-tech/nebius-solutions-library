@@ -29,7 +29,6 @@ REPOSITORY_ROOT = SOLUTION_ROOT.parent
 INFRA_ROOT = SOLUTION_ROOT / "stages" / "infrastructure"
 FOUNDATION_ROOT = SOLUTION_ROOT / "stages" / "foundation"
 WORKLOADS_ROOT = SOLUTION_ROOT / "stages" / "workloads"
-REFERENCE_DATA_ROOT = SOLUTION_ROOT / "reference-data" / "terraform"
 CATALOG_ROOT = SOLUTION_ROOT / "catalog" / "runtime"
 MODEL_ROUTES_PATH = (
     SOLUTION_ROOT
@@ -55,7 +54,6 @@ TERRAFORM_ROOT_NAMES = {
     INFRA_ROOT.resolve(): "infrastructure",
     FOUNDATION_ROOT.resolve(): "foundation",
     WORKLOADS_ROOT.resolve(): "workloads",
-    REFERENCE_DATA_ROOT.resolve(): "reference-data",
 }
 STAGE_COMPLETION_OUTPUTS = {
     "infrastructure": "accelerator_pool_contract",

@@ -444,14 +444,25 @@ def test_apply_gate_is_additive_and_authority_is_not_caller_selected() -> None:
         ROOT / "reference-data/terraform",
     ):
         source = (root / "credential_migration_gate.tf").read_text()
-        assert 'resource "terraform_data" "credential_apply_gate_generation"' in source
+        if root == ROOT / "reference-data/terraform":
+            assert (
+                'resource "terraform_data" "credential_apply_gate_generation"'
+                not in source
+            )
+        else:
+            assert (
+                'resource "terraform_data" "credential_apply_gate_generation"'
+                in source
+            )
         assert "prevent_destroy = true" in source
         assert "triggers_replace" not in source
         assert '"/usr/bin/python3"' in source
         assert '"/opt/fs2/k8s-inference/scripts/secret_migration_guard.py"' in source
         assert '${path.module}/../../scripts/secret_migration_guard.py' not in source
         assert '"--registry"' not in source
-        expected_history_guards = 3 if root == ROOT / "reference-data/terraform" else 2
+        expected_history_guards = (
+            1 if root == ROOT / "reference-data/terraform" else 2
+        )
         assert source.count(
             "!contains(var.credential_migration_gate_history, "
             "var.credential_migration_gate_receipt_sha256)"
@@ -470,8 +481,8 @@ def test_embedded_reference_data_uses_the_workloads_native_gate() -> None:
         (ROOT / "security/credential-authority-deployment-contract.json").read_text()
     )["saved_plan_execution"]["embedded_module_gate_owner"]
 
-    assert 'REFERENCE_DATA_ROOT = SOLUTION_ROOT / "reference-data" / "terraform"' in wrapper
-    assert 'REFERENCE_DATA_ROOT.resolve(): "reference-data"' in wrapper
+    assert "REFERENCE_DATA_ROOT" not in wrapper
+    assert 'REFERENCE_DATA_ROOT.resolve(): "reference-data"' not in wrapper
     assert "credential_migration_gate_managed_by_parent = true" in workloads
     for name in (
         "credential_migration_gate_receipt_path",
@@ -484,23 +495,25 @@ def test_embedded_reference_data_uses_the_workloads_native_gate() -> None:
         assert f"var.{name}" in workloads
     assert "depends_on = [terraform_data.credential_migration_gate]" in workloads
 
-    assert "count = var.credential_migration_gate_managed_by_parent ? 0 : 1" in child
+    assert "condition     = var.credential_migration_gate_managed_by_parent" in child
+    assert 'terraform_root          = "workloads"' in child
+    assert "count =" not in child
     assert (
-        "for_each = var.credential_migration_gate_managed_by_parent ? "
-        "toset([]) : setunion(" in child
+        'resource "terraform_data" "credential_apply_gate_generation"'
+        not in child
     )
+    assert "apply-saved-plan-gate" not in child
     assert "terraform_configuration = path.root" in child
-    assert "--terraform-configuration ${path.root}" in child
     assert "path.root != path.module" in child
-    assert child.count("path.root == path.module") == 2
     assert "terraform_configuration = path.module" not in child
-    assert "--terraform-configuration ${path.module}" not in child
 
     assert contract == {
         "module": "module.reference_data",
         "owning_root": "workloads",
-        "child_native_gate_enabled": False,
-        "embedded_mode_requires": "path.root != path.module",
+        "child_read_only_receipt_verification_enabled": True,
+        "child_receipt_verification_root": "workloads",
+        "child_apply_generation_enabled": False,
+        "embedded_mode_requires": "exact-registered-workloads-path-root-and-receipt",
         "parent_gate_inputs_forwarded": [
             "credential_migration_gate_receipt_path",
             "credential_migration_gate_source_commit",
@@ -509,9 +522,8 @@ def test_embedded_reference_data_uses_the_workloads_native_gate() -> None:
             "credential_migration_phase",
         ],
         "module_depends_on": "terraform_data.credential_migration_gate",
-        "standalone_root": "reference-data",
-        "standalone_mode_requires": "path.root == path.module",
-        "standalone_requires_exact_root_mapping": True,
+        "standalone_supported": False,
+        "standalone_rejection": "not-present-in-wrapper-authority-or-guard-root-registries",
     }
 
 
@@ -650,13 +662,14 @@ def test_every_deployable_terraform_root_forbids_local_state() -> None:
         ROOT / "stages/foundation",
         ROOT / "stages/infrastructure",
         ROOT / "stages/workloads",
-        ROOT / "reference-data/terraform",
         ROOT / "model-artifacts/terraform",
     )
     for root in roots:
         source = (root / "versions.tf").read_text()
         assert 'backend "s3" {}' in source
         assert 'backend "local"' not in source
+    child = (ROOT / "reference-data/terraform/versions.tf").read_text()
+    assert 'backend "' not in child
     wrapper = (ROOT / "inference-stack").read_text()
     assert 'Path("/etc/fs2-serve/terraform-backends")' in wrapper
     assert 'f"-backend-config={backend_config}"' in wrapper

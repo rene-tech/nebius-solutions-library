@@ -116,20 +116,22 @@ The customer reference-data plane is part of the workloads Terraform state,
 not a second state root. When `module.reference_data` is enabled, workloads is
 the sole native gate owner: the module receives the exact receipt path, source
 commit, receipt hash, complete gate history and migration phase from workloads,
-and the entire module depends on the workloads gate token. The child retains
-its stable, protected dependency token for its credential resources, but its
-duplicate external/native gate and apply generation are disabled. It therefore
-cannot demand a `reference-data` ancestor while Terraform is applying the
-workloads saved plan, and it cannot advance before the actual workloads gate.
+and the entire module depends on the workloads gate token. The child keeps its
+read-only external verification active and validates that forwarded receipt as
+`terraform_root=workloads` against `path.root`. The guard accepts only the
+exact registered workloads directory, so another embedding root cannot turn a
+Boolean into parent authority even if it copies all forwarded values. The
+child retains its protected dependency token for credential resources but has
+no apply generation or local-exec; workloads is the only such owner.
 
-The reusable reference-data Terraform directory keeps a self-gated standalone
-mode only for an invocation whose exact resolved directory is registered as
-the separate `reference-data` root. Nested use never infers standalone
-authority from `path.module`; its effective root is `path.root`. Parent-owned
-mode requires `path.root != path.module`, while standalone mode requires exact
-equality, so a standalone caller cannot disable the native gate by setting the
-parent-mode input. The normal three-stage stack does not plan or apply a
-separate reference-data state.
+Standalone reference-data Terraform is explicitly unsupported. The reusable
+directory is absent from the wrapper and guard root registries, from the
+authority's required state roots and from the supported CLI root choices, and
+it declares no backend of its own. Its module input validation also requires
+workloads parent ownership. The normal three-stage stack therefore has one
+authoritative workloads state and no dead or ambient standalone route.
+This supersedes v2's historical six-root description without rewriting that
+preserved predecessor.
 
 Preflight validation retains the original canonical path solely to match the
 write-once receipt. Runtime validation compares the sealed snapshot's path

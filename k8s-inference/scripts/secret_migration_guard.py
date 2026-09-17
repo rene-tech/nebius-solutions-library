@@ -31,6 +31,15 @@ PRODUCTION_AUTHORITY_COMMAND = (
     str(ROOT / "scripts" / "credential_provider_adapter.py"),
 )
 PRODUCTION_TERRAFORM_COMMAND = "/snap/bin/terraform"
+SUPPORTED_TERRAFORM_CONFIGURATION_ROOTS = {
+    "configuration": ROOT,
+    "infrastructure": ROOT / "stages" / "infrastructure",
+    "foundation": ROOT / "stages" / "foundation",
+    "workloads": ROOT / "stages" / "workloads",
+}
+CREDENTIAL_TERRAFORM_ROOT_NAMES = frozenset(
+    {"infrastructure", "foundation", "workloads"}
+)
 CONTENT_COMMITMENT_SCHEME = "sha256-canonical-json-decoded-secret-data-v1"
 SENSITIVE_ARTIFACT_SUFFIXES = (".tfstate", ".tfplan", ".backup")
 SCOPED_CREDENTIAL_PREFIXES = (
@@ -89,6 +98,26 @@ def canonical_sha256(value: Any) -> str:
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     ).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def require_supported_terraform_configuration(
+    terraform_configuration: Path, terraform_root: str
+) -> Path:
+    """Authenticate a gate caller against one exact supported root directory."""
+
+    expected = SUPPORTED_TERRAFORM_CONFIGURATION_ROOTS.get(terraform_root)
+    if expected is None:
+        raise GuardError(f"unsupported Terraform root: {terraform_root}")
+    try:
+        observed = terraform_configuration.resolve(strict=True)
+        expected_resolved = expected.resolve(strict=True)
+    except OSError as error:
+        raise GuardError("Terraform configuration root is absent") from error
+    if observed != expected_resolved:
+        raise GuardError(
+            f"Terraform configuration is not the registered {terraform_root} root"
+        )
+    return observed
 
 
 def load_consumer_contracts(
@@ -484,11 +513,13 @@ def validate_native_gate(
         or not all(isinstance(query[key], str) and query[key] for key in required)
     ):
         raise GuardError("native Terraform gate query is incomplete")
+    root = require_supported_terraform_configuration(
+        Path(query["terraform_configuration"]), query["terraform_root"]
+    )
     receipt_path = Path(query["receipt_path"])
     receipt = load_private_document(receipt_path, label="Terraform gate receipt")
     if receipt.get("schema") != "fs2-serve.nebius.ai/terraform-plan-gate/v4":
         raise GuardError("Terraform gate receipt has the wrong schema")
-    root = Path(query["terraform_configuration"])
     expected = {
         "terraform_root": query["terraform_root"],
         "source_commit": query["source_commit"],
@@ -1421,8 +1452,7 @@ def load_registry(path: Path = DEFAULT_REGISTRY) -> dict[str, Any]:
         or not all(
             isinstance(item, dict)
             and set(item) == {"root", "address"}
-            and item["root"]
-            in {"infrastructure", "foundation", "workloads", "reference-data"}
+            and item["root"] in CREDENTIAL_TERRAFORM_ROOT_NAMES
             and isinstance(item["address"], str)
             and item["address"]
             for item in resources
@@ -1458,8 +1488,7 @@ def load_registry(path: Path = DEFAULT_REGISTRY) -> dict[str, Any]:
             not isinstance(identifier, str)
             or not identifier
             or identifier in identifiers
-            or item.get("terraform_root")
-            not in {"infrastructure", "foundation", "workloads", "reference-data"}
+            or item.get("terraform_root") not in CREDENTIAL_TERRAFORM_ROOT_NAMES
             or not isinstance(patterns, list)
             or not all(isinstance(pattern, str) and pattern for pattern in patterns)
             or not isinstance(item.get("owner"), str)
@@ -4368,13 +4397,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     plan.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     plan.add_argument(
         "--terraform-root",
-        choices=(
-            "configuration",
-            "infrastructure",
-            "foundation",
-            "workloads",
-            "reference-data",
-        ),
+        choices=tuple(SUPPORTED_TERRAFORM_CONFIGURATION_ROOTS),
         required=True,
     )
     capture = subparsers.add_parser("capture-state")
@@ -4384,7 +4407,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     capture.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     capture.add_argument(
         "--terraform-root",
-        choices=("configuration", "infrastructure", "foundation", "workloads", "reference-data"),
+        choices=tuple(SUPPORTED_TERRAFORM_CONFIGURATION_ROOTS),
         required=True,
     )
     validate_state = subparsers.add_parser("validate-state")
@@ -4393,7 +4416,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     validate_state.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     validate_state.add_argument(
         "--terraform-root",
-        choices=("configuration", "infrastructure", "foundation", "workloads", "reference-data"),
+        choices=tuple(SUPPORTED_TERRAFORM_CONFIGURATION_ROOTS),
         required=True,
     )
     apply_gate = subparsers.add_parser("capture-apply-gate")
@@ -4409,7 +4432,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     apply_gate.add_argument("--terraform-configuration", type=Path, required=True)
     apply_gate.add_argument(
         "--terraform-root",
-        choices=("configuration", "infrastructure", "foundation", "workloads", "reference-data"),
+        choices=tuple(SUPPORTED_TERRAFORM_CONFIGURATION_ROOTS),
         required=True,
     )
     apply_gate.add_argument("--source-commit", required=True)
@@ -4432,7 +4455,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     saved_gate.add_argument("--terraform-configuration", type=Path, required=True)
     saved_gate.add_argument(
         "--terraform-root",
-        choices=("configuration", "infrastructure", "foundation", "workloads", "reference-data"),
+        choices=tuple(SUPPORTED_TERRAFORM_CONFIGURATION_ROOTS),
         required=True,
     )
     saved_gate.add_argument("--source-commit", required=True)
@@ -4442,7 +4465,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     execution_gate.add_argument("--terraform-configuration", type=Path, required=True)
     execution_gate.add_argument(
         "--terraform-root",
-        choices=("configuration", "infrastructure", "foundation", "workloads", "reference-data"),
+        choices=tuple(SUPPORTED_TERRAFORM_CONFIGURATION_ROOTS),
         required=True,
     )
     execution_gate.add_argument("--source-commit", required=True)

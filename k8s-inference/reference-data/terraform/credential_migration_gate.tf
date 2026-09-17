@@ -1,7 +1,11 @@
 variable "credential_migration_gate_managed_by_parent" {
-  description = "When true, the root module owns the one native gate generation and orders this entire module behind it."
+  description = "Must be true: reference-data is supported only as a workloads-owned child module."
   type        = bool
   default     = false
+  validation {
+    condition     = var.credential_migration_gate_managed_by_parent
+    error_message = "Standalone reference-data Terraform is unsupported; instantiate this module only from the workloads root."
+  }
 }
 
 variable "credential_migration_gate_receipt_path" {
@@ -47,63 +51,30 @@ variable "credential_migration_phase" {
 }
 
 data "external" "credential_migration_gate" {
-  count = var.credential_migration_gate_managed_by_parent ? 0 : 1
-
   program = ["/usr/bin/python3", "/opt/fs2/k8s-inference/scripts/secret_migration_guard.py", "native-gate"]
   query = {
     receipt_path            = var.credential_migration_gate_receipt_path
     terraform_configuration = path.root
-    terraform_root          = "reference-data"
+    terraform_root          = "workloads"
     source_commit           = var.credential_migration_gate_source_commit
   }
 }
 
 resource "terraform_data" "credential_migration_gate" {
-  input = var.credential_migration_gate_managed_by_parent ? (
-    var.credential_migration_gate_receipt_sha256
-  ) : data.external.credential_migration_gate[0].result.receipt_sha256
-  depends_on = [terraform_data.credential_apply_gate_generation]
+  input = data.external.credential_migration_gate.result.receipt_sha256
 
   lifecycle {
     prevent_destroy = true
     ignore_changes  = [input]
     precondition {
-      condition = var.credential_migration_gate_managed_by_parent ? (
-          path.root != path.module &&
-          startswith(var.credential_migration_gate_receipt_path, "/") &&
-          can(regex("^[0-9a-f]{40}$", var.credential_migration_gate_source_commit)) &&
-          can(regex("^[0-9a-f]{64}$", var.credential_migration_gate_receipt_sha256)) &&
-          !contains(var.credential_migration_gate_history, var.credential_migration_gate_receipt_sha256)
-        ) : (
-        path.root == path.module &&
-        data.external.credential_migration_gate[0].result.status == "pass" &&
-        data.external.credential_migration_gate[0].result.receipt_sha256 == var.credential_migration_gate_receipt_sha256 &&
-        !contains(var.credential_migration_gate_history, var.credential_migration_gate_receipt_sha256)
-      )
-      error_message = "Reference-data requires either its own exact new native gate or an exact parent-owned gate binding. Reused, missing, or malformed gate evidence is forbidden."
-    }
-  }
-}
-
-resource "terraform_data" "credential_apply_gate_generation" {
-  for_each = var.credential_migration_gate_managed_by_parent ? toset([]) : setunion(var.credential_migration_gate_history, toset([var.credential_migration_gate_receipt_sha256]))
-  input    = each.key
-
-  provisioner "local-exec" {
-    command = "/usr/bin/python3 /opt/fs2/k8s-inference/scripts/secret_migration_guard.py apply-saved-plan-gate --terraform-configuration ${path.root} --terraform-root reference-data --source-commit ${var.credential_migration_gate_source_commit}"
-  }
-
-  lifecycle {
-    prevent_destroy = true
-    precondition {
       condition = (
-        !var.credential_migration_gate_managed_by_parent &&
-        path.root == path.module &&
-        data.external.credential_migration_gate[0].result.status == "pass" &&
-        data.external.credential_migration_gate[0].result.receipt_sha256 == var.credential_migration_gate_receipt_sha256 &&
+        var.credential_migration_gate_managed_by_parent &&
+        path.root != path.module &&
+        data.external.credential_migration_gate.result.status == "pass" &&
+        data.external.credential_migration_gate.result.receipt_sha256 == var.credential_migration_gate_receipt_sha256 &&
         !contains(var.credential_migration_gate_history, var.credential_migration_gate_receipt_sha256)
       )
-      error_message = "The short-lived SAI-10 credential migration gate did not pass or its current receipt was reused. Use the staged operator workflow; direct apply without one new exact gate generation is forbidden."
+      error_message = "Reference-data requires the exact workloads-owned native receipt and cannot run as a standalone or arbitrarily embedded root."
     }
   }
 }
