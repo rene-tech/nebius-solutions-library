@@ -56,6 +56,14 @@ def test_http_envelope_uses_same_policy_operation_as_actual_mcp_response(mode):
     assert "operation" not in value["payload"]
 
 
+def test_upload_key_is_stable_on_resume_but_unique_across_cohorts_and_principals(tmp_path):
+    first = runner.upload_key(tmp_path / "cold-one", "synthetic-token-id")
+    assert first == runner.upload_key(tmp_path / "cold-one", "synthetic-token-id")
+    assert first != runner.upload_key(tmp_path / "cold-two", "synthetic-token-id")
+    assert first != runner.upload_key(tmp_path / "cold-one", "other-synthetic-token-id")
+    assert 8 <= len(first) <= 200
+
+
 @pytest.mark.parametrize("operation", ["generate-media", "generate"])
 def test_entire_http_mcp_matrix_preflight_against_published_contract(operation):
     models = {"data": [{"id": runner.MODEL, "operations": [operation]}]}

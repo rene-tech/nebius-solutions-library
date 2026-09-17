@@ -363,6 +363,13 @@ def http_invocation(mode: str, body: dict) -> dict:
     }
 
 
+def upload_key(output: Path, token_id: str) -> str:
+    # Each cohort owns one immutable upload. Resume keeps its key; a new cold
+    # cohort must not try to rewrite the previous cohort's finalized artifact.
+    identity = hashlib.sha256((str(output.resolve()) + ":" + token_id).encode()).hexdigest()
+    return PREFIX + "upload-" + identity
+
+
 def validate_public_contract(models: dict, schema: dict, tools: dict, uploaded: dict) -> None:
     rows = [row for row in models["data"] if row["id"] == MODEL]
     check(len(rows) == 1 and rows[0]["operations"] == ["generate-media"], "published_media_operation_changed")
@@ -554,7 +561,7 @@ async def execute(args) -> None:
                 uploaded = private_json(uploaded_path)
             else:
                 uploaded = await public.upload(
-                    MODEL, source_path, "video/mp4", "none", PREFIX + args.phase + "-upload-" + args.token_id
+                    MODEL, source_path, "video/mp4", "none", upload_key(args.output, args.token_id)
                 )
                 write_private(uploaded_path, uploaded, (token,))
             models = await public.call("list_models", {})
