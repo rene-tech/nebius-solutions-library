@@ -20,6 +20,7 @@ from .federation import FederationRouter, FederationTransportError
 from .models import ClaimedOperation, ReportedUsage, RuntimeIdentity, RuntimeLifecycleObservation, RuntimeResult
 from .registry import OperationalModel, ProbeSpec
 from .request_debug import (
+    _MAX_DEBUG_QUERY_BYTES,
     DebugCapturePolicy,
     DebugExchange,
     DebugPersistQueue,
@@ -84,6 +85,26 @@ def _bounded_httpx_headers(headers: httpx.Headers) -> list[tuple[str, str]]:
     )
 
 
+def _bounded_httpx_query(url: httpx.URL) -> str:
+    """Copy at most the capture budget from HTTPX's already-parsed query.
+
+    ``URL.query`` encodes the complete internal string before returning bytes in
+    the pinned HTTPX release.  Reading it would therefore allocate in proportion
+    to an attacker-controlled URL before the debug boundary could slice it.  Use
+    the existing parsed string, slice first, and fail closed if HTTPX changes the
+    private representation rather than falling back to the allocating property.
+    """
+
+    reference = getattr(url, "_uri_reference", None)
+    query = getattr(reference, "query", None)
+    if not isinstance(query, str):
+        return ""
+    try:
+        return bound_capture_query(query[:_MAX_DEBUG_QUERY_BYTES].encode("ascii"))
+    except UnicodeEncodeError:
+        return ""
+
+
 def _bounded_content_type(headers: list[tuple[str, str]]) -> str | None:
     """Read Content-Type only from the already-bounded capture copy."""
     return next((value for name, value in headers if name.lower() == "content-type"), None)
@@ -146,7 +167,7 @@ class _UpstreamCapture:
     def request(self, request: httpx.Request) -> None:
         self.endpoint = request.url.path
         # Bound the query and header list at capture, WHILE iterating, before credential learning/redaction.
-        self.query_string = bound_capture_query(request.url.query)
+        self.query_string = _bounded_httpx_query(request.url)
         self.method = request.method
         self.request_headers = _bounded_httpx_headers(request.headers)
         self.request_content_type = _bounded_content_type(self.request_headers)

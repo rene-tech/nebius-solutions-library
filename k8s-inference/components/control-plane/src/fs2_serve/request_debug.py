@@ -1080,8 +1080,9 @@ def bound_capture_headers(pairs: HeaderPairs) -> list[tuple[str, str]]:
 def bound_capture_query(query: str | bytes) -> str:
     """Capture-time bound for an upstream query, applied before credential learning/redaction.
 
-    HTTPX exposes raw URL query bytes; slice those bytes BEFORE decoding so an unbounded temporary string is
-    never created merely to truncate it. A pre-decoded string is bounded with the same UTF-8 byte contract.
+    Callers supplying bytes must obtain them without first materializing an unbounded public-library
+    property. Slice those bytes BEFORE decoding. A pre-decoded string is bounded with the same UTF-8 byte
+    contract; the HTTPX adapter slices its already-parsed private string before passing it here.
     """
     if isinstance(query, bytes):
         return _bounded_text(query[:_MAX_DEBUG_QUERY_BYTES].decode("ascii", errors="replace"), _MAX_DEBUG_QUERY_BYTES)

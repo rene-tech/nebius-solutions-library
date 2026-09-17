@@ -7,6 +7,7 @@ import base64
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from fs2_serve.models import Principal
@@ -1879,6 +1880,38 @@ def test_raw_upstream_headers_and_query_are_bounded_incrementally_before_decode(
     assert pulled < 1000 and stored_bytes <= _MAX_DEBUG_HEADERS_BYTES
     assert "truncated" in bounded[-1][1]
     assert len(bound_capture_query(b"q=" + b"x" * 1_000_000).encode()) <= _MAX_DEBUG_QUERY_BYTES
+
+
+def test_real_httpx_request_query_is_sliced_before_public_property_materialization(monkeypatch):
+    """SAI-01 final pre-materialization regression: use a real HTTPX Request but make any access to
+    ``URL.query`` fail. The adapter must read the existing parsed string, slice it to 8 KiB, and only then
+    encode it; an HTTPX-internal representation change must fail closed instead of using the public property.
+    Authored; not executed here."""
+    from fs2_serve.request_debug import _MAX_DEBUG_QUERY_BYTES
+    from fs2_serve.runtime import _bounded_httpx_query
+
+    request = httpx.Request("GET", "https://runtime.invalid/invoke?token=" + "x" * 1_000_000)
+
+    def public_query_must_not_be_read(_url):
+        raise AssertionError("HTTPX URL.query materializes the complete query")
+
+    monkeypatch.setattr(httpx.URL, "query", property(public_query_must_not_be_read))
+    bounded = _bounded_httpx_query(request.url)
+
+    assert len(bounded.encode()) <= _MAX_DEBUG_QUERY_BYTES
+    assert bounded.startswith("token=")
+
+
+def test_httpx_query_capture_fails_closed_when_private_representation_drifts():
+    """The adapter must not fall back to ``URL.query`` if the pinned private representation disappears."""
+    from fs2_serve.runtime import _bounded_httpx_query
+
+    class ChangedURL:
+        @property
+        def query(self):
+            raise AssertionError("allocating public fallback was accessed")
+
+    assert _bounded_httpx_query(ChangedURL()) == ""  # type: ignore[arg-type]
 
 
 def test_ceiling_accounts_control_char_escaping_for_non_body_metadata_fields():
