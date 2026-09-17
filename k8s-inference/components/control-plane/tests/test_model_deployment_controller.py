@@ -46,6 +46,7 @@ from fs2_serve.model_deployment_controller import (
     SCALE_GATE_CONFIG_MAP,
     SCALE_GATE_DENIAL_MESSAGE,
     SCALE_GATE_AUTHORIZATION_MAX_BYTES,
+    SCALE_GATE_PREDECESSOR_EVIDENCE_CONFIG_MAP_PREFIX,
     SCALE_GATE_PREDECESSOR_EVIDENCE_MAX_BYTES,
     SCALE_GATE_RECORD_MAX_BYTES,
     SCALE_GATE_MUTATION_ANNOTATION,
@@ -92,9 +93,13 @@ from fs2_serve.model_deployment_controller import (
     _scale_gate_companion_keys,
     _scale_gate_mutation_token,
     _scale_gate_predecessor_evidence,
+    _scale_gate_predecessor_evidence_config_map,
+    _scale_gate_predecessor_evidence_config_map_name,
     _scale_gate_predecessor_evidence_digest,
     _scale_gate_predecessor_evidence_entry,
+    _scale_gate_predecessor_evidence_from_config_map,
     _scale_gate_predecessor_evidence_update,
+    _scale_gate_predecessor_lineage,
     _scale_gate_scaler_checkpoint,
     _scale_gate_target,
     _scale_gate_target_key,
@@ -2846,6 +2851,7 @@ def _handoff_model_fence() -> ModelWriteFence:
 
 
 _TEST_SCALE_GATES: dict[str, str] = {}
+_TEST_SCALE_GATE_EVIDENCE_SHARDS: dict[str, dict[str, Any]] = {}
 _TEST_SCALE_GATE_RESOURCE_VERSION = 91
 
 
@@ -2890,10 +2896,27 @@ def _test_tombstone_value(resource: RenderedResource, tombstone: ScaleGateTombst
     return _encoded_scale_gate_tombstone_value(_scale_gate_target(resource), tombstone)
 
 
+def _store_test_scale_gate_evidence_shard(
+    target: ScaleGateTargetIdentity,
+    evidence: ScaleGateReleaseAuthorizationV2,
+) -> str:
+    body = _scale_gate_predecessor_evidence_config_map(target, evidence)
+    name = body["metadata"]["name"]
+    body["metadata"].update(
+        {
+            "uid": f"evidence-{len(_TEST_SCALE_GATE_EVIDENCE_SHARDS) + 1}",
+            "resourceVersion": "1",
+        }
+    )
+    _TEST_SCALE_GATE_EVIDENCE_SHARDS[name] = body
+    return name
+
+
 @pytest.fixture(autouse=True)
 def _isolate_test_scale_gates() -> None:
     global _TEST_SCALE_GATE_RESOURCE_VERSION
     _TEST_SCALE_GATES.clear()
+    _TEST_SCALE_GATE_EVIDENCE_SHARDS.clear()
     _TEST_SCALE_GATE_RESOURCE_VERSION = 91
 
 
@@ -2942,6 +2965,39 @@ def _scale_gate_response(request: httpx.Request) -> httpx.Response | None:
                 "data": copy.deepcopy(_TEST_SCALE_GATES),
             },
         )
+    if request.method == "POST" and request.url.path.endswith("/configmaps"):
+        body = json.loads(request.content)
+        name = body.get("metadata", {}).get("name")
+        if isinstance(name, str) and name.startswith(SCALE_GATE_PREDECESSOR_EVIDENCE_CONFIG_MAP_PREFIX):
+            if name in _TEST_SCALE_GATE_EVIDENCE_SHARDS:
+                return httpx.Response(
+                    409,
+                    json={
+                        "apiVersion": "v1",
+                        "kind": "Status",
+                        "status": "Failure",
+                        "reason": "AlreadyExists",
+                        "code": 409,
+                    },
+                )
+            retained = copy.deepcopy(body)
+            retained["metadata"].update(
+                {
+                    "uid": f"evidence-{len(_TEST_SCALE_GATE_EVIDENCE_SHARDS) + 1}",
+                    "resourceVersion": "1",
+                }
+            )
+            _TEST_SCALE_GATE_EVIDENCE_SHARDS[name] = retained
+            return httpx.Response(201, json=copy.deepcopy(retained))
+    if request.method == "GET" and "/configmaps/" in request.url.path:
+        name = request.url.path.rsplit("/", 1)[-1]
+        if name.startswith(SCALE_GATE_PREDECESSOR_EVIDENCE_CONFIG_MAP_PREFIX):
+            retained = _TEST_SCALE_GATE_EVIDENCE_SHARDS.get(name)
+            return (
+                httpx.Response(200, json=copy.deepcopy(retained))
+                if retained is not None
+                else httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+            )
     if (
         request.method == "POST"
         and request.url.path.endswith("/scaledobjects")
@@ -2959,6 +3015,19 @@ def _scale_gate_response(request: httpx.Request) -> httpx.Response | None:
             },
         )
     return None
+
+
+def _is_test_scale_gate_storage_request(request: httpx.Request) -> bool:
+    if request.url.path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}"):
+        return True
+    if f"/configmaps/{SCALE_GATE_PREDECESSOR_EVIDENCE_CONFIG_MAP_PREFIX}" in request.url.path:
+        return True
+    if request.method == "POST" and request.url.path.endswith("/configmaps"):
+        body = json.loads(request.content)
+        return str(body.get("metadata", {}).get("name", "")).startswith(
+            SCALE_GATE_PREDECESSOR_EVIDENCE_CONFIG_MAP_PREFIX
+        )
+    return False
 
 
 def test_scale_gate_http_mock_enforces_config_map_cas_and_advances_resource_version() -> None:
@@ -7046,7 +7115,7 @@ def test_protocol_v2_c574_provenance_is_validated_before_adoption() -> None:
 
 
 def test_maximum_protocol_v2_predecessor_is_retained_once_by_bounded_canonical_digest() -> None:
-    """Every bounded v2 field fits without duplicating its bytes in the v3 gate record."""
+    """Multiple maximum v2 records use independent sub-1MiB immutable shards."""
 
     # Non-BMP code points expand to two JSON surrogate escapes, exercising
     # the schema's true worst-case canonical byte representation.
@@ -7107,25 +7176,40 @@ def test_maximum_protocol_v2_predecessor_is_retained_once_by_bounded_canonical_d
         phase="applied",
     )
     target = ScaleGateTargetIdentity(
-        apiVersion=longest_identity,
-        kind=longest_identity,
-        namespace=longest_identity,
-        name=longest_identity,
+        apiVersion="apps/v1",
+        kind="Deployment",
+        namespace="n" * 63,
+        name="d" * 253,
     )
     encoded = _encoded_scale_gate_value(target, authorization)
     encoded_authorization = json.loads(encoded)["authorization"]
+    evidence_shard = _scale_gate_predecessor_evidence_config_map(target, predecessor)
 
     assert len(evidence_value.encode()) <= SCALE_GATE_PREDECESSOR_EVIDENCE_MAX_BYTES
     assert len(encoded_authorization.encode()) <= SCALE_GATE_AUTHORIZATION_MAX_BYTES
     assert len(encoded.encode()) <= SCALE_GATE_RECORD_MAX_BYTES
-    assert (
-        len(evidence_key.encode())
-        + len(evidence_value.encode())
-        + len(_scale_gate_target_key(target).encode())
-        + len(encoded.encode())
-        < KUBERNETES_CONFIG_MAP_MAX_BYTES
-    )
+    assert len(json.dumps(evidence_shard, separators=(",", ":")).encode()) < KUBERNETES_CONFIG_MAP_MAX_BYTES
     assert evidence_key.endswith(digest.removeprefix("sha256:"))
+    assert evidence_shard["immutable"] is True
+    assert not evidence_shard["metadata"].get("ownerReferences")
+    assert evidence_shard["metadata"]["name"] == _scale_gate_predecessor_evidence_config_map_name(
+        target,
+        digest,
+    )
+    assert len(evidence_shard["metadata"]["name"]) <= 253
+    persisted_shard = copy.deepcopy(evidence_shard)
+    persisted_shard["metadata"].update({"uid": "evidence-uid", "resourceVersion": "1"})
+    assert _scale_gate_predecessor_evidence_from_config_map(
+        persisted_shard,
+        target=target,
+        digest=digest,
+    ) == predecessor
+    _scale_gate_predecessor_lineage(authorization, predecessor)
+    with pytest.raises(KubernetesConflictError, match="evidence lineage changed"):
+        _scale_gate_predecessor_lineage(
+            authorization.model_copy(update={"model_uid": "foreign-model"}),
+            predecessor,
+        )
     assert "predecessorAuthorization" not in encoded_authorization
     assert _scale_gate_predecessor_evidence({evidence_key: evidence_value}, authorization) == predecessor
     noncanonical_value = json.dumps(json.loads(evidence_value), indent=1)
@@ -7133,6 +7217,19 @@ def test_maximum_protocol_v2_predecessor_is_retained_once_by_bounded_canonical_d
         _scale_gate_predecessor_evidence({evidence_key: noncanonical_value}, authorization)
     with pytest.raises(KubernetesConflictError, match="evidence slot changed"):
         _scale_gate_predecessor_evidence_update({evidence_key: noncanonical_value}, predecessor)
+    maximum_predecessors = [
+        predecessor.model_copy(update={"model_uid": f"{'m' * 251}{index:02x}"})
+        for index in range(128)
+    ]
+    shards = [_scale_gate_predecessor_evidence_config_map(target, item) for item in maximum_predecessors]
+    assert len({item["metadata"]["name"] for item in shards}) == len(shards)
+    assert all(
+        len(json.dumps(item, separators=(",", ":")).encode()) < KUBERNETES_CONFIG_MAP_MAX_BYTES
+        for item in shards
+    )
+    assert sum(len(item["data"]["authorization.json"].encode()) for item in shards) > (
+        KUBERNETES_CONFIG_MAP_MAX_BYTES
+    )
 
 
 @pytest.mark.asyncio
@@ -7217,9 +7314,16 @@ async def test_fixed_generation_closes_crashed_older_autoscaler_allowance_withou
         model_fence=model_fence,
         fence=fence(),
     )
-    evidence_key, evidence_value = _scale_gate_predecessor_evidence_entry(authorization)
-    assert set(_TEST_SCALE_GATES) == {target_key, evidence_key}
-    assert _TEST_SCALE_GATES[evidence_key] == evidence_value
+    evidence_digest = _scale_gate_predecessor_evidence_digest(authorization)
+    evidence_name = _scale_gate_predecessor_evidence_config_map_name(target, evidence_digest)
+    assert set(_TEST_SCALE_GATES) == {target_key}
+    assert not any(key.startswith("evidence.") for key in _TEST_SCALE_GATES)
+    assert set(_TEST_SCALE_GATE_EVIDENCE_SHARDS) == {evidence_name}
+    assert _scale_gate_predecessor_evidence_from_config_map(
+        _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name],
+        target=target,
+        digest=evidence_digest,
+    ) == authorization
     closed = _scale_gate_authorization(_TEST_SCALE_GATES[target_key], target)
     assert isinstance(closed, ScaleGateReleaseAuthorization)
     assert closed.phase == "closed"
@@ -7227,8 +7331,7 @@ async def test_fixed_generation_closes_crashed_older_autoscaler_allowance_withou
     assert closed.model_resource_version == model_fence.resource_version
     assert closed.model_spec_digest == model_fence.spec_digest
     assert closed.predecessor_authorization is None
-    assert closed.predecessor_evidence_digest == _scale_gate_predecessor_evidence_digest(authorization)
-    assert _scale_gate_predecessor_evidence(_TEST_SCALE_GATES, closed) == authorization
+    assert closed.predecessor_evidence_digest == evidence_digest
     assert closed.prior_scaler is None
     base_render = renderer().render(
         model_spec(),
@@ -7249,12 +7352,30 @@ async def test_fixed_generation_closes_crashed_older_autoscaler_allowance_withou
         "cr-uid-1",
         4,
     ) == [(desired, _snapshot(current, desired))]
+    exact_shard = copy.deepcopy(_TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name])
+    _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name]["data"]["authorization.json"] = json.dumps(
+        json.loads(exact_shard["data"]["authorization.json"]),
+        indent=1,
+    )
+    handoff_receipt = ScaleHandoffReceipt.model_validate_json(
+        current["metadata"]["annotations"][SCALE_HANDOFF_RECEIPT_ANNOTATION]
+    )
+    with pytest.raises(KubernetesConflictError, match="evidence shard changed"):
+        await client._assert_scale_gate(desired, handoff_receipt)
+    with pytest.raises(KubernetesConflictError, match="evidence shard changed"):
+        await client._assert_superseded_handoff_closure(
+            desired,
+            receipt=handoff_receipt,
+            model_fence=model_fence,
+        )
+    _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name] = exact_shard
     assert not any(
         request.method in {"PATCH", "POST", "DELETE"}
-        and not request.url.path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}")
+        and not _is_test_scale_gate_storage_request(request)
         and request.url.params.get("dryRun") != "All"
         for request in requests
     )
+    assert not any(request.method == "DELETE" for request in requests)
     assert not any(request.url.path.endswith("/scale") for request in requests)
     await http.aclose()
 
@@ -7353,10 +7474,20 @@ async def test_scaledobject_apply_fences_cr_change_at_the_mutating_boundary(tmp_
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("resume_after_apply", [False, True], ids=["old-to-desired", "crash-after-apply"])
+@pytest.mark.parametrize(
+    ("resume_after_apply", "evidence_failure_checkpoint"),
+    [(False, None), (True, None), (False, "after-write"), (False, "after-completion")],
+    ids=[
+        "old-to-desired",
+        "crash-after-apply",
+        "evidence-lost-after-write",
+        "evidence-lost-after-completion",
+    ],
+)
 async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_records_postcondition(
     tmp_path: Path,
     resume_after_apply: bool,
+    evidence_failure_checkpoint: str | None,
 ) -> None:
     token = tmp_path / "token"
     token.write_text("projected-service-account-token")
@@ -7395,6 +7526,26 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
         expected_generation=8,
         operation="Apply",
     )
+    predecessor = ScaleGateReleaseAuthorizationV2(
+        version=2,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        modelResourceVersion=model_fence.resource_version,
+        modelGeneration=model_fence.generation,
+        modelSpecDigest=model_fence.spec_digest,
+        scalerAPIVersion=scaler.api_version,
+        scalerKind=scaler.kind,
+        scalerNamespace=scaler.namespace,
+        scalerName=scaler.name,
+        desiredScalerDigest=scaler.digest,
+        expectedScalerGeneration=8,
+        mutationToken=mutation_token,
+        mutationOperation="Apply",
+        priorScaler=ScaleGateScalerCheckpointV2.model_validate(
+            prior_checkpoint.model_dump(mode="json", by_alias=True)
+        ),
+        phase="prepared",
+    )
     authorization = ScaleGateReleaseAuthorization(
         version=3,
         deploymentUID="deployment-uid",
@@ -7413,9 +7564,12 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
         mutationModelGeneration=model_fence.generation,
         mutationModelSpecDigest=model_fence.spec_digest,
         priorScaler=prior_checkpoint,
+        predecessorEvidenceDigest=_scale_gate_predecessor_evidence_digest(predecessor),
         phase="prepared",
     )
+    target = _scale_gate_target(target_resource)
     _TEST_SCALE_GATES[_test_gate_key(target_resource)] = _test_gate_value(target_resource, authorization)
+    evidence_name = _store_test_scale_gate_evidence_shard(target, predecessor)
     deployment = copy.deepcopy(target_resource.manifest)
     deployment["spec"]["replicas"] = 0
     deployment["metadata"].update(
@@ -7443,6 +7597,12 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
         if request.url.path.endswith("/modeldeployments/qwen-live"):
             return httpx.Response(200, json=model)
         if (response := _scale_gate_response(request)) is not None:
+            if (
+                evidence_failure_checkpoint == "after-completion"
+                and request.method == "PATCH"
+                and request.url.path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}")
+            ):
+                _TEST_SCALE_GATE_EVIDENCE_SHARDS.pop(evidence_name)
             return response
         if request.url.path.endswith(f"/deployments/{target_resource.name}"):
             return httpx.Response(200, json=deployment)
@@ -7450,6 +7610,8 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
             if request.method == "PATCH":
                 scaler_patches.append(request)
                 applied = True
+                if evidence_failure_checkpoint == "after-write":
+                    _TEST_SCALE_GATE_EVIDENCE_SHARDS.pop(evidence_name)
                 return httpx.Response(200, json=desired_live)
             if applied:
                 reread = copy.deepcopy(desired_live)
@@ -7466,6 +7628,27 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
         writes_enabled=True,
         client=http,
     )
+    if evidence_failure_checkpoint is not None:
+        with pytest.raises(KubernetesConflictError, match="evidence shard is absent"):
+            await client.apply_autoscaler_resource(
+                scaler,
+                target=target_resource,
+                authorization=authorization,
+                owner_uid="cr-uid-1",
+                model_fence=model_fence,
+                fence=fence(),
+        )
+        assert len(scaler_patches) == 1
+        failed_record = _scale_gate_authorization(
+            _TEST_SCALE_GATES[_test_gate_key(target_resource)],
+            target,
+        )
+        assert isinstance(failed_record, ScaleGateReleaseAuthorization)
+        assert failed_record.phase == (
+            "prepared" if evidence_failure_checkpoint == "after-write" else "applied"
+        )
+        await http.aclose()
+        return
     result = await client.apply_autoscaler_resource(
         scaler,
         target=target_resource,
@@ -7914,7 +8097,15 @@ async def test_c574_update_adoption_preserves_prior_and_survives_second_reconcil
     assert refreshed.model_resource_version == model_fence.resource_version
     assert refreshed.predecessor_authorization is None
     assert refreshed.predecessor_evidence_digest == _scale_gate_predecessor_evidence_digest(retained)
-    assert _scale_gate_predecessor_evidence(_TEST_SCALE_GATES, refreshed) == retained
+    evidence_name = _scale_gate_predecessor_evidence_config_map_name(
+        target,
+        refreshed.predecessor_evidence_digest,
+    )
+    assert _scale_gate_predecessor_evidence_from_config_map(
+        _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name],
+        target=target,
+        digest=refreshed.predecessor_evidence_digest,
+    ) == retained
     assert refreshed.prior_scaler == prior
     assert refreshed.mutation_token == mutation_token
     assert refreshed.applied_scaler == ScaleGateScalerCheckpoint(
@@ -7937,8 +8128,47 @@ async def test_c574_update_adoption_preserves_prior_and_survives_second_reconcil
         fence=fence(),
     )
     assert second == refreshed
-    evidence_key, evidence_value = _scale_gate_predecessor_evidence_entry(retained)
-    assert _TEST_SCALE_GATES[evidence_key] == evidence_value
+    assert set(_TEST_SCALE_GATE_EVIDENCE_SHARDS) == {evidence_name}
+    assert not any(key.startswith("evidence.") for key in _TEST_SCALE_GATES)
+    exact_evidence_shard = copy.deepcopy(_TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name])
+
+    def mutating_scaler_requests() -> list[httpx.Request]:
+        return [
+            request
+            for request in requests
+            if request.method in {"POST", "PATCH"}
+            and (request.url.path.endswith("/scaledobjects") or f"/scaledobjects/{scaler.name}" in request.url.path)
+            and request.url.params.get("dryRun") != "All"
+        ]
+
+    before_failed_checks = len(mutating_scaler_requests())
+    _TEST_SCALE_GATE_EVIDENCE_SHARDS.pop(evidence_name)
+    with pytest.raises(KubernetesConflictError, match="evidence shard is absent"):
+        await client.apply_autoscaler_resource(
+            scaler,
+            target=target_resource,
+            authorization=second,
+            owner_uid="cr-uid-1",
+            model_fence=model_fence,
+            fence=fence(),
+        )
+    tampered_shard = copy.deepcopy(exact_evidence_shard)
+    tampered_shard["data"]["authorization.json"] = json.dumps(
+        json.loads(tampered_shard["data"]["authorization.json"]),
+        indent=1,
+    )
+    _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name] = tampered_shard
+    with pytest.raises(KubernetesConflictError, match="evidence shard changed"):
+        await client.apply_autoscaler_resource(
+            scaler,
+            target=target_resource,
+            authorization=second,
+            owner_uid="cr-uid-1",
+            model_fence=model_fence,
+            fence=fence(),
+        )
+    assert len(mutating_scaler_requests()) == before_failed_checks
+    _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name] = exact_evidence_shard
     applied = await client.apply_autoscaler_resource(
         scaler,
         target=target_resource,
@@ -7951,9 +8181,10 @@ async def test_c574_update_adoption_preserves_prior_and_survives_second_reconcil
     assert not any(
         request.method in {"POST", "PATCH"}
         and request.url.params.get("dryRun") != "All"
-        and not request.url.path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}")
+        and not _is_test_scale_gate_storage_request(request)
         for request in requests
     )
+    assert not any(request.method == "DELETE" for request in requests)
     await http.aclose()
 
 
@@ -8118,7 +8349,7 @@ async def test_applied_scaler_authorization_preserves_original_mutation_fence_on
     assert second == first
     assert not any(
         request.method in {"POST", "PATCH"}
-        and not request.url.path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}")
+        and not _is_test_scale_gate_storage_request(request)
         for request in requests
     )
     await http.aclose()
