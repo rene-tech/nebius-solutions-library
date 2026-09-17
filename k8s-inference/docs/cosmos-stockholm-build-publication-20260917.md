@@ -328,3 +328,52 @@ fresh scrapes, and repeat affected exact-image acceptance. Release-145 cohorts
 remain valid only for their recorded release-145 scope. This build lane made
 no cluster mutation and claims neither deployed verification nor customer
 readiness for the new image.
+
+### Release-146 held-upload verification — retrospective metric correlation
+
+The owner deployed exact index `25438d07...`. Before the upload, this lane
+verified three Ready CP replicas on that index, actual Cosmos desired replicas
+0/no Pods, inactive KEDA and HPA desired 0 across two reads. KSM desired-0
+sample timestamps advanced from 16:01:20.604 to 16:01:50.604 UTC; all nine
+queued/activating/running series from the three CP pods were fresh and zero.
+
+The Cosmos acceptance worker then admitted upload
+`9d8cab8d-0647-48f8-aa07-bc019d9f8a14` at **16:03:25.591970 UTC**, held it
+open for **90.408645 seconds**, and retained **ten timestamped public
+caller-visible `queued` observations**. It finalized at **16:04:56.783718 UTC**
+with `succeeded`, `artifact_uploaded`, semantic `verified`, HTTP 201,
+attempt 0 and zero reserved/estimated GPU seconds. No generation was submitted
+as part of this proof. The worker also recorded actual zero replicas/no Pods
+before and after.
+
+The operation ID reached this lane after finalization during a worker context
+handoff. Therefore the metric proof is explicitly **retrospective**, correlated
+with the retained public queued observations; no synchronous during-hold SQL
+snapshots or second upload are claimed. Prometheus history for the exact
+acceptance-to-finalization interval shows:
+
+- All nine CP active-state series and aggregate GPU demand stayed zero. Each
+  CP has 19–20 distinct five-second scrape timestamps across the interval;
+  maximum sample age was 4.903 seconds.
+- KSM desired replicas, observed replicas and model Pod count stayed zero.
+  Sample timestamps advanced through 16:03:20.604, 16:03:50.604,
+  16:04:20.604 and 16:04:50.604; the latter three occurred during the queued
+  upload. Startup-retention demand also stayed zero.
+- One-second query-grid values repeat the actual scrape samples; they are not
+  92 independent scrapes or continuous sub-scrape visibility.
+
+Protected correlation receipt:
+`/home/tux/secure-handoff/cosmos-stockholm-rollout-20260917/held-upload-r146-retrospective-correlation.json`,
+SHA-256 `7226e7be5bdbb626da4b804fd67010e06f1d66b3aeb31993c2f557576886a630`.
+It links the acceptance worker's public upload receipt, SHA-256
+`e0c99e2c694c22dd22634c8642e3526b35f2e07379296ceb6d654b28a11d8a99`,
+at `/home/tux/secure-handoff/cosmos-public-media-20260917-aiumy1sU/upload-proof-release146/receipt.json`.
+Two earlier preflight receipts remain in the same rollout directory with
+`held-upload-r146-00000000-0000-0000-0000-000000000000-sample{1,2}.json` names;
+their zero UUID denotes no admitted preflight operation.
+
+This qualifies the narrow queued CPU-upload demand exclusion on the exact
+release and observed scrape boundaries. It does not qualify model generation,
+every upload size/concurrency shape, full-cluster health, billing, unsupported
+clients or broader release readiness. There was no second upload, extra
+inference, live configuration change or post-handoff SQL probe by this lane.
