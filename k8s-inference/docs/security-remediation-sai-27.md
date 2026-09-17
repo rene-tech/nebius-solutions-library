@@ -19,7 +19,10 @@ The successor preserves the ordinary 403 missing-scope behavior by requiring
 It also converts only the final post-refresh principal/model authorization
 denial to a dedicated `KeyError` subclass. Model-required-scope, operation,
 protocol, MCP, admin/operator, and authorized readiness errors retain their
-existing behavior. The branch merges current `origin/main` at
+existing behavior. Final admission resolves enabled-or-disabled state, applies
+principal/model authorization, and only then exposes stale or unavailable route
+status, preserving 503 for authorized callers without reopening the oracle. The
+branch merges current `origin/main` at
 `0e6fdf6d9f61e5737dc6ac5cec4c0111207dd697`; rejected history is preserved
 without rebase or amendment.
 

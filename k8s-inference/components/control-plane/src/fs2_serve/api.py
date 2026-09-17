@@ -1123,8 +1123,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             raise HTTPException(status_code=400, detail="streaming is not enabled in phase 1; use an async operation")
         model_id = _validate_model_id(payload["model"])
         request.state.model_id = model_id
-        public_model_or_not_found(model_id, identity, surface="openai")
-        model = runtime.registry.get(model_id)
+        model = public_model_or_not_found(model_id, identity, surface="openai")
         resolved_operation = runtime.registry.operation_for_protocol(model, protocol)
         return await invoke(
             request=request,

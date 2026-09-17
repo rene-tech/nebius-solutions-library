@@ -201,9 +201,7 @@ class AdmissionService:
         routes_fresh = True
         if self.route_refresh is not None:
             routes_fresh = await self.route_refresh()
-        model = self.registry.get(admission.model_id)
-        if not routes_fresh and model.dynamic_policy is not None:
-            raise ModelRouteUnavailableError("dynamic model route evidence is unavailable")
+        model = self.registry.get(admission.model_id, require_enabled=False)
         try:
             self.registry.authorize_principal(
                 model,
@@ -218,6 +216,10 @@ class AdmissionService:
             if required_scope == Scope.INFERENCE_INVOKE.value:
                 raise PublicModelPolicyNotFoundError("model not found") from None
             raise
+        if not routes_fresh and model.dynamic_policy is not None:
+            raise ModelRouteUnavailableError("dynamic model route evidence is unavailable")
+        if not model.enabled:
+            raise ModelRouteUnavailableError("model is not routable")
         self.registry.authorize(model, principal.scopes)
         if admission.operation not in model.gateway.policy_operations:
             raise PermissionError("operation is outside model policy")
