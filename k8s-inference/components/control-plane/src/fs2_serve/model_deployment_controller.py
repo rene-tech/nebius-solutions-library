@@ -205,16 +205,29 @@ class ScaleGateScalerCheckpoint(StrictModel):
     managed_fields_digest: str = Field(alias="managedFieldsDigest", pattern=r"^sha256:[0-9a-f]{64}$")
 
 
-class ScaleGateReleaseAuthorization(StrictModel):
-    """Generation-exact authorization for one ScaledObject create/update.
+class ScaleGateScalerCheckpointV2(StrictModel):
+    """Decoder for persisted protocol-v2 checkpoints.
 
-    ``prepared`` permits exactly the absent/old state to move to the desired
-    digest. ``applied`` is a durable postcondition and permits no further
-    ScaledObject mutation. ``closed`` records that a newer fixed generation
-    superseded the allowance after every targeter disappeared. The Deployment
-    receipt remains the provenance for the scale-owner transition; this record
-    binds its autoscaled reversal to the current ModelDeployment revision.
+    The original v2 schema did not retain ``managedFieldsDigest``; the brief
+    c574 lineage did. Keeping the field optional here decodes both immutable
+    predecessors without pretending the missing proof already exists.
     """
+
+    model_config = ConfigDict(extra="forbid", strict=True, populate_by_name=True)
+
+    uid: str = Field(min_length=1, max_length=253)
+    resource_version: str = Field(alias="resourceVersion", min_length=1, max_length=128)
+    generation: int = Field(ge=1)
+    digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    managed_fields_digest: str | None = Field(
+        default=None,
+        alias="managedFieldsDigest",
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
+
+
+class ScaleGateReleaseAuthorizationV2(StrictModel):
+    """Read-only compatibility decoder for both persisted v2 variants."""
 
     model_config = ConfigDict(extra="forbid", strict=True, populate_by_name=True)
 
@@ -232,6 +245,51 @@ class ScaleGateReleaseAuthorization(StrictModel):
     expected_scaler_generation: int | None = Field(default=None, alias="expectedScalerGeneration", ge=1)
     mutation_token: str | None = Field(default=None, alias="mutationToken", pattern=r"^sha256:[0-9a-f]{64}$")
     mutation_operation: Literal["Apply", "Update"] | None = Field(default=None, alias="mutationOperation")
+    prior_scaler: ScaleGateScalerCheckpointV2 | None = Field(default=None, alias="priorScaler")
+    applied_scaler: ScaleGateScalerCheckpointV2 | None = Field(default=None, alias="appliedScaler")
+    phase: Literal["prepared", "applied", "closed"]
+
+    def annotation_value(self) -> str:
+        return self.model_dump_json(by_alias=True)
+
+
+class ScaleGateReleaseAuthorization(StrictModel):
+    """Generation-exact authorization for one ScaledObject create/update.
+
+    Protocol v3 separates the immutable mutation-generation/spec fence from
+    the refreshable current ModelDeployment fence. This preserves a completed
+    write's token when a later, semantically identical CR generation retries.
+
+    ``prepared`` permits exactly the absent/old state to move to the desired
+    digest. ``applied`` is a durable postcondition and permits no further
+    ScaledObject mutation. ``closed`` records that a newer fixed generation
+    superseded the allowance after every targeter disappeared. The Deployment
+    receipt remains the provenance for the scale-owner transition; this record
+    binds its autoscaled reversal to the current ModelDeployment revision.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, populate_by_name=True)
+
+    version: Literal[3]
+    deployment_uid: str = Field(alias="deploymentUID", min_length=1, max_length=253)
+    model_uid: str = Field(alias="modelUID", min_length=1, max_length=253)
+    model_resource_version: str = Field(alias="modelResourceVersion", min_length=1, max_length=128)
+    model_generation: int = Field(alias="modelGeneration", ge=1)
+    model_spec_digest: str = Field(alias="modelSpecDigest", pattern=r"^sha256:[0-9a-f]{64}$")
+    scaler_api_version: str = Field(alias="scalerAPIVersion", min_length=1, max_length=253)
+    scaler_kind: str = Field(alias="scalerKind", min_length=1, max_length=253)
+    scaler_namespace: str = Field(alias="scalerNamespace", min_length=1, max_length=253)
+    scaler_name: str = Field(alias="scalerName", min_length=1, max_length=253)
+    desired_scaler_digest: str = Field(alias="desiredScalerDigest", pattern=r"^sha256:[0-9a-f]{64}$")
+    expected_scaler_generation: int | None = Field(default=None, alias="expectedScalerGeneration", ge=1)
+    mutation_token: str | None = Field(default=None, alias="mutationToken", pattern=r"^sha256:[0-9a-f]{64}$")
+    mutation_operation: Literal["Apply", "Update"] | None = Field(default=None, alias="mutationOperation")
+    mutation_model_generation: int | None = Field(default=None, alias="mutationModelGeneration", ge=1)
+    mutation_model_spec_digest: str | None = Field(
+        default=None,
+        alias="mutationModelSpecDigest",
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
     prior_scaler: ScaleGateScalerCheckpoint | None = Field(default=None, alias="priorScaler")
     applied_scaler: ScaleGateScalerCheckpoint | None = Field(default=None, alias="appliedScaler")
     phase: Literal["prepared", "applied", "closed"]
@@ -240,7 +298,12 @@ class ScaleGateReleaseAuthorization(StrictModel):
         return self.model_dump_json(by_alias=True)
 
 
-ScaleGateAuthorization = ScaleAuthorizationReceipt | ScaleGateReleaseAuthorization
+ScaleGateReleaseRecord = ScaleGateReleaseAuthorization | ScaleGateReleaseAuthorizationV2
+ScaleGateAuthorization = ScaleAuthorizationReceipt | ScaleGateReleaseRecord
+SCALE_GATE_RELEASE_AUTHORIZATION_TYPES = (
+    ScaleGateReleaseAuthorization,
+    ScaleGateReleaseAuthorizationV2,
+)
 
 
 class ScaleGateTombstone(StrictModel):
@@ -887,7 +950,12 @@ def _scale_gate_authorization(
     record = _scale_gate_record(value, target)
     if record is None:
         return None
-    for receipt_type in (ScaleGateReleaseAuthorization, ScaleHandoffReceipt, ScaleInitializationReceipt):
+    for receipt_type in (
+        ScaleGateReleaseAuthorization,
+        ScaleGateReleaseAuthorizationV2,
+        ScaleHandoffReceipt,
+        ScaleInitializationReceipt,
+    ):
         try:
             return receipt_type.model_validate_json(record.authorization)
         except (ValidationError, ValueError):
@@ -1746,6 +1814,8 @@ class HttpKubernetesModelClient:
                 authorization.expected_scaler_generation is None
                 or authorization.mutation_token is None
                 or authorization.mutation_operation is None
+                or authorization.mutation_model_generation != model_fence.generation
+                or authorization.mutation_model_spec_digest != model_fence.spec_digest
                 or authorization.applied_scaler is not None
             )
         ):
@@ -1826,6 +1896,199 @@ class HttpKubernetesModelClient:
             raise KubernetesConflictError("ScaledObject is not the exact authorized mutation successor")
         return snapshot, checkpoint
 
+    @staticmethod
+    def _adopt_scale_release_authorization_v2(
+        authorization: ScaleGateReleaseAuthorizationV2,
+        *,
+        scaler: RenderedResource,
+        live_scaler: Mapping[str, Any] | None,
+        scaler_snapshot: ResourceSnapshot | None,
+        deployment_uid: str,
+        owner_uid: str,
+        model_fence: ModelWriteFence,
+    ) -> ScaleGateReleaseAuthorization:
+        """Upgrade immutable protocol-v2 evidence without inventing proof.
+
+        Missing managed-fields evidence is adopted only from an exact live
+        UID/generation/digest state with exclusive controller spec ownership.
+        A prepared create that already produced an object remains unprovable
+        because v2 recorded no successor UID, and therefore fails closed.
+        """
+
+        if (
+            authorization.deployment_uid != deployment_uid
+            or authorization.model_uid != owner_uid
+            or authorization.model_generation > model_fence.generation
+            or authorization.model_generation == model_fence.generation
+            and authorization.model_spec_digest != model_fence.spec_digest
+        ):
+            raise KubernetesConflictError("protocol-v2 autoscaler authorization is stale or foreign")
+        live_checkpoint = (
+            _scale_gate_scaler_checkpoint(scaler_snapshot) if scaler_snapshot is not None else None
+        )
+
+        def checkpoint_matches(checkpoint: ScaleGateScalerCheckpointV2 | None) -> bool:
+            return bool(
+                checkpoint is not None
+                and live_checkpoint is not None
+                and live_checkpoint.uid == checkpoint.uid
+                and live_checkpoint.generation == checkpoint.generation
+                and live_checkpoint.digest == checkpoint.digest
+                and (
+                    checkpoint.managed_fields_digest is None
+                    or live_checkpoint.managed_fields_digest == checkpoint.managed_fields_digest
+                )
+            )
+
+        mutation_parts = (
+            authorization.expected_scaler_generation,
+            authorization.mutation_token,
+            authorization.mutation_operation,
+        )
+        has_any_mutation_provenance = any(item is not None for item in mutation_parts)
+        has_complete_mutation_provenance = all(item is not None for item in mutation_parts)
+        if has_any_mutation_provenance != has_complete_mutation_provenance:
+            raise KubernetesConflictError("protocol-v2 mutation provenance is incomplete")
+        upgraded_prior: ScaleGateScalerCheckpoint | None = None
+        if authorization.prior_scaler is not None:
+            if authorization.prior_scaler.managed_fields_digest is not None:
+                upgraded_prior = ScaleGateScalerCheckpoint(
+                    uid=authorization.prior_scaler.uid,
+                    resourceVersion=authorization.prior_scaler.resource_version,
+                    generation=authorization.prior_scaler.generation,
+                    digest=authorization.prior_scaler.digest,
+                    managedFieldsDigest=authorization.prior_scaler.managed_fields_digest,
+                )
+            elif checkpoint_matches(authorization.prior_scaler):
+                assert live_checkpoint is not None
+                upgraded_prior = live_checkpoint
+        if has_complete_mutation_provenance:
+            if authorization.prior_scaler is not None and upgraded_prior is None:
+                raise KubernetesConflictError("protocol-v2 mutation predecessor cannot be proven")
+            assert authorization.expected_scaler_generation is not None
+            assert authorization.mutation_operation is not None
+            legacy_fence = ModelWriteFence(
+                key=model_fence.key,
+                uid=authorization.model_uid,
+                resource_version=authorization.model_resource_version,
+                generation=authorization.model_generation,
+                spec_digest=authorization.model_spec_digest,
+            )
+            legacy_scaler = scaler.model_copy(update={"digest": authorization.desired_scaler_digest})
+            if authorization.mutation_token != _scale_gate_mutation_token(
+                deployment_uid=authorization.deployment_uid,
+                model_fence=legacy_fence,
+                scaler=legacy_scaler,
+                prior_scaler=upgraded_prior,
+                expected_generation=authorization.expected_scaler_generation,
+                operation=authorization.mutation_operation,
+            ):
+                raise KubernetesConflictError("protocol-v2 mutation token is invalid")
+
+        common = {
+            "version": 3,
+            "deploymentUID": authorization.deployment_uid,
+            "modelUID": authorization.model_uid,
+            "modelResourceVersion": authorization.model_resource_version,
+            "modelGeneration": authorization.model_generation,
+            "modelSpecDigest": authorization.model_spec_digest,
+            "scalerAPIVersion": authorization.scaler_api_version,
+            "scalerKind": authorization.scaler_kind,
+            "scalerNamespace": authorization.scaler_namespace,
+            "scalerName": authorization.scaler_name,
+            "desiredScalerDigest": authorization.desired_scaler_digest,
+        }
+        if authorization.phase == "closed":
+            if live_scaler is not None:
+                raise KubernetesConflictError("protocol-v2 closed gate retained a live scaler")
+            return ScaleGateReleaseAuthorization(**common, phase="closed")
+
+        if authorization.phase == "applied":
+            if not checkpoint_matches(authorization.applied_scaler):
+                raise KubernetesConflictError("protocol-v2 applied scaler checkpoint cannot be proven")
+            assert live_checkpoint is not None
+            mutation = {}
+            if has_complete_mutation_provenance:
+                mutation = {
+                    "expectedScalerGeneration": authorization.expected_scaler_generation,
+                    "mutationToken": authorization.mutation_token,
+                    "mutationOperation": authorization.mutation_operation,
+                    "mutationModelGeneration": authorization.model_generation,
+                    "mutationModelSpecDigest": authorization.model_spec_digest,
+                }
+            return ScaleGateReleaseAuthorization(
+                **common,
+                **mutation,
+                appliedScaler=live_checkpoint,
+                phase="applied",
+            )
+
+        if authorization.applied_scaler is not None:
+            raise KubernetesConflictError("protocol-v2 prepared gate contains an applied checkpoint")
+        if live_scaler is None:
+            if authorization.prior_scaler is not None:
+                raise KubernetesConflictError("protocol-v2 prepared scaler predecessor disappeared")
+            expected_generation = 1
+            operation: Literal["Apply", "Update"] = "Update"
+            prior = None
+        elif checkpoint_matches(authorization.prior_scaler):
+            assert live_checkpoint is not None
+            expected_generation = _expected_scaler_mutation_generation(live_scaler, scaler)
+            operation = "Apply"
+            prior = live_checkpoint
+        elif (
+            authorization.prior_scaler is not None
+            and live_checkpoint is not None
+            and live_checkpoint.uid == authorization.prior_scaler.uid
+            and live_checkpoint.digest == authorization.desired_scaler_digest
+            and live_checkpoint.generation == authorization.prior_scaler.generation + 1
+        ):
+            # The original v2 prepared record plus one exact successor
+            # generation is sufficient to adopt an interrupted old SSA write.
+            # A toggle away/back necessarily advances generation again.
+            mutation = {}
+            if has_complete_mutation_provenance:
+                mutation = {
+                    "expectedScalerGeneration": authorization.expected_scaler_generation,
+                    "mutationToken": authorization.mutation_token,
+                    "mutationOperation": authorization.mutation_operation,
+                    "mutationModelGeneration": authorization.model_generation,
+                    "mutationModelSpecDigest": authorization.model_spec_digest,
+                }
+            return ScaleGateReleaseAuthorization(
+                **common,
+                **mutation,
+                appliedScaler=live_checkpoint,
+                phase="applied",
+            )
+        else:
+            raise KubernetesConflictError("protocol-v2 prepared scaler state cannot be proven")
+
+        current_common = common | {
+            "modelResourceVersion": model_fence.resource_version,
+            "modelGeneration": model_fence.generation,
+            "modelSpecDigest": model_fence.spec_digest,
+            "desiredScalerDigest": scaler.digest,
+        }
+        token = _scale_gate_mutation_token(
+            deployment_uid=deployment_uid,
+            model_fence=model_fence,
+            scaler=scaler,
+            prior_scaler=prior,
+            expected_generation=expected_generation,
+            operation=operation,
+        )
+        return ScaleGateReleaseAuthorization(
+            **current_common,
+            expectedScalerGeneration=expected_generation,
+            mutationToken=token,
+            mutationOperation=operation,
+            mutationModelGeneration=model_fence.generation,
+            mutationModelSpecDigest=model_fence.spec_digest,
+            priorScaler=prior,
+            phase="prepared",
+        )
+
     async def apply_autoscaler_resource(
         self,
         resource: RenderedResource,
@@ -1888,6 +2151,8 @@ class HttpKubernetesModelClient:
                 authorization.expected_scaler_generation,
                 authorization.mutation_token,
                 authorization.mutation_operation,
+                authorization.mutation_model_generation,
+                authorization.mutation_model_spec_digest,
             )
             if any(item is not None for item in mutation_parts):
                 if not all(item is not None for item in mutation_parts):
@@ -2361,7 +2626,7 @@ class HttpKubernetesModelClient:
         data = _mapping(config_map.get("data"))
         gate_authorization = _scale_gate_authorization(data.get(target_key), target)
         interrupted_release = (
-            isinstance(gate_authorization, ScaleGateReleaseAuthorization)
+            isinstance(gate_authorization, SCALE_GATE_RELEASE_AUTHORIZATION_TYPES)
             and gate_authorization.deployment_uid == current.observed.uid
             and gate_authorization.model_uid == owner_uid
             and gate_authorization.model_generation < model_fence.generation
@@ -2750,7 +3015,7 @@ class HttpKubernetesModelClient:
         else:
             assert receipt is not None
             allowed_retained = retained in {self._scale_gate_value(resource, receipt), tombstone_value} or (
-                isinstance(retained_authorization, ScaleGateReleaseAuthorization)
+                isinstance(retained_authorization, SCALE_GATE_RELEASE_AUTHORIZATION_TYPES)
                 and retained_authorization.deployment_uid == current.observed.uid
                 and retained_authorization.model_uid == owner_uid
                 and retained_authorization.model_generation <= model_fence.generation
@@ -3474,7 +3739,7 @@ class HttpKubernetesModelClient:
             or retained_authorization.scaler.name != scaler.name
         ):
             raise KubernetesConflictError("autoscaler admission gate handoff identity changed")
-        if isinstance(retained_authorization, ScaleGateReleaseAuthorization) and (
+        if isinstance(retained_authorization, SCALE_GATE_RELEASE_AUTHORIZATION_TYPES) and (
             retained_authorization.scaler_api_version != scaler.api_version
             or retained_authorization.scaler_kind != scaler.kind
             or retained_authorization.scaler_namespace != scaler.namespace
@@ -3488,24 +3753,35 @@ class HttpKubernetesModelClient:
                 retained_authorization.expected_scaler_generation,
                 retained_authorization.mutation_token,
                 retained_authorization.mutation_operation,
+                retained_authorization.mutation_model_generation,
+                retained_authorization.mutation_model_spec_digest,
             )
             has_any_mutation_provenance = any(item is not None for item in mutation_parts)
             has_complete_mutation_provenance = all(item is not None for item in mutation_parts)
             if (
                 has_any_mutation_provenance != has_complete_mutation_provenance
                 or retained_authorization.phase == "prepared" and not has_complete_mutation_provenance
+                or retained_authorization.phase == "prepared"
+                and (
+                    retained_authorization.mutation_model_generation
+                    != retained_authorization.model_generation
+                    or retained_authorization.mutation_model_spec_digest
+                    != retained_authorization.model_spec_digest
+                )
                 or retained_authorization.phase == "closed" and has_any_mutation_provenance
             ):
                 raise KubernetesConflictError("autoscaler gate mutation provenance is incomplete")
             if has_complete_mutation_provenance:
                 assert retained_authorization.expected_scaler_generation is not None
                 assert retained_authorization.mutation_operation is not None
+                assert retained_authorization.mutation_model_generation is not None
+                assert retained_authorization.mutation_model_spec_digest is not None
                 retained_fence = ModelWriteFence(
                     key=model_fence.key,
                     uid=retained_authorization.model_uid,
                     resource_version=retained_authorization.model_resource_version,
-                    generation=retained_authorization.model_generation,
-                    spec_digest=retained_authorization.model_spec_digest,
+                    generation=retained_authorization.mutation_model_generation,
+                    spec_digest=retained_authorization.mutation_model_spec_digest,
                 )
                 retained_scaler = scaler.model_copy(
                     update={"digest": retained_authorization.desired_scaler_digest}
@@ -3554,6 +3830,16 @@ class HttpKubernetesModelClient:
                 or FIELD_MANAGER not in scaler_snapshot.observed.field_managers
             ):
                 raise KubernetesConflictError("rendered ScaledObject is deleting or foreign")
+        if isinstance(retained_authorization, ScaleGateReleaseAuthorizationV2):
+            retained_authorization = self._adopt_scale_release_authorization_v2(
+                retained_authorization,
+                scaler=scaler,
+                live_scaler=live_scaler,
+                scaler_snapshot=scaler_snapshot,
+                deployment_uid=current.observed.uid,
+                owner_uid=owner_uid,
+                model_fence=model_fence,
+            )
         retain_applied_authorization = False
         recovered_mutation_checkpoint: ScaleGateScalerCheckpoint | None = None
         if isinstance(retained_authorization, ScaleGateReleaseAuthorization):
@@ -3597,6 +3883,8 @@ class HttpKubernetesModelClient:
                 retained_authorization.expected_scaler_generation,
                 retained_authorization.mutation_token,
                 retained_authorization.mutation_operation,
+                retained_authorization.mutation_model_generation,
+                retained_authorization.mutation_model_spec_digest,
             )
             if any(item is not None for item in applied_mutation_parts):
                 expected_generation = retained_authorization.expected_scaler_generation
@@ -3734,7 +4022,7 @@ class HttpKubernetesModelClient:
             mutation_operation: Literal["Apply", "Update"] = "Apply" if prior_scaler is not None else "Update"
             expected_generation = _expected_scaler_mutation_generation(live_scaler, scaler)
             authorization = ScaleGateReleaseAuthorization(
-                version=2,
+                version=3,
                 deploymentUID=current.observed.uid,
                 modelUID=owner_uid,
                 modelResourceVersion=model_fence.resource_version,
@@ -3755,6 +4043,8 @@ class HttpKubernetesModelClient:
                     operation=mutation_operation,
                 ),
                 mutationOperation=mutation_operation,
+                mutationModelGeneration=model_fence.generation,
+                mutationModelSpecDigest=model_fence.spec_digest,
                 priorScaler=prior_scaler,
                 phase="prepared",
             )
@@ -3781,7 +4071,7 @@ class HttpKubernetesModelClient:
                 # live scaler UID/generation. No mutation is being recovered,
                 # so no synthetic mutation token is minted.
                 authorization = ScaleGateReleaseAuthorization(
-                    version=2,
+                    version=3,
                     deploymentUID=current.observed.uid,
                     modelUID=owner_uid,
                     modelResourceVersion=model_fence.resource_version,
@@ -3943,7 +4233,7 @@ class HttpKubernetesModelClient:
         data = _mapping(gate.get("data"))
         retained_gate_value = data.get(target_key)
         retained_authorization = _scale_gate_authorization(retained_gate_value, target)
-        if isinstance(retained_authorization, ScaleGateReleaseAuthorization):
+        if isinstance(retained_authorization, SCALE_GATE_RELEASE_AUTHORIZATION_TYPES):
             if (
                 retained_authorization.deployment_uid != current.observed.uid
                 or retained_authorization.model_uid != owner_uid
@@ -3966,18 +4256,19 @@ class HttpKubernetesModelClient:
                 and retained_authorization.model_spec_digest != model_fence.spec_digest
             ):
                 raise KubernetesConflictError("fixed scale closure is not bound to the current CR semantics")
-            closure = retained_authorization.model_copy(
-                update={
-                    "model_resource_version": model_fence.resource_version,
-                    "model_generation": model_fence.generation,
-                    "model_spec_digest": model_fence.spec_digest,
-                    "expected_scaler_generation": None,
-                    "mutation_token": None,
-                    "mutation_operation": None,
-                    "prior_scaler": None,
-                    "applied_scaler": None,
-                    "phase": "closed",
-                }
+            closure = ScaleGateReleaseAuthorization(
+                version=3,
+                deploymentUID=retained_authorization.deployment_uid,
+                modelUID=retained_authorization.model_uid,
+                modelResourceVersion=model_fence.resource_version,
+                modelGeneration=model_fence.generation,
+                modelSpecDigest=model_fence.spec_digest,
+                scalerAPIVersion=retained_authorization.scaler_api_version,
+                scalerKind=retained_authorization.scaler_kind,
+                scalerNamespace=retained_authorization.scaler_namespace,
+                scalerName=retained_authorization.scaler_name,
+                desiredScalerDigest=retained_authorization.desired_scaler_digest,
+                phase="closed",
             )
             closure_value = _encoded_scale_gate_value(target, closure)
             # No targeter remains. Close the exact older autoscaled generation
@@ -4011,7 +4302,7 @@ class HttpKubernetesModelClient:
             # opens a ScaledObject/HPA allowance and makes the later fixed
             # /scale takeover resumable.
             closure = ScaleGateReleaseAuthorization(
-                version=2,
+                version=3,
                 deploymentUID=current.observed.uid,
                 modelUID=owner_uid,
                 modelResourceVersion=model_fence.resource_version,
