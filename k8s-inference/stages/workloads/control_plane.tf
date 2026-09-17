@@ -277,7 +277,7 @@ resource "helm_release" "control_plane" {
         !local.observability_operator.loki.auth_enabled ||
         local.runtime_log_payload_safety_ready
       )
-      error_message = "Auth-enabled Loki requires the source-pinned exact-image runtime log payload-safety inventory; documentation or a single acknowledgement boolean is insufficient."
+      error_message = "Auth-enabled Loki requires the source-pinned five-source exact-image payload-safety inventory and admission permit; the foundation stage separately requires a fresh release-owner signature before authorization."
     }
 
     precondition {
@@ -321,6 +321,7 @@ resource "helm_release" "control_plane" {
     kubernetes_persistent_volume_claim_v1.serving_snapshots,
     kubernetes_config_map_v1.serving_snapshot_sources,
     kubernetes_config_map_v1.scientific_scheduling_contract,
+    kubernetes_manifest.runtime_log_payload_safety_binding,
     kubernetes_manifest.model,
     # The chart renders capacity-reader Roles in every scientific queue
     # namespace. Order Helm after the owners that create those namespaces and

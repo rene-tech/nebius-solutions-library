@@ -35,15 +35,30 @@ hot_model_ids      = []
 # keda_cooldown_period_seconds       = 300
 
 # SAI-22 auth migration requires a source-pinned evidence object covering the
-# exact digest-qualified control-plane, selected model, and enabled scientific
-# runtime image inventory. Populate only from independently sealed synthetic-
-# marker tests; never place raw runtime logs or customer payloads here.
+# exact digest-qualified images from all live Pods/controllers, Terraform
+# runtime addresses, static manifests, and catalog bindings. Populate only
+# from independently sealed synthetic-marker tests; never place raw runtime
+# logs or customer payloads here. This prepares a fail-closed admission permit
+# but cannot authorize Loki auth until a release owner rereads it and signs the
+# current observability projection with an independently pinned trust root.
 # runtime_log_payload_safety_evidence = {
-#   schema        = "fs2-serve.nebius.ai/runtime-log-payload-safety/v1"
+#   schema        = "fs2-serve.nebius.ai/runtime-log-payload-safety/v2"
 #   source_commit = "<40 lowercase hex>"
 #   source_tree   = "<40 lowercase hex>"
 #   reviewed_at   = "<UTC RFC3339>"
-#   images        = { ...one exact entry per generated image-reference SHA-256... }
+#   coverage = {
+#     complete   = true
+#     namespaces = ["fs2-system", "fs2-models", "<every scientific runtime namespace>"]
+#     live_pods                    = { count = 1, sha256 = "<64 lowercase hex>" }
+#     live_workload_controllers    = { count = 1, sha256 = "<64 lowercase hex>" }
+#     terraform_runtime_addresses = { count = 1, sha256 = "<64 lowercase hex>" }
+#     static_runtime_manifests     = { count = 1, sha256 = "<64 lowercase hex>" }
+#     catalog_runtime_bindings     = { count = 1, sha256 = "<64 lowercase hex>" }
+#   }
+#   images = {
+#     # key = SHA-256 of image_reference; each entry also names non-empty
+#     # consumers and inventory_sources from the five enumerations above.
+#   }
 # }
 
 # Generated from deployment.scheduling by the root workflow. The stable

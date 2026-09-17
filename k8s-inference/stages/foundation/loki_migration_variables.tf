@@ -1,5 +1,5 @@
 variable "loki_migration_acknowledgements" {
-  description = "Source-pinned pretransition and posttransition acknowledgements. Historical envelopes are accepted only while their exact deployments, Helm revisions, datasource, evidence custody, and validity window still match live objects."
+  description = "Source-pinned pretransition and posttransition acknowledgements. Authorization also requires a current release-owner projection signed by a source-pinned public trust root after rereading live Helm storage, effective configuration, datasource content, workload inventory and admission custody."
   type = map(object({
     schema = string
     stage  = string
@@ -58,6 +58,21 @@ variable "loki_migration_acknowledgements" {
       inventory_sha256 = string
       image_count      = number
     })
+    owner_projection = object({
+      namespace          = string
+      name               = string
+      uid                = string
+      resource_version   = string
+      projection_sha256  = string
+      attestation_sha256 = string
+      trust_root = object({
+        namespace        = string
+        name             = string
+        uid              = string
+        resource_version = string
+        content_sha256   = string
+      })
+    })
     proof = object({
       observed_at                     = string
       valid_until                     = string
@@ -82,7 +97,7 @@ variable "loki_migration_acknowledgements" {
       length(setsubtract(toset(keys(var.loki_migration_acknowledgements)), toset(["pretransition", "posttransition"]))) == 0 &&
       alltrue([
         for stage, acknowledgement in var.loki_migration_acknowledgements : try(
-          acknowledgement.schema == "fs2-serve.nebius.ai/loki-migration-acknowledgement/v2" &&
+          acknowledgement.schema == "fs2-serve.nebius.ai/loki-migration-acknowledgement/v3" &&
           acknowledgement.stage == stage &&
           acknowledgement.binding.namespace == "fs2-observability" &&
           can(regex("^fs2-loki-(?:pretransition|posttransition)-ack-[0-9a-f]{12}$", acknowledgement.binding.config_map_name)) &&
@@ -125,10 +140,21 @@ variable "loki_migration_acknowledgements" {
           can(regex("^[0-9a-f]{64}$", acknowledgement.payload_safety_inventory.inventory_sha256)) &&
           floor(acknowledgement.payload_safety_inventory.image_count) == acknowledgement.payload_safety_inventory.image_count &&
           acknowledgement.payload_safety_inventory.image_count >= 1 &&
+          acknowledgement.owner_projection.namespace == "fs2-observability" &&
+          can(regex("^fs2-loki-(?:pretransition|posttransition)-owner-[0-9a-f]{12}$", acknowledgement.owner_projection.name)) &&
+          can(regex("^[0-9a-fA-F-]{20,}$", acknowledgement.owner_projection.uid)) &&
+          length(trimspace(acknowledgement.owner_projection.resource_version)) >= 1 &&
+          can(regex("^[0-9a-f]{64}$", acknowledgement.owner_projection.projection_sha256)) &&
+          can(regex("^[0-9a-f]{64}$", acknowledgement.owner_projection.attestation_sha256)) &&
+          acknowledgement.owner_projection.trust_root.namespace == "fs2-system" &&
+          acknowledgement.owner_projection.trust_root.name == "fs2-observability-release-attestors" &&
+          can(regex("^[0-9a-fA-F-]{20,}$", acknowledgement.owner_projection.trust_root.uid)) &&
+          length(trimspace(acknowledgement.owner_projection.trust_root.resource_version)) >= 1 &&
+          can(regex("^[0-9a-f]{64}$", acknowledgement.owner_projection.trust_root.content_sha256)) &&
           can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", acknowledgement.proof.observed_at)) &&
           can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", acknowledgement.proof.valid_until)) &&
           timecmp(acknowledgement.proof.valid_until, acknowledgement.proof.observed_at) > 0 &&
-          timecmp(acknowledgement.proof.valid_until, timeadd(acknowledgement.proof.observed_at, "24h")) <= 0 &&
+          timecmp(acknowledgement.proof.valid_until, timeadd(acknowledgement.proof.observed_at, "5m")) <= 0 &&
           can(regex("^[0-9a-f]{64}$", acknowledgement.proof.sealed_evidence_sha256)) &&
           can(regex("^[0-9a-f]{64}$", acknowledgement.proof.marker_sha256)) &&
           acknowledgement.proof.writer_identity == "fs2-otel-gateway" &&
@@ -139,6 +165,6 @@ variable "loki_migration_acknowledgements" {
         )
       ])
     )
-    error_message = "loki_migration_acknowledgements accepts only strict pretransition/posttransition envelopes bound to exact target, source, revisions, deployments, datasource, payload-safety inventory, and a validity window no longer than 24 hours."
+    error_message = "loki_migration_acknowledgements accepts only strict v3 pretransition/posttransition envelopes bound to exact target, source, revisions, deployments, datasource, payload-safety inventory, release-owner projection, public trust-root custody, and a validity window no longer than five minutes."
   }
 }

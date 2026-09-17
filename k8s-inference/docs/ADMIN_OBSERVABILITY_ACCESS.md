@@ -45,16 +45,31 @@ The transition order is executable in Terraform and must not be collapsed:
    and the control plane. A later source successor pins that separate envelope
    before phase and floor advance to `"enforced-dual-read"`.
 
-Each stage envelope binds the exact cluster/run, deployed source commit/tree,
-Loki/OTel/control-plane/Grafana Helm revisions, current Pod-template and image
-fingerprints, Grafana datasource UID/resourceVersion, and sealed marker-only
-proof. It is stored in a digest-named immutable ConfigMap. An immutable record
-is historical evidence, not perpetual authority: every auth-on plan re-reads
-the current deployments and two non-secret, target-bound revision/datasource
-freshness ConfigMaps, then compares their UID, `resourceVersion`, and exact
-content digest along with the evidence inventory and acknowledgement custody.
-It never reads Helm release or datasource Secrets for this check, and rejects
-drift, replacement, or an expired `valid_until`.
+Each v3 stage envelope binds the exact cluster/run, deployed source
+commit/tree, Loki/OTel/control-plane/Grafana Helm revisions, current
+Pod-template and image fingerprints, Grafana datasource UID/resourceVersion,
+and sealed marker-only proof. It is stored in a digest-named immutable
+ConfigMap. An immutable record is historical evidence, not perpetual
+authority. Every auth-on plan additionally requires a distinct immutable
+release-owner projection whose Ed25519 signature validates against the exact
+public trust-root digest pinned in source. The signing private key is never a
+Terraform input or Kubernetes workload secret.
+
+The release owner must reread current Helm storage Secret identity and payload
+digests for Loki, OTel, Grafana, and the control plane; current Pod templates
+and images; the effective Loki configuration; the OTel writer configuration;
+the Grafana datasource Secret; control-plane reader configuration; the two
+cached marker objects; the payload inventory; and its admission policy and
+binding. Only non-secret identities and SHA-256 digests enter the projection.
+Its validity window is at most five minutes, it binds the exact
+source-accepted authorization-intent digest, and Terraform compares it to
+current deployment objects, current OTel/Grafana `helm_release` revisions,
+cached-marker contents, and current admission objects. A configuration-only
+change therefore changes the reread Loki runtime-config or datasource-content
+digest even when no Pod template changes. A replay, signer swap, cached-marker
+drift, Secret replacement, expired projection, or caller-selected trust root
+fails closed. The source-pinned acknowledgement and trust-root digests remain
+`null` in this static candidate; it cannot enable auth.
 
 The old `loki_client_compatibility_receipt` is a SHA-256 of public constants.
 It remains only as a deprecated workloads diagnostic, is rejected as a
@@ -90,15 +105,26 @@ caller-selected destination.
 
 The source tree does not log inference request or response bodies in the
 first-party control-plane access path. That does not establish the behavior of
-every third-party model-runtime image. Terraform therefore derives the exact
-digest-qualified control-plane, selected model, and enabled scientific-stage
-runtime-image inventory. A source-pinned evidence digest must cover exactly
-that key set, with per-image normal, streaming, error, response, and startup
-synthetic-marker negative results. Only then may Terraform create the
-immutable inventory ConfigMap that a migration acknowledgement must bind by
-digest, UID, resourceVersion, content, and image count. Documentation or one
-acknowledgement boolean cannot satisfy this gate. Evidence records marker
-absence only and must never contain customer payloads or raw runtime logs.
+every third-party model-runtime image. The v2 payload-safety record must
+enumerate five authoritative sets: all current runtime Pods, all current
+runtime-producing controllers, all Terraform runtime addresses, all deployable
+static runtime manifests, and every catalog runtime binding. Extra discovered
+images are permitted; omitting any desired image or protected runtime
+namespace is not. Every digest-qualified image carries its consumers, source
+sets, and normal, streaming, error, response, and startup synthetic-marker
+negative evidence.
+
+The source-pinned inventory digest creates an immutable ConfigMap plus a native
+`ValidatingAdmissionPolicy` and binding. The binding covers every enumerated
+runtime namespace and denies Pod create/update (including init and ephemeral
+containers) when an image is absent from that immutable permit. Admission does
+not retroactively validate existing Pods, so the independently signed owner
+projection must also bind the exhaustive current Pod/controller enumerations,
+the immutable permit, and the exact live policy and binding. Terraform-input
+booleans and hashes are preparation data only: they cannot authorize Loki auth
+without the external signer, source-pinned public trust root, fresh live-state
+projection, and exact artifact custody. Evidence records marker absence only
+and must never contain customer payloads or raw runtime logs.
 
 ## Terraform configuration
 
@@ -132,8 +158,8 @@ deployment = {
 loki_access_phase    = "network-bound"
 loki_rollback_floor  = "network-bound"
 # loki_migration_acknowledgements = {
-#   pretransition  = { ...auth-off legacy-read record... }
-#   posttransition = { ...auth-on scoped-read record... }
+#   pretransition  = { ...v3 record and signed owner projection reference... }
+#   posttransition = { ...v3 record and signed owner projection reference... }
 # }
 # loki_identity_custody_receipt            = "<source-pinned SAI-03 receipt>"
 # loki_prometheus_health_exception_receipt = "<source-pinned exception receipt>"
@@ -184,6 +210,14 @@ not a second public backend.
 
 ## Verification and rollback
 
+Static authoring for this correction is an additive successor to independently
+rejected commit `a8853e12d59b573d64709761b03e9aff9150cbff` / tree
+`b779bc1f5675105d5baf1a2be06b8429f2885782`. That rejection remains the
+authoritative negative evidence for replayable freshness, incomplete runtime
+enumeration, unsigned payload-safety inputs, and configuration-only drift.
+The correction does not claim source GO, integration, deployment, or live
+acceptance.
+
 The SAI-22 source candidate authors regressions for all of these contracts, but
 the coordinator's static-source boundary for its authoring task prohibited
 executing tests, Helm/Terraform commands, scanners, builds, live probes, or
@@ -227,9 +261,11 @@ writer and legacy reads; because auth is off, require storage under `fake` and
 reject any scoped ingestion/read claim. After the first auth-on apply, use a
 different marker to prove `fs2-platform` ingestion and both legacy/scoped
 reads. Seal the exact target, source/tree, current object fingerprints, release
-revisions, datasource identity, validity window, and evidence digest. Run every
-exact-image payload-marker negative test without displaying or retaining
-payloads.
+   revisions, reread Loki/runtime and datasource content digests, admission
+   identities, five-source runtime inventory, validity window, and evidence
+   digest. Verify the owner signature against the source-pinned public trust
+   root. Run every exact-image payload-marker negative test without displaying
+   or retaining payloads.
 
 Alertmanager-only rollback is a reviewed Terraform change that restores the
 previous application digests and/or sets
@@ -248,8 +284,9 @@ use only header-capable control-plane/Grafana versions and must retain Loki
 auth, `fake|fs2-platform`, and the NetworkPolicy. A pre-migration release is
 not a valid rollback target because it would hide the scoped cohort. The
 rollback target needs a newly sealed, source-pinned acknowledgement whose
-deployment/image/revision/datasource fingerprints match that target; a stale
-pretransition or posttransition envelope is rejected. Auth
+deployment/image/revision/configuration/datasource fingerprints match that
+target and a new five-minute owner projection reopens the exact live release;
+a stale pretransition or posttransition envelope is rejected. Auth
 enforcement creates the state-retained
 `terraform_data.loki_enforced_dual_read_floor` sentinel with
 `prevent_destroy`; a normal downgrade plan therefore fails. Never bypass that

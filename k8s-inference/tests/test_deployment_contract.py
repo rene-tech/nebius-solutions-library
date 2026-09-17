@@ -3308,6 +3308,7 @@ class DeploymentContractTests(unittest.TestCase):
             'accepted_loki_identity_custody_receipt = null',
             'accepted_loki_prometheus_health_exception_receipt = null',
             'accepted_loki_migration_acknowledgement_sha256 = {',
+            'accepted_observability_release_attestors_sha256 = null',
             'pretransition  = null',
             'posttransition = null',
             'loki_auth_enforced              = var.loki_access_phase != "network-bound"',
@@ -3319,6 +3320,8 @@ class DeploymentContractTests(unittest.TestCase):
             'var.loki_migration_acknowledgements.posttransition.proof.marker_storage_tenant == local.loki_write_tenant_id',
             'read_tenant_header                    = local.loki_read_tenant_header',
             'caller_reproducible_receipts_accepted = false',
+            'current_owner_projection_matches      = local.loki_owner_projection_current',
+            'owner_projection_max_age_seconds      = 300',
             'transition_order                      = ["network-policy-auth-off", "header-capable-clients-and-legacy-proof", "auth-enforced-validation", "post-auth-scoped-proof-and-enforced-dual-read"]',
         ):
             self.assertIn(expected, foundation)
@@ -3348,7 +3351,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("DEPRECATED non-authoritative configuration claim", workload_outputs)
         self.assertIn('output "loki_deployed_client_acknowledgement_requirements"', workload_outputs)
         self.assertIn('output "loki_migration_acknowledgement_requirements"', workload_outputs)
-        self.assertIn("local.runtime_log_payload_safety_ready ? 1 : 0", workload_outputs)
+        self.assertIn("local.runtime_log_payload_safety_ready ? 3 : 0", workload_outputs)
         self.assertIn("48 +", workload_outputs)
         self.assertIn("helm_release.control_plane,", workload_outputs)
         self.assertIn("kubernetes_secret_v1.grafana_datasource,", workload_outputs)
@@ -3377,6 +3380,9 @@ class DeploymentContractTests(unittest.TestCase):
             "revisions.control_plane_helm",
             "revisions.grafana_helm",
             "payload_safety_inventory.inventory_sha256",
+            "owner_projection.projection_sha256",
+            "owner_projection.attestation_sha256",
+            "owner_projection.trust_root.content_sha256",
             "proof.valid_until",
             "proof.auth_enabled",
             "proof.writer_identity",
@@ -3392,7 +3398,16 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn('data "kubernetes_resource" "loki_migration_acknowledgement"', foundation)
         self.assertIn('data "kubernetes_resource" "loki_current_foundation_freshness"', foundation)
         self.assertIn('data "kubernetes_resource" "loki_current_workloads_freshness"', foundation)
-        self.assertNotIn('kind        = "Secret"', foundation)
+        self.assertIn('data "kubernetes_secret_v1" "loki_owner_trust_root"', foundation)
+        self.assertIn('name      = each.value.owner_projection.trust_root.name', foundation)
+        self.assertIn('data "external" "loki_owner_projection_verification"', foundation)
+        self.assertIn('verify-observability-owner-projection.py', foundation)
+        self.assertIn('trusted_attestors_json', foundation)
+        self.assertIn('local.accepted_observability_release_attestors_sha256', foundation)
+        self.assertIn('local.loki_owner_projection_current', foundation)
+        self.assertIn('live_configuration.grafana_datasource.resource.uid', foundation)
+        self.assertIn('payload_safety.admission.policy.content_sha256', foundation)
+        self.assertIn('payload_safety.admission.binding.content_sha256', foundation)
         self.assertIn('name      = "fs2-${var.run_id}-monitoring-grafana"', foundation)
         self.assertIn('schema = "fs2-serve.nebius.ai/loki-foundation-freshness/v1"', foundation)
         self.assertIn('sha256(data.kubernetes_resource.loki_current_foundation_freshness["active"].object.data["revisions.json"])', foundation)
@@ -3405,28 +3420,116 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn('object.data["acknowledgement.json"]', foundation)
         self.assertIn("timecmp(plantimestamp(), local.loki_active_acknowledgement.proof.observed_at) >= 0", foundation)
         self.assertIn("timecmp(local.loki_active_acknowledgement.proof.valid_until, plantimestamp()) > 0", foundation)
-        self.assertIn('timeadd(acknowledgement.proof.observed_at, "24h")', variables)
+        self.assertIn('timeadd(acknowledgement.proof.observed_at, "5m")', variables)
         self.assertNotIn("proof.no_customer_payload_recorded", foundation)
 
         payload_safety = (DEPLOY_ROOT / "stages/workloads/loki_payload_safety.tf").read_text(
+            encoding="utf-8"
+        )
+        control_plane_source = (
+            DEPLOY_ROOT / "stages/workloads/control_plane.tf"
+        ).read_text(encoding="utf-8")
+        models_source = (DEPLOY_ROOT / "stages/workloads/models.tf").read_text(
             encoding="utf-8"
         )
         for required in (
             'accepted_runtime_log_payload_safety_inventory_sha256 = null',
             'resource "kubernetes_config_map_v1" "runtime_log_payload_safety"',
             'resource "kubernetes_config_map_v1" "loki_client_freshness"',
+            'resource "kubernetes_manifest" "runtime_log_payload_safety_policy"',
+            'resource "kubernetes_manifest" "runtime_log_payload_safety_binding"',
+            'kind       = "ValidatingAdmissionPolicy"',
+            'kind       = "ValidatingAdmissionPolicyBinding"',
+            'parameterNotFoundAction = "Deny"',
+            'validationActions = ["Deny"]',
+            'resources   = ["pods", "pods/ephemeralcontainers"]',
             'schema = "fs2-serve.nebius.ai/loki-workloads-freshness/v1"',
             "immutable = true",
             "local.runtime_log_model_consumers",
             "local.runtime_log_scientific_consumers",
             'consumer        = "control-plane/fs2-serve-control-plane"',
-            "toset(keys(var.runtime_log_payload_safety_evidence.images)) == toset(keys(local.expected_runtime_log_image_inventory))",
+            "var.runtime_log_payload_safety_evidence.coverage.complete",
+            "var.runtime_log_payload_safety_evidence.coverage.live_pods",
+            "var.runtime_log_payload_safety_evidence.coverage.live_workload_controllers",
+            "var.runtime_log_payload_safety_evidence.coverage.terraform_runtime_addresses",
+            "var.runtime_log_payload_safety_evidence.coverage.static_runtime_manifests",
+            "var.runtime_log_payload_safety_evidence.coverage.catalog_runtime_bindings",
+            "setsubtract(",
+            "k.startsWith('image-')",
             "normal_request_marker_absent",
             "streaming_request_marker_absent",
             "error_request_marker_absent",
             "!evidence.raw_evidence_contains_customer_payloads",
         ):
             self.assertIn(required, payload_safety)
+        self.assertIn(
+            "kubernetes_manifest.runtime_log_payload_safety_binding,",
+            control_plane_source,
+        )
+        self.assertIn(
+            "kubernetes_manifest.runtime_log_payload_safety_binding,",
+            models_source,
+        )
+
+    def test_loki_owner_projection_uses_signed_fresh_live_configuration_evidence(self) -> None:
+        verifier = (
+            DEPLOY_ROOT
+            / "stages/foundation/scripts/verify-observability-owner-projection.py"
+        ).read_text(encoding="utf-8")
+        foundation = (
+            DEPLOY_ROOT / "stages/foundation/observability_backends.tf"
+        ).read_text(encoding="utf-8")
+        migration_variables = (
+            DEPLOY_ROOT / "stages/foundation/loki_migration_variables.tf"
+        ).read_text(encoding="utf-8")
+
+        for required in (
+            "verify_signed_attestation",
+            "MAX_PROJECTION_LIFETIME = timedelta(minutes=5)",
+            'PROJECTION_SCHEMA = "fs2-serve.nebius.ai/observability-release-owner-projection/v1"',
+            '"loki", "otel_gateway", "grafana", "control_plane"',
+            '"runtime_config_sha256"',
+            '"grafana_datasource"',
+            '"content_sha256"',
+            '"storage_secret"',
+            '"rendered_manifest_sha256"',
+            '"effective_values_sha256"',
+            '"live_pods"',
+            '"live_workload_controllers"',
+            '"terraform_runtime_addresses"',
+            '"static_runtime_manifests"',
+            '"catalog_runtime_bindings"',
+            '"ValidatingAdmissionPolicy"',
+            '"ValidatingAdmissionPolicyBinding"',
+            "the current OTel writer tenant digest must bind fs2-platform",
+            'reader["content_sha256"] != reader["resource"]["content_sha256"]',
+            'inventory["inventory_sha256"] != inventory["resource"]["content_sha256"]',
+            'verified["issued_at"] != projection["observed_at"]',
+        ):
+            self.assertIn(required, verifier)
+
+        for required in (
+            'accepted_observability_release_attestors_sha256 = null',
+            'data "kubernetes_resource" "loki_owner_projection"',
+            'data "kubernetes_secret_v1" "loki_owner_trust_root"',
+            'data "external" "loki_owner_projection_verification"',
+            'sha256(nonsensitive(data.kubernetes_secret_v1.loki_owner_trust_root',
+            'helm_release.otel_gateway.metadata.revision',
+            'helm_release.monitoring.metadata.revision',
+            'loki_active_owner_projection.live_configuration.grafana_datasource.resource.uid',
+            'loki_active_owner_projection.payload_safety.admission.policy.uid',
+            'loki_active_owner_projection.payload_safety.admission.binding.uid',
+            'loki_active_owner_projection.observed_at == local.loki_active_acknowledgement.proof.observed_at',
+            'local.loki_active_deployment_state_current &&',
+            'local.loki_owner_projection_current',
+        ):
+            self.assertIn(required, foundation)
+
+        self.assertIn(
+            'acknowledgement.schema == "fs2-serve.nebius.ai/loki-migration-acknowledgement/v3"',
+            migration_variables,
+        )
+        self.assertNotIn("private_key", foundation)
 
     def test_loki_control_plane_ingress_selector_matches_rendered_chart_identity(self) -> None:
         helpers = (

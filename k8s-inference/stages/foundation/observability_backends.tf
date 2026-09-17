@@ -35,6 +35,28 @@ locals {
     pretransition  = null
     posttransition = null
   }
+  # Public release-owner attestors are provisioned outside both Terraform
+  # states. A reviewed successor must pin the exact canonical key-set digest
+  # here; a tfvar, acknowledgement, or ConfigMap cannot choose its own signer.
+  accepted_observability_release_attestors_sha256 = null
+  loki_migration_authorization_intent_records = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements : stage => {
+      schema                   = acknowledgement.schema
+      stage                    = acknowledgement.stage
+      target                   = acknowledgement.target
+      source                   = acknowledgement.source
+      revisions                = acknowledgement.revisions
+      deployments              = acknowledgement.deployments
+      grafana_datasource       = acknowledgement.grafana_datasource
+      freshness_markers        = acknowledgement.freshness_markers
+      payload_safety_inventory = acknowledgement.payload_safety_inventory
+      proof                    = acknowledgement.proof
+    }
+  }
+  loki_migration_authorization_intent_sha256 = {
+    for stage, record in local.loki_migration_authorization_intent_records :
+    stage => sha256(jsonencode(record))
+  }
   loki_migration_acknowledgement_records = {
     for stage, acknowledgement in var.loki_migration_acknowledgements : stage => {
       schema                   = acknowledgement.schema
@@ -46,6 +68,7 @@ locals {
       grafana_datasource       = acknowledgement.grafana_datasource
       freshness_markers        = acknowledgement.freshness_markers
       payload_safety_inventory = acknowledgement.payload_safety_inventory
+      owner_projection         = acknowledgement.owner_projection
       proof                    = acknowledgement.proof
     }
   }
@@ -157,6 +180,56 @@ data "kubernetes_resource" "loki_payload_safety_inventory" {
   }
 }
 
+# The immutable owner projection is deliberately distinct from the caller's
+# acknowledgement. Its signer rereads Helm storage, effective Loki config,
+# the Grafana datasource Secret, every relevant runtime workload source and
+# the admission objects. Terraform sees only public keys and content digests.
+data "kubernetes_resource" "loki_owner_projection" {
+  for_each = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements :
+    stage => acknowledgement
+    if local.loki_migration_acknowledgement_source_accepted[stage]
+  }
+  api_version = "v1"
+  kind        = "ConfigMap"
+  metadata {
+    name      = each.value.owner_projection.name
+    namespace = each.value.owner_projection.namespace
+  }
+}
+
+data "kubernetes_secret_v1" "loki_owner_trust_root" {
+  for_each = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements :
+    stage => acknowledgement
+    if local.loki_migration_acknowledgement_source_accepted[stage]
+  }
+  metadata {
+    name      = each.value.owner_projection.trust_root.name
+    namespace = each.value.owner_projection.trust_root.namespace
+  }
+}
+
+data "external" "loki_owner_projection_verification" {
+  for_each = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements :
+    stage => acknowledgement
+    if local.loki_migration_acknowledgement_source_accepted[stage]
+  }
+  program = ["python3", "${path.module}/scripts/verify-observability-owner-projection.py"]
+  query = {
+    projection_json                   = data.kubernetes_resource.loki_owner_projection[each.key].object.data["projection.json"]
+    attestation_json                  = data.kubernetes_resource.loki_owner_projection[each.key].object.data["attestation.json"]
+    trusted_attestors_json            = nonsensitive(data.kubernetes_secret_v1.loki_owner_trust_root[each.key].data["attestors.json"])
+    validation_time                   = plantimestamp()
+    expected_stage                    = each.key
+    expected_run_id                   = var.run_id
+    expected_cluster_id               = var.cluster_id
+    expected_kube_system_uid          = var.kube_system_uid
+    expected_acknowledgement_sha256   = local.loki_migration_authorization_intent_sha256[each.key]
+  }
+}
+
 data "kubernetes_resource" "loki_current_control_plane" {
   for_each    = local.loki_active_acknowledgement_source_accepted ? { active = local.loki_active_acknowledgement } : {}
   api_version = "apps/v1"
@@ -217,7 +290,55 @@ data "kubernetes_resource" "loki_current_workloads_freshness" {
   }
 }
 
+data "kubernetes_resource" "loki_current_payload_admission_policy" {
+  for_each    = local.loki_active_acknowledgement_source_accepted ? { active = local.loki_active_acknowledgement } : {}
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicy"
+  metadata {
+    name = "fs2-runtime-log-payload-safety"
+  }
+}
+
+data "kubernetes_resource" "loki_current_payload_admission_binding" {
+  for_each    = local.loki_active_acknowledgement_source_accepted ? { active = local.loki_active_acknowledgement } : {}
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicyBinding"
+  metadata {
+    name = "fs2-runtime-log-payload-safety"
+  }
+}
+
 locals {
+  loki_owner_trust_root_bound = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements : stage => try(
+      data.kubernetes_secret_v1.loki_owner_trust_root[stage].metadata[0].uid == acknowledgement.owner_projection.trust_root.uid &&
+      data.kubernetes_secret_v1.loki_owner_trust_root[stage].metadata[0].resource_version == acknowledgement.owner_projection.trust_root.resource_version &&
+      sha256(nonsensitive(data.kubernetes_secret_v1.loki_owner_trust_root[stage].data["attestors.json"])) == acknowledgement.owner_projection.trust_root.content_sha256 &&
+      acknowledgement.owner_projection.trust_root.content_sha256 == local.accepted_observability_release_attestors_sha256,
+      false,
+    )
+  }
+  loki_verified_owner_projections = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements : stage => try(
+      jsondecode(data.external.loki_owner_projection_verification[stage].result.projection_json),
+      null,
+    )
+  }
+  loki_owner_projection_bound = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements : stage => try(
+      local.loki_owner_trust_root_bound[stage] &&
+      data.kubernetes_resource.loki_owner_projection[stage].object.immutable == true &&
+      data.kubernetes_resource.loki_owner_projection[stage].object.metadata.uid == acknowledgement.owner_projection.uid &&
+      data.kubernetes_resource.loki_owner_projection[stage].object.metadata.resourceVersion == acknowledgement.owner_projection.resource_version &&
+      acknowledgement.owner_projection.name == "fs2-loki-${stage}-owner-${substr(acknowledgement.owner_projection.projection_sha256, 0, 12)}" &&
+      data.external.loki_owner_projection_verification[stage].result.verified == "true" &&
+      data.external.loki_owner_projection_verification[stage].result.projection_sha256 == acknowledgement.owner_projection.projection_sha256 &&
+      sha256(data.kubernetes_resource.loki_owner_projection[stage].object.data["attestation.json"]) == acknowledgement.owner_projection.attestation_sha256 &&
+      local.loki_verified_owner_projections[stage].acknowledgement_sha256 == local.loki_migration_authorization_intent_sha256[stage] &&
+      local.loki_verified_owner_projections[stage].source == acknowledgement.source,
+      false,
+    )
+  }
   loki_migration_acknowledgement_bound = {
     for stage, acknowledgement in var.loki_migration_acknowledgements : stage => (
       local.loki_migration_acknowledgement_source_accepted[stage] &&
@@ -317,6 +438,72 @@ locals {
     }
     revisions = local.loki_active_foundation_revisions
   }
+  loki_active_owner_projection = (
+    local.loki_active_acknowledgement_stage == null ? null :
+    try(local.loki_verified_owner_projections[local.loki_active_acknowledgement_stage], null)
+  )
+  loki_owner_projection_current = try(
+    local.loki_owner_projection_bound[local.loki_active_acknowledgement_stage] &&
+    local.loki_active_owner_projection.releases.loki.name == "fs2-${var.run_id}-loki" &&
+    local.loki_active_owner_projection.releases.loki.namespace == "fs2-observability" &&
+    local.loki_active_owner_projection.releases.loki.revision == local.loki_active_acknowledgement.revisions.loki_helm &&
+    local.loki_active_owner_projection.releases.otel_gateway.name == "fs2-${var.run_id}-otel-gateway" &&
+    local.loki_active_owner_projection.releases.otel_gateway.namespace == "fs2-observability" &&
+    local.loki_active_owner_projection.releases.otel_gateway.revision == helm_release.otel_gateway.metadata.revision &&
+    local.loki_active_owner_projection.releases.otel_gateway.revision == local.loki_active_acknowledgement.revisions.otel_gateway_helm &&
+    local.loki_active_owner_projection.releases.grafana.name == "fs2-${var.run_id}-monitoring" &&
+    local.loki_active_owner_projection.releases.grafana.namespace == "fs2-observability" &&
+    local.loki_active_owner_projection.releases.grafana.revision == helm_release.monitoring.metadata.revision &&
+    local.loki_active_owner_projection.releases.grafana.revision == local.loki_active_acknowledgement.revisions.grafana_helm &&
+    local.loki_active_owner_projection.releases.control_plane.name == "fs2-serve-control-plane" &&
+    local.loki_active_owner_projection.releases.control_plane.namespace == "fs2-system" &&
+    local.loki_active_owner_projection.releases.control_plane.revision == local.loki_active_acknowledgement.revisions.control_plane_helm &&
+    alltrue([
+      for name, fingerprint in local.loki_active_acknowledgement.deployments :
+      local.loki_active_owner_projection.workloads[name].uid == fingerprint.uid &&
+      local.loki_active_owner_projection.workloads[name].generation == fingerprint.generation &&
+      local.loki_active_owner_projection.workloads[name].resource_version == fingerprint.resource_version &&
+      local.loki_active_owner_projection.workloads[name].pod_template_sha256 == fingerprint.pod_template_sha256 &&
+      local.loki_active_owner_projection.workloads[name].container_images_sha256 == fingerprint.container_images_sha256
+    ]) &&
+    local.loki_active_owner_projection.live_configuration.grafana_datasource.resource.namespace == local.loki_active_acknowledgement.grafana_datasource.namespace &&
+    local.loki_active_owner_projection.live_configuration.grafana_datasource.resource.name == local.loki_active_acknowledgement.grafana_datasource.name &&
+    local.loki_active_owner_projection.live_configuration.grafana_datasource.resource.uid == local.loki_active_acknowledgement.grafana_datasource.uid &&
+    local.loki_active_owner_projection.live_configuration.grafana_datasource.resource.resource_version == local.loki_active_acknowledgement.grafana_datasource.resource_version &&
+    local.loki_active_owner_projection.cached_markers.foundation.uid == local.loki_active_acknowledgement.freshness_markers.foundation.uid &&
+    local.loki_active_owner_projection.cached_markers.foundation.resource_version == local.loki_active_acknowledgement.freshness_markers.foundation.resource_version &&
+    local.loki_active_owner_projection.cached_markers.foundation.content_sha256 == local.loki_active_acknowledgement.freshness_markers.foundation.content_sha256 &&
+    local.loki_active_owner_projection.cached_markers.workloads.uid == local.loki_active_acknowledgement.freshness_markers.workloads.uid &&
+    local.loki_active_owner_projection.cached_markers.workloads.resource_version == local.loki_active_acknowledgement.freshness_markers.workloads.resource_version &&
+    local.loki_active_owner_projection.cached_markers.workloads.content_sha256 == local.loki_active_acknowledgement.freshness_markers.workloads.content_sha256 &&
+    local.loki_active_owner_projection.payload_safety.inventory.resource.namespace == local.loki_active_acknowledgement.payload_safety_inventory.namespace &&
+    local.loki_active_owner_projection.payload_safety.inventory.resource.name == local.loki_active_acknowledgement.payload_safety_inventory.name &&
+    local.loki_active_owner_projection.payload_safety.inventory.resource.uid == local.loki_active_acknowledgement.payload_safety_inventory.uid &&
+    local.loki_active_owner_projection.payload_safety.inventory.resource.resource_version == local.loki_active_acknowledgement.payload_safety_inventory.resource_version &&
+    local.loki_active_owner_projection.payload_safety.inventory.inventory_sha256 == local.loki_active_acknowledgement.payload_safety_inventory.inventory_sha256 &&
+    local.loki_active_owner_projection.payload_safety.inventory.image_count == local.loki_active_acknowledgement.payload_safety_inventory.image_count &&
+    local.loki_active_owner_projection.payload_safety.admission.parameter.uid == local.loki_active_acknowledgement.payload_safety_inventory.uid &&
+    local.loki_active_owner_projection.payload_safety.admission.parameter.resource_version == local.loki_active_acknowledgement.payload_safety_inventory.resource_version &&
+    local.loki_active_owner_projection.payload_safety.admission.policy.uid == data.kubernetes_resource.loki_current_payload_admission_policy["active"].object.metadata.uid &&
+    local.loki_active_owner_projection.payload_safety.admission.policy.resource_version == data.kubernetes_resource.loki_current_payload_admission_policy["active"].object.metadata.resourceVersion &&
+    local.loki_active_owner_projection.payload_safety.admission.policy.content_sha256 == sha256(jsonencode(data.kubernetes_resource.loki_current_payload_admission_policy["active"].object.spec)) &&
+    local.loki_active_owner_projection.payload_safety.admission.binding.uid == data.kubernetes_resource.loki_current_payload_admission_binding["active"].object.metadata.uid &&
+    local.loki_active_owner_projection.payload_safety.admission.binding.resource_version == data.kubernetes_resource.loki_current_payload_admission_binding["active"].object.metadata.resourceVersion &&
+    local.loki_active_owner_projection.payload_safety.admission.binding.content_sha256 == sha256(jsonencode(data.kubernetes_resource.loki_current_payload_admission_binding["active"].object.spec)) &&
+    local.loki_active_owner_projection.migration_proof.sealed_evidence_sha256 == local.loki_active_acknowledgement.proof.sealed_evidence_sha256 &&
+    local.loki_active_owner_projection.migration_proof.marker_sha256 == local.loki_active_acknowledgement.proof.marker_sha256 &&
+    local.loki_active_owner_projection.migration_proof.writer_identity == local.loki_active_acknowledgement.proof.writer_identity &&
+    local.loki_active_owner_projection.migration_proof.writer_scoped_header_configured == local.loki_active_acknowledgement.proof.writer_scoped_header_configured &&
+    local.loki_active_owner_projection.migration_proof.writer_marker_ingested == local.loki_active_acknowledgement.proof.writer_marker_ingested &&
+    local.loki_active_owner_projection.migration_proof.marker_storage_tenant == local.loki_active_acknowledgement.proof.marker_storage_tenant &&
+    local.loki_active_owner_projection.migration_proof.grafana_legacy_read == local.loki_active_acknowledgement.proof.grafana_legacy_read &&
+    local.loki_active_owner_projection.migration_proof.grafana_scoped_read == local.loki_active_acknowledgement.proof.grafana_scoped_read &&
+    local.loki_active_owner_projection.migration_proof.control_plane_legacy_read == local.loki_active_acknowledgement.proof.control_plane_legacy_read &&
+    local.loki_active_owner_projection.migration_proof.control_plane_scoped_read == local.loki_active_acknowledgement.proof.control_plane_scoped_read &&
+    local.loki_active_owner_projection.observed_at == local.loki_active_acknowledgement.proof.observed_at &&
+    local.loki_active_owner_projection.valid_until == local.loki_active_acknowledgement.proof.valid_until,
+    false,
+  )
   loki_active_deployment_state_current = try(
     alltrue([
       for name, fingerprint in local.loki_active_acknowledgement.deployments :
@@ -350,6 +537,7 @@ locals {
     local.loki_active_acknowledgement.payload_safety_inventory.name == "fs2-runtime-log-safety-${substr(local.loki_active_acknowledgement.payload_safety_inventory.inventory_sha256, 0, 12)}" &&
     sha256(data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.data["inventory.json"]) == local.loki_active_acknowledgement.payload_safety_inventory.inventory_sha256 &&
     length(jsondecode(data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.data["inventory.json"]).images) == local.loki_active_acknowledgement.payload_safety_inventory.image_count &&
+    jsonencode(jsondecode(data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.data["inventory.json"]).coverage) == jsonencode(local.loki_active_owner_projection.payload_safety.coverage) &&
     jsondecode(data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.data["inventory.json"]).target.run_id == var.run_id &&
     jsondecode(data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.data["inventory.json"]).target.cluster_id == var.cluster_id &&
     jsondecode(data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.data["inventory.json"]).target.kube_system_uid == var.kube_system_uid &&
@@ -361,7 +549,8 @@ locals {
     local.loki_active_acknowledgement_stage != null &&
     try(local.loki_migration_acknowledgement_bound[local.loki_active_acknowledgement_stage], false) &&
     try(local.loki_migration_proof_semantics_valid[local.loki_active_acknowledgement_stage], false) &&
-    local.loki_active_deployment_state_current
+    local.loki_active_deployment_state_current &&
+    local.loki_owner_projection_current
   )
   loki_migration_authorized = (
     !local.loki_auth_enforced || local.loki_active_migration_acknowledgement_ready
@@ -642,6 +831,9 @@ output "observability_operator_contract" {
       active_acknowledgement_stage          = local.loki_active_acknowledgement_stage
       active_acknowledgement_ready          = local.loki_active_migration_acknowledgement_ready
       current_deployment_state_matches      = local.loki_active_deployment_state_current
+      current_owner_projection_matches      = local.loki_owner_projection_current
+      owner_projection_max_age_seconds      = 300
+      release_attestor_trust_root_accepted  = local.accepted_observability_release_attestors_sha256 != null
       enforcement_authorized                = local.loki_identity_custody_ready && local.loki_prometheus_health_exception_ready && local.loki_migration_authorized
       expected_client_configuration_claim   = local.expected_loki_client_configuration_claim
       caller_reproducible_receipts_accepted = false

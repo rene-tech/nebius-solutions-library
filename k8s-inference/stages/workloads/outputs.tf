@@ -413,6 +413,8 @@ output "managed_resource_count" {
   value = (
     # Profile-independent identity, credential, database, queue, control-plane,
     # and Grafana egress addresses. Profile-shaped collections stay explicit.
+    # An accepted payload-safety inventory adds its immutable permit plus the
+    # cluster-scoped ValidatingAdmissionPolicy and binding (three addresses).
     48 +
     (local.ngc_api_key_required ? 1 : 0) +
     (local.model_nvcr_credentials_required ? 1 : 0) +
@@ -426,7 +428,7 @@ output "managed_resource_count" {
     (var.model_controller.enabled ? 2 : 0) +
     (local.model_controller_bootstrap_enabled ? 3 : 0) +
     (local.admin_configuration_enabled ? 1 : 0) +
-    (local.runtime_log_payload_safety_ready ? 1 : 0) +
+    (local.runtime_log_payload_safety_ready ? 3 : 0) +
     (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +
     (var.run_acceptance_job ? 4 : 0) +
     (var.run_acceptance_job && var.deployment_profile == "full_catalog" ? 1 : 0)
@@ -509,9 +511,9 @@ output "loki_deployed_client_acknowledgement_requirements" {
 }
 
 output "loki_migration_acknowledgement_requirements" {
-  description = "Non-secret staged evidence contract. This output is not evidence and cannot authorize auth."
+  description = "Non-secret staged evidence contract. This desired-state output is not evidence and cannot authorize auth; a release owner must reread live state and sign a short-lived projection."
   value = {
-    schema = "fs2-serve.nebius.ai/loki-migration-acknowledgement/v2"
+    schema = "fs2-serve.nebius.ai/loki-migration-acknowledgement/v3"
     target = {
       run_id          = var.run_id
       cluster_id      = var.cluster_id
@@ -553,13 +555,30 @@ output "loki_migration_acknowledgement_requirements" {
       "immutable acknowledgement ConfigMap UID/resourceVersion/content",
       "immutable runtime payload-safety inventory UID/resourceVersion/content",
       "source-pinned full-envelope SHA-256",
-      "unexpired valid_until",
+      "source-pinned public release-owner trust-root digest",
+      "Ed25519-signed owner projection valid for no more than five minutes",
+      "reread Helm storage Secret UID/resourceVersion/payload for Loki, OTel, Grafana, and control plane",
+      "reread effective Loki runtime config and Grafana datasource Secret content digests",
+      "reread exact admission policy, binding, and payload-permit ConfigMap",
+      "unexpired owner projection and migration valid_until",
     ]
     runtime_payload_safety = {
       ready                     = local.runtime_log_payload_safety_ready
-      expected_image_count      = length(local.expected_runtime_log_image_inventory)
+      expected_image_count      = try(length(var.runtime_log_payload_safety_evidence.images), 0)
       expected_inventory_sha256 = local.expected_runtime_log_image_inventory_sha256
       accepted_inventory_sha256 = local.accepted_runtime_log_payload_safety_inventory_sha256
+      required_enumerations     = ["live-pod", "live-controller", "terraform-address", "static-manifest", "catalog-binding"]
+      admission_policy          = "fs2-runtime-log-payload-safety"
+      admission_binding         = "fs2-runtime-log-payload-safety"
+      future_unpermitted_images = "denied"
+    }
+    owner_projection = {
+      schema                    = "fs2-serve.nebius.ai/observability-release-owner-projection/v1"
+      signer                    = "external release owner"
+      private_key_in_terraform  = false
+      trust_root_secret         = "fs2-system/fs2-observability-release-attestors"
+      maximum_lifetime_seconds  = 300
+      caller_acknowledgement_is_authority = false
     }
   }
 
@@ -567,6 +586,8 @@ output "loki_migration_acknowledgement_requirements" {
     helm_release.control_plane,
     kubernetes_secret_v1.grafana_datasource,
     kubernetes_config_map_v1.runtime_log_payload_safety,
+    kubernetes_manifest.runtime_log_payload_safety_policy,
+    kubernetes_manifest.runtime_log_payload_safety_binding,
     kubernetes_config_map_v1.loki_client_freshness,
   ]
 }

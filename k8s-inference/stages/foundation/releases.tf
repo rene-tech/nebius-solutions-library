@@ -498,6 +498,8 @@ resource "terraform_data" "loki_enforced_dual_read_floor" {
     phase                                     = var.loki_access_phase
     read_tenant_header                        = local.loki_read_tenant_header
     active_migration_acknowledgement_sha256   = local.loki_active_migration_acknowledgement_sha256
+    active_owner_projection_sha256            = try(local.loki_active_acknowledgement.owner_projection.projection_sha256, null)
+    active_owner_attestor_key_id               = try(data.external.loki_owner_projection_verification[local.loki_active_acknowledgement_stage].result.key_id, null)
     identity_custody_receipt                  = var.loki_identity_custody_receipt
     prometheus_health_exception_receipt       = var.loki_prometheus_health_exception_receipt
   }

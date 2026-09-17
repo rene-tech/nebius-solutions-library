@@ -40,6 +40,7 @@ resource "kubernetes_manifest" "model" {
     kubernetes_secret_v1.ngc_api_key,
     kubernetes_secret_v1.nvcrio_cred,
     helm_release.dcgm_exporter,
+    kubernetes_manifest.runtime_log_payload_safety_binding,
   ]
 }
 
