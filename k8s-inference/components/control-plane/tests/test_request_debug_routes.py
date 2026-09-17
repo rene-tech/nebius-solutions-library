@@ -32,6 +32,9 @@ def _exchange(*, tenant="tenant-a", model="qwen3-8b", operation=None):
             b'{"detail":"synthetic upstream validation failure"}', "application/json", True, is_response=True
         ),
         error_type="upstream_http_error",
+        # A raw-ish stored error_detail (as a legacy row could hold) — the read path must fail it
+        # closed to the generic marker, never serve this verbatim.
+        error_detail="upstream ValueError: token sk-ROUTE-DETAIL-LEAK in prompt",
     )
 
 
@@ -155,6 +158,10 @@ def test_app_operation_filters_and_redacts_error_detail(registry, cipher, hasher
         stored_response = detail.json()["data"]["response_body"]
         assert stored_response["redacted"] and "synthetic upstream validation failure" not in stored_response["data"]
         assert "[sha256:" not in stored_response["data"] and "[REDACTED]" in stored_response["data"]
+        # error_detail is failed closed to the generic marker on read — the raw stored detail (and any
+        # secret in it) is never served.
+        assert detail.json()["data"]["error_detail"] == "[detail withheld on read]"
+        assert "ROUTE-DETAIL-LEAK" not in detail.text
         assert client.get(f"{base}/{foreign_model.id}").status_code == 404
         assert client.get(base, params={"cursor": "invalid"}).status_code == 400
         assert len(client.get("/admin/api/v1/requests").json()["data"]["items"]) == 3

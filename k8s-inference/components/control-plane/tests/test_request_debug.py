@@ -1720,6 +1720,58 @@ async def test_queue_drain_recovers_after_worker_cancellation_without_hanging():
     await queue.aclose()
 
 
+def test_bounded_for_summary_excludes_large_and_incomplete_rows():
+    """SAI-01: the list derives read-time summary truth by a BOUNDED per-row decrypt only for complete
+    rows within the current cap; large or incomplete rows (withheld on detail anyway) are summarized
+    conservatively from clear columns without loading their full payload — this is what prevents the
+    list from decrypting an unbounded (up to legacy-cap × limit) result set."""
+    from fs2_serve.request_debug import _bounded_for_summary
+
+    cap = 1024
+    assert _bounded_for_summary(100, 100, True, cap) is True  # small + complete -> bounded decrypt
+    assert _bounded_for_summary(5000, 100, True, cap) is False  # large request -> conservative, no decrypt
+    assert _bounded_for_summary(100, 5000, True, cap) is False  # large response -> conservative, no decrypt
+    assert _bounded_for_summary(100, 100, False, cap) is False  # incomplete -> conservative
+    assert _bounded_for_summary(10**9, 10**9, True, None) is True  # no cap configured -> bounded
+
+
+async def test_queue_reprocesses_item_after_mid_item_cancellation():
+    """SAI-01 regression: a worker cancelled WHILE persisting an item must NOT lose that accepted item
+    or leak/undercount — it is re-queued (count stays balanced) and a restarted worker persists it.
+    Deterministic via a store that blocks inside record(). Authored; not executed here."""
+    from fs2_serve.request_debug import DebugPersistQueue
+
+    entered = asyncio.Event()
+    gate = asyncio.Event()
+
+    class _BlockingStore(InMemoryDebugStore):
+        async def record(self, exchange: DebugExchange) -> None:
+            entered.set()  # signal the worker has reached persist (mid-item)
+            await gate.wait()  # block there until the test releases it
+            await super().record(exchange)
+
+    store = _BlockingStore()
+    queue = DebugPersistQueue(store, maxsize=8, max_inflight=8)
+    reservation = queue.reserve()
+    assert reservation is not None
+    with reservation:
+        assert reservation.submit(lambda: row(id=uuid4())) is True
+    await entered.wait()  # the worker is now blocked inside record() — cancellation will hit mid-item
+    worker = queue._worker
+    assert worker is not None
+    worker.cancel()
+    try:
+        await worker
+    except asyncio.CancelledError:
+        pass
+    # The accepted item is re-queued (not lost) and still counted (no undercount): 1 pending, 1 in-flight.
+    assert len(queue._pending) == 1 and queue._inflight() == 1
+    gate.set()  # let the restarted worker's record() proceed
+    await queue.drain()  # restarts the worker, reprocesses the re-queued item
+    assert queue._inflight() == 0 and len(store.exchanges) == 1
+    await queue.aclose()
+
+
 async def test_read_and_list_withhold_legacy_complete_truncated_request_under_cap():
     """SAI-01 (reviewer-overruled 3c): a legacy request marked complete AND truncated (a stored prefix)
     that is UNDER the current cap must be withheld on detail AND listed redacted. The list summary is

@@ -788,6 +788,29 @@ def _summary(exchange: DebugExchange) -> DebugExchangeSummary:
     )
 
 
+def _bounded_for_summary(
+    request_observed: int, response_observed: int, request_complete: bool, max_body_bytes: int | None
+) -> bool:
+    """True when a row's read-time truncation/redaction truth can be derived by a BOUNDED read: the
+    request is wire-complete AND both bodies are within the current cap, so the stored payload is small
+    (~2*cap) and cheap to decrypt off the event loop. A row failing this is withheld on detail anyway
+    (incomplete, or a body over the cap) and is summarized CONSERVATIVELY from clear columns WITHOUT
+    loading its (possibly huge, up to the legacy cap) payload — so the list never materializes or
+    decrypts an unbounded result set (no memory / event-loop DoS)."""
+    if not request_complete:
+        return False
+    if max_body_bytes is None:
+        return True
+    return request_observed <= max_body_bytes and response_observed <= max_body_bytes
+
+
+def _conservative_summary(summary: DebugExchangeSummary) -> DebugExchangeSummary:
+    """Summary for a row deliberately NOT decrypted (withheld-on-detail or unbounded payload): the
+    response is always withheld and the request is conservatively marked redacted, so the list never
+    UNDER-reports what detail withholds. Factual fields (observed lengths, completeness) are unchanged."""
+    return summary.model_copy(update={"request_redacted": True, "response_redacted": True})
+
+
 def _cursor(summary: DebugExchangeSummary) -> str:
     raw = json.dumps([summary.started_at.isoformat(), str(summary.id)], separators=(",", ":")).encode()
     return base64.urlsafe_b64encode(raw).decode()
@@ -848,10 +871,26 @@ class InMemoryDebugStore:
             key=lambda row: (row.started_at, row.id),
             reverse=True,
         )
-        # Compute each summary from the EGRESS-SANITIZED exchange, so the list flags (including
-        # truncation truth for legacy rows) match exactly what detail-read serves — no separate,
-        # possibly-stale summary logic.
-        items = [_summary(normalize_exchange_for_read(row, self._max_body_bytes)) for row in rows[:limit]]
+        # Read-time truthful summaries, BOUNDED to match the Postgres store's memory-safe behaviour: a
+        # bounded row (complete + both bodies within cap) is sanitized for exact truncation/redaction
+        # truth; a larger/incomplete row (withheld on detail anyway) is summarized conservatively from
+        # its stored flags without treating its full body as list-view content.
+        cap = self._max_body_bytes
+
+        def _row_bounded(exchange: DebugExchange) -> bool:
+            return _bounded_for_summary(
+                exchange.request_body.observed_bytes,
+                exchange.response_body.observed_bytes,
+                exchange.request_body.complete,
+                cap,
+            )
+
+        items: list[DebugExchangeSummary] = []
+        for row in rows[:limit]:
+            if _row_bounded(row):
+                items.append(_summary(normalize_exchange_for_read(row, cap)))
+            else:
+                items.append(_conservative_summary(_summary(row)))
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
@@ -927,13 +966,13 @@ class PostgresDebugStore:
         cursor: str | None = None,
     ) -> DebugExchangeList:
         after = _pagination(limit, cursor)
+        cap = self._max_body_bytes
+        # Phase 1: fetch only the CLEAR summary columns (never the ciphertext) — bounded memory, no
+        # decrypt, so the list can never load or decrypt an unbounded result set (up to `limit` rows
+        # each up to the legacy multi-hundred-MiB cap). This alone avoids the load-all-and-decrypt DoS.
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
-                # Filter/sort/paginate on the CLEAR columns, but fetch the ciphertext too: the summary
-                # flags (redaction + legacy-truncation truth) are COMPUTED at read time from the
-                # decrypted, egress-sanitized exchange, matching detail-read exactly — no persisted
-                # truncated column, and the ciphertext is never rewritten.
-                "SELECT * FROM fs2_request_debug "
+                f"SELECT {','.join(DebugExchangeSummary.model_fields)} FROM fs2_request_debug "  # noqa: S608 - fixed columns
                 "WHERE ($1::text IS NULL OR model_id=$1) AND ($2::uuid IS NULL OR operation_id=$2) "
                 "AND ($3::text IS NULL OR tenant_id=$3) AND ($4::timestamptz IS NULL OR started_at >= $4) "
                 "AND ($5::timestamptz IS NULL OR started_at < $5) "
@@ -948,7 +987,36 @@ class PostgresDebugStore:
                 after[1] if after else None,
                 limit + 1,
             )
-        items = [_summary(normalize_exchange_for_read(self._decode(row), self._max_body_bytes)) for row in rows[:limit]]
+        page = rows[:limit]
+        # Phase 2: for BOUNDED rows only (complete + both bodies within cap => small payload), fetch
+        # just their ciphertext and derive truthful truncation/redaction OFF the event loop. Larger or
+        # incomplete rows are withheld on detail anyway and summarized conservatively from clear
+        # columns, so their (possibly huge) payloads are never fetched or decrypted.
+        bounded_ids = [
+            row["id"]
+            for row in page
+            if _bounded_for_summary(
+                row["request_observed_bytes"], row["response_observed_bytes"], row["request_complete"], cap
+            )
+        ]
+        truthful: dict[UUID, DebugExchangeSummary] = {}
+        if bounded_ids:
+            async with self.pool.acquire() as connection:
+                cipher_rows = await connection.fetch(
+                    "SELECT * FROM fs2_request_debug WHERE id = ANY($1::uuid[])", bounded_ids
+                )
+
+            def _derive() -> dict[UUID, DebugExchangeSummary]:
+                # Decrypt + sanitize + summarize the bounded rows in a worker thread (off the loop).
+                return {cr["id"]: _summary(normalize_exchange_for_read(self._decode(cr), cap)) for cr in cipher_rows}
+
+            truthful = await asyncio.to_thread(_derive)
+        items = [
+            truthful[row["id"]]
+            if row["id"] in truthful
+            else _conservative_summary(DebugExchangeSummary.model_validate(dict(row)))
+            for row in page
+        ]
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
 
     def _decode(self, row: asyncpg.Record) -> DebugExchange:
@@ -1227,10 +1295,19 @@ class DebugPersistQueue:
                     built = await offload_capture(builder)
                     if built is not None:
                         await persist_debug_exchange(self._store, built, self._persist_timeout_seconds)
+                except asyncio.CancelledError:
+                    # Cancelled MID-ITEM (worker cancelled outside the drain-then-close path): do NOT
+                    # discard the accepted item or free its token — RE-QUEUE it at the front (a worker
+                    # restarted by the next commit or by drain()/aclose() persists it) and keep it
+                    # committed. Balance the count, then re-raise so the task actually stops.
+                    self._pending.appendleft((builder, token))
+                    self._processing -= 1
+                    raise
                 except Exception as error:
                     LOGGER.warning("request debug capture failed error_type=%s", type(error).__name__)
-                finally:
-                    # Balance the in-flight count and free THIS token even on cancellation mid-item.
+                    self._complete(token)
+                    self._processing -= 1
+                else:
                     self._complete(token)
                     self._processing -= 1
         finally:

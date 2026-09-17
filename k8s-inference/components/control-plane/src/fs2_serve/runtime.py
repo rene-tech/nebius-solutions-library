@@ -341,19 +341,35 @@ class RuntimeClient:
         # released on EVERY exit path — construction error, cancellation, or a submit failure — with
         # no leak window; the worker takes ownership of the slot only once submit commits.
         with reservation:
-            capture = _UpstreamCapture(
-                operation,
-                endpoint,
-                request_body,
-                headers,
-                self.max_response_bytes,
-                upstream_attempt,
-                self.debug_max_body_bytes,
-            )
+            # Capture is FULLY ISOLATED from inference: any capture-side failure (construction,
+            # response(), failed(), or submit) is caught and logged — it can never replace or interrupt
+            # the customer's upstream outcome. On a construction failure the stream is served with no
+            # capture at all (the reservation context still frees the slot on exit).
+            capture: _UpstreamCapture | None
+            try:
+                capture = _UpstreamCapture(
+                    operation,
+                    endpoint,
+                    request_body,
+                    headers,
+                    self.max_response_bytes,
+                    upstream_attempt,
+                    self.debug_max_body_bytes,
+                )
+            except Exception as error:
+                _LOGGER.warning("request debug capture init failed error_type=%s", type(error).__name__)
+                async with stream as response:
+                    yield response
+                return
             try:
                 async with stream as response:
-                    capture.response(response)
-                    response.extensions[_DEBUG_CAPTURE_EXTENSION] = capture
+                    try:
+                        capture.response(response)
+                        response.extensions[_DEBUG_CAPTURE_EXTENSION] = capture
+                    except Exception as error:
+                        # Disable capture for this exchange but keep serving the customer.
+                        _LOGGER.warning("request debug capture.response failed error_type=%s", type(error).__name__)
+                        capture = None
                     # Capture never DRAINS an otherwise-unread upstream body: the normal reader
                     # observes a successful body as the customer reads it, and an unread error body
                     # is left untouched (the response body is withheld from storage regardless), so
@@ -361,10 +377,18 @@ class RuntimeClient:
                     try:
                         yield response
                     except BaseException as error:
-                        capture.failed(error)
+                        if capture is not None:
+                            try:
+                                capture.failed(error)
+                            except Exception:
+                                _LOGGER.warning("request debug capture.failed ignored (customer error preserved)")
                         raise
             except BaseException as error:
-                capture.failed(error)
+                if capture is not None:
+                    try:
+                        capture.failed(error)
+                    except Exception:
+                        _LOGGER.warning("request debug capture.failed ignored (customer error preserved)")
                 raise
             finally:
                 # Persist OFF the customer critical path: enqueue on the bounded queue and return
@@ -372,10 +396,11 @@ class RuntimeClient:
                 # reservation after it persists; a defensive enqueue-drop leaves the slot with the
                 # reservation, which releases it on context exit. GUARDED so a capture-path failure can
                 # NEVER replace a valid customer outcome — the reservation context still frees the slot.
-                try:
-                    reservation.submit(capture.exchange)
-                except Exception as error:
-                    _LOGGER.warning("request debug upstream submit failed error_type=%s", type(error).__name__)
+                if capture is not None:
+                    try:
+                        reservation.submit(capture.exchange)
+                    except Exception as error:
+                        _LOGGER.warning("request debug upstream submit failed error_type=%s", type(error).__name__)
 
     async def close(self) -> None:
         # Drain + stop the bounded capture-persist queue on shutdown (best-effort), so a queued
@@ -679,12 +704,21 @@ class RuntimeClient:
                 capture = response.extensions.get(_DEBUG_CAPTURE_EXTENSION)
                 async for chunk in response.aiter_bytes():
                     if isinstance(capture, _UpstreamCapture):
-                        capture.observe(chunk)
+                        # Capture is isolated: an observe() failure disables capture for this exchange
+                        # but never interrupts the customer's body read.
+                        try:
+                            capture.observe(chunk)
+                        except Exception as error:
+                            _LOGGER.warning("request debug capture.observe failed error_type=%s", type(error).__name__)
+                            capture = None
                     content.extend(chunk)
                     if len(content) > self.max_response_bytes:
                         raise RuntimeProtocolError("runtime response exceeded configured maximum")
                 if isinstance(capture, _UpstreamCapture):
-                    capture.finished()
+                    try:
+                        capture.finished()
+                    except Exception as error:
+                        _LOGGER.warning("request debug capture.finished failed error_type=%s", type(error).__name__)
                 semantic = self._semantic_outcome(operation.protocol, bytes(content))
                 runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
                 return RuntimeResult(

@@ -158,10 +158,10 @@ export function RequestDebugLog({
                           response
                           <span className="secondary-line">
                             {item.request_complete && item.response_complete
-                              ? "Complete"
-                              : "Partial / incomplete"}
+                              ? "Complete on the wire"
+                              : "Partial / incomplete on the wire"}
                             {item.request_redacted || item.response_redacted
-                              ? " · Redacted"
+                              ? " · redacted / withheld on read"
                               : ""}
                           </span>
                         </td>
