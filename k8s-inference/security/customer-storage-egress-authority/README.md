@@ -25,7 +25,7 @@ state addresses; installed entries use `ignore_changes = all` plus
 payload. Omitting a retained key therefore cannot turn a rotation into a
 destroy proposal or a `prevent_destroy` dead end.
 The same checkpoint carries the canonical spec/digest and Deny binding for
-every retained v3 admission generation. Both the security root and ordinary
+every retained legacy and v3 admission generation. Both the security root and ordinary
 workloads consumer re-read all of them live; state ownership or
 `ignore_changes` is never accepted as live-equality evidence. The root
 also descriptor-reads the initialized backend metadata and requires its
@@ -41,7 +41,8 @@ workload admission specs, accepted SAI-10 commit/tree/review custody, exact
 project IAM inventory, a provider-native effective-authority graph covering
 inherited/federated/external principals, the fresh signed target-cluster RBAC
 inventory, its complete subject closure and its derived binding-to-rule
-effective-authority graph, and every content-named
+effective-authority graph, deterministic Kubernetes-native groups, exact
+provider-bound controller identities, and every content-named
 route/node generation. Canonical state uses a locked,
 versioned remote backend; local or omitted state is never an authority source.
 

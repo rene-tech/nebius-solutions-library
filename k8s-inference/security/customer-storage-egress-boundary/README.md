@@ -44,9 +44,15 @@ exact signed group set; every ServiceAccount subject must resolve to the signed
 ServiceAccount inventory. Provider access and mutation sets come from the
 signed provider-native effective-authority graph, including inherited,
 federated and external principals, rather than candidate declarations.
-Each signed ServiceAccount and Kubernetes-native User/Group also carries the
-digest of its direct-plus-group rule closure and the exact expanded dangerous
-capability set. Wildcards and resource names are evaluated semantically for
+ServiceAccount and Kubernetes-native User/Group memberships are derived from
+Kubernetes identity rules rather than accepted from the signed payload. Their
+direct-plus-group authority is then recomputed from the live RBAC graph.
+Dangerous capabilities are rejected unless they are in the narrow source-coded
+Deployment, ReplicaSet, DaemonSet, scheduler, security-owner, or release
+admission contract; the signed dangerous list is evidence, not authorization.
+Every authenticated owner, workloads, release, human, break-glass and other
+identity is evaluated through the same graph, including resource-name-limited
+rules. Wildcards and resource names are evaluated semantically for
 Secret, ConfigMap, Pod/exec/attach/binding, TokenRequest, node, workload,
 NetworkPolicy, RBAC bind/escalate, impersonation, admission and CSR pivots;
 matching the cluster-wide RBAC hash alone is insufficient.
@@ -66,7 +72,7 @@ admission layer remains defense in depth: the target-cluster node group's
 provider VPC security group and exact provider IAM inventory are the canonical
 boundary.
 
-Every retained v3 policy and Deny binding is listed with its full canonical
+Every retained legacy and v3 policy and Deny binding is listed with its full canonical
 spec in the separately signed prior boundary checkpoint. Before a successor is
 created, both this root and the workloads root read every listed live object
 and require exact equality. A drifted older generation therefore cannot hide
@@ -81,11 +87,17 @@ Pods must keep the signed image, generation labels, protected node target,
 Secret and image-pull-secret allowlists; projected Secrets, host paths, PVCs,
 CSI volumes, `spec.nodeName`, and additional secret-backed environment sources
 are denied.
-The workload policy also has a cluster-wide guard branch: outside the exact
-storage and Kubernetes system namespaces it denies direct `nodeName`, the
-generation's node selector/taint, and blanket `Exists` tolerations. Retained
+The workload policy has no namespace exemption. It denies the generation's
+node selector or taint globally and evaluates blanket `Exists` tolerations on
+every Pod. The only blanket-toleration exception is an exact kube-system Pod
+created by the provider-bound DaemonSet controller, with a DaemonSet owner and
+no explicit protected selector, taint or `nodeName`. Pod binding subresources
+are matched cluster-wide and accepted only from the provider-bound scheduler.
+Ordinary direct `nodeName` use is not globally rejected; direct Pod creators
+are instead closed by independently derived RBAC authority, while the exact
+storage and system-DaemonSet contracts both forbid `nodeName`. Retained
 policies protect their own retained node groups without selecting later exact
-storage workloads in `fs2-system`.
+storage workloads.
 
 The ConfigMap Helm driver is not a namespace-wide exemption. RBAC may grant
 the release identity namespace-scoped create only because Kubernetes cannot

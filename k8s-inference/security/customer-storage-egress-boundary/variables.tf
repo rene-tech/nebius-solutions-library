@@ -172,7 +172,11 @@ variable "kubernetes_service_account_inventory" {
       alltrue([
         for subject in var.kubernetes_service_account_inventory :
         subject.namespace != "" && subject.name != "" && subject.owner != "" &&
-        subject.groups == sort(distinct(subject.groups)) &&
+        subject.groups == sort([
+          "system:authenticated",
+          "system:serviceaccounts",
+          "system:serviceaccounts:${subject.namespace}",
+        ]) &&
         can(regex("^[a-f0-9]{64}$", subject.effective_authority_sha256)) &&
         subject.dangerous_permissions == sort(distinct(subject.dangerous_permissions))
       ])
@@ -198,7 +202,11 @@ variable "kubernetes_system_subject_inventory" {
       contains(["User", "Group"], subject.kind) &&
       startswith(subject.name, "system:") &&
       subject.namespace == "" && subject.owner != "" &&
-      subject.groups == sort(distinct(subject.groups)) &&
+      subject.groups == (
+        subject.kind == "Group" ? [] :
+        subject.name == "system:anonymous" ? ["system:unauthenticated"] :
+        ["system:authenticated"]
+      ) &&
       can(regex("^[a-f0-9]{64}$", subject.effective_authority_sha256)) &&
       subject.dangerous_permissions == sort(distinct(subject.dangerous_permissions))
     ])
@@ -210,8 +218,8 @@ variable "deployment_controller_username" {
   description = "Exact live authenticated username that creates Deployment ReplicaSets, present in the signed system-subject inventory."
   type        = string
   validation {
-    condition     = startswith(var.deployment_controller_username, "system:")
-    error_message = "deployment_controller_username must be an exact Kubernetes system identity."
+    condition     = var.deployment_controller_username == "system:controller:deployment-controller"
+    error_message = "deployment_controller_username must be the canonical Kubernetes Deployment controller identity."
   }
 }
 
@@ -219,8 +227,26 @@ variable "replicaset_controller_username" {
   description = "Exact live authenticated username that creates ReplicaSet Pods, present in the signed system-subject inventory."
   type        = string
   validation {
-    condition     = startswith(var.replicaset_controller_username, "system:")
-    error_message = "replicaset_controller_username must be an exact Kubernetes system identity."
+    condition     = var.replicaset_controller_username == "system:controller:replicaset-controller"
+    error_message = "replicaset_controller_username must be the canonical Kubernetes ReplicaSet controller identity."
+  }
+}
+
+variable "daemonset_controller_username" {
+  description = "Exact live authenticated username that creates kube-system DaemonSet Pods, present in the signed system-subject inventory."
+  type        = string
+  validation {
+    condition     = var.daemonset_controller_username == "system:controller:daemon-set-controller"
+    error_message = "daemonset_controller_username must be the canonical Kubernetes DaemonSet controller identity."
+  }
+}
+
+variable "scheduler_username" {
+  description = "Exact live authenticated scheduler username permitted to create Pod binding subresources."
+  type        = string
+  validation {
+    condition     = var.scheduler_username == "system:kube-scheduler"
+    error_message = "scheduler_username must be the canonical Kubernetes scheduler identity."
   }
 }
 
@@ -331,6 +357,10 @@ variable "provider_authority" {
     kubernetes_identity_inventory_sha256              = string
     kubernetes_service_account_inventory_sha256       = string
     kubernetes_system_subject_inventory_sha256        = string
+    deployment_controller_username                    = string
+    replicaset_controller_username                    = string
+    daemonset_controller_username                     = string
+    scheduler_username                                = string
     kubernetes_rbac_inventory_sha256                  = string
     kubernetes_rbac_effective_authority_sha256        = string
     kubernetes_rbac_inventory_receipt_sha256          = string
@@ -339,6 +369,24 @@ variable "provider_authority" {
     provider_authority_adapter_sha256                 = string
     provider_state_custody_sha256                     = string
     boundary_state_custody_sha256                     = string
+    retained_legacy_boundary_policies = map(object({
+      name          = string
+      policy_sha256 = string
+      policy_spec   = any
+      binding_spec = object({
+        policyName        = string
+        validationActions = list(string)
+      })
+    }))
+    retained_legacy_workload_policies = map(object({
+      name          = string
+      policy_sha256 = string
+      policy_spec   = any
+      binding_spec = object({
+        policyName        = string
+        validationActions = list(string)
+      })
+    }))
     retained_v3_boundary_policies = map(object({
       name          = string
       policy_sha256 = string
@@ -357,7 +405,7 @@ variable "provider_authority" {
         validationActions = list(string)
       })
     }))
-    retained_v3_admission_custody_sha256    = string
+    retained_admission_custody_sha256       = string
     workloads_service_account_sha256        = string
     accepted_sai10_commit                   = string
     accepted_sai10_tree                     = string
@@ -366,7 +414,7 @@ variable "provider_authority" {
 
   validation {
     condition = (
-      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v4" &&
+      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v5" &&
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.generation)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.authority_manifest_sha256)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.prior_head_receipt_sha256)) &&
@@ -405,7 +453,7 @@ variable "provider_authority" {
           var.provider_authority.provider_authority_adapter_sha256,
           var.provider_authority.provider_state_custody_sha256,
           var.provider_authority.boundary_state_custody_sha256,
-          var.provider_authority.retained_v3_admission_custody_sha256,
+          var.provider_authority.retained_admission_custody_sha256,
           var.provider_authority.workloads_service_account_sha256,
           var.provider_authority.sai10_independent_review_receipt_sha256,
         ] : can(regex("^[a-f0-9]{64}$", digest))
@@ -414,8 +462,14 @@ variable "provider_authority" {
       can(regex("^[a-f0-9]{40}$", var.provider_authority.accepted_sai10_tree)) &&
       !startswith(var.provider_authority.accepted_sai10_commit, "1ae009b85") &&
       var.provider_authority.authority_service_account_sha256 != var.provider_authority.workloads_service_account_sha256
+      && var.provider_authority.deployment_controller_username == "system:controller:deployment-controller"
+      && var.provider_authority.replicaset_controller_username == "system:controller:replicaset-controller"
+      && var.provider_authority.daemonset_controller_username == "system:controller:daemon-set-controller"
+      && var.provider_authority.scheduler_username == "system:kube-scheduler"
       && alltrue([
         for generation, policy in merge(
+          var.provider_authority.retained_legacy_boundary_policies,
+          var.provider_authority.retained_legacy_workload_policies,
           var.provider_authority.retained_v3_boundary_policies,
           var.provider_authority.retained_v3_workload_policies,
         ) :
@@ -427,9 +481,11 @@ variable "provider_authority" {
         policy.binding_spec.validationActions == ["Deny"]
       ])
       && sha256(jsonencode({
-        retained_v3_boundary_policies = var.provider_authority.retained_v3_boundary_policies
-        retained_v3_workload_policies = var.provider_authority.retained_v3_workload_policies
-      })) == var.provider_authority.retained_v3_admission_custody_sha256
+        retained_legacy_boundary_policies = var.provider_authority.retained_legacy_boundary_policies
+        retained_legacy_workload_policies = var.provider_authority.retained_legacy_workload_policies
+        retained_v3_boundary_policies     = var.provider_authority.retained_v3_boundary_policies
+        retained_v3_workload_policies     = var.provider_authority.retained_v3_workload_policies
+      })) == var.provider_authority.retained_admission_custody_sha256
     )
     error_message = "provider_authority must be the exact provider-enforced, identity-separated VPC/node handoff."
   }

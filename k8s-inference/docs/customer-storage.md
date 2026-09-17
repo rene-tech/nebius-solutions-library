@@ -37,10 +37,11 @@ principals, accepted custody and complete Kubernetes credential inventory plus
 a fresh exact RBAC object/subject inventory. A
 second security-owner root adds immutable,
 generation-named contract, trust and NetworkPolicy objects as defense in depth.
-The signed RBAC inventory also binds each ServiceAccount and system User/Group
-to its direct-plus-group rule digest and fully expanded dangerous capability
-set; a matching cluster-wide hash without per-subject authority equality is
-rejected. Release ConfigMap create is admission-mediated to the exact Helm v1
+ServiceAccount/system groups are derived deterministically, and the live RBAC
+graph independently recomputes every signed and authenticated subject's
+direct-plus-group authority. Unmediated dangerous capabilities, including
+resource-name-limited ConfigMap mutation, are rejected rather than blessed by
+a signed descriptive list. Release ConfigMap create is admission-mediated to the exact Helm v1
 record, update/patch is RBAC-restricted to that name, and delete is forbidden.
 The reconciler verifies the signed bytes, freshness, live DNS, and the effective
 union of every NetworkPolicy selecting its full actual label set, including its
@@ -48,11 +49,14 @@ controller-assigned `pod-template-hash`, before readiness.
 Admission continuously permits only the exact content-bound selecting policy;
 an additional signed policy constrains every Pod or workload-producing object
 to the exact Secret allowlist, image and provider-protected node target.
-The same retained policy denies non-system namespaces from using a protected
-generation's selector, taint (including blanket `Exists` tolerations), or
-direct `nodeName`. Every retained v3 policy and Deny binding is re-read and
-compared with the canonical separately signed prior checkpoint before a new
-generation is admitted.
+The same retained policy has no namespace exemption: it guards the protected
+selector and taint globally, constrains blanket `Exists` Pods to the exact
+provider-bound kube-system DaemonSet controller contract, and admits Pod
+binding only from the provider-bound scheduler. Ordinary `nodeName` use is not
+globally regressed; the exact storage/system Pod contracts and semantic RBAC
+closure prevent it from bypassing the dedicated lane. Every retained legacy
+and v3 policy and Deny binding is re-read and compared with the canonical
+separately signed prior checkpoint before a new generation is admitted.
 Public runtime NetworkPolicies do not contain a customer-storage HTTPS
 exception.
 

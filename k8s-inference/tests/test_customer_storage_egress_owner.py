@@ -17,7 +17,35 @@ SPEC = importlib.util.spec_from_file_location("customer_storage_egress_owner", S
 assert SPEC is not None and SPEC.loader is not None
 owner_module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(owner_module)
-from rbac_authority import subject_authority  # noqa: E402
+from rbac_authority import (  # noqa: E402
+    deterministic_groups,
+    reject_unapproved_dangerous,
+    subject_authority,
+)
+
+
+CONTROLLERS = {
+    "deployment": "system:controller:deployment-controller",
+    "replicaset": "system:controller:replicaset-controller",
+    "daemonset": "system:controller:daemon-set-controller",
+    "scheduler": "system:kube-scheduler",
+}
+
+
+def system_subject_inventory() -> list[dict[str, object]]:
+    empty_authority = hashlib.sha256(b"[]").hexdigest()
+    return [
+        {
+            "kind": "User",
+            "namespace": "",
+            "name": username,
+            "owner": role,
+            "groups": ["system:authenticated"],
+            "effective_authority_sha256": empty_authority,
+            "dangerous_permissions": [],
+        }
+        for role, username in sorted(CONTROLLERS.items())
+    ]
 
 
 def inventory() -> dict[str, dict[str, object]]:
@@ -45,7 +73,11 @@ def query() -> dict[str, str]:
         "security_owner_group": "fs2:customer-storage-egress-security-owner",
         "identity_inventory_json": json.dumps(inventory()),
         "service_account_inventory_json": "[]",
-        "system_subject_inventory_json": "[]",
+        "system_subject_inventory_json": json.dumps(system_subject_inventory()),
+        "deployment_controller_username": CONTROLLERS["deployment"],
+        "replicaset_controller_username": CONTROLLERS["replicaset"],
+        "daemonset_controller_username": CONTROLLERS["daemonset"],
+        "scheduler_username": CONTROLLERS["scheduler"],
         "expected_rbac_inventory_sha256": "a" * 64,
         "expected_effective_authority_sha256": hashlib.sha256(b"[]").hexdigest(),
         "protected_names_json": json.dumps(
@@ -243,17 +275,86 @@ def test_service_account_group_authority_is_semantically_reconciled():
         kind="ServiceAccount",
         namespace="fs2-system",
         name="storage",
-        groups=["system:authenticated", "system:serviceaccounts"],
+        groups=deterministic_groups(
+            kind="ServiceAccount", namespace="fs2-system", name="storage"
+        ),
     )
     declaration = {
         "namespace": "fs2-system",
         "name": "storage",
         "owner": "storage",
-        "groups": ["system:authenticated", "system:serviceaccounts"],
+        "groups": deterministic_groups(
+            kind="ServiceAccount", namespace="fs2-system", name="storage"
+        ),
         "effective_authority_sha256": digest,
         "dangerous_permissions": dangerous,
     }
-    owner_module.verify_subject_inventory([declaration], [], authority)
-    declaration["dangerous_permissions"] = []
-    with pytest.raises(ValueError, match="dangerous authority differs"):
+    with pytest.raises(ValueError, match="independently derived dangerous"):
         owner_module.verify_subject_inventory([declaration], [], authority)
+
+
+def test_service_account_group_membership_is_deterministic():
+    declaration = {
+        "namespace": "fs2-system",
+        "name": "storage",
+        "owner": "storage",
+        "groups": ["system:authenticated"],
+        "effective_authority_sha256": hashlib.sha256(b"[]").hexdigest(),
+        "dangerous_permissions": [],
+    }
+    with pytest.raises(ValueError, match="groups are not deterministic"):
+        owner_module.verify_subject_inventory([declaration], [], [])
+
+
+def test_controller_inventory_accepts_only_canonical_identities_and_authority():
+    subjects = system_subject_inventory()
+    owner_module.verify_subject_inventory(
+        [], subjects, [], controller_users=CONTROLLERS
+    )
+
+    substituted = dict(CONTROLLERS)
+    substituted["scheduler"] = "system:controller:fake-scheduler"
+    with pytest.raises(
+        ValueError, match="canonical Kubernetes controller identities"
+    ):
+        owner_module.verify_subject_inventory(
+            [], subjects, [], controller_users=substituted
+        )
+
+
+def test_resource_name_expansion_cannot_hide_extra_configmap_authority():
+    authority = [
+        {
+            "subject": {"kind": "User", "namespace": "", "name": "subject:release"},
+            "scope": "fs2-system",
+            "binding": {
+                "kind": "RoleBinding",
+                "namespace": "fs2-system",
+                "name": "release",
+                "uid": "release-binding-uid",
+            },
+            "roleRef": {"kind": "Role", "namespace": "fs2-system", "name": "release"},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["configmaps"],
+                    "verbs": ["update"],
+                    "resourceNames": ["approved", "unapproved"],
+                }
+            ],
+        }
+    ]
+    _, dangerous = subject_authority(
+        authority,
+        kind="User",
+        namespace="",
+        name="subject:release",
+        groups=[],
+    )
+    with pytest.raises(ValueError, match="independently derived dangerous"):
+        reject_unapproved_dangerous(
+            dangerous,
+            explicitly_allowed={
+                "fs2-system|core|configmaps|update|names=approved"
+            },
+        )

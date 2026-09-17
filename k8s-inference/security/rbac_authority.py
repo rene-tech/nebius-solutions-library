@@ -37,7 +37,6 @@ DANGEROUS_TARGETS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("authentication.k8s.io", "userextras", ("impersonate",)),
     ("authentication.k8s.io", "tokenreviews", ("create",)),
     ("authorization.k8s.io", "subjectaccessreviews", ("create",)),
-    ("authorization.k8s.io", "selfsubjectaccessreviews", ("create",)),
     ("apps", "deployments", ("create", "update", "patch", "delete", "deletecollection")),
     ("apps", "replicasets", ("create", "update", "patch", "delete", "deletecollection")),
     ("apps", "daemonsets", ("create", "update", "patch", "delete", "deletecollection")),
@@ -98,7 +97,8 @@ def _rule_capabilities(rule: dict[str, Any], scope: str) -> list[str]:
         raise ValueError("Kubernetes non-resource RBAC rule is malformed")
     for url in sorted(set(non_resource_urls)):
         for verb in sorted(set(verbs)):
-            capabilities.append(f"{scope}|nonresource|{url}|{verb}|names=*")
+            if verb in {"*", "post", "put", "patch", "delete"}:
+                capabilities.append(f"{scope}|nonresource|{url}|{verb}|names=*")
     return capabilities
 
 
@@ -148,22 +148,143 @@ def subject_authority(
     return hashlib.sha256(_canonical(selected)).hexdigest(), sorted(set(capabilities))
 
 
+def deterministic_groups(*, kind: str, namespace: str, name: str) -> list[str]:
+    """Return Kubernetes-defined groups without accepting caller membership claims."""
+
+    if kind == "ServiceAccount":
+        if not namespace or not name:
+            raise ValueError("ServiceAccount identity is incomplete")
+        return sorted(
+            {
+                "system:authenticated",
+                "system:serviceaccounts",
+                f"system:serviceaccounts:{namespace}",
+            }
+        )
+    if kind == "User":
+        if not name.startswith("system:"):
+            raise ValueError("only Kubernetes-native system Users are deterministic")
+        if name == "system:anonymous":
+            return ["system:unauthenticated"]
+        return ["system:authenticated"]
+    if kind == "Group":
+        if not name.startswith("system:"):
+            raise ValueError("only Kubernetes-native system Groups are deterministic")
+        return []
+    raise ValueError("Kubernetes subject kind is unsupported")
+
+
+CONTROLLER_ALLOWANCES: dict[str, frozenset[tuple[str, str, str]]] = {
+    "deployment": frozenset(
+        ("apps", "replicasets", verb)
+        for verb in ("create", "update", "patch", "delete", "deletecollection")
+    ),
+    "replicaset": frozenset(
+        ("core", "pods", verb)
+        for verb in ("create", "update", "patch", "delete", "deletecollection")
+    ),
+    "daemonset": frozenset(
+        ("core", "pods", verb)
+        for verb in ("create", "update", "patch", "delete", "deletecollection")
+    ),
+    "scheduler": frozenset(
+        {
+            ("core", "pods/binding", "create"),
+            ("core", "nodes", "get"),
+            ("core", "nodes", "list"),
+            ("core", "nodes", "watch"),
+        }
+    ),
+}
+
+CONTROLLER_USERNAMES: dict[str, str] = {
+    "deployment": "system:controller:deployment-controller",
+    "replicaset": "system:controller:replicaset-controller",
+    "daemonset": "system:controller:daemon-set-controller",
+    "scheduler": "system:kube-scheduler",
+}
+
+
+def _controller_capability_allowed(capability: str, role: str) -> bool:
+    fields = capability.split("|")
+    if len(fields) != 5 or not fields[4].startswith("names="):
+        raise ValueError("expanded Kubernetes capability is malformed")
+    scope, api_group, resource, verb, names = fields
+    return (
+        scope == "*"
+        and names == "names=*"
+        and (api_group, resource, verb) in CONTROLLER_ALLOWANCES[role]
+    )
+
+
+def reject_unapproved_dangerous(
+    dangerous: list[str],
+    *,
+    controller_role: str | None = None,
+    explicitly_allowed: set[str] | None = None,
+) -> None:
+    """Reject semantic authority unless source policy independently mediates it."""
+
+    if controller_role is not None and controller_role not in CONTROLLER_ALLOWANCES:
+        raise ValueError("Kubernetes controller role is unsupported")
+    allowed = explicitly_allowed or set()
+    unexpected = [
+        capability
+        for capability in dangerous
+        if capability not in allowed
+        and not (
+            controller_role is not None
+            and _controller_capability_allowed(capability, controller_role)
+        )
+    ]
+    if unexpected:
+        raise ValueError(
+            f"independently derived dangerous Kubernetes authority is not mediated: {unexpected[0]}"
+        )
+
+
 def verify_subject_inventory(
     service_accounts: list[dict[str, Any]],
     system_subjects: list[dict[str, Any]],
     effective_authority: list[dict[str, Any]],
+    *,
+    controller_users: dict[str, str] | None = None,
 ) -> None:
-    """Require each signed non-human subject to equal its live effective rules."""
+    """Derive groups/rules independently and reject unmediated authority."""
 
-    declarations: list[tuple[dict[str, Any], str, str, str, list[str]]] = []
+    controllers = controller_users or {}
+    if controller_users is not None and (
+        controllers != CONTROLLER_USERNAMES
+    ):
+        raise ValueError("canonical Kubernetes controller identities are required")
+    controller_role_by_user = {
+        username: role for role, username in controllers.items()
+    }
+    declared_system_users = {
+        subject.get("name")
+        for subject in system_subjects
+        if subject.get("kind") == "User"
+    }
+    if not set(controllers.values()) <= declared_system_users:
+        raise ValueError("controller identity is absent from the system User inventory")
+
+    declarations: list[tuple[dict[str, Any], str, str, str]] = []
     for subject in service_accounts:
         declarations.append(
-            (subject, "ServiceAccount", subject["namespace"], subject["name"], subject["groups"])
+            (subject, "ServiceAccount", subject["namespace"], subject["name"])
         )
     for subject in system_subjects:
-        groups = subject["groups"] if subject["kind"] == "User" else [subject["name"]]
-        declarations.append((subject, subject["kind"], "", subject["name"], groups))
-    for declaration, kind, namespace, name, groups in declarations:
+        declarations.append((subject, subject["kind"], "", subject["name"]))
+    for declaration, kind, namespace, name in declarations:
+        groups = deterministic_groups(
+            kind=kind,
+            namespace=namespace,
+            name=name,
+        )
+        if declaration.get("groups") != groups:
+            raise ValueError(
+                f"signed {kind} {namespace}/{name} groups are not deterministic"
+            )
         authority_sha256, dangerous = subject_authority(
             effective_authority,
             kind=kind,
@@ -179,3 +300,9 @@ def verify_subject_inventory(
             raise ValueError(
                 f"signed {kind} {namespace}/{name} dangerous authority differs"
             )
+        reject_unapproved_dangerous(
+            dangerous,
+            controller_role=(
+                controller_role_by_user.get(name) if kind == "User" else None
+            ),
+        )
