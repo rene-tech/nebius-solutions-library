@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Prove a no-delete SAI-07 legacy-object closure or fail closed.
+"""Prove an inert retained SAI-07 legacy quarantine without mutation.
 
-The hard no-delete contract forbids this tool from mutating Kubernetes. It
-re-reads the exact signed inventory and cleanup fence, then emits a closure only
-when the approved legacy-object set is already empty. A non-empty set is a real
-integration blocker; this program does not rewrite or remove retained objects.
+The hard no-delete contract forbids this tool from mutating Kubernetes. It can
+close a non-empty inventory only when every retained object is already inert:
+NetworkPolicies are deny-only, ServiceAccounts are tokenless and unreferenced,
+and DaemonSets own no Pods and schedule nothing. The exact admission fence then
+freezes those identities, denies new ServiceAccount consumers, and denies Pods
+owned by a retained DaemonSet. Anything active or permissive fails closed.
 """
 
 from __future__ import annotations
@@ -20,8 +22,8 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sai07_inventory_projection import ProjectionError, live_projection  # noqa: E402
 
-SCHEMA = "fs2-serve.nebius.ai/sai07-no-delete-closure/v4"
-RESULT_SCHEMA = "fs2-serve.nebius.ai/sai07-no-delete-closure-result/v4"
+SCHEMA = "fs2-serve.nebius.ai/sai07-retained-quarantine/v5"
+RESULT_SCHEMA = "fs2-serve.nebius.ai/sai07-retained-quarantine-result/v5"
 NAMESPACE = "fs2-models"
 MAX_OBJECTS = 128
 KINDS = {
@@ -324,6 +326,79 @@ def nested_service_account_names(value: object) -> set[str]:
     return result
 
 
+def daemonset_owned_pods(client: Kubectl, name: str, uid: str) -> list[str]:
+    collection = client.raw(f"/api/v1/namespaces/{NAMESPACE}/pods")
+    if collection is None:  # pragma: no cover - mandatory read
+        raise CleanupError("Pod inventory disappeared during retained quarantine verification")
+    owned: list[str] = []
+    for pod in collection.get("items", []):
+        metadata = pod.get("metadata", {}) if isinstance(pod, dict) else {}
+        owners = metadata.get("ownerReferences", []) if isinstance(metadata, dict) else []
+        if any(
+            isinstance(owner, dict)
+            and owner.get("apiVersion") == "apps/v1"
+            and owner.get("kind") == "DaemonSet"
+            and owner.get("name") == name
+            and owner.get("uid") == uid
+            for owner in owners or []
+        ):
+            owned.append(str(metadata.get("name", "")))
+    return sorted(owned)
+
+
+def validate_quarantined_object(
+    client: Kubectl,
+    item: dict[str, str],
+    live: dict[str, object],
+    retained_daemonsets: frozenset[str] = frozenset(),
+) -> None:
+    if item["kind"] == "NetworkPolicy":
+        spec = live.get("spec")
+        if not isinstance(spec, dict) or set(spec.get("policyTypes", [])) != {"Ingress", "Egress"}:
+            raise CleanupError("retained NetworkPolicy is not an ingress-and-egress quarantine")
+        if spec.get("ingress", []) != [] or spec.get("egress", []) != []:
+            raise CleanupError("retained NetworkPolicy grants traffic and cannot be quarantined")
+        if not isinstance(spec.get("podSelector"), dict):
+            raise CleanupError("retained NetworkPolicy pod selector is malformed")
+        return
+    if item["kind"] == "ServiceAccount":
+        if (
+            live.get("automountServiceAccountToken") is not False
+            or live.get("secrets", []) != []
+            or live.get("imagePullSecrets", []) != []
+        ):
+            raise CleanupError("retained ServiceAccount is not tokenless and reference-free")
+        references = [
+            reference
+            for reference in service_account_references(client, item["name"])
+            if not (
+                reference.startswith("DaemonSet/")
+                and reference.removeprefix("DaemonSet/") in retained_daemonsets
+            )
+        ]
+        if references:
+            raise CleanupError(
+                "retained ServiceAccount still has workload consumers: " + ", ".join(references)
+            )
+        return
+    status = live.get("status", {})
+    if not isinstance(status, dict):
+        raise CleanupError("retained DaemonSet status is malformed")
+    counters = (
+        "desiredNumberScheduled",
+        "currentNumberScheduled",
+        "numberReady",
+        "numberAvailable",
+        "updatedNumberScheduled",
+        "numberMisscheduled",
+    )
+    if any(isinstance(status.get(field, 0), bool) or status.get(field, 0) != 0 for field in counters):
+        raise CleanupError("retained DaemonSet still schedules or owns live capacity")
+    owned = daemonset_owned_pods(client, item["name"], item["uid"])
+    if owned:
+        raise CleanupError("retained DaemonSet still owns Pods: " + ", ".join(owned))
+
+
 def run(args: argparse.Namespace) -> dict[str, object]:
     payload = json.loads(args.manifest.read_text(encoding="utf-8"))
     manifest, objects = validate_manifest(payload)
@@ -337,22 +412,18 @@ def run(args: argparse.Namespace) -> dict[str, object]:
 
     validate_cleanup_fence(client, manifest)
     checked: list[dict[str, str]] = []
+    retained_daemonsets = frozenset(item["name"] for item in objects if item["kind"] == "DaemonSet")
     for item in objects:
         uri = path_for(item["kind"], item["name"])
         live = client.raw(uri)
         if live is None:  # pragma: no cover - mandatory object
             raise CleanupError(f"cleanup object disappeared before validation: {item['kind']}/{item['name']}")
         validate_live(item, live)
+        validate_quarantined_object(client, item, live, retained_daemonsets)
         checked.append(item)
-    if checked:
-        retained = ", ".join(f"{item['kind']}/{item['name']}" for item in checked)
-        raise CleanupError(
-            "no-delete closure is blocked by retained legacy objects; "
-            f"no mutation was attempted: {retained}"
-        )
     result = {
         "schema": RESULT_SCHEMA,
-        "mode": "no-delete-closure",
+        "mode": "retained-quarantine",
         "manifest_sha256": digest,
         "baseline_artifact_sha256": manifest["baseline_artifact_sha256"],
         "prior_inventory_sha256": manifest["prior_inventory_sha256"],
@@ -361,7 +432,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         "kube_system_uid": manifest["kube_system_uid"],
         "fence_objects": manifest["fence_objects"],
         "checked_objects": checked,
-        "retained_objects": [],
+        "retained_objects": checked,
         "removed_objects": [],
     }
     result["result_sha256"] = hashlib.sha256(canonical(result)).hexdigest()
@@ -380,7 +451,7 @@ def main() -> int:
     try:
         result = run(parser().parse_args())
     except (CleanupError, ProjectionError, OSError, json.JSONDecodeError) as error:
-        print(f"SAI-07 no-delete closure refused: {error}", file=sys.stderr)
+        print(f"SAI-07 retained quarantine refused: {error}", file=sys.stderr)
         return 1
     json.dump(result, sys.stdout, sort_keys=True)
     sys.stdout.write("\n")

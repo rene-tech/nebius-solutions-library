@@ -69,6 +69,8 @@ locals {
       host_policy_sha256     = filesha256("${path.module}/pod_security_admission.tf")
       snapshot_policy_sha256 = filesha256("${path.module}/pod_security_snapshot_admission.tf")
       rollout_custodian      = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-custodian"
+      external_custody_user  = coalesce(var.pod_security_rollout_receipt.custody_username, "prepare")
+      external_custody_group = "fs2-pod-security-receipt-custodians"
       rollout_token_audience = "https://kubernetes.default.svc"
       host_agent_images      = var.pod_security_host_agent_images
       storage_probe_image    = var.pod_security_storage_probe_image
@@ -172,6 +174,9 @@ module "pod_security_rollout_gate" {
   consumer_role             = "owner"
   kubeconfig_path           = var.kubeconfig_path
   kube_context              = var.kube_context
+  custody_kubeconfig_path   = var.pod_security_rollout_receipt.custody_kubeconfig_path
+  custody_context           = var.pod_security_rollout_receipt.custody_context
+  custody_username          = var.pod_security_rollout_receipt.custody_username
   phase                     = var.pod_security_rollout_phase
   receipt_bundle_path       = var.pod_security_rollout_receipt.bundle_path
   receipt_public_key_path   = var.pod_security_rollout_receipt.public_key_path
@@ -201,6 +206,9 @@ module "pod_security_rollout_ack" {
   action                    = "acknowledge"
   kubeconfig_path           = var.kubeconfig_path
   kube_context              = var.kube_context
+  custody_kubeconfig_path   = var.pod_security_rollout_receipt.custody_kubeconfig_path
+  custody_context           = var.pod_security_rollout_receipt.custody_context
+  custody_username          = var.pod_security_rollout_receipt.custody_username
   phase                     = var.pod_security_rollout_phase
   receipt_bundle_path       = var.pod_security_rollout_receipt.bundle_path
   receipt_public_key_path   = var.pod_security_rollout_receipt.public_key_path

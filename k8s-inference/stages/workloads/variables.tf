@@ -54,14 +54,17 @@ variable "pod_security_version" {
 variable "pod_security_rollout_receipt" {
   description = "Whole-bundle receipt path plus the exact reviewed Ed25519 authority identity."
   type = object({
-    bundle_path            = optional(string)
-    public_key_path        = optional(string)
-    public_key_sha256      = optional(string)
-    key_id                 = optional(string)
-    signer_identity        = optional(string)
-    deployment_nonce       = optional(string)
-    baseline_artifact_path = optional(string)
-    cleanup_result_path    = optional(string)
+    bundle_path             = optional(string)
+    public_key_path         = optional(string)
+    public_key_sha256       = optional(string)
+    key_id                  = optional(string)
+    signer_identity         = optional(string)
+    deployment_nonce        = optional(string)
+    baseline_artifact_path  = optional(string)
+    cleanup_result_path     = optional(string)
+    custody_kubeconfig_path = optional(string)
+    custody_context         = optional(string)
+    custody_username        = optional(string)
   })
   default = {}
 }

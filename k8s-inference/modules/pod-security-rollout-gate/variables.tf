@@ -52,6 +52,35 @@ variable "kube_context" {
   }
 }
 
+variable "custody_kubeconfig_path" {
+  description = "Absolute kubeconfig for the separately administered external OIDC custody principal; never the platform Terraform kubeconfig."
+  type        = string
+  default     = null
+  nullable    = true
+  sensitive   = true
+
+  validation {
+    condition = var.custody_kubeconfig_path == null || (
+      startswith(var.custody_kubeconfig_path, "/") && !strcontains(var.custody_kubeconfig_path, "..")
+    )
+    error_message = "custody_kubeconfig_path must be absolute without parent traversal."
+  }
+}
+
+variable "custody_context" {
+  description = "Exact context selected from the external-custody kubeconfig."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "custody_username" {
+  description = "Exact non-system OIDC username independently assigned to receipt custody."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "token_audience" {
   description = "Exact Kubernetes API audience for the ten-minute rollout-custodian TokenRequest."
   type        = string

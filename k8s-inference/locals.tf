@@ -1055,14 +1055,17 @@ locals {
     pod_security_rollout_phase = var.deployment.pod_security.rollout_phase
     pod_security_version       = "v${join(".", slice(split(".", trimprefix(var.deployment.cluster.kubernetes_version, "v")), 0, 2))}"
     pod_security_rollout_receipt = {
-      bundle_path            = var.deployment.pod_security.receipt.bundle_path
-      public_key_path        = var.deployment.pod_security.receipt.public_key_path
-      public_key_sha256      = var.deployment.pod_security.receipt.public_key_sha256
-      key_id                 = var.deployment.pod_security.receipt.key_id
-      signer_identity        = var.deployment.pod_security.receipt.signer_identity
-      deployment_nonce       = var.deployment.pod_security.receipt.deployment_nonce
-      baseline_artifact_path = var.deployment.pod_security.receipt.baseline_artifact_path
-      cleanup_result_path    = var.deployment.pod_security.receipt.cleanup_result_path
+      bundle_path             = var.deployment.pod_security.receipt.bundle_path
+      public_key_path         = var.deployment.pod_security.receipt.public_key_path
+      public_key_sha256       = var.deployment.pod_security.receipt.public_key_sha256
+      key_id                  = var.deployment.pod_security.receipt.key_id
+      signer_identity         = var.deployment.pod_security.receipt.signer_identity
+      deployment_nonce        = var.deployment.pod_security.receipt.deployment_nonce
+      baseline_artifact_path  = var.deployment.pod_security.receipt.baseline_artifact_path
+      cleanup_result_path     = var.deployment.pod_security.receipt.cleanup_result_path
+      custody_kubeconfig_path = var.deployment.pod_security.receipt.custody_kubeconfig_path
+      custody_context         = var.deployment.pod_security.receipt.custody_context
+      custody_username        = var.deployment.pod_security.receipt.custody_username
     }
     pod_security_successor_storage_sha256 = (
       var.deployment.pod_security.successor_storage == null ?
@@ -1169,14 +1172,17 @@ locals {
     pod_security_version                        = "v${join(".", slice(split(".", trimprefix(var.deployment.cluster.kubernetes_version, "v")), 0, 2))}"
     pod_security_existing_scientific_namespaces = sort(tolist(var.deployment.pod_security.existing_scientific_namespaces))
     pod_security_rollout_receipt = {
-      bundle_path            = var.deployment.pod_security.receipt.bundle_path
-      public_key_path        = var.deployment.pod_security.receipt.public_key_path
-      public_key_sha256      = var.deployment.pod_security.receipt.public_key_sha256
-      key_id                 = var.deployment.pod_security.receipt.key_id
-      signer_identity        = var.deployment.pod_security.receipt.signer_identity
-      deployment_nonce       = var.deployment.pod_security.receipt.deployment_nonce
-      baseline_artifact_path = var.deployment.pod_security.receipt.baseline_artifact_path
-      cleanup_result_path    = var.deployment.pod_security.receipt.cleanup_result_path
+      bundle_path             = var.deployment.pod_security.receipt.bundle_path
+      public_key_path         = var.deployment.pod_security.receipt.public_key_path
+      public_key_sha256       = var.deployment.pod_security.receipt.public_key_sha256
+      key_id                  = var.deployment.pod_security.receipt.key_id
+      signer_identity         = var.deployment.pod_security.receipt.signer_identity
+      deployment_nonce        = var.deployment.pod_security.receipt.deployment_nonce
+      baseline_artifact_path  = var.deployment.pod_security.receipt.baseline_artifact_path
+      cleanup_result_path     = var.deployment.pod_security.receipt.cleanup_result_path
+      custody_kubeconfig_path = var.deployment.pod_security.receipt.custody_kubeconfig_path
+      custody_context         = var.deployment.pod_security.receipt.custody_context
+      custody_username        = var.deployment.pod_security.receipt.custody_username
     }
     pod_security_successor_storage  = var.deployment.pod_security.successor_storage
     deployment_profile              = local.model_profile

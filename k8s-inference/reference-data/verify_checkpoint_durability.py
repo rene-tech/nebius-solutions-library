@@ -63,6 +63,16 @@ def write_all(descriptor: int, payload: bytes) -> None:
         offset += written
 
 
+def fsync_directory(root: Path) -> None:
+    """Persist a verified directory entry, including an entry from a prior try."""
+
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
 def publish_marker(root: Path, target: Path, generation: str, payload: bytes) -> None:
     """Publish complete bytes without overwriting or deleting any filesystem entry.
 
@@ -99,11 +109,7 @@ def publish_marker(root: Path, target: Path, generation: str, payload: bytes) ->
         # implementation that did not preserve the complete inode contents.
         read_exact(target, payload)
 
-    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        os.fsync(directory)
-    finally:
-        os.close(directory)
+    fsync_directory(root)
 
 
 def proof(args: argparse.Namespace) -> dict[str, object]:
@@ -127,6 +133,10 @@ def proof(args: argparse.Namespace) -> dict[str, object]:
     if args.mode == "write":
         if target.exists():
             read_exact(target, payload)
+            # The prior process may have crashed after link(2) but before its
+            # directory fsync. A retry must make the already verified final
+            # name durable rather than treating byte equality as completion.
+            fsync_directory(root)
         else:
             publish_marker(root, target, args.generation, payload)
     else:

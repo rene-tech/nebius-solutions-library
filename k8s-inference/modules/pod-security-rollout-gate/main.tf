@@ -154,8 +154,11 @@ resource "terraform_data" "verified" {
     quiet   = true
 
     environment = {
-      FS2_KUBECONFIG                  = var.kubeconfig_path
-      FS2_KUBE_CONTEXT                = var.kube_context
+      FS2_KUBECONFIG                  = coalesce(var.custody_kubeconfig_path, "/prepare-not-authorized")
+      FS2_KUBE_CONTEXT                = coalesce(var.custody_context, "prepare")
+      FS2_PLATFORM_KUBECONFIG         = var.kubeconfig_path
+      FS2_PLATFORM_KUBE_CONTEXT       = var.kube_context
+      FS2_POD_SECURITY_CUSTODY_USER   = coalesce(var.custody_username, "prepare")
       FS2_POD_SECURITY_TOKEN_AUDIENCE = var.token_audience
       FS2_POD_SECURITY_QUERY          = jsonencode(local.consume_query)
     }
@@ -170,9 +173,13 @@ resource "terraform_data" "verified" {
         var.receipt_key_id != null &&
         var.receipt_signer_identity != null
         && var.baseline_artifact_path != null
+        && var.custody_kubeconfig_path != null
+        && var.custody_context != null
+        && var.custody_username != null
+        && try(abspath(var.custody_kubeconfig_path) != abspath(var.kubeconfig_path), false)
         && (var.phase != "quiesce-enforcement" || var.cleanup_result_path != null)
       )
-      error_message = "Every post-prepare phase requires a whole-bundle signature, reviewed signer identity, descriptor-fenced baseline artifact, and durable-ledger consumption."
+      error_message = "Every post-prepare phase requires a whole-bundle signature, descriptor-fenced baseline artifact, and a distinct externally administered custody kubeconfig and username."
     }
   }
 

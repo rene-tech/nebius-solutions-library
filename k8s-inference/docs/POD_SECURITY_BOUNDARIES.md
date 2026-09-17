@@ -55,15 +55,18 @@ workload movement. Advance only after the checks for the current phase pass:
    successors are Bound to retained classes and their exact content/durability
    probes pass. Missing claims or probes fail closed.
 6. `quiesce-enforcement` consumes `reference-data-ready`. Reconcile every
-   retained model and App under the finite network profiles. Under a no-delete
-   operating constraint, the source has no resource-removal path: its closure
-   command performs exact read-only UID/resourceVersion/spec checks and emits a
-   result only when both the v4 baseline and immediate live inventory already
-   contain zero legacy controller-owned NetworkPolicies, ServiceAccounts, and
-   DaemonSets. Any retained object is a hard integration blocker, not a cleanup
-   success. Only that empty signed result can advance the ledger to
-   `enforcement-quiesced`; the CAS then activates a fail-closed admission fence
-   for every Pod-producing write.
+   retained model and App under the finite network profiles. The no-delete
+   closure performs exact read-only UID/resourceVersion/spec checks and permits
+   a nonempty legacy inventory only as a retained quarantine: NetworkPolicies
+   must grant no ingress or egress, ServiceAccounts must be tokenless and have
+   no consumers, and DaemonSets must schedule and own zero Pods. Admission
+   freezes every retained identity, denies token requests and new consumers for
+   retained ServiceAccounts, and permanently denies Pods owned by retained
+   DaemonSets. The signed result preserves every frozen UID and permits no
+   removed or absent object. Any active or permissive object remains a hard
+   integration blocker. The verified retained finding counts, rather than a
+   manufactured zero, advance the ledger to `enforcement-quiesced`; the CAS
+   then activates the fail-closed admission fence for Pod-producing writes.
 7. `enforce` consumes `enforcement-quiesced` and applies `baseline` enforcement
    plus pinned-minor restricted warn/audit labels to
    the foundation, reference-data, academic, ModelExpress, and explicitly listed
@@ -140,7 +143,9 @@ reference PV by name, UID, resourceVersion, CSI driver, handle and attributes,
 and identifies a distinct pre-provisioned checkpoint CSI volume. Both identities
 carry an external provisioning-receipt digest and storage owner. The complete
 contract digest is part of the signed rollout context consumed independently by
-the foundation and workloads stages.
+the foundation and workloads stages. The short-lived custodian has `get` (and
+never list or mutation) for exactly that canonical PV, the six fixed alias PVs,
+and the fixed checkpoint PV so all eight required live reads are authorized.
 
 Terraform then creates exactly six fixed `ReadOnlyMany` PV/PVC aliases: one in
 each of the five BioIR namespaces and `fs2-snapshot-reference` in the snapshot
@@ -162,9 +167,12 @@ unique candidate, then atomically hard-links that complete inode into the final
 no-overwrite name and fsyncs the directory. A crash or short write before
 publication leaves only a bounded retained candidate; a retry uses a new
 candidate. A crash after publication resumes only when the final marker's exact
-bytes match. No marker or candidate is unlinked or rewritten. All six reference
-read probes and both checkpoint Jobs bind the generation, attempt, signed nonce,
-and live PVC UID, resourceVersion and volumeName.
+bytes match, and that retry fsyncs the containing directory again so a prior
+link-before-directory-fsync crash cannot be acknowledged prematurely. No marker
+or candidate is unlinked or rewritten. This is exact filesystem namespace and
+remount evidence; it is not an independent disaster-recovery or backup claim.
+All six reference read probes and both checkpoint Jobs bind the generation,
+attempt, signed nonce, and live PVC UID, resourceVersion and volumeName.
 
 The predecessor layout is adopted without replacement. A signed `retained-v2`
 mode binds fourteen exact retained ConfigMap/Job addresses, their live UIDs,
@@ -225,16 +233,24 @@ spec/status drift, inventory omission, context substitution, and concurrent
 ledger updates all fail closed. A digest-shaped string or a valid signature
 without successful live reconciliation and ledger consumption has no authority.
 
-The verifier does not impersonate the rollout identity. Its ambient external
-OIDC principal has only exact-name `serviceaccounts/token` creation through a
-dedicated receipt-custodian group. A fail-closed admission policy requires a
+The verifier does not impersonate the rollout identity. Every post-prepare
+stage requires a custody kubeconfig path distinct from the platform Terraform
+kubeconfig and an exact non-system OIDC username in the dedicated
+receipt-custodian group. A SelfSubjectReview proves that identity differs from
+the platform identity. SelfSubjectRulesReview is then evaluated in every
+protected namespace and rejects any persistent mutation, RBAC bind/escalate,
+admission-policy, impersonation, credential, or workload pivot; the only
+persistent mutation edge allowed is exact-name `serviceaccounts/token`
+creation, alongside the self-review APIs needed to prove the boundary. A
+fail-closed admission policy requires a
 directly authenticated non-system identity with authenticator JTI metadata and
 permits only the exact API audience for at most ten minutes. The returned JWT
 is checked for subject, audience, lifetime and live ServiceAccount UID, then
-held in an anonymous in-memory kubeconfig. Before minting, exact
-SelfSubjectAccessReviews require the one token edge and deny direct ledger
-update, any second ServiceAccount token, custodian user/ServiceAccount/group
-impersonation, and authenticator-extra impersonation. Ledger admission
+held in an anonymous in-memory kubeconfig. Exact SelfSubjectAccessReviews also
+pin the one token edge and deny unbounded token minting, direct ledger or
+admission mutation, RBAC creation/bind/escalate, custodian
+user/ServiceAccount/group impersonation, and authenticator-extra impersonation.
+Ledger admission
 independently requires that short-lived ServiceAccount JWT's authenticator JTI;
 ordinary username/group impersonation cannot write the ledger. The retained
 predecessor manager and its bindings remain unchanged for non-destructive state
@@ -287,8 +303,10 @@ admission-policy identity, negative privileged-Pod result, positive
 customer/App/inference checks, and the slot-time stable rollback revision with
 request debugging disabled.
 
-Under the current no-delete operating constraint, any baseline or live
-inventory containing a legacy controller-owned NetworkPolicy, ServiceAccount,
-or DaemonSet keeps integration and enforcement blocked. This source does not
-claim that such retained objects have been removed, and source conformance is
+Under the current no-delete operating constraint, legacy controller-owned
+objects are never reported as removed. A nonempty inventory may advance only
+when the read-only v5 retained-quarantine result proves all exact objects inert
+under the admission fence described above. Active/permissive objects, changed
+UIDs, unbounded tokens, consumers, scheduled/owned Pods, missing objects, or any
+claimed removal keep integration and enforcement blocked. Source conformance is
 not live closure evidence.

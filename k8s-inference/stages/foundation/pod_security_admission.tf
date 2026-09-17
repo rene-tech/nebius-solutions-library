@@ -27,6 +27,20 @@ locals {
   pod_security_rollout_custodian_username = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-custodian"
   pod_security_rollout_custodian_group    = "fs2-pod-security-receipt-custodians"
   pod_security_rollout_token_audience     = "https://kubernetes.default.svc"
+  pod_security_rollout_persistent_volumes = sort(distinct(concat(
+    [
+      "fs2-sai07-ref-bioir-boltz2",
+      "fs2-sai07-ref-bioir-coverage",
+      "fs2-sai07-ref-bioir-openfold",
+      "fs2-sai07-ref-bioir-protenix",
+      "fs2-sai07-ref-bioir-snapshot",
+      "fs2-sai07-ref-snapshot-operations",
+    ],
+    local.pod_security_receipt_required ? [
+      jsondecode(var.pod_security_successor_storage_json).reference_source.persistent_volume_name,
+      jsondecode(var.pod_security_successor_storage_json).checkpoint_source.persistent_volume_name,
+    ] : [],
+  )))
   pod_security_daemonset_controller_expression = format(
     "request.userInfo.username in %s",
     jsonencode([
@@ -412,6 +426,12 @@ resource "kubernetes_cluster_role_v1" "pod_security_rollout_reader" {
     verbs = ["get", "list"]
   }
   rule {
+    api_groups     = [""]
+    resources      = ["persistentvolumes"]
+    resource_names = local.pod_security_rollout_persistent_volumes
+    verbs          = ["get"]
+  }
+  rule {
     api_groups = ["apps"]
     resources  = ["daemonsets", "deployments", "replicasets", "statefulsets"]
     verbs      = ["get", "list"]
@@ -758,9 +778,10 @@ resource "kubernetes_manifest" "pod_security_enforcement_fence_binding" {
 }
 
 # Once the exception agents and finite profiles are ready, this admission
-# fence freezes every exact legacy cleanup identity and rejects new consumers
-# of a legacy ServiceAccount. The cleanup tool can therefore remove DS/NP
-# first, re-read SA consumers, and remove SAs without a create/update race.
+# fence freezes every exact retained legacy identity, rejects new consumers of
+# a legacy ServiceAccount and rejects Pods owned by a retained DaemonSet. The
+# read-only verifier accepts only inert deny-only/tokenless/zero-Pod objects;
+# no delete or rewrite is part of this closure.
 resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_policy" {
   count = local.pod_security_receipt_required ? 1 : 0
   manifest = {
@@ -814,6 +835,30 @@ resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_policy" {
             operations  = ["CREATE", "UPDATE"]
             resources   = ["networkpolicies"]
           },
+          {
+            apiGroups   = [""]
+            apiVersions = ["v1"]
+            operations  = ["DELETE"]
+            resources   = ["serviceaccounts"]
+          },
+          {
+            apiGroups   = ["apps"]
+            apiVersions = ["v1"]
+            operations  = ["DELETE"]
+            resources   = ["daemonsets"]
+          },
+          {
+            apiGroups   = ["networking.k8s.io"]
+            apiVersions = ["v1"]
+            operations  = ["DELETE"]
+            resources   = ["networkpolicies"]
+          },
+          {
+            apiGroups   = [""]
+            apiVersions = ["v1"]
+            operations  = ["CREATE"]
+            resources   = ["serviceaccounts/token"]
+          },
         ]
       }
       variables = [{
@@ -823,7 +868,10 @@ resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_policy" {
       validations = [
         {
           expression = format(
-            "!variables.cleanupActive || !((object.kind == 'NetworkPolicy' && object.metadata.name in %s) || (object.kind == 'ServiceAccount' && object.metadata.name in %s) || (object.kind == 'DaemonSet' && object.metadata.name in %s))",
+            "!variables.cleanupActive || (request.operation == 'DELETE' ? !((oldObject.kind == 'NetworkPolicy' && oldObject.metadata.name in %s) || (oldObject.kind == 'ServiceAccount' && oldObject.metadata.name in %s) || (oldObject.kind == 'DaemonSet' && oldObject.metadata.name in %s)) : !((object.kind == 'NetworkPolicy' && object.metadata.name in %s) || (object.kind == 'ServiceAccount' && object.metadata.name in %s) || (object.kind == 'DaemonSet' && object.metadata.name in %s)))",
+            jsonencode(local.pod_security_legacy_cleanup_names.networkpolicies),
+            jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+            jsonencode(local.pod_security_legacy_cleanup_names.daemonsets),
             jsonencode(local.pod_security_legacy_cleanup_names.networkpolicies),
             jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
             jsonencode(local.pod_security_legacy_cleanup_names.daemonsets),
@@ -832,7 +880,7 @@ resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_policy" {
         },
         {
           expression = format(
-            "!variables.cleanupActive || (object.kind == 'Pod' ? (!has(object.spec.serviceAccountName) || !(object.spec.serviceAccountName in %s)) : object.kind == 'PodTemplate' ? (!has(object.template.spec.serviceAccountName) || !(object.template.spec.serviceAccountName in %s)) : object.kind in ['Deployment','StatefulSet','DaemonSet','ReplicaSet','ReplicationController','Job'] ? (!has(object.spec.template.spec.serviceAccountName) || !(object.spec.template.spec.serviceAccountName in %s)) : object.kind == 'CronJob' ? (!has(object.spec.jobTemplate.spec.template.spec.serviceAccountName) || !(object.spec.jobTemplate.spec.template.spec.serviceAccountName in %s)) : object.kind == 'JobSet' ? object.spec.replicatedJobs.all(r, !has(r.template.spec.template.spec.serviceAccountName) || !(r.template.spec.template.spec.serviceAccountName in %s)) : object.kind == 'ModelDeployment' ? (!has(object.spec.template) || !has(object.spec.template.spec) || !has(object.spec.template.spec.serviceAccountName) || !(object.spec.template.spec.serviceAccountName in %s)) : true)",
+            "!variables.cleanupActive || request.operation == 'DELETE' || (object.kind == 'Pod' ? (!has(object.spec.serviceAccountName) || !(object.spec.serviceAccountName in %s)) : object.kind == 'PodTemplate' ? (!has(object.template.spec.serviceAccountName) || !(object.template.spec.serviceAccountName in %s)) : object.kind in ['Deployment','StatefulSet','DaemonSet','ReplicaSet','ReplicationController','Job'] ? (!has(object.spec.template.spec.serviceAccountName) || !(object.spec.template.spec.serviceAccountName in %s)) : object.kind == 'CronJob' ? (!has(object.spec.jobTemplate.spec.template.spec.serviceAccountName) || !(object.spec.jobTemplate.spec.template.spec.serviceAccountName in %s)) : object.kind == 'JobSet' ? object.spec.replicatedJobs.all(r, !has(r.template.spec.template.spec.serviceAccountName) || !(r.template.spec.template.spec.serviceAccountName in %s)) : object.kind == 'ModelDeployment' ? (!has(object.spec.template) || !has(object.spec.template.spec) || !has(object.spec.template.spec.serviceAccountName) || !(object.spec.template.spec.serviceAccountName in %s)) : true)",
             jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
             jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
             jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
@@ -840,7 +888,21 @@ resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_policy" {
             jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
             jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
           )
-          message = "No Pod or supported controller may acquire a legacy ServiceAccount while cleanup is fenced."
+          message = "No Pod or supported controller may acquire a retained legacy ServiceAccount while quarantine is active."
+        },
+        {
+          expression = format(
+            "!variables.cleanupActive || request.operation == 'DELETE' || object.kind != 'Pod' || !has(object.metadata.ownerReferences) || object.metadata.ownerReferences.all(o, o.kind != 'DaemonSet' || !(o.name in %s))",
+            jsonencode(local.pod_security_legacy_cleanup_names.daemonsets),
+          )
+          message = "Pods owned by a retained legacy DaemonSet are permanently quarantined."
+        },
+        {
+          expression = format(
+            "!variables.cleanupActive || object.kind != 'TokenRequest' || !(request.name in %s)",
+            jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+          )
+          message = "TokenRequest is forbidden for every retained legacy ServiceAccount."
         },
       ]
     }

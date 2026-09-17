@@ -127,10 +127,12 @@ def test_cleanup_contract_binds_resource_version_spec_and_result() -> None:
     source = (ROOT / "scripts" / "cleanup_sai07_legacy_resources.py").read_text()
     assert "hashlib.sha256(canonical(live_projection(live))).hexdigest()" in source
     assert "validate_cleanup_fence(client, manifest)" in source
-    assert "no-delete closure is blocked by retained legacy objects" in source
+    assert "validate_quarantined_object(client, item, live, retained_daemonsets)" in source
+    assert "retained NetworkPolicy grants traffic" in source
+    assert "retained DaemonSet still owns Pods" in source
     assert '"delete"' not in source
     assert '"--execute"' not in source
-    assert '"retained_objects": []' in source
+    assert '"retained_objects": checked' in source
     assert '"removed_objects": []' in source
     assert '"result_sha256"' in source
     for controller in (
@@ -143,6 +145,46 @@ def test_cleanup_contract_binds_resource_version_spec_and_result() -> None:
         "ModelDeployment",
     ):
         assert controller in source
+
+
+def test_retained_networkpolicy_must_be_deny_only() -> None:
+    candidate = item("NetworkPolicy", "legacy-deny")
+    safe = {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "NetworkPolicy",
+        "metadata": {
+            "name": candidate["name"],
+            "namespace": "fs2-models",
+            "uid": candidate["uid"],
+            "resourceVersion": candidate["resource_version"],
+            "labels": {"app.kubernetes.io/part-of": "fs2-serve"},
+        },
+        "spec": {"podSelector": {"matchLabels": {"app": "legacy"}}, "policyTypes": ["Ingress", "Egress"]},
+    }
+    cleanup.validate_quarantined_object(None, candidate, safe)
+    unsafe = {**safe, "spec": {**safe["spec"], "ingress": [{}]}}
+    with pytest.raises(cleanup.CleanupError, match="grants traffic"):
+        cleanup.validate_quarantined_object(None, candidate, unsafe)
+
+
+def test_retained_serviceaccount_must_be_tokenless_and_unused() -> None:
+    class FakeClient:
+        def raw(self, _uri: str, *, allow_absent: bool = False) -> dict[str, object]:
+            del allow_absent
+            return {"items": []}
+
+    candidate = item("ServiceAccount", "legacy-runtime")
+    safe = {
+        "apiVersion": "v1",
+        "kind": "ServiceAccount",
+        "metadata": {"name": "legacy-runtime", "namespace": "fs2-models"},
+        "automountServiceAccountToken": False,
+    }
+    cleanup.validate_quarantined_object(FakeClient(), candidate, safe)
+    with pytest.raises(cleanup.CleanupError, match="not tokenless"):
+        cleanup.validate_quarantined_object(
+            FakeClient(), candidate, {**safe, "automountServiceAccountToken": True}
+        )
 
 
 def test_cleanup_and_collector_use_the_identical_v4_projection() -> None:

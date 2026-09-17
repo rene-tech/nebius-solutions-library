@@ -127,10 +127,17 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "https://kubernetes.default.svc" in verifier
     assert "--as=" not in verifier
     assert "SelfSubjectAccessReview" in verifier
+    assert "SelfSubjectRulesReview" in verifier
+    assert "SelfSubjectReview" in verifier
+    assert "external custody and platform Terraform must not share a kubeconfig" in verifier
+    assert "external custody has a persisted mutation, RBAC, admission, or workload pivot" in verifier
     assert "ambient identity has direct rollout-ledger authority" in verifier
+    assert "ambient identity can dismantle rollout-ledger admission" in verifier
     assert "ambient identity may impersonate service accounts" in verifier
     assert "ambient identity may forge authenticator credential metadata" in verifier
     assert "os.memfd_create" in verifier
+    assert "FS2_PLATFORM_KUBECONFIG" in gate
+    assert "FS2_POD_SECURITY_CUSTODY_USER" in gate
     assert "foundation resources have not acknowledged this authorization" in verifier
     assert "prior phase has not been acknowledged by both Terraform stages" in verifier
     assert '"owner-acknowledgement"' in verifier
@@ -145,6 +152,8 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "The monotonic pod-security rollout ledger may not be deleted" in admission
     assert "object.data.size() == 19" in admission
     assert "pod-security-rollout-ledger/v3" in admission
+    assert 'resources      = ["persistentvolumes"]' in admission
+    assert "pod_security_rollout_persistent_volumes" in admission
     assert "proof_generation_ids" in admission
     assert "authentication.kubernetes.io/credential-id" in admission
     assert "serviceaccounts/token" in admission
@@ -168,6 +177,8 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "authorization_downstream_acknowledged == 'false'" in admission
     assert "fs2-pod-security-enforcement-fence" in admission
     assert "authorization_downstream_acknowledged != 'true'" in admission
+    assert "Pods owned by a retained legacy DaemonSet are permanently quarantined" in admission
+    assert "TokenRequest is forbidden for every retained legacy ServiceAccount" in admission
 
     reference = _source("reference-data/terraform/main.tf")
     for phase, terminal in expected.items():

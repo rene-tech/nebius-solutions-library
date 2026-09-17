@@ -1056,6 +1056,37 @@ def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> dict
         observed_object_counts[key] += 1
     if observed_object_counts != observed_collections:
         raise ReceiptError("baseline object counts differ from collection snapshots")
+    object_identities = {
+        (item.get("api_version"), item.get("kind"), item.get("namespace"), item.get("name")): item
+        for item in objects
+    }
+    legacy_seen: set[tuple[str, str, str, str]] = set()
+    for index, item_raw in enumerate(artifact["legacy_controller_objects"]):
+        item = _object(item_raw, f"baseline legacy object[{index}]")
+        _exact_keys(
+            item,
+            {
+                "api_version",
+                "kind",
+                "namespace",
+                "name",
+                "uid",
+                "resource_version",
+                "object_sha256",
+            },
+            f"baseline legacy object[{index}]",
+        )
+        identity = (item["api_version"], item["kind"], item["namespace"], item["name"])
+        source = object_identities.get(identity)
+        if (
+            identity in legacy_seen
+            or item["namespace"] != "fs2-models"
+            or item["kind"] not in {"NetworkPolicy", "ServiceAccount", "DaemonSet"}
+            or source is None
+            or any(source.get(field) != item[field] for field in ("uid", "resource_version", "object_sha256"))
+        ):
+            raise ReceiptError("baseline legacy inventory is duplicated or not bound to an exact object")
+        legacy_seen.add(identity)
     if (
         artifact["schema"] != baseline["schema"]
         or self_digest != baseline["inventory_sha256"]
@@ -1072,12 +1103,31 @@ def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> dict
     return artifact
 
 
+def _cleanup_fence_projection(value: dict[str, Any]) -> dict[str, Any]:
+    metadata = _object(value.get("metadata"), "retained quarantine fence metadata")
+    return {
+        "apiVersion": value.get("apiVersion"),
+        "kind": value.get("kind"),
+        "metadata": {
+            "name": metadata.get("name"),
+            "namespace": metadata.get("namespace", ""),
+            "uid": metadata.get("uid"),
+            "resourceVersion": metadata.get("resourceVersion"),
+            "generation": metadata.get("generation"),
+            "deletionTimestamp": metadata.get("deletionTimestamp"),
+        },
+        "spec": value.get("spec", {}),
+        "data": value.get("data", {}),
+    }
+
+
 def _validate_cleanup_result(
     payload: bytes,
     assertions: dict[str, Any],
     context: dict[str, Any],
     baseline_artifact: dict[str, Any],
-) -> None:
+    client: KubeClient,
+) -> dict[str, Any]:
     if _sha256(payload) != assertions["cleanup_result_sha256"]:
         raise ReceiptError("cleanup result bytes differ from the signed assertion")
     try:
@@ -1103,8 +1153,8 @@ def _validate_cleanup_result(
     unsigned = dict(result)
     result_self_digest = unsigned.pop("result_sha256")
     if (
-        result["schema"] != "fs2-serve.nebius.ai/sai07-no-delete-closure-result/v4"
-        or result["mode"] != "no-delete-closure"
+        result["schema"] != "fs2-serve.nebius.ai/sai07-retained-quarantine-result/v5"
+        or result["mode"] != "retained-quarantine"
         or result_self_digest != _sha256(_canonical(unsigned))
         or result["manifest_sha256"] != assertions["cleanup_manifest_sha256"]
         or result["baseline_artifact_sha256"] != context["baseline"]["artifact_sha256"]
@@ -1114,13 +1164,87 @@ def _validate_cleanup_result(
         or result["kube_system_uid"] != context["kube_system_uid"]
         or not isinstance(result["fence_objects"], list)
         or len(result["fence_objects"]) != 3
-        or result["checked_objects"] != []
-        or result["retained_objects"] != []
         or result["removed_objects"] != []
         or assertions["removed_objects"] != []
-        or baseline_artifact["legacy_controller_objects"] != []
     ):
-        raise ReceiptError("no-delete closure requires an already empty exact legacy-object inventory")
+        raise ReceiptError("retained quarantine identity or no-delete result is invalid")
+    for expected_raw in result["fence_objects"]:
+        expected = _object(expected_raw, "retained quarantine fence object")
+        live = client.get_object(
+            _string(expected.get("api_version"), "retained quarantine fence apiVersion"),
+            _string(expected.get("kind"), "retained quarantine fence kind"),
+            str(expected.get("namespace", "")),
+            _string(expected.get("name"), "retained quarantine fence name"),
+        )
+        metadata = _object(live.get("metadata"), "retained quarantine live fence metadata") if live else {}
+        if (
+            live is None
+            or metadata.get("uid") != expected.get("uid")
+            or metadata.get("resourceVersion") != expected.get("resource_version")
+            or _sha256(_canonical(_cleanup_fence_projection(live))) != expected.get("object_sha256")
+        ):
+            raise ReceiptError("retained quarantine fence changed after its read-only proof")
+    checked = result["checked_objects"]
+    retained = result["retained_objects"]
+    if not isinstance(checked, list) or checked != retained:
+        raise ReceiptError("retained quarantine must check and preserve the same exact objects")
+    expected_fields = {
+        "api_version",
+        "kind",
+        "namespace",
+        "name",
+        "uid",
+        "resource_version",
+        "object_sha256",
+    }
+    baseline_legacy = baseline_artifact["legacy_controller_objects"]
+    baseline_identities = {
+        (item["api_version"], item["kind"], item["namespace"], item["name"]): item["uid"]
+        for item in baseline_legacy
+    }
+    retained_identities: dict[tuple[str, str, str, str], str] = {}
+    for index, item_raw in enumerate(retained):
+        item = _object(item_raw, f"retained quarantine object[{index}]")
+        _exact_keys(item, expected_fields, f"retained quarantine object[{index}]")
+        identity = (item["api_version"], item["kind"], item["namespace"], item["name"])
+        if (
+            identity in retained_identities
+            or item["namespace"] != "fs2-models"
+            or item["kind"] not in {"NetworkPolicy", "ServiceAccount", "DaemonSet"}
+            or not IDENTIFIER_RE.fullmatch(_string(item["uid"], "retained quarantine UID"))
+            or not IDENTIFIER_RE.fullmatch(
+                _string(item["resource_version"], "retained quarantine resourceVersion")
+            )
+            or not SHA256_RE.fullmatch(_string(item["object_sha256"], "retained quarantine object hash"))
+        ):
+            raise ReceiptError("retained quarantine object inventory is malformed")
+        retained_identities[identity] = item["uid"]
+    if retained_identities != baseline_identities:
+        raise ReceiptError("retained quarantine does not preserve every frozen legacy UID")
+    retained_names = sorted("/".join(identity) for identity in retained_identities)
+    if assertions["retained_objects"] != retained_names:
+        raise ReceiptError("signed retained quarantine identities differ from the verified result")
+
+    baseline_objects = {
+        (item["api_version"], item["kind"], item["namespace"], item["name"]): item
+        for item in baseline_artifact["objects"]
+    }
+    if not set(baseline_identities).issubset(baseline_objects):
+        raise ReceiptError("frozen legacy inventory is not represented in baseline objects")
+    legacy_objects = [baseline_objects[identity] for identity in baseline_identities]
+    expected_findings = {
+        "live_reference_host_paths": sum(
+            "hostPath" in item.get("baseline_findings", []) for item in legacy_objects
+        ),
+        "live_baseline_incompatible_objects": sum(bool(item.get("baseline_findings", [])) for item in legacy_objects),
+        "live_restricted_incompatible_objects": sum(
+            bool(item.get("restricted_findings", [])) for item in legacy_objects
+        ),
+    }
+    if any(assertions[field] != expected for field, expected in expected_findings.items()):
+        raise ReceiptError("retained quarantine finding counts include non-quarantined workloads")
+    result["retained_identity_names"] = retained_names
+    return result
 
 
 def _resource_path(api_version: str, kind: str, namespace: str, name: str = "") -> str:
@@ -1499,23 +1623,20 @@ def _validate_observation_contract(
                 "live_baseline_incompatible_objects",
                 "live_restricted_incompatible_objects",
                 "live_legacy_controller_objects",
+                "retained_objects",
             },
             "enforcement-quiesced assertions",
         )
         if assertions["workload_writes_fenced"] is not True:
             raise ReceiptError("enforcement quiesce fence is not asserted")
-        if (
-            any(
-                assertions[field] != 0
-                for field in (
-                    "live_reference_host_paths",
-                    "live_baseline_incompatible_objects",
-                    "live_restricted_incompatible_objects",
-                )
-            )
-            or assertions["live_legacy_controller_objects"] != []
+        for field in (
+            "live_reference_host_paths",
+            "live_baseline_incompatible_objects",
+            "live_restricted_incompatible_objects",
         ):
-            raise ReceiptError("enforcement-quiesced inventory is not clean")
+            _integer(assertions[field], f"enforcement-quiesced {field}")
+        if assertions["retained_objects"] != assertions["live_legacy_controller_objects"]:
+            raise ReceiptError("enforcement-quiesced legacy inventory differs from retained quarantine")
         required = {
             (
                 "admissionregistration.k8s.io/v1",
@@ -1544,6 +1665,7 @@ def _validate_observation_contract(
                 "cleanup_manifest_sha256",
                 "cleanup_result_sha256",
                 "removed_objects",
+                "retained_objects",
                 "live_inventory_sha256",
                 "live_reference_host_paths",
                 "live_baseline_incompatible_objects",
@@ -1573,13 +1695,12 @@ def _validate_observation_contract(
             "live_baseline_incompatible_objects",
             "live_restricted_incompatible_objects",
         ):
-            if assertions[field] != 0:
-                raise ReceiptError("cleanup-complete live inventory is not clean")
-        if assertions["live_legacy_controller_objects"] != []:
-            raise ReceiptError("cleanup-complete retains legacy controller-owned objects")
+            _integer(assertions[field], f"cleanup-complete {field}")
+        if assertions["retained_objects"] != assertions["live_legacy_controller_objects"]:
+            raise ReceiptError("cleanup-complete legacy inventory differs from retained quarantine")
         removed = assertions["removed_objects"]
         if removed != [] or absent:
-            raise ReceiptError("no-delete closure may not claim removed or absent objects")
+            raise ReceiptError("retained quarantine may not claim removed or absent objects")
     elif state == "baseline-enforced":
         _exact_keys(assertions, {"privileged_probe_rejected", "positive_smoke_passed"}, "baseline-enforced assertions")
         if not all(assertions.values()):
@@ -3503,13 +3624,15 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
         _read_regular_file(baseline_artifact, "baseline artifact", 128 * 1024 * 1024),
         _object(bundle["context"], "context"),
     )
+    retained_quarantine: dict[str, Any] | None = None
     if phase == "quiesce-enforcement":
         cleanup_path = Path(_string(query["cleanup_result_path"], "cleanup_result_path"))
-        _validate_cleanup_result(
+        retained_quarantine = _validate_cleanup_result(
             _read_regular_file(cleanup_path, "cleanup result", 8 * 1024 * 1024),
             assertions,
             _object(bundle["context"], "context"),
             baseline,
+            client,
         )
     elif query["cleanup_result_path"] is not None:
         raise ReceiptError("cleanup_result_path is valid only for quiesce-enforcement")
@@ -3537,7 +3660,26 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
             "live_legacy_controller_objects": assertions["live_legacy_controller_objects"],
         }
         if any(live_inventory[field] != expected for field, expected in expected_live.items()):
-            raise ReceiptError("immediate live workload inventory differs from signed clean assertions")
+            raise ReceiptError("immediate live workload inventory differs from signed quarantine assertions")
+    if retained_quarantine is not None and live_inventory is not None:
+        live_by_identity = {
+            (item["api_version"], item["kind"], item["namespace"], item["name"]): item
+            for item in live_inventory["live_inventory_objects"]
+        }
+        for retained_raw in retained_quarantine["retained_objects"]:
+            retained = _object(retained_raw, "retained quarantine object")
+            identity = (
+                retained["api_version"],
+                retained["kind"],
+                retained["namespace"],
+                retained["name"],
+            )
+            live = live_by_identity.get(identity)
+            if live is None or any(
+                live[field] != retained[field]
+                for field in ("uid", "resource_version", "object_sha256")
+            ):
+                raise ReceiptError("retained quarantine object changed after its read-only proof")
 
     authorization = ledger.get("authorization")
     exact_authorization = bool(
@@ -3634,12 +3776,57 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
 class KubectlClient:
     CUSTODIAN_NAMESPACE = "fs2-system"
     CUSTODIAN_NAME = "fs2-pod-security-rollout-custodian"
+    CUSTODIAN_GROUP = "fs2-pod-security-receipt-custodians"
+    PROTECTED_NAMESPACES = (
+        "fs2-academic-poc",
+        "fs2-bioir-boltz2",
+        "fs2-bioir-coverage",
+        "fs2-bioir-openfold",
+        "fs2-bioir-protenix",
+        "fs2-bioir-snapshot",
+        "fs2-data",
+        "fs2-models",
+        "fs2-node-observability",
+        "fs2-observability",
+        "fs2-reference-data",
+        "fs2-snapshot-operations",
+        "fs2-system",
+    )
+    MUTATING_VERBS = {
+        "*",
+        "approve",
+        "bind",
+        "create",
+        "delete",
+        "deletecollection",
+        "escalate",
+        "impersonate",
+        "patch",
+        "sign",
+        "update",
+    }
 
-    def __init__(self, kubeconfig: Path, context: str, audience: str) -> None:
+    def __init__(
+        self,
+        kubeconfig: Path,
+        context: str,
+        audience: str,
+        expected_username: str,
+        platform_kubeconfig: Path,
+        platform_context: str,
+    ) -> None:
         if not kubeconfig.is_absolute() or ".." in kubeconfig.parts:
-            raise ReceiptError("kubeconfig_path must be absolute without parent traversal")
+            raise ReceiptError("custody kubeconfig path must be absolute without parent traversal")
+        if not platform_kubeconfig.is_absolute() or ".." in platform_kubeconfig.parts:
+            raise ReceiptError("platform kubeconfig path must be absolute without parent traversal")
+        if kubeconfig.resolve(strict=True) == platform_kubeconfig.resolve(strict=True):
+            raise ReceiptError("external custody and platform Terraform must not share a kubeconfig")
         if not IDENTIFIER_RE.fullmatch(context):
-            raise ReceiptError("kube_context is malformed")
+            raise ReceiptError("custody kube_context is malformed")
+        if not IDENTIFIER_RE.fullmatch(platform_context):
+            raise ReceiptError("platform kube_context is malformed")
+        if not expected_username or len(expected_username) > 512 or expected_username.startswith("system:"):
+            raise ReceiptError("external custody username must identify one non-system principal")
         if audience != "https://kubernetes.default.svc":
             raise ReceiptError("rollout token audience differs from the reviewed API audience")
         bootstrap = [
@@ -3649,6 +3836,21 @@ class KubectlClient:
             "--context",
             context,
         ]
+        platform = [
+            "kubectl",
+            "--kubeconfig",
+            str(platform_kubeconfig),
+            "--context",
+            platform_context,
+        ]
+        custody_identity = self._authenticated_identity(bootstrap)
+        platform_identity = self._authenticated_identity(platform)
+        if (
+            custody_identity["username"] != expected_username
+            or self.CUSTODIAN_GROUP not in custody_identity["groups"]
+            or custody_identity["username"] == platform_identity["username"]
+        ):
+            raise ReceiptError("external custody is not an exact identity distinct from platform Terraform")
         self._require_external_custody(bootstrap)
         token_request = subprocess.run(
             [
@@ -3730,9 +3932,126 @@ class KubectlClient:
             self.close()
             raise ReceiptError("short-lived token is not bound to the exact live custodian identity")
 
+    @staticmethod
+    def _raw_review(bootstrap: list[str], path: str, review: dict[str, Any], label: str) -> dict[str, Any]:
+        completed = subprocess.run(
+            [*bootstrap, "create", "--raw", path, "-f", "-"],
+            input=_canonical(review),
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        try:
+            response = _object(json.loads(completed.stdout), label)
+        except (UnicodeDecodeError, json.JSONDecodeError, ReceiptError) as error:
+            raise ReceiptError(f"{label} failed") from error
+        if completed.returncode != 0:
+            raise ReceiptError(f"{label} failed")
+        return response
+
+    @classmethod
+    def _authenticated_identity(cls, bootstrap: list[str]) -> dict[str, Any]:
+        review = {
+            "apiVersion": "authentication.k8s.io/v1beta1",
+            "kind": "SelfSubjectReview",
+            "spec": {},
+        }
+        response = cls._raw_review(
+            bootstrap,
+            "/apis/authentication.k8s.io/v1beta1/selfsubjectreviews",
+            review,
+            "SelfSubjectReview response",
+        )
+        status = _object(response.get("status"), "SelfSubjectReview status")
+        user_info = _object(status.get("userInfo"), "SelfSubjectReview userInfo")
+        username = _string(user_info.get("username"), "SelfSubjectReview username")
+        groups = user_info.get("groups", [])
+        if not isinstance(groups, list) or not all(isinstance(group, str) for group in groups):
+            raise ReceiptError("SelfSubjectReview groups are malformed")
+        return {"username": username, "groups": set(groups)}
+
+    @classmethod
+    def _subject_access_allowed(cls, bootstrap: list[str], attributes: dict[str, str]) -> bool:
+        review = {
+            "apiVersion": "authorization.k8s.io/v1",
+            "kind": "SelfSubjectAccessReview",
+            "spec": {"resourceAttributes": attributes},
+        }
+        response = cls._raw_review(
+            bootstrap,
+            "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
+            review,
+            "SelfSubjectAccessReview response",
+        )
+        status = _object(response.get("status"), "SelfSubjectAccessReview status")
+        if not isinstance(status.get("allowed"), bool):
+            raise ReceiptError("SelfSubjectAccessReview omitted its authorization decision")
+        return status["allowed"]
+
     @classmethod
     def _require_external_custody(cls, bootstrap: list[str]) -> None:
-        """Prove the ambient principal has only the reviewed token-mint edge."""
+        """Reject every persisted mutation/pivot except the exact token edge.
+
+        SelfSubjectRulesReview is evaluated in every protected namespace so an
+        overlooked RoleBinding cannot hide behind a short hand-picked deny
+        list. The individual reviews below independently pin the critical edge
+        and common escalation paths even if a non-RBAC authorizer contributes.
+        """
+
+        allowed_self_reviews = {
+            ("authorization.k8s.io", "selfsubjectaccessreviews"),
+            ("authorization.k8s.io", "selfsubjectrulesreviews"),
+            ("authentication.k8s.io", "selfsubjectreviews"),
+        }
+        for namespace in cls.PROTECTED_NAMESPACES:
+            review = {
+                "apiVersion": "authorization.k8s.io/v1",
+                "kind": "SelfSubjectRulesReview",
+                "spec": {"namespace": namespace},
+            }
+            response = cls._raw_review(
+                bootstrap,
+                "/apis/authorization.k8s.io/v1/selfsubjectrulesreviews",
+                review,
+                f"SelfSubjectRulesReview response for {namespace}",
+            )
+            status = _object(response.get("status"), "SelfSubjectRulesReview status")
+            if status.get("incomplete") is not False:
+                raise ReceiptError("external custody authorization inventory is incomplete")
+            rules = status.get("resourceRules", [])
+            non_resource_rules = status.get("nonResourceRules", [])
+            if not isinstance(rules, list) or not isinstance(non_resource_rules, list):
+                raise ReceiptError("external custody authorization inventory is malformed")
+            for rule_raw in rules:
+                rule = _object(rule_raw, "external custody resource rule")
+                verbs = set(rule.get("verbs", []))
+                mutating = verbs & cls.MUTATING_VERBS
+                if not mutating:
+                    continue
+                groups = set(rule.get("apiGroups", []))
+                resources = set(rule.get("resources", []))
+                names = set(rule.get("resourceNames", []))
+                exact_token = (
+                    namespace == cls.CUSTODIAN_NAMESPACE
+                    and mutating == {"create"}
+                    and groups == {""}
+                    and resources == {"serviceaccounts/token"}
+                    and names == {cls.CUSTODIAN_NAME}
+                )
+                exact_self_reviews = (
+                    mutating == {"create"}
+                    and bool(groups)
+                    and bool(resources)
+                    and not names
+                    and all((group, resource) in allowed_self_reviews for group in groups for resource in resources)
+                )
+                if not (exact_token or exact_self_reviews):
+                    raise ReceiptError("external custody has a persisted mutation, RBAC, admission, or workload pivot")
+            for rule_raw in non_resource_rules:
+                rule = _object(rule_raw, "external custody non-resource rule")
+                verbs = set(rule.get("verbs", []))
+                if verbs & {"*", "post", "put", "patch", "delete"}:
+                    raise ReceiptError("external custody has a mutating non-resource URL edge")
 
         checks = [
             (
@@ -3746,6 +4065,17 @@ class KubectlClient:
                     "name": cls.CUSTODIAN_NAME,
                 },
                 "ambient identity cannot mint the exact rollout token",
+            ),
+            (
+                False,
+                {
+                    "group": "",
+                    "resource": "serviceaccounts",
+                    "subresource": "token",
+                    "verb": "create",
+                    "namespace": cls.CUSTODIAN_NAMESPACE,
+                },
+                "ambient identity can mint an unbounded service-account token",
             ),
             (
                 False,
@@ -3769,6 +4099,43 @@ class KubectlClient:
                     "name": "fs2-pod-security-rollout-ledger",
                 },
                 "ambient identity has direct rollout-ledger authority",
+            ),
+            (
+                False,
+                {
+                    "group": "admissionregistration.k8s.io",
+                    "resource": "validatingadmissionpolicies",
+                    "verb": "update",
+                    "name": "fs2-pod-security-rollout-ledger",
+                },
+                "ambient identity can dismantle rollout-ledger admission",
+            ),
+            (
+                False,
+                {
+                    "group": "rbac.authorization.k8s.io",
+                    "resource": "clusterrolebindings",
+                    "verb": "create",
+                },
+                "ambient identity can create an RBAC pivot",
+            ),
+            (
+                False,
+                {
+                    "group": "rbac.authorization.k8s.io",
+                    "resource": "clusterroles",
+                    "verb": "escalate",
+                },
+                "ambient identity can escalate RBAC",
+            ),
+            (
+                False,
+                {
+                    "group": "rbac.authorization.k8s.io",
+                    "resource": "clusterroles",
+                    "verb": "bind",
+                },
+                "ambient identity can bind RBAC",
             ),
             (
                 False,
@@ -3813,31 +4180,7 @@ class KubectlClient:
             ),
         ]
         for required, attributes, error_message in checks:
-            review = {
-                "apiVersion": "authorization.k8s.io/v1",
-                "kind": "SelfSubjectAccessReview",
-                "spec": {"resourceAttributes": attributes},
-            }
-            completed = subprocess.run(
-                [
-                    *bootstrap,
-                    "create",
-                    "--raw",
-                    "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
-                    "-f",
-                    "-",
-                ],
-                input=_canonical(review),
-                check=False,
-                capture_output=True,
-                timeout=30,
-            )
-            try:
-                response = _object(json.loads(completed.stdout), "SelfSubjectAccessReview response")
-                status = _object(response.get("status"), "SelfSubjectAccessReview status")
-            except (UnicodeDecodeError, json.JSONDecodeError, ReceiptError) as error:
-                raise ReceiptError("external custody authorization review failed") from error
-            if completed.returncode != 0 or status.get("allowed") is not required:
+            if cls._subject_access_allowed(bootstrap, attributes) is not required:
                 raise ReceiptError(error_message)
 
     @classmethod
@@ -3970,8 +4313,24 @@ def main() -> int:
         query = _query_from_environment()
         kubeconfig = Path(_string(os.environ.get("FS2_KUBECONFIG"), "FS2_KUBECONFIG"))
         kube_context = _string(os.environ.get("FS2_KUBE_CONTEXT"), "FS2_KUBE_CONTEXT")
+        platform_kubeconfig = Path(
+            _string(os.environ.get("FS2_PLATFORM_KUBECONFIG"), "FS2_PLATFORM_KUBECONFIG")
+        )
+        platform_context = _string(
+            os.environ.get("FS2_PLATFORM_KUBE_CONTEXT"), "FS2_PLATFORM_KUBE_CONTEXT"
+        )
+        custody_username = _string(
+            os.environ.get("FS2_POD_SECURITY_CUSTODY_USER"), "FS2_POD_SECURITY_CUSTODY_USER"
+        )
         audience = _string(os.environ.get("FS2_POD_SECURITY_TOKEN_AUDIENCE"), "token audience")
-        with KubectlClient(kubeconfig, kube_context, audience) as client:
+        with KubectlClient(
+            kubeconfig,
+            kube_context,
+            audience,
+            custody_username,
+            platform_kubeconfig,
+            platform_context,
+        ) as client:
             result = verify_and_consume(query, client)
     except (OSError, ReceiptError, json.JSONDecodeError, subprocess.SubprocessError) as error:
         print(f"pod-security receipt consumption failed: {error}", file=sys.stderr)

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -64,3 +67,42 @@ def test_atomic_publication_never_overwrites_a_different_final_marker(tmp_path: 
     with pytest.raises(durability.DurabilityError, match="differs|exact regular file"):
         durability.publish_marker(tmp_path, target, generation, b"expected\n")
     assert target.read_bytes() == b"different\n"
+
+
+def test_retry_fsyncs_directory_after_verified_existing_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    generation = "d" * 64
+    args = SimpleNamespace(
+        root=tmp_path,
+        generation=generation,
+        attempt=1,
+        pvc_uid="pvc-uid",
+        pvc_resource_version="17",
+        volume_name="pv-name",
+        challenge="retry-after-link",
+        mode="write",
+    )
+    payload = durability.canonical(
+        {
+            "schema": "fs2-serve.nebius.ai/checkpoint-durability-marker/v2",
+            "pvc": {"uid": "pvc-uid", "resource_version": "17", "volume_name": "pv-name"},
+            "challenge": "retry-after-link",
+            "generation": generation,
+            "attempt": 1,
+        }
+    ) + b"\n"
+    target = tmp_path / f".fs2-durability-{generation[:24]}"
+    target.write_bytes(payload)
+    fsynced: list[int] = []
+    real_fsync = durability.os.fsync
+
+    def record_fsync(descriptor: int) -> None:
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            fsynced.append(descriptor)
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(durability.os, "fsync", record_fsync)
+    monkeypatch.setattr(durability, "validate_root", lambda _root: tmp_path)
+    durability.proof(args)
+    assert len(fsynced) == 1
