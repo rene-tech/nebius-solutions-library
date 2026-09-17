@@ -1,10 +1,10 @@
 # Retained H100 cluster release delta. Apply after the current live Helm values.
 # This file changes the application release, not infrastructure or model scaling.
-# Control plane source: c7f99b46fcd22f8ee3d63b8603715eb52a58ac4c
+# Control plane source: f8cbadb3bf14ad5ec157cf8f41466d95de645053
 # Admin source: b33d73149d5f8be96cac70711b17d039927cea2a
 image:
   repository: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane
-  digest: sha256:624763c6141a990125c37b71fccc0a8d7ba5371a4efd5be325336cbc58d54020
+  digest: sha256:84a1b5e02ca28af811e72bd7c97cbc6c5337665aac3a708f07087edb9fac10bc
 adminConsole:
   image:
     repository: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console
