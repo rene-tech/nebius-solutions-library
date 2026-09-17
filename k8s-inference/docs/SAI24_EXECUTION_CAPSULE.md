@@ -87,8 +87,28 @@ long-lived credentials in Terraform state.
 The repository never accepts broker receipt, Docker configuration, bootstrap,
 trust, toolchain or refresh-registration paths on the `inference-stack` CLI.
 After infrastructure and foundation have converged, it asks the authenticated
-capsule peer for a new exact-subject workload credential immediately before the
-workload plan/apply pair. Admission requires the independently attested refresh
-owner to be live and observed, and requires at least 600 seconds of credential
-lifetime at both plan and apply entry. If planning consumes that margin, apply
-fails before mutation and a new plan must be created with a fresh credential.
+capsule peer for planning-only render evidence. Before apply, repository code
+removes both registry Terraform variables. `signed-terraform-apply` must use
+the externally bound provider-RPC proxy and
+`security/workload-registry-secret-admission-contract.json`: immediately before
+starting Terraform it supplies only a signed noncredential placeholder for
+ephemeral expression evaluation; the proxy must reject that placeholder if it
+ever reaches the Kubernetes provider. Immediately before
+each of the three reviewed Secret create/update RPCs, the proxy rechecks that
+both refresh owner and proxy readiness were observed no more than 60 seconds
+ago, derives exact private subjects from the signed plan and closure, brokers a
+new pull-only credential, requires at least 600 seconds remaining, injects it
+only through write-only provider data, and records a non-secret receipt. A
+credential may not be reused for another Secret RPC. The plan credential is
+never forwarded to apply, so a long workload apply cannot admit expired bytes.
+
+## Registry mirroring
+
+There is no mirror-loop credential. Each target lookup, source lookup, copy,
+post-copy tag lookup, and digest-reference lookup asks the authenticated
+capsule for a new operation-specific authorization. The authorization binds
+the exact repository+expected digest, action, and operation ID. Digest calls
+have a 240-second execution bound and at least a 300-second TTL safety margin;
+copies have a 3,000-second execution bound and the same margin. A copy that
+cannot finish within that bound fails closed and is retried as a new operation
+with a new authorization; its token is never reused by verification.

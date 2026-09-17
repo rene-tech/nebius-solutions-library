@@ -218,6 +218,10 @@ def test_catalog_mapping_is_consumed_by_runtime_and_model_express_cannot_bypass_
         activation_body.index("apply-registry-secret")
     )
     assert "--refresh-registration" in activation_body
+    assert "--broker-fresh-credential-at-secret-admission" in activation_body
+    assert "--admission-contract" in activation_body
+    assert "--maximum-readiness-age-seconds 60" in activation_body
+    assert '--docker-config "$PULL_DOCKER_CONFIG"' not in activation_body
     postrenderer = (ROOT / "security/helm_image_postrenderer.py").read_text()
     assert "FS2_IMAGE_ATTESTATION_TRUST" not in postrenderer
     assert "validate_image_gate_authorization" in postrenderer
@@ -287,6 +291,11 @@ def test_external_capsule_is_the_only_release_execution_authority() -> None:
     assert protected_entry["capability_transport"] == "inherited-unix-sock-seqpacket"
     assert protected_entry["required_peer_uid"] == 0
     assert protected_entry["caller_selectable_bindings"] is False
+    provider_admission = external["capsule_contract"][
+        "workload_secret_provider_rpc_admission"
+    ]
+    assert provider_admission["deny_planning_credential_forwarding"] is True
+    assert provider_admission["deny_credential_reuse_across_resource_rpcs"] is True
 
     toolchain = json.loads(
         (ROOT / "security/execution-toolchain.lock.json").read_text()
@@ -298,6 +307,12 @@ def test_external_capsule_is_the_only_release_execution_authority() -> None:
         "stages/foundation",
         "stages/workloads",
     }
+    provider_proxy = toolchain["terraform_execution"][
+        "workload_secret_provider_rpc_proxy"
+    ]
+    assert provider_proxy["path"] is None
+    assert provider_proxy["credential_reuse_across_resource_rpcs"] is False
+    assert provider_proxy["planning_credential_forwarded_to_apply"] is False
     assert toolchain["terraform_execution"]["bind_init_plan_show_apply_to_same_capsule"] is True
     assert toolchain["terraform_execution"]["network_provider_installation"] is False
     assert all(
@@ -351,8 +366,11 @@ def test_private_pull_refresh_contract_stays_fail_closed_until_attested() -> Non
     policy = trust["workload_registry_authentication"]
     assert policy["maximum_ttl_seconds"] == 900
     assert policy["maximum_refresh_interval_seconds"] == 300
+    assert policy["maximum_refresh_readiness_age_seconds"] == 60
     assert policy["authorized_refresh_owner_ids"] == []
     assert policy["refresh_controller_contract_sha256"] is None
+    assert policy["secret_admission_contract_sha256"] is None
+    assert policy["authorized_secret_admission_proxy_ids"] == []
 
     refresh = json.loads(
         (ROOT / "security/workload-registry-refresh-contract.json").read_text()
@@ -361,10 +379,25 @@ def test_private_pull_refresh_contract_stays_fail_closed_until_attested() -> Non
         "blocked_pending_security_owner_and_runtime_attestation"
     )
     assert refresh["retire_superseded_without_delete"] is True
+    assert refresh["maximum_readiness_receipt_age_seconds"] == 60
+    assert refresh["secret_admission_contract_sha256"] is None
     assert refresh["failure_policy"]["delete_secret"] is False
     assert refresh["runtime"]["image"] is None
     assert refresh["runtime"]["sbom_sha256"] is None
     assert refresh["runtime"]["provenance_sha256"] is None
+
+    admission = json.loads(
+        (ROOT / "security/workload-registry-secret-admission-contract.json").read_text()
+    )
+    assert admission["state"] == (
+        "blocked_pending_security_owner_and_runtime_attestation"
+    )
+    assert admission["provider_rpc_mode"] == (
+        "broker-immediately-before-secret-create-or-update"
+    )
+    assert admission["planning_credential_is_never_forwarded_to_apply"] is True
+    assert admission["fail_closed"]["credential_reuse_across_resource_rpcs_allowed"] is False
+    assert admission["runtime"]["proxy_id"] is None
 
     variables = (ROOT / "variables.tf").read_text()
     assert "static NVCR Docker config input is forbidden" in variables
@@ -375,5 +408,8 @@ def test_private_pull_refresh_contract_stays_fail_closed_until_attested() -> Non
         "rotate_before_expiry_seconds",
         "refresh_registration_sha256",
         "retire_superseded_without_delete",
+        "secret_admission_proxy_id",
+        "secret_admission_contract_sha256",
+        "secret_admission_ready_observed_at",
     ):
         assert field in workload_variables

@@ -38,6 +38,7 @@ EXTERNAL_TRUST="${FS2_EXTERNAL_CAPSULE_TRUST:-}"
 reviewed_helm=()
 reviewed_kubectl=()
 PULL_AUTH_RECEIPT=""
+PULL_ADMISSION_RECEIPT=""
 PULL_REFRESH_REGISTRATION=""
 PULL_DOCKER_CONFIG=""
 PULL_SUBJECT=""
@@ -175,6 +176,7 @@ acquire_pull_authorization() {
     PULL_DOCKER_CONFIG="$auth_root/modelexpress-dockerconfig.json"
     PULL_AUTH_RECEIPT="$auth_root/modelexpress-pull-receipt.json"
     PULL_REFRESH_REGISTRATION="$auth_root/modelexpress-refresh-registration.json"
+    PULL_ADMISSION_RECEIPT="$auth_root/modelexpress-secret-admission-receipt.json"
     FS2_IMAGE_GATE_TOOLCHAIN="$TOOLCHAIN" \
     FS2_IMAGE_GATE_TRUST="$SECURITY_DIR/image-attestation-trust.json" \
       "$GATE_BOOTSTRAP" python-entry \
@@ -210,9 +212,16 @@ activate_pull_authorization() {
         --toolchain "$TOOLCHAIN" \
         --source-root "$SECURITY_DIR/.." \
         --trust "$SECURITY_DIR/image-attestation-trust.json" \
-        --receipt "$PULL_AUTH_RECEIPT" \
-        --docker-config "$PULL_DOCKER_CONFIG" \
+        --planning-receipt "$PULL_AUTH_RECEIPT" \
         --refresh-registration "$PULL_REFRESH_REGISTRATION" \
+        --broker-fresh-credential-at-secret-admission \
+        --identity "$PULL_IDENTITY_FILE" \
+        --token-file "$PULL_TOKEN_FILE" \
+        --controller-contract "$SECURITY_DIR/workload-registry-refresh-contract.json" \
+        --admission-contract "$SECURITY_DIR/workload-registry-secret-admission-contract.json" \
+        --minimum-remaining-ttl-seconds 600 \
+        --maximum-readiness-age-seconds 60 \
+        --admission-receipt-output "$PULL_ADMISSION_RECEIPT" \
         --subject "$PULL_SUBJECT" \
         --namespace "$NAMESPACE" \
         --secret-name fs2-modelexpress-pull

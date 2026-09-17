@@ -286,12 +286,15 @@ resource "terraform_data" "cluster_contract" {
           var.nvcrio_credential_authorization.authorization_model == "repository-digest-action" &&
           var.nvcrio_credential_authorization.refresh_owner_ready &&
           timecmp(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, timestamp()) <= 0 &&
+          var.nvcrio_credential_authorization.secret_admission_ready &&
+          timecmp(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, timestamp()) <= 0 &&
+          can(regex("^[0-9a-f]{64}$", var.nvcrio_credential_authorization.secret_admission_contract_sha256)) &&
           var.nvcrio_credential_authorization.management_mode == "external-short-lived-refresh-controller" &&
           var.nvcrio_credential_authorization.refresh_interval_seconds <= 300 &&
           var.nvcrio_credential_authorization.retire_superseded_without_delete
         ))
       )
-      error_message = "Private NVCR pulls require a broker receipt with >=600 seconds remaining, ephemeral write-only bytes, and an already-live signed non-delete refresh owner; static or state-retained credentials are forbidden."
+      error_message = "Private NVCR planning requires exact ephemeral inputs and an approved provider-RPC broker; the external apply capsule replaces them with freshly brokered bytes immediately before each Secret admission."
     }
     precondition {
       condition     = try(data.kubernetes_resource.envoyproxy_crd.object.metadata.name, "") == "envoyproxies.gateway.envoyproxy.io"

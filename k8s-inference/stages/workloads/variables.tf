@@ -1636,6 +1636,10 @@ variable "nvcrio_credential_authorization" {
     refresh_registration_sha256        = string
     refresh_owner_ready                = bool
     refresh_owner_ready_observed_at    = string
+    secret_admission_proxy_id          = string
+    secret_admission_contract_sha256   = string
+    secret_admission_ready             = bool
+    secret_admission_ready_observed_at = string
   })
   nullable = true
   default  = null
@@ -1655,6 +1659,11 @@ variable "nvcrio_credential_authorization" {
       var.nvcrio_credential_authorization.refresh_owner_ready &&
       can(timecmp(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, timestamp())) &&
       timecmp(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, timestamp()) <= 0 &&
+      length(var.nvcrio_credential_authorization.secret_admission_proxy_id) > 0 &&
+      can(regex("^[0-9a-f]{64}$", var.nvcrio_credential_authorization.secret_admission_contract_sha256)) &&
+      var.nvcrio_credential_authorization.secret_admission_ready &&
+      can(timecmp(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, timestamp())) &&
+      timecmp(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, timestamp()) <= 0 &&
       floor(var.nvcrio_credential_authorization.rotate_before_expiry_seconds) == var.nvcrio_credential_authorization.rotate_before_expiry_seconds &&
       var.nvcrio_credential_authorization.rotate_before_expiry_seconds >= 60 &&
       var.nvcrio_credential_authorization.management_mode == "external-short-lived-refresh-controller" &&
@@ -1666,7 +1675,7 @@ variable "nvcrio_credential_authorization" {
         can(regex("^[^@[:space:]]+@sha256:[0-9a-f]{64}$", subject))
       ])
     )
-    error_message = "NVCR authorization requires a signed receipt with >=600 seconds remaining, exact digest subjects, and a live approved <=300-second non-delete refresh owner."
+    error_message = "NVCR planning authorization requires a signed receipt with >=600 seconds remaining at plan time, exact digest subjects, and an approved provider-RPC broker; freshness is re-established at each Secret RPC."
   }
 }
 

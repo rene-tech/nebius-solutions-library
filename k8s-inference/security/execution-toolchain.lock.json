@@ -100,6 +100,14 @@
     "input_transport": "sealed-memfd",
     "permitted_external_executables": [],
     "deny_module_downloads": true,
-    "deny_provisioner_path_lookup": true
+    "deny_provisioner_path_lookup": true,
+    "workload_secret_provider_rpc_proxy": {
+      "path": null,
+      "sha256": null,
+      "provider_protocol_sha256": null,
+      "admission_contract_sha256": null,
+      "credential_reuse_across_resource_rpcs": false,
+      "planning_credential_forwarded_to_apply": false
+    }
   }
 }

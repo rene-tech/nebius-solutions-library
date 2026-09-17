@@ -169,6 +169,10 @@ resource "kubernetes_secret_v1" "modelexpress_nvcrio" {
       "fs2.nebius.ai/registry-auth-authorization-model" = try(var.nvcrio_credential_authorization.authorization_model, "blocked")
       "fs2.nebius.ai/registry-auth-refresh-owner-ready" = try(var.nvcrio_credential_authorization.refresh_owner_ready, false) ? "true" : "blocked"
       "fs2.nebius.ai/registry-auth-refresh-owner-observed-at" = try(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-proxy" = try(var.nvcrio_credential_authorization.secret_admission_proxy_id, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-contract-sha256" = try(var.nvcrio_credential_authorization.secret_admission_contract_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-ready" = try(var.nvcrio_credential_authorization.secret_admission_ready, false) ? "true" : "blocked"
+      "fs2.nebius.ai/registry-auth-admission-observed-at" = try(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, "blocked")
     }
   }
   type = "kubernetes.io/dockerconfigjson"
@@ -216,6 +220,9 @@ resource "helm_release" "modelexpress" {
         var.nvcrio_credential_authorization.authorization_model == "repository-digest-action" &&
         var.nvcrio_credential_authorization.refresh_owner_ready &&
         timecmp(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, timestamp()) <= 0 &&
+        var.nvcrio_credential_authorization.secret_admission_ready &&
+        timecmp(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, timestamp()) <= 0 &&
+        can(regex("^[0-9a-f]{64}$", var.nvcrio_credential_authorization.secret_admission_contract_sha256)) &&
         var.nvcrio_credential_authorization.management_mode == "external-short-lived-refresh-controller" &&
         var.nvcrio_credential_authorization.retire_superseded_without_delete &&
         contains(
@@ -223,7 +230,7 @@ resource "helm_release" "modelexpress" {
           "${var.model_express.server_image.repository}@${var.model_express.server_image.digest}",
         )
       )
-      error_message = "Managed NVCR ModelExpress requires a signed exact-digest pull authorization with >=600 seconds remaining and a live refresh owner."
+      error_message = "Managed NVCR ModelExpress requires exact-digest planning authorization and an approved per-Secret provider-RPC broker that establishes freshness at admission."
     }
   }
 

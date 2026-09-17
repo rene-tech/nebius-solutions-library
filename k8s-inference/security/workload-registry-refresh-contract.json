@@ -6,12 +6,17 @@
   "maximum_refresh_interval_seconds": 300,
   "required_rotation_margin_seconds": 60,
   "initial_admission_minimum_remaining_ttl_seconds": 600,
+  "maximum_readiness_receipt_age_seconds": 60,
+  "secret_admission_contract_path": "workload-registry-secret-admission-contract.json",
+  "secret_admission_contract_sha256": null,
   "initial_admission_sequence": [
     "refresh-owner-ready-and-observed",
-    "fresh-exact-subject-credential-issued",
+    "planning-only-render-authorization-issued",
     "workload-plan-created",
-    "remaining-ttl-rechecked-before-apply",
-    "secret-admitted",
+    "planning-credential-removed-from-apply-environment",
+    "refresh-owner-readiness-rechecked-at-provider-rpc",
+    "fresh-exact-subject-credential-brokered-at-provider-rpc",
+    "secret-admitted-with-at-least-600-seconds-remaining",
     "refresh-owner-confirms-revision"
   ],
   "readiness_receipt_schema": "fs2-serve.nebius.ai/workload-registry-refresh-readiness/v1",
@@ -21,6 +26,7 @@
   "watched_secrets": [
     "fs2-models/nvcrio-cred",
     "fs2-observability/fs2-dcgm-exporter-nvcrio",
+    "modelexpress/fs2-modelexpress-nvcrio",
     "modelexpress/fs2-modelexpress-pull"
   ],
   "required_audit_events": [
@@ -42,6 +48,8 @@
     "source_tree": null,
     "image": null,
     "sbom_sha256": null,
-    "provenance_sha256": null
+    "provenance_sha256": null,
+    "admission_proxy_id": null,
+    "admission_proxy_executable_sha256": null
   }
 }

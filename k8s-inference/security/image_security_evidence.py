@@ -287,6 +287,23 @@ def validate_workload_registry_auth_receipt(
         raise EvidenceError("refresh-controller contract differs from trust")
     refresh_contract = _load_object(refresh_contract_path)
     refresh_runtime = refresh_contract.get("runtime")
+    admission_relative = policy.get("secret_admission_contract_path")
+    admission_sha256 = policy.get("secret_admission_contract_sha256")
+    if (
+        not isinstance(admission_relative, str)
+        or Path(admission_relative).is_absolute()
+        or not isinstance(admission_sha256, str)
+        or not HEX_SHA256.fullmatch(admission_sha256)
+    ):
+        raise EvidenceError(f"{trust_path}: Secret admission trust is incomplete")
+    admission_contract_path = (
+        Path(source_root_value) / "security" / admission_relative
+    ).resolve()
+    if _sha256(admission_contract_path) != admission_sha256:
+        raise EvidenceError("Secret admission contract differs from trust")
+    admission_contract = _load_object(admission_contract_path)
+    admission_runtime = admission_contract.get("runtime")
+    authorized_admission_proxies = policy.get("authorized_secret_admission_proxy_ids")
     if (
         refresh_contract.get("schema")
         != "fs2-serve.nebius.ai/workload-registry-refresh-contract/v1"
@@ -304,8 +321,32 @@ def validate_workload_registry_auth_receipt(
             and HEX_SHA256.fullmatch(refresh_runtime[field])
             for field in ("sbom_sha256", "provenance_sha256")
         )
+        or refresh_contract.get("maximum_readiness_receipt_age_seconds")
+        != policy.get("maximum_refresh_readiness_age_seconds")
+        or refresh_contract.get("secret_admission_contract_sha256")
+        != admission_sha256
+        or admission_contract.get("schema")
+        != "fs2-serve.nebius.ai/workload-registry-secret-admission-contract/v1"
+        or admission_contract.get("state") != "trusted"
+        or admission_contract.get("provider_rpc_mode")
+        != "broker-immediately-before-secret-create-or-update"
+        or not isinstance(admission_runtime, dict)
+        or not isinstance(authorized_admission_proxies, list)
+        or admission_runtime.get("proxy_id") not in authorized_admission_proxies
+        or not all(
+            isinstance(admission_runtime.get(field), str)
+            and HEX_SHA256.fullmatch(admission_runtime[field])
+            for field in (
+                "executable_sha256",
+                "provider_protocol_sha256",
+                "sbom_sha256",
+                "provenance_sha256",
+            )
+        )
     ):
-        raise EvidenceError("refresh-controller runtime is not independently trusted")
+        raise EvidenceError(
+            "refresh-controller and Secret-admission runtimes are not independently trusted"
+        )
     if receipt.get("authorization_model") != "repository-digest-action" or policy.get(
         "required_authorization_model"
     ) != "repository-digest-action":
@@ -376,6 +417,7 @@ def validate_workload_registry_auth_receipt(
     ):
         raise EvidenceError(f"{path}: Docker config digest is invalid")
     refresh = receipt.get("refresh")
+    admission = receipt.get("secret_admission")
     refresh_owners = policy.get("authorized_refresh_owner_ids")
     maximum_refresh = policy.get("maximum_refresh_interval_seconds")
     if (
@@ -392,6 +434,13 @@ def validate_workload_registry_auth_receipt(
         or refresh.get("management_mode")
         != "external-short-lived-refresh-controller"
         or refresh.get("retire_superseded_without_delete") is not True
+        or not isinstance(admission, dict)
+        or admission.get("proxy_id") != admission_runtime.get("proxy_id")
+        or admission.get("contract_sha256") != admission_sha256
+        or admission.get("provider_rpc_mode")
+        != "broker-immediately-before-secret-create-or-update"
+        or admission.get("planning_credential_forwarded_to_apply") is not False
+        or admission.get("credential_reuse_across_resource_rpcs") is not False
     ):
         raise EvidenceError(f"{path}: pull credential refresh ownership is invalid")
     revision = receipt.get("revision")

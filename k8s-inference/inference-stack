@@ -64,6 +64,15 @@ CAPSULE_SESSION_OPERATIONS = {
     "terraform-validate-root",
 }
 MINIMUM_WORKLOAD_CREDENTIAL_TTL_SECONDS = 600
+MAXIMUM_REFRESH_READINESS_AGE_SECONDS = 60
+REGISTRY_DIGEST_OPERATION_TIMEOUT_SECONDS = 240
+REGISTRY_COPY_OPERATION_TIMEOUT_SECONDS = 3000
+REGISTRY_OPERATION_TTL_SAFETY_SECONDS = 300
+WORKLOAD_REGISTRY_SECRET_RESOURCES = (
+    "kubernetes_secret_v1.nvcrio_cred",
+    "kubernetes_secret_v1.dcgm_exporter_nvcrio",
+    "kubernetes_secret_v1.modelexpress_nvcrio",
+)
 
 
 class DeploymentError(RuntimeError):
@@ -1564,17 +1573,38 @@ def registry_client_environment(
 def crane_digest(
     crane: str,
     reference: str,
-    environment: Mapping[str, str],
+    expected_digest: str,
+    contract: Mapping[str, Any],
+    nebius_profile: str,
     *,
     missing_ok: bool = False,
 ) -> str | None:
-    result = subprocess.run(
-        [crane, "digest", reference],
-        env=dict(environment),
-        text=True,
-        capture_output=True,
-        check=False,
+    repository = (
+        reference.rsplit("@", 1)[0]
+        if "@" in reference
+        else reference.rsplit(":", 1)[0]
     )
+    credential = load_registry_credential(
+        purpose="release-mirror",
+        minimum_remaining_ttl_seconds=(
+            REGISTRY_DIGEST_OPERATION_TIMEOUT_SECONDS
+            + REGISTRY_OPERATION_TTL_SAFETY_SECONDS
+        ),
+        operation_id="manifest-digest",
+        required_subjects=(f"{repository}@{expected_digest}",),
+        required_actions=("pull",),
+    )
+    with registry_client_environment(
+        contract, nebius_profile, credential
+    ) as environment:
+        result = subprocess.run(
+            [crane, "digest", reference],
+            env=dict(environment),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=REGISTRY_DIGEST_OPERATION_TIMEOUT_SECONDS,
+        )
     if result.returncode != 0:
         missing_markers = (
             "manifest unknown",
@@ -1600,15 +1630,32 @@ def crane_copy(
     crane: str,
     source: str,
     target_tag: str,
-    environment: Mapping[str, str],
+    expected_digest: str,
+    contract: Mapping[str, Any],
+    nebius_profile: str,
 ) -> None:
-    result = subprocess.run(
-        [crane, "copy", "--no-clobber", source, target_tag],
-        env=dict(environment),
-        text=True,
-        capture_output=True,
-        check=False,
+    target_repository = target_tag.rsplit(":", 1)[0]
+    credential = load_registry_credential(
+        purpose="release-mirror",
+        minimum_remaining_ttl_seconds=(
+            REGISTRY_COPY_OPERATION_TIMEOUT_SECONDS
+            + REGISTRY_OPERATION_TTL_SAFETY_SECONDS
+        ),
+        operation_id="copy-exact-image",
+        required_subjects=(source, f"{target_repository}@{expected_digest}"),
+        required_actions=("pull", "push"),
     )
+    with registry_client_environment(
+        contract, nebius_profile, credential
+    ) as environment:
+        result = subprocess.run(
+            [crane, "copy", "--no-clobber", source, target_tag],
+            env=dict(environment),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=REGISTRY_COPY_OPERATION_TIMEOUT_SECONDS,
+        )
     if result.returncode != 0:
         raise DeploymentError(
             "regional image copy failed; verify upstream pull and target push credentials"
@@ -1620,9 +1667,8 @@ def mirror_selected_images(
     run_root: Path,
     contract: Mapping[str, Any],
     dynamic: Mapping[str, Any],
-    registry_credential: Mapping[str, Any] | None,
 ) -> Path | None:
-    """Copy and verify the complete selected image closure before workloads."""
+    """Copy and verify the closure with one fresh authorization per registry call."""
     if contract["artifact_delivery"]["mode"] == "direct-source":
         return None
     artifacts = selected_image_artifacts(
@@ -1630,66 +1676,86 @@ def mirror_selected_images(
     )
     receipt_images: list[dict[str, str]] = []
     completed_targets: dict[str, str] = {}
-    with registry_client_environment(
-        contract, args.nebius_profile, registry_credential
-    ) as environment:
-        for artifact in artifacts:
-            expected = artifact["digest"]
-            target_reference = artifact["target_reference"]
-            status = completed_targets.get(target_reference)
-            if status is None:
-                existing = crane_digest(
-                    args.crane, artifact["target_tag"], environment, missing_ok=True
-                )
-                if existing is not None and existing != expected:
-                    raise DeploymentError(
-                        f"target mirror tag digest mismatch for {artifact['name']}; refusing to overwrite"
-                    )
-                if existing == expected:
-                    status = "existing"
-                else:
-                    source_digest = crane_digest(
-                        args.crane, artifact["source_reference"], environment
-                    )
-                    if source_digest != expected:
-                        raise DeploymentError(
-                            f"upstream digest mismatch for {artifact['name']}; refusing to deploy"
-                        )
-                    print(
-                        f"Mirroring {artifact['name']} into the regional registry.",
-                        file=sys.stderr,
-                    )
-                    crane_copy(
-                        args.crane,
-                        artifact["source_reference"],
-                        artifact["target_tag"],
-                        environment,
-                    )
-                    status = "copied"
-                if (
-                    crane_digest(args.crane, artifact["target_tag"], environment)
-                    != expected
-                ):
-                    raise DeploymentError(
-                        f"post-copy tag verification failed for {artifact['name']}"
-                    )
-                if (
-                    crane_digest(args.crane, artifact["target_reference"], environment)
-                    != expected
-                ):
-                    raise DeploymentError(
-                        f"post-copy digest-reference verification failed for {artifact['name']}"
-                    )
-                completed_targets[target_reference] = status
-            receipt_images.append(
-                {
-                    "name": artifact["name"],
-                    "source_host": artifact["source_repository"].split("/", 1)[0],
-                    "digest": expected,
-                    "target_reference": artifact["target_reference"],
-                    "status": status,
-                }
+    for artifact in artifacts:
+        expected = artifact["digest"]
+        target_reference = artifact["target_reference"]
+        status = completed_targets.get(target_reference)
+        if status is None:
+            existing = crane_digest(
+                args.crane,
+                artifact["target_tag"],
+                expected,
+                contract,
+                args.nebius_profile,
+                missing_ok=True,
             )
+            if existing is not None and existing != expected:
+                raise DeploymentError(
+                    f"target mirror tag digest mismatch for {artifact['name']}; refusing to overwrite"
+                )
+            if existing == expected:
+                status = "existing"
+            else:
+                source_digest = crane_digest(
+                    args.crane,
+                    artifact["source_reference"],
+                    expected,
+                    contract,
+                    args.nebius_profile,
+                )
+                if source_digest != expected:
+                    raise DeploymentError(
+                        f"upstream digest mismatch for {artifact['name']}; refusing to deploy"
+                    )
+                print(
+                    f"Mirroring {artifact['name']} into the regional registry.",
+                    file=sys.stderr,
+                )
+                crane_copy(
+                    args.crane,
+                    artifact["source_reference"],
+                    artifact["target_tag"],
+                    expected,
+                    contract,
+                    args.nebius_profile,
+                )
+                status = "copied"
+            if (
+                crane_digest(
+                    args.crane,
+                    artifact["target_tag"],
+                    expected,
+                    contract,
+                    args.nebius_profile,
+                )
+                != expected
+            ):
+                raise DeploymentError(
+                    f"post-copy tag verification failed for {artifact['name']}"
+                )
+            if (
+                crane_digest(
+                    args.crane,
+                    artifact["target_reference"],
+                    expected,
+                    contract,
+                    args.nebius_profile,
+                )
+                != expected
+            ):
+                raise DeploymentError(
+                    f"post-copy digest-reference verification failed for {artifact['name']}"
+                )
+            completed_targets[target_reference] = status
+        receipt_images.append(
+            {
+                "name": artifact["name"],
+                "source_host": artifact["source_repository"].split("/", 1)[0],
+                "digest": expected,
+                "target_reference": artifact["target_reference"],
+                "status": status,
+            }
+        )
     receipt = {
         "schema": "fs2-serve.nebius.ai/registry-mirror-receipt/v1",
         "mode": "regional-mirror",
@@ -2113,6 +2179,9 @@ def load_registry_credential(
     *,
     purpose: str,
     minimum_remaining_ttl_seconds: int,
+    operation_id: str | None = None,
+    required_subjects: Sequence[str] = (),
+    required_actions: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Acquire and verify a fresh credential from the external capsule.
 
@@ -2149,6 +2218,18 @@ def load_registry_credential(
         "--output-format",
         "inference-stack-json",
     ]
+    if purpose == "release-mirror":
+        if (
+            operation_id not in {"manifest-digest", "copy-exact-image"}
+            or not required_subjects
+            or not required_actions
+        ):
+            raise DeploymentError("release registry operation scope is incomplete")
+        command.extend(["--operation-id", operation_id])
+        for subject in required_subjects:
+            command.extend(["--subject", subject])
+        for action in required_actions:
+            command.extend(["--action", action])
     if purpose == "workload-secret":
         command.extend(
             [
@@ -2166,7 +2247,7 @@ def load_registry_credential(
         check=False,
     )
     if completed.returncode != 0:
-        raise DeploymentError("external capsule rejected the workload registry credential")
+        raise DeploymentError("external capsule rejected the registry operation authorization")
     try:
         result = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
@@ -2180,6 +2261,7 @@ def load_registry_credential(
         "subjects",
         "authorization_model",
     }
+    release_authorization = {"operation_id", "actions", "issued_at"}
     workload_authorization = {
         "refresh_owner_id",
         "refresh_interval_seconds",
@@ -2189,11 +2271,15 @@ def load_registry_credential(
         "refresh_registration_sha256",
         "refresh_owner_ready",
         "refresh_owner_ready_observed_at",
+        "secret_admission_proxy_id",
+        "secret_admission_contract_sha256",
+        "secret_admission_ready",
+        "secret_admission_ready_observed_at",
     }
     expected_authorization = (
         common_authorization | workload_authorization
         if purpose == "workload-secret"
-        else common_authorization
+        else common_authorization | release_authorization
     )
     if (
         not isinstance(docker_config, str)
@@ -2205,12 +2291,31 @@ def load_registry_credential(
         or authorization.get("authorization_model")
         != "repository-digest-action"
         or (
+            purpose == "release-mirror"
+            and (
+                authorization.get("operation_id") != operation_id
+                or authorization.get("subjects") != list(required_subjects)
+                or authorization.get("actions") != list(required_actions)
+            )
+        )
+        or (
             purpose == "workload-secret"
             and (
                 authorization.get("management_mode")
                 != "external-short-lived-refresh-controller"
                 or authorization.get("retire_superseded_without_delete") is not True
                 or authorization.get("refresh_owner_ready") is not True
+                or authorization.get("secret_admission_ready") is not True
+                or not isinstance(
+                    authorization.get("secret_admission_proxy_id"), str
+                )
+                or not authorization["secret_admission_proxy_id"]
+                or authorization.get("secret_admission_contract_sha256")
+                != _sha256_file(
+                    SOLUTION_ROOT
+                    / "security"
+                    / "workload-registry-secret-admission-contract.json"
+                )
             )
         )
     ):
@@ -2276,6 +2381,37 @@ def require_registry_credential_margin(
             ) from exc
         if observed > now:
             raise DeploymentError("registry refresh-owner readiness is future-dated")
+        readiness_age = (now - observed).total_seconds()
+        if readiness_age > MAXIMUM_REFRESH_READINESS_AGE_SECONDS:
+            raise DeploymentError("registry refresh-owner readiness is stale")
+        try:
+            admission_observed = datetime.fromisoformat(
+                str(authorization["secret_admission_ready_observed_at"]).removesuffix(
+                    "Z"
+                )
+                + "+00:00"
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise DeploymentError(
+                "registry Secret admission readiness timestamp is invalid"
+            ) from exc
+        if admission_observed > now:
+            raise DeploymentError(
+                "registry Secret admission readiness is future-dated"
+            )
+        if (
+            now - admission_observed
+        ).total_seconds() > MAXIMUM_REFRESH_READINESS_AGE_SECONDS:
+            raise DeploymentError("registry Secret admission readiness is stale")
+    else:
+        try:
+            issued = datetime.fromisoformat(
+                str(authorization["issued_at"]).removesuffix("Z") + "+00:00"
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise DeploymentError("registry operation issue timestamp is invalid") from exc
+        if issued > now or (now - issued).total_seconds() > 60:
+            raise DeploymentError("registry operation authorization is not fresh")
 
 
 def credential_release_contract(
@@ -2622,13 +2758,15 @@ def apply_plan(
             raise DeploymentError("registry credential is accepted only for workload apply")
         if registry_credential is None:
             raise DeploymentError(
-                "workload apply requires a just-in-time registry credential"
+                "workload apply requires the signed planning authorization receipt"
             )
-        require_registry_credential_margin(
-            registry_credential,
-            minimum_remaining_ttl_seconds=MINIMUM_WORKLOAD_CREDENTIAL_TTL_SECONDS,
-        )
     gate_environment = dict(environment)
+    if registry_credential_required:
+        # Planning credentials authorize rendering only. They never enter the
+        # apply process. The measured provider proxy brokers and injects fresh
+        # exact-subject bytes at each reviewed Secret create/update RPC.
+        gate_environment.pop("TF_VAR_nvcrio_dockerconfigjson", None)
+        gate_environment.pop("TF_VAR_nvcrio_credential_authorization", None)
     gate_environment.update(
         {
             "FS2_IMAGE_GATE_BOOTSTRAP": release_image_contract["bootstrap_path"],
@@ -2667,9 +2805,31 @@ def apply_plan(
             release_image_contract["registry_refresh_registration_path"],
             *(
                 [
-                    "--minimum-registry-credential-remaining-ttl-seconds",
+                    "--minimum-admitted-registry-credential-remaining-ttl-seconds",
                     str(MINIMUM_WORKLOAD_CREDENTIAL_TTL_SECONDS),
+                    "--maximum-refresh-readiness-age-seconds",
+                    str(MAXIMUM_REFRESH_READINESS_AGE_SECONDS),
                     "--require-refresh-owner-ready",
+                    "--broker-workload-credential-at-provider-rpc",
+                    "--registry-secret-admission-contract",
+                    str(
+                        SOLUTION_ROOT
+                        / "security"
+                        / "workload-registry-secret-admission-contract.json"
+                    ),
+                    "--registry-secret-admission-contract-sha256",
+                    _sha256_file(
+                        SOLUTION_ROOT
+                        / "security"
+                        / "workload-registry-secret-admission-contract.json"
+                    ),
+                    "--refresh-readiness-source",
+                    "external-attested-owner-at-provider-rpc",
+                    *[
+                        argument
+                        for resource in WORKLOAD_REGISTRY_SECRET_RESOURCES
+                        for argument in ("--registry-secret-resource", resource)
+                    ],
                 ]
                 if registry_credential_required
                 else []
@@ -3058,14 +3218,7 @@ def apply_stack(
         nebius_profile=args.nebius_profile,
         kubectl=args.kubectl,
     )
-    mirror_credential = (
-        load_registry_credential(
-            purpose="release-mirror", minimum_remaining_ttl_seconds=300
-        )
-        if contract["artifact_delivery"]["mode"] != "direct-source"
-        else None
-    )
-    mirror_selected_images(args, run_root, contract, dynamic, mirror_credential)
+    mirror_selected_images(args, run_root, contract, dynamic)
     foundation_variables, workloads_variables = write_downstream_variables(
         run_root, contract, dynamic, release_contract
     )

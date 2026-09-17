@@ -332,14 +332,40 @@ def workload_registry_auth(
     refresh_runtime = (
         refresh_contract.get("runtime") if isinstance(refresh_contract, dict) else None
     )
+    admission_relative = policy.get("secret_admission_contract_path")
+    admission_sha256 = policy.get("secret_admission_contract_sha256")
+    if (
+        not isinstance(admission_relative, str)
+        or Path(admission_relative).is_absolute()
+        or not isinstance(admission_sha256, str)
+    ):
+        raise BrokerError("Secret admission trust is incomplete")
+    admission_contract_path = (
+        source_root / "security" / admission_relative
+    ).resolve()
+    admission_contract = json.loads(
+        admission_contract_path.read_text(encoding="utf-8")
+    )
+    admission_runtime = (
+        admission_contract.get("runtime")
+        if isinstance(admission_contract, dict)
+        else None
+    )
     if (
         _sha256(refresh_contract_path) != contract_sha256
         or refresh_contract.get("state") != "trusted"
         or not isinstance(refresh_runtime, dict)
         or refresh_runtime.get("owner_id")
         not in policy.get("authorized_refresh_owner_ids", [])
+        or _sha256(admission_contract_path) != admission_sha256
+        or admission_contract.get("state") != "trusted"
+        or not isinstance(admission_runtime, dict)
+        or admission_runtime.get("proxy_id")
+        not in policy.get("authorized_secret_admission_proxy_ids", [])
     ):
-        raise BrokerError("refresh-controller runtime is not trusted")
+        raise BrokerError(
+            "refresh-controller and Secret-admission runtimes are not trusted"
+        )
     identity_document = json.loads(identity_path.read_text(encoding="utf-8"))
     if not isinstance(identity_document, dict):
         raise BrokerError("workload identity document must be an object")
@@ -397,6 +423,15 @@ def workload_registry_auth(
                     "oidc_token": token,
                     "credential_format": "docker-config-json",
                     "required_actions": ["pull"],
+                    "secret_admission": {
+                        "proxy_id": admission_runtime["proxy_id"],
+                        "contract_sha256": admission_sha256,
+                        "provider_rpc_mode": (
+                            "broker-immediately-before-secret-create-or-update"
+                        ),
+                        "planning_credential_forwarded_to_apply": False,
+                        "credential_reuse_across_resource_rpcs": False,
+                    },
                 }
             ).encode("utf-8"),
             headers={"Content-Type": "application/json"},
@@ -433,6 +468,14 @@ def workload_registry_auth(
         or receipt["refresh"].get("rotate_before_expiry_seconds")
         >= policy.get("maximum_ttl_seconds", 0)
         or receipt["refresh"].get("retire_superseded_without_delete") is not True
+        or receipt.get("secret_admission")
+        != {
+            "proxy_id": admission_runtime["proxy_id"],
+            "contract_sha256": admission_sha256,
+            "provider_rpc_mode": "broker-immediately-before-secret-create-or-update",
+            "planning_credential_forwarded_to_apply": False,
+            "credential_reuse_across_resource_rpcs": False,
+        }
     ):
         raise BrokerError("workload registry receipt scope differs")
     try:

@@ -202,6 +202,10 @@ resource "kubernetes_secret_v1" "nvcrio_cred" {
       "fs2.nebius.ai/registry-auth-authorization-model" = try(var.nvcrio_credential_authorization.authorization_model, "blocked")
       "fs2.nebius.ai/registry-auth-refresh-owner-ready" = try(var.nvcrio_credential_authorization.refresh_owner_ready, false) ? "true" : "blocked"
       "fs2.nebius.ai/registry-auth-refresh-owner-observed-at" = try(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-proxy" = try(var.nvcrio_credential_authorization.secret_admission_proxy_id, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-contract-sha256" = try(var.nvcrio_credential_authorization.secret_admission_contract_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-ready" = try(var.nvcrio_credential_authorization.secret_admission_ready, false) ? "true" : "blocked"
+      "fs2.nebius.ai/registry-auth-admission-observed-at" = try(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, "blocked")
     }
   }
   type = "kubernetes.io/dockerconfigjson"
@@ -231,6 +235,10 @@ resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio" {
       "fs2.nebius.ai/registry-auth-authorization-model" = try(var.nvcrio_credential_authorization.authorization_model, "blocked")
       "fs2.nebius.ai/registry-auth-refresh-owner-ready" = try(var.nvcrio_credential_authorization.refresh_owner_ready, false) ? "true" : "blocked"
       "fs2.nebius.ai/registry-auth-refresh-owner-observed-at" = try(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-proxy" = try(var.nvcrio_credential_authorization.secret_admission_proxy_id, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-contract-sha256" = try(var.nvcrio_credential_authorization.secret_admission_contract_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-admission-ready" = try(var.nvcrio_credential_authorization.secret_admission_ready, false) ? "true" : "blocked"
+      "fs2.nebius.ai/registry-auth-admission-observed-at" = try(var.nvcrio_credential_authorization.secret_admission_ready_observed_at, "blocked")
     }
   }
   type = "kubernetes.io/dockerconfigjson"

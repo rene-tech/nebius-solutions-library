@@ -196,7 +196,18 @@ audit every transition, and supersede without deleting the Secret. Static
 Docker config environment variables and host credential merging are rejected.
 The checked-in refresh controller contract has null runtime/provenance fields,
 so private-image integration remains blocked rather than pretending that one
-short-lived initial Secret preserves later scale or reschedule behavior.
+short-lived initial Secret preserves later scale or reschedule behavior. The
+separate provider-RPC admission contract is also blocked until Platform
+Security supplies its exact proxy executable, provider-protocol, SBOM and
+provenance identities. Planning credentials are stripped before apply; that
+proxy must broker distinct fresh bytes immediately before each exact Secret
+create/update and reject readiness older than 60 seconds.
+
+Regional mirroring similarly has no credential shared by an artifact loop.
+Every digest lookup and copy receives a distinct operation ID, exact
+repository+expected-digest subject set, action set, bounded command timeout and
+fresh authorization with an additional TTL safety margin. Post-copy checks use
+new authorizations rather than inheriting the copy token.
 
 Rollback is a normal Git revert of the integration commit plus restoration of
 the previously recorded first-party image digests or Helm revisions. The

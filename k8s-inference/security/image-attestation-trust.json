@@ -44,6 +44,7 @@
     "audience": "fs2-sai24-release-attestation",
     "maximum_ttl_seconds": 3600,
     "required_authorization_model": "repository-digest-action",
+    "release_operation_actions": ["pull", "push"],
     "authorized_broker_ids": [],
     "allowed_registries": [],
     "anonymous_registries": []
@@ -58,8 +59,12 @@
     "authorized_service_accounts": [],
     "authorized_refresh_owner_ids": [],
     "maximum_refresh_interval_seconds": 300,
+    "maximum_refresh_readiness_age_seconds": 60,
     "refresh_controller_contract_path": "workload-registry-refresh-contract.json",
     "refresh_controller_contract_sha256": null,
+    "secret_admission_contract_path": "workload-registry-secret-admission-contract.json",
+    "secret_admission_contract_sha256": null,
+    "authorized_secret_admission_proxy_ids": [],
     "allowed_registries": []
   }
 }

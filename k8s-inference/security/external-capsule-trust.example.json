@@ -31,6 +31,23 @@
     "file_transport": "sealed-memfd",
     "terraform_provider_transport": "verified-read-only-private-mount",
     "terraform_modes": ["init", "plan", "show", "apply"],
+    "workload_secret_provider_rpc_admission": {
+      "mode": "broker-immediately-before-secret-create-or-update",
+      "contract_path": null,
+      "contract_sha256": null,
+      "provider_proxy_path": null,
+      "provider_proxy_sha256": null,
+      "deny_planning_credential_forwarding": true,
+      "deny_credential_reuse_across_resource_rpcs": true
+    },
+    "registry_operation_authorization": {
+      "one_credential_per_command": true,
+      "required_binding": "operation-id-actions-and-exact-repository-expected-digest-subjects",
+      "digest_timeout_seconds": 240,
+      "copy_timeout_seconds": 3000,
+      "minimum_ttl_safety_seconds": 300,
+      "deny_credential_reuse_for_post_copy_verification": true
+    },
     "deny_path_reopen": true,
     "deny_path_lookup": true,
     "inference_stack_entry": {

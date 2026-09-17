@@ -390,6 +390,10 @@ class InferenceStackTests(unittest.TestCase):
                 "refresh_registration_sha256": "c" * 64,
                 "refresh_owner_ready": True,
                 "refresh_owner_ready_observed_at": "2026-09-17T00:00:00Z",
+                "secret_admission_proxy_id": "reviewed-admission-proxy",
+                "secret_admission_contract_sha256": "d" * 64,
+                "secret_admission_ready": True,
+                "secret_admission_ready_observed_at": "2026-09-17T00:00:00Z",
             }
             registry_credential = {
                 "docker_config_json": '{"auths":{"nvcr.io":{"auth":"SENTINEL"}}}',
@@ -2362,9 +2366,11 @@ class InferenceStackTests(unittest.TestCase):
         configuration = regional_contract()
         expected_digests = {f"sha256:{character * 64}" for character in ("a", "b", "c")}
 
-        def digest_from_reference(_crane, reference, environment, **_kwargs):
-            self.assertEqual(environment["NEBIUS_PROFILE"], "explicit-profile")
-            digest = f"sha256:{reference[-64:]}"
+        def digest_from_reference(
+            _crane, reference, expected, _contract, nebius_profile, **_kwargs
+        ):
+            self.assertEqual(nebius_profile, "explicit-profile")
+            digest = expected
             self.assertIn(digest, expected_digests)
             return digest
 
@@ -2383,7 +2389,6 @@ class InferenceStackTests(unittest.TestCase):
                         Path(temporary),
                         configuration,
                         regional_dynamic(Path(temporary)),
-                        None,
                     )
             self.assertIsNotNone(receipt)
             payload = json.loads(receipt.read_text(encoding="utf-8"))
@@ -2403,8 +2408,9 @@ class InferenceStackTests(unittest.TestCase):
         configuration["selected_model_ids"] = []
         tag_lookups: dict[str, int] = {}
 
-        def digest_result(_crane, reference, _environment, **_kwargs):
-            expected = f"sha256:{reference[-64:]}"
+        def digest_result(
+            _crane, reference, expected, _contract, _nebius_profile, **_kwargs
+        ):
             if ":mirror-sha256-" in reference:
                 count = tag_lookups.get(reference, 0)
                 tag_lookups[reference] = count + 1
@@ -2422,7 +2428,6 @@ class InferenceStackTests(unittest.TestCase):
                     Path(temporary),
                     configuration,
                     regional_dynamic(Path(temporary)),
-                    None,
                 )
             self.assertEqual(copy_image.call_count, 2)
             self.assertTrue(receipt_path.is_file())
@@ -2438,12 +2443,14 @@ class InferenceStackTests(unittest.TestCase):
         configuration["selected_model_ids"] = []
         tag_calls = 0
 
-        def mismatched_digest(_crane, reference, _environment, **_kwargs):
+        def mismatched_digest(
+            _crane, reference, expected, _contract, _nebius_profile, **_kwargs
+        ):
             nonlocal tag_calls
             if ":mirror-sha256-" in reference:
                 tag_calls += 1
                 return None if tag_calls == 1 else f"sha256:{'f' * 64}"
-            return f"sha256:{reference[-64:]}"
+            return expected
 
         with tempfile.TemporaryDirectory(prefix="fs2-mirror-mismatch-") as temporary:
             receipt_path = Path(temporary) / "registry-mirror.receipt.json"
@@ -2457,7 +2464,6 @@ class InferenceStackTests(unittest.TestCase):
                     Path(temporary),
                     configuration,
                     regional_dynamic(Path(temporary)),
-                    None,
                 )
             copy_image.assert_called_once()
             self.assertFalse(receipt_path.exists())
@@ -2652,7 +2658,7 @@ class InferenceStackTests(unittest.TestCase):
         self.assertIn("SOCK_SEQPACKET", source)
         self.assertIn("direct inference-stack execution is disabled", source)
 
-    def test_workload_credential_is_acquired_after_foundation_and_at_apply_margin(self) -> None:
+    def test_workload_secret_is_rebrokered_at_each_provider_rpc(self) -> None:
         source = STACK_PATH.read_text(encoding="utf-8")
         apply_source = source.split("def apply_stack", 1)[1].split(
             "def plan_stack", 1
@@ -2664,8 +2670,40 @@ class InferenceStackTests(unittest.TestCase):
         self.assertLess(foundation_apply, workload_acquire)
         self.assertLess(workload_acquire, workload_plan)
         self.assertLess(workload_plan, workload_apply)
-        self.assertIn("require_registry_credential_margin", apply_source)
+        self.assertIn("require_registry_credential_margin", source)
         self.assertIn("MINIMUM_WORKLOAD_CREDENTIAL_TTL_SECONDS", apply_source)
+        apply_plan_source = source.split("def apply_plan", 1)[1].split(
+            "def workload_endpoint_outputs", 1
+        )[0]
+        self.assertIn(
+            'gate_environment.pop("TF_VAR_nvcrio_dockerconfigjson", None)',
+            apply_plan_source,
+        )
+        self.assertIn("--broker-workload-credential-at-provider-rpc", apply_plan_source)
+        self.assertIn("--maximum-refresh-readiness-age-seconds", apply_plan_source)
+        self.assertNotIn("require_registry_credential_margin(", apply_plan_source)
+        for resource in STACK.WORKLOAD_REGISTRY_SECRET_RESOURCES:
+            self.assertIn(resource, source)
+
+    def test_each_registry_command_acquires_its_own_exact_operation_scope(self) -> None:
+        source = STACK_PATH.read_text(encoding="utf-8")
+        digest_source = source.split("def crane_digest", 1)[1].split(
+            "def crane_copy", 1
+        )[0]
+        copy_source = source.split("def crane_copy", 1)[1].split(
+            "def mirror_selected_images", 1
+        )[0]
+        mirror_source = source.split("def mirror_selected_images", 1)[1].split(
+            "def stage_paths", 1
+        )[0]
+        self.assertIn("load_registry_credential", digest_source)
+        self.assertIn('operation_id="manifest-digest"', digest_source)
+        self.assertIn("REGISTRY_DIGEST_OPERATION_TIMEOUT_SECONDS", digest_source)
+        self.assertIn("load_registry_credential", copy_source)
+        self.assertIn('operation_id="copy-exact-image"', copy_source)
+        self.assertIn("REGISTRY_COPY_OPERATION_TIMEOUT_SECONDS", copy_source)
+        self.assertNotIn("registry_credential:", mirror_source)
+        self.assertIn("registry refresh-owner readiness is stale", source)
 
 
 if __name__ == "__main__":
