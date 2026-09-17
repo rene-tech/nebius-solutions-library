@@ -42,8 +42,11 @@
       "mutate_write_only_secret_data_only": true,
       "preserve_planned_metadata_and_data_wo_revision": true,
       "require_distinct_stable_lease_per_secret": true,
+      "require_exact_enabled_secret_inventory_from_signed_plan": true,
+      "forbid_static_secret_superset": true,
+      "refresh_readiness_must_bind_secret_inventory_sha256": true,
       "require_complete_signed_external_handoff_before_apply_success": true,
-      "handoff_schema": "fs2-serve.nebius.ai/workload-registry-secret-admission-handoff/v1",
+      "handoff_schema": "fs2-serve.nebius.ai/workload-registry-secret-admission-handoff/v2",
       "handoff_signer_id": null,
       "handoff_public_key_sha256": null,
       "handoff_verifier_sha256": null

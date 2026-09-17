@@ -194,6 +194,8 @@ resource "kubernetes_secret_v1" "nvcrio_cred" {
       "fs2.nebius.ai/registry-lease-id"                          = try(var.nvcrio_secret_leases.models.lease_id, "blocked")
       "fs2.nebius.ai/registry-lease-generation"                  = tostring(try(var.nvcrio_secret_leases.models.lease_generation, 0))
       "fs2.nebius.ai/registry-subject-scope-sha256"              = try(var.nvcrio_secret_leases.models.subject_scope_sha256, "blocked")
+      "fs2.nebius.ai/registry-inventory-derivation-sha256"       = try(var.nvcrio_secret_leases.models.derivation_sha256, "blocked")
+      "fs2.nebius.ai/registry-secret-inventory-sha256"           = try(var.nvcrio_secret_leases.models.secret_inventory_sha256, "blocked")
       "fs2.nebius.ai/registry-auth-refresh-owner"                = try(var.nvcrio_secret_leases.models.refresh_owner_id, "blocked")
       "fs2.nebius.ai/registry-auth-management"                   = try(var.nvcrio_secret_leases.models.management_mode, "blocked")
       "fs2.nebius.ai/registry-auth-retirement"                   = try(var.nvcrio_secret_leases.models.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
@@ -224,6 +226,8 @@ resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio" {
       "fs2.nebius.ai/registry-lease-id"                          = try(var.nvcrio_secret_leases.observability.lease_id, "blocked")
       "fs2.nebius.ai/registry-lease-generation"                  = tostring(try(var.nvcrio_secret_leases.observability.lease_generation, 0))
       "fs2.nebius.ai/registry-subject-scope-sha256"              = try(var.nvcrio_secret_leases.observability.subject_scope_sha256, "blocked")
+      "fs2.nebius.ai/registry-inventory-derivation-sha256"       = try(var.nvcrio_secret_leases.observability.derivation_sha256, "blocked")
+      "fs2.nebius.ai/registry-secret-inventory-sha256"           = try(var.nvcrio_secret_leases.observability.secret_inventory_sha256, "blocked")
       "fs2.nebius.ai/registry-auth-refresh-owner"                = try(var.nvcrio_secret_leases.observability.refresh_owner_id, "blocked")
       "fs2.nebius.ai/registry-auth-management"                   = try(var.nvcrio_secret_leases.observability.management_mode, "blocked")
       "fs2.nebius.ai/registry-auth-retirement"                   = try(var.nvcrio_secret_leases.observability.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"

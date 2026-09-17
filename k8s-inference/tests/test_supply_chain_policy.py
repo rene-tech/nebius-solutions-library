@@ -217,6 +217,9 @@ def test_catalog_mapping_is_consumed_by_runtime_and_model_express_cannot_bypass_
     assert activation_body.index("register-workload-registry-refresh") < (
         activation_body.index("apply-registry-secret")
     )
+    assert activation_body.count("--require-exact-watched-secret-set") == 2
+    assert activation_body.count('--namespace "$NAMESPACE"') == 2
+    assert activation_body.count("--signed-invocation-closure") == 2
     assert "--refresh-registration" in activation_body
     assert "--broker-fresh-credential-at-secret-admission" in activation_body
     assert "--admission-contract" in activation_body
@@ -265,12 +268,29 @@ def test_catalog_mapping_is_consumed_by_runtime_and_model_express_cannot_bypass_
     }
     assert set(lease_surfaces) == {"models", "observability", "modelexpress"}
     assert lease_surfaces["models"]["subject_sources"] == ["catalog_image_sources"]
+    assert lease_surfaces["models"]["enabled_predicate"] == (
+        "local.model_nvcr_credentials_required"
+    )
     assert lease_surfaces["observability"]["subject_consumers"] == [
         "stages/workloads/values/dcgm-exporter.yaml"
     ]
     assert lease_surfaces["modelexpress"]["resource_address"] == (
         "kubernetes_secret_v1.modelexpress_nvcrio[0]"
     )
+    assert lease_surfaces["modelexpress"]["namespace_from_signed_plan"] == (
+        "var.model_express.namespace"
+    )
+    assert surfaces[
+        "workload_registry_secret_inventory_derivation_sources"
+    ] == [
+        "inference-stack",
+        "catalog/profiles/model-profiles.json",
+        "catalog/runtime/deployment-runtimes/*.json",
+        "locals.tf",
+        "stages/workloads/locals.tf",
+        "stages/workloads/modelexpress.tf",
+        "stages/workloads/values/dcgm-exporter.yaml",
+    ]
     modelexpress_readme = (ROOT / "charts/addons/modelexpress/README.md").read_text()
     assert "helm install " not in modelexpress_readme
     assert "helm upgrade " not in modelexpress_readme
@@ -309,6 +329,14 @@ def test_external_capsule_is_the_only_release_execution_authority() -> None:
     assert provider_admission["deny_credential_reuse_across_resource_rpcs"] is True
     assert provider_admission["mutate_write_only_secret_data_only"] is True
     assert provider_admission["preserve_planned_metadata_and_data_wo_revision"] is True
+    assert provider_admission[
+        "require_exact_enabled_secret_inventory_from_signed_plan"
+    ] is True
+    assert provider_admission["forbid_static_secret_superset"] is True
+    assert provider_admission[
+        "refresh_readiness_must_bind_secret_inventory_sha256"
+    ] is True
+    assert provider_admission["handoff_schema"].endswith("/v2")
     assert (
         provider_admission["require_complete_signed_external_handoff_before_apply_success"]
         is True
@@ -406,6 +434,15 @@ def test_private_pull_refresh_contract_stays_fail_closed_until_attested() -> Non
     )
     assert refresh["retire_superseded_without_delete"] is True
     assert refresh["maximum_readiness_receipt_age_seconds"] == 60
+    assert refresh["schema"] == (
+        "fs2-serve.nebius.ai/workload-registry-refresh-contract/v2"
+    )
+    watched = refresh["watched_secret_inventory"]
+    assert watched["selection"] == "exact-enabled-subset-only"
+    assert watched["static_default_namespace_allowed"] is False
+    assert watched["readiness_receipt_must_bind_inventory_sha256"] is True
+    assert refresh["readiness_receipt_schema"].endswith("/v2")
+    assert "watched_secrets" not in refresh
     assert refresh["secret_admission_contract_sha256"] is None
     assert refresh["failure_policy"]["delete_secret"] is False
     assert refresh["runtime"]["image"] is None
@@ -416,7 +453,7 @@ def test_private_pull_refresh_contract_stays_fail_closed_until_attested() -> Non
         (ROOT / "security/workload-registry-secret-admission-contract.json").read_text()
     )
     assert admission["schema"] == (
-        "fs2-serve.nebius.ai/workload-registry-secret-admission-contract/v2"
+        "fs2-serve.nebius.ai/workload-registry-secret-admission-contract/v3"
     )
     assert admission["state"] == (
         "blocked_pending_security_owner_and_runtime_attestation"
@@ -430,6 +467,14 @@ def test_private_pull_refresh_contract_stays_fail_closed_until_attested() -> Non
     assert admission["provider_proxy_mutates_only_write_only_secret_data"] is True
     assert admission["token_receipt_persisted_in_terraform_state"] is False
     assert admission["token_revision_persisted_in_terraform_state"] is False
+    inventory = admission["enabled_secret_inventory"]
+    assert inventory["static_superset_allowed"] is False
+    assert inventory["extra_or_missing_resource_allowed"] is False
+    assert inventory[
+        "inventory_sha256_must_match_planning_authorization_refresh_readiness_admission_and_handoff"
+    ] is True
+    assert "derivation_sha256" in inventory["required_row_fields"]
+    assert admission["authoritative_handoff"]["schema"].endswith("/v2")
     assert (
         admission["authoritative_handoff"][
             "terraform_apply_success_requires_verified_handoff"
@@ -445,10 +490,16 @@ def test_private_pull_refresh_contract_stays_fail_closed_until_attested() -> Non
     variables = (ROOT / "variables.tf").read_text()
     assert "static NVCR Docker config input is forbidden" in variables
     workload_variables = (ROOT / "stages/workloads/variables.tf").read_text()
+    assert 'variable "nvcrio_secret_inventory"' in workload_variables
     for field in (
+        "resource_address",
+        "namespace",
+        "name",
         "lease_id",
         "lease_generation",
         "subject_scope_sha256",
+        "derivation_sha256",
+        "secret_inventory_sha256",
         "refresh_owner_id",
         "refresh_registration_sha256",
         "retire_superseded_without_delete",

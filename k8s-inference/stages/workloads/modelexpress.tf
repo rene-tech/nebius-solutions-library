@@ -161,6 +161,8 @@ resource "kubernetes_secret_v1" "modelexpress_nvcrio" {
       "fs2.nebius.ai/registry-lease-id"                          = try(var.nvcrio_secret_leases.modelexpress.lease_id, "blocked")
       "fs2.nebius.ai/registry-lease-generation"                  = tostring(try(var.nvcrio_secret_leases.modelexpress.lease_generation, 0))
       "fs2.nebius.ai/registry-subject-scope-sha256"              = try(var.nvcrio_secret_leases.modelexpress.subject_scope_sha256, "blocked")
+      "fs2.nebius.ai/registry-inventory-derivation-sha256"       = try(var.nvcrio_secret_leases.modelexpress.derivation_sha256, "blocked")
+      "fs2.nebius.ai/registry-secret-inventory-sha256"           = try(var.nvcrio_secret_leases.modelexpress.secret_inventory_sha256, "blocked")
       "fs2.nebius.ai/registry-auth-refresh-owner"                = try(var.nvcrio_secret_leases.modelexpress.refresh_owner_id, "blocked")
       "fs2.nebius.ai/registry-auth-management"                   = try(var.nvcrio_secret_leases.modelexpress.management_mode, "blocked")
       "fs2.nebius.ai/registry-auth-retirement"                   = try(var.nvcrio_secret_leases.modelexpress.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
@@ -212,7 +214,14 @@ resource "helm_release" "modelexpress" {
     precondition {
       condition = !local.modelexpress_nvcr_required || try((
         var.nvcrio_secret_admission_placeholders != null &&
+        var.nvcrio_secret_inventory != null &&
         var.nvcrio_secret_leases != null &&
+        var.nvcrio_secret_inventory.modelexpress == local.workload_registry_secret_inventory.modelexpress &&
+        var.nvcrio_secret_leases.modelexpress.resource_address == local.workload_registry_secret_inventory.modelexpress.resource_address &&
+        var.nvcrio_secret_leases.modelexpress.namespace == var.model_express.namespace &&
+        var.nvcrio_secret_leases.modelexpress.name == local.modelexpress_pull_secret_name &&
+        var.nvcrio_secret_leases.modelexpress.derivation_sha256 == local.workload_registry_inventory_derivation_sha256 &&
+        var.nvcrio_secret_leases.modelexpress.secret_inventory_sha256 == sha256(jsonencode(local.workload_registry_secret_inventory)) &&
         var.nvcrio_secret_leases.modelexpress.authorization_model == "repository-digest-action" &&
         var.nvcrio_secret_leases.modelexpress.management_mode == "external-short-lived-refresh-controller" &&
         var.nvcrio_secret_leases.modelexpress.retire_superseded_without_delete &&

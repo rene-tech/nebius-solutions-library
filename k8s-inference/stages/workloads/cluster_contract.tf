@@ -279,12 +279,26 @@ resource "terraform_data" "cluster_contract" {
     precondition {
       condition = (
         (!local.ngc_api_key_required || var.ngc_api_key != null) &&
-        (!(local.model_nvcr_credentials_required || local.dcgm_nvcr_credentials_required || local.modelexpress_nvcr_required) || try((
+        (!(local.model_nvcr_credentials_required || local.dcgm_nvcr_credentials_required || local.modelexpress_nvcr_required) ? (
+          var.nvcrio_secret_admission_placeholders == null &&
+          var.nvcrio_secret_inventory == null &&
+          var.nvcrio_secret_leases == null
+        ) : try((
           var.nvcrio_secret_admission_placeholders != null &&
+          var.nvcrio_secret_inventory != null &&
           var.nvcrio_secret_leases != null &&
-          toset(keys(var.nvcrio_secret_leases)) == toset(["models", "observability", "modelexpress"]) &&
+          var.nvcrio_secret_inventory == local.workload_registry_secret_inventory &&
+          toset(keys(var.nvcrio_secret_admission_placeholders)) == toset(keys(local.workload_registry_secret_inventory)) &&
+          toset(keys(var.nvcrio_secret_leases)) == toset(keys(local.workload_registry_secret_inventory)) &&
           alltrue([
-            for lease in values(var.nvcrio_secret_leases) :
+            for key, lease in var.nvcrio_secret_leases :
+            lease.resource_address == local.workload_registry_secret_inventory[key].resource_address &&
+            lease.namespace == local.workload_registry_secret_inventory[key].namespace &&
+            lease.name == local.workload_registry_secret_inventory[key].name &&
+            lease.subjects == toset(local.workload_registry_secret_inventory[key].subjects) &&
+            lease.subject_scope_sha256 == local.workload_registry_secret_inventory[key].subject_scope_sha256 &&
+            lease.derivation_sha256 == local.workload_registry_inventory_derivation_sha256 &&
+            lease.secret_inventory_sha256 == sha256(jsonencode(local.workload_registry_secret_inventory)) &&
             lease.authorization_model == "repository-digest-action" &&
             lease.management_mode == "external-short-lived-refresh-controller" &&
             lease.retire_superseded_without_delete &&
@@ -293,7 +307,7 @@ resource "terraform_data" "cluster_contract" {
           ])
         ), false))
       )
-      error_message = "Private NVCR planning requires distinct invalid placeholders and stable per-Secret leases; volatile credential receipts/revisions must remain in the external signed admission handoff."
+      error_message = "Private NVCR planning requires an exact enabled Secret inventory, one distinct invalid placeholder and one stable lease per planned Secret; volatile credential receipts/revisions must remain in the external signed admission handoff."
     }
     precondition {
       condition     = try(data.kubernetes_resource.envoyproxy_crd.object.metadata.name, "") == "envoyproxies.gateway.envoyproxy.io"

@@ -283,6 +283,58 @@ locals {
     "nvcr_dockerconfigjson",
   )
   dcgm_nvcr_credentials_required = var.deployment_profile == "full_catalog"
+  model_nvcr_subjects = sort(distinct([
+    for model_id in local.accelerator_model_ids : var.model_image_overrides[model_id]
+    if contains(
+      try(local.profile_contract.model_artifacts[model_id].required_secrets, []),
+      "nvcr_dockerconfigjson",
+    )
+  ]))
+  dcgm_nvcr_subject = "nvcr.io/nvidia/k8s/dcgm-exporter@sha256:b4df763de9558e5b3f1f1d79bc65b772fcf65b8a9c3664ea7173e47153112b4a"
+  workload_registry_inventory_derivation_sha256 = sha256(jsonencode({
+    inference_stack_sha256 = filesha256("${local.fs2_root}/inference-stack")
+    model_profiles_sha256 = filesha256("${local.fs2_root}/catalog/profiles/model-profiles.json")
+    deployment_runtime_records = {
+      for name in fileset("${local.fs2_root}/catalog/runtime/deployment-runtimes", "*.json") :
+      name => filesha256("${local.fs2_root}/catalog/runtime/deployment-runtimes/${name}")
+    }
+    root_locals_sha256     = filesha256("${local.fs2_root}/locals.tf")
+    workload_locals_sha256 = filesha256("${path.module}/locals.tf")
+    modelexpress_sha256     = filesha256("${path.module}/modelexpress.tf")
+    dcgm_values_sha256      = filesha256("${path.module}/values/dcgm-exporter.yaml")
+  }))
+  workload_registry_secret_inventory = merge(
+    local.model_nvcr_credentials_required ? {
+      models = {
+        resource_address    = "kubernetes_secret_v1.nvcrio_cred[0]"
+        namespace           = "fs2-models"
+        name                = "nvcrio-cred"
+        subjects            = local.model_nvcr_subjects
+        subject_scope_sha256 = sha256(jsonencode(local.model_nvcr_subjects))
+        derivation_sha256    = local.workload_registry_inventory_derivation_sha256
+      }
+    } : {},
+    local.dcgm_nvcr_credentials_required ? {
+      observability = {
+        resource_address    = "kubernetes_secret_v1.dcgm_exporter_nvcrio[0]"
+        namespace           = "fs2-observability"
+        name                = "fs2-dcgm-exporter-nvcrio"
+        subjects            = [local.dcgm_nvcr_subject]
+        subject_scope_sha256 = sha256(jsonencode([local.dcgm_nvcr_subject]))
+        derivation_sha256    = local.workload_registry_inventory_derivation_sha256
+      }
+    } : {},
+    local.modelexpress_nvcr_required ? {
+      modelexpress = {
+        resource_address    = "kubernetes_secret_v1.modelexpress_nvcrio[0]"
+        namespace           = var.model_express.namespace
+        name                = "fs2-modelexpress-nvcrio"
+        subjects            = ["${var.model_express.server_image.repository}@${var.model_express.server_image.digest}"]
+        subject_scope_sha256 = sha256(jsonencode(["${var.model_express.server_image.repository}@${var.model_express.server_image.digest}"]))
+        derivation_sha256    = local.workload_registry_inventory_derivation_sha256
+      }
+    } : {},
+  )
   cpu_runtime_manifest_paths = {
     for model_id, candidate in local.static_cpu_runtime_records : model_id => one([
       for relative_path in local.profile_contract.model_artifacts[model_id].manifest_paths : relative_path

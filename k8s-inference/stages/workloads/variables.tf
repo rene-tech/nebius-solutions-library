@@ -1611,6 +1611,42 @@ variable "ngc_api_key" {
   default     = null
 }
 
+variable "nvcrio_secret_inventory" {
+  description = "Exact enabled private-pull Secret identities and subjects derived from workload inputs, consumed by both the signed plan and the external refresh/admission owners."
+  type = map(object({
+    resource_address     = string
+    namespace            = string
+    name                 = string
+    subjects             = list(string)
+    subject_scope_sha256 = string
+    derivation_sha256    = string
+  }))
+  nullable = true
+  default  = null
+
+  validation {
+    condition = var.nvcrio_secret_inventory == null || (
+      length(var.nvcrio_secret_inventory) > 0 &&
+      length(setsubtract(toset(keys(var.nvcrio_secret_inventory)), toset(["models", "observability", "modelexpress"]))) == 0 &&
+      alltrue([
+        for row in values(var.nvcrio_secret_inventory) :
+        length(row.namespace) > 0 &&
+        length(row.name) > 0 &&
+        length(row.subjects) > 0 &&
+        length(row.subjects) == length(distinct(row.subjects)) &&
+        row.subjects == sort(row.subjects) &&
+        row.subject_scope_sha256 == sha256(jsonencode(row.subjects)) &&
+        can(regex("^[0-9a-f]{64}$", row.derivation_sha256)) &&
+        alltrue([
+          for subject in row.subjects :
+          can(regex("^[^@[:space:]]+@sha256:[0-9a-f]{64}$", subject))
+        ])
+      ])
+    )
+    error_message = "NVCR Secret inventory must be a nonempty subset of reviewed resources with exact identities and sorted digest-bound subjects."
+  }
+}
+
 variable "nvcrio_secret_admission_placeholders" {
   description = "Distinct invalid placeholders used only to evaluate each write-only registry Secret field. The external provider proxy replaces only these bytes at the corresponding Secret RPC."
   type        = map(string)
@@ -1621,14 +1657,15 @@ variable "nvcrio_secret_admission_placeholders" {
 
   validation {
     condition = var.nvcrio_secret_admission_placeholders == null || (
-      toset(keys(var.nvcrio_secret_admission_placeholders)) == toset(["models", "observability", "modelexpress"]) &&
-      length(distinct(values(var.nvcrio_secret_admission_placeholders))) == 3 &&
+      length(var.nvcrio_secret_admission_placeholders) > 0 &&
+      length(setsubtract(toset(keys(var.nvcrio_secret_admission_placeholders)), toset(["models", "observability", "modelexpress"]))) == 0 &&
+      length(distinct(values(var.nvcrio_secret_admission_placeholders))) == length(var.nvcrio_secret_admission_placeholders) &&
       alltrue([
         for placeholder in values(var.nvcrio_secret_admission_placeholders) :
         startswith(placeholder, "fs2-noncredential-placeholder:v1:")
       ])
     )
-    error_message = "NVCR Secret admission requires three distinct, explicitly noncredential placeholders."
+    error_message = "NVCR Secret admission requires one distinct, explicitly noncredential placeholder for each enabled reviewed Secret."
   }
 }
 
@@ -1636,10 +1673,14 @@ variable "nvcrio_secret_leases" {
   description = "Stable, per-Secret noncredential lease identities stored in the signed plan. Token receipts, expiries and token revisions exist only in the authoritative external admission handoff."
   type = map(object({
     resource_address                   = string
+    namespace                          = string
+    name                               = string
     lease_id                           = string
     lease_generation                   = number
     subjects                           = set(string)
     subject_scope_sha256               = string
+    derivation_sha256                  = string
+    secret_inventory_sha256            = string
     authorization_model                = string
     refresh_owner_id                   = string
     management_mode                    = string
@@ -1655,19 +1696,21 @@ variable "nvcrio_secret_leases" {
 
   validation {
     condition = var.nvcrio_secret_leases == null || (
-      toset(keys(var.nvcrio_secret_leases)) == toset(["models", "observability", "modelexpress"]) &&
-      try(var.nvcrio_secret_leases.models.resource_address, "") == "kubernetes_secret_v1.nvcrio_cred[0]" &&
-      try(var.nvcrio_secret_leases.observability.resource_address, "") == "kubernetes_secret_v1.dcgm_exporter_nvcrio[0]" &&
-      try(var.nvcrio_secret_leases.modelexpress.resource_address, "") == "kubernetes_secret_v1.modelexpress_nvcrio[0]" &&
-      length(distinct([for lease in values(var.nvcrio_secret_leases) : lease.lease_id])) == 3 &&
+      length(var.nvcrio_secret_leases) > 0 &&
+      length(setsubtract(toset(keys(var.nvcrio_secret_leases)), toset(["models", "observability", "modelexpress"]))) == 0 &&
+      length(distinct([for lease in values(var.nvcrio_secret_leases) : lease.lease_id])) == length(var.nvcrio_secret_leases) &&
       length(flatten([for lease in values(var.nvcrio_secret_leases) : tolist(lease.subjects)])) == length(distinct(flatten([for lease in values(var.nvcrio_secret_leases) : tolist(lease.subjects)]))) &&
       alltrue([
         for lease in values(var.nvcrio_secret_leases) :
         length(lease.lease_id) > 0 &&
+        length(lease.namespace) > 0 &&
+        length(lease.name) > 0 &&
         floor(lease.lease_generation) == lease.lease_generation &&
         lease.lease_generation > 0 &&
         length(lease.subjects) > 0 &&
         lease.subject_scope_sha256 == sha256(jsonencode(sort(tolist(lease.subjects)))) &&
+        can(regex("^[0-9a-f]{64}$", lease.derivation_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", lease.secret_inventory_sha256)) &&
         lease.authorization_model == "repository-digest-action" &&
         length(lease.refresh_owner_id) > 0 &&
         lease.management_mode == "external-short-lived-refresh-controller" &&
@@ -1683,7 +1726,7 @@ variable "nvcrio_secret_leases" {
         ])
       ])
     )
-    error_message = "NVCR Secret leases must be three distinct stable identities with exact digest scopes and external ownership of volatile credential receipts/revisions."
+    error_message = "NVCR Secret leases must be a nonempty reviewed subset of distinct stable Secret identities with exact digest scopes and external ownership of volatile credential receipts/revisions."
   }
 }
 

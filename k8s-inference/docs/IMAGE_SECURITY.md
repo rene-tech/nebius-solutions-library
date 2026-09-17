@@ -200,13 +200,25 @@ short-lived initial Secret preserves later scale or reschedule behavior. The
 separate provider-RPC admission contract is also blocked until Platform
 Security supplies its exact proxy executable, provider-protocol, SBOM and
 provenance identities, plus the external handoff signer/public-key/verifier
-identities. The signed plan stores a distinct stable lease and lease
-generation for each Secret, plus only invalid ephemeral placeholders. The proxy
-must preserve every planned annotation and `data_wo_revision`, broker distinct
-fresh bytes immediately before each exact Secret create/update, and reject
-readiness older than 60 seconds. Each volatile token receipt/revision is bound
-to the API response in a complete signed external handoff; Terraform apply may
-not report success until the capsule verifies that handoff.
+identities. The signed plan stores the exact nonempty subset of private-pull
+Secrets actually enabled by the workload inputs, including each configured
+namespace/name and digest subject, then stores a distinct stable lease and
+lease generation plus one invalid ephemeral placeholder for each member of
+that subset. Subject lists are normalized as sorted distinct sets. Each row
+also binds a canonical digest of the model profile, every deployment-runtime
+record, the `inference-stack` derivation code, the workloads locals and
+ModelExpress source, and the DCGM values used
+by both the Python and Terraform derivations; the CPU-runtime predicate includes
+the GPU shape, runtime-image cache owner, and allowed artifact kind on both
+sides. The refresh readiness receipt, provider-RPC admission, and final
+handoff must all carry the same canonical inventory hash; a static superset,
+missing row, extra row, or checked-in default ModelExpress namespace is not
+authority. The proxy must preserve every planned annotation and
+`data_wo_revision`, broker distinct fresh bytes immediately before each exact
+Secret create/update, and reject readiness older than 60 seconds. Each volatile
+token receipt/revision is bound to the API response in a complete signed
+external handoff; Terraform apply may not report success until the capsule
+verifies that handoff against the exact signed-plan inventory.
 
 Regional mirroring similarly has no credential shared by an artifact loop.
 Every digest lookup and copy receives a distinct operation ID and exact grant

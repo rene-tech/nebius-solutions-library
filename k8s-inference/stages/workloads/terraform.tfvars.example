@@ -114,8 +114,9 @@ hot_model_ids      = []
 
 # NVCR is required by the full-catalog DCGM exporter. NGC is additionally
 # required only when enabled_model_ids includes an NGC-backed NIM. The capsule
-# alone supplies nvcrio_secret_leases and ephemeral per-Secret noncredential
-# placeholders; never place Docker credentials or token receipts in tfvars.
+# alone derives nvcrio_secret_inventory, then supplies one lease and one
+# ephemeral noncredential placeholder for each Secret that the signed plan
+# actually creates; never place Docker credentials or token receipts in tfvars.
 # ngc_api_key = "REPLACE"
 
 # Initial verified create requires false. After all 16 routes/17 backends are

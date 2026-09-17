@@ -359,18 +359,36 @@ def workload_registry_auth(
     )
     if (
         _sha256(refresh_contract_path) != contract_sha256
+        or refresh_contract.get("schema")
+        != "fs2-serve.nebius.ai/workload-registry-refresh-contract/v2"
         or refresh_contract.get("state") != "trusted"
         or not isinstance(refresh_runtime, dict)
         or refresh_runtime.get("owner_id")
         not in policy.get("authorized_refresh_owner_ids", [])
         or _sha256(admission_contract_path) != admission_sha256
         or admission_contract.get("schema")
-        != "fs2-serve.nebius.ai/workload-registry-secret-admission-contract/v2"
+        != "fs2-serve.nebius.ai/workload-registry-secret-admission-contract/v3"
         or admission_contract.get("state") != "trusted"
         or admission_contract.get("provider_proxy_mutates_planned_metadata") is not False
         or admission_contract.get("provider_proxy_mutates_data_wo_revision") is not False
         or admission_contract.get("provider_proxy_mutates_only_write_only_secret_data") is not True
+        or not isinstance(refresh_contract.get("watched_secret_inventory"), dict)
+        or refresh_contract["watched_secret_inventory"].get("selection")
+        != "exact-enabled-subset-only"
+        or refresh_contract["watched_secret_inventory"].get(
+            "readiness_receipt_must_bind_inventory_sha256"
+        )
+        is not True
+        or refresh_contract.get("readiness_receipt_schema")
+        != "fs2-serve.nebius.ai/workload-registry-refresh-readiness/v2"
+        or not isinstance(admission_contract.get("enabled_secret_inventory"), dict)
+        or admission_contract["enabled_secret_inventory"].get(
+            "static_superset_allowed"
+        )
+        is not False
         or not isinstance(admission_handoff, dict)
+        or admission_handoff.get("schema")
+        != "fs2-serve.nebius.ai/workload-registry-secret-admission-handoff/v2"
         or admission_handoff.get("terraform_apply_success_requires_verified_handoff")
         is not True
         or not isinstance(admission_runtime, dict)

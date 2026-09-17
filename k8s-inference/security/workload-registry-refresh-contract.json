@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/workload-registry-refresh-contract/v1",
+  "schema": "fs2-serve.nebius.ai/workload-registry-refresh-contract/v2",
   "state": "blocked_pending_security_owner_and_runtime_attestation",
   "authority": "Platform Security must independently install and attest the refresh owner before private workload pulls are enabled.",
   "management_mode": "external-short-lived-refresh-controller",
@@ -21,18 +21,27 @@
     "refresh-owner-confirms-token-revision-in-external-handoff",
     "capsule-verifies-complete-signed-handoff-before-apply-success"
   ],
-  "readiness_receipt_schema": "fs2-serve.nebius.ai/workload-registry-refresh-readiness/v1",
+  "readiness_receipt_schema": "fs2-serve.nebius.ai/workload-registry-refresh-readiness/v2",
   "retire_superseded_without_delete": true,
   "credential_storage": "kubernetes-secret-write-only-no-terraform-state",
   "terraform_state_ownership": "stable-lease-metadata-and-lease-generation-only",
   "volatile_receipt_storage": "external-signed-admission-handoff-only",
   "subject_scope": "exact-repository-digest-pull",
-  "watched_secrets": [
-    "fs2-models/nvcrio-cred",
-    "fs2-observability/fs2-dcgm-exporter-nvcrio",
-    "modelexpress/fs2-modelexpress-nvcrio",
-    "modelexpress/fs2-modelexpress-pull"
-  ],
+  "watched_secret_inventory": {
+    "selection": "exact-enabled-subset-only",
+    "terraform_source": "signed-plan-var.nvcrio_secret_inventory",
+    "terraform_derived_source": "local.workload_registry_secret_inventory",
+    "direct_installer_source": "signed-release-name-namespace-mode-chart-values-render-invocation",
+    "direct_installer_name": "fs2-modelexpress-pull",
+    "direct_installer_namespace_field": "NAMESPACE",
+    "static_default_namespace_allowed": false,
+    "static_superset_allowed": false,
+    "extra_or_missing_identity_allowed": false,
+    "required_identity_fields": ["resource_address", "namespace", "name", "subjects", "subject_scope_sha256", "derivation_sha256"],
+    "canonical_inventory_sha256_required": true,
+    "readiness_receipt_must_bind_inventory_sha256": true,
+    "refresh_event_must_bind_inventory_sha256_and_exact_secret_identity": true
+  },
   "required_audit_events": [
     "refresh-requested",
     "receipt-validated",

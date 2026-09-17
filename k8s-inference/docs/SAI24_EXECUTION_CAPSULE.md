@@ -71,18 +71,25 @@ populates all null tool, provider, module, trust, digest, scan and broker facts.
 ## Short-lived private pulls
 
 Static NVCR environment credentials are not an accepted input. The signed plan
-contains only a distinct stable lease identity, lease generation and exact
-subject-scope digest for each Secret. Its three ephemeral inputs are distinct,
-explicitly invalid noncredential placeholders; no token receipt, expiry, token
-revision or Docker bytes are retained in the plan or Terraform state.
+contains an exact inventory derived from the enabled workload inputs plus a
+distinct stable lease identity, lease generation and subject-scope digest for
+each Secret that the plan actually creates. Its ephemeral inputs are one
+distinct, explicitly invalid noncredential placeholder per enabled Secret; a
+disabled Secret cannot receive a lease, placeholder, refresh watch or handoff
+row. Subject lists use one sorted distinct-set normalization in Python and
+Terraform, and each row binds the exact profile/runtime/locals/ModelExpress/DCGM
+derivation-source digest. No token receipt, expiry, token revision or Docker bytes are retained in
+the plan or Terraform state.
 
 Every managed pull Secret also names one signed refresh owner, a maximum
 300-second cadence, a pre-expiry rotation margin and non-delete supersession.
 The owner contract is `security/workload-registry-refresh-contract.json`.
 Its runtime/image/provenance fields and its trust hash are deliberately null;
 ordinary private pulls remain blocked until an independently installed owner
-is attested, authorized and shown to refresh all three Secrets without putting
-long-lived credentials in Terraform state.
+is attested, authorized and shown to refresh exactly the signed-plan Secret
+inventory without putting long-lived credentials in Terraform state. The
+inventory carries each dynamic namespace and name, including the configured
+ModelExpress namespace; no checked-in default namespace is a watch authority.
 
 The repository never accepts broker receipt, Docker configuration, bootstrap,
 trust, toolchain or refresh-registration paths on the `inference-stack` CLI.
@@ -95,7 +102,7 @@ the externally bound provider-RPC proxy and
 starting Terraform it supplies distinct signed noncredential placeholders for
 ephemeral expression evaluation; the proxy must reject any placeholder if it
 ever reaches the Kubernetes API. Immediately before
-each of the three reviewed Secret create/update RPCs, the proxy rechecks that
+each enabled reviewed Secret create/update RPC, the proxy rechecks that
 both refresh owner and proxy readiness were observed no more than 60 seconds
 ago, derives exact private subjects from the signed plan and closure, brokers a
 new pull-only credential, requires at least 600 seconds remaining, and replaces
@@ -104,7 +111,8 @@ only the write-only provider data. It must not change planned annotations or
 After each API response it records a unique token receipt/revision, lease,
 subject scope, Secret UID/resourceVersion, response hash and planned/observed
 metadata hashes in an external signed handoff. Apply succeeds only after the
-capsule verifies the complete one-to-one handoff with the externally bound
+capsule verifies the complete one-to-one handoff whose resource/namespace/name
+set and inventory hash exactly equal the signed plan, with the externally bound
 signer/public-key/verifier identities; no credential bytes enter it. Those
 runtime trust fields remain null in source, so integration stays fail-closed.
 

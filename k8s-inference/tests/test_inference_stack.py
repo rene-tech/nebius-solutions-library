@@ -79,6 +79,16 @@ def contract() -> dict:
             "workloads": {
                 "deployment_profile": "full_catalog",
                 "enabled_model_ids": ["proteinmpnn"],
+                "model_image_overrides": {
+                    "proteinmpnn": "registry.example/runtime@sha256:"
+                    + "a" * 64
+                },
+                "model_express": {
+                    "enabled": False,
+                    "deployment_mode": "managed",
+                    "namespace": "fs2-modelexpress",
+                    "server_image": None,
+                },
             },
         },
         "secret_environment": {
@@ -377,9 +387,7 @@ class InferenceStackTests(unittest.TestCase):
             first_bytes = {path.name: path.read_bytes() for path in paths}
 
             placeholders = {
-                "models": "fs2-noncredential-placeholder:v1:models",
                 "observability": "fs2-noncredential-placeholder:v1:observability",
-                "modelexpress": "fs2-noncredential-placeholder:v1:modelexpress",
             }
             registry_credential = {
                 "secret_admission_placeholders": placeholders,
@@ -2674,9 +2682,10 @@ class InferenceStackTests(unittest.TestCase):
         )
         self.assertIn("--require-complete-registry-secret-handoff", apply_plan_source)
         self.assertIn("--maximum-refresh-readiness-age-seconds", apply_plan_source)
+        self.assertIn("--registry-secret-inventory-sha256", apply_plan_source)
+        self.assertIn("--registry-secret-json", apply_plan_source)
         self.assertNotIn("require_registry_credential_margin(", apply_plan_source)
-        for resource in STACK.WORKLOAD_REGISTRY_SECRET_RESOURCES:
-            self.assertIn(resource, source)
+        self.assertNotIn("WORKLOAD_REGISTRY_SECRET_RESOURCES", apply_plan_source)
 
     def test_each_registry_command_acquires_its_own_exact_operation_scope(self) -> None:
         source = STACK_PATH.read_text(encoding="utf-8")
@@ -2706,6 +2715,11 @@ class InferenceStackTests(unittest.TestCase):
             "def require_registry_credential_margin", 1
         )[0]
         self.assertIn("--grant-json", credential_source)
+        self.assertIn("--secret-inventory-json", credential_source)
+        self.assertIn("--secret-inventory-sha256", credential_source)
+        self.assertIn("--require-exact-enabled-secret-set", credential_source)
+        self.assertIn("refresh_owner_secret_inventory_sha256", credential_source)
+        self.assertIn("secret_admission_secret_inventory_sha256", credential_source)
         self.assertIn("docker_auth_partitions", credential_source)
         self.assertIn("canonical_object_sha256", credential_source)
         self.assertNotIn("registry_credential:", mirror_source)
@@ -2738,29 +2752,132 @@ class InferenceStackTests(unittest.TestCase):
         with self.assertRaisesRegex(STACK.DeploymentError, "not digest-bound"):
             STACK.registry_grant("nvcr.io/nvidia/runtime:latest", "pull")
 
+    def test_workload_secret_inventory_tracks_only_enabled_resources(self) -> None:
+        digest = "sha256:" + "a" * 64
+        duplicate_subject = f"nvcr.io/nim/shared@{digest}"
+        self.assertEqual(
+            STACK.normalized_registry_subjects(
+                [duplicate_subject, duplicate_subject]
+            ),
+            [duplicate_subject],
+        )
+        workloads = {
+            "deployment_profile": "minimal",
+            "enabled_model_ids": ["proteinmpnn"],
+            "model_image_overrides": {
+                "proteinmpnn": f"registry.example/runtime@{digest}"
+            },
+            "model_express": {"enabled": False, "deployment_mode": "managed"},
+        }
+        self.assertEqual(STACK.workload_registry_secret_inventory(workloads), {})
+
+        workloads["deployment_profile"] = "full_catalog"
+        workloads["enabled_model_ids"] = ["proteinmpnn"]
+        observability_only = STACK.workload_registry_secret_inventory(workloads)
+        self.assertEqual(set(observability_only), {"observability"})
+
+        workloads["enabled_model_ids"] = ["msa-search-pdb70"]
+        workloads["model_image_overrides"] = {
+            "msa-search-pdb70": f"nvcr.io/nim/msa@{digest}"
+        }
+        without_modelexpress = STACK.workload_registry_secret_inventory(workloads)
+        self.assertEqual(set(without_modelexpress), {"models", "observability"})
+
+        cpu_shape_but_nonruntime_cache = {
+            "msa-search-pdb70": {
+                "record": {
+                    "resources": {
+                        "gpu": {
+                            "class": "CPU",
+                            "count": 0,
+                            "topology": "cpu-only",
+                            "placement": None,
+                            "b300_state": "not-applicable",
+                            "alternatives": [],
+                        }
+                    },
+                    "cache": {
+                        "owner": "external-volume",
+                        "artifact": {"kind": "reference-database"},
+                    },
+                }
+            }
+        }
+        with mock.patch.object(
+            STACK,
+            "selected_deployment_runtimes",
+            return_value=cpu_shape_but_nonruntime_cache,
+        ):
+            mirrored_predicate = STACK.workload_registry_secret_inventory(workloads)
+        self.assertEqual(set(mirrored_predicate), {"models", "observability"})
+        cpu_shape_but_nonruntime_cache["msa-search-pdb70"]["record"]["cache"] = {
+            "owner": "runtime-image",
+            "artifact": {"kind": "reference-database"},
+        }
+        with mock.patch.object(
+            STACK,
+            "selected_deployment_runtimes",
+            return_value=cpu_shape_but_nonruntime_cache,
+        ):
+            exact_cpu_predicate = STACK.workload_registry_secret_inventory(workloads)
+        self.assertEqual(set(exact_cpu_predicate), {"observability"})
+
+        workloads["model_express"] = {
+            "enabled": True,
+            "deployment_mode": "managed",
+            "namespace": "customer-modelexpress",
+            "server_image": {
+                "repository": "nvcr.io/nvidia/modelexpress",
+                "digest": "sha256:" + "b" * 64,
+            },
+        }
+        complete = STACK.workload_registry_secret_inventory(workloads)
+        self.assertEqual(set(complete), {"models", "observability", "modelexpress"})
+        self.assertEqual(
+            complete["modelexpress"]["namespace"], "customer-modelexpress"
+        )
+
     def test_workload_secret_leases_are_distinct_and_state_stable(self) -> None:
+        definitions = STACK.WORKLOAD_REGISTRY_SECRET_DEFINITIONS
+        keys = ("models", "modelexpress")
         subjects = {
             key: f"nvcr.io/nvidia/{key}@sha256:" + f"{index}" * 64
-            for index, key in enumerate(
-                STACK.WORKLOAD_REGISTRY_SECRET_KEYS, start=1
-            )
+            for index, key in enumerate(keys, start=1)
         }
+        inventory = {
+            key: {
+                **definitions[key],
+                "namespace": definitions[key].get("namespace", "tenant-modelexpress"),
+                "subjects": [subjects[key]],
+                "subject_scope_sha256": STACK.canonical_object_sha256(
+                    [subjects[key]]
+                ),
+                "derivation_sha256": "e" * 64,
+            }
+            for key in keys
+        }
+        inventory_sha256 = STACK.canonical_object_sha256(inventory)
         authorization = {
             "subjects": sorted(subjects.values()),
+            "secret_inventory_sha256": inventory_sha256,
             "refresh_owner_id": "refresh-owner",
             "refresh_registration_sha256": "c" * 64,
             "secret_admission_proxy_id": "provider-proxy",
             "secret_admission_contract_sha256": "d" * 64,
         }
         leases = {}
-        for index, key in enumerate(STACK.WORKLOAD_REGISTRY_SECRET_KEYS, start=1):
+        for index, key in enumerate(keys, start=1):
             lease_subjects = [subjects[key]]
             leases[key] = {
-                "resource_address": STACK.WORKLOAD_REGISTRY_SECRET_ADDRESSES[key],
+                "resource_address": inventory[key]["resource_address"],
+                "namespace": inventory[key]["namespace"],
+                "name": inventory[key]["name"],
                 "lease_id": f"lease-{key}",
                 "lease_generation": index,
                 "subjects": lease_subjects,
                 "subject_scope_sha256": STACK.canonical_object_sha256(lease_subjects),
+                "derivation_sha256": "e" * 64,
+                "secret_inventory_sha256": inventory_sha256,
                 "authorization_model": "repository-digest-action",
                 "refresh_owner_id": "refresh-owner",
                 "management_mode": "external-short-lived-refresh-controller",
@@ -2777,7 +2894,9 @@ class InferenceStackTests(unittest.TestCase):
             leases
         )
         self.assertTrue(
-            STACK.workload_secret_leases_are_exact(leases, authorization)
+            STACK.workload_secret_leases_are_exact(
+                leases, authorization, inventory
+            )
         )
         forged = json.loads(json.dumps(leases))
         forged["modelexpress"]["lease_id"] = forged["models"]["lease_id"]
@@ -2785,7 +2904,9 @@ class InferenceStackTests(unittest.TestCase):
             forged
         )
         self.assertFalse(
-            STACK.workload_secret_leases_are_exact(forged, authorization)
+            STACK.workload_secret_leases_are_exact(
+                forged, authorization, inventory
+            )
         )
         overbroad = json.loads(json.dumps(leases))
         overbroad["modelexpress"]["subjects"] = list(
@@ -2805,14 +2926,32 @@ class InferenceStackTests(unittest.TestCase):
             overbroad
         )
         self.assertFalse(
-            STACK.workload_secret_leases_are_exact(overbroad, authorization)
+            STACK.workload_secret_leases_are_exact(
+                overbroad, authorization, inventory
+            )
         )
 
     def test_workload_registry_plan_has_stable_leases_not_token_receipts(self) -> None:
         variables = (DEPLOY_ROOT / "stages/workloads/variables.tf").read_text()
+        locals_source = (DEPLOY_ROOT / "stages/workloads/locals.tf").read_text()
+        cluster_contract = (
+            DEPLOY_ROOT / "stages/workloads/cluster_contract.tf"
+        ).read_text()
         secrets = (DEPLOY_ROOT / "stages/workloads/secrets.tf").read_text()
         modelexpress = (DEPLOY_ROOT / "stages/workloads/modelexpress.tf").read_text()
         self.assertIn('variable "nvcrio_secret_leases"', variables)
+        self.assertIn('variable "nvcrio_secret_inventory"', variables)
+        self.assertIn("sort(distinct([", locals_source)
+        self.assertIn('candidate.record.cache.owner == "runtime-image"', locals_source)
+        self.assertIn(
+            'contains(["reference-database", "weights", "formula"]',
+            locals_source,
+        )
+        self.assertIn("workload_registry_inventory_derivation_sha256", locals_source)
+        self.assertIn(
+            "var.nvcrio_secret_inventory == local.workload_registry_secret_inventory",
+            cluster_contract,
+        )
         self.assertIn(
             'variable "nvcrio_secret_admission_placeholders"', variables
         )

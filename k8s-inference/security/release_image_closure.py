@@ -236,16 +236,25 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
         {
             "key": "models",
             "resource_address": "kubernetes_secret_v1.nvcrio_cred[0]",
+            "enabled_predicate": "local.model_nvcr_credentials_required",
+            "namespace": "fs2-models",
+            "name": "nvcrio-cred",
             "subject_sources": ["catalog_image_sources"],
         },
         {
             "key": "observability",
             "resource_address": "kubernetes_secret_v1.dcgm_exporter_nvcrio[0]",
+            "enabled_predicate": "local.dcgm_nvcr_credentials_required",
+            "namespace": "fs2-observability",
+            "name": "fs2-dcgm-exporter-nvcrio",
             "subject_consumers": ["stages/workloads/values/dcgm-exporter.yaml"],
         },
         {
             "key": "modelexpress",
             "resource_address": "kubernetes_secret_v1.modelexpress_nvcrio[0]",
+            "enabled_predicate": "local.modelexpress_nvcr_required",
+            "namespace_from_signed_plan": "var.model_express.namespace",
+            "name": "fs2-modelexpress-nvcrio",
             "subject_consumers": [
                 "charts/addons/modelexpress/values.yaml",
                 "charts/addons/modelexpress/templates/tests/test-connection.yaml",
@@ -255,6 +264,18 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
     if manifest.get("workload_registry_secret_leases") != expected_secret_leases:
         raise EvidenceError(
             f"{manifest_path}: workload registry Secret lease consumers are incomplete"
+        )
+    if manifest.get("workload_registry_secret_inventory_derivation_sources") != [
+        "inference-stack",
+        "catalog/profiles/model-profiles.json",
+        "catalog/runtime/deployment-runtimes/*.json",
+        "locals.tf",
+        "stages/workloads/locals.tf",
+        "stages/workloads/modelexpress.tf",
+        "stages/workloads/values/dcgm-exporter.yaml",
+    ]:
+        raise EvidenceError(
+            f"{manifest_path}: workload registry Secret derivation sources are incomplete"
         )
     discovered: set[str] = set()
     for path in sorted(root.rglob("*.tf")):
@@ -370,6 +391,10 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
         "--preserve-planned-secret-metadata-and-revision",
         "--registry-secret-handoff-signature-output",
         "--require-complete-registry-secret-handoff",
+        "--registry-secret-inventory-sha256",
+        "--registry-secret-json",
+        "--require-exact-enabled-secret-set",
+        "workload_registry_secret_inventory",
         "workload-registry-secret-admission-contract.json",
         'gate_environment.pop("TF_VAR_nvcrio_secret_admission_placeholders", None)',
         "direct inference-stack execution is disabled",

@@ -44,6 +44,7 @@ MODEL_ROUTES_PATH = (
 POOL_PROFILES_PATH = (
     SOLUTION_ROOT / "catalog" / "profiles" / "accelerator-pool-profiles.json"
 )
+MODEL_PROFILES_PATH = SOLUTION_ROOT / "catalog" / "profiles" / "model-profiles.json"
 INTERNAL_EDGE_PROXY = WORKLOADS_ROOT / "scripts" / "internal_edge_proxy.py"
 STAGE_COMPLETION_OUTPUTS = {
     "infrastructure": "accelerator_pool_contract",
@@ -68,14 +69,25 @@ MAXIMUM_REFRESH_READINESS_AGE_SECONDS = 60
 REGISTRY_DIGEST_OPERATION_TIMEOUT_SECONDS = 240
 REGISTRY_COPY_OPERATION_TIMEOUT_SECONDS = 3000
 REGISTRY_OPERATION_TTL_SAFETY_SECONDS = 300
-WORKLOAD_REGISTRY_SECRET_RESOURCES = (
-    "kubernetes_secret_v1.nvcrio_cred[0]",
-    "kubernetes_secret_v1.dcgm_exporter_nvcrio[0]",
-    "kubernetes_secret_v1.modelexpress_nvcrio[0]",
-)
-WORKLOAD_REGISTRY_SECRET_KEYS = ("models", "observability", "modelexpress")
-WORKLOAD_REGISTRY_SECRET_ADDRESSES = dict(
-    zip(WORKLOAD_REGISTRY_SECRET_KEYS, WORKLOAD_REGISTRY_SECRET_RESOURCES)
+WORKLOAD_REGISTRY_SECRET_DEFINITIONS = {
+    "models": {
+        "resource_address": "kubernetes_secret_v1.nvcrio_cred[0]",
+        "namespace": "fs2-models",
+        "name": "nvcrio-cred",
+    },
+    "observability": {
+        "resource_address": "kubernetes_secret_v1.dcgm_exporter_nvcrio[0]",
+        "namespace": "fs2-observability",
+        "name": "fs2-dcgm-exporter-nvcrio",
+    },
+    "modelexpress": {
+        "resource_address": "kubernetes_secret_v1.modelexpress_nvcrio[0]",
+        "name": "fs2-modelexpress-nvcrio",
+    },
+}
+DCGM_EXPORTER_SUBJECT = (
+    "nvcr.io/nvidia/k8s/dcgm-exporter@"
+    "sha256:b4df763de9558e5b3f1f1d79bc65b772fcf65b8a9c3664ea7173e47153112b4a"
 )
 
 
@@ -1141,7 +1153,12 @@ def selected_deployment_runtimes(model_images: Mapping[str, str]) -> dict[str, A
         entry = json.loads(path.read_text(encoding="utf-8"))
         model_id = entry["model_id"]
         image = model_images.get(model_id)
-        if image is None or image.rsplit("@", 1)[-1] != entry["record"]["runtime"]["image"]["digest"]:
+        if (
+            image is None
+            or image.count("@") != 1
+            or image.rsplit("@", 1)[-1]
+            != entry["record"]["runtime"]["image"]["digest"]
+        ):
             continue
         if model_id in selected:
             raise DeploymentError(f"model {model_id!r} has ambiguous deployment runtime records")
@@ -1604,12 +1621,189 @@ def canonical_object_sha256(value: Any) -> str:
     ).hexdigest()
 
 
+def workload_registry_inventory_derivation_sha256() -> str:
+    """Bind the exact source material used by both inventory derivations."""
+
+    runtime_root = CATALOG_ROOT / "deployment-runtimes"
+    material = {
+        "inference_stack_sha256": _sha256_file(SOLUTION_ROOT / "inference-stack"),
+        "model_profiles_sha256": _sha256_file(MODEL_PROFILES_PATH),
+        "deployment_runtime_records": {
+            path.name: _sha256_file(path)
+            for path in sorted(runtime_root.glob("*.json"))
+        },
+        "root_locals_sha256": _sha256_file(SOLUTION_ROOT / "locals.tf"),
+        "workload_locals_sha256": _sha256_file(WORKLOADS_ROOT / "locals.tf"),
+        "modelexpress_sha256": _sha256_file(WORKLOADS_ROOT / "modelexpress.tf"),
+        "dcgm_values_sha256": _sha256_file(
+            WORKLOADS_ROOT / "values" / "dcgm-exporter.yaml"
+        ),
+    }
+    return canonical_object_sha256(material)
+
+
+def normalized_registry_subjects(subjects: Sequence[str]) -> list[str]:
+    normalized = sorted(set(subjects))
+    if not normalized:
+        raise DeploymentError("registry Secret subject set is empty")
+    for subject in normalized:
+        registry_partition(subject)
+    return normalized
+
+
+def workload_registry_secret_inventory(
+    workloads: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Derive the exact private-pull Secret set from workload plan inputs.
+
+    This deliberately uses the same model profile, selected runtime-digest and
+    ModelExpress predicates as the workloads Terraform root.  The returned
+    object is written into the signed plan and is also sent to the external
+    credential/refresh capsule.  A static superset is never authorized.
+    """
+
+    try:
+        profile_contract = json.loads(MODEL_PROFILES_PATH.read_text(encoding="utf-8"))
+        deployment_profile = workloads["deployment_profile"]
+        selected_profile = profile_contract["profiles"][deployment_profile]
+        enabled_model_ids = workloads.get("enabled_model_ids")
+        if enabled_model_ids is not None and not isinstance(enabled_model_ids, list):
+            raise TypeError("enabled_model_ids must be a JSON list or null")
+        selected_model_ids = sorted(
+            selected_profile["canonical_routes"]
+            if enabled_model_ids is None
+            else enabled_model_ids
+        )
+        image_overrides = workloads["model_image_overrides"]
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise DeploymentError(
+            "workload inputs cannot derive the exact registry Secret inventory"
+        ) from exc
+    if (
+        not isinstance(selected_model_ids, list)
+        or any(not isinstance(model_id, str) for model_id in selected_model_ids)
+        or len(selected_model_ids) != len(set(selected_model_ids))
+        or not isinstance(image_overrides, Mapping)
+    ):
+        raise DeploymentError("selected workload model inventory is malformed")
+
+    deployment_runtimes = selected_deployment_runtimes(
+        {
+            model_id: image_overrides[model_id]
+            for model_id in selected_model_ids
+            if model_id in image_overrides
+            and isinstance(image_overrides[model_id], str)
+        }
+    )
+    cpu_runtime_model_ids = {
+        model_id
+        for model_id, entry in deployment_runtimes.items()
+        if entry["record"]["resources"]["gpu"]
+        == {
+            "class": "CPU",
+            "count": 0,
+            "topology": "cpu-only",
+            "placement": None,
+            "b300_state": "not-applicable",
+            "alternatives": [],
+        }
+        and entry["record"]["cache"]["owner"] == "runtime-image"
+        and entry["record"]["cache"]["artifact"]["kind"]
+        in {"reference-database", "weights", "formula"}
+    }
+    accelerator_model_ids = sorted(set(selected_model_ids) - cpu_runtime_model_ids)
+    model_subjects: list[str] = []
+    for model_id in accelerator_model_ids:
+        required = profile_contract["model_artifacts"].get(model_id, {}).get(
+            "required_secrets", []
+        )
+        if "nvcr_dockerconfigjson" not in required:
+            continue
+        subject = image_overrides.get(model_id)
+        if not isinstance(subject, str):
+            raise DeploymentError(
+                f"private model {model_id!r} has no exact runtime image subject"
+            )
+        model_subjects.append(subject)
+
+    inventory: dict[str, dict[str, Any]] = {}
+    if model_subjects:
+        inventory["models"] = {
+            **WORKLOAD_REGISTRY_SECRET_DEFINITIONS["models"],
+            "subjects": normalized_registry_subjects(model_subjects),
+        }
+    if deployment_profile == "full_catalog":
+        inventory["observability"] = {
+            **WORKLOAD_REGISTRY_SECRET_DEFINITIONS["observability"],
+            "subjects": normalized_registry_subjects([DCGM_EXPORTER_SUBJECT]),
+        }
+
+    model_express = workloads.get("model_express", {})
+    if not isinstance(model_express, Mapping):
+        raise DeploymentError("ModelExpress workload input is malformed")
+    server_image = model_express.get("server_image")
+    if (
+        model_express.get("enabled") is True
+        and model_express.get("deployment_mode") == "managed"
+        and isinstance(server_image, Mapping)
+        and str(server_image.get("repository", "")).startswith("nvcr.io/")
+    ):
+        namespace = model_express.get("namespace")
+        repository = server_image.get("repository")
+        digest = server_image.get("digest")
+        if not all(isinstance(value, str) and value for value in (namespace, repository, digest)):
+            raise DeploymentError(
+                "managed NVCR ModelExpress has no exact namespace or image subject"
+            )
+        inventory["modelexpress"] = {
+            **WORKLOAD_REGISTRY_SECRET_DEFINITIONS["modelexpress"],
+            "namespace": namespace,
+            "subjects": normalized_registry_subjects([f"{repository}@{digest}"]),
+        }
+
+    derivation_sha256 = workload_registry_inventory_derivation_sha256()
+    assigned_subjects: set[str] = set()
+    for key, row in inventory.items():
+        subjects = row["subjects"]
+        if (
+            key not in WORKLOAD_REGISTRY_SECRET_DEFINITIONS
+            or not subjects
+            or len(subjects) != len(set(subjects))
+            or subjects != sorted(subjects)
+            or any(subject in assigned_subjects for subject in subjects)
+        ):
+            raise DeploymentError("workload registry Secret inventory is not one-to-one")
+        assigned_subjects.update(subjects)
+        row["subject_scope_sha256"] = canonical_object_sha256(subjects)
+        row["derivation_sha256"] = derivation_sha256
+    return {key: inventory[key] for key in sorted(inventory)}
+
+
+def staged_workload_registry_secret_inventory(
+    workloads_path: Path,
+) -> dict[str, dict[str, Any]]:
+    if workloads_path.is_symlink() or not workloads_path.is_file():
+        raise DeploymentError("workload input must be a retained regular file")
+    try:
+        workloads = json.loads(workloads_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DeploymentError("workload input is not canonical JSON") from exc
+    if not isinstance(workloads, Mapping):
+        raise DeploymentError("workload input root is not an object")
+    return workload_registry_secret_inventory(workloads)
+
+
 def workload_secret_leases_are_exact(
-    leases: Any, authorization: Mapping[str, Any]
+    leases: Any,
+    authorization: Mapping[str, Any],
+    secret_inventory: Mapping[str, Mapping[str, Any]],
 ) -> bool:
     if (
         not isinstance(leases, dict)
-        or set(leases) != set(WORKLOAD_REGISTRY_SECRET_KEYS)
+        or not secret_inventory
+        or set(leases) != set(secret_inventory)
+        or authorization.get("secret_inventory_sha256")
+        != canonical_object_sha256(secret_inventory)
         or authorization.get("secret_lease_set_sha256")
         != canonical_object_sha256(leases)
     ):
@@ -1619,10 +1813,14 @@ def workload_secret_leases_are_exact(
     total_subjects = 0
     expected_fields = {
         "resource_address",
+        "namespace",
+        "name",
         "lease_id",
         "lease_generation",
         "subjects",
         "subject_scope_sha256",
+        "derivation_sha256",
+        "secret_inventory_sha256",
         "authorization_model",
         "refresh_owner_id",
         "management_mode",
@@ -1633,8 +1831,10 @@ def workload_secret_leases_are_exact(
         "state_ownership",
         "token_receipt_destination",
     }
-    for key in WORKLOAD_REGISTRY_SECRET_KEYS:
+    inventory_sha256 = canonical_object_sha256(secret_inventory)
+    for key in sorted(secret_inventory):
         lease = leases.get(key)
+        expected = secret_inventory[key]
         subjects = lease.get("subjects") if isinstance(lease, dict) else None
         lease_id = lease.get("lease_id") if isinstance(lease, dict) else None
         generation = (
@@ -1643,8 +1843,9 @@ def workload_secret_leases_are_exact(
         if (
             not isinstance(lease, dict)
             or set(lease) != expected_fields
-            or lease.get("resource_address")
-            != WORKLOAD_REGISTRY_SECRET_ADDRESSES[key]
+            or lease.get("resource_address") != expected.get("resource_address")
+            or lease.get("namespace") != expected.get("namespace")
+            or lease.get("name") != expected.get("name")
             or not isinstance(lease_id, str)
             or not lease_id
             or lease_id in lease_ids
@@ -1655,6 +1856,7 @@ def workload_secret_leases_are_exact(
             or not subjects
             or len(subjects) != len(set(subjects))
             or subjects != sorted(subjects)
+            or subjects != expected.get("subjects")
             or not all(
                 isinstance(subject, str)
                 and re.fullmatch(r"[^@\s]+@sha256:[0-9a-f]{64}", subject)
@@ -1662,6 +1864,8 @@ def workload_secret_leases_are_exact(
             )
             or lease.get("subject_scope_sha256")
             != canonical_object_sha256(subjects)
+            or lease.get("derivation_sha256") != expected.get("derivation_sha256")
+            or lease.get("secret_inventory_sha256") != inventory_sha256
             or lease.get("authorization_model") != "repository-digest-action"
             or lease.get("refresh_owner_id") != authorization.get("refresh_owner_id")
             or lease.get("management_mode")
@@ -2296,6 +2500,7 @@ def load_registry_credential(
     minimum_remaining_ttl_seconds: int,
     operation_id: str | None = None,
     required_grants: Sequence[Mapping[str, Any]] = (),
+    required_secret_inventory: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Acquire a mirror credential or prepare workload Secret admission leases.
 
@@ -2354,6 +2559,11 @@ def load_registry_credential(
                 ]
             )
     if purpose == "workload-secret":
+        if not required_secret_inventory:
+            raise DeploymentError(
+                "workload registry authorization requires a nonempty exact Secret inventory"
+            )
+        secret_inventory_sha256 = canonical_object_sha256(required_secret_inventory)
         command.extend(
             [
                 "--refresh-registration",
@@ -2363,6 +2573,15 @@ def load_registry_credential(
                 "--minimum-admission-credential-remaining-ttl-seconds",
                 str(minimum_remaining_ttl_seconds),
                 "--require-refresh-owner-ready",
+                "--secret-inventory-json",
+                json.dumps(
+                    required_secret_inventory,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                "--secret-inventory-sha256",
+                secret_inventory_sha256,
+                "--require-exact-enabled-secret-set",
             ]
         )
     completed = subprocess.run(
@@ -2397,6 +2616,7 @@ def load_registry_credential(
         "issued_at",
         "expires_at",
         "revision",
+        "secret_inventory_sha256",
         "secret_lease_set_sha256",
         "refresh_owner_id",
         "refresh_interval_seconds",
@@ -2406,10 +2626,12 @@ def load_registry_credential(
         "refresh_registration_sha256",
         "refresh_owner_ready",
         "refresh_owner_ready_observed_at",
+        "refresh_owner_secret_inventory_sha256",
         "secret_admission_proxy_id",
         "secret_admission_contract_sha256",
         "secret_admission_ready",
         "secret_admission_ready_observed_at",
+        "secret_admission_secret_inventory_sha256",
     }
     expected_authorization = (
         common_authorization | workload_authorization
@@ -2443,6 +2665,12 @@ def load_registry_credential(
             and (
                 not isinstance(authorization.get("subjects"), list)
                 or not authorization["subjects"]
+                or authorization.get("secret_inventory_sha256")
+                != canonical_object_sha256(required_secret_inventory)
+                or authorization.get("refresh_owner_secret_inventory_sha256")
+                != canonical_object_sha256(required_secret_inventory)
+                or authorization.get("secret_admission_secret_inventory_sha256")
+                != canonical_object_sha256(required_secret_inventory)
                 or authorization.get("planning_only") is not True
                 or authorization.get("credential_issued") is not True
                 or not isinstance(authorization.get("revision"), int)
@@ -2537,16 +2765,17 @@ def load_registry_credential(
         leases = result.get("secret_leases")
         placeholders = result.get("secret_admission_placeholders")
         if (
-            not workload_secret_leases_are_exact(leases, authorization)
+            not workload_secret_leases_are_exact(
+                leases, authorization, required_secret_inventory
+            )
             or not isinstance(placeholders, dict)
-            or tuple(sorted(placeholders))
-            != tuple(sorted(WORKLOAD_REGISTRY_SECRET_KEYS))
+            or set(placeholders) != set(required_secret_inventory)
             or not all(
                 isinstance(value, str)
                 and value.startswith("fs2-noncredential-placeholder:v1:")
                 for value in placeholders.values()
             )
-            or len(set(placeholders.values())) != len(WORKLOAD_REGISTRY_SECRET_KEYS)
+            or len(set(placeholders.values())) != len(required_secret_inventory)
         ):
             raise DeploymentError(
                 "external capsule workload lease projection is incomplete"
@@ -2575,6 +2804,7 @@ def load_registry_credential(
     if purpose == "workload-secret":
         credential["secret_leases"] = leases
         credential["secret_admission_placeholders"] = placeholders
+        credential["secret_inventory"] = dict(required_secret_inventory)
     require_registry_credential_margin(
         credential, minimum_remaining_ttl_seconds=minimum_remaining_ttl_seconds
     )
@@ -2893,9 +3123,15 @@ def bind_fresh_workload_registry_contract(
         raise DeploymentError("workload input is not canonical JSON") from exc
     if not isinstance(workloads, dict):
         raise DeploymentError("workload input root is not an object")
+    expected_inventory = workload_registry_secret_inventory(workloads)
+    if credential.get("secret_inventory") != expected_inventory:
+        raise DeploymentError(
+            "capsule Secret inventory differs from the exact staged workload inputs"
+        )
     workloads["release_image_contract"] = credential_release_contract(
         release_contract, credential
     )
+    workloads["nvcrio_secret_inventory"] = credential["secret_inventory"]
     workloads["nvcrio_secret_leases"] = credential["secret_leases"]
     destination = workloads_path.with_name("workloads.jit-credential.tfvars.json")
     private_json(destination, workloads)
@@ -2990,6 +3226,13 @@ def apply_plan(
             raise DeploymentError(
                 "workload apply requires the signed planning authorization receipt"
             )
+        registry_secret_inventory = registry_credential.get("secret_inventory")
+        if not isinstance(registry_secret_inventory, Mapping) or not registry_secret_inventory:
+            raise DeploymentError(
+                "workload apply requires the exact enabled registry Secret inventory"
+            )
+    else:
+        registry_secret_inventory = {}
     gate_environment = dict(environment)
     if registry_credential_required:
         # The plan contains stable lease metadata only. Terraform's ephemeral
@@ -3065,10 +3308,22 @@ def apply_plan(
                     "--registry-secret-handoff-signature-output",
                     f"{registry_secret_handoff}.sig",
                     "--require-complete-registry-secret-handoff",
+                    "--registry-secret-inventory-sha256",
+                    canonical_object_sha256(registry_secret_inventory),
                     *[
                         argument
-                        for resource in WORKLOAD_REGISTRY_SECRET_RESOURCES
-                        for argument in ("--registry-secret-resource", resource)
+                        for key in sorted(registry_secret_inventory)
+                        for argument in (
+                            "--registry-secret-json",
+                            json.dumps(
+                                {
+                                    "key": key,
+                                    **registry_secret_inventory[key],
+                                },
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ),
+                        )
                     ],
                 ]
                 if registry_credential_required
@@ -3478,11 +3733,21 @@ def apply_stack(
         release_contract,
     )
 
-    workload_registry_required = contract["secret_requirements"]["nvcr_dockerconfig"]
+    workload_secret_inventory = staged_workload_registry_secret_inventory(
+        workloads_variables
+    )
+    workload_registry_required = bool(workload_secret_inventory)
+    if workload_registry_required != bool(
+        contract["secret_requirements"]["nvcr_dockerconfig"]
+    ):
+        raise DeploymentError(
+            "root Secret requirement differs from the exact enabled workload Secret set"
+        )
     workload_credential = (
         load_registry_credential(
             purpose="workload-secret",
             minimum_remaining_ttl_seconds=MINIMUM_WORKLOAD_CREDENTIAL_TTL_SECONDS,
+            required_secret_inventory=workload_secret_inventory,
         )
         if workload_registry_required
         else None
@@ -3610,12 +3875,22 @@ def plan_stack(
         )
         return
 
-    workload_registry_required = contract["secret_requirements"]["nvcr_dockerconfig"]
+    workload_secret_inventory = staged_workload_registry_secret_inventory(
+        workloads_variables
+    )
+    workload_registry_required = bool(workload_secret_inventory)
+    if workload_registry_required != bool(
+        contract["secret_requirements"]["nvcr_dockerconfig"]
+    ):
+        raise DeploymentError(
+            "root Secret requirement differs from the exact enabled workload Secret set"
+        )
     if not state_ready(args.terraform, run_root, "workloads", contract):
         workload_credential = (
             load_registry_credential(
                 purpose="workload-secret",
                 minimum_remaining_ttl_seconds=MINIMUM_WORKLOAD_CREDENTIAL_TTL_SECONDS,
+                required_secret_inventory=workload_secret_inventory,
             )
             if workload_registry_required
             else None
@@ -3642,6 +3917,7 @@ def plan_stack(
         load_registry_credential(
             purpose="workload-secret",
             minimum_remaining_ttl_seconds=MINIMUM_WORKLOAD_CREDENTIAL_TTL_SECONDS,
+            required_secret_inventory=workload_secret_inventory,
         )
         if workload_registry_required
         else None

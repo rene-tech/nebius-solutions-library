@@ -204,8 +204,12 @@ activate_pull_authorization() {
         --token-file "$PULL_TOKEN_FILE" \
         --receipt "$PULL_AUTH_RECEIPT" \
         --subject "$PULL_SUBJECT" \
+        --signed-invocation-closure "$RELEASE_CLOSURE" \
+        --watched-secret-key modelexpress-direct \
+        --watched-secret-resource direct_secret.modelexpress_pull \
         --namespace "$NAMESPACE" \
         --secret-name fs2-modelexpress-pull \
+        --require-exact-watched-secret-set \
         --output "$PULL_REFRESH_REGISTRATION"
     "$GATE_BOOTSTRAP" apply-registry-secret \
         --external-trust "$EXTERNAL_TRUST" \
@@ -223,8 +227,12 @@ activate_pull_authorization() {
         --maximum-readiness-age-seconds 60 \
         --admission-receipt-output "$PULL_ADMISSION_RECEIPT" \
         --subject "$PULL_SUBJECT" \
+        --signed-invocation-closure "$RELEASE_CLOSURE" \
+        --watched-secret-key modelexpress-direct \
+        --watched-secret-resource direct_secret.modelexpress_pull \
         --namespace "$NAMESPACE" \
-        --secret-name fs2-modelexpress-pull
+        --secret-name fs2-modelexpress-pull \
+        --require-exact-watched-secret-set
 }
 
 configure_reviewed_tools() {

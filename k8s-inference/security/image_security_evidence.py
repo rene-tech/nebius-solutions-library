@@ -310,7 +310,7 @@ def validate_workload_registry_auth_receipt(
     )
     if (
         refresh_contract.get("schema")
-        != "fs2-serve.nebius.ai/workload-registry-refresh-contract/v1"
+        != "fs2-serve.nebius.ai/workload-registry-refresh-contract/v2"
         or refresh_contract.get("state") != "trusted"
         or refresh_contract.get("management_mode")
         != "external-short-lived-refresh-controller"
@@ -329,8 +329,21 @@ def validate_workload_registry_auth_receipt(
         != policy.get("maximum_refresh_readiness_age_seconds")
         or refresh_contract.get("secret_admission_contract_sha256")
         != admission_sha256
+        or not isinstance(refresh_contract.get("watched_secret_inventory"), dict)
+        or refresh_contract["watched_secret_inventory"].get("selection")
+        != "exact-enabled-subset-only"
+        or refresh_contract["watched_secret_inventory"].get(
+            "static_default_namespace_allowed"
+        )
+        is not False
+        or refresh_contract["watched_secret_inventory"].get(
+            "readiness_receipt_must_bind_inventory_sha256"
+        )
+        is not True
+        or refresh_contract.get("readiness_receipt_schema")
+        != "fs2-serve.nebius.ai/workload-registry-refresh-readiness/v2"
         or admission_contract.get("schema")
-        != "fs2-serve.nebius.ai/workload-registry-secret-admission-contract/v2"
+        != "fs2-serve.nebius.ai/workload-registry-secret-admission-contract/v3"
         or admission_contract.get("state") != "trusted"
         or admission_contract.get("provider_rpc_mode")
         != "broker-immediately-before-secret-create-or-update"
@@ -339,7 +352,18 @@ def validate_workload_registry_auth_receipt(
         or admission_contract.get("provider_proxy_mutates_only_write_only_secret_data") is not True
         or admission_contract.get("token_receipt_persisted_in_terraform_state") is not False
         or admission_contract.get("token_revision_persisted_in_terraform_state") is not False
+        or not isinstance(admission_contract.get("enabled_secret_inventory"), dict)
+        or admission_contract["enabled_secret_inventory"].get(
+            "static_superset_allowed"
+        )
+        is not False
+        or admission_contract["enabled_secret_inventory"].get(
+            "inventory_sha256_must_match_planning_authorization_refresh_readiness_admission_and_handoff"
+        )
+        is not True
         or not isinstance(admission_handoff, dict)
+        or admission_handoff.get("schema")
+        != "fs2-serve.nebius.ai/workload-registry-secret-admission-handoff/v2"
         or admission_handoff.get("terraform_apply_success_requires_verified_handoff")
         is not True
         or not isinstance(admission_runtime, dict)
