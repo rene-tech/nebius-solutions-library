@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+import yaml
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
@@ -25,6 +26,12 @@ PROVIDER_TRUST_ANCHOR_PATH = Path("/etc/fs2/security/network-policy-provider-tru
 PROVIDER_CLI_PATH = Path("/usr/local/bin/nebius")
 PROVIDER_CONFIG_PATH = Path("/etc/fs2/security/nebius-directory-reader.yaml")
 PROVIDER_CREDENTIAL_PATH = Path("/etc/fs2/security/nebius-directory-reader-credential.json")
+PROVIDER_AUTHORITY_PATH = Path(
+    "/etc/fs2/security/network-policy-provider-collection-authority-v1.json"
+)
+PROVIDER_OIDC_PROBE_PATH = Path(
+    "/etc/fs2/security/network-policy-provider-oidc-probe.jwt"
+)
 
 
 class PreflightError(RuntimeError):
@@ -69,6 +76,112 @@ def is_https_endpoint(value: Any) -> bool:
             value,
         )
     )
+
+
+def nested(value: Any, path: Any, *, label: str) -> Any:
+    if (
+        not isinstance(path, list)
+        or not path
+        or any(not isinstance(part, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", part) for part in path)
+    ):
+        raise PreflightError(f"{label} path is invalid")
+    current = value
+    for part in path:
+        if not isinstance(current, dict) or part not in current:
+            raise PreflightError(f"{label} path is absent")
+        current = current[part]
+    return current
+
+
+def verified_provider_authority(
+    trust: dict[str, Any], *, required_valid_until: int
+) -> tuple[dict[str, Any], str]:
+    raw, metadata = descriptor_bytes(
+        PROVIDER_AUTHORITY_PATH,
+        maximum=65536,
+        label="provider collection authority",
+    )
+    try:
+        authority = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise PreflightError("provider collection authority is invalid") from error
+    authority_sha256 = hashlib.sha256(canonical(authority).encode()).hexdigest()
+    try:
+        valid_from = dt.datetime.fromisoformat(str(authority.get("valid_from", "")).replace("Z", "+00:00"))
+        expires_at = dt.datetime.fromisoformat(str(authority.get("expires_at", "")).replace("Z", "+00:00"))
+    except ValueError as error:
+        raise PreflightError("provider collection authority validity is invalid") from error
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != 0
+        or metadata.st_gid != 0
+        or stat.S_IMODE(metadata.st_mode) not in {0o400, 0o444}
+        or not isinstance(authority, dict)
+        or set(authority)
+        != {
+            "schema",
+            "provider",
+            "tenant_sha256",
+            "api_endpoint_sha256",
+            "snapshot_public_key",
+            "snapshot_signer_key_id",
+            "valid_from",
+            "expires_at",
+        }
+        or authority.get("schema")
+        != "fs2-serve.nebius.ai/security-provider-collection-authority/v1"
+        or authority.get("provider") != "nebius-iam"
+        or authority_sha256 != trust.get("provider_collection_authority_sha256")
+        or authority.get("tenant_sha256") != trust.get("tenant_sha256")
+        or authority.get("api_endpoint_sha256")
+        != trust.get("directory_execution", {}).get("api_endpoint_sha256")
+        or not isinstance(authority.get("snapshot_public_key"), str)
+        or authority.get("snapshot_signer_key_id")
+        != hashlib.sha256(str(authority.get("snapshot_public_key", "")).encode()).hexdigest()
+        or valid_from.tzinfo is None
+        or expires_at.tzinfo is None
+        or valid_from.astimezone(dt.UTC) > dt.datetime.now(dt.UTC)
+        or int(expires_at.timestamp()) < required_valid_until
+    ):
+        raise PreflightError("provider collection authority custody is not independently exact")
+    decode_base64url(authority["snapshot_public_key"], size=32)
+    return authority, authority_sha256
+
+
+def execute_authoritative_provider_adapter(
+    adapter_path: Path,
+    *,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    try:
+        result = subprocess.run(  # noqa: S603 -- exact source-pinned adapter and interpreter
+            [sys.executable, "-B", str(adapter_path)],
+            capture_output=True,
+            check=False,
+            close_fds=True,
+            cwd="/",
+            env={
+                "HOME": "/var/empty",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "PATH": "/usr/bin:/bin",
+                "PYTHONDONTWRITEBYTECODE": "1",
+            },
+            stdin=subprocess.DEVNULL,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise PreflightError("authoritative provider adapter did not complete within its bound") from error
+    if result.returncode != 0 or result.stderr.strip():
+        raise PreflightError("authoritative provider adapter failed closed")
+    try:
+        capture = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise PreflightError("authoritative provider adapter returned invalid JSON") from error
+    if not isinstance(capture, dict):
+        raise PreflightError("authoritative provider adapter did not return an object")
+    return capture
 
 
 def decode_base64url(value: Any, *, size: int) -> bytes:
@@ -139,12 +252,57 @@ def normalized_subjects(
     return normalized_users, sorted(groups)
 
 
+def normalized_provider_subjects(
+    signed: dict[str, Any], *, forbidden_usernames: set[str]
+) -> tuple[list[dict[str, Any]], list[str]]:
+    users = signed.get("human_users")
+    groups = signed.get("human_groups")
+    if not isinstance(users, list) or not users or not isinstance(groups, list) or not groups:
+        raise PreflightError("provider subject set is empty or malformed")
+    normalized: list[dict[str, Any]] = []
+    provider_ids: set[str] = set()
+    usernames: set[str] = set()
+    for subject in users:
+        if (
+            not isinstance(subject, dict)
+            or set(subject) != {"provider_subject_id", "username", "groups"}
+            or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", str(subject.get("provider_subject_id", "")))
+            or not re.fullmatch(r"[A-Za-z0-9:@._+/-]{3,253}", str(subject.get("username", "")))
+            or subject.get("username") in forbidden_usernames
+            or not isinstance(subject.get("groups"), list)
+            or len(subject["groups"]) != len(set(subject["groups"]))
+            or any(
+                not isinstance(group, str) or not re.fullmatch(r"[A-Za-z0-9:@._/-]{1,253}", group)
+                for group in subject["groups"]
+            )
+            or subject["provider_subject_id"] in provider_ids
+            or subject["username"] in usernames
+        ):
+            raise PreflightError("provider subject user inventory is invalid")
+        provider_ids.add(subject["provider_subject_id"])
+        usernames.add(subject["username"])
+        normalized.append(
+            {
+                "provider_subject_id": subject["provider_subject_id"],
+                "username": subject["username"],
+                "groups": sorted(subject["groups"]),
+            }
+        )
+    if len(groups) != len(set(groups)) or any(
+        not isinstance(group, str) or not re.fullmatch(r"[A-Za-z0-9:@._/-]{1,253}", group)
+        for group in groups
+    ):
+        raise PreflightError("provider subject group inventory is invalid")
+    normalized.sort(key=lambda value: value["username"])
+    return normalized, sorted(groups)
+
+
 def verified_provider_trust_anchor(
     path: Path,
     adapter_path: Path,
     *,
-    rollback_valid_until: int,
-) -> tuple[dict[str, Any], str, str]:
+    required_valid_until: int,
+) -> tuple[dict[str, Any], str, str, dict[str, Any], str]:
     if path != PROVIDER_TRUST_ANCHOR_PATH:
         raise PreflightError("provider trust anchor path is not source-fixed")
     expected_adapter = Path(__file__).resolve().parents[3] / (
@@ -165,22 +323,25 @@ def verified_provider_trust_anchor(
             PROVIDER_CREDENTIAL_PATH, maximum=1048576, label="provider credential"
         )
         trust = json.loads(trust_bytes.decode("utf-8"))
-        config_text = config_bytes.decode("utf-8")
+        config_document = yaml.safe_load(config_bytes)
+        credential_document = json.loads(credential_bytes)
         adapter_sha256 = hashlib.sha256(adapter_bytes).hexdigest()
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+    except (UnicodeDecodeError, json.JSONDecodeError, yaml.YAMLError) as error:
         raise PreflightError("provider trust custody is unavailable") from error
     if not isinstance(trust, dict):
         raise PreflightError("provider trust anchor is not an object")
     expected_fields = {
         "schema", "provider", "adapter", "directory_execution", "directory_query",
         "kubernetes_authentication", "execution_sha256", "kubernetes_authentication_sha256",
-        "tenant_sha256", "query_sha256", "snapshot_public_key", "snapshot_signer_key_id",
+        "tenant_sha256", "query_sha256", "provider_collection_authority_sha256",
         "valid_from", "expires_at",
     }
     execution_fields = {
         "cli_path", "cli_sha256", "config_path", "config_sha256", "credential_path",
         "credential_sha256", "api_endpoint", "api_endpoint_sha256", "provider_issuer",
-        "provider_issuer_sha256", "principal_type", "principal_id",
+        "provider_issuer_sha256", "principal_type", "principal_id", "config_profiles_path",
+        "config_endpoint_path", "config_credential_path", "config_principal_path",
+        "credential_principal_path", "directory_reader_role",
     }
     query_fields = {
         "cli_path", "config_path", "profile", "tenant_id", "page_size", "max_pages",
@@ -190,6 +351,7 @@ def verified_provider_trust_anchor(
         "oidc_issuer", "oidc_issuer_sha256", "audiences", "audiences_sha256",
         "username_claim", "username_prefix", "groups_claim", "groups_prefix",
         "provider_subject_field", "provider_email_field", "provider_group_field",
+        "probe_token_path", "probe_token_sha256",
     }
     execution = trust.get("directory_execution", {}) if isinstance(trust, dict) else {}
     directory_query = trust.get("directory_query", {}) if isinstance(trust, dict) else {}
@@ -197,7 +359,6 @@ def verified_provider_trust_anchor(
     now = dt.datetime.now(dt.UTC)
     valid_from = dt.datetime.fromisoformat(str(trust.get("valid_from", "")).replace("Z", "+00:00"))
     expires = dt.datetime.fromisoformat(str(trust.get("expires_at", "")).replace("Z", "+00:00"))
-    public_key = trust.get("snapshot_public_key")
     exact_root_files = (
         (trust_metadata, {0o400, 0o444}),
         (cli_metadata, {0o500, 0o550, 0o555, 0o700, 0o750, 0o755}),
@@ -237,10 +398,21 @@ def verified_provider_trust_anchor(
         != hashlib.sha256(str(execution.get("provider_issuer", "")).encode()).hexdigest()
         or execution.get("principal_type") != "service-account"
         or not re.fullmatch(r"serviceaccount-[A-Za-z0-9-]{8,128}", str(execution.get("principal_id", "")))
-        or execution.get("api_endpoint") not in config_text
-        or str(PROVIDER_CREDENTIAL_PATH) not in config_text
-        or execution.get("principal_id") not in config_text
-        or str(execution.get("principal_id", "")).encode() not in credential_bytes
+        or not isinstance(execution.get("directory_reader_role"), dict)
+        or set(execution["directory_reader_role"]) != {"id", "permissions", "permissions_sha256"}
+        or not isinstance(execution["directory_reader_role"].get("permissions"), list)
+        or not execution["directory_reader_role"]["permissions"]
+        or len(execution["directory_reader_role"]["permissions"])
+        != len(set(execution["directory_reader_role"]["permissions"]))
+        or any(
+            not isinstance(permission, str)
+            or not re.fullmatch(r"[a-z0-9._/-]+\.(?:get|list)", permission)
+            for permission in execution["directory_reader_role"]["permissions"]
+        )
+        or execution["directory_reader_role"].get("permissions_sha256")
+        != hashlib.sha256(
+            canonical(sorted(execution["directory_reader_role"]["permissions"])).encode()
+        ).hexdigest()
         or directory_query.get("cli_path") != str(PROVIDER_CLI_PATH)
         or directory_query.get("config_path") != str(PROVIDER_CONFIG_PATH)
         or not re.fullmatch(r"[A-Za-z0-9._-]{3,128}", str(directory_query.get("profile", "")))
@@ -254,7 +426,7 @@ def verified_provider_trust_anchor(
         or not isinstance(directory_query.get("timeout_seconds"), int)
         or not 1 <= directory_query["timeout_seconds"] <= 120
         or not isinstance(directory_query.get("snapshot_ttl_seconds"), int)
-        or not 300 <= directory_query["snapshot_ttl_seconds"] <= 3600
+        or not 10800 <= directory_query["snapshot_ttl_seconds"] <= 28800
         or directory_query.get("consistency_passes") != 2
         or not is_https_endpoint(authentication.get("oidc_issuer"))
         or authentication.get("oidc_issuer_sha256")
@@ -276,6 +448,8 @@ def verified_provider_trust_anchor(
         or authentication.get("provider_subject_field") != "tenant_user_account.metadata.id"
         or authentication.get("provider_email_field") != "attributes.email"
         or authentication.get("provider_group_field") != "metadata.name"
+        or authentication.get("probe_token_path") != str(PROVIDER_OIDC_PROBE_PATH)
+        or not re.fullmatch(r"[0-9a-f]{64}", str(authentication.get("probe_token_sha256", "")))
         or trust.get("execution_sha256") != hashlib.sha256(canonical(execution).encode()).hexdigest()
         or trust.get("kubernetes_authentication_sha256")
         != hashlib.sha256(canonical(authentication).encode()).hexdigest()
@@ -287,29 +461,60 @@ def verified_provider_trust_anchor(
                 {"execution": execution, "query": directory_query, "authentication": authentication}
             ).encode()
         ).hexdigest()
-        or not isinstance(public_key, str)
-        or trust.get("snapshot_signer_key_id") != hashlib.sha256(public_key.encode()).hexdigest()
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(trust.get("provider_collection_authority_sha256", ""))
+        )
         or valid_from.tzinfo is None
         or expires.tzinfo is None
         or valid_from.astimezone(dt.UTC) > now
         or expires.astimezone(dt.UTC) <= now
-        or int(expires.timestamp()) < rollback_valid_until
+        or int(expires.timestamp()) < required_valid_until
     ):
         raise PreflightError("provider trust anchor or executable/authentication custody is not exact")
-    decode_base64url(public_key, size=32)
-    return trust, hashlib.sha256(canonical(trust).encode()).hexdigest(), adapter_sha256
+    profiles = nested(config_document, execution["config_profiles_path"], label="profile root")
+    profile = profiles.get(directory_query["profile"]) if isinstance(profiles, dict) else None
+    if (
+        not isinstance(profile, dict)
+        or nested(profile, execution["config_endpoint_path"], label="profile endpoint")
+        != execution["api_endpoint"]
+        or nested(profile, execution["config_credential_path"], label="profile credential")
+        != str(PROVIDER_CREDENTIAL_PATH)
+        or nested(profile, execution["config_principal_path"], label="profile principal")
+        != execution["principal_id"]
+        or nested(
+            credential_document,
+            execution["credential_principal_path"],
+            label="credential principal",
+        )
+        != execution["principal_id"]
+    ):
+        raise PreflightError("parsed provider profile-to-credential binding is not exact")
+    authority, authority_sha256 = verified_provider_authority(
+        trust,
+        required_valid_until=required_valid_until,
+    )
+    return (
+        trust,
+        hashlib.sha256(canonical(trust).encode()).hexdigest(),
+        adapter_sha256,
+        authority,
+        authority_sha256,
+    )
 
 
 def verified_provider_snapshot(
     raw_snapshot: str,
     trust: dict[str, Any],
     *,
+    provider_authority: dict[str, Any],
+    provider_authority_sha256: str,
+    authoritative_capture: dict[str, Any],
     trust_anchor_sha256: str,
     adapter_sha256: str,
-    rollback_valid_until: int,
+    required_valid_until: int,
     forbidden_usernames: set[str],
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str], str]:
-    provider_public_key = trust["snapshot_public_key"]
+    provider_public_key = provider_authority["snapshot_public_key"]
     signed = verified_envelope(raw_snapshot, provider_public_key, label="provider/IAM subject snapshot")
     expected_fields = {
         "schema",
@@ -317,6 +522,7 @@ def verified_provider_snapshot(
         "provider",
         "adapter",
         "trust_anchor_sha256",
+        "provider_collection_authority_sha256",
         "execution_sha256",
         "kubernetes_authentication_sha256",
         "provider_principal",
@@ -324,8 +530,10 @@ def verified_provider_snapshot(
         "provider_issuer_sha256",
         "tenant_sha256",
         "query_sha256",
+        "provider_authorization",
         "complete",
         "pagination",
+        "raw_collections",
         "human_users",
         "human_groups",
         "captured_at",
@@ -337,6 +545,14 @@ def verified_provider_snapshot(
     now = dt.datetime.now(dt.UTC)
     captured = dt.datetime.fromisoformat(str(signed.get("captured_at", "")).replace("Z", "+00:00"))
     expires = dt.datetime.fromisoformat(str(signed.get("expires_at", "")).replace("Z", "+00:00"))
+    trust_valid_from = dt.datetime.fromisoformat(str(trust.get("valid_from", "")).replace("Z", "+00:00"))
+    trust_expires = dt.datetime.fromisoformat(str(trust.get("expires_at", "")).replace("Z", "+00:00"))
+    authority_valid_from = dt.datetime.fromisoformat(
+        str(provider_authority.get("valid_from", "")).replace("Z", "+00:00")
+    )
+    authority_expires = dt.datetime.fromisoformat(
+        str(provider_authority.get("expires_at", "")).replace("Z", "+00:00")
+    )
     if (
         signed.get("schema") != "fs2-serve.nebius.ai/security-subject-provider-snapshot/v3"
         or signed.get("complete") is not True
@@ -344,6 +560,7 @@ def verified_provider_snapshot(
         or signed.get("provider") != trust["provider"]
         or signed.get("adapter") != {"id": PROVIDER_ADAPTER_ID, "sha256": adapter_sha256}
         or signed.get("trust_anchor_sha256") != trust_anchor_sha256
+        or signed.get("provider_collection_authority_sha256") != provider_authority_sha256
         or signed.get("execution_sha256") != trust["execution_sha256"]
         or signed.get("kubernetes_authentication_sha256")
         != trust["kubernetes_authentication_sha256"]
@@ -361,12 +578,52 @@ def verified_provider_snapshot(
         or signed.get("query_sha256") != trust["query_sha256"]
         or captured.tzinfo is None
         or expires.tzinfo is None
+        or trust_valid_from.tzinfo is None
+        or trust_expires.tzinfo is None
+        or authority_valid_from.tzinfo is None
+        or authority_expires.tzinfo is None
         or captured.astimezone(dt.UTC) > now
+        or captured.astimezone(dt.UTC) < trust_valid_from.astimezone(dt.UTC)
+        or captured.astimezone(dt.UTC) < authority_valid_from.astimezone(dt.UTC)
         or expires.astimezone(dt.UTC) <= now
-        or int(expires.timestamp()) < rollback_valid_until
+        or expires.astimezone(dt.UTC) > trust_expires.astimezone(dt.UTC)
+        or expires.astimezone(dt.UTC) > authority_expires.astimezone(dt.UTC)
+        or int(expires.timestamp()) < required_valid_until
+        or int((expires - captured).total_seconds())
+        != trust["directory_query"]["snapshot_ttl_seconds"]
+        or signed.get("signer_key_id") != provider_authority["snapshot_signer_key_id"]
     ):
         raise PreflightError("provider/IAM subject snapshot is incomplete, stale or from another tenant/query")
-    users, groups = normalized_subjects(signed, forbidden_usernames=forbidden_usernames)
+    users, groups = normalized_provider_subjects(signed, forbidden_usernames=forbidden_usernames)
+    authorization = signed.get("provider_authorization")
+    role_contract = trust["directory_execution"]["directory_reader_role"]
+    if (
+        not isinstance(authorization, dict)
+        or set(authorization)
+        != {
+            "whoami",
+            "access_binding_pages",
+            "principal_bindings",
+            "role",
+            "whoami_sha256",
+            "access_bindings_sha256",
+            "role_sha256",
+            "permissions_sha256",
+        }
+        or authorization.get("whoami_sha256")
+        != hashlib.sha256(canonical(authorization.get("whoami")).encode()).hexdigest()
+        or authorization.get("access_bindings_sha256")
+        != hashlib.sha256(canonical(authorization.get("access_binding_pages")).encode()).hexdigest()
+        or authorization.get("role_sha256")
+        != hashlib.sha256(canonical(authorization.get("role")).encode()).hexdigest()
+        or authorization.get("permissions_sha256") != role_contract["permissions_sha256"]
+        or authorization.get("principal_bindings")
+        != [{
+            "subject_id": trust["directory_execution"]["principal_id"],
+            "role_id": role_contract["id"],
+        }]
+    ):
+        raise PreflightError("provider whoami or read-only IAM role proof is not exact")
     pagination = signed.get("pagination")
     if not isinstance(pagination, dict) or set(pagination) != {
         "page_size", "subject_count", "consistency", "collections"
@@ -389,6 +646,9 @@ def verified_provider_snapshot(
         raise PreflightError("provider/IAM pagination counts are incomplete")
     collection_hashes: list[str] = []
     collection_pages: list[list[dict[str, Any]]] = []
+    raw_collections = signed.get("raw_collections")
+    if not isinstance(raw_collections, list) or len(raw_collections) != 2:
+        raise PreflightError("provider/IAM raw collection evidence is incomplete")
     for collection_index, collection in enumerate(collections):
         if (
             not isinstance(collection, dict)
@@ -407,7 +667,20 @@ def verified_provider_snapshot(
             raise PreflightError("provider/IAM collection receipt is invalid")
         expected_request = hashlib.sha256(b"").hexdigest()
         pages = collection["pages"]
+        raw_pages = raw_collections[collection_index]
+        if not isinstance(raw_pages, list) or len(raw_pages) != len(pages):
+            raise PreflightError("provider/IAM raw pages do not match their receipt count")
         for page_index, page in enumerate(pages):
+            raw_page = raw_pages[page_index]
+            if (
+                not isinstance(raw_page, dict)
+                or set(raw_page) != {"operation", "request_token", "response", "next_token"}
+                or not isinstance(raw_page.get("operation"), str)
+                or not isinstance(raw_page.get("request_token"), str)
+                or not isinstance(raw_page.get("response"), dict)
+                or not isinstance(raw_page.get("next_token"), str)
+            ):
+                raise PreflightError("provider/IAM raw page is not exact")
             if (
                 not isinstance(page, dict)
                 or set(page)
@@ -415,24 +688,78 @@ def verified_provider_snapshot(
                 or page.get("index") != page_index
                 or page.get("request_cursor_sha256") != expected_request
                 or not re.fullmatch(r"[0-9a-f]{64}", str(page.get("response_sha256", "")))
+                or page.get("response_sha256")
+                != hashlib.sha256(
+                    canonical({"operation": raw_page["operation"], "response": raw_page["response"]}).encode()
+                ).hexdigest()
             ):
                 raise PreflightError("provider/IAM pagination chain is invalid")
             next_cursor = page.get("next_cursor_sha256")
+            next_logical_cursor = (
+                ""
+                if page_index + 1 == len(raw_pages)
+                else canonical(
+                    {
+                        "operation": raw_pages[page_index + 1]["operation"],
+                        "request_token": raw_pages[page_index + 1]["request_token"],
+                    }
+                )
+            )
+            recomputed_next = (
+                hashlib.sha256(next_logical_cursor.encode()).hexdigest()
+                if next_logical_cursor
+                else ""
+            )
             if page_index + 1 == len(pages):
-                if next_cursor != "":
+                if next_cursor != "" or recomputed_next != "":
                     raise PreflightError("provider/IAM pagination is not terminal")
-            elif not isinstance(next_cursor, str) or not re.fullmatch(r"[0-9a-f]{64}", next_cursor):
+            elif (
+                not isinstance(next_cursor, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", next_cursor)
+                or next_cursor != recomputed_next
+            ):
                 raise PreflightError("provider/IAM pagination cursor is invalid")
             else:
                 expected_request = next_cursor
         collection_hashes.append(collection["sha256"])
         collection_pages.append(pages)
+        if collection["sha256"] != hashlib.sha256(canonical(raw_pages).encode()).hexdigest():
+            raise PreflightError("provider/IAM raw transcript digest is not recomputable")
     if (
         len(set(collection_hashes)) != 1
         or collection_hashes[0] != consistency["collection_sha256"]
         or collection_pages[0] != collection_pages[1]
     ):
         raise PreflightError("provider/IAM repeat-stability fence is not byte-identical")
+    independently_collected_fields = {
+        "provider",
+        "adapter",
+        "trust_anchor_sha256",
+        "provider_collection_authority_sha256",
+        "execution_sha256",
+        "kubernetes_authentication_sha256",
+        "provider_principal",
+        "api_endpoint_sha256",
+        "provider_issuer_sha256",
+        "tenant_sha256",
+        "query_sha256",
+        "provider_authorization",
+        "complete",
+        "pagination",
+        "raw_collections",
+        "human_users",
+        "human_groups",
+        "signer_key_id",
+    }
+    if (
+        set(authoritative_capture) != expected_fields
+        or {
+            field: authoritative_capture.get(field)
+            for field in independently_collected_fields
+        }
+        != {field: signed.get(field) for field in independently_collected_fields}
+    ):
+        raise PreflightError("signed provider snapshot differs from the freshly executed authoritative collection")
     snapshot_sha256 = hashlib.sha256(canonical(signed).encode()).hexdigest()
     return signed, users, groups, snapshot_sha256
 
@@ -473,9 +800,15 @@ def verified_subject_inventory(
         "provider": provider_signed["provider"],
         "adapter": provider_signed["adapter"],
         "trust_anchor_sha256": provider_signed["trust_anchor_sha256"],
+        "provider_collection_authority_sha256": provider_signed[
+            "provider_collection_authority_sha256"
+        ],
         "execution_sha256": provider_signed["execution_sha256"],
         "kubernetes_authentication_sha256": provider_signed["kubernetes_authentication_sha256"],
         "provider_principal": provider_signed["provider_principal"],
+        "provider_authorization_sha256": hashlib.sha256(
+            canonical(provider_signed["provider_authorization"]).encode()
+        ).hexdigest(),
         "api_endpoint_sha256": provider_signed["api_endpoint_sha256"],
         "provider_issuer_sha256": provider_signed["provider_issuer_sha256"],
         "tenant_sha256": provider_signed["tenant_sha256"],
@@ -496,7 +829,11 @@ def verified_subject_inventory(
         or not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", str(signed.get("inventory_id", "")))
         or signed.get("cluster") != expected_cluster
         or signed.get("provider_snapshot") != provider_binding
-        or inventory_users != provider_users
+        or inventory_users
+        != [
+            {"username": user["username"], "groups": user["groups"]}
+            for user in provider_users
+        ]
         or inventory_groups != provider_groups
         or issued.tzinfo is None
         or expires.tzinfo is None
@@ -617,6 +954,114 @@ def cluster_identity(kubeconfig: Path, context: str) -> tuple[str, str]:
     if not isinstance(server, str) or not server or not uid:
         raise PreflightError("boundary cluster identity is incomplete")
     return server, uid
+
+
+def verified_cluster_oidc_mapping(
+    kubeconfig: Path,
+    context: str,
+    *,
+    trust: dict[str, Any],
+    provider_users: list[dict[str, Any]],
+    cluster: tuple[str, str],
+) -> str:
+    """Have the selected API server authenticate one fixed provider OIDC probe."""
+    token_bytes, token_metadata = descriptor_bytes(
+        PROVIDER_OIDC_PROBE_PATH,
+        maximum=65536,
+        label="provider OIDC probe token",
+    )
+    if (
+        not stat.S_ISREG(token_metadata.st_mode)
+        or token_metadata.st_uid != 0
+        or token_metadata.st_gid != 0
+        or stat.S_IMODE(token_metadata.st_mode) not in {0o400, 0o440}
+        or hashlib.sha256(token_bytes).hexdigest()
+        != trust["kubernetes_authentication"]["probe_token_sha256"]
+    ):
+        raise PreflightError("provider OIDC probe custody is not exact")
+    try:
+        token = token_bytes.decode("ascii").strip()
+        parts = token.split(".")
+        if len(parts) != 3:
+            raise PreflightError("provider OIDC probe is not a JWT")
+        claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
+        raise PreflightError("provider OIDC probe claims are invalid") from error
+    authentication = trust["kubernetes_authentication"]
+    audiences = claims.get("aud")
+    audiences = [audiences] if isinstance(audiences, str) else audiences
+    raw_groups = claims.get(authentication["groups_claim"])
+    claim_value = claims.get(authentication["username_claim"])
+    subject_id = claims.get("sub")
+    if (
+        claims.get("iss") != authentication["oidc_issuer"]
+        or not isinstance(audiences, list)
+        or sorted(audiences) != sorted(authentication["audiences"])
+        or not isinstance(claims.get("exp"), int)
+        or claims["exp"] <= int(dt.datetime.now(dt.UTC).timestamp()) + 60
+        or not isinstance(subject_id, str)
+        or not isinstance(claim_value, str)
+        or not isinstance(raw_groups, list)
+        or any(not isinstance(group, str) for group in raw_groups)
+    ):
+        raise PreflightError("provider OIDC probe claims do not match the trusted issuer/audience contract")
+    mapped = {
+        "provider_subject_id": subject_id,
+        "username": f"{authentication['username_prefix']}{claim_value}",
+        "groups": sorted(f"{authentication['groups_prefix']}{group}" for group in raw_groups),
+    }
+    if mapped not in provider_users:
+        raise PreflightError("provider OIDC probe does not represent the authoritative directory")
+    review_request = {
+        "apiVersion": "authentication.k8s.io/v1",
+        "kind": "TokenReview",
+        "spec": {"token": token, "audiences": sorted(authentication["audiences"])},
+    }
+    try:
+        review = json.loads(
+            run(
+                kubeconfig,
+                context,
+                "create",
+                "--raw",
+                "/apis/authentication.k8s.io/v1/tokenreviews",
+                "-f",
+                "-",
+                input_text=canonical(review_request),
+            )
+        )
+    except json.JSONDecodeError as error:
+        raise PreflightError("provider OIDC TokenReview response is invalid") from error
+    status = review.get("status", {}) if isinstance(review, dict) else {}
+    user = status.get("user", {}) if isinstance(status, dict) else {}
+    observed_groups = sorted(user.get("groups", [])) if isinstance(user, dict) else []
+    expected_groups = sorted({*mapped["groups"], "system:authenticated"})
+    if (
+        status.get("authenticated") is not True
+        or sorted(status.get("audiences", [])) != sorted(authentication["audiences"])
+        or user.get("username") != mapped["username"]
+        or observed_groups != expected_groups
+        or not isinstance(user.get("uid"), str)
+        or not user["uid"]
+        or not isinstance(user.get("extra", {}), dict)
+    ):
+        raise PreflightError("selected API server does not enforce the trusted OIDC claim mapping")
+    evidence = {
+        "cluster": {
+            "api_server_sha256": hashlib.sha256(cluster[0].encode()).hexdigest(),
+            "kube_system_uid": cluster[1],
+        },
+        "token_sha256": hashlib.sha256(token_bytes).hexdigest(),
+        "issuer_sha256": authentication["oidc_issuer_sha256"],
+        "audiences_sha256": authentication["audiences_sha256"],
+        "provider_subject_id": subject_id,
+        "username": user["username"],
+        "uid": user["uid"],
+        "groups": observed_groups,
+        "extra": user.get("extra", {}),
+        "authenticated": True,
+    }
+    return hashlib.sha256(canonical(evidence).encode()).hexdigest()
 
 
 def paginated_collection(
@@ -1095,6 +1540,11 @@ def auditor_bootstrap_contract(
         {
             "apiGroups": ["authorization.k8s.io"],
             "resources": ["subjectaccessreviews"],
+            "verbs": ["create"],
+        },
+        {
+            "apiGroups": ["authentication.k8s.io"],
+            "resources": ["tokenreviews"],
             "verbs": ["create"],
         },
         {
@@ -1684,24 +2134,39 @@ def main() -> int:
                     raise PreflightError("prior credential must remain valid during retirement proof")
             minimum_rollback_seconds = int(query["minimum_rollback_seconds"])
             rollback_valid_until = min(expiries["release"], expiries["security"])
+            evidence_valid_until = expiries["bootstrap"] + minimum_rollback_seconds
             if (
                 minimum_rollback_seconds < 3600
-                or rollback_valid_until < expiries["bootstrap"] + minimum_rollback_seconds
+                or rollback_valid_until < evidence_valid_until
             ):
                 raise PreflightError("boundary credentials do not preserve the minimum post-bootstrap rollback window")
-            provider_trust, provider_trust_anchor_sha256, provider_adapter_sha256 = (
+            (
+                provider_trust,
+                provider_trust_anchor_sha256,
+                provider_adapter_sha256,
+                provider_authority,
+                provider_authority_sha256,
+            ) = (
                 verified_provider_trust_anchor(
                     provider_trust_anchor_path,
                     provider_adapter_path,
-                    rollback_valid_until=rollback_valid_until,
+                    required_valid_until=evidence_valid_until,
                 )
             )
             provider_execution_sha256 = provider_trust["execution_sha256"]
             kubernetes_authentication_sha256 = provider_trust[
                 "kubernetes_authentication_sha256"
             ]
-            if provider_trust["snapshot_public_key"] == query["recovery_public_key"]:
+            if provider_authority["snapshot_public_key"] == query["recovery_public_key"]:
                 raise PreflightError("provider/IAM and recovery inventory authorities must be disjoint")
+            authoritative_capture = execute_authoritative_provider_adapter(
+                provider_adapter_path,
+                timeout_seconds=min(
+                    1800,
+                    provider_trust["directory_query"]["timeout_seconds"]
+                    * (provider_trust["directory_query"]["max_pages"] + 4),
+                ),
+            )
             provider_snapshot_bytes, provider_snapshot_metadata = descriptor_bytes(
                 provider_snapshot_path,
                 maximum=16777216,
@@ -1721,9 +2186,12 @@ def main() -> int:
                 verified_provider_snapshot(
                     provider_snapshot_text,
                     provider_trust,
+                    provider_authority=provider_authority,
+                    provider_authority_sha256=provider_authority_sha256,
+                    authoritative_capture=authoritative_capture,
                     trust_anchor_sha256=provider_trust_anchor_sha256,
                     adapter_sha256=provider_adapter_sha256,
-                    rollback_valid_until=rollback_valid_until,
+                    required_valid_until=evidence_valid_until,
                     forbidden_usernames=set(expected_principals.values()),
                 )
             )
@@ -1731,7 +2199,7 @@ def main() -> int:
                 query["subject_inventory"],
                 query["recovery_public_key"],
                 cluster=next(iter(clusters.values())),
-                rollback_valid_until=rollback_valid_until,
+                rollback_valid_until=evidence_valid_until,
                 forbidden_usernames=set(expected_principals.values()),
                 provider_signed=provider_signed,
                 provider_users=provider_users,
@@ -1751,6 +2219,8 @@ def main() -> int:
             kubernetes_authentication_sha256 = hashlib.sha256(
                 b"internal-only-kubernetes-authentication"
             ).hexdigest()
+            provider_authority_sha256 = hashlib.sha256(b"internal-only-provider-authority").hexdigest()
+            oidc_mapping_sha256 = hashlib.sha256(b"internal-only-oidc-mapping").hexdigest()
             auditor_bootstrap_sha256 = hashlib.sha256(b"internal-only-auditor-bootstrap").hexdigest()
             external_role_bundle_sha256 = hashlib.sha256(b"internal-only-role-bundle").hexdigest()
             effective_rbac_subjects_sha256 = hashlib.sha256(b"internal-only-rbac-subjects").hexdigest()
@@ -1775,6 +2245,16 @@ def main() -> int:
                 expected_principals["successor_bootstrap"],
                 query["gateway_namespace"],
                 query["controller_namespace"],
+            )
+            can_i(bootstrap, context, "yes", "create", "tokenreviews.authentication.k8s.io")
+            for identity in (release, security, prior_security, prior_bootstrap):
+                can_i(identity, context, "no", "create", "tokenreviews.authentication.k8s.io")
+            oidc_mapping_sha256 = verified_cluster_oidc_mapping(
+                bootstrap,
+                context,
+                trust=provider_trust,
+                provider_users=provider_users,
+                cluster=next(iter(clusters.values())),
             )
             before_mutation_subjects = [
                 expected_principals["prior_security"],
@@ -2183,6 +2663,7 @@ def main() -> int:
             "list",
             "certificatesigningrequests.certificates.k8s.io",
         )
+        initial_kubernetes_subject_inventory = kubernetes_subject_inventory(bootstrap, context)
         (
             service_accounts,
             roles,
@@ -2192,7 +2673,7 @@ def main() -> int:
             csr_signers,
             effective_rbac_subjects,
             kubernetes_subject_inventory_sha256,
-        ) = kubernetes_subject_inventory(bootstrap, context)
+        ) = initial_kubernetes_subject_inventory
         rule_impersonation_targets, rule_delegation_targets, rule_signers = (
             rbac_rule_authorization_targets(roles, cluster_roles)
         )
@@ -2553,6 +3034,13 @@ def main() -> int:
                         name=name,
                     )
 
+        post_sar_kubernetes_subject_inventory = kubernetes_subject_inventory(bootstrap, context)
+        if post_sar_kubernetes_subject_inventory != initial_kubernetes_subject_inventory:
+            raise PreflightError(
+                "Kubernetes subject inventory drifted after SubjectAccessReview closure"
+            )
+        kubernetes_subject_inventory_post_sar_sha256 = post_sar_kubernetes_subject_inventory[-1]
+
         digest = hashlib.sha256(
             canonical(
                 {
@@ -2560,10 +3048,15 @@ def main() -> int:
                     "credential_set_sha256": credential_set_sha256,
                     "provider_snapshot_sha256": provider_snapshot_sha256,
                     "provider_trust_anchor_sha256": provider_trust_anchor_sha256,
+                    "provider_collection_authority_sha256": provider_authority_sha256,
                     "provider_adapter_sha256": provider_adapter_sha256,
                     "provider_execution_sha256": provider_execution_sha256,
                     "kubernetes_authentication_sha256": kubernetes_authentication_sha256,
+                    "oidc_mapping_sha256": oidc_mapping_sha256,
                     "kubernetes_subject_inventory_sha256": kubernetes_subject_inventory_sha256,
+                    "kubernetes_subject_inventory_post_sar_sha256": (
+                        kubernetes_subject_inventory_post_sar_sha256
+                    ),
                     "effective_rbac_subjects_sha256": effective_rbac_subjects_sha256,
                     "auditor_bootstrap_sha256": auditor_bootstrap_sha256,
                     "external_role_bundle_sha256": external_role_bundle_sha256,
@@ -2580,10 +3073,15 @@ def main() -> int:
                     "subject_inventory_sha256": inventory_sha256,
                     "provider_snapshot_sha256": provider_snapshot_sha256,
                     "provider_trust_anchor_sha256": provider_trust_anchor_sha256,
+                    "provider_collection_authority_sha256": provider_authority_sha256,
                     "provider_adapter_sha256": provider_adapter_sha256,
                     "provider_execution_sha256": provider_execution_sha256,
                     "kubernetes_authentication_sha256": kubernetes_authentication_sha256,
+                    "oidc_mapping_sha256": oidc_mapping_sha256,
                     "kubernetes_subject_inventory_sha256": kubernetes_subject_inventory_sha256,
+                    "kubernetes_subject_inventory_post_sar_sha256": (
+                        kubernetes_subject_inventory_post_sar_sha256
+                    ),
                     "effective_rbac_subjects_sha256": effective_rbac_subjects_sha256,
                     "auditor_bootstrap_sha256": auditor_bootstrap_sha256,
                     "external_role_bundle_sha256": external_role_bundle_sha256,

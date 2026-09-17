@@ -20,6 +20,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 ADAPTER_ID = "fs2-serve.nebius.ai/nebius-iam-human-directory/v3"
 SNAPSHOT_SCHEMA = "fs2-serve.nebius.ai/security-subject-provider-snapshot/v3"
 TRUST_SCHEMA = "fs2-serve.nebius.ai/security-provider-trust-anchor/v3"
@@ -27,6 +29,9 @@ TRUST_ANCHOR_PATH = Path("/etc/fs2/security/network-policy-provider-trust-anchor
 NEBIUS_CLI_PATH = Path("/usr/local/bin/nebius")
 NEBIUS_CONFIG_PATH = Path("/etc/fs2/security/nebius-directory-reader.yaml")
 NEBIUS_CREDENTIAL_PATH = Path("/etc/fs2/security/nebius-directory-reader-credential.json")
+PROVIDER_AUTHORITY_PATH = Path(
+    "/etc/fs2/security/network-policy-provider-collection-authority-v1.json"
+)
 
 
 class AdapterError(RuntimeError):
@@ -44,6 +49,21 @@ def _is_https_endpoint(value: Any) -> bool:
             value,
         )
     )
+
+
+def _nested(value: Any, path: Any, *, label: str) -> Any:
+    if (
+        not isinstance(path, list)
+        or not path
+        or any(not isinstance(part, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", part) for part in path)
+    ):
+        raise AdapterError(f"{label} path is invalid")
+    current = value
+    for part in path:
+        if not isinstance(current, dict) or part not in current:
+            raise AdapterError(f"{label} path is absent")
+        current = current[part]
+    return current
 
 
 def _root_owned_file(
@@ -88,6 +108,61 @@ def _root_owned_file(
     return value
 
 
+def _provider_authority(trust: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    try:
+        raw = _root_owned_file(
+            PROVIDER_AUTHORITY_PATH,
+            modes={0o400, 0o444},
+            maximum=65536,
+            label="provider collection authority",
+            required_gid=0,
+        )
+        authority = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise AdapterError("provider collection authority is invalid") from error
+    authority_sha256 = hashlib.sha256(canonical(authority).encode()).hexdigest()
+    if (
+        not isinstance(authority, dict)
+        or set(authority)
+        != {
+            "schema",
+            "provider",
+            "tenant_sha256",
+            "api_endpoint_sha256",
+            "snapshot_public_key",
+            "snapshot_signer_key_id",
+            "valid_from",
+            "expires_at",
+        }
+        or authority.get("schema")
+        != "fs2-serve.nebius.ai/security-provider-collection-authority/v1"
+        or authority.get("provider") != "nebius-iam"
+        or authority.get("tenant_sha256") != trust.get("tenant_sha256")
+        or authority.get("api_endpoint_sha256")
+        != trust.get("directory_execution", {}).get("api_endpoint_sha256")
+        or authority_sha256 != trust.get("provider_collection_authority_sha256")
+        or not re.fullmatch(r"[A-Za-z0-9_-]{43}", str(authority.get("snapshot_public_key", "")))
+        or authority.get("snapshot_signer_key_id")
+        != hashlib.sha256(str(authority.get("snapshot_public_key", "")).encode()).hexdigest()
+    ):
+        raise AdapterError("provider collection authority is not independently pinned")
+    now = dt.datetime.now(dt.UTC)
+    try:
+        valid_from = dt.datetime.fromisoformat(str(authority["valid_from"]).replace("Z", "+00:00"))
+        expires_at = dt.datetime.fromisoformat(str(authority["expires_at"]).replace("Z", "+00:00"))
+    except ValueError as error:
+        raise AdapterError("provider collection authority validity is invalid") from error
+    if (
+        valid_from.tzinfo is None
+        or expires_at.tzinfo is None
+        or valid_from.astimezone(dt.UTC) > now
+        or expires_at.astimezone(dt.UTC)
+        <= now + dt.timedelta(seconds=trust["directory_query"]["snapshot_ttl_seconds"])
+    ):
+        raise AdapterError("provider collection authority is not valid for the trusted evidence lifetime")
+    return authority, authority_sha256
+
+
 def _trust_anchor() -> tuple[dict[str, Any], str]:
     try:
         raw = _root_owned_file(
@@ -103,13 +178,15 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
     expected = {
         "schema", "provider", "adapter", "directory_execution", "directory_query",
         "kubernetes_authentication", "execution_sha256", "kubernetes_authentication_sha256",
-        "tenant_sha256", "query_sha256", "snapshot_public_key", "snapshot_signer_key_id",
+        "tenant_sha256", "query_sha256", "provider_collection_authority_sha256",
         "valid_from", "expires_at",
     }
     execution_fields = {
         "cli_path", "cli_sha256", "config_path", "config_sha256", "credential_path",
         "credential_sha256", "api_endpoint", "api_endpoint_sha256", "provider_issuer",
-        "provider_issuer_sha256", "principal_type", "principal_id",
+        "provider_issuer_sha256", "principal_type", "principal_id", "config_profiles_path",
+        "config_endpoint_path", "config_credential_path", "config_principal_path",
+        "credential_principal_path", "directory_reader_role",
     }
     query_fields = {
         "cli_path", "config_path", "profile", "tenant_id", "page_size", "max_pages",
@@ -119,6 +196,7 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         "oidc_issuer", "oidc_issuer_sha256", "audiences", "audiences_sha256",
         "username_claim", "username_prefix", "groups_claim", "groups_prefix",
         "provider_subject_field", "provider_email_field", "provider_group_field",
+        "probe_token_path", "probe_token_sha256",
     }
     execution = trust.get("directory_execution", {}) if isinstance(trust, dict) else {}
     query = trust.get("directory_query", {}) if isinstance(trust, dict) else {}
@@ -150,7 +228,7 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         or not isinstance(query.get("timeout_seconds"), int)
         or not 1 <= query["timeout_seconds"] <= 120
         or not isinstance(query.get("snapshot_ttl_seconds"), int)
-        or not 300 <= query["snapshot_ttl_seconds"] <= 3600
+        or not 10800 <= query["snapshot_ttl_seconds"] <= 28800
         or query.get("consistency_passes") != 2
         or not _is_https_endpoint(execution.get("api_endpoint"))
         or not _is_https_endpoint(execution.get("provider_issuer"))
@@ -160,6 +238,24 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         != hashlib.sha256(str(execution.get("provider_issuer", "")).encode()).hexdigest()
         or execution.get("principal_type") != "service-account"
         or not re.fullmatch(r"serviceaccount-[A-Za-z0-9-]{8,128}", str(execution.get("principal_id", "")))
+        or not isinstance(execution.get("directory_reader_role"), dict)
+        or set(execution["directory_reader_role"]) != {"id", "permissions", "permissions_sha256"}
+        or not re.fullmatch(
+            r"[A-Za-z0-9._:-]{8,253}", str(execution["directory_reader_role"].get("id", ""))
+        )
+        or not isinstance(execution["directory_reader_role"].get("permissions"), list)
+        or not execution["directory_reader_role"]["permissions"]
+        or len(execution["directory_reader_role"]["permissions"])
+        != len(set(execution["directory_reader_role"]["permissions"]))
+        or any(
+            not isinstance(permission, str)
+            or not re.fullmatch(r"[a-z0-9._/-]+\.(?:get|list)", permission)
+            for permission in execution["directory_reader_role"]["permissions"]
+        )
+        or execution["directory_reader_role"].get("permissions_sha256")
+        != hashlib.sha256(
+            canonical(sorted(execution["directory_reader_role"]["permissions"])).encode()
+        ).hexdigest()
         or not _is_https_endpoint(authentication.get("oidc_issuer"))
         or authentication.get("oidc_issuer_sha256")
         != hashlib.sha256(str(authentication.get("oidc_issuer", "")).encode()).hexdigest()
@@ -179,6 +275,9 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         or authentication.get("provider_subject_field") != "tenant_user_account.metadata.id"
         or authentication.get("provider_email_field") != "attributes.email"
         or authentication.get("provider_group_field") != "metadata.name"
+        or authentication.get("probe_token_path")
+        != "/etc/fs2/security/network-policy-provider-oidc-probe.jwt"
+        or not re.fullmatch(r"[0-9a-f]{64}", str(authentication.get("probe_token_sha256", "")))
         or trust.get("execution_sha256") != hashlib.sha256(canonical(execution).encode()).hexdigest()
         or trust.get("kubernetes_authentication_sha256")
         != hashlib.sha256(canonical(authentication).encode()).hexdigest()
@@ -191,9 +290,9 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
             "id": ADAPTER_ID,
             "sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         }
-        or not re.fullmatch(r"[A-Za-z0-9_-]{43}", str(trust.get("snapshot_public_key", "")))
-        or trust.get("snapshot_signer_key_id")
-        != hashlib.sha256(str(trust.get("snapshot_public_key", "")).encode()).hexdigest()
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(trust.get("provider_collection_authority_sha256", ""))
+        )
     ):
         raise AdapterError("provider trust anchor is not source-pinned exact")
     now = dt.datetime.now(dt.UTC)
@@ -231,19 +330,38 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         required_gid=0,
     )
     try:
-        config_text = config_bytes.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise AdapterError("provider CLI configuration is not UTF-8") from error
+        config_document = yaml.safe_load(config_bytes)
+        credential_document = json.loads(credential_bytes)
+        profiles = _nested(config_document, execution.get("config_profiles_path"), label="profile root")
+        profile = profiles.get(query["profile"]) if isinstance(profiles, dict) else None
+        if not isinstance(profile, dict):
+            raise AdapterError("configured provider profile is absent")
+        configured_endpoint = _nested(
+            profile, execution.get("config_endpoint_path"), label="profile endpoint"
+        )
+        configured_credential = _nested(
+            profile, execution.get("config_credential_path"), label="profile credential"
+        )
+        configured_principal = _nested(
+            profile, execution.get("config_principal_path"), label="profile principal"
+        )
+        credential_principal = _nested(
+            credential_document,
+            execution.get("credential_principal_path"),
+            label="credential principal",
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, yaml.YAMLError) as error:
+        raise AdapterError("provider configuration or credential is not parseable") from error
     if (
         execution.get("cli_sha256") != hashlib.sha256(cli_bytes).hexdigest()
         or execution.get("config_sha256") != hashlib.sha256(config_bytes).hexdigest()
         or execution.get("credential_sha256") != hashlib.sha256(credential_bytes).hexdigest()
-        or execution["api_endpoint"] not in config_text
-        or str(NEBIUS_CREDENTIAL_PATH) not in config_text
-        or execution["principal_id"] not in config_text
-        or execution["principal_id"].encode() not in credential_bytes
+        or configured_endpoint != execution["api_endpoint"]
+        or configured_credential != str(NEBIUS_CREDENTIAL_PATH)
+        or configured_principal != execution["principal_id"]
+        or credential_principal != execution["principal_id"]
     ):
-        raise AdapterError("provider executable, configuration or credential bytes are not exact")
+        raise AdapterError("provider executable or parsed profile-to-credential binding is not exact")
     return trust, hashlib.sha256(canonical(trust).encode()).hexdigest()
 
 
@@ -297,6 +415,137 @@ def _provider_page(
     ):
         raise AdapterError("provider page schema is not exact")
     return page
+
+
+def _provider_document(
+    execution: dict[str, Any],
+    query: dict[str, Any],
+    command: list[str],
+    *,
+    label: str,
+) -> dict[str, Any]:
+    arguments = [
+        str(NEBIUS_CLI_PATH),
+        *command,
+        "--format",
+        "json",
+        "--config",
+        str(NEBIUS_CONFIG_PATH),
+        "--profile",
+        query["profile"],
+        "--endpoint",
+        execution["api_endpoint"],
+        "--no-check-update",
+        "--no-browser",
+        "--color=false",
+        "--retries",
+        "1",
+        "--timeout",
+        f"{query['timeout_seconds']}s",
+        "--auth-timeout",
+        f"{query['timeout_seconds']}s",
+    ]
+    try:
+        result = subprocess.run(  # noqa: S603 -- executable and arguments are source/root anchored
+            arguments,
+            capture_output=True,
+            check=False,
+            close_fds=True,
+            cwd="/",
+            env={
+                "HOME": "/var/empty",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "NEBIUS_CONFIG": str(NEBIUS_CONFIG_PATH),
+                "PATH": "/usr/bin:/bin",
+            },
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            text=True,
+            timeout=query["timeout_seconds"] + 5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise AdapterError(f"provider {label} query did not complete within its bound") from error
+    if result.returncode != 0 or result.stderr.strip():
+        raise AdapterError(f"provider {label} query failed closed")
+    try:
+        document = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise AdapterError(f"provider {label} query returned invalid JSON") from error
+    if not isinstance(document, dict):
+        raise AdapterError(f"provider {label} query did not return an object")
+    return document
+
+
+def _capture_provider_authorization(trust: dict[str, Any]) -> dict[str, Any]:
+    execution = trust["directory_execution"]
+    query = trust["directory_query"]
+    whoami = _provider_document(execution, query, ["iam", "whoami"], label="whoami")
+    subject = whoami.get("subject", {}) if isinstance(whoami, dict) else {}
+    if (
+        not isinstance(subject, dict)
+        or subject.get("type") != execution["principal_type"]
+        or subject.get("id") != execution["principal_id"]
+        or whoami.get("tenant_id") != query["tenant_id"]
+        or set(whoami) != {"subject", "tenant_id"}
+        or set(subject) != {"type", "id"}
+    ):
+        raise AdapterError("provider whoami does not match the parsed credential principal")
+    budgets = {"pages": query["max_pages"], "records": query["max_records"]}
+    bindings, binding_pages = _list_pages(
+        execution,
+        query,
+        ["iam", "access-binding", "list", "--parent-id", query["tenant_id"]],
+        "access-binding.list",
+        budgets,
+    )
+    principal_bindings: list[dict[str, str]] = []
+    for binding in bindings:
+        spec = binding.get("spec", {}) if isinstance(binding, dict) else {}
+        if spec.get("subject_id") == execution["principal_id"]:
+            if set(spec) != {"subject_id", "role_id"} or not isinstance(spec.get("role_id"), str):
+                raise AdapterError("provider directory-reader access binding is malformed")
+            principal_bindings.append(
+                {"subject_id": spec["subject_id"], "role_id": spec["role_id"]}
+            )
+    role_contract = execution["directory_reader_role"]
+    if principal_bindings != [
+        {"subject_id": execution["principal_id"], "role_id": role_contract["id"]}
+    ]:
+        raise AdapterError("provider directory reader does not have exactly one approved role")
+    role = _provider_document(
+        execution,
+        query,
+        ["iam", "role", "get", "--id", role_contract["id"]],
+        label="directory-reader role",
+    )
+    role_metadata = role.get("metadata", {}) if isinstance(role, dict) else {}
+    role_spec = role.get("spec", {}) if isinstance(role, dict) else {}
+    permissions = role_spec.get("permissions") if isinstance(role_spec, dict) else None
+    if (
+        not isinstance(role_metadata, dict)
+        or role_metadata.get("id") != role_contract["id"]
+        or not isinstance(permissions, list)
+        or sorted(permissions) != sorted(role_contract["permissions"])
+        or hashlib.sha256(canonical(sorted(permissions)).encode()).hexdigest()
+        != role_contract["permissions_sha256"]
+        or any(
+            not isinstance(permission, str)
+            or not re.fullmatch(r"[a-z0-9._/-]+\.(?:get|list)", permission)
+            for permission in permissions
+        )
+    ):
+        raise AdapterError("provider directory-reader role is not read-only exact")
+    return {
+        "whoami": whoami,
+        "access_binding_pages": binding_pages,
+        "principal_bindings": principal_bindings,
+        "role": role,
+        "whoami_sha256": hashlib.sha256(canonical(whoami).encode()).hexdigest(),
+        "access_bindings_sha256": hashlib.sha256(canonical(binding_pages).encode()).hexdigest(),
+        "role_sha256": hashlib.sha256(canonical(role).encode()).hexdigest(),
+        "permissions_sha256": role_contract["permissions_sha256"],
+    }
 
 
 def _list_pages(
@@ -384,7 +633,11 @@ def _capture_directory(trust: dict[str, Any]) -> dict[str, Any]:
             or any(value["username"] == username for value in users_by_id.values())
         ):
             raise AdapterError("provider human account inventory is invalid or duplicated")
-        users_by_id[identifier] = {"username": username, "groups": []}
+        users_by_id[identifier] = {
+            "provider_subject_id": identifier,
+            "username": username,
+            "groups": [],
+        }
 
     groups_by_id: dict[str, str] = {}
     for item in group_items:
@@ -459,7 +712,9 @@ def _capture_directory(trust: dict[str, Any]) -> dict[str, Any]:
 
 def capture() -> dict[str, Any]:
     trust, trust_sha256 = _trust_anchor()
+    authority, authority_sha256 = _provider_authority(trust)
     query = trust["directory_query"]
+    provider_authorization = _capture_provider_authorization(trust)
     collections = [_capture_directory(trust) for _ in range(query["consistency_passes"])]
     baseline = collections[0]
     if any(
@@ -480,6 +735,7 @@ def capture() -> dict[str, Any]:
         "provider": "nebius-iam",
         "adapter": {"id": ADAPTER_ID, "sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()},
         "trust_anchor_sha256": trust_sha256,
+        "provider_collection_authority_sha256": authority_sha256,
         "execution_sha256": trust["execution_sha256"],
         "kubernetes_authentication_sha256": trust["kubernetes_authentication_sha256"],
         "provider_principal": {
@@ -491,6 +747,7 @@ def capture() -> dict[str, Any]:
         "provider_issuer_sha256": trust["directory_execution"]["provider_issuer_sha256"],
         "tenant_sha256": trust["tenant_sha256"],
         "query_sha256": trust["query_sha256"],
+        "provider_authorization": provider_authorization,
         "complete": True,
         "pagination": {
             "subject_count": len(users) + len(groups),
@@ -512,11 +769,12 @@ def capture() -> dict[str, Any]:
                 for index, collection in enumerate(collections)
             ],
         },
+        "raw_collections": [collection["raw_pages"] for collection in collections],
         "human_users": users,
         "human_groups": groups,
         "captured_at": now.isoformat(),
         "expires_at": (now + dt.timedelta(seconds=query["snapshot_ttl_seconds"])).isoformat(),
-        "signer_key_id": trust["snapshot_signer_key_id"],
+        "signer_key_id": authority["snapshot_signer_key_id"],
     }
 
 

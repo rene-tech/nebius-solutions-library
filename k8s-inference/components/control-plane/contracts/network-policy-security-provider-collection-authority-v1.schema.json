@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/contracts/network-policy-security-provider-collection-authority-v1.schema.json",
+  "title": "Independent provider collection signing authority",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "provider", "tenant_sha256", "api_endpoint_sha256",
+    "snapshot_public_key", "snapshot_signer_key_id", "valid_from", "expires_at"
+  ],
+  "properties": {
+    "schema": { "const": "fs2-serve.nebius.ai/security-provider-collection-authority/v1" },
+    "provider": { "const": "nebius-iam" },
+    "tenant_sha256": { "$ref": "#/$defs/sha256" },
+    "api_endpoint_sha256": { "$ref": "#/$defs/sha256" },
+    "snapshot_public_key": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+    "snapshot_signer_key_id": { "$ref": "#/$defs/sha256" },
+    "valid_from": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

@@ -822,22 +822,42 @@ and credential from fixed paths
 to enumerate tenant users with attributes, groups and each user's memberships
 with bounded explicit pagination. Its source SHA-256, CLI/config paths,
 CLI/config/credential byte hashes, API endpoint, provider/OIDC issuer,
-non-human principal, Kubernetes audience and username/group claim mapping,
-dedicated directory public key, tenant, query, budgets and validity are pinned
+non-human principal, parsed profile-to-endpoint/credential/principal paths,
+the exact read-only directory role and permissions, Kubernetes audience and
+username/group claim mapping, tenant, query, budgets and validity are pinned
 in the root-owned, mode-0400/0444
 `/etc/fs2/security/network-policy-provider-trust-anchor-v3.json`. Those values
-are not Terraform inputs. The signed provider snapshot binds the exact trust
-anchor, adapter and executable/authentication hashes plus two byte-identical,
-bounded, terminal provider-directory sweeps. The adapter supplies an empty,
+are not Terraform inputs. The snapshot verification key is not declared by
+that file: it is declared by the separately custodied, root-owned
+`/etc/fs2/security/network-policy-provider-collection-authority-v1.json`, whose
+canonical digest is pinned by the trust anchor; the corresponding private
+signing key remains outside both documents. The signed provider snapshot
+binds the exact trust anchor, separate collection authority, adapter and
+executable/authentication hashes, provider `whoami`, the sole approved
+principal-to-role binding, the exact read-only role definition, and two
+byte-identical, bounded, terminal provider-directory sweeps including their raw
+JSON responses. Preflight recomputes every page/collection receipt and executes
+the source-pinned adapter again with no caller input; the fresh authoritative
+collection must match the signed collection fields byte-for-byte. The adapter supplies an empty,
 fixed execution environment, explicit endpoint/config/profile and no stdin, so
-ambient CLI state cannot select another backend or principal. The separately recovery-signed cluster inventory
+ambient CLI state cannot select another backend or principal. A fixed,
+root-owned short-lived provider OIDC probe is submitted to the selected API
+server's TokenReview endpoint; its issuer, audiences, provider subject,
+username and groups must map to one freshly collected directory subject, and
+the resulting userInfo is bound to the exact API-server hash and `kube-system`
+UID. The separately recovery-signed cluster inventory
 must reproduce that provider snapshot's users, groups and provenance exactly
 while also binding the API-server hash, `kube-system` UID and rollback window.
+Provider snapshots contain raw directory responses and are sensitive local
+evidence: store them mode 0400 under the security-owned evidence directory and
+never commit them to source control.
 The two signing keys must differ. Release-operator subject lists and an
 unreconciled completeness assertion are not accepted. The preflight also reads
 all Namespaces, every namespace-local ServiceAccount, Role and RoleBinding, all
 ClusterRoles and ClusterRoleBindings, every RBAC rule and every CSR signer through bounded server
-pagination twice and rejects concurrent drift. Every provider-enumerated user
+pagination twice and rejects concurrent drift. After all SubjectAccessReviews,
+it performs the same double-stable inventory again and requires exact equality
+with the pre-review inventory, closing the authorization-check race. Every provider-enumerated user
 and group, every subject from every live RBAC binding, discovered
 ServiceAccount, Role/ClusterRole name, named RBAC grant
 and custom signer is covered by unnamed and exact-name impersonation, token,
@@ -884,8 +904,10 @@ not group-writable. The separate recovery-approval private key is never present 
 process. The enforcer
 checks `SO_PEERCRED` immediately after `accept` and before reading any bytes,
 rejects a supplementary-only GID, applies both a five-second per-read timeout
-and a ten-second absolute frame deadline
-and one-MiB frame limit, verifies the coordinator signature, rereads the
+and a single 30-second monotonic end-to-end deadline covering receive, handler
+Kubernetes calls, response signing and send, plus a one-MiB frame limit. The
+client applies the same deadline to connect, send and every response receive.
+The enforcer verifies the coordinator signature, rereads the
 same-cluster topology, target UID/resourceVersion/state hash, Lease fence and
 durable receipt, and authorizes only the named semantic operations
 `lease-acquire`, `lease-renew`, `lease-release`, `receipt-write`, `guard-stage`,
@@ -943,6 +965,14 @@ still-valid, hashed prior kubeconfigs to require both prior owner and prior
 bootstrap to be denied every named mutation, delete and collection-delete. Its
 proof hash is exported with the preflight hash and exact prior/current epochs;
 workloads reject missing or mismatched retirement evidence.
+
+Provider trust, collection authority, signed snapshot and recovery-signed
+inventory use the same evidence deadline: the recorded bootstrap expiry plus
+`minimum_rollback_seconds`. The adapter's trusted snapshot TTL is 10,800 to
+28,800 seconds, the signed `expires_at - captured_at` must equal that exact TTL,
+and every authority and evidence artifact must cover the shared deadline. This
+keeps the default two-hour rollback floor realizable while preserving a
+fail-closed time boundary.
 
 Before the rollback window closes, security automation creates the next epoch
 directory plus immutable kubeconfig, provider snapshot and key paths, issues a

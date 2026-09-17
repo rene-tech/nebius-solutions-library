@@ -199,10 +199,13 @@ def _fixture() -> tuple[
                 "security_subject_inventory_sha256": "d" * 64,
                 "provider_subject_snapshot_sha256": "1" * 64,
                 "provider_trust_anchor_sha256": "5" * 64,
+                "provider_collection_authority_sha256": "6" * 64,
                 "provider_adapter_sha256": "6" * 64,
                 "provider_execution_sha256": "a" * 64,
                 "kubernetes_authentication_sha256": "b" * 64,
+                "oidc_mapping_sha256": "d" * 64,
                 "kubernetes_subject_inventory_sha256": "2" * 64,
+                "kubernetes_subject_inventory_post_sar_sha256": "2" * 64,
                 "effective_rbac_subjects_sha256": "4" * 64,
                 "auditor_bootstrap_sha256": "7" * 64,
                 "external_role_bundle_sha256": "9" * 64,
@@ -510,7 +513,8 @@ def test_socket_rejects_peer_before_recv_and_enforces_an_absolute_connection_dea
     accepted = Connection(1001, 1002, [payload, b""])
     ENFORCER.serve_connection(accepted, enforcer)
     assert accepted.timeouts
-    assert all(0 < timeout <= ENFORCER.SOCKET_READ_SECONDS for timeout in accepted.timeouts)
+    assert all(0 < timeout <= ENFORCER.SOCKET_CONNECTION_SECONDS for timeout in accepted.timeouts)
+    assert any(timeout <= ENFORCER.SOCKET_READ_SECONDS for timeout in accepted.timeouts)
     assert accepted.response.endswith(b"\n")
 
     oversized = Connection(1001, 1002, [b"x" * (ENFORCER.MAX_REQUEST_BYTES + 1)])
@@ -519,10 +523,41 @@ def test_socket_rejects_peer_before_recv_and_enforces_an_absolute_connection_dea
     assert oversized.timeouts
 
     slow_drip = Connection(1001, 1002, [b"{"])
-    clock_values = iter([0.0, 0.0, 9.0, 11.0])
+    clock_values = iter([0.0, 0.0, ENFORCER.SOCKET_CONNECTION_SECONDS - 1, ENFORCER.SOCKET_CONNECTION_SECONDS + 1])
     with pytest.raises(ENFORCER.EnforcerError, match="absolute deadline"):
         ENFORCER.serve_connection(slow_drip, enforcer, clock=lambda: next(clock_values))
     assert slow_drip.recv_called is True
+
+    class SlowHandler:
+        expected_peer_uid = 1001
+        expected_peer_gid = 1002
+
+        def handle_envelope(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            return {"signed": {}, "signature": "x"}
+
+    handler_clock = iter([
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        ENFORCER.SOCKET_CONNECTION_SECONDS + 1,
+    ])
+    handler_connection = Connection(1001, 1002, [b"{}", b""])
+    with pytest.raises(ENFORCER.EnforcerError, match="end-to-end deadline"):
+        ENFORCER.serve_connection(
+            handler_connection,
+            SlowHandler(),  # type: ignore[arg-type]
+            clock=lambda: next(handler_clock),
+        )
+
+    class SendTimeout(Connection):
+        def sendall(self, _response: bytes) -> None:
+            raise TimeoutError
+
+    send_timeout = SendTimeout(1001, 1002, [payload, b""])
+    with pytest.raises(ENFORCER.EnforcerError, match="end-to-end deadline"):
+        ENFORCER.serve_connection(send_timeout, enforcer)
 
 
 def test_enforcer_rejects_a_peer_gid_shared_with_the_security_process(monkeypatch: Any) -> None:

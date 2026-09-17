@@ -6,7 +6,7 @@ import importlib.util
 import json
 import re
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -32,6 +32,9 @@ PROVIDER_SNAPSHOT_SCHEMA = (
 )
 PROVIDER_TRUST_ANCHOR_SCHEMA = (
     CONTROL_ROOT / "contracts" / "network-policy-security-provider-trust-anchor-v3.schema.json"
+)
+PROVIDER_COLLECTION_AUTHORITY_SCHEMA = (
+    CONTROL_ROOT / "contracts" / "network-policy-security-provider-collection-authority-v1.schema.json"
 )
 PROVIDER_ADAPTER = CONTROL_ROOT / "scripts" / "network_policy_subject_provider_adapter.py"
 EPOCH_RETIREMENT = (
@@ -419,10 +422,13 @@ def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
                     "security_subject_inventory_sha256": "f" * 64,
                     "provider_subject_snapshot_sha256": "2" * 64,
                     "provider_trust_anchor_sha256": "6" * 64,
+                    "provider_collection_authority_sha256": "7" * 64,
                     "provider_adapter_sha256": "7" * 64,
                     "provider_execution_sha256": "8" * 64,
                     "kubernetes_authentication_sha256": "9" * 64,
+                    "oidc_mapping_sha256": "a" * 64,
                     "kubernetes_subject_inventory_sha256": "3" * 64,
+                    "kubernetes_subject_inventory_post_sar_sha256": "3" * 64,
                     "effective_rbac_subjects_sha256": "4" * 64,
                     "auditor_bootstrap_sha256": "8" * 64,
                     "external_role_bundle_sha256": "1" * 64,
@@ -488,7 +494,9 @@ def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
         transition.configure_guarded_client()
 
 
-def test_signed_handoff_verifies_request_cluster_expiry_and_ed25519_signature() -> None:
+def test_signed_handoff_verifies_request_cluster_expiry_and_ed25519_signature(
+    monkeypatch: Any,
+) -> None:
     server_private_key = Ed25519PrivateKey.generate()
     server_public_key = (
         TRANSITION.base64.urlsafe_b64encode(server_private_key.public_key().public_bytes_raw()).decode().rstrip("=")
@@ -507,7 +515,8 @@ def test_signed_handoff_verifies_request_cluster_expiry_and_ed25519_signature() 
     handoff.cluster = cluster
     handoff.release = {"name": "test-release", "namespace": "fs2-system"}
 
-    def exchange(envelope: dict[str, Any]) -> dict[str, Any]:
+    def exchange(envelope: dict[str, Any], *, deadline: float) -> dict[str, Any]:
+        assert deadline > TRANSITION.time.monotonic()
         request = envelope["signed"]
         client_private_key.public_key().verify(
             TRANSITION.decode_base64url(envelope["signature"], expected_bytes=64),
@@ -531,8 +540,17 @@ def test_signed_handoff_verifies_request_cluster_expiry_and_ed25519_signature() 
     handoff._exchange = exchange
     assert handoff.request("attest", {}) == {"attested": True}
 
-    handoff._exchange = lambda request: {**exchange(request), "signature": "A" * 86}
+    handoff._exchange = lambda request, *, deadline: {
+        **exchange(request, deadline=deadline),
+        "signature": "A" * 86,
+    }
     with pytest.raises(TRANSITION.TransitionError, match="signature is invalid"):
+        handoff.request("attest", {})
+
+    handoff._exchange = exchange
+    monotonic_ticks = iter([0.0, 1.0, TRANSITION.HANDOFF_SECONDS + 1.0])
+    monkeypatch.setattr(TRANSITION.time, "monotonic", lambda: next(monotonic_ticks))
+    with pytest.raises(TRANSITION.TransitionError, match="monotonic end-to-end deadline"):
         handoff.request("attest", {})
 
 
@@ -1898,6 +1916,11 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
     )
     now = TRANSITION.dt.datetime.now(TRANSITION.dt.UTC)
     cluster = ("https://reviewed-api.example.invalid", "kube-system-uid-000000000000")
+    provider_users = [{
+        "provider_subject_id": "tenantuseraccount-reviewer-001",
+        "username": "reviewer@example.invalid",
+        "groups": ["fs2-reviewers"],
+    }]
     users = [{"username": "reviewer@example.invalid", "groups": ["fs2-reviewers"]}]
     groups = ["fs2-platform-admins"]
     adapter_sha256 = PREFLIGHT.hashlib.sha256(PROVIDER_ADAPTER.read_bytes()).hexdigest()
@@ -1911,25 +1934,83 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
             "credential_sha256": "e" * 64,
             "api_endpoint_sha256": "f" * 64,
             "provider_issuer_sha256": "0" * 64,
+            "directory_reader_role": {
+                "id": "role-directory-reader-001",
+                "permissions": ["iam.group.list", "iam.tenant-user-account.get"],
+                "permissions_sha256": PREFLIGHT.hashlib.sha256(
+                    PREFLIGHT.canonical(
+                        ["iam.group.list", "iam.tenant-user-account.get"]
+                    ).encode()
+                ).hexdigest(),
+            },
         },
+        "directory_query": {"snapshot_ttl_seconds": 10800},
         "execution_sha256": "1" * 64,
         "kubernetes_authentication_sha256": "2" * 64,
         "tenant_sha256": "a" * 64,
         "query_sha256": "b" * 64,
-        "snapshot_public_key": provider_public_value,
+        "valid_from": (now - TRANSITION.dt.timedelta(hours=1)).isoformat(),
+        "expires_at": (now + TRANSITION.dt.timedelta(hours=4)).isoformat(),
     }
+    provider_authority = {
+        "snapshot_public_key": provider_public_value,
+        "snapshot_signer_key_id": PREFLIGHT.hashlib.sha256(provider_public_value.encode()).hexdigest(),
+        "valid_from": (now - TRANSITION.dt.timedelta(hours=1)).isoformat(),
+        "expires_at": (now + TRANSITION.dt.timedelta(hours=4)).isoformat(),
+    }
+    raw_page = {
+        "operation": "tenant-user-account-with-attributes.list",
+        "request_token": "",
+        "response": {"items": [{"id": "tenantuseraccount-reviewer-001"}], "next_page_token": ""},
+        "next_token": "",
+    }
+    collection_sha256 = PREFLIGHT.hashlib.sha256(PREFLIGHT.canonical([raw_page]).encode()).hexdigest()
     page_receipt = {
         "index": 0,
         "request_cursor_sha256": PREFLIGHT.hashlib.sha256(b"").hexdigest(),
-        "response_sha256": "c" * 64,
+        "response_sha256": PREFLIGHT.hashlib.sha256(
+            PREFLIGHT.canonical(
+                {"operation": raw_page["operation"], "response": raw_page["response"]}
+            ).encode()
+        ).hexdigest(),
         "next_cursor_sha256": "",
     }
+    provider_authorization = {
+        "whoami": {
+            "subject": {"type": "service-account", "id": "serviceaccount-directory-reader-001"},
+            "tenant_id": "tenant-example0001",
+        },
+        "access_binding_pages": [raw_page],
+        "principal_bindings": [{
+            "subject_id": "serviceaccount-directory-reader-001",
+            "role_id": "role-directory-reader-001",
+        }],
+        "role": {
+            "metadata": {"id": "role-directory-reader-001"},
+            "spec": {"permissions": ["iam.group.list", "iam.tenant-user-account.get"]},
+        },
+    }
+    provider_authorization.update({
+        "whoami_sha256": PREFLIGHT.hashlib.sha256(
+            PREFLIGHT.canonical(provider_authorization["whoami"]).encode()
+        ).hexdigest(),
+        "access_bindings_sha256": PREFLIGHT.hashlib.sha256(
+            PREFLIGHT.canonical(provider_authorization["access_binding_pages"]).encode()
+        ).hexdigest(),
+        "role_sha256": PREFLIGHT.hashlib.sha256(
+            PREFLIGHT.canonical(provider_authorization["role"]).encode()
+        ).hexdigest(),
+        "permissions_sha256": provider_trust["directory_execution"]["directory_reader_role"][
+            "permissions_sha256"
+        ],
+    })
     provider_signed = {
         "schema": "fs2-serve.nebius.ai/security-subject-provider-snapshot/v3",
         "snapshot_id": "provider-snapshot-epoch-001",
         "provider": "nebius-iam",
         "adapter": {"id": PREFLIGHT.PROVIDER_ADAPTER_ID, "sha256": adapter_sha256},
         "trust_anchor_sha256": trust_anchor_sha256,
+        "provider_collection_authority_sha256": "4" * 64,
         "execution_sha256": "1" * 64,
         "kubernetes_authentication_sha256": "2" * 64,
         "provider_principal": {
@@ -1941,6 +2022,7 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
         "provider_issuer_sha256": "0" * 64,
         "tenant_sha256": "a" * 64,
         "query_sha256": "b" * 64,
+        "provider_authorization": provider_authorization,
         "complete": True,
         "pagination": {
             "page_size": 200,
@@ -1948,7 +2030,7 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
             "consistency": {
                 "mode": "double-collect-byte-identical",
                 "passes": 2,
-                "collection_sha256": "3" * 64,
+                "collection_sha256": collection_sha256,
             },
             "collections": [
                 {
@@ -1957,15 +2039,18 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
                     "record_count": 2,
                     "terminal_cursor": "",
                     "pages": [page_receipt],
-                    "sha256": "3" * 64,
+                    "sha256": collection_sha256,
                 }
                 for index in range(2)
             ],
         },
-        "human_users": users,
+        "raw_collections": [[raw_page], [raw_page]],
+        "human_users": provider_users,
         "human_groups": groups,
         "captured_at": (now - TRANSITION.dt.timedelta(minutes=1)).isoformat(),
-        "expires_at": (now + TRANSITION.dt.timedelta(hours=3)).isoformat(),
+        "expires_at": (
+            now - TRANSITION.dt.timedelta(minutes=1) + TRANSITION.dt.timedelta(seconds=10800)
+        ).isoformat(),
         "signer_key_id": PREFLIGHT.hashlib.sha256(provider_public_value.encode()).hexdigest(),
     }
     provider_signature = TRANSITION.base64.urlsafe_b64encode(
@@ -1978,9 +2063,12 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
     verified_provider, provider_users, provider_groups, provider_hash = PREFLIGHT.verified_provider_snapshot(
         provider_envelope,
         provider_trust,
+        provider_authority=provider_authority,
+        provider_authority_sha256="4" * 64,
+        authoritative_capture=provider_signed,
         trust_anchor_sha256=trust_anchor_sha256,
         adapter_sha256=adapter_sha256,
-        rollback_valid_until=int((now + TRANSITION.dt.timedelta(hours=2)).timestamp()),
+        required_valid_until=int((now + TRANSITION.dt.timedelta(hours=2)).timestamp()),
         forbidden_usernames=set(),
     )
     signed = {
@@ -1996,17 +2084,23 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
             "provider": provider_signed["provider"],
             "adapter": provider_signed["adapter"],
             "trust_anchor_sha256": provider_signed["trust_anchor_sha256"],
+            "provider_collection_authority_sha256": provider_signed[
+                "provider_collection_authority_sha256"
+            ],
             "execution_sha256": provider_signed["execution_sha256"],
             "kubernetes_authentication_sha256": provider_signed[
                 "kubernetes_authentication_sha256"
             ],
             "provider_principal": provider_signed["provider_principal"],
+            "provider_authorization_sha256": PREFLIGHT.hashlib.sha256(
+                PREFLIGHT.canonical(provider_signed["provider_authorization"]).encode()
+            ).hexdigest(),
             "api_endpoint_sha256": provider_signed["api_endpoint_sha256"],
             "provider_issuer_sha256": provider_signed["provider_issuer_sha256"],
             "tenant_sha256": provider_signed["tenant_sha256"],
             "query_sha256": provider_signed["query_sha256"],
             "collection_count": 2,
-            "collection_sha256": "3" * 64,
+            "collection_sha256": collection_sha256,
             "record_count": 2,
             "captured_at": provider_signed["captured_at"],
             "expires_at": provider_signed["expires_at"],
@@ -2134,6 +2228,15 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert "group-membership" in provider_adapter
     assert '"consistency_passes") != 2' in provider_adapter
     assert "provider directory changed across the required repeat-stability fence" in provider_adapter
+    assert "provider collection authority is not independently pinned" in provider_adapter
+    assert "provider whoami does not match the parsed credential principal" in provider_adapter
+    assert "provider directory-reader role is not read-only exact" in provider_adapter
+    assert "parsed profile-to-credential binding is not exact" in preflight
+    assert "execute_authoritative_provider_adapter" in preflight
+    assert "freshly executed authoritative collection" in preflight
+    assert "raw transcript digest is not recomputable" in preflight
+    assert "verified_cluster_oidc_mapping" in preflight
+    assert '"/apis/authentication.k8s.io/v1/tokenreviews"' in preflight
     assert '"--endpoint", execution["api_endpoint"]' in provider_adapter
     assert '"HOME": "/var/empty"' in provider_adapter
     assert '"NEBIUS_CONFIG": str(NEBIUS_CONFIG_PATH)' in provider_adapter
@@ -2142,7 +2245,7 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert "json.load(sys.stdin)" not in provider_adapter
     assert "pagination chain is invalid" in preflight
     assert "provider_snapshot_bytes" in preflight
-    assert "inventory_users != provider_users" in preflight
+    assert '{"username": user["username"], "groups": user["groups"]}' in preflight
     assert "provider_subject_snapshot_sha256" in workloads
     assert "provider_trust_anchor_sha256" in workloads
     assert "provider_adapter_sha256" in workloads
@@ -2150,6 +2253,15 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert "kubernetes_authentication_sha256" in workloads
     assert "kubernetes_subject_inventory_sha256" in workloads
     assert "effective_rbac_subjects_sha256" in workloads
+    assert "provider_collection_authority_sha256" in workloads
+    assert "oidc_mapping_sha256" in workloads
+    assert "kubernetes_subject_inventory_post_sar_sha256" in workloads
+    assert "Kubernetes subject inventory drifted after SubjectAccessReview closure" in preflight
+    assert "deadline = time.monotonic() + HANDOFF_SECONDS" in transition
+    assert transition.count("connection.settimeout(self._remaining(deadline))") >= 3
+    assert "timeout=remaining" in enforcer
+    assert "deadline=deadline" in enforcer
+    assert "connection.settimeout(remaining)" in enforcer
     assert "auditor_bootstrap_sha256" in workloads
     assert 'import {\n  to = kubernetes_cluster_role_v1.control_plane_network_policy_security_auditor' in boundary
     assert (
@@ -2193,8 +2305,19 @@ def test_provider_trust_anchor_schema_pins_adapter_and_signing_custody() -> None
     assert execution["api_endpoint_sha256"]["pattern"] == "^[0-9a-f]{64}$"
     assert execution["provider_issuer_sha256"]["pattern"] == "^[0-9a-f]{64}$"
     assert authentication["groups_claim"] == {"const": "groups"}
+    assert authentication["probe_token_path"] == {
+        "const": "/etc/fs2/security/network-policy-provider-oidc-probe.jwt"
+    }
     assert properties["directory_query"]["properties"]["consistency_passes"] == {"const": 2}
-    assert properties["snapshot_public_key"]["pattern"] == "^[A-Za-z0-9_-]{43}$"
+    assert properties["directory_query"]["properties"]["snapshot_ttl_seconds"] == {
+        "type": "integer",
+        "minimum": 10800,
+        "maximum": 28800,
+    }
+    assert properties["provider_collection_authority_sha256"] == {"$ref": "#/$defs/sha256"}
+    authority = json.loads(PROVIDER_COLLECTION_AUTHORITY_SCHEMA.read_text())
+    assert authority["properties"]["snapshot_public_key"]["pattern"] == "^[A-Za-z0-9_-]{43}$"
+    assert authority["properties"]["provider"] == {"const": "nebius-iam"}
 
 
 def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(monkeypatch: Any) -> None:
@@ -2207,7 +2330,7 @@ def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(m
         "max_pages": 20,
         "max_records": 100,
         "timeout_seconds": 10,
-        "snapshot_ttl_seconds": 900,
+        "snapshot_ttl_seconds": 10800,
         "consistency_passes": 2,
     }
     authentication = {
@@ -2229,9 +2352,27 @@ def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(m
         "kubernetes_authentication_sha256": "2" * 64,
         "tenant_sha256": "a" * 64,
         "query_sha256": "b" * 64,
-        "snapshot_signer_key_id": "c" * 64,
     }
     monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_trust_anchor", lambda: (trust, "d" * 64))
+    monkeypatch.setattr(
+        PROVIDER_ADAPTER_MODULE,
+        "_provider_authority",
+        lambda _trust: ({"snapshot_signer_key_id": "c" * 64}, "4" * 64),
+    )
+    monkeypatch.setattr(
+        PROVIDER_ADAPTER_MODULE,
+        "_capture_provider_authorization",
+        lambda _trust: {
+            "whoami": {},
+            "access_binding_pages": [],
+            "principal_bindings": [],
+            "role": {},
+            "whoami_sha256": "1" * 64,
+            "access_bindings_sha256": "2" * 64,
+            "role_sha256": "3" * 64,
+            "permissions_sha256": "4" * 64,
+        },
+    )
 
     def pages(
         _execution: Any,
@@ -2269,13 +2410,104 @@ def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(m
     captured = PROVIDER_ADAPTER_MODULE.capture()
 
     assert captured["human_users"] == [
-        {"username": "reviewer@example.invalid", "groups": ["reviewers"]}
+        {
+            "provider_subject_id": "tenantuseraccount-001",
+            "username": "reviewer@example.invalid",
+            "groups": ["reviewers"],
+        }
     ]
     assert captured["human_groups"] == ["reviewers"]
     assert captured["complete"] is True
     assert captured["adapter"]["id"].endswith("/v3")
     assert captured["pagination"]["consistency"]["passes"] == 2
     assert len(captured["pagination"]["collections"]) == 2
+    assert captured["raw_collections"][0] == captured["raw_collections"][1]
+    captured_at = TRANSITION.dt.datetime.fromisoformat(captured["captured_at"])
+    expires_at = TRANSITION.dt.datetime.fromisoformat(captured["expires_at"])
+    assert int((expires_at - captured_at).total_seconds()) == query["snapshot_ttl_seconds"]
+
+
+def test_provider_oidc_mapping_is_authenticated_by_the_selected_api_server(monkeypatch: Any) -> None:
+    claims = {
+        "iss": "https://auth.example.invalid",
+        "aud": ["kubernetes"],
+        "sub": "tenantuseraccount-reviewer-001",
+        "email": "reviewer@example.invalid",
+        "groups": ["reviewers"],
+        "exp": int(TRANSITION.dt.datetime.now(TRANSITION.dt.UTC).timestamp()) + 600,
+    }
+    encoded_claims = TRANSITION.base64.urlsafe_b64encode(
+        PREFLIGHT.canonical(claims).encode()
+    ).decode().rstrip("=")
+    token_bytes = f"e30.{encoded_claims}.signature\n".encode()
+    token_sha256 = PREFLIGHT.hashlib.sha256(token_bytes).hexdigest()
+    monkeypatch.setattr(
+        PREFLIGHT,
+        "descriptor_bytes",
+        lambda *_args, **_kwargs: (
+            token_bytes,
+            SimpleNamespace(
+                st_mode=PREFLIGHT.stat.S_IFREG | 0o400,
+                st_uid=0,
+                st_gid=0,
+            ),
+        ),
+    )
+    observed: dict[str, Any] = {}
+
+    def token_review(_kubeconfig: Any, _context: str, *arguments: str, input_text: str | None = None) -> str:
+        observed["arguments"] = arguments
+        observed["request"] = json.loads(input_text or "{}")
+        return PREFLIGHT.canonical({
+            "status": {
+                "authenticated": True,
+                "audiences": ["kubernetes"],
+                "user": {
+                    "username": "reviewer@example.invalid",
+                    "uid": "oidc-user-uid-001",
+                    "groups": ["reviewers", "system:authenticated"],
+                    "extra": {},
+                },
+            }
+        })
+
+    monkeypatch.setattr(PREFLIGHT, "run", token_review)
+    trust = {
+        "kubernetes_authentication": {
+            "probe_token_sha256": token_sha256,
+            "oidc_issuer": claims["iss"],
+            "oidc_issuer_sha256": PREFLIGHT.hashlib.sha256(claims["iss"].encode()).hexdigest(),
+            "audiences": ["kubernetes"],
+            "audiences_sha256": PREFLIGHT.hashlib.sha256(
+                PREFLIGHT.canonical(["kubernetes"]).encode()
+            ).hexdigest(),
+            "username_claim": "email",
+            "username_prefix": "",
+            "groups_claim": "groups",
+            "groups_prefix": "",
+        }
+    }
+    evidence_sha256 = PREFLIGHT.verified_cluster_oidc_mapping(
+        PREFLIGHT.Path("/run/bootstrap-kubeconfig"),
+        "reviewed-context",
+        trust=trust,
+        provider_users=[{
+            "provider_subject_id": claims["sub"],
+            "username": claims["email"],
+            "groups": claims["groups"],
+        }],
+        cluster=("https://api.example.invalid", "kube-system-uid-000000000000"),
+    )
+
+    assert observed["arguments"] == (
+        "create",
+        "--raw",
+        "/apis/authentication.k8s.io/v1/tokenreviews",
+        "-f",
+        "-",
+    )
+    assert observed["request"]["spec"]["token"] == token_bytes.decode().strip()
+    assert re.fullmatch(r"[0-9a-f]{64}", evidence_sha256)
 
 
 def test_kubernetes_rbac_binding_subjects_are_in_the_authorization_closure() -> None:
@@ -2327,9 +2559,15 @@ def test_provider_adapter_rejects_a_hybrid_directory_across_consistency_passes(
     monkeypatch: Any,
 ) -> None:
     trust = {
-        "directory_query": {"consistency_passes": 2, "snapshot_ttl_seconds": 900},
+        "directory_query": {"consistency_passes": 2, "snapshot_ttl_seconds": 10800},
     }
     monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_trust_anchor", lambda: (trust, "d" * 64))
+    monkeypatch.setattr(
+        PROVIDER_ADAPTER_MODULE,
+        "_provider_authority",
+        lambda _trust: ({"snapshot_signer_key_id": "c" * 64}, "4" * 64),
+    )
+    monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_capture_provider_authorization", lambda _trust: {})
     collections = iter(
         [
             {

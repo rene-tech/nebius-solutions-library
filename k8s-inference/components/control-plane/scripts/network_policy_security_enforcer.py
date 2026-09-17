@@ -46,7 +46,7 @@ RECOVERY_APPROVAL_SCHEMA = "fs2-serve.nebius.ai/network-policy-recovery-approval
 HANDOFF_SECONDS = 30
 MAX_REQUEST_BYTES = 1024 * 1024
 SOCKET_READ_SECONDS = 5.0
-SOCKET_CONNECTION_SECONDS = 10.0
+SOCKET_CONNECTION_SECONDS = float(HANDOFF_SECONDS)
 RELAXED_SELECTOR = {"fs2.nebius.ai/network-policy-deny-relaxed": "true"}
 ACTIVE_DENY_SPEC = {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": []}
 RELAXED_DENY_SPEC = {
@@ -155,6 +155,8 @@ def assert_absent_socket_path(path: Path) -> None:
 
 
 class KubernetesAPI(Protocol):
+    def set_deadline(self, deadline: float | None) -> None: ...
+
     def get(self, resource: str, name: str, namespace: str = "") -> dict[str, Any]: ...
 
     def patch(
@@ -185,18 +187,37 @@ class KubectlAPI:
 
     def __init__(self, kubeconfig: Path, context: str) -> None:
         assert_security_owned_file(kubeconfig, label="security kubeconfig")
-        prefix = ["kubectl", "--kubeconfig", str(kubeconfig), "--request-timeout=30s"]
+        prefix = ["kubectl", "--kubeconfig", str(kubeconfig)]
         if context:
             prefix.extend(["--context", context])
         self.prefix = prefix
+        self.deadline: float | None = None
+
+    def set_deadline(self, deadline: float | None) -> None:
+        self.deadline = deadline
+
+    def _remaining(self) -> float:
+        if self.deadline is None:
+            return float(HANDOFF_SECONDS)
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise EnforcerError("security handoff exceeded its monotonic end-to-end deadline")
+        return remaining
 
     def _run(self, *arguments: str) -> CommandResult:
-        result = subprocess.run(  # noqa: S603 -- fixed executable and validated exact arguments
-            [*self.prefix, *arguments],
-            capture_output=True,
-            check=False,
-            text=True,
-        )
+        remaining = self._remaining()
+        request_timeout = max(1, int(remaining))
+        try:
+            result = subprocess.run(  # noqa: S603 -- fixed executable and validated exact arguments
+                [*self.prefix, f"--request-timeout={request_timeout}s", *arguments],
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=remaining,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise EnforcerError("security handoff exceeded its monotonic end-to-end deadline") from error
+        self._remaining()
         outcome = CommandResult(result.returncode, result.stdout, result.stderr)
         if outcome.returncode != 0:
             raise EnforcerError("security-owned Kubernetes request failed closed")
@@ -552,12 +573,18 @@ class SecurityEnforcer:
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("security_subject_inventory_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_subject_snapshot_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_trust_anchor_sha256", "")))
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity.get("provider_collection_authority_sha256", ""))
+            )
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_adapter_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_execution_sha256", "")))
             or not re.fullmatch(
                 r"[0-9a-f]{64}", str(identity.get("kubernetes_authentication_sha256", ""))
             )
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("oidc_mapping_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("kubernetes_subject_inventory_sha256", "")))
+            or identity.get("kubernetes_subject_inventory_post_sar_sha256")
+            != identity.get("kubernetes_subject_inventory_sha256")
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("effective_rbac_subjects_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("auditor_bootstrap_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("external_role_bundle_sha256", "")))
@@ -1334,74 +1361,85 @@ class SecurityEnforcer:
             raise EnforcerError("durable recovery completion reread failed")
         return {"binding": binding, "parameter": parameter, "receipt": final_receipt_object}
 
-    def handle_envelope(self, envelope: dict[str, Any], *, peer_uid: int, peer_gid: int) -> dict[str, Any]:
-        request = self._verify_request(envelope, peer_uid, peer_gid)
-        action = request["action"]
-        body = cast(dict[str, Any], request["body"])
-        if action == "attest":
-            if body:
-                raise EnforcerError("attestation body must be empty")
-            topology, contract = self._topology()
-            self._assert_topology(
-                {
-                    "namespace": RELEASE_NAMESPACE,
-                    "name": TOPOLOGY_NAME,
-                    "uid": topology.get("metadata", {}).get("uid"),
-                    "resource_version": topology.get("metadata", {}).get("resourceVersion"),
-                    "sha256": sha256_json(contract),
+    def handle_envelope(
+        self,
+        envelope: dict[str, Any],
+        *,
+        peer_uid: int,
+        peer_gid: int,
+        deadline: float | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> dict[str, Any]:
+        if deadline is not None and clock() >= deadline:
+            raise EnforcerError("security handoff exceeded its monotonic end-to-end deadline")
+        set_deadline = getattr(self.api, "set_deadline", None)
+        if callable(set_deadline):
+            set_deadline(deadline)
+        try:
+            request = self._verify_request(envelope, peer_uid, peer_gid)
+            action = request["action"]
+            body = cast(dict[str, Any], request["body"])
+            if action == "attest":
+                if body:
+                    raise EnforcerError("attestation body must be empty")
+                topology, contract = self._topology()
+                self._assert_topology(
+                    {
+                        "namespace": RELEASE_NAMESPACE,
+                        "name": TOPOLOGY_NAME,
+                        "uid": topology.get("metadata", {}).get("uid"),
+                        "resource_version": topology.get("metadata", {}).get("resourceVersion"),
+                        "sha256": sha256_json(contract),
+                    }
+                )
+                identity = contract.get("security_handoff", {}).get("identity_boundary", {})
+                result = {
+                    "schema": ATTESTATION_SCHEMA,
+                    "security_owner_username": contract.get("security_owner_username"),
+                    "allowed_actions": ["transition-mutation", "set-admission-recovery"],
+                    "recovery_modes": ["Audit", "Warn", "Deny"],
+                    "delete_allowed": False,
+                    "security_user_info_sha256": identity.get("security_user_info_sha256"),
+                    "identity_epoch": identity.get("identity_epoch"),
+                    "provider_subject_snapshot_sha256": identity.get(
+                        "provider_subject_snapshot_sha256"
+                    ),
+                    "provider_trust_anchor_sha256": identity.get("provider_trust_anchor_sha256"),
+                    "provider_collection_authority_sha256": identity.get(
+                        "provider_collection_authority_sha256"
+                    ),
+                    "provider_adapter_sha256": identity.get("provider_adapter_sha256"),
+                    "provider_execution_sha256": identity.get("provider_execution_sha256"),
+                    "kubernetes_authentication_sha256": identity.get(
+                        "kubernetes_authentication_sha256"
+                    ),
+                    "oidc_mapping_sha256": identity.get("oidc_mapping_sha256"),
+                    "kubernetes_subject_inventory_sha256": identity.get(
+                        "kubernetes_subject_inventory_sha256"
+                    ),
+                    "kubernetes_subject_inventory_post_sar_sha256": identity.get(
+                        "kubernetes_subject_inventory_post_sar_sha256"
+                    ),
+                    "effective_rbac_subjects_sha256": identity.get(
+                        "effective_rbac_subjects_sha256"
+                    ),
+                    "auditor_bootstrap_sha256": identity.get("auditor_bootstrap_sha256"),
+                    "external_role_bundle_sha256": identity.get("external_role_bundle_sha256"),
+                    "plan_rotation_phase": identity.get("plan_rotation_phase"),
+                    "rotation_binding_state_sha256": identity.get(
+                        "rotation_binding_state_sha256"
+                    ),
                 }
-            )
-            result = {
-                "schema": ATTESTATION_SCHEMA,
-                "security_owner_username": contract.get("security_owner_username"),
-                "allowed_actions": ["transition-mutation", "set-admission-recovery"],
-                "recovery_modes": ["Audit", "Warn", "Deny"],
-                "delete_allowed": False,
-                "security_user_info_sha256": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("security_user_info_sha256"),
-                "identity_epoch": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("identity_epoch"),
-                "provider_subject_snapshot_sha256": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("provider_subject_snapshot_sha256"),
-                "provider_trust_anchor_sha256": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("provider_trust_anchor_sha256"),
-                "provider_adapter_sha256": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("provider_adapter_sha256"),
-                "provider_execution_sha256": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("provider_execution_sha256"),
-                "kubernetes_authentication_sha256": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("kubernetes_authentication_sha256"),
-                "kubernetes_subject_inventory_sha256": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("kubernetes_subject_inventory_sha256"),
-                "effective_rbac_subjects_sha256": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("effective_rbac_subjects_sha256"),
-                "auditor_bootstrap_sha256": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("auditor_bootstrap_sha256"),
-                "external_role_bundle_sha256": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("external_role_bundle_sha256"),
-                "plan_rotation_phase": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("plan_rotation_phase"),
-                "rotation_binding_state_sha256": contract.get("security_handoff", {})
-                .get("identity_boundary", {})
-                .get("rotation_binding_state_sha256"),
-            }
-        elif action == "transition-mutation":
-            result = self._transition_mutation(body)
-        else:
-            result = self._recovery(request, body)
-        return self._response(request, result)
+            elif action == "transition-mutation":
+                result = self._transition_mutation(body)
+            else:
+                result = self._recovery(request, body)
+            if deadline is not None and clock() >= deadline:
+                raise EnforcerError("security handoff exceeded its monotonic end-to-end deadline")
+            return self._response(request, result)
+        finally:
+            if callable(set_deadline):
+                set_deadline(None)
 
 
 def serve_connection(
@@ -1440,8 +1478,23 @@ def serve_connection(
         raise EnforcerError("security handoff request is not valid JSON") from error
     if not isinstance(envelope, dict):
         raise EnforcerError("security handoff request is not an object")
-    response = enforcer.handle_envelope(cast(dict[str, Any], envelope), peer_uid=peer_uid, peer_gid=peer_gid)
-    connection.sendall((canonical(response) + "\n").encode())
+    response = enforcer.handle_envelope(
+        cast(dict[str, Any], envelope),
+        peer_uid=peer_uid,
+        peer_gid=peer_gid,
+        deadline=deadline,
+        clock=clock,
+    )
+    remaining = deadline - clock()
+    if remaining <= 0:
+        raise EnforcerError("security handoff exceeded its monotonic end-to-end deadline")
+    connection.settimeout(remaining)
+    try:
+        connection.sendall((canonical(response) + "\n").encode())
+    except TimeoutError as error:
+        raise EnforcerError("security handoff exceeded its monotonic end-to-end deadline") from error
+    if clock() > deadline:
+        raise EnforcerError("security handoff exceeded its monotonic end-to-end deadline")
 
 
 def serve(socket_path: Path, enforcer: SecurityEnforcer, *, peer_gid: int) -> None:

@@ -28,18 +28,28 @@ project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 # `security_subject_provider_snapshot_path`. Callers cannot supply the provider
 # key, tenant or query. External security pins them in the root-owned, mode-0400
 # `/etc/fs2/security/network-policy-provider-trust-anchor-v3.json`, including
-# exact adapter/CLI/config/credential hashes, provider endpoint and issuer,
-# non-human principal, and Kubernetes issuer/audience/claim mapping. The adapter
-# clears inherited environment state and enumerates users, groups and memberships
-# directly; it never accepts a caller-provided transcript. The provider receipt
-# includes two byte-identical complete bounded pagination sweeps; the
+# exact adapter/CLI/config/credential hashes, parsed profile-to-credential
+# paths, provider endpoint and issuer, non-human principal, its sole exact
+# read-only IAM role, and Kubernetes issuer/audience/claim mapping. The snapshot
+# verification key lives in the separate root-owned collection-authority file
+# whose digest is pinned by the trust anchor; its private signing key remains
+# outside both documents. The adapter clears inherited environment state
+# and enumerates provider whoami, role/binding evidence, users, groups and
+# memberships directly; it never accepts a caller-provided transcript. The
+# provider receipt includes the raw responses for two byte-identical complete
+# bounded pagination sweeps. Preflight executes the pinned adapter again and
+# requires the fresh output to match, then has the selected API server
+# authenticate the fixed root-owned OIDC probe through TokenReview. The
 # recovery-signed inventory must match
-# its users/groups and provenance byte-for-byte and remain valid through
-# rollback. Bootstrap paginates every live Namespace, ServiceAccount, Role,
+# its users/groups and provenance byte-for-byte. Trust, authority, provider
+# snapshot and inventory must remain valid through bootstrap expiry plus the
+# configured rollback floor; the adapter TTL is exactly 10800-28800 seconds.
+# Bootstrap paginates every live Namespace, ServiceAccount, Role,
 # RoleBinding, ClusterRole, ClusterRoleBinding and CSR twice, includes every
 # bound User/Group/ServiceAccount in the authorization closure, derives named targets from every RBAC rule, then
 # checks exact token, signer, impersonation, namespace/finalize and exhaustive
-# RBAC-delegation denial.
+# RBAC-delegation denial, then repeats the complete double inventory after all
+# SubjectAccessReviews and requires exact equality.
 # The bootstrap credential only updates the externally preprovisioned permanent
 # boundary and is expired before workloads may plan; the runtime owner has only
 # exact-name protected-object mutation and no RBAC binding update authority.

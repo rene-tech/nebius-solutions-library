@@ -30,7 +30,9 @@
           "additionalProperties": false,
           "required": [
             "sha256", "snapshot_id", "provider", "adapter", "trust_anchor_sha256",
-            "execution_sha256", "kubernetes_authentication_sha256", "provider_principal",
+            "provider_collection_authority_sha256", "execution_sha256",
+            "kubernetes_authentication_sha256", "provider_principal",
+            "provider_authorization_sha256",
             "api_endpoint_sha256", "provider_issuer_sha256", "tenant_sha256", "query_sha256",
             "collection_count", "collection_sha256", "record_count", "captured_at", "expires_at",
             "signer_key_id"
@@ -49,6 +51,7 @@
               }
             },
             "trust_anchor_sha256": { "$ref": "#/$defs/sha256" },
+            "provider_collection_authority_sha256": { "$ref": "#/$defs/sha256" },
             "execution_sha256": { "$ref": "#/$defs/sha256" },
             "kubernetes_authentication_sha256": { "$ref": "#/$defs/sha256" },
             "provider_principal": {
@@ -61,6 +64,7 @@
                 "credential_sha256": { "$ref": "#/$defs/sha256" }
               }
             },
+            "provider_authorization_sha256": { "$ref": "#/$defs/sha256" },
             "api_endpoint_sha256": { "$ref": "#/$defs/sha256" },
             "provider_issuer_sha256": { "$ref": "#/$defs/sha256" },
             "tenant_sha256": { "$ref": "#/$defs/sha256" },

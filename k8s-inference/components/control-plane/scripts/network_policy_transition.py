@@ -18,6 +18,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.parse
 import uuid
 from collections.abc import Iterator, Sequence
@@ -211,18 +212,30 @@ class SecurityHandoff:
         self.cluster = cluster
         self.release = release
 
-    def _exchange(self, envelope: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def _remaining(deadline: float) -> float:
+        value = deadline - time.monotonic()
+        if value <= 0:
+            raise TransitionError("security handoff exceeded its monotonic end-to-end deadline")
+        return value
+
+    def _exchange(self, envelope: dict[str, Any], *, deadline: float) -> dict[str, Any]:
         encoded = (canonical(envelope) + "\n").encode()
+
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-                connection.settimeout(HANDOFF_SECONDS)
+                connection.settimeout(self._remaining(deadline))
                 connection.connect(str(self.socket_path))
+                connection.settimeout(self._remaining(deadline))
                 connection.sendall(encoded)
+                self._remaining(deadline)
                 connection.shutdown(socket.SHUT_WR)
                 chunks: list[bytes] = []
                 size = 0
                 while True:
+                    connection.settimeout(self._remaining(deadline))
                     chunk = connection.recv(65536)
+                    self._remaining(deadline)
                     if not chunk:
                         break
                     size += len(chunk)
@@ -272,7 +285,12 @@ class SecurityHandoff:
         request_signature = (
             base64.urlsafe_b64encode(self.client_private_key.sign(canonical(request).encode())).decode().rstrip("=")
         )
-        response = self._exchange({"signed": request, "signature": request_signature})
+        deadline = time.monotonic() + HANDOFF_SECONDS
+        response = self._exchange(
+            {"signed": request, "signature": request_signature},
+            deadline=deadline,
+        )
+        self._remaining(deadline)
         if set(response) != {"signed", "signature"} or not isinstance(response.get("signed"), dict):
             raise TransitionError("security handoff response envelope is not exact")
         signed = cast(dict[str, Any], response["signed"])
@@ -296,6 +314,7 @@ class SecurityHandoff:
             )
         except InvalidSignature as error:
             raise TransitionError("security handoff signature is invalid") from error
+        self._remaining(deadline)
         now = dt.datetime.now(dt.UTC)
         response_issued = self._instant(signed["issued_at"], field="issued_at")
         response_expires = self._instant(signed["expires_at"], field="expires_at")
@@ -315,6 +334,7 @@ class SecurityHandoff:
         result = signed["result"]
         if not isinstance(result, dict):
             raise TransitionError("security handoff result is not an object")
+        self._remaining(deadline)
         return cast(dict[str, Any], result)
 
 
@@ -700,14 +720,23 @@ class Transition:
             or not re.fullmatch(
                 r"[0-9a-f]{64}", str(identity_boundary.get("provider_trust_anchor_sha256", ""))
             )
+            or not re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(identity_boundary.get("provider_collection_authority_sha256", "")),
+            )
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("provider_adapter_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("provider_execution_sha256", "")))
             or not re.fullmatch(
                 r"[0-9a-f]{64}", str(identity_boundary.get("kubernetes_authentication_sha256", ""))
             )
             or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity_boundary.get("oidc_mapping_sha256", ""))
+            )
+            or not re.fullmatch(
                 r"[0-9a-f]{64}", str(identity_boundary.get("kubernetes_subject_inventory_sha256", ""))
             )
+            or identity_boundary.get("kubernetes_subject_inventory_post_sar_sha256")
+            != identity_boundary.get("kubernetes_subject_inventory_sha256")
             or not re.fullmatch(
                 r"[0-9a-f]{64}", str(identity_boundary.get("effective_rbac_subjects_sha256", ""))
             )
@@ -765,12 +794,19 @@ class Transition:
             "identity_epoch": epoch,
             "provider_subject_snapshot_sha256": identity_boundary.get("provider_subject_snapshot_sha256"),
             "provider_trust_anchor_sha256": identity_boundary.get("provider_trust_anchor_sha256"),
+            "provider_collection_authority_sha256": identity_boundary.get(
+                "provider_collection_authority_sha256"
+            ),
             "provider_adapter_sha256": identity_boundary.get("provider_adapter_sha256"),
             "provider_execution_sha256": identity_boundary.get("provider_execution_sha256"),
             "kubernetes_authentication_sha256": identity_boundary.get(
                 "kubernetes_authentication_sha256"
             ),
+            "oidc_mapping_sha256": identity_boundary.get("oidc_mapping_sha256"),
             "kubernetes_subject_inventory_sha256": identity_boundary.get("kubernetes_subject_inventory_sha256"),
+            "kubernetes_subject_inventory_post_sar_sha256": identity_boundary.get(
+                "kubernetes_subject_inventory_post_sar_sha256"
+            ),
             "effective_rbac_subjects_sha256": identity_boundary.get("effective_rbac_subjects_sha256"),
             "auditor_bootstrap_sha256": identity_boundary.get("auditor_bootstrap_sha256"),
             "external_role_bundle_sha256": identity_boundary.get("external_role_bundle_sha256"),

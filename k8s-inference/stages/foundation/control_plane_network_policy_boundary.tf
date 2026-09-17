@@ -169,6 +169,10 @@ locals {
         data.external.control_plane_network_policy_security_preflight_v2.result.provider_trust_anchor_sha256,
         null,
       )
+      provider_collection_authority_sha256 = try(
+        data.external.control_plane_network_policy_security_preflight_v2.result.provider_collection_authority_sha256,
+        null,
+      )
       provider_adapter_sha256 = try(
         data.external.control_plane_network_policy_security_preflight_v2.result.provider_adapter_sha256,
         null,
@@ -181,8 +185,16 @@ locals {
         data.external.control_plane_network_policy_security_preflight_v2.result.kubernetes_authentication_sha256,
         null,
       )
+      oidc_mapping_sha256 = try(
+        data.external.control_plane_network_policy_security_preflight_v2.result.oidc_mapping_sha256,
+        null,
+      )
       kubernetes_subject_inventory_sha256 = try(
         data.external.control_plane_network_policy_security_preflight_v2.result.kubernetes_subject_inventory_sha256,
+        null,
+      )
+      kubernetes_subject_inventory_post_sar_sha256 = try(
+        data.external.control_plane_network_policy_security_preflight_v2.result.kubernetes_subject_inventory_post_sar_sha256,
         null,
       )
       effective_rbac_subjects_sha256 = try(
@@ -299,10 +311,13 @@ data "external" "control_plane_network_policy_security_preflight_v2" {
         can(regex("^[0-9a-f]{64}$", self.result.subject_inventory_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.provider_snapshot_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.provider_trust_anchor_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.provider_collection_authority_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.provider_adapter_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.provider_execution_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.kubernetes_authentication_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.oidc_mapping_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.kubernetes_subject_inventory_sha256)) &&
+        self.result.kubernetes_subject_inventory_post_sar_sha256 == self.result.kubernetes_subject_inventory_sha256 &&
         can(regex("^[0-9a-f]{64}$", self.result.effective_rbac_subjects_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.auditor_bootstrap_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.external_role_bundle_sha256)) &&
@@ -502,6 +517,9 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
         test "$(bootstrap_can deletecollection "$resource")" = "no"
       done
       test "$(bootstrap_can create subjectaccessreviews.authorization.k8s.io)" = "yes"
+      test "$(bootstrap_can create tokenreviews.authentication.k8s.io)" = "yes"
+      test "$(ordinary_can create tokenreviews.authentication.k8s.io)" = "no"
+      test "$(security_can create tokenreviews.authentication.k8s.io)" = "no"
       for resource in validatingadmissionpolicies.admissionregistration.k8s.io validatingadmissionpolicybindings.admissionregistration.k8s.io; do
         test "$(security_can create "$resource")" = "no"
         test "$(bootstrap_can create "$resource")" = "no"
@@ -1091,6 +1109,11 @@ resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_aud
   rule {
     api_groups = ["authorization.k8s.io"]
     resources  = ["subjectaccessreviews"]
+    verbs      = ["create"]
+  }
+  rule {
+    api_groups = ["authentication.k8s.io"]
+    resources  = ["tokenreviews"]
     verbs      = ["create"]
   }
   rule {

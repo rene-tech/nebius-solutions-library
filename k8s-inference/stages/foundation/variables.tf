@@ -139,24 +139,26 @@ variable "network_policy_boundary" {
             id     = string
             sha256 = string
           })
-          trust_anchor_sha256              = string
-          execution_sha256                 = string
-          kubernetes_authentication_sha256 = string
+          trust_anchor_sha256                  = string
+          provider_collection_authority_sha256 = string
+          execution_sha256                     = string
+          kubernetes_authentication_sha256     = string
           provider_principal = object({
             type              = string
             id                = string
             credential_sha256 = string
           })
-          api_endpoint_sha256    = string
-          provider_issuer_sha256 = string
-          tenant_sha256          = string
-          query_sha256           = string
-          collection_count       = number
-          collection_sha256      = string
-          record_count           = number
-          captured_at            = string
-          expires_at             = string
-          signer_key_id          = string
+          provider_authorization_sha256 = string
+          api_endpoint_sha256           = string
+          provider_issuer_sha256        = string
+          tenant_sha256                 = string
+          query_sha256                  = string
+          collection_count              = number
+          collection_sha256             = string
+          record_count                  = number
+          captured_at                   = string
+          expires_at                    = string
+          signer_key_id                 = string
         })
         human_users = list(object({
           username = string
@@ -292,11 +294,13 @@ variable "network_policy_boundary" {
       var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.adapter.id == "fs2-serve.nebius.ai/nebius-iam-human-directory/v3" &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.adapter.sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.trust_anchor_sha256)) &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.provider_collection_authority_sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.execution_sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.kubernetes_authentication_sha256)) &&
       var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.provider_principal.type == "service-account" &&
       can(regex("^serviceaccount-[A-Za-z0-9-]{8,128}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.provider_principal.id)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.provider_principal.credential_sha256)) &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.provider_authorization_sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.api_endpoint_sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.provider_issuer_sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.tenant_sha256)) &&
