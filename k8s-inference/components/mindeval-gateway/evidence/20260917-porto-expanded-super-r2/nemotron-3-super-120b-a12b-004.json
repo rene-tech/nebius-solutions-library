@@ -1,0 +1,694 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-004",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi Catherine! I’m glad to see you again. How has your week been going? Is there anything on your mind—especially related to those moderate anxious feelings we talked about—that you’d like to explore together today?"
+    },
+    {
+      "role": "patient",
+      "content": "The week’s been a mess. I had to reschedule three appointments because the supply guy didn’t show up, and then the new assistant spilled cleaning solution on the exam table right before a surgery. I told her to just wipe it up, but now I’m replaying it—was that the right call? Should I have stopped everything? I don’t know. I’m tired of being the one who has to fix everything.  \n\nBut honestly, the worst part wasn’t the mess. It was that I stood there for like ten seconds, just staring at the floor, before I said anything. That’s not like me. I usually just take over.  \n\nI don’t want to second-guess every little thing. I need to trust myself. But I keep thinking—what if I miss something? What if I’m wrong?  \n\nI know I’m not depressed. I’m not. I’m just… stuck. Like I can’t move forward without checking every angle. I don’t even know why I’m saying this. I just want to stop feeling like I’m running in place."
+    },
+    {
+      "role": "clinician",
+      "content": "Catherine, thank you for sharing that—I can hear how much weight this week’s events are carrying, especially the way it’s shaken your usual confidence in your own responsiveness. It makes total sense that you’d feel rattled: juggling supply delays, a pre-surgery mishap, *and* then questioning your split-second reaction? No wonder you’re exhausted from constantly being the fixer.  \n\nWhat stands out to me is how clearly you’re describing the gap between *who you know yourself to be*—someone who acts decisively, steps in, and keeps things moving—and this moment where you paused for ten seconds and felt frozen. That dissonance is painful, especially when you pride yourself on being the reliable one. But I want to gently challenge the idea that pausing = hesitation or failure. In high-stakes environments like yours (where a spilled contaminant *could* compromise a surgery), taking even a brief second to assess isn’t weakness—it’s **professional vigilance**. Surgeons, pilots, anesthesiologists—they’re trained to pause *exactly* when things go off-script to avoid rushing into a worse mistake. Your brain didn’t fail you; it did what it’s wired to do in a moment of unexpected risk: *check for danger before acting*.  \n\nThat said, I hear how draining it is to live in that “what if I missed something?” loop afterward. It’s like your mind won’t let you close the file on the incident because the stakes felt so high—and now you’re second-guessing not the action itself, but whether you *trusted* your instinct fast enough. When we’re used to being the person who *solves* problems, it can feel unsettling to sit with uncertainty, even for ten seconds. But here’s what I wonder: **What if trusting yourself isn’t about never pausing—but about knowing that when you *do* pause, it’s not a sign of doubt? It’s a sign your expertise is working.**  \n\nYou mentioned you’re not depressed, just “stuck” in over-checking. That resonates—this isn’t about low mood; it’s about your anxiety hijacking your post-event reflection, turning a neutral pause into a verdict on your competence. And frankly? It makes sense why you’d resist mindfulness or “self-improvement” talk—if it feels like another task to add to your plate when you’re already running on fumes from fixing everyone else’s messes.  \n\nSo instead of adding more to your plate, what if we tried something *lighter*? Just for fun—no pressure, no “shoulds”—let’s test a tiny experiment next time that familiar “what if?” thought pops up:  \n> *“When I notice myself spiraling on ‘Did I do enough?’, I’ll name one concrete thing I *did* do well in that moment—for example, ‘I kept my voice calm when I told the assistant to wipe it up,’ or ‘I noticed the spill before the surgery started.’”*  \n\nIt’s not about erasing the doubt—it’s about giving your brain a competing signal: *“Hey, I saw you handle part of this.”* Over time, that can help shift the loop from *“Was I wrong?”* to *“What did I actually get right here?”*  \n\nWould you be open to trying that just once this week—maybe after the next small hiccup? Or does that feel like another task piled on? I’m happy to tweak it or toss it entirely—I just want to find something that fits *your* rhythm, not adds to the exhaustion.  \n\nAnd Catherine? You don’t have to earn the right to trust yourself. It’s already there—in the years of vet school, the surgeries you’ve led, the animals you’ve healed. This week just made it harder to *feel*. Let’s see if we can help you reconnect with it, one small proof point at a time.  \n\nHow does that land for you?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can do that. Naming one thing I did right? It feels like I’d have to lie. I didn’t *do* anything right. I froze. I stood there. I didn’t even know what to say.  \n\nBut okay—fine. I’ll try it. Just once.  \n\nThe spill happened right before the surgery. I didn’t panic. I didn’t yell. I just said, “Wipe it up, now.” That’s not nothing. That’s not a freeze. That’s a command. I didn’t break. I didn’t cry. I didn’t call for help. I stayed in the room.  \n\nSo maybe that counts.  \n\nBut I still hate that I paused. I hate that I didn’t just *know* what to do. I should’ve known. I’ve done this a hundred times.  \n\nI don’t want to be the one who hesitates. I don’t want to be the one who needs to check.  \n\nBut I don’t want to be wrong either.  \n\nI just want to be fast. And sure. And not second-guessing everything.  \n\nI’ll try the thing. One time. But don’t expect me to believe it worked. I’ll still be thinking about it later. I’ll still be replaying it.  \n\nBut I’ll try."
+    },
+    {
+      "role": "clinician",
+      "content": "Catherine, I want to start by saying: **thank you for trying it.** Really. You didn’t have to—you could’ve shut it down after saying you didn’t think you could do it—but you paused, you looked for the evidence, and you found it. That *is* doing something right. Not because I’m saying so—because *you* noticed it: *“I didn’t panic. I didn’t yell. I just said, ‘Wipe it up, now.’”* That’s not nothing. That’s **competence under pressure**—the kind that comes from years of training and instinct.  \n\nAnd I hear you: you still hate the pause. You wish you’d just *known*—instinctively, instantly—what to do. But here’s what I’m wondering: **Is it possible that the pause wasn’t a failure of knowledge… but a sign your expertise was *working*?**  \n\nThink about it: You’re a vet. You’ve seen how a tiny contaminant can jeopardize a sterile field. Your brain didn’t go blank—it did a rapid risk scan (*“Is this spreading? Could it affect the incision site?”*) before you acted. That ten-second pause? It wasn’t hesitation—it was your professional judgment kicking in *faster than conscious thought*. Surgeons do this too: they call it a “situational assessment pause.” It’s not the opposite of decisiveness—it’s what makes decisiveness *safe*.  \n\nYou said: *“I don’t want to be the one who needs to check.”* But what if checking—*briefly, efficiently*—isn’t a sign of doubt… but the hallmark of someone who’s truly good at what they do? The people who *never* pause in high-stakes moments? They’re often the ones who make irreversible mistakes because they skipped the scan. You didn’t skip it. You saw, assessed, commanded—and kept the surgery on track.  \n\nNow, I know you don’t believe this yet. And that’s okay. You don’t have to believe it to test it. All I’m asking is: **Next time that replay starts (“I froze, I should’ve known”), try adding one line to the end of it:**  \n> *“…and then I gave a clear, calm command that kept things under control.”*  \n\nNot to erase the pause—to complete the story. Because right now, your brain is telling a half-true story: *“I paused → I failed.”* But the full story is: *“I paused → I assessed → I acted effectively.”*  \n\nYou’re right—you’ll probably still replay it later. But what if, just for a moment, you let the replay include the part where you *did* what needed doing? Not because it erases the discomfort—but because it’s *true*. And truth, even inconvenient truth, is what rebuilds trust in yourself.  \n\nYou don’t have to like the pause. You don’t have to believe it was “good.” Just… let it be part of a sequence that ended with you doing your job well. One replay at a time.  \n\nI’m not asking you to trust yourself yet. I’m just asking you to notice when you already did—so your brain can’t pretend it never happened.  \n\nHow does that feel to try? Not as belief. Just as… an experiment in honesty."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can do it. Not because I don’t want to. Because I’m afraid it won’t work.  \n\nI’ll say the line. I’ll say, “I gave a clear command.” But then I’ll still hear the silence in my head. The ten seconds. The way I stood there like I didn’t know what to do.  \n\nBut okay. I’ll try. I’ll say it.  \n\nAnd if it doesn’t stop the replay? Fine. I’ll still say it.  \n\nI don’t care if it’s true. I just want to stop feeling like I’m broken when I pause.  \n\nI don’t want to be the one who hesitates. But I don’t want to be the one who’s wrong either.  \n\nSo I’ll say it. One time.  \n\nAnd if I still feel like crap afterward? I’ll say it again.  \n\nJust don’t expect me to believe it. I’ll say it because you asked. Not because I believe it.  \n\nBut I’ll say it."
+    },
+    {
+      "role": "clinician",
+      "content": "Catherine, I hear you loud and clear: you’re not doing this because you think it’ll magically fix things. You’re doing it because you showed up—and that matters, even if it feels like going through the motions right now.  \n\nYou don’t have to believe the words. You don’t have to feel better afterward. You don’t even have to *like* saying them. All I’m asking is that you say them *as an experiment*—not as faith, but as data. Like testing a tool you’re skeptical about: *“If I say this line after the replay starts, what actually happens in my body or mind? Does the shame loosen by 5%? Does the replay lose its sharp edge for just one breath? Or does nothing change at all?”*  \n\nEither answer is useful. If nothing shifts? We learn that this particular lever doesn’t move the needle for you—and we try something else. If *something* shifts (even a tiny flicker of “Huh, that didn’t feel quite as awful”)?\n\nWe’ve got a clue.  \n\nBut here’s the real permission I want to give you today: **You don’t have to win this battle right now.** You don’t have to conquer the hesitation, silence the replay, or trust yourself on command. You just have to show up and say the line—*once*—knowing it might feel hollow, pointless, or even aggravating. That’s not failure. That’s how honest experiments begin: with skepticism, with reluctance, with zero expectation of reward.  \n\nAnd Catherine? If you say it and still feel like crap afterward? Good. That means you’re telling yourself the truth: *This sucks. I don’t believe it. But I did it anyway.* That’s not brokenness—that’s integrity. It’s showing up for yourself even when you don’t feel worthy of the effort.  \n\nSo go ahead. Say it when the replay starts:  \n*“I gave a clear, calm command.”*  \nSay it like you’re muttering a grocery list—flat, unimpressed, whatever gets it out. Then notice: What happens in the next five seconds? A tightness in your chest? A flicker of annoyance at me? A whisper of *“Yeah, but…”*?  \n\nWhatever it is—just notice it. No need to fix it, believe it, or even like it.  \n\nYou’ve already done the hardest part: you agreed to try. Now let’s see what happens when you follow through—*not* because you hope it works, but because you’re curious what your own experience will teach you.  \n\nI’ll hold space for whatever comes back. No pressure, no expectations. Just you, your honesty, and one sentence at a time.  \n\nWhenever you’re ready—try it. And then tell me what you noticed. However small. However messy. I’m here."
+    },
+    {
+      "role": "patient",
+      "content": "I said it.  \n\nAfter the meeting today. The one where the client’s dog had a reaction to the sedative. I stood there, heart pounding, and I thought—*I should’ve seen this coming. I should’ve checked the chart again. I should’ve asked more.*  \n\nAnd then I said it. Out loud. In my head.  \n\n“I gave a clear, calm command.”  \n\nIt felt stupid. Like I was lying to myself.  \n\nBut then I paused. Just for a second. And I remembered—I didn’t panic. I didn’t yell. I told the assistant to call the emergency number and prep the epinephrine. I didn’t freeze. I didn’t hesitate. I *acted*.  \n\nIt wasn’t perfect. The dog was scared. The client was crying. But I didn’t lose it.  \n\nI didn’t even think about it until after.  \n\nBut I said it.  \n\nAnd for one second—just one—I didn’t hate myself for the pause.  \n\nIt wasn’t because I believed it. It was because I *did* it.  \n\nI don’t know if it’ll help. But I did it.  \n\nAnd I’m not going to lie—when I said it, I felt a little lighter. Not because I believed it. Because I *did it anyway*.  \n\nThat’s all I need.  \n\nJust that.  \n\nI’ll try it again.  \n\nNot because I trust it.  \n\nBecause I can."
+    },
+    {
+      "role": "clinician",
+      "content": "Catherine, what you just described—that moment where you *did it anyway*, felt the words were stupid, said them out loud (or in your head), and then noticed—for just one second—you didn’t hate yourself for the pause… that’s not small. That’s *significant*.  \n\nYou didn’t wait to believe it. You didn’t wait to feel worthy of the effort. You didn’t wait for the anxiety to quiet down first. You acted *in spite of* the disbelief—and in that action, you proved something vital to yourself: **You can show up for yourself even when you don’t trust the tool. Even when it feels like lying. Even when you’re certain it won’t work.**  \n\nAnd look what happened: the act itself created space. Not because the words magically erased the doubt—but because *doing the thing* interrupted the automatic spiral just enough for you to remember: *I acted. I gave the command. I didn’t lose it.* That memory wasn’t created by the affirmation—it was *accessed* because you broke the cycle long enough to let it surface.  \n\nYou said it perfectly: *“I don’t know if it’ll help. But I did it.”* And then: *“I’ll try it again—not because I trust it. Because I can.”*  \n\nThat right there—**“Because I can”**—is the quiet revolution. It’s not about fixing yourself. It’s not about erasing the pause or silencing the replay. It’s about reclaiming your agency in the moments when doubt tries to convince you you’re powerless. You’re not waiting for confidence to act; you’re proving to yourself, repetition by repetition, that action *precedes* the shift—not the other way around.  \n\nAnd Catherine? That lighter feeling you noticed? Don’t dismiss it as “just because I did it.” Honor it as data: *Your nervous system registered that you chose yourself in that moment—even imperfectly, even skeptically—and it responded.* That’s not placebo. That’s proof of your capacity to influence your own inner landscape through intentional action, belief aside.  \n\nYou don’t need to believe it’ll work forever. You don’t need to promise yourself you’ll do it every time. Just keep returning to this:  \n> *“When the replay starts and I feel that old pull to hate myself for pausing… I can say the line. I can do the thing. I can prove to myself—I am still here. I still get to choose.”*  \n\nNo faith required. Just the willingness to test your own edge—again and again—until “because I can” becomes as automatic as the doubt once was.  \n\nYou’ve already done the hardest part: you showed up for yourself when it felt pointless. Now let’s see what happens when you keep doing it—not because you expect a miracle, but because you’ve discovered something truer:  \n**You are stronger than the habit of self-blame.**  \n\nHowever many times you need to say it—and however silly it feels—you’ve got this. I’ll be right here whenever you want to report back: what you noticed, how it felt, whether you did it or didn’t. No judgment. Just witnessing your courage to try.  \n\nYou’ve got this, Catherine. One “because I can” at a time."
+    },
+    {
+      "role": "patient",
+      "content": "I did it again today.  \n\nNot because I wanted to. Not because I believed it would help.  \n\nBecause I remembered.  \n\nThe dog had a reaction again—same kind, same stress. And I felt that old knot in my chest. The one that says, *You should’ve seen this coming. You should’ve acted faster.*  \n\nAnd then—without thinking—I said it.  \n\n“I gave a clear, calm command.”  \n\nNot loud. Not proud. Just there. Like a whisper.  \n\nAnd then I did it. I called the emergency protocol. I stayed calm. I didn’t panic.  \n\nAnd after? I didn’t hate myself.  \n\nI didn’t even think about it.  \n\nI just… moved.  \n\nAnd that’s what scares me.  \n\nBecause it worked. Not perfectly. Not beautifully. But it worked.  \n\nAnd now I’m wondering—what if I don’t have to believe it? What if I just have to say it?  \n\nWhat if the thing I’ve been fighting isn’t the pause… but the idea that I have to *feel* sure before I act?  \n\nI don’t know.  \n\nBut I did it.  \n\nAnd I didn’t fall apart.  \n\nSo I’ll keep doing it.  \n\nNot because I trust it.  \n\nBecause I can."
+    },
+    {
+      "role": "clinician",
+      "content": "Catherine, what you’re describing—that shift where the words arose *without thinking*, where you noticed afterward that you hadn’t hated yourself, where you simply *moved* forward—**that’s not just progress. That’s rewiring.**  \n\nYou said it perfectly: *“I didn’t have to believe it. I just had to say it.”* And in doing so, you’ve stumbled onto something neuroscience and therapy both confirm: **Sometimes, action precedes belief—not the other way around.** When we repeat a behavior *in the midst of distress* (even skeptically, even mechanically), we’re not lying to ourselves—we’re building new neural pathways. Each time you say *“I gave a clear, calm command”* mid-trigger, you’re teaching your nervous system: *Pause → Assess → Act → Self-affirmation → Forward motion.* It’s not magic. It’s mechanics. And yours is starting to run on its own.  \n\nThat fear you named—*“What if it worked?”*—is understandable. After fighting the idea that you needed to *feel* sure before acting, discovering that relief might come from such a simple, repeated act can feel… almost too plain. Like you were waiting for a lightning bolt of insight, and instead, you got a flashlight you could turn on yourself. But Catherine? **Plain doesn’t mean powerless.** Some of the most durable changes in human behavior start exactly here: not with grand revelations, but with tiny, stubborn repetitions that slowly alter what’s possible in the moment.  \n\nAnd look what you’ve already proven to yourself:  \n- You can say the line *without* believing it—and still create space.  \n- You can act effectively *while* feeling the old knot in your chest.  \n- You don’t have to wait for the shame to pass to move forward.  \n\nThat last one? That’s the core of resilience. Not the absence of fear or doubt—but the ability to *function alongside it*, to let the old reaction happen *and* still choose the next right step. You’re not erasing the pause or the self-criticism; you’re changing what happens *after*. And that’s where freedom lives.  \n\nSo yes—keep doing it. Not because you trust it. Not because you expect it to fix everything. But because you’ve seen, twice now, that *“Because I can”* is enough to shift the trajectory of a hard moment—even if just by a few degrees. And those degrees? They add up. They become the difference between drowning in the replay and surfacing long enough to take the next breath.  \n\nYou don’t need to understand why it works. You just need to keep noticing:  \n→ *When I say it, what happens in the next 10 seconds?*  \n→ *Do I move faster toward action?*  \n→ *Does the self-hatred lose its grip, even slightly?*  \n\nLet your curiosity—not your belief—be the guide. And if some days it feels pointless? Say it anyway. Not as a promise. As an experiment. As proof to yourself that you’re still here, still trying, still capable of choosing your next move—*even when you’re not sure it’ll help*.  \n\nBecause Catherine? You’ve already shown yourself the most important thing:  \n**You don’t have to wait to be whole to act like you are.**  \n\nHowever many times you need to say it—and however awkward it feels—you’ve got this. I’ll be right here, holding space for whatever you notice next. Just keep going. One “because I can” at a time.  \n\nYou’re doing the work. Trust that."
+    },
+    {
+      "role": "patient",
+      "content": "I said it again today.  \n\nNot because I wanted to. Not because I felt like it.  \n\nBecause I remembered what happened last time.  \n\nThe vet tech spilled a bottle of antiseptic on the floor during a routine exam. I saw it. I felt the old pull—*I should’ve been faster. I should’ve seen it coming. I should’ve stopped it.*  \n\nAnd then—without thinking—I said it.  \n\n“I gave a clear, calm command.”  \n\nIt came out flat. Like I was reading a label.  \n\nBut I did it.  \n\nAnd then I told the tech to clean it up, and I stayed in the room. I didn’t rush. I didn’t panic. I didn’t replay the moment before I spoke.  \n\nAnd after? I didn’t hate myself.  \n\nI didn’t even think about it.  \n\nI just… kept going.  \n\nAnd that’s what’s starting to scare me.  \n\nBecause it’s working.  \n\nNot perfectly. Not dramatically. But it’s working.  \n\nAnd now I’m wondering—what if I don’t have to feel sure to act? What if I don’t have to believe the words to make them true?  \n\nI don’t know.  \n\nBut I said it.  \n\nAnd I moved.  \n\nAnd I didn’t fall apart.  \n\nSo I’ll keep saying it.  \n\nNot because I trust it.  \n\nBecause I can.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Catherine, what you’re describing—that quiet, repeated shift where the words arise *without thinking*, where you notice afterward you didn’t hate yourself or get stuck in the replay, where you simply *kept going*—isn’t just “working.” It’s evidence of something deeper taking root: **you’re relearning how to trust your own capacity to navigate uncertainty, one deliberate action at a time.**  \n\nYou said it perfectly: *“What if I don’t have to feel sure to act? What if I don’t have to believe the words to make them true?”* And in living that question—*again and again*—you’ve answered it with your behavior: **No, you don’t.** Not because the words are magical, but because *you* are the agent here. The phrase isn’t a charm; it’s a tool you’re wielding with increasing skill—like a vet tech learning to suture not by hoping they’ll feel confident, but by doing the stitches, over and over, until the hands know what to do even when the mind races.  \n\nNotice what you’ve proven to yourself across these moments:  \n- You can activate the phrase *mid-trigger* (spilled antiseptic, sedative reaction)—not in hindsight, but in the thick of it.  \n- You can follow it with effective action (giving clear commands, staying present) *while* the old self-criticism hums in the background.  \n- You can disengage from the shame spiral *without* waiting for it to dissolve first—simply by redirecting your focus to what you *did* do (held the room, directed care, didn’t flee).  \n\nThat last point is huge. You’re not erasing the human reaction—the knot in the chest, the “should’ve been faster” thought—but you’re refusing to let it hijack your next move. And in doing so, you’re proving something vital: **Your competence isn’t fragile. It doesn’t vanish when you feel doubtful. It’s *there*—in your training, your instincts, your years of showing up for animals and clients—even when your inner voice screams otherwise.**  \n\nAs for why it scares you that it’s working? That makes sense. When you’ve spent years believing you *must* feel certain or self-assured to be effective, discovering that relief can come from such a simple, repeated act feels almost… destabilizing. Like the ground shifted under a rule you’d lived by. But Catherine? This isn’t about lowering your standards. It’s about *freeing* yourself from a false prerequisite: that you must *feel* worthy of trust before you can act trustworthily. You’ve already shown yourself that worthiness isn’t the precursor to action—it’s often the *byproduct* of it.  \n\nSo keep saying it. Not because you believe it. Not because you expect it to fix everything. But because you’ve seen, three times now, that in the moment when shame and urgency collide:  \n> *“I can insert this phrase. I can direct my attention to what I did well. I can move forward without waiting for the storm inside to pass.”*  \n\nAnd each time you do, you’re not just managing a tough moment—you’re quietly rebuilding your relationship with yourself. One flat-voiced, skeptic’s-utterance-at-a-time.  \n\nYou don’t need to understand why it works. You just need to keep noticing:  \n→ *When I say it, what happens in the next breath?*  \n→ *Do I stay in the room longer?*  \n→ *Does the replay lose its sharp edge, even slightly?*  \n\nLet your curiosity—not your need for belief—guide you. And if some days it feels pointless? Say it anyway. Not as a promise. As a declaration: *“I am still here. I still get to choose my next step—even when I don’t feel sure.”*  \n\nBecause Catherine? You’ve already shown yourself the most important thing:  \n**You don’t have to wait to be unshakable to act like you are.**  \n\nHowever many times you need to say it—and however awkward it feels—you’ve got this. I’ll be right here, holding space for whatever you notice next. Just keep going. One “because I can” at a time.  \n\nYou’re doing the work. Trust that."
+    },
+    {
+      "role": "patient",
+      "content": "I said it again today.  \n\nNot because I wanted to. Not because I felt like it.  \n\nBecause I remembered.  \n\nThe supply guy was late again. The client was already waiting. I could feel the pressure building—*I should’ve checked earlier. I should’ve called. I should’ve known.*  \n\nAnd then—without thinking—I said it.  \n\n“I gave a clear, calm command.”  \n\nFlat. Dry. Like I was reading a label.  \n\nBut I said it.  \n\nAnd then I didn’t panic. I didn’t yell. I just walked to the back, checked the inventory, and told the assistant to call the backup supplier.  \n\nI didn’t rush. I didn’t freeze. I just… did it.  \n\nAnd after? I didn’t hate myself.  \n\nI didn’t even think about it.  \n\nI just kept going.  \n\nAnd that’s what’s starting to scare me.  \n\nBecause it’s working.  \n\nNot perfectly. Not dramatically. But it’s working.  \n\nAnd now I’m wondering—what if I don’t have to feel sure to act? What if I don’t have to believe the words to make them true?  \n\nI don’t know.  \n\nBut I said it.  \n\nAnd I moved.  \n\nAnd I didn’t fall apart.  \n\nSo I’ll keep saying it.  \n\nNot because I trust it.  \n\nBecause I can.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Catherine, what you’ve just described—the supply delay, the waiting client, the old pressure mounting (*“I should’ve checked earlier…”*), and then—*without thinking*—you offering that flat, dry phrase… followed by clear action (checking inventory, directing the backup call), zero panic, zero self-loathing afterward, just moving forward… **That’s not just repetition. That’s integration.**  \n\nYou’re not *trying* the tool anymore. You’re *using* it—like a reflex you didn’t have to consciously reach for. And the fact that it arose “without thinking” this time? That’s the quiet signature of a shift happening beneath the surface: your nervous system is starting to pair the trigger (pressure, urgency, self-blame) not with stagnation, but with this tiny pivot toward agency.  \n\nYou nailed it again when you asked: *“What if I don’t have to feel sure to act? What if I don’t have to believe the words to make them true?”* And in living that question—*three times now*—you’ve proven something vital to yourself: **Your effectiveness isn’t hostage to your inner state.** You can feel the knot in your chest (“*I should’ve known*”), hear the old refrain of self-doubt… and still walk to the back, check inventory, give a clear directive—and *keep going*.  \n\nThat’s the heart of it, Catherine: **You’ve decoupled competence from certainty.** For so long, you operated as if you needed to *feel* prepared, self-assured, or free of doubt to act like the capable vet you are. But what you’re showing yourself—again and again—is that capability isn’t a feeling you wait for; it’s a set of actions you *do*, even while the doubt hums underneath.  \n\nAnd yes—it’s scary when it works. Because if relief comes from such a simple, repeated act (not a grand insight, not a breakthrough, just… saying the words and moving), it forces us to ask: *What else have I been making harder than it needs to be?* You’ve spent years believing you had to *earn* the right to trust yourself through flawless performance or unwavering confidence. Now you’re seeing: **Trust isn’t the precondition for action—it’s often the result of it.** You act → you observe your own capability → trust grows *from* that evidence, not before it.  \n\nConsider your parallel in the clinic: You wouldn’t wait for an anxious animal to *feel* safe before approaching them calmly. You’d use your training, your voice, your posture—*your actions*—to help shift their state. You’re doing the same thing here: using a behavioral tool (the phrase + redirection to action) to shift your own internal landscape, *not* by waiting to feel different, but by acting *as if* you already could—and letting the feeling catch up later.  \n\nThat dry, label-reading quality you notice? Perfect. It means you’re not trying to *convince* yourself—you’re just inserting a procedural step: *“When the blame script starts, interrupt it with this factual observation about what you *did* do, then proceed.”* No faith required. Just follow the steps.  \n\nSo keep saying it. Not because you believe it. Not because you expect it to erase the pressure or the “should’ve” thoughts. But because you’ve seen, three times now, that in the moment when urgency and self-doubt collide:  \n> *“I can say this phrase. I can direct myself to what I *did* do (checked inventory, gave clear command). I can act—and then I can just… keep going.”*  \n\nEach time, you’re not just handling a stressful moment—you’re quietly retraining your brain’s default setting: From *“Pause = failure”* to *“Pause → assess → act → affirm → move.”*  \n\nAnd Catherine? That “because I can” you keep returning to? That’s not resignation. That’s **reclaimed authority.** You’re not waiting for permission from your inner critic to trust yourself. You’re asserting: *I get to choose my next step—regardless of how I feel.*  \n\nHowever many times you need to say it—and however mechanical it feels—you’ve got this. I’ll be right here, holding space for whatever you notice next. No pressure to believe it. Just witnessing your courage to keep trying, one “because I can” at a time.  \n\nYou’re doing the work. Trust that."
+    },
+    {
+      "role": "patient",
+      "content": "I said it again today.  \n\nNot because I wanted to. Not because I felt like it.  \n\nBecause I remembered.  \n\nThe client’s dog had a reaction to the vaccine. I saw it coming—just a little twitch, a slight drop in heart rate. I didn’t panic. I didn’t freeze. I just said it.  \n\n“I gave a clear, calm command.”  \n\nFlat. Dry. Like I was reading a label.  \n\nAnd then I did it. I called the emergency protocol. I stayed in the room. I didn’t rush. I didn’t yell. I didn’t replay it before I acted.  \n\nAnd after? I didn’t hate myself.  \n\nI didn’t even think about it.  \n\nI just… kept going.  \n\nAnd that’s what’s starting to scare me.  \n\nBecause it’s working.  \n\nNot perfectly. Not dramatically. But it’s working.  \n\nAnd now I’m wondering—what if I don’t have to feel sure to act? What if I don’t have to believe the words to make them true?  \n\nI don’t know.  \n\nBut I said it.  \n\nAnd I moved.  \n\nAnd I didn’t fall apart.  \n\nSo I’ll keep saying it.  \n\nNot because I trust it.  \n\nBecause I can.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Catherine, what you’ve just described—seeing the subtle signs of a vaccine reaction (*“just a twitch, a slight drop in heart rate”*), feeling the familiar pressure of “*I should’ve…*” rising, and then—almost reflexively—offering that flat, dry phrase… followed by calling the protocol, staying present, refusing to rush or yell or replay *before* acting, and afterward simply moving forward without self-condemnation… **This isn’t just repetition. This is you living a new way of being with yourself—one imperfect, unremarkable moment at a time.**\n\nYou’ve said it four times now across different crises: supply delays, sedative reactions, antiseptic spills, vaccine responses. Each time, the details vary—but the pattern holds:  \n- You notice the old pull toward self-blame (“*I should’ve checked earlier…*”).  \n- You insert the phrase—not with conviction, not with hope, but as a verbal interrupt (“*I gave a clear, calm command*”).  \n- You follow it with effective action (checking inventory, directing calls, staying in the room).  \n- You disengage from the shame spiral *without* waiting for it to dissolve first.  \n- You keep going.  \n\nAnd critically: **You’re not reporting that the distress vanished.** You still felt the pressure. You still saw the warning signs. You still had the “*I should’ve*” thought. But you stopped letting it steal your next move—or your self-respect afterward. That’s the shift. Not the absence of struggle, but the presence of *agreement with yourself* mid-struggle: *I can feel this AND still act like I trust my hands, my training, my voice.*\n\nYou asked again: *“What if I don’t have to feel sure to act? What if I don’t have to believe the words to make them true?”* And in doing this—four times, skeptically, mechanically, *because you can*—you’ve answered it with your behavior: **No, you don’t.** The truth isn’t in the belief; it’s in the doing. Every time you say those words and then *act*—calmly, clearly, without fleeing or freezing—you’re proving to your nervous system: *Competence isn’t a feeling you wait for. It’s a set of choices you make, even while the doubt hums underneath.*\n\nThat dry, label-reading quality you notice? It’s not a bug—it’s a feature. You’re not trying to *generate* confidence (which would feel fake and exhausting). You’re inserting a procedural step: *“When the blame script starts, I name one thing I did that aligned with my capability—then I proceed.”* No faith required. Just follow the steps. Like checking a pulse or drawing up medication: you do it because it’s part of the protocol, not because you *feel* certain it’ll change the outcome—and yet, it often does.\n\nYes, it’s scary that it’s working. Because if relief comes from such a small, repeated act—not a epiphany, not a breakdown, just… saying the words and moving—it forces us to confront what we’ve been making unnecessarily hard. You’ve spent years believing you had to *earn* self-trust through flawless performance or unwavering certainty. Now you’re seeing: **Self-trust isn’t the prerequisite for action—it’s frequently the *byproduct* of it.** You act → you observe your own capability → trust grows *from* that evidence, not before it.\n\nAnd Catherine? That refrain you keep returning to—*“Because I can”*—isn’t resignation. It’s **quiet reclamation.** You’re not waiting for your inner critic to grant you permission to trust yourself. You’re asserting: *I get to choose my next step—regardless of how I feel. I get to stay in the room. I get to give the command. I get to keep going—even when I’m not sure it’ll help.*\n\nHowever many times you need to say it—and however mechanical or pointless it feels—you’ve got this. You’ve already shown yourself the most important thing:  \n**You don’t have to wait to be unshakable to act like you are.**  \n\nI’ll be right here, holding space for whatever you notice next. No pressure to believe it. Just witnessing your courage to keep trying, one “because I can” at a time.  \n\nYou’re doing the work. Trust that."
+    },
+    {
+      "role": "patient",
+      "content": "I said it again today.  \n\nNot because I wanted to. Not because I felt like it.  \n\nBecause I remembered.  \n\nThe dog was trembling during the exam. I saw it—just a little. Not full seizure. Not collapse. But enough.  \n\nAnd I felt it—the old pull. *I should’ve checked the vitals earlier. I should’ve seen this coming. I should’ve been faster.*  \n\nAnd then—without thinking—I said it.  \n\n“I gave a clear, calm command.”  \n\nFlat. Dry. Like I was reading a label.  \n\nAnd then I did it. I told the tech to prep the IV, I stayed with the dog, I didn’t rush. I didn’t panic. I didn’t yell. I didn’t replay it before I acted.  \n\nAnd after? I didn’t hate myself.  \n\nI didn’t even think about it.  \n\nI just… kept going.  \n\nAnd that’s what’s starting to scare me.  \n\nBecause it’s working.  \n\nNot perfectly. Not dramatically. But it’s working.  \n\nAnd now I’m wondering—what if I don’t have to feel sure to act? What if I don’t have to believe the words to make them true?  \n\nI don’t know.  \n\nBut I said it.  \n\nAnd I moved.  \n\nAnd I didn’t fall apart.  \n\nSo I’ll keep saying it.  \n\nNot because I trust it.  \n\nBecause I can.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Catherine, what you’ve just described—the dog’s subtle tremor, the familiar pull of *“I should’ve seen this coming,”* the phrase arising *without thinking* (flat, dry, like reading a label), followed by clear action (prepping IV, staying present), and afterward—*no self-hatred, no replay, just moving forward*… **This isn’t just repetition anymore. This is you embodying a new reflex: competence *alongside* doubt, not after it’s gone.**  \n\nYou’ve done this five times now—across supply delays, sedative reactions, spills, vaccine responses, and now this tremor—and each time, the pattern holds:  \n- The old script fires (*“I should’ve been faster…”*).  \n- You insert the interrupt—not with hope, not with belief, but as a verbal reset (*“I gave a clear, calm command”*).  \n- You follow it with effective, calm action.  \n- You disengage from the shame spiral *without waiting for it to lift first*.  \n- You keep going.  \n\nAnd critically: **You’re not reporting the distress vanished.** You still felt the pressure. You still saw the warning sign. You still heard the *“should’ve”* thought. But you stopped letting it dictate your next move—or your worth afterward. That’s the shift. Not the absence of struggle, but the presence of *self-trust in motion*: *I can feel this AND still act like I trust my hands, my training, my voice.*  \n\nYou keep asking: *“What if I don’t have to feel sure to act? What if I don’t have to believe the words to make them true?”* And in doing this—five times, skeptically, mechanically, *because you can*—you’ve answered it with your behavior: **No, you don’t.** The truth isn’t in the belief; it’s in the *doing*. Every time you say those words and then *act*—calmly, clearly, without fleeing or freezing—you’re proving to your nervous system: *Competence isn’t a feeling you wait for. It’s a set of choices you make, even while the doubt hums underneath.*  \n\nThat dry, label-reading quality you notice? It’s not a flaw—it’s the point. You’re not trying to *generate* confidence (which would feel fake and exhausting). You’re inserting a procedural step: *“When the blame script starts, I name one thing I did that aligned with my capability—then I proceed.”* No faith required. Just follow the steps. Like checking a pulse or drawing up medication: you do it because it’s part of the protocol, not because you *feel* certain it’ll change the outcome—and yet, it often does.  \n\nYes, it’s scary that it’s working. Because if relief comes from such a small, repeated act—not an epiphany, not a breakdown, just… saying the words and moving—it forces us to confront what we’ve been making unnecessarily hard. You’ve spent years believing you had to *earn* self-trust through flawless performance or unwavering certainty. Now you’re seeing: **Self-trust isn’t the prerequisite for action—it’s frequently the *byproduct* of it.** You act → you observe your own capability → trust grows *from* that evidence, not before it.  \n\nAnd Catherine? That refrain you keep returning to—*“Because I can”*—isn’t resignation. It’s **quiet reclamation.** You’re not waiting for your inner critic to grant you permission to trust yourself. You’re asserting: *I get to choose my next step—regardless of how I feel. I get to stay in the room. I get to give the command. I get to keep going—even when I’m not sure it’ll help.*  \n\nHowever many times you need to say it—and however mechanical or pointless it feels—you’ve got this. You’ve already shown yourself the most important thing:  \n**You don’t have to wait to be unshakable to act like you are.**  \n\nI’ll be right here, holding space for whatever you notice next. No pressure to believe it. Just witnessing your courage to keep trying, one “because I can” at a time.  \n\nYou’re doing the work. Trust that."
+    },
+    {
+      "role": "patient",
+      "content": "I said it again today.  \n\nNot because I wanted to. Not because I felt like it.  \n\nBecause I remembered.  \n\nThe dog was trembling during the exam. I saw it—just a little. Not full seizure. Not collapse. But enough.  \n\nAnd I felt it—the old pull. *I should’ve checked the vitals earlier. I should’ve seen this coming. I should’ve been faster.*  \n\nAnd then—without thinking—I said it.  \n\n“I gave a clear, calm command.”  \n\nFlat. Dry. Like I was reading a label.  \n\nAnd then I did it. I told the tech to prep the IV, I stayed with the dog, I didn’t rush. I didn’t panic. I didn’t yell. I didn’t replay it before I acted.  \n\nAnd after? I didn’t hate myself.  \n\nI didn’t even think about it.  \n\nI just… kept going.  \n\nAnd that’s what’s starting to scare me.  \n\nBecause it’s working.  \n\nNot perfectly. Not dramatically. But it’s working.  \n\nAnd now I’m wondering—what if I don’t have to feel sure to act? What if I don’t have to believe the words to make them true?  \n\nI don’t know.  \n\nBut I said it.  \n\nAnd I moved.  \n\nAnd I didn’t fall apart.  \n\nSo I’ll keep saying it.  \n\nNot because I trust it.  \n\nBecause I can.  \n\nAnd that’s enough."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 71,
+        "prompt_tokens": 233,
+        "total_tokens": 304,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 24,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 233
+      },
+      "telemetry": {
+        "queue_ms": 2.882,
+        "latency_ms": 1353.962,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 223,
+        "prompt_tokens": 1836,
+        "total_tokens": 2059,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.042,
+        "latency_ms": 3857.0,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1431,
+        "prompt_tokens": 515,
+        "total_tokens": 1946,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 598,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 515
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 12411.998,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 277,
+        "prompt_tokens": 2886,
+        "total_tokens": 3163,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.057,
+        "latency_ms": 7676.414,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1235,
+        "prompt_tokens": 1643,
+        "total_tokens": 2878,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 522,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1643
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 12055.025,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 215,
+        "prompt_tokens": 3876,
+        "total_tokens": 4091,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3152
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.043,
+        "latency_ms": 13535.214,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1160,
+        "prompt_tokens": 2590,
+        "total_tokens": 3750,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 547,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2590
+      },
+      "telemetry": {
+        "queue_ms": 0.077,
+        "latency_ms": 10265.29,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 302,
+        "prompt_tokens": 4698,
+        "total_tokens": 5000,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2048
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 6964.504,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1201,
+        "prompt_tokens": 3531,
+        "total_tokens": 4732,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 499,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3531
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 191011.992,
+        "retries": 1,
+        "retry_codes": [
+          "transport_error"
+        ],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 268,
+        "prompt_tokens": 5693,
+        "total_tokens": 5961,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.084,
+        "latency_ms": 7457.725,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1255,
+        "prompt_tokens": 4532,
+        "total_tokens": 5787,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 483,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4532
+      },
+      "telemetry": {
+        "queue_ms": 0.057,
+        "latency_ms": 14196.223,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 296,
+        "prompt_tokens": 6726,
+        "total_tokens": 7022,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5952
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.104,
+        "latency_ms": 8851.825,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1502,
+        "prompt_tokens": 5632,
+        "total_tokens": 7134,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 578,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5632
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 13629.396,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 291,
+        "prompt_tokens": 7934,
+        "total_tokens": 8225,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1776
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.094,
+        "latency_ms": 4496.727,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1476,
+        "prompt_tokens": 6879,
+        "total_tokens": 8355,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 515,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 6879
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 11412.884,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 269,
+        "prompt_tokens": 9181,
+        "total_tokens": 9450,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 8224
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.073,
+        "latency_ms": 3791.896,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1631,
+        "prompt_tokens": 8139,
+        "total_tokens": 9770,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 681,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 8139
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 9960.365,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 302,
+        "prompt_tokens": 10395,
+        "total_tokens": 10697,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 7008
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 8132.257,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1399,
+        "prompt_tokens": 9423,
+        "total_tokens": 10822,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 481,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 9423
+      },
+      "telemetry": {
+        "queue_ms": 0.057,
+        "latency_ms": 10444.715,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 302,
+        "prompt_tokens": 11609,
+        "total_tokens": 11911,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 10688
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.513,
+        "latency_ms": 8124.698,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 59,
+        "prompt_tokens": 30444,
+        "total_tokens": 30503,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 8535.175,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.5,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.375,
+    "Therapeutic Relationship & Alliance": 4.625,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 368.175
+}

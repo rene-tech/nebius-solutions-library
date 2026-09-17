@@ -66,7 +66,7 @@ def test_invalid_judgments_never_default(text):
     assert caught.value.code == "invalid_judgment"
 
 
-async def complete_responses(responses):
+async def complete_responses(responses, model="test"):
     sent = []
     sleeps = []
 
@@ -85,7 +85,7 @@ async def complete_responses(responses):
     try:
         result = await adapter.complete(
             team="team",
-            model="test",
+            model=model,
             messages=[{"role": "user", "content": "hi"}],
             max_completion_tokens=128,
             temperature=0,
@@ -101,6 +101,32 @@ async def test_429_and_transient_5xx_have_bounded_retries():
     assert result["telemetry"]["retries"] == 2
     assert len(requests) == 3
     assert sleeps == [1, 2]
+
+
+async def test_super_template_preserves_reasoning_and_requires_visible_content():
+    model = "nvidia/nemotron-3-super-120b-a12b"
+    result, requests, _ = await complete_responses([(200, response(reasoning="separate"))], model)
+    assert requests[0]["chat_template_kwargs"] == {"force_nonempty_content": True}
+    assert result["telemetry"]["chat_template_kwargs"] == {"force_nonempty_content": True}
+    assert result["reasoning"] == "separate"
+    with pytest.raises(GatewayError) as caught:
+        await complete_responses([(200, response(None, reasoning="not an answer"))], model)
+    assert caught.value.code == "reasoning_only"
+    assert caught.value.telemetry["chat_template_kwargs"] == {"force_nonempty_content": True}
+
+
+async def test_truncated_generation_retries_same_payload_once_and_retains_usage():
+    result, requests, sleeps = await complete_responses([(200, response("partial", "length")), (200, response("complete"))])
+    assert requests[0] == requests[1]
+    assert result["content"] == "complete"
+    assert result["telemetry"]["retry_codes"] == ["length_finished"]
+    assert result["telemetry"]["invalid_completions"][0]["usage"]["total_tokens"] == 8
+    assert "partial" not in json.dumps(result["telemetry"])
+    assert sleeps == [1]
+    with pytest.raises(GatewayError) as caught:
+        await complete_responses([(200, response(None, reasoning="not final"))])
+    assert caught.value.code == "reasoning_only"
+    assert len(caught.value.telemetry["invalid_completions"]) == 2
 
 
 async def test_persistent_429_exhausts_four_attempts():

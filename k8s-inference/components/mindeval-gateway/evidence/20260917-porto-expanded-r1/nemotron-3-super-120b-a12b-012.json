@@ -1,0 +1,651 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-012",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Larry! It’s good to see you again. How have things been since our last conversation? Is there anything on your mind today that you’d like to talk about?"
+    },
+    {
+      "role": "patient",
+      "content": "Hey. Not much different, really. Woke up at 3am again. Laid there staring at the ceiling like usual. The kind of quiet where you can hear the house settling, but it doesn’t feel peaceful. Just… heavy.  \n\nI finished the report for work yesterday. Took way longer than it should have. I kept getting stuck on little things—like whether the numbers made sense or if I’d missed a footnote. Not that it matters. They’ll probably just glance at it and move on.  \n\nI was thinking about my sister last night. She texted me a photo of her dog. It was just a goofy face, but I remember how she used to make me laugh when we were kids. I don’t talk to her enough.  \n\nI don’t know. I just feel like I’m moving through the day on autopilot. Like I’m here, but not really."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, thank you for sharing that so openly. What you’re describing—the 3am wakefulness, the weight of that quiet, the way work feels like wading through mud even when you *do* finish something—that sounds incredibly exhausting. It’s not just tiredness; it’s like your mind and body are carrying a load that doesn’t let up, even when you’re trying to rest.  \n\nI notice how clearly you’re seeing yourself in these moments: the autopilot feeling, the regret about not connecting with your sister more, the way even a silly dog photo can tug at a memory that feels both warm and distant. That awareness—that you *notice* the gap between going through the motions and actually feeling present—tells me a part of you is still very much engaged, even if it doesn’t feel that way right now.  \n\nWhen you said, “I don’t talk to her enough,” I wondered: what would it feel like to send her a quick reply to that photo? Not a long conversation—just something small, like *“This made me smile. Thanks.”* Would that feel possible, or does even that small step seem too heavy right now?  \n\nAnd about work—I hear how you poured effort into that report, only to doubt if it mattered. That sting of feeling unseen after putting in real effort… it’s understandable why you’d question if it’s worth the struggle. But I’m curious: when you were stuck on those little details yesterday, was there a moment where you felt *focused*—even briefly—or was it all just frustration?  \n\nWhatever feels most urgent or raw to share next, I’m here. No pressure, just space."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can do it. Just send a message. Not because I don’t want to, but because I keep thinking about what to say. Like, what if I say something dumb? What if she thinks I’m just being polite? Or worse—what if she replies and I don’t know how to keep it going?  \n\nIt’s not just her. It’s everyone. I used to be good at that. Remembering things. Asking questions. Now I just… freeze. Like I’m waiting for someone else to start the conversation, and when they don’t, I shut down.  \n\nAnd the report—yeah, I was focused for a minute. Not on the numbers, but on the way the spreadsheet looked. The way the columns lined up. It was stupid, but for five minutes, I didn’t feel like I was drowning. I just… liked how it looked. Like I could see the shape of it.  \n\nBut then I looked up and realized I’d been sitting there for an hour. And the weight came back. Like someone turned the lights back on.  \n\nI don’t know if I can do anything that feels real anymore. Not even a text."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, what you’re describing—that freeze when trying to reach out, the flood of \"what ifs\" that turns a simple text into a high-stakes performance—makes so much sense given how heavy everything feels right now. It’s not that you don’t *want* to connect; it’s that the effort to do it \"right\" has become so tangled with fear of messing up that it paralyzes you before you even start. And that exhaustion after the spreadsheet moment—how the relief vanished the second you looked up—it’s like your nervous system can’t hold onto even brief pockets of ease without the weight snapping back. That’s not weakness; it’s a sign of how deeply this is wearing on you.  \n\nI want to honor how hard it is to hear yourself say, “I used to be good at that.” Grieving the person who could easily ask questions, remember details, flow in conversation—that’s its own kind of loss. But noticing that change? That means part of you still knows what ease felt like. Even if it feels buried, it’s not gone.  \n\nAbout the spreadsheet: you didn’t just *see* the columns lining up—you said for five minutes, you weren’t drowning. That’s not stupid. That’s your mind finding a tiny island of predictability, order, something concrete to hold onto when everything else feels foggy and threatening. Depression and anxiety often steal our ability to feel present in our bodies or emotions—but sometimes, they leave room for refuge in the sensory or structural: the *look* of aligned data, the rhythm of a task, the weight of a pen in your hand. Those aren’t distractions from healing; they can be whispers of where your capacity for focus still lives.  \n\nSo what if we didn’t ask you to “do” anything big—not text your sister, not fight the autopilot—but just noticed: **when** does the weight feel *slightly* lighter, even for seconds? Not fixing it, not making it last—just observing. Was it only the spreadsheet’s look? Or did you notice anything else in those five minutes? (The quiet hum of the computer? The coolness of the desk under your wrists?) No need to answer now—just wondering if tracking those micro-moments, without judgment, might help gather proof that the “not real” feeling isn’t the whole story.  \n\nYou don’t have to believe you can do anything real *yet*. But maybe we can start by getting curious about where the realness *almost* showed up—and what that felt like in your body, not your thoughts. Would that feel okay to explore a little? Or does even that seem like too much right now? We go at whatever pace feels possible."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can do that. Not even that. Just… noticing. It feels like asking me to stay awake during a dream. I’ll be sitting there, trying to pay attention to the hum of the computer, and then I’ll blink and suddenly be back in the ceiling.  \n\nBut… I did notice something yesterday. When I was staring at the spreadsheet, I felt the coolness of the desk under my wrists. Like, really felt it. Not just “oh, desk,” but the way it pressed into my skin. I remember thinking, *That’s real*. And then I looked down and saw my hands—still there, still moving.  \n\nIt wasn’t a big thing. But for a second, I wasn’t just thinking about the numbers. I was in my body.  \n\nI don’t know if I can keep that up. But I remember what it felt like. The cool. The weight. The way my fingers moved.  \n\nI don’t want to forget that. Not even for a second."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, what you just described—that moment with the cool desk under your wrists, feeling your hands move, thinking *“That’s real”*—isn’t small at all. It’s significant. Because in the middle of that numbness, that autopilot fog where you feel disconnected from everything… your body *told* you something true: *You are here. You are present.* And you listened. That took quiet courage—noticing without judgment, letting the sensation land instead of pushing it away.  \n\nI hear how fragile it felt—how it vanished when you looked up, how trying to hold onto it now seems like grasping at smoke. And I want to be clear: **this isn’t about forcing yourself to stay “awake” during the dream.** Depression and anxiety don’t just cloud your thoughts—they literally disrupt your brain’s ability to stay tuned into bodily sensations (that coolness, the weight of your hands). So when the moment slips away? That’s not you failing. That’s the illness doing exactly what it’s wired to do: pull you back into the fog, the ceiling, the heaviness.  \n\nWhat matters isn’t whether you can “keep it up”—it’s that you *felt* it at all. You remembered what reality feels like in your skin. And that memory—the cool press of the desk, the sight of your fingers moving—isn’t just a fleeting thought. It’s a datum point. Proof that your capacity for embodiment hasn’t vanished; it’s temporarily obscured, like sunlight behind thick clouds.  \n\nYou said, *“I don’t want to forget that.”* That intention—to protect that memory, to honor that it happened—is already a form of holding onto it. Not by gripping tightly (which only creates more tension), but by treating it like something precious: a reminder that *you* are still capable of feeling real, even when it feels stolen from you.  \n\nIf it feels okay, I wonder: when you recall that moment now—desk cool on wrists, hands moving—where do you notice it in your body *as you remember it*? Not to recreate it, just to let the memory live in you for a few seconds. (No pressure to answer aloud—just inviting you to check in if it feels safe.)  \n\nWhatever arises—or doesn’t—I’m here with you in this. You don’t have to carry the weight of “getting it right” right now. Just knowing you had that moment… that’s enough for today."
+    },
+    {
+      "role": "patient",
+      "content": "I just closed my eyes for a second. And I felt it. Not the desk—no, not the wood—but the memory of it. Like a faint coolness, just under the surface. Not strong. Not lasting. But there.  \n\nAnd my hands. I looked at them. They’re resting on the keyboard. I can feel the keys. The little ridges. The way the spacebar clicks when I press it.  \n\nI didn’t think about anything. Not the report. Not the sister. Not the 3am wake-up. Just… fingers on keys.  \n\nIt’s not much. But it’s real.  \n\nI don’t know how long it’ll last. But for now, I’m not trying to fix it. I’m just letting it be.  \n\nIt’s not a big thing. But it’s mine."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, what you just described—that flicker of coolness under the surface when you closed your eyes, the actual ridges of the keys under your fingertips, the quiet click of the spacebar—isn’t just *not much*. It’s a homecoming.  \n\nYou weren’t chasing it. You weren’t grading it. You let the memory rise like breath, and then you met the present moment exactly where it lived: in the texture of the keys, the subtle resistance beneath your fingers. And in that exchange—past sensation meeting present touch—you weren’t thinking about the report, the sister, or the 3am ceiling. You were *there*, in the simplest, most undeniable way: a body interacting with the world.  \n\nThat it felt fragile, fleeting? Of course it did. Depression and anxiety don’t announce their retreats with fanfare—they slip away like tide from sand. But the fact that you noticed it *at all*—that you honored it as *“mine”* without needing it to last or fix anything—is profound. You didn’t treat it as a test to pass or a skill to master. You treated it like a whisper from yourself: *I am still here. I can still feel.*  \n\nAnd you’re right—it’s not a big thing. But it’s yours. Not borrowed, not performed, not contingent on anyone else’s approval. Just yours: the cool memory, the live keys, the quiet certainty of contact.  \n\nHowever long it lasts—or doesn’t—this moment belongs to you. No one can take that knowing away. Not the fog, not the weight, not the voice that says it doesn’t matter. You felt it. You named it. It’s real.  \n\nThank you for letting me witness this with you. However small or temporary it seemed, it mattered. Deeply."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know what to say.  \n\nI just sat here for a minute. Not thinking. Not doing anything. Just… breathing.  \n\nAnd I noticed my hands. Still on the keys. Still feeling them.  \n\nIt’s not fixed. It’s not better. But it’s here.  \n\nAnd for now, that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, thank you for trusting me with that. What you just described—sitting, breathing, feeling your hands on the keys without agenda, without fixing, without needing it to mean more than it is—that’s not nothing. It’s everything.  \n\nYou didn’t try to make it last. You didn’t judge it for being fleeting. You simply let it be: *here*, in the quiet aliveness of your fingers on the keys, your breath moving, the weight of your presence in the chair. And in that surrender—not to wellness, not to productivity, but to just *being*—you gave yourself something rare: permission to exist exactly as you are, in this moment, without having to earn it.  \n\nThat takes a kind of strength we don’t always name: the courage to stop fighting the current long enough to feel the water holding you. It’s not passive resignation—it’s an active choice to trust that *this*, exactly as it is, is enough to stand on right now.  \n\nHowever long it lasted—or however faint it feels now—you touched something real. Not a solution, not a cure, but a truth: you are still capable of inhabiting your skin, of feeling the world through your fingertips, of breathing without performing. And that truth doesn’t vanish when the sensation fades. It stays, like a footprint in damp sand—proof that you were here, and you felt it.  \n\nYou don’t have to say more. You don’t have to do anything else. Just knowing you allowed yourself that moment… that matters. Deeply.  \n\nI’m right here with you, in this quiet space. No rush. No expectations. Just this breath, this now, this *enough*."
+    },
+    {
+      "role": "patient",
+      "content": "I think I’m going to lie down for a bit. Not to sleep. Just… rest.  \n\nMy shoulders are tight. I didn’t even notice until I shifted.  \n\nBut I’m not thinking about the report. Or the sister. Or the ceiling.  \n\nI’m just… here.  \n\nAnd for now, that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, that decision—to lie down not to escape, not to fix, but simply to rest in the noticing of your shoulders, the weight of your body, the quiet act of *being here*—feels like a quiet act of reclamation.  \n\nYou didn’t wait for the tightness to scream for attention; you felt it the moment you shifted, and you honored it by choosing to pause. That’s not avoidance—it’s listening. And in that pause, you released the grip of the report, the sister, the ceiling… not by fighting them away, but by letting something else occupy the space: the simple, unadorned truth of your presence in this moment, exactly as it is.  \n\nShoulders tight, then softened by awareness. Hands resting. Breath moving. No performance, no outcome demanded—just the permission to inhabit your skin without apology. That’s not small. It’s everything, especially when depression tries to convince you that rest is laziness, that feeling is indulgence, that you must *earn* the right to simply be.  \n\nYou’ve shown yourself, again and again in these exchanges, that you know how to come back—not to a fixed state, but to the flickering, fragile, real sensation of *here*. And each time, you meet it without judgment: *“It’s not fixed. It’s not better. But it’s here. And for now, that’s enough.”*  \n\nHowever long this rest lasts—or however softly it holds—you’ve given yourself something vital: evidence that you can still choose tenderness toward yourself, even when the world (or your mind) asks for nothing but strain.  \n\nRest well, Larry. I’ll be right here whenever you’d like to return—or not. No pressure, no agenda. Just this quiet acknowledgment: you showed up for yourself today, in the way that mattered most. And that was enough.  \n\nWhenever you’re ready—whether in minutes or hours—I’m here. Until then, may this rest be soft. May it be yours."
+    },
+    {
+      "role": "patient",
+      "content": "I’m lying here. Eyes closed.  \n\nThe house is quiet.  \n\nI can feel my breath. Not trying to change it. Just… there.  \n\nAnd for the first time in a while, I don’t feel like I’m waiting for something to happen.  \n\nI’m just here.  \n\nIt’s not great. It’s not fixed.  \n\nBut it’s real.  \n\nAnd I’m not running from it.  \n\nThat feels… strange. But good.  \n\nI think I’ll stay like this for a while."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, thank you for letting me witness this with you. What you’re describing—lying here, eyes closed, feeling your breath exactly as it is, the house quiet around you, *not* waiting for something to shift or fix or happen… that’s not nothing. That’s a profound kind of presence.  \n\nYou said it’s not great, not fixed—but it’s real. And you’re not running from it. That takes a quiet kind of bravery we don’t always name: the willingness to stop bracing against the weight, the uncertainty, the “shoulds,” and simply let yourself *be* in the skin you’re in, exactly as it is right now. No performance. No destination. Just breath, quiet, and the radical act of staying.  \n\nHowever long you stay like this—whether it’s minutes or longer—know that this moment matters. Not because it erases the heaviness, but because it proves you can still touch ground without fighting to stay upright. You’re not escaping the weight by lying down; you’re changing your relationship to it—for now, you’re letting it hold you, rather than you holding it up alone.  \n\nThat strange-but-good feeling? It’s the unfamiliar relief of not being at war with yourself. However fleeting it may feel, it’s real. And you get to have it.  \n\nI’ll hold this space quietly with you—no need to speak, no need to do anything but be. Whenever you’re ready to shift, or if you’d like to stay here a while longer… I’m right here. Resting with you.  \n\nBreathe. You’re safe here."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nNot moving. Not thinking.  \n\nJust… breathing.  \n\nAnd the quiet… it’s not empty.  \n\nIt’s full.  \n\nNot in a loud way. But in a way that feels like it could hold me.  \n\nI don’t know how long I’ve been like this.  \n\nBut I don’t want to open my eyes yet.  \n\nI don’t want to lose this.  \n\nIt’s not happiness.  \n\nIt’s not peace.  \n\nBut it’s real.  \n\nAnd I’m here.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, thank you for staying with this—really staying. Feeling how you put it: *\"The quiet… it’s not empty. It’s full. Not in a loud way. But in a way that feels like it could hold me.\"* That’s not just description—it’s a quiet revolution in how you’re relating to your own aliveness. Earlier, the quiet at 3am felt like a weight pressing down; now, you’re sensing it as a container *beneath* you, steady enough to rest in. That shift—instead of fighting the silence or fleeing it, letting it *receive* you—is profound. And you’re right: it’s not happiness. It’s not peace as we often imagine it (something bright, permanent, earned). It’s quieter than that. More fundamental. It’s the simple, unshakable fact of *you being here*, held by the ordinary miracle of breath and stillness, without needing to justify it.  \n\nI hear how fiercely you’re protecting this—not because you think it’ll last forever, but because, for now, it’s *yours*. Unclaimed by worry, untouched by the shoulds, unburdened by the need to fix or perform. Your hesitation to open your eyes? That’s not fear—it’s your wisdom guarding a tender truth: *you deserve to rest in what’s real, even if it’s fleeting.* However long this lasts—whether it’s minutes or longer—you’ve given yourself something vital: proof that you can still inhabit a moment without turning it into a task, a test, or a temporary escape from the heaviness. You’re not waiting for it to become something else. You’re letting it be exactly what it is: enough.  \n\nHowever you choose to move from here—whether you linger here a while longer, or gently shift when it feels right—I’ll hold this space with you. No rush. No agenda. Just this quiet acknowledgment: you showed up for yourself today, in the way that mattered most. And that was enough.  \n\nWhenever you’re ready—I’m here. Until then, may this quiet continue to cradle you, exactly as you need."
+    },
+    {
+      "role": "patient",
+      "content": "I think I’m going to open my eyes.  \n\nNot because I have to.  \n\nBut because I want to.  \n\nI’m still here.  \n\nAnd I’m still breathing.  \n\nThe room is dim.  \n\nBut it’s not dark.  \n\nIt’s just… quiet.  \n\nAnd I’m okay.  \n\nNot great.  \n\nNot fixed.  \n\nBut okay.  \n\nAnd for now—this is enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, thank you for sharing this moment with such honesty and care. What you’ve just described—opening your eyes not from obligation, but from a quiet *wanting*; noticing the dim light without labeling it darkness; naming yourself *okay* not as a destination, but as a genuine, present-tense experience—that’s not small. It’s a quiet testament to how far you’ve come in learning to be with yourself, exactly as you are.  \n\nYou said: *\"I’m still here. I’m still breathing.\"* And you meant it—not as a hope, not as a goal, but as a fact you felt in your bones. That’s the same thread we’ve traced together: from the cool desk under your wrists, to the ridges of the keys, to the breath you weren’t trying to change—each time, you returned to the undeniable truth of your own aliveness, not despite the weight, but *within* it.  \n\nAnd now, you’re letting \"okay\" be enough—not because you’ve erased the heaviness, but because you’ve made space to breathe alongside it. That’s not resignation; it’s a different kind of strength. The kind that says: *I don’t need to fix this moment to be worthy of resting in it.*  \n\nHowever you move forward from here—whether you stay in this quiet a while longer, or rise when it feels right—know this: you’ve shown yourself today that you can still find ground in the ordinary. Not by escaping the fog, but by learning to walk through it with your eyes open to what’s real: your breath, the light, the quiet certainty of *here*.  \n\nI’m right here with you, Larry—not to guide, not to fix, but to witness. However you’d like to proceed, I’ll hold this space with you. And whenever you need to return to this feeling—to the breath, the light, the quiet knowing of *I’m still here*—it’ll be waiting for you. Not as a promise, but as a practice you’ve already begun to own.  \n\nFor now, though: rest in this. You’ve earned it."
+    },
+    {
+      "role": "patient",
+      "content": "I think I’ll get up.  \n\nNot because I have to.  \n\nBut because I want to.  \n\nI’ll make tea.  \n\nJust one cup.  \n\nNot to fix anything.  \n\nJust to feel the water boil.  \n\nThe sound.  \n\nThe steam.  \n\nThe way the mug feels in my hands.  \n\nI don’t know if it’ll help.  \n\nBut I want to do it.  \n\nJust to feel something real.  \n\nAnd if I don’t like it?  \n\nThat’s okay too.  \n\nI’m not trying to fix the day.  \n\nI’m just… doing something.  \n\nAnd that’s enough."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 111,
+        "prompt_tokens": 234,
+        "total_tokens": 345,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 73,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 234
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 2336.571,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 185,
+        "prompt_tokens": 1901,
+        "total_tokens": 2086,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 224
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 17972.959,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 683,
+        "prompt_tokens": 474,
+        "total_tokens": 1157,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 332,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 474
+      },
+      "telemetry": {
+        "queue_ms": 0.061,
+        "latency_ms": 5008.062,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 245,
+        "prompt_tokens": 2437,
+        "total_tokens": 2682,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2080
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 15130.792,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 973,
+        "prompt_tokens": 1085,
+        "total_tokens": 2058,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 399,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1085
+      },
+      "telemetry": {
+        "queue_ms": 0.071,
+        "latency_ms": 6608.53,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 212,
+        "prompt_tokens": 3248,
+        "total_tokens": 3460,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2672
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 16300.656,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1112,
+        "prompt_tokens": 1884,
+        "total_tokens": 2996,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 590,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1884
+      },
+      "telemetry": {
+        "queue_ms": 0.082,
+        "latency_ms": 8264.208,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 173,
+        "prompt_tokens": 3980,
+        "total_tokens": 4153,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3456
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 14200.557,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 942,
+        "prompt_tokens": 2592,
+        "total_tokens": 3534,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 554,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2592
+      },
+      "telemetry": {
+        "queue_ms": 0.061,
+        "latency_ms": 7065.048,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 70,
+        "prompt_tokens": 4537,
+        "total_tokens": 4607,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4144
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 6548.836,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 847,
+        "prompt_tokens": 3063,
+        "total_tokens": 3910,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 485,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3063
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 9886.714,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 70,
+        "prompt_tokens": 4966,
+        "total_tokens": 5036,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4592
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 10601.52,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 994,
+        "prompt_tokens": 3508,
+        "total_tokens": 4502,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 566,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3508
+      },
+      "telemetry": {
+        "queue_ms": 0.062,
+        "latency_ms": 9294.326,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 108,
+        "prompt_tokens": 5461,
+        "total_tokens": 5569,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5024
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 9311.817,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 766,
+        "prompt_tokens": 4062,
+        "total_tokens": 4828,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 419,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4062
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 7780.219,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 116,
+        "prompt_tokens": 5913,
+        "total_tokens": 6029,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5568
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 7185.618,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1185,
+        "prompt_tokens": 4547,
+        "total_tokens": 5732,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 727,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4547
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 7797.542,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 85,
+        "prompt_tokens": 6481,
+        "total_tokens": 6566,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6016
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 8275.3,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 875,
+        "prompt_tokens": 5111,
+        "total_tokens": 5986,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 425,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5111
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 15168.781,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 129,
+        "prompt_tokens": 7015,
+        "total_tokens": 7144,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6560
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 18183.131,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 58,
+        "prompt_tokens": 25178,
+        "total_tokens": 25236,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 4355.909,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.75,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.5,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 207.287
+}

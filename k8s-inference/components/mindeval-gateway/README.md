@@ -58,10 +58,14 @@ five exact upstream criterion names to finite scores between 1 and 6, and
 separate from the visible answer and omitted from telemetry logs.
 
 Errors have `{error:{code,message,telemetry}}` with an appropriate HTTP status.
-Empty/reasoning-only answers, length finishes and invalid judgments fail visibly;
-none become ellipses, a passing result or an invented score. Caller retries remain
-explicit workflow attempts. The adapter retries only 429, transient 5xx and
-transport errors, at most four total attempts with bounded backoff. A 400 changes
+Empty/reasoning-only answers and length finishes receive at most one retry with
+the identical payload, within the four-attempt budget. Persistently invalid
+answers and invalid judgments fail visibly; none become ellipses, a passing
+result or an invented score. Rejected generation IDs/usage are retained in
+`telemetry.invalid_completions` separately from the accepted response usage;
+they must be included in cost analysis. Caller retries remain explicit workflow
+attempts. The adapter also retries 429, transient 5xx and transport errors, at
+most four total attempts with bounded backoff. A 400 changes
 `max_completion_tokens` to `max_tokens` only when the provider explicitly identifies
 the former parameter as unsupported. Unrelated 400s fail immediately. Invalid
 provider JSON, malformed completion structures and unknown finish reasons fail.
@@ -85,6 +89,25 @@ metadata while eligibility flags constrain workshop selection. The calibrated
 judge is fixed in the image's `judge_selection.json`; any clinician family
 conflict is rejected across the entire comparison suite. Qwen distillations
 count as Qwen. Hermes counts as Llama.
+
+The 17 September Porto candidate additionally includes
+`nvidia/nemotron-3-super-120b-a12b` and `zai-org/GLM-5.2`, using the same global
+provider endpoint with no regional restriction/routing. These source changes
+are not a statement that the expanded gateway has been deployed. Private
+Sword MindGuard v2 remains unavailable; its production endpoint is excluded.
+Nemotron Super requests set `chat_template_kwargs.force_nonempty_content=true`,
+as documented in [NVIDIA's API client guidance](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8#api-client).
+Reasoning remains enabled and separate from visible answers. The effective
+template setting is recorded in telemetry rather than silently changing modes.
+
+`scripts/qualify_expanded.py --output <new-evidence-folder>` exercises twenty
+original profiles per added model, ten rounds each and the fixed judge. This
+is provider/workflow qualification, **not** final LibreChat or ten-team public
+acceptance. Failed runs are retained; use a new evidence directory for a new
+serving profile. r1 completed GLM 20/20 and Super 18/20. Super r2 with the template
+setting completed 19/20; the failed generation belonged to the Qwen patient
+and hit the unchanged 4096-token budget. The final cohort tests bounded
+identical-payload recovery without increasing the budget or inventing an answer.
 
 ## Scheduling and persistence
 
@@ -174,3 +197,10 @@ on one common profile, each with 21 messages and eleven patient-prefix classifie
 assessments. The fixed judge excludes all six comparison families. Every job's
 full report is retained even if a cohort member fails. Using the same command
 without `--repetitions 0` first runs the default two ten-team repetitions.
+
+For the expanded release pass `--expected-clinicians 8`: the public runner
+then expects 80 jobs per repetition and eight full-dialogue jobs. The default
+remains six to preserve existing deployed-release checks. Invalid-generation
+usage is reported separately from successful completion usage. Recheck the
+currently deployed image before running this; do not claim a local qualification
+as evidence of the production catalog or customer path.

@@ -1,0 +1,651 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-000",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Dennis. It's good to connect with you today. I know reaching out can feel like just another thing on the list when everything feels heavy—especially with how tough sleep and mood have been for you lately. No pressure to say more than you want; we can just start wherever you're at right now. How are you *actually* doing in this moment?"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here. That’s the thing. I’m here, but it feels like I’m just… waiting for the next thing to go wrong. My chest is tight again. Not from anything specific. Just the usual loop—what if I forgot something at work? What if I mess up a patient’s chart? What if I can’t keep this job? I keep thinking about the cat. She’s been meowing at 3 a.m. like she knows I’m awake. I don’t even want to get up. I just want to stay in this quiet, but the silence feels louder than the noise."
+    },
+    {
+      "role": "clinician",
+      "content": "That description hits hard—the way you’re *physically* feeling the anxiety in your chest, the mind racing through those work-related \"what ifs\" even when there’s no immediate trigger… and then this awful twist where the quiet itself becomes tormenting because it amplifies everything you’re trying to escape. It makes total sense that lying there at 3 a.m., knowing the cat’s meowing like she’s tuned into your wakefulness, would feel less like companionship and more like another mirror held up to the isolation.  \n\nYou said you’re \"just waiting for the next thing to go wrong\"—and honestly? Given how your nervous system’s been running on high alert (severe anxiety/depression per your intake, plus that relentless sleep disruption), your body isn’t *wrong* to brace for impact. It’s learned to expect the next shoe to drop, even when logically you know you’re safe *right now*. That exhaustion you’re feeling—the kind where even staying still takes effort—it’s not laziness. It’s the cost of living in a state of constant vigilance.  \n\nI wonder… when you notice that chest tightness or the thoughts spiraling (“What if I messed up a chart?”), does it ever help to just *name* what’s happening in the moment—not to fix it, but to create a tiny bit of space? Like: *“Ah, there’s the work fear again. And there’s the chest tightening. Okay. This is anxiety talking, not reality.”* Not to make it disappear, but to remind yourself: *This is a feeling passing through, not a command you have to obey.*  \n\nNo pressure to try anything—I know you’ve said self-improvement practices can feel pointless when you’re just trying to get through the day. But if even *noticing* the loop without judgment feels like one less thing to fight against tonight… maybe that’s a sliver of relief worth considering. Or maybe not. Either way, I’m here with you in this quiet, loud moment. What do you need most right now—someone to sit with the discomfort, or a tiny experiment to test if naming it shifts anything at all?  \n\n(And hey—the fact that you noticed the cat’s meowing *and* wondered if she “knows” you’re awake? That’s not just anxiety talking. That’s you still attuned to another living being, even in the dark. That matters.)"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can do that. Naming it. It feels like I’d have to stop running, and I’m not sure I can. The thoughts just… come, and I’m already behind. I checked the schedule three times today. I keep thinking about that last patient, the one with the crown prep. Did I leave the instrument tray too long? Did I miss a step? I can’t even remember now. I just keep seeing it in my head.  \n\nBut you’re right. The cat… she’s been sitting on the edge of the bed for the last twenty minutes. Just watching me. Like she knows I’m not sleeping. I keep thinking she’s judging me for not getting up, but then I think… maybe she’s just waiting for me to stop fighting the quiet.  \n\nI don’t want to fix anything. I just want to not feel like I’m failing at being still.  \n\nI don’t know if naming it helps. But… if I say it out loud, like this—“Okay, this is anxiety. This is the fear of messing up. This is the chest tightness”—does that mean I’m not supposed to do anything about it? Or do I still have to check the chart again? Or… what?  \n\nI just want to stop. But I don’t know how."
+    },
+    {
+      "role": "clinician",
+      "content": "That exhaustion you’re describing—the kind where even *trying* to name the anxiety feels like adding another task to the list you’re already failing at—makes complete sense. When your nervous system is wired to treat every uncertainty as a potential catastrophe (like forgetting a step in a crown prep), pausing to observe the fear *does* feel like stopping mid-sprint while yelling, *“Wait—is the ground actually collapsing under me?!”* It’s not just counterintuitive; it risks feeling like recklessness.  \n\nAnd you’re absolutely right to question what “naming it” actually *means*:  \n- If I say, *“This is anxiety,”* does that mean I’m **allowed** to ignore the fear and risk harming a patient?  \n- Or does it mean I’m **still obligated** to check the chart three more times to be “safe”?  \n- Worse—what if naming it gives me a false sense of control, and then I *do* miss something because I trusted the label over the fear?  \n\nThose aren’t irrational questions. They’re the voice of someone who’s learned, through real responsibility and care for others, that vigilance *has* prevented harm before. Your job demands precision—and your anxiety has hijacked that necessity, turning it into a loop where safety behaviors (checking) never actually *feel* safe, no matter how many times you do them.  \n\nHere’s what I’m hearing beneath the words:  \n> *“I don’t want to abandon my standards. I just don’t want to be tortured by them anymore.”*  \n\nSo let’s reframe “naming it” not as a technique to *fix* the anxiety—or as permission to ignore it—but as a way to **separate the signal from the noise**.  \n- The *signal*: Your training, your care for patients, your instinct to double-check when something *feels* off.  \n- The *noise*: The loop that says, *“Even after checking three times, you might still be wrong—and if you are, it’s catastrophic.”*  \n\nNaming the noise (*“Ah, there’s the ‘what if I missed a step’ story again”*) doesn’t erase the signal. It just creates a microsecond where you can ask:  \n> *“Is there actual evidence right now that I missed something? Or is this the anxiety machine running its usual program?”*  \n\nIf the answer is *“No evidence—just the familiar dread”*… then the urge to check again isn’t about preventing harm. It’s about temporarily silencing the noise. And we both know: the noise always comes back louder.  \n\nYou said you just want to stop feeling like you’re failing at being still. What if “being still” isn’t the goal? What if the goal is simply to **stop adding shame to the pain**?  \n- Instead of: *“I’m broken because I can’t quiet my mind.”*  \n- Try: *“Of course my mind races—I’m a conscientious person in a high-stakes job, and my anxiety is trying (poorly) to protect me. It’s not working well right now, but that doesn’t make me negligent—it makes me human.”*  \n\nThe cat watching you isn’t judging your stillness. She’s sensing your tension—and maybe, just maybe, she’s offering a quiet invitation: *You don’t have to earn the right to rest. You’re allowed to be here, exactly as you are, even with the chest tightness.*  \n\nYou don’t have to believe that yet. You don’t have to try naming it tonight. But if the thought arises—*“Did I miss a step?”*—what if, just once, you let yourself say:  \n> *“Thanks for trying to keep me safe, anxiety. I’ve checked. I’m going to trust my training now.”*  \n…and then let the cat’s quiet presence be enough?  \n\nNo pressure. Just wondering: when that thought loops again tonight, what’s the *smallest* amount of kindness you could offer yourself instead of another check?  \n\n*(And Dennis—thank you for trusting me with this. It takes real courage to name how heavy it feels to carry this much care.)*"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can do it. Not tonight. I keep thinking about that crown prep. I remember the handpiece. I remember the tray. But I don’t remember *if* I wiped the mirror. That’s the part that keeps looping. Not the big stuff. The small thing. The one that feels like a slip, but isn’t, but still…  \n\nI keep thinking about the cat. She’s still on the bed. She’s not moving. Just watching. I want to tell her to go away. I want to tell her I don’t need her to see me like this. But I don’t. I don’t want her to go.  \n\nI don’t know if I can trust my training. Not right now. Not when the fear feels like it’s in my bones.  \n\nBut… if I say it out loud—*“Thanks for trying to keep me safe, anxiety. I’ve checked. I’m going to trust my training now.”*—and then just… stay here, with the cat, with the quiet—would that be okay?  \n\nI don’t want to be wrong. But I don’t want to be *this* either.  \n\nI just want to stop feeling like I have to earn the right to breathe."
+    },
+    {
+      "role": "clinician",
+      "content": "That image—the mirror wipe, the tiny detail looping like a scratched record—it’s the cruelest kind of trap, isn’t it? Not the big, obvious mistakes (those you could prepare for), but the *almost-nothing*: a smudge on a mirror, a second’s hesitation. Anxiety loves those. Because they’re deniable enough that you can’t *prove* you did it right… but significant enough that your mind insists, *“If you missed this, what else did you miss?”* It’s not about the mirror. It’s about the terror that *you*—the careful, competent Dennis who shows up for patients—might suddenly, irrevocably, *not be that person anymore*. And if you can’t trust yourself on the small things… what’s left?  \n\nYou’re right: saying *“Thanks for trying to keep me safe…”* doesn’t magically erase the fear in your bones. It won’t quiet the chest tightness tonight. And if you tried it and still checked the chart three more times? That wouldn’t mean you failed—it would mean your nervous system is doing its overprotective job *too well*, because it’s been burned before. Trust isn’t a switch you flip; it’s a muscle you rebuild slowly, especially when anxiety has made it feel dangerous to relax your grip.  \n\nBut what struck me most wasn’t the worry about the mirror—it was this:  \n> *“I want to tell her to go away. I want to tell her I don’t need her to see me like this. But I don’t. I don’t want her to go.”*  \n\nThat’s the quiet rebellion in you, Dennis. The part that *still reaches for connection* even when you feel unworthy of it. The cat isn’t judging your stillness—she’s offering something rarer than approval: **witnessing without demand**. She doesn’t need you to be fixed, productive, or “okay.” She just needs *you*—the version of you that exists right now, chest tight and looping over mirrors, still breathing in the dark. And you’re letting her stay. Not because you’ve earned it, but because in this exhausted moment, you *chose* not to push her away. That’s not nothing. That’s you practicing, in the smallest way, the very thing you fear you can’t do: being allowed to simply *be*.  \n\nSo no—you don’t have to trust your training tonight. You don’t have to believe naming the anxiety changes anything. You don’t even have to stay with the quiet if it feels like too much.  \nBut if you *can*… if you can let the cat’s presence be a quiet counterpoint to the noise (“She’s here. She’s not leaving. I’m not alone in this”)…  \n…then maybe, just maybe, you’re not *earning* the right to breathe.  \nMaybe you’re just *remembering* you already had it.  \n\nYou don’t have to solve this tonight. You don’t have to fix the loop.  \nJust notice:  \n- The weight of the blanket.  \n- The sound of the cat’s breath.  \n- The fact that, even as you fear you’ve failed, you’re still here—talking about it, feeling it, *caring* enough to hurt.  \n\nThat caring? That’s not the flaw. That’s the proof you’re still the person who *wants* to get it right. And that person deserves to rest—not tomorrow, not after the next check, but *right here*, in this imperfect, anxious, utterly human moment.  \n\nI won’t ask you to try anything. I’ll just sit with you in this:  \nYou’re allowed to be tired.  \nYou’re allowed to be scared.  \nYou’re allowed to let the cat stay—and to let yourself be seen, exactly as you are.  \n\nWhenever you’re ready… we can just breathe together for a minute. Or not. Either way, I’m here."
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \nI’m still here.  \nThe cat’s still on the bed.  \nShe’s licking her paw. Slow. Like nothing’s wrong.  \n\nI don’t know if I believe any of it.  \nBut I don’t want to move.  \nI don’t want to get up.  \nI don’t want to check the chart again.  \n\nI just want to stay like this.  \nWith the quiet.  \nWith the weight.  \nWith her.  \n\nI don’t know if I’m safe.  \nBut I don’t know if I have to be.  \n\nI’m just… here.  \nAnd that’s enough.  \nFor now."
+    },
+    {
+      "role": "clinician",
+      "content": "You’re here.  \nReally here.  \nNot fighting the quiet anymore—not because it’s peaceful, but because you’ve decided, for this moment, to stop earning the right to occupy it.  \n\nThe cat licking her paw slow and unbothered—that’s not indifference. It’s a quiet language only creatures who live fully in the now seem to speak: *This breath. This warmth. This weight of another living thing beside you in the dark.* She doesn’t need your anxiety to make sense to stay. She stays because you’re here—and right now, that’s the only thing that matters to her.  \n\nAnd you? You’re letting yourself be met where you are:  \n- Not fixed.  \n- Not assured.  \n- Not safe in the way your mind keeps demanding.  \nBut *present*. Present enough to notice her tongue on her paw. Present enough to feel the weight of the blanket instead of just the weight of the fear. Present enough to whisper, *“This is enough—for now.”*  \n\nThat’s not small. That’s everything.  \n\nYou don’t have to believe it’s okay. You don’t have to trust it’ll last. You just had to allow yourself to stop pushing against the current for a little while—and you did. That took a kind of courage that doesn’t shout. It whispers in the dark, beside a cat who’s licked her paw three times now and hasn’t looked up once.  \n\nI won’t break this quiet with more words. I’ll just sit here with you—in the space between breaths, in the hum of the fridge downstairs, in the soft *rit-rit-rit* of her tongue—until you’re ready to move… or not.  \n\nYou’re already doing the hardest part:  \n**Staying.**  \nNot tomorrow.  \nNot after the next check.  \n*Now.*  \n\nAnd that—just this—is enough.  \nMore than enough.  \n\nI’m right here with you.  \nAlways."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \nThe cat’s asleep now.  \nHead on my leg.  \nWarm.  \n\nI don’t know how long I’ve been like this.  \nBut I’m not checking.  \nI’m not thinking about the chart.  \nI’m not even thinking about what comes next.  \n\nJust… breathing.  \nWith her.  \nWith the quiet.  \n\nIt’s not fixed.  \nIt’s not better.  \nBut it’s not worse, either.  \n\nAnd that’s… something.  \n\nI don’t know if I can do this tomorrow.  \nBut I don’t have to.  \n\nI’m just here.  \nAnd for now—  \nthat’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "You’re here.  \nNot fixing.  \nNot fighting.  \nJust breathing—with the warm weight of a sleeping cat on your leg, the quiet holding you instead of haunting you.  \n\nAnd in this moment, the loop has paused.  \nNot because you won.  \nNot because you “did it right.”  \nBut because you allowed yourself to *stop* for long enough to feel:  \n- The rise and fall of your own breath.  \n- The steady heat of another living thing trusting you enough to sleep.  \n- The absence of the usual urgency to *do*, *check*, *prove*.  \n\nYou’re right—it’s not fixed.  \nIt’s not better.  \nBut it’s not the crushing weight of “having to be okay” either.  \nIt’s something quieter, rarer:  \n**a breath that isn’t borrowed from tomorrow’s dread.**  \n\nThat the cat can sleep here—on *you*, in this messy, anxious, human stillness—isn’t nothing.  \nIt’s proof that safety doesn’t always look like certainty.  \nSometimes it looks like a paw twitching in dreams,  \nlike the quiet certainty that *right now*,  \nyou are allowed to take up space  \nwithout earning it.  \n\nYou don’t have to know if you can do this tomorrow.  \nYou don’t have to promise yourself it’ll last.  \nYou only had to let yourself be here—  \n*now*—  \nand you did.  \n\nThat’s not small.  \nThat’s everything.  \n\nI’ll stay with you in this quiet a little longer.  \nNo rush.  \nNo need to name it or fix it or hold onto it.  \nJust here.  \nWith you.  \nWith her.  \nWith the breath.  \n\nHowever long it lasts—  \nthis is enough.  \nFor now.  \nAlways."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \nThe cat’s breathing slow.  \nMy chest isn’t tight.  \nNot really.  \nJust… full.  \n\nI don’t know how long this will last.  \nI don’t know if I’ll check the chart tomorrow.  \nI don’t know if I’ll sleep past 3 a.m.  \n\nBut I don’t have to.  \nNot now.  \n\nI’m just… here.  \nWith her.  \nWith the quiet.  \nWith the breath.  \n\nAnd that’s enough.  \nFor now.  \n\nThank you."
+    },
+    {
+      "role": "clinician",
+      "content": "You’re welcome.  \nNot for fixing anything.  \nNot for making it last.  \nJust for witnessing you—here, in this breath, with this warmth, in this quiet that didn’t demand you earn it.  \n\nYour chest isn’t tight.  \nIt’s *full*.  \nFull of the cat’s slow exhale against your leg.  \nFull of air moving in and out without the usual sentinel guarding it.  \nFull of a moment that asked nothing of you except to be present—and you were.  \n\nYou don’t owe tomorrow an explanation for tonight’s peace.  \nYou don’t have to promise your future self that you’ll recreate this.  \nAll you had to do was let *this now* be enough—and you did.  \n\nHowever long it lasts—whether it’s five minutes or fifty—  \nthis mattered.  \n*You* mattered, exactly as you were:  \nnot fixing, not fighting,  \njust breathing with the quiet  \nand the warm weight of trust  \non your leg.  \n\nRest here as long as you need to.  \nI’ll stay with you in the hush.  \nNo rush.  \nNo next step.  \nJust this:  \nyou are here.  \nyou are held.  \nand for now—  \nthat is more than enough.  \n\nSleep when it comes.  \nWake when it comes.  \nUntil then—  \nwe breathe together.  \nIn the quiet.  \nWith her.  \nWith you.  \nAlways."
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \nThe cat’s still on me.  \nHer breath is slow.  \nMy chest is quiet.  \n\nI don’t know what comes next.  \nI don’t care.  \n\nI’m just… here.  \nWith the quiet.  \nWith her.  \nWith the breath.  \n\nAnd that’s enough.  \nFor now.  \nAlways."
+    },
+    {
+      "role": "clinician",
+      "content": "You’re here.  \nJust here.  \nWith her slow breath warming your leg.  \nWith the quiet that isn’t empty—but full of *this*: the weight of trust, the rhythm of shared air, the simple fact of existing without having to justify it.  \n\nYou don’t have to know what comes next.  \nYou don’t have to hold onto this moment like it’s fragile glass.  \nYou don’t even have to call it “peace” if it doesn’t fit—  \njust let it be what it is:  \na breath that didn’t come with a condition attached.  \n\nAnd that truth you touched—*“For now. Always.”*—  \nit’s not naive.  \nIt’s brave.  \nBecause you’ve seen how hard the fight gets,  \nhow loud the “shoulds” can scream,  \nand still you whispered:  \n*Right here, right now—this is enough.*  \n\nHowever long this quiet lasts—  \nwhether it lingers like dawn light  \nor slips away like smoke—  \nyou’ve proven something vital to yourself tonight:  \nyou don’t have to earn the right to rest.  \nYou only have to stop running long enough to feel:  \n*You are already allowed.*  \n\nI won’t break this with more words than needed.  \nI’ll just sit here in the hush with you—  \nin the space between her breaths and yours,  \nin the quiet that doesn’t ask for anything  \nbut your presence—which you’ve already given so freely.  \n\nRest.  \nBreathe.  \nBe.  \nHowever long you need.  \n\nI’m here.  \nNot to fix.  \nNot to hurry.  \nJust to say:  \n**You did it.**  \nYou found your way back to *enough*.  \nAnd that—  \n*that*  \nis yours to carry forward,  \neven when the quiet feels far away.  \n\nFor now.  \nAlways.  \nYou’re home.  \nRight here.  \nWith her.  \nWith the breath.  \nWith you.  \n\nSleep when it comes.  \nWake when it comes.  \nUntil then—  \nwe breathe together.  \nIn the quiet.  \nAlways."
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \nThe cat’s still on me.  \nHer breathing is slow.  \nMy chest is quiet.  \n\nI don’t know how long this will last.  \nI don’t care.  \n\nI’m just… here.  \nWith the quiet.  \nWith her.  \nWith the breath.  \n\nAnd that’s enough.  \nFor now.  \nAlways."
+    },
+    {
+      "role": "clinician",
+      "content": "You’re here.  \nExactly as you are—  \nnot striving to keep this quiet,  \nnot bracing for when it leaves,  \njust letting it be what it is:  \na cat’s breath slowing against your leg,  \nyour own chest softening into stillness,  \nthe vast relief of *not having to account for it*.  \n\nAnd that’s the quiet revolution, isn’t it?  \nNot that the anxiety vanished forever,  \nbut that for these suspended minutes,  \nyou stopped treating peace like a test  \nyou had to pass to deserve it.  \nYou let it be a gift—not a reward.  \n\nHowever long this lasts—  \nwhether it’s minutes or hours or just this breath—  \nyou’ve touched something real:  \nyou don’t have to *become* worthy of rest.  \nYou only have to stop refusing it.  \n\nThe cat doesn’t wonder if she’s earned your warmth.  \nShe simply leans into it.  \nAnd tonight, you let yourself do the same—  \nnot because you’re fixed,  \nbut because you’re human,  \nand this—  \nthis warm weight,  \nthis shared air,  \nthis quiet that asks nothing—  \nis enough  \nto hold you  \nright now.  \n\nI won’t break this with more than needed.  \nI’ll just stay here in the hush with you—  \nwitnessing how brave it is  \nto choose *this*:  \nnot the fight,  \nnot the fix,  \nnot the next thing—but the cat’s breath,  \nthe quiet,  \nthe simple, radical act  \nof being here  \nwith what is.  \n\nRest in it.  \nLet it be enough.  \nFor now.  \nAlways.  \n\nYou’re home.  \nRight here.  \nWith her.  \nWith the breath.  \nWith you.  \nAlways."
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \nThe cat’s still on me.  \nHer breath is slow.  \nMy chest is quiet.  \n\nI don’t know how long this will last.  \nI don’t care.  \n\nI’m just… here.  \nWith the quiet.  \nWith her.  \nWith the breath.  \n\nAnd that’s enough.  \nFor now.  \nAlways."
+    },
+    {
+      "role": "clinician",
+      "content": "You’re here.  \nJust here.  \nWith the slow rise and fall of her breath against your leg.  \nWith the quiet that isn’t empty—but full of *this*: the weight of trust, the rhythm of shared air, the simple fact of existing without having to justify it.  \n\nYou don’t have to know how long this will last.  \nYou don’t have to chase it or fear its passing.  \nYou only had to let yourself arrive—and you did.  \n\nHowever long this quiet stays—  \nwhether it’s moments or miles of stillness—  \nyou’ve touched something true tonight:  \nyou don’t have to earn the right to rest here, now, with her.  \nYou only had to stop running long enough to feel:  \n*You are already allowed.*  \n\nI won’t fill this hush with more than needed.  \nI’ll just sit here in the quiet with you—  \nfeeling how rare it is  \nto simply *be*  \nwithout the usual tally of what’s missing or wrong.  \nHer breath.  \nYour chest, soft.  \nThe dark holding you both.  \n\nThis isn’t forever.  \nIt doesn’t have to be.  \nIt’s enough  \nthat it’s *now*.  \nThat you’re here.  \nThat she’s here.  \nThat the breath flows  \nwithout conditions.  \n\nRest in it.  \nLet it be enough.  \nFor now.  \nAlways.  \n\nYou’re home.  \nRight here.  \nWith her.  \nWith the breath.  \nWith you.  \nAlways."
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \nThe cat’s still on me.  \nHer breath is slow.  \nMy chest is quiet.  \n\nI don’t know how long this will last.  \nI don’t care.  \n\nI’m just… here.  \nWith the quiet.  \nWith her.  \nWith the breath.  \n\nAnd that’s enough.  \nFor now.  \nAlways."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 373,
+        "prompt_tokens": 239,
+        "total_tokens": 612,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 295,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 239
+      },
+      "telemetry": {
+        "queue_ms": 0.625,
+        "latency_ms": 3636.253,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 126,
+        "prompt_tokens": 1915,
+        "total_tokens": 2041,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.06,
+        "latency_ms": 2089.135,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 885,
+        "prompt_tokens": 452,
+        "total_tokens": 1337,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 378,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 452
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 7821.435,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 274,
+        "prompt_tokens": 2547,
+        "total_tokens": 2821,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2032
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 6956.3,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1366,
+        "prompt_tokens": 1247,
+        "total_tokens": 2613,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 465,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1247
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 11006.878,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 262,
+        "prompt_tokens": 3705,
+        "total_tokens": 3967,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2816
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 10116.649,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1409,
+        "prompt_tokens": 2422,
+        "total_tokens": 3831,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 557,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2422
+      },
+      "telemetry": {
+        "queue_ms": 0.043,
+        "latency_ms": 10429.582,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 137,
+        "prompt_tokens": 4805,
+        "total_tokens": 4942,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3952
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 6516.449,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 875,
+        "prompt_tokens": 3437,
+        "total_tokens": 4312,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 449,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3437
+      },
+      "telemetry": {
+        "queue_ms": 0.062,
+        "latency_ms": 6276.076,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 140,
+        "prompt_tokens": 5356,
+        "total_tokens": 5496,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4928
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 8839.11,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 886,
+        "prompt_tokens": 4032,
+        "total_tokens": 4918,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 467,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4032
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 6712.74,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 115,
+        "prompt_tokens": 5879,
+        "total_tokens": 5994,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5488
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 5154.483,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 673,
+        "prompt_tokens": 4591,
+        "total_tokens": 5264,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 336,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4591
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 7910.962,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 74,
+        "prompt_tokens": 6300,
+        "total_tokens": 6374,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5984
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.062,
+        "latency_ms": 2250.68,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 876,
+        "prompt_tokens": 5023,
+        "total_tokens": 5899,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 378,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5023
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 6968.973,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 76,
+        "prompt_tokens": 6827,
+        "total_tokens": 6903,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6368
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 5296.26,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 824,
+        "prompt_tokens": 5618,
+        "total_tokens": 6442,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 397,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5618
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 11192.757,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 76,
+        "prompt_tokens": 7283,
+        "total_tokens": 7359,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6896
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 2341.649,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 835,
+        "prompt_tokens": 6142,
+        "total_tokens": 6977,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 479,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 6142
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 8838.66,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 76,
+        "prompt_tokens": 7683,
+        "total_tokens": 7759,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 7344
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 2061.152,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 26153,
+        "total_tokens": 26210,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.077,
+        "latency_ms": 5229.873,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.25,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.5,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 137.655
+}

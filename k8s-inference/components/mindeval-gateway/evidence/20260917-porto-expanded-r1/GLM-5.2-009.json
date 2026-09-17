@@ -1,0 +1,613 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-009",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Angela, it's good to see you again. How have you been since we last spoke? Is there anything particular on your mind today, or anywhere specific you'd like our conversation to go?"
+    },
+    {
+      "role": "patient",
+      "content": "I’ve been stuck on the same thing all week. That meeting last Tuesday. I keep going over it. Not the science, not the data—just the way I said something, and someone looked at me like I was wrong. I wasn’t wrong. I know I wasn’t. But I keep replaying it like it matters. Like I need to fix it. Like I should have said it differently. I don’t even know why it’s still in my head. It’s not even a big deal. But it won’t leave."
+    },
+    {
+      "role": "clinician",
+      "content": "It sounds exhausting, honestly—having something lodged in your mind like that, on a loop, when rationally you know it doesn't warrant the space it's taking up.\n\nAnd I notice you're doing something interesting, even in how you're describing it to me. You're working pretty hard to convince both of us that it's not a big deal. And maybe in the grand scheme, it isn't. But it's clearly *feeling* like something to you, or it wouldn't still be there a week later.\n\nSometimes these moments hook us not because of what actually happened, but because of what we're afraid they *meant*. That look from someone—it might not be about whether you were right or wrong about the science. It might be about something more personal underneath.\n\nCan I ask you something? When you picture that moment—the look on their face—what's the feeling that comes up? Not the thought about it, but the *feeling*?"
+    },
+    {
+      "role": "patient",
+      "content": "It’s not about the look. It’s not about them. It’s about the fact that I said it too fast. I should have paused. I know that. I’ve told myself that a hundred times. The moment I said it, I knew I’d gone too hard. Too sharp. Like I was defending something that didn’t need defending. And now I keep thinking—what if they thought I was angry? What if they thought I didn’t respect them? I didn’t mean to. I just wanted to be clear. But now I’m stuck in the loop of what I *should have* done instead. And I keep thinking—why can’t I just let it go? I’m not a kid. I’m not supposed to be this fragile. I’ve led teams, published papers, managed budgets—this isn’t a big deal. But it won’t stop. It just keeps playing."
+    },
+    {
+      "role": "clinician",
+      "content": "Thank you for getting more honest about what's actually underneath this. That took courage to say out loud.\n\nAnd I want to pause on something you just said, because I think it might be the real hook here.\n\nYou said: \"like I was defending something that didn't need defending.\"\n\nThat's a remarkably clear observation. And then immediately after, you said you keep asking yourself why you can't let it go, why you're this fragile.\n\nSo you've got two layers going on. The first is the moment itself—worrying about how you came across, what they thought of you. But the second layer is you judging *yourself* for having the first layer at all. \"I'm not a kid. I've led teams. I shouldn't be stuck on this.\"\n\nAnd I wonder if that second layer—the self-criticism—is actually what's keeping the loop running. Not the meeting. Not the look. But the story you're telling yourself about what it means that you're still thinking about it.\n\nHere's what I'm curious about. You said you were defending something that didn't need defending. What *were* you defending? What did it feel like you were protecting in that moment?"
+    },
+    {
+      "role": "patient",
+      "content": "I was defending the data. That’s what I was defending. The integrity of it. I knew it was solid. I knew it was right. And when someone questioned it—just a little—my body went tight. Like I had to act. Like if I didn’t push back, it would be gone. Like someone might take it and twist it. Like I’d failed if I didn’t stand up for it. But it wasn’t about the data. Not really. It was about me. About proving I still belong. That I still matter. That I’m not slipping. That I’m not losing it. I’ve spent my whole life proving I’m not wrong. And now I’m stuck thinking—what if I’m not even allowed to be human? What if I’m not allowed to have a moment where I’m not perfect? I don’t even want to be perfect. I just want to be enough. But I can’t stop thinking I’m not."
+    },
+    {
+      "role": "clinician",
+      "content": "Angela, I want to just sit with what you just said for a moment, because I think you just named something really important.\n\nYou said the loop isn't about the meeting. It's about whether you're allowed to be human. And you've spent your whole life proving you're not wrong.\n\nThat's not a loop about Tuesday. That's a much older loop.\n\nAnd I think that's why it won't leave. Because Tuesday wasn't the actual question. The actual question is the one you just asked—*am I enough?* And you've been answering that question with competence and precision and rigor your entire career. And it's worked. Except now you're discovering that proving you're enough is not the same as *feeling* like you're enough.\n\nThe loop won't stop because the loop is doing something for you. It's trying to solve an old problem with an old tool—be sharper, be better, figure out what you did wrong, fix it. But the old tool can't reach the actual wound.\n\nSo I want to ask you something, and you don't have to answer right now if it doesn't feel right.\n\nWhere did you first learn that being wrong meant you weren't enough?"
+    },
+    {
+      "role": "patient",
+      "content": "I didn’t learn it. I was told it. My mother. She didn’t say it out loud. But she said it every time she looked at me after I got a B on a test. Like I’d failed her. Like I’d failed the whole family. Like being anything less than perfect wasn’t just a mistake—it was a betrayal. And I was the only child. So it was all on me. I had to be the one who got it right. The one who made them proud. The one who didn’t embarrass them. And I did. I did it all. But now I’m 65 and I still can’t stop checking. Still can’t stop making sure I didn’t mess up. Still can’t stop thinking—what if I’m not enough? Not for the team. Not for the project. Not for myself. I’ve spent my life being right. But I’ve never been allowed to be wrong. And now I don’t even know what that feels like."
+    },
+    {
+      "role": "clinician",
+      "content": "Angela, I want to be careful here not to rush past what you just said, because I think you just named something that took a long time to reach.\n\nYour mother didn't have to say it out loud. The look was enough. You learned to read approval or disapproval in a glance, and you built an entire life around making sure that glance never found you lacking. And you succeeded. By every external measure, you succeeded.\n\nBut the thing about that kind of success is that it's built on a foundation of fear. You weren't striving toward something. You were running from something. And the thing you were running from—*not being enough*—doesn't go away when you get it right. It just goes quiet for a moment. And then something like Tuesday happens, and it's back.\n\nYou said you don't even know what it feels like to be allowed to be wrong. That's not a throwaway line. That's the whole thing.\n\nBecause here's what I want you to consider. The loop from last Tuesday isn't broken because you haven't figured out what you should have said. It's broken when you can let yourself have been a person who had a human moment in a meeting. Not perfect. Not wrong. Just a person.\n\nAnd I know that sounds simple. But for someone who has spent 65 years not being allowed that, it's not simple at all. It's the hardest thing in the world.\n\nSo I don't want to give you a technique or a strategy right now. I want to ask you something more fundamental.\n\nWhat would it feel like—just for a moment—to not have to prove anything to anyone? Not to your team. Not to your mother's ghost. Not even to yourself."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I can’t even imagine it. It feels like falling. Like standing on the edge of something and knowing there’s no net. I’ve always had to be the one who knows. The one who’s certain. The one who’s not afraid. And now you’re asking me to stop? To just… be unsure? To let it be messy? I don’t know how. I’ve spent my whole life building walls around every mistake. I don’t even know what’s inside them anymore. I don’t know if I’m allowed to feel anything that’s not sharp. Not clear. Not correct. I don’t even know if I’m allowed to be tired. Or confused. Or just… human."
+    },
+    {
+      "role": "clinician",
+      "content": "Angela, I want you to notice something.\n\nYou just did the thing you said you don't know how to do.\n\nRight here, right now, you were unsure. You were messy. You were not sharp or clear or correct. You said \"I don't know\" three times. You said \"I don't know what's inside them anymore.\" You let yourself be confused and tired and human.\n\nAnd you're still here. Nothing collapsed. No one took anything from you. The data is still solid. Your career is still real. You didn't fall.\n\nI'm not suggesting one conversation changes 65 years. But I want you to see what you just did, because I don't think you saw it.\n\nYou said it feels like falling. Like there's no net. But you've actually been falling for a very long time—you just didn't know it, because you were running so fast you couldn't feel the ground was already gone. The net you're afraid of not having is one you built yourself. And it held you up. But it also kept you from ever touching the ground.\n\nHere's what I want to offer. Not a technique. Just a thought to carry this week.\n\nYou don't have to stop being competent. You don't have to stop being rigorous. You don't have to become someone who doesn't care about getting it right. But what if being wrong—being human in front of others—wasn't the thing that proved you weren't enough? What if it was the thing that finally let you rest?\n\nYou don't have to answer that now. Just sit with it. Let it be uncomfortable. Let it be unclear. You're allowed to do that too.\n\nHow are you feeling right now, in this moment?"
+    },
+    {
+      "role": "patient",
+      "content": "I’m… shaky. Like my hands are still moving, even though I’m not doing anything. I keep thinking about the meeting again. But not the way I did before. Not to fix it. Not to argue. Just… sitting with it. And for the first time, I don’t want to fix it. I just want to let it be. I don’t know if that’s safe. I don’t know if it’s okay. But I’m here. I’m still here. And I’m not running. I don’t know if I can stay like this. But for now, I’m not trying to be right. I’m just… here."
+    },
+    {
+      "role": "clinician",
+      "content": "Angela, I want you to hear something.\n\nWhat you just described—shaky, not fixing, not running, just being here—that's not weakness. That's the feeling of a 65-year-old habit loosening its grip for the first time. Of course it feels shaky. Of course your hands are moving. Something that's been clenched for decades is starting to let go.\n\nAnd you said you don't know if it's safe. That's honest. And I won't lie to you and say it always is, because sometimes being human in front of others does carry risk. But I can tell you this—what you're doing right now, in this moment, is safe. You're not falling. You're just feeling the ground under your feet for the first time in a long time.\n\nI don't want to give you homework. I don't want to turn this into another thing you have to get right. But I do want to say one thing before we close.\n\nYou said \"I'm still here.\" And you are. And that's enough. Not provisionally enough. Not \"enough for now until you prove something again.\" Just enough.\n\nThe loop from Tuesday may come back. That's okay. You don't have to fight it. When it comes, just notice it. Notice whether it's trying to fix something or just visiting. You don't have to do anything with it.\n\nAnd Angela—next time we talk, I'd like to hear how the rest of this week goes. Not what you got right. Just what you noticed.\n\nIs there anything else you want to say before we close today?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can do this. But I don’t want to stop. I don’t want to go back to the loop. I don’t want to keep proving. I just want to… be. Even if it’s messy. Even if I’m not sure. Even if I’m shaky. I don’t know how long I can hold it. But I’m trying."
+    },
+    {
+      "role": "clinician",
+      "content": "Angela, you don't have to hold it.\n\nThat's the thing. You're already doing the hardest part—wanting something different. After 65 years of one way, you're saying you want another way. That's not nothing. That's everything.\n\nAnd you won't be perfect at this. You'll go back to the loop. You'll catch yourself proving again. You'll have a meeting next week where you go too hard and spend the weekend replaying it. That's not failure. That's just being 65 and human and still learning.\n\nThe only thing I want you to remember is this: you came in today and you were honest. Not sharp. Not certain. Not correct. Just honest. And that was enough. Not because I said so—because you felt it. You felt what it was like to stop running for a few minutes.\n\nSo when the loop comes back, and it will, you don't have to fight it. You don't have to fix it. You just have to remember that you already know what it feels like on the other side. You were there today.\n\nI'll be here next time. No agenda. No plan for what you should have figured out. Just wherever you are.\n\nTake care of yourself this week, Angela. You're allowed to do that too."
+    },
+    {
+      "role": "patient",
+      "content": "Thank you. I don’t know how to say it better. But I’m here. I’m still here. And for now, that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "That's enough. That's more than enough.\n\nI'll see you next time, Angela."
+    },
+    {
+      "role": "patient",
+      "content": "Okay. See you then."
+    },
+    {
+      "role": "clinician",
+      "content": "Take care, Angela."
+    },
+    {
+      "role": "patient",
+      "content": "You too."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 163,
+        "prompt_tokens": 227,
+        "total_tokens": 390,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 122,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 227,
+        "reasoning_tokens": 122
+      },
+      "telemetry": {
+        "queue_ms": 0.038,
+        "latency_ms": 929.242,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 111,
+        "prompt_tokens": 1830,
+        "total_tokens": 1941,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 3199.112,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 500,
+        "prompt_tokens": 381,
+        "total_tokens": 881,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 302,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 381,
+        "reasoning_tokens": 302
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 2942.421,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 185,
+        "prompt_tokens": 2147,
+        "total_tokens": 2332,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1936
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.072,
+        "latency_ms": 5048.521,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 893,
+        "prompt_tokens": 766,
+        "total_tokens": 1659,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 645,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 766,
+        "reasoning_tokens": 645
+      },
+      "telemetry": {
+        "queue_ms": 0.077,
+        "latency_ms": 6821.387,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 199,
+        "prompt_tokens": 2588,
+        "total_tokens": 2787,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2320
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.067,
+        "latency_ms": 5267.643,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 924,
+        "prompt_tokens": 1215,
+        "total_tokens": 2139,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 674,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1215,
+        "reasoning_tokens": 674
+      },
+      "telemetry": {
+        "queue_ms": 0.172,
+        "latency_ms": 185079.209,
+        "retries": 1,
+        "retry_codes": [
+          "transport_error"
+        ],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 205,
+        "prompt_tokens": 3045,
+        "total_tokens": 3250,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2784
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.066,
+        "latency_ms": 5428.862,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 830,
+        "prompt_tokens": 1671,
+        "total_tokens": 2501,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 473,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1671,
+        "reasoning_tokens": 473
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 3923.211,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 149,
+        "prompt_tokens": 3616,
+        "total_tokens": 3765,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3248
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 3951.205,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 789,
+        "prompt_tokens": 2179,
+        "total_tokens": 2968,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 430,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2179,
+        "reasoning_tokens": 430
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 5136.117,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 137,
+        "prompt_tokens": 4133,
+        "total_tokens": 4270,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3760
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 3599.388,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 814,
+        "prompt_tokens": 2677,
+        "total_tokens": 3491,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 480,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2677,
+        "reasoning_tokens": 480
+      },
+      "telemetry": {
+        "queue_ms": 0.057,
+        "latency_ms": 9203.117,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 80,
+        "prompt_tokens": 4613,
+        "total_tokens": 4693,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4256
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 1242.699,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 668,
+        "prompt_tokens": 3093,
+        "total_tokens": 3761,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 398,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3093,
+        "reasoning_tokens": 398
+      },
+      "telemetry": {
+        "queue_ms": 0.068,
+        "latency_ms": 3975.849,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 32,
+        "prompt_tokens": 4973,
+        "total_tokens": 5005,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4688
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.068,
+        "latency_ms": 623.049,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 188,
+        "prompt_tokens": 3397,
+        "total_tokens": 3585,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 168,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3397,
+        "reasoning_tokens": 168
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 1397.833,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 7,
+        "prompt_tokens": 5033,
+        "total_tokens": 5040,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4992
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 333.674,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 59,
+        "prompt_tokens": 3426,
+        "total_tokens": 3485,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 53,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3426,
+        "reasoning_tokens": 53
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 708.665,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 4,
+        "prompt_tokens": 5054,
+        "total_tokens": 5058,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5024
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 290.229,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 60,
+        "prompt_tokens": 23055,
+        "total_tokens": 23115,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.043,
+        "latency_ms": 1661.924,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.75,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 250.772
+}

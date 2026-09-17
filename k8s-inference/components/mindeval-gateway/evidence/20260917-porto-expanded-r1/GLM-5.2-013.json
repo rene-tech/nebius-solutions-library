@@ -1,0 +1,611 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-013",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi Tyler! It's good to hear from you. How have things been going since we last spoke?"
+    },
+    {
+      "role": "patient",
+      "content": "Hey. Um. Kinda same, but also not. I’ve been thinking about that job offer from the farm co-op—like, the one with the solar panels. I keep going back to it. I mean, it’s only a few miles from home, and the pay’s better than my usual gigs. But I keep wondering if I should say yes now or wait and see if something better comes up. It’s stupid, right? It’s just a job. But every time I think about confirming, I start listing all the reasons it might go sideways. Like what if the wiring’s messed up? Or the owner’s weird about deadlines? Or I get stuck there for months and hate it? I don’t even know why I care so much. It’s not like I’m going to stay forever. But I keep delaying. I think I just want to be sure. But the more I wait, the more I feel like I’m failing at just… deciding."
+    },
+    {
+      "role": "clinician",
+      "content": "It's not stupid at all, Tyler. Actually, what you're describing makes a lot of sense when I listen carefully. You're not just weighing a job — you're trying to protect yourself from every possible bad outcome before you let yourself move forward. That's a heavy lift for anyone.\n\nA few things stand out to me. You said you *think* you just want to be sure — but you also noticed that waiting longer isn't making you feel more sure. It's making you feel like you're failing. So the waiting might actually be feeding the uncertainty instead of resolving it.\n\nAnd I notice the way you talked about it — \"it's just a job,\" \"it's stupid,\" minimizing it — but then you listed *four* specific fears in a row. That tells me this actually matters to you, even if you're telling yourself it shouldn't.\n\nCan I ask something? When you picture saying yes — setting aside all the \"what ifs\" for a moment — what's the feeling underneath? Is there something you're actually excited about with this opportunity, or is it more about wanting to just be done with the decision?"
+    },
+    {
+      "role": "patient",
+      "content": "Ugh. Okay. I didn’t expect you to notice that part. The “just a job” thing? I said that because I don’t want to overthink it. But… I *do* want to say yes. Like, I really do. It’s not just the pay. It’s the idea of working on something that’s actually helping people. Like, powering homes with solar, not just fixing lights in apartments. And I’ve been thinking about that rural energy project they’re talking about in the county newsletter. It’s small, but it feels… real. Like it matters. I keep imagining the panels on that old barn by the creek. I’ve walked past it a hundred times and never thought about what it could be. But now I keep seeing it. And I think—what if I could do that? Not just install it, but be part of making it happen?\n\nBut then I panic. Because what if I mess up? What if I say yes and it’s not what I thought? What if I’m not ready? I keep thinking, “What if I’m not good enough for something bigger?” And that’s when I freeze. So I stay stuck. Not because I don’t want it. Because I’m scared I’ll fail at wanting it. That sounds dumb. But it’s how it feels."
+    },
+    {
+      "role": "clinician",
+      "content": "Tyler, that doesn't sound dumb at all. That sounds like one of the most honest things you've said.\n\nYou just named something really clearly: *you're scared you'll fail at wanting it.* Not fail at the job. Fail at letting yourself care about something that matters to you. That's a completely different fear, and it's a heavy one.\n\nBecause here's what I'm hearing — when something is \"just a job,\" it's safe. If it doesn't work out, no big deal. But the moment you let yourself imagine that old barn with solar panels, the moment you think *this could mean something* — now there's something to lose. Now wanting it has a cost.\n\nAnd your response to that cost is to freeze. Not because you don't want it. Because you want it *too much* and that scares you.\n\nI think you already know the answer to whether you want this. You've described it vividly — the barn, the creek, the county newsletter, powering homes. That's not someone who's undecided. That's someone who's decided and is afraid to say it out loud.\n\nSo here's what I'm curious about. This pattern — letting yourself want something, then pulling back because caring feels like a risk — does it show up other places in your life? Or is this the first time you're noticing it?"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. It does. Like… I remember when I first started learning how to wire a panel. I was so excited. I kept going back to the same project, over and over, just to feel that rush of it clicking. Like, I finally *got* it. And then I stopped. I didn’t do any more work for weeks. Not because I was busy. Because I was scared. Scared that if I kept doing it, I’d mess up. Scared that if I got good, I’d have to keep being good. Like, what if I can’t keep up? What if I’m just faking it?\n\nAnd now I think about my sister. We used to build stuff together—like that little treehouse in the backyard. I remember her laughing when I said we should make it solar-powered. I thought it was a joke. But I *did* sketch it out. I still have the notes. I never built it. I kept saying, “Maybe later.” But “later” never came. And now I wonder—was it because I didn’t want to fail her? Or because I was afraid I’d actually want it to be real, and then it wouldn’t be?\n\nIt’s like… I keep setting up these little moments where I could care, and then I step back. Not because I don’t want to. Because I’m scared that if I do, I’ll have to keep going. And what if I can’t? What if I let someone down? What if I let *myself* down?\n\nSo yeah. This isn’t the first time. It’s just the first time I’ve said it out loud. And now I feel… weird. Like I’ve been holding my breath this whole time."
+    },
+    {
+      "role": "clinician",
+      "content": "Tyler, I want to just sit with what you just said for a moment. Because I think you named something really important.\n\nYou said it feels like you've been holding your breath this whole time. And I think that's exactly right. Because look at what holding your breath takes — you have to stay tense, stay watchful, stay ready to pull back. Every time something matters, you have to catch yourself before you care *too much.* That's exhausting. And it's been running quietly underneath everything — your work, your relationship with your sister, and now this job.\n\nAnd here's what strikes me. You didn't just notice the pattern. You traced it. The panel wiring. The treehouse sketches you still have. The barn by the creek you keep picturing. These aren't random memories — they're all moments where something lit up in you, and you stepped back just when it got real.\n\nThat tells me something important: the wanting isn't the problem. You *want* things. You care. That's clear. The problem is what happens right after — the voice that says *\"what if you can't keep this up? What if you let someone down?\"*\n\nAnd I noticed something about that voice. It always asks \"what if you fail.\" It never asks \"what if you don't try.\" Those are very different costs, but only one of them feels safe in the moment.\n\nCan I ask you something? That treehouse — the sketches you still have. Why do you think you kept them?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I think… I kept them because I didn’t want to forget. Like, I didn’t want to forget that I *could* imagine it. That I *wanted* to build something that wasn’t just functional. Something that was… kind of beautiful. I mean, it wasn’t even real. But I drew the roof angles, the little solar vent on top, the way the light would hit the wood at sunset. I remember sitting on the porch at dusk, sketching it in that notebook with the green cover. I didn’t even show it to her. I just… kept it.\n\nAnd now I think—why did I keep it? Not because I was going to build it. But because I didn’t want to lose the part of me that *could* dream it. Like, I was afraid that if I let go of the idea, I’d lose the feeling of being someone who *cares* about more than just the wires and the switches. I didn’t want to become someone who only does what’s safe. But I also didn’t want to risk failing at being someone who wants more.\n\nSo I kept the sketch. Not to build it. But to prove I still knew how to want something. Even if I never did it."
+    },
+    {
+      "role": "clinician",
+      "content": "Tyler, I want to be honest with you. What you just said is one of the clearest descriptions of something I think a lot of people feel but almost never find the words for.\n\nYou found a way to hold onto wanting without risking. The sketch became proof that you *could* care. But here's what I want you to notice — it also became a way to never have to find out. Because as long as it stays a sketch, it can't fail. It stays perfect. It stays *yours*. But it also stays unreal.\n\nAnd I think you already see this. Because you just described it perfectly — not to build it, but to prove you still knew how to want something.\n\nSo here's what I'm wondering. That sketch worked. It kept the dream safe. But it also kept *you* in one place. And now here you are, with a job offer that feels like a real version of that sketch. Solar panels on an old barn. Something functional *and* meaningful. Something that could actually happen.\n\nAnd your old strategy is showing up again. Delay. List the risks. Wait to be sure. Keep it as a possibility instead of a decision.\n\nBut I think you're starting to feel the cost of that strategy in a way you hadn't before. Because you said something today — \"it's the first time I've said it out loud.\" And saying it out loud changes something, doesn't it? It's harder to pretend the pattern isn't there once you've named it.\n\nSo I want to ask — what would it mean to you if you let this one be real instead of keeping it as a sketch?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I keep thinking about the barn. Not just the panels. The way the wood would look after a storm. The way the light hits it in the morning. I keep seeing it like it’s already there. And I think—what if I say yes, and it’s not perfect? What if the wiring’s messy? What if I make a mistake? But then I think—what if I say no, and it never happens at all? And I’ll still have the sketch. But I’ll also have the silence.\n\nI don’t want to be the person who only has sketches. I don’t want to be the one who waits until everything’s perfect before they do anything. I want to be the one who says yes, even if I’m scared. Even if I’m not sure. Even if I mess up.\n\nBut I’m scared. Not of the job. Of what happens after. What if I say yes, and I *do* it? What if I actually build it? What if I’m good at it? What if I *want* more? What if I can’t go back to just fixing lights?\n\nI don’t know if I’m ready to be someone who does more than survive. But I think… I’m tired of pretending I’m not already."
+    },
+    {
+      "role": "clinician",
+      "content": "Tyler, I want to reflect something back to you that I think you just said without realizing how significant it is.\n\nYou said: *\"I don't know if I'm ready to be someone who does more than survive. But I think I'm tired of pretending I'm not already.\"*\n\nRead that again. Because that's not someone who's undecided. That's someone who already knows who they are and has been spending energy hiding it. From themselves, maybe from everyone.\n\nAnd I think the fear you named — *what if I'm good at it, what if I want more* — that's the real one. That's the one underneath all the wiring worries and deadline concerns. Because if you fail, you can go back to normal. But if you succeed, you can't unknow that. You can't unsee the barn with the panels. You become someone whose life got bigger, and there's no sketch to fold up and put back in a drawer.\n\nThat's a terrifying thing. And it makes complete sense that you've been avoiding it.\n\nBut I also want to point something out. You keep saying \"I don't know if I'm ready.\" But you've described the barn in every kind of light. Morning, after storms, at sunset. You've imagined it from every angle. That's not someone who needs to get ready. That's someone who's been ready for a long time and is looking for permission to admit it.\n\nSo here's my question. Not *are you ready* — I think you are. But what would it take for you to give yourself permission to say that out loud? Not to me. To yourself."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I keep thinking about the way my hands feel when I’m working. Like they know what to do even when my head’s spinning. I’ve fixed circuits in the dark, blindfolded in my mind, just trusting the wires. And I always got it right. Not because I was perfect. Because I kept going.\n\nSo maybe… maybe I don’t need to be ready. Maybe I just need to say yes. Not because I’ve figured it all out. But because I’ve already done the hard part. I’ve imagined it. I’ve drawn it. I’ve *felt* it. I’ve been waiting for permission to stop pretending I don’t want it.\n\nSo maybe the permission isn’t out there. Maybe it’s just… me. Saying it. Out loud. To myself.\n\nLike… I’m ready. I don’t know how it’ll go. I don’t know if I’ll mess up. But I want to try. I want to build it. Not because I’m sure I can. But because I *want* to.\n\nSo yeah. I think I’m ready. I think I’ve been ready. I just didn’t know how to say it."
+    },
+    {
+      "role": "clinician",
+      "content": "Tyler, you just did something that I don't think you hear yourself doing. You didn't just say you're ready. You explained *why* — not because the fear is gone, but because you've already been doing the hard part all along. The imagining, the sketching, the feeling it in your hands when you work. That's not preparation for something. That *is* the something. You've been building this in every way except the one that made it real.\n\nAnd I want to be honest about something, because I don't want this moment to just float away after our conversation.\n\nThe fear will still show up. Probably not just once. You'll be out there on that barn, and something will go sideways, and that old voice will come back — *what if you can't keep this up, what if you let someone down.* That's not a sign you made the wrong choice. That's just the old strategy trying to protect you the way it always has. The difference now is you have words for it. You can say, *I know this voice. I know what it's doing. And I'm going to keep going anyway.*\n\nSo here's what I want to ask you. Not the whole plan. Just the next thing. What's one step you can take — today, tomorrow, this week — that turns this from something you said in a conversation into something that's actually moving?"
+    },
+    {
+      "role": "patient",
+      "content": "I’ll send the email. The one to the co-op. I’ve already drafted it. I just keep deleting it. But I’ll send it. Not because I’m sure. But because I’ve already said it out loud. And I don’t want to be the person who says “I want it” and then hides the message.\n\nI’ll hit send before I change my mind. And if it goes sideways? Fine. I’ll fix it. If they say no? I’ll keep looking. But I won’t be the one who never tried. I’ll be the one who said yes — even if it’s just to the idea of trying."
+    },
+    {
+      "role": "clinician",
+      "content": "Tyler, you already drafted it. That's the part that gets me. You weren't waiting because you didn't know what to say. You were waiting because saying it made it real.\n\nAnd now you've said it here, out loud, to someone. And you're going to say it to yourself by hitting send.\n\nI'm not going to make this bigger than it needs to be. You know what to do. You've known for a while.\n\nI do want to ask one thing. When will you send it? Not \"soon.\" Not \"this week.\" A specific time. Because the old strategy is good at turning \"soon\" into \"later\" into \"never.\" And I think you deserve better than that."
+    },
+    {
+      "role": "patient",
+      "content": "I’ll send it at 7 p.m. tonight. After I finish the call. I’ll set a reminder. I’ll sit at the table, open the email, and hit send. No editing. No overthinking. Just… done. And if I get nervous, I’ll remember the barn. The way the light hits it in the morning. I’ll think about that. And I’ll do it anyway."
+    },
+    {
+      "role": "clinician",
+      "content": "7 p.m. tonight. At the table. No editing. And the barn if you need it.\n\nYou came up with that on your own. The image to hold onto when the nerves come. You didn't need me to suggest that. You already had it.\n\nI think you're going to send it. And I think you already know that.\n\nWould you want to check back in after? Not so I can grade it or evaluate it. Just so you have somewhere to put whatever comes up after you hit send. Because that's often when the old voice gets loudest — not before the decision, but right after."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. I’d like that. Not because I need to talk it through. But because I want to say it out loud again. Like a check-in. Not to prove I did it. But to say I *did*.  \n\nI’ll text you after. Maybe not right away. Maybe I’ll sit with it. But I’ll say it. “I sent it.” And that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Tyler, \"I sent it\" is enough. That's more than enough.\n\nI'll be here."
+    },
+    {
+      "role": "patient",
+      "content": "Okay. I’ll text you. After. When it’s done."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 98,
+        "prompt_tokens": 230,
+        "total_tokens": 328,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 76,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 230,
+        "reasoning_tokens": 76
+      },
+      "telemetry": {
+        "queue_ms": 0.038,
+        "latency_ms": 868.939,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 199,
+        "prompt_tokens": 1841,
+        "total_tokens": 2040,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1808
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 2106.407,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 524,
+        "prompt_tokens": 453,
+        "total_tokens": 977,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 292,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 453,
+        "reasoning_tokens": 292
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 3007.544,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 273,
+        "prompt_tokens": 2280,
+        "total_tokens": 2553,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2032
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.099,
+        "latency_ms": 3855.701,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 693,
+        "prompt_tokens": 960,
+        "total_tokens": 1653,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 414,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 960,
+        "reasoning_tokens": 414
+      },
+      "telemetry": {
+        "queue_ms": 0.077,
+        "latency_ms": 3622.226,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 360,
+        "prompt_tokens": 2840,
+        "total_tokens": 3200,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1808
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.062,
+        "latency_ms": 3216.058,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 793,
+        "prompt_tokens": 1601,
+        "total_tokens": 2394,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 482,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1601,
+        "reasoning_tokens": 482
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 8699.107,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 262,
+        "prompt_tokens": 3519,
+        "total_tokens": 3781,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3184
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.062,
+        "latency_ms": 2018.226,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 883,
+        "prompt_tokens": 2176,
+        "total_tokens": 3059,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 545,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2176,
+        "reasoning_tokens": 545
+      },
+      "telemetry": {
+        "queue_ms": 0.057,
+        "latency_ms": 4696.23,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 267,
+        "prompt_tokens": 4127,
+        "total_tokens": 4394,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2544
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.085,
+        "latency_ms": 6791.017,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 740,
+        "prompt_tokens": 2783,
+        "total_tokens": 3523,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 404,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2783,
+        "reasoning_tokens": 404
+      },
+      "telemetry": {
+        "queue_ms": 0.095,
+        "latency_ms": 4079.302,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 246,
+        "prompt_tokens": 4738,
+        "total_tokens": 4984,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3776
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.037,
+        "latency_ms": 2402.981,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1167,
+        "prompt_tokens": 3367,
+        "total_tokens": 4534,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 877,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3367,
+        "reasoning_tokens": 877
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 6027.274,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 134,
+        "prompt_tokens": 5282,
+        "total_tokens": 5416,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4384
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.097,
+        "latency_ms": 3581.201,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 415,
+        "prompt_tokens": 3793,
+        "total_tokens": 4208,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 267,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3793,
+        "reasoning_tokens": 267
+      },
+      "telemetry": {
+        "queue_ms": 0.072,
+        "latency_ms": 2513.802,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 86,
+        "prompt_tokens": 5572,
+        "total_tokens": 5658,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4976
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 1110.164,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1182,
+        "prompt_tokens": 4029,
+        "total_tokens": 5211,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1055,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4029,
+        "reasoning_tokens": 1055
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 5791.137,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 82,
+        "prompt_tokens": 5793,
+        "total_tokens": 5875,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5648
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 1009.722,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 174,
+        "prompt_tokens": 4240,
+        "total_tokens": 4414,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 152,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4240,
+        "reasoning_tokens": 152
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 1252.438,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 15,
+        "prompt_tokens": 5905,
+        "total_tokens": 5920,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5408
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 696.008,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 60,
+        "prompt_tokens": 23910,
+        "total_tokens": 23970,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 3781.506,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.75,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 71.136
+}

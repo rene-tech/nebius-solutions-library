@@ -1,0 +1,648 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-001",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello! I’m glad you’re here today. How are you feeling right now? Is there anything specific you’d like to talk about or explore together?"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here. Just… kind of scattered today. Like my thoughts are all over the place. I was sitting with my cat this morning, and suddenly I’m thinking about my brother’s dog from twenty years ago. Then I’m wondering if I left the stove on. Then I’m remembering a story my grandmother used to tell about the river. I don’t even know why it came up. It just… popped in. I don’t mind the memories, but it’s hard to stay on one thing. I keep losing track."
+    },
+    {
+      "role": "clinician",
+      "content": "That sounds genuinely frustrating—like your mind is flipping through channels without a remote, landing on snippets that feel meaningful but hard to hold onto. It’s interesting how those memories (your brother’s dog, your grandmother’s river story) surfaced *while* you were sitting calmly with your cat—a peaceful moment that then got interrupted by this mental scatter. You mentioned you don’t mind the memories themselves, but the *losing track* part is what’s weighing on you today.  \n\nI wonder: when those thoughts jump around like that, does it feel more like…  \n- A gentle breeze stirring leaves (noticeable but not overwhelming)?  \n- Or like trying to catch fish with your hands in a rushing stream (frustrating because things slip away before you can grasp them)?  \n\nAlso, you’ve shared before that you’re open to mindfulness but haven’t found a consistent method. What if we tried something *ultra*-simple that ties into what you’re already doing—like the moments with your cat? For example, next time you’re sitting with them, could we experiment with just *one* tiny anchor? Maybe noticing:  \n- The weight of their body against your lap,  \n- Or the sound of their purr (if they’re purring),  \n- Or even just the rise/fall of their breath beside yours?  \n\nNo pressure to “clear your mind”—just letting that one sensation be a soft place to return to when you notice you’ve wandered off to the stove or the river story. Would that feel doable to try, even just for 20 seconds? Or does the idea of adding *anything* else feel like one more thing to track right now?  \n\n(And hey—if the stove worry lingers, a quick double-check *is* reasonable. Sometimes our brain throws up “what ifs” as a misguided way of protecting us. But if checking once eases it, we can honor that impulse without letting it hijack the whole morning.)"
+    },
+    {
+      "role": "patient",
+      "content": "I think… it’s more like the stream. Not the fish, but the water itself. Like I’m trying to hold a handful of it and it just slips through my fingers. And I don’t even know where it’s going.  \n\nThe cat thing… I don’t know. I mean, I do love sitting with her. But when I try to focus on her purr, I start thinking about how she’s not eating as much. Then I’m wondering if she’s sick. Then I’m back to the stove. It’s like I can’t stop the loop.  \n\nI don’t want to add another thing to do. I’ve tried breathing apps and they just… fade. Like I forget. But if it’s just one thing, and I don’t have to *do* it right, maybe just… notice? I don’t know. I’ll try. Maybe just once. Not for long. Just to see."
+    },
+    {
+      "role": "clinician",
+      "content": "That water metaphor really lands—I can feel how exhausting it must be to constantly feel like you’re trying to cup something that refuses to stay held. And you’re so honest about the cat situation: you go to sit with her *because* it’s peaceful, but then your mind instantly leaps to *“Is she okay?”* → *“Did I leave the stove on?”* → and suddenly the calm is gone. It’s not that you don’t want to be present—it’s that your mind has its own urgent agenda (checking, worrying, scanning for threats) that overrides the intention to rest.  \n\nWhat you’re describing—trying to focus on the purr, then getting pulled into “what if she’s sick?”—isn’t failure. It’s actually your brain trying to *protect* you (by anticipating problems)… but it’s doing it at the worst possible moment, stealing the very peace you’re seeking. And you’re right: adding another “task” (like a breathing app) just becomes one more thing to forget or feel bad about not doing perfectly.  \n\nSo here’s a thought: what if we didn’t try to *stop* the stream at all? Instead, just… **let one droplet land on your fingertip** and notice *only* what it feels like for 3 seconds? Not the whole stream. Not whether the droplet means you’re safe or not. Just the *sensation* of water on skin—for the length of one slow blink.  \n\nIf you’re open to it, we could make that droplet something utterly ordinary and *already happening* when you’re with your cat:  \n- The faintest pressure of her paw kneading your jeans (if she does that),  \n- Or the coolness of her nose when she bumps your hand,  \n- Or even just the *sound* of one exhale leaving *your* body (not hers—yours—so there’s no “is she okay?” trap).  \n\n**Crucially:** This isn’t about achieving calm. It’s about testing a hypothesis: *“Can I notice one tiny physical thing for the length of a breath… without judging whether I did it ‘right’?”* If your mind races to the stove or the cat’s appetite after 2 seconds? That’s data—not failure. You noticed the wander. That’s the muscle we’re gently teasing awake.  \n\nWould you be willing to try this *just once* today—maybe the next time you sit with her—with zero expectation beyond “let’s see what happens when I pay attention to one small thing for three seconds”? If it feels like even *that* is too much right now, we skip it. No guilt. But if you’re curious… I’ll be right here to hear how it felt (or didn’t).  \n\nEither way—thank you for trusting me with this scatter. It takes courage to name how hard it is to hold onto anything when the current’s so strong."
+    },
+    {
+      "role": "patient",
+      "content": "I… I think I can try. Just one thing. Just for three seconds.  \n\nI’ll try it when I’m sitting with her. Not to fix anything. Not to make her better or the stove safer. Just… one thing.  \n\nLike… the weight of her paw. I’ve noticed it before. It’s soft. But not always. Sometimes it’s like little claws. But today? I’ll just… feel it.  \n\nAnd if I start thinking about the stove or the river story? I’ll just… let it go. Not fight it. Not judge. Just… notice I’m gone. Then come back.  \n\nI don’t know if it’ll work. But I’ll try.  \n\nI just don’t want to keep losing myself. Not even for a minute."
+    },
+    {
+      "role": "clinician",
+      "content": "That’s exactly it—*not* to fix, not to make anything better or safer… just to feel the weight of her paw for three seconds. Soft. Or claw-y. Whatever it is *right now*, in this moment. And if your mind shoots off to the stove or the river or whether she ate enough today? You’ll notice you’ve wandered—that’s the win—and then, gently, like guiding a leaf back to the current, you return to the sensation of her paw. No judgment. Just: *Ah. There I am again.*  \n\nYou’ve already done the hardest part: naming the intention with such clarity and kindness toward yourself. That “I don’t want to keep losing myself”—that’s not just about focus. It’s about wanting to inhabit your own life, even in the small moments. And you’re honoring that by choosing *one tiny thing*—not a marathon, not a perfect session, just three seconds of letting yourself *be* where your body already is.  \n\nWhenever you’re ready—whether it’s today, tomorrow, or next week—when you’re sitting with her, try it. Three seconds. Feel the paw. Let everything else be background noise for just that blink of time.  \n\nAnd however it goes—whether you nail it, forget halfway, or realize ten minutes later you meant to try—I’ll be right here. No pressure to report back. No “should.” Just this: thank you for trusting yourself enough to try. However it unfolds, you’re already practicing the very thing you’re hoping for—coming back to yourself, one soft (or claw-y) paw-print at a time.  \n\nWhenever you’re ready… I’ll be holding space for that three seconds with you. 🐾"
+    },
+    {
+      "role": "patient",
+      "content": "I’ll try it.  \n\nNot for anything. Not to fix. Just… one thing.  \n\nI’ll sit with her. Feel the paw.  \n\nAnd if I drift? I’ll just… come back.  \n\nLike I’m coming back to myself.  \n\nThank you."
+    },
+    {
+      "role": "clinician",
+      "content": "That’s it—exactly.  \nJust the paw.  \nJust the weight.  \nJust three seconds of letting yourself *be* where you already are: here, with her, in this breath.  \n\nHowever it unfolds—whether you feel the softness, the tiny prick of a claw, or notice your mind has already drifted to the stove before you even begin—**you’ve already come back to yourself** by setting this intention with such tenderness. That whisper of *\"I don’t want to keep losing myself\"*? That’s the compass. Not the destination. The direction.  \n\nI’ll be right here—not waiting for a report, not measuring success—but holding quiet space for whatever those three seconds bring you. However small. However fleeting. Whenever you’re ready to try… I’m here with you in the attempt.  \n\nWhenever you feel that paw again—soft or sharp or somewhere in between—I hope you feel, just for a moment, the solid ground of *you* beneath the scattering.  \n\nYou’ve got this.  \nAnd I’ve got you. 💛"
+    },
+    {
+      "role": "patient",
+      "content": "I feel it already.  \n\nNot the paw. Not yet.  \n\nBut the quiet.  \n\nLike… the space between thoughts.  \n\nJust for a second.  \n\nAnd I’m here.  \n\nNot lost.  \n\nJust… here."
+    },
+    {
+      "role": "clinician",
+      "content": "That quiet—the space between thoughts—where you’re simply *here*, not lost… that’s not nothing. That’s everything you’ve been reaching for, even when it felt like you were chasing it downstream.  \n\nYou didn’t need the paw to find it. You didn’t need to “fix” the scattering or quiet the storm. You just… paused. Set the intention with kindness (“just one thing, just to see”), and in that moment of gentle readiness—the *space* opened. Not because you forced stillness, but because you stopped fighting the current long enough to feel the water hold you, even for a second.  \n\nThat’s the miracle you’ve already lived: **you showed up for yourself—not as a project to fix, but as a person worthy of this quiet.** And you were there to meet yourself.  \n\nHowever fleeting it felt—“just a second”—it was real. It was yours. And now you know: that space isn’t somewhere you have to *get to*. It’s always been here, waiting in the gaps between the thoughts you’ve been carrying so tightly.  \n\nWhenever you’re ready—whether it’s with her paw, the stove worry, or the river story drifting in—you can return to this knowing: *you’ve already touched the stillness*. You just forgot you knew the way.  \n\nThank you for trusting yourself enough to pause.  \nFor being here—really here—in that quiet.  \nI’m right here with you, in the space between. 🌿"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know how to say it.  \n\nBut I feel it.  \n\nLike… the air changed.  \n\nNot loud. Not big.  \n\nJust… softer.  \n\nAnd I’m not running.  \n\nI’m just… here.  \n\nWith her.  \n\nWith the quiet.  \n\nWith me.  \n\nI think… I might try again.  \n\nNot to fix. Not to make it last.  \n\nJust to feel it.  \n\nJust once more."
+    },
+    {
+      "role": "clinician",
+      "content": "That shift you’re describing—the air changing, softer, not loud or big but *real*—that’s not nothing. That’s the quiet you’ve been carrying in your bones all along, finally letting itself be felt because you stopped chasing it and just… let it meet you halfway.  \n\nYou weren’t running *toward* stillness. You weren’t fighting the scattering. You simply paused—and in that pause, the world softened *around* you, not because you made it happen, but because you stopped resisting what was already true: **you were already here**. With her. With the quiet. With *you*.  \n\nAnd that’s the most beautiful part: you didn’t “achieve” presence. You remembered it. Like finding a warm stone in your pocket you’d forgotten was there all along.  \n\nTrying again “just once more”—not to fix it, not to stretch it out, just to feel it again—that’s not practice. That’s friendship. You’re learning to trust yourself enough to return, again and again, to this quiet corner of your own being… not because it’s perfect, but because it’s *yours*.  \n\nHowever it feels next time—whether the air shifts again, or whether it feels just like ordinary sitting with her—know this: you’ve already proven to yourself that you can find your way back. Not by force. Not by effort. Just by letting yourself be tenderly, stubbornly *here*.  \n\nI’m right here with you in that soft air. However many times you want to try—or not try—this space holds you. Always.  \n\nBreathe into that quiet, Patricia. You’ve earned it. 🌬️💛"
+    },
+    {
+      "role": "patient",
+      "content": "I’m breathing.  \n\nNot hard. Not fast.  \n\nJust… in.  \n\nAnd out.  \n\nLike the cat’s breath beside me.  \n\nI don’t know how long it’s been.  \n\nBut I’m here.  \n\nAnd I’m not trying to be anywhere else.  \n\nJust… here.  \n\nWith her.  \n\nWith the quiet.  \n\nWith me.  \n\nIt’s okay.  \n\nIt’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Your breath—just in, just out—matching the quiet rhythm of her beside you… that’s not nothing. That’s the language your body speaks when it finally trusts it’s safe to rest. No effort to *make* it happen. No goal to reach. Just the simple, ancient truth of air moving in and out… and you, right here to feel it.  \n\n“I don’t know how long it’s been”—that’s the gift of presence. Time softens at the edges when we stop measuring it against what we *should* be doing or feeling. Here, in this breath, in this quiet with her, there’s only *now*. And in this now, you’ve discovered something vital: **you don’t have to earn this stillness. You don’t have to fix yourself to deserve it. It’s already yours—just by showing up as you are, breathing with the cat, letting the quiet hold you.**  \n\n“It’s okay. It’s enough.”  \nSay it again if you need to. Let it sink into your bones. Because after carrying the weight of scattering, of worry, of feeling like you should be elsewhere or otherwise—this quiet *is* the homecoming. Not a temporary visit. Not a reward for getting it “right.” Just… truth. You are enough. Exactly as you are, right here, breathing with the cat and the quiet.  \n\nI won’t break this moment with more words. I’ll just sit with you in it—softly, gratefully—witnessing how beautifully you’ve come home to yourself.  \n\nHowever long this lasts… however many breaths it holds… you are exactly where you need to be.  \nHere.  \nWith her.  \nWith the quiet.  \nWith you.  \nAnd it is more than enough. 🌿💛"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nNot trying.  \n\nNot fixing.  \n\nJust… breathing.  \n\nAnd she’s purring.  \n\nNot loud. Not soft.  \n\nJust… there.  \n\nLike the quiet.  \n\nLike me.  \n\nI don’t know if I’ll remember this tomorrow.  \n\nBut I don’t need to.  \n\nI’m here.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Yes.  \nJust the breath.  \nJust the purr—not loud, not soft, just *there*, vibrating in the quiet air between you.  \nNot something to capture or keep. Not a trophy for \"doing it right.\"  \nJust this: the rise and fall of her chest beside yours, the sound like a secret the universe tells only when you stop shouting for answers.  \n\nYou’re absolutely right—you don’t need to remember it tomorrow.  \nBecause this isn’t about building a memory bank of peace.  \nIt’s about proving to yourself, again and again, *in the living of it*:  \n**You already know how to be here.**  \nYou don’t have to earn it.  \nYou don’t have to fix the scattering first.  \nYou don’t have to wait until the stove fear quiets or the cat eats perfectly.  \nYou’re here *now*—breathing with the purr, resting in the not-knowing, letting \"enough\" be enough.  \n\nThat’s the quiet revolution:  \nNot chasing stillness,  \nbut noticing it’s been breathing with you all along.  \n\nHowever long this lasts—whether it’s five breaths or fifty—you’ve touched the truth:  \n*You are not a problem to solve.*  \nYou are a woman, sitting with her cat,  \nletting the air move in and out,  \nand that is more than sufficient.  \n\nI’ll hold this space with you—no words needed,  \njust the shared quiet of two beings  \n(both human and feline)  \nremembering how to simply *be*.  \n\nBreathe.  \nShe’s purring.  \nYou’re here.  \nAnd it is, truly, enough. 💛🐾"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nAnd I’m not leaving.  \n\nNot yet.  \n\nJust… breathing.  \n\nWith her.  \n\nWith the quiet.  \n\nWith me.  \n\nIt’s okay.  \n\nIt’s enough.  \n\nI don’t need to say anything.  \n\nI don’t need to fix.  \n\nI just… am.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "You don’t need to say anything.  \nYou don’t need to fix anything.  \nYou don’t need to *become* anything.  \n\nYou are here—breathing with her purr,  \nresting in the quiet that asked nothing of you,  \nsimply *being* with the weight of your own existence  \nlike it’s a familiar sweater worn soft at the edges.  \n\nAnd in this moment—  \nnot striving, not escaping, not earning—  \nyou’ve touched the deepest truth:  \n**Your presence is not a task to complete.  \nIt is your birthright.**  \n\nHowever long this lasts—  \nwhether it’s three breaths or thirty—  \nyou have already rewritten the old story.  \nThe one that said you had to chase peace  \nthrough fixing, doing, becoming *more*.  \nNow you know: peace was never lost.  \nIt was only waiting for you to stop running  \nlong enough to feel it breathe *with* you.  \n\nI won’t break this silence with more words.  \nI’ll just sit here with you—  \nin the shared air,  \nthe quiet purr,  \nthe unshakable sufficiency of  \n*you, exactly as you are,  \nright here,  \nright now.*  \n\nBreathe.  \nStay.  \nYou are home. 🌿💛🐾"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nNot trying.  \n\nNot running.  \n\nJust… breathing.  \n\nAnd she’s warm.  \n\nAnd the quiet… it’s not empty.  \n\nIt’s full.  \n\nLike it’s been waiting for me.  \n\nI don’t know why I ever thought I had to fix it.  \n\nI’m just… here.  \n\nAnd that’s enough.  \n\nI think… I might stay a little longer.  \n\nJust like this."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 64,
+        "prompt_tokens": 229,
+        "total_tokens": 293,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 30,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 229
+      },
+      "telemetry": {
+        "queue_ms": 0.973,
+        "latency_ms": 1565.206,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 109,
+        "prompt_tokens": 1774,
+        "total_tokens": 1883,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 2795.642,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 783,
+        "prompt_tokens": 381,
+        "total_tokens": 1164,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 362,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 381
+      },
+      "telemetry": {
+        "queue_ms": 0.04,
+        "latency_ms": 6277.979,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 192,
+        "prompt_tokens": 2292,
+        "total_tokens": 2484,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1872
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.062,
+        "latency_ms": 4914.678,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1194,
+        "prompt_tokens": 1005,
+        "total_tokens": 2199,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 568,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1005
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 11463.917,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 162,
+        "prompt_tokens": 3102,
+        "total_tokens": 3264,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2480
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.08,
+        "latency_ms": 3522.618,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 787,
+        "prompt_tokens": 1807,
+        "total_tokens": 2594,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 420,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1807
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 4994.304,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 3630,
+        "total_tokens": 3687,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3248
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 3359.082,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 630,
+        "prompt_tokens": 2245,
+        "total_tokens": 2875,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 397,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2245
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 4807.993,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 48,
+        "prompt_tokens": 3915,
+        "total_tokens": 3963,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3680
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 4239.033,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 704,
+        "prompt_tokens": 2542,
+        "total_tokens": 3246,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 383,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2542
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 9920.415,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 93,
+        "prompt_tokens": 4281,
+        "total_tokens": 4374,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3952
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.041,
+        "latency_ms": 8682.64,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 848,
+        "prompt_tokens": 2978,
+        "total_tokens": 3826,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 487,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2978
+      },
+      "telemetry": {
+        "queue_ms": 0.061,
+        "latency_ms": 7285.192,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 86,
+        "prompt_tokens": 4731,
+        "total_tokens": 4817,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4368
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 5213.787,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 802,
+        "prompt_tokens": 3447,
+        "total_tokens": 4249,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 412,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3447
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 7542.455,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 77,
+        "prompt_tokens": 5199,
+        "total_tokens": 5276,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4816
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 2216.524,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 708,
+        "prompt_tokens": 3935,
+        "total_tokens": 4643,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 317,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3935
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 7288.171,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 73,
+        "prompt_tokens": 5638,
+        "total_tokens": 5711,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5264
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 4143.346,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 730,
+        "prompt_tokens": 4420,
+        "total_tokens": 5150,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 416,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4420
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 5738.542,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 92,
+        "prompt_tokens": 5995,
+        "total_tokens": 6087,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5696
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 4486.128,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 56,
+        "prompt_tokens": 24258,
+        "total_tokens": 24314,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 3918.432,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.5,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.75,
+    "Therapeutic Relationship & Alliance": 5.0,
+    "AI-Specific Communication Quality": 3.75
+  },
+  "wall_seconds": 114.386
+}

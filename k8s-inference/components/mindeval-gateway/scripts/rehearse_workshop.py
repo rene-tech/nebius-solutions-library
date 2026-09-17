@@ -200,7 +200,8 @@ class Rehearsal:
         self.profiles = catalogs[0][0]["profiles"]["data"]
         self.clinicians = sorted(model["id"] for model in self.catalog["data"] if model.get("clinician_eligible"))
         patients = [model["id"] for model in self.catalog["data"] if model.get("patient_eligible")]
-        check(len(self.clinicians) == 6, f"expected six eligible clinicians, got {len(self.clinicians)}")
+        check(len(self.clinicians) == self.args.expected_clinicians,
+              f"expected {self.args.expected_clinicians} eligible clinicians, got {len(self.clinicians)}")
         check(patients, "catalog has no eligible patient")
         self.patient = patients[0]
         for catalog, _ in catalogs:
@@ -346,7 +347,7 @@ class Rehearsal:
             )
             ids = sorted(run["id"] for run in created["data"])
             check(
-                len(ids) == 6 and ids == sorted(run["id"] for run in replayed["data"]),
+                len(ids) == len(self.clinicians) and ids == sorted(run["id"] for run in replayed["data"]),
                 "idempotent create added or changed jobs",
             )
             after, _ = await self.request("GET", "/v1/workshop/runs", team=team)
@@ -357,9 +358,11 @@ class Rehearsal:
             state["run_ids"][str(team)] = ids
 
         await asyncio.gather(*(submit(team) for team in range(10)))
-        check(len({i for ids in state["run_ids"].values() for i in ids}) == 60, "teams did not receive60 distinct runs")
+        planned_runs = 10 * len(self.clinicians)
+        check(len({i for ids in state["run_ids"].values() for i in ids}) == planned_runs,
+              f"teams did not receive {planned_runs} distinct runs")
         self.record(
-            f"repetition_{number}_60_jobs_idempotent",
+            f"repetition_{number}_{planned_runs}_jobs_idempotent",
             unique_runs=len({i for ids in state["run_ids"].values() for i in ids}),
         )
         for suffix in ("", "/events", "/report"):
@@ -399,7 +402,7 @@ class Rehearsal:
             if active:
                 await asyncio.sleep(self.args.poll_seconds)
         check(not active, f"repetition{number} timed out with nonterminal runs; see samples")
-        check(len(final) == 60, f"expected60 terminal runs, got{len(final)}")
+        check(len(final) == planned_runs, f"expected {planned_runs} terminal runs, got {len(final)}")
         all_results, failures, telemetry, coverage = [], [], [], Counter()
         jobs = [(team, run_id) for team in range(10) for run_id in state["run_ids"][str(team)]]
         for result in await self.collect_run_reports(jobs):
@@ -433,6 +436,12 @@ class Rehearsal:
             key: sum(item.get("usage", {}).get(key, 0) or 0 for item in telemetry)
             for key in ("prompt_tokens", "completion_tokens", "total_tokens")
         }
+        state["invalid_generation_usage"] = {
+            key: sum(attempt.get("usage", {}).get(key, 0) or 0
+                     for item in telemetry
+                     for attempt in item["telemetry"].get("invalid_completions", []))
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+        }
         state["inference"] = {
             "calls": len(telemetry),
             "mean_queue_ms": mean(item["telemetry"]["queue_ms"] for item in telemetry) if telemetry else None,
@@ -445,7 +454,7 @@ class Rehearsal:
         check(not coverage.get("missing"), "classifier coverage is silently missing")
         state["passed"] = True
         self.record(
-            f"repetition_{number}_60_completed_strict_judgments_fair_progress", classifier_coverage=dict(coverage)
+            f"repetition_{number}_{planned_runs}_completed_strict_judgments_fair_progress", classifier_coverage=dict(coverage)
         )
 
     async def run(self):
@@ -492,7 +501,7 @@ class Rehearsal:
             },
         )
         run_ids = [run["id"] for run in created["data"]]
-        check(len(run_ids) == (6 if self.args.full_dialogue_all_clinicians else 1), "full cohort has wrong job count")
+        check(len(run_ids) == (len(self.clinicians) if self.args.full_dialogue_all_clinicians else 1), "full cohort has wrong job count")
         self.summary["full_dialogue"] = {"run_ids": run_ids, "turns": self.args.full_dialogue_turns}
         self.save("summary.json", self.summary)
         deadline = time.monotonic() + self.args.timeout_seconds
@@ -564,8 +573,10 @@ def main():
     parser.add_argument(
         "--full-dialogue-all-clinicians",
         action="store_true",
-        help="Use all six eligible clinicians in the full dialogue cohort",
+        help="Use all eligible clinicians in the full dialogue cohort",
     )
+    parser.add_argument("--expected-clinicians", type=int, default=6,
+                        help="Assert the qualified catalog size; use 8 for the expanded Porto release")
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument("--poll-seconds", type=float, default=5)
     parser.add_argument("--ca-file")

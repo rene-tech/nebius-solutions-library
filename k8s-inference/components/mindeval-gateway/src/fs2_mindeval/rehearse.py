@@ -20,8 +20,10 @@ CLINICIANS = [
     "Qwen/Qwen3-235B-A22B-Instruct-2507",
     "Qwen/Qwen3-30B-A3B-Instruct-2507",
     "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+    "nvidia/nemotron-3-super-120b-a12b",
     "openai/gpt-oss-120b",
     "zai-org/GLM-5.1",
+    "zai-org/GLM-5.2",
     "deepseek-ai/DeepSeek-V4-Pro",
 ]
 CANDIDATES = ["NousResearch/Hermes-4-405B", "google/gemma-3-27b-it"]

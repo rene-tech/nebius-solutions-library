@@ -95,6 +95,7 @@ async def test_preflight_and_secret_safe_report(tmp_path):
         run_label="mock",
         gateway_image="gateway@sha256:test",
         workshop_image="workshop@sha256:test",
+        expected_clinicians=6,
     )
     rehearsal = runner.Rehearsal(args, teams, "test-denied-token")
     requests = []

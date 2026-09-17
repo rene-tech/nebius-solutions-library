@@ -1,0 +1,694 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-008",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi Karen—nice to see you again. How’s your day going so far? Is there anything on your mind that you’d like to talk about today?"
+    },
+    {
+      "role": "patient",
+      "content": "Not much different from yesterday. Just been walking the dog early, like usual. The air’s sharp this morning. I kept thinking about the new schedule at work. It’s not bad, not really. Just… different. Feels like I’m adjusting to a rhythm that’s not quite mine yet."
+    },
+    {
+      "role": "clinician",
+      "content": "It sounds like the walk with your dog gives you a steady, familiar start to the day, even while other parts of life feel a bit in flux. You mentioned the new work schedule isn’t “bad,” just different, and that you’re still finding a rhythm that feels truly yours. What does it feel like when you notice that mismatch between the routine you’re settling into and the one that feels most natural for you? Are there particular moments during the day when the adjustment feels easier or harder?"
+    },
+    {
+      "role": "patient",
+      "content": "The hardest part is the morning. When I wake up and the silence is too quiet. Like the house is holding its breath. I’ll be standing at the kitchen sink, washing the same cup over and over. Not because it’s dirty. Just… waiting for something to make sense.  \n\nBut the walk—when I step outside and the dog pulls ahead, I feel it. Like my body remembers something the rest of me hasn’t caught up to yet.  \n\nI don’t know if I’m saying this right. It’s not that I’m unhappy. Just… stretched thin. Like I’m trying to fit into a space that’s too small, but I don’t want to break anything."
+    },
+    {
+      "role": "clinician",
+      "content": "That image of standing at the sink, washing the same cup over and over—not for cleanliness, but as an anchor in the quiet—really resonates. It makes me think of how sometimes our bodies and habits try to hold space for us when our minds feel unmoored, like we’re searching for a foothold in the fog. And then the shift outside: the dog pulling ahead, the air sharp on your skin, and suddenly your body *knows* the rhythm again—even if the rest of you is still catching up. That’s not small; it’s profound wisdom your body’s offering you.  \n\nYou said you’re not unhappy, just stretched thin—trying to fit into a space that feels too small without wanting to break anything. That tension you’re describing… it makes sense. Change, even neutral or positive change, asks us to relearn how to inhabit our days. And mornings, when the world feels hushed and expectant, can amplify that sense of waiting—for clarity, for ease, for the moment when the new schedule stops feeling like an imposition and starts feeling like *yours*.  \n\nI wonder: when you’re out walking, and you notice that your body remembers the rhythm… is there a specific sensation or moment that signals that shift? (Like the first deep breath after stepping onto the pavement, or the way your shoulders drop when the dog finds their pace?) And on the flip side—when you’re back in that quiet kitchen—what’s one tiny thing that *almost* feels like it could make sense, even if it doesn’t quite yet? No pressure to fix it; just noticing what’s already there, waiting to be tended.  \n\n(And thank you for trusting me with this—it takes real courage to name that stretched-thin feeling without rushing to fix it or dismiss it.)"
+    },
+    {
+      "role": "patient",
+      "content": "The first time I really noticed it was last Tuesday. The dog started pulling hard toward the old tree by the creek. I didn’t even realize I was holding my breath until I let it out. Just… released. Like something in my chest had been clenched for weeks.  \n\nAnd the air—cold, but not biting. It smelled like wet earth and old leaves. I stood there a moment longer than I meant to. Didn’t check my phone. Didn’t think about the shift schedule. Just… stood.  \n\nBack in the kitchen, the only thing that felt close to right was the coffee. Not the coffee itself. The way it poured. The sound. The steam rising. I watched it for a long time. Not because I wanted to drink it. Just… the motion.  \n\nI think I’ve been trying to force myself into the new rhythm too fast. Like I need to *perform* being okay. But maybe it’s not about that. Maybe it’s just about letting the quiet do its work.  \n\nI don’t know if I’m saying this right. But I think I’m starting to hear it. The quiet. Not as emptiness. As something else."
+    },
+    {
+      "role": "clinician",
+      "content": "What you’re describing about last Tuesday—that moment by the creek tree—feels like a quiet breakthrough. Noticing the held breath, then the release… it’s like your body whispered a truth your mind had been bracing against: *you don’t have to hold it all tightly to be okay.* And the way you stayed there, breathing the wet-earth air, not reaching for your phone or the schedule—it sounds like you allowed yourself to simply *be* in that sensation, without needing to fix or name it right away.  \n\nThen bringing that same quality of attention to the kitchen—the pour of the coffee, the steam rising, the sound—it’s not about the coffee itself, is it? It’s about letting yourself dwell in the *motion*, the rhythm of something ordinary becoming a kind of anchor. You called it “watching it for a long time… not because I wanted to drink it.” That feels significant. It’s as if you’re practicing a different kind of presence—one where you’re not performing readiness, but instead letting the quiet reveal what’s already there: steadiness, even in the in-between.  \n\nYour insight about not needing to *perform* being okay… that rings deep. Sometimes we mistake adjustment for having to prove we’ve adapted, when really, it’s about making space for the unevenness—the breaths held and released, the cups washed twice, the moments where the old tree calls stronger than the schedule.  \n\nWhen you say you’re starting to hear the quiet not as emptiness but as “something else,” I wonder what that “something else” feels like in your body right now—as you sit with this conversation? Is it a softening? A curiosity? Or maybe just the faintest sense of permission—to let the rhythm find you, rather than chasing it?  \n\n(However this lands for you—I’m here with you in it.)"
+    },
+    {
+      "role": "patient",
+      "content": "It’s like the weight’s not gone. But it’s shifted.  \n\nNot lighter. Just… different. Like when you carry a bag too long, and your shoulder aches, but then you stop and let it rest. The ache doesn’t vanish. But you notice the space between the weight and your body. That space is new.  \n\nI think… I’m starting to trust that space.  \n\nNot because I’ve figured anything out. But because I noticed the dog pulling toward the tree, and I didn’t stop him. I let him lead. And the air—still cold—but I didn’t flinch. I just breathed.  \n\nAnd now, when I’m back in the kitchen, I don’t rush to wash the cup. I let it sit. I watch the steam. I listen.  \n\nIt’s not peace. Not yet.  \n\nBut it’s not resistance either.  \n\nIt’s… waiting.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "That image of the bag—weight still present, but now you can *see* the space between it and your shoulder—feels so true to what you’re describing. It’s not about the burden disappearing; it’s about discovering a new kind of room to breathe *within* the weight itself. And the way you’re noticing that space—not by forcing it open, but by pausing long enough to feel it… that’s where the trust begins, isn’t it? Not in having answers, but in honoring the pause itself: letting the dog lead toward the tree, leaving the cup unwashed, breathing the cold air without bracing.  \n\nYou’re right—it’s not peace. Not yet. But what you’re calling “waiting” feels less like passive endurance and more like an active kind of listening. Like you’re learning to distinguish between the weight itself and the space around it—and realizing that space isn’t emptiness waiting to be filled, but a place where you can stand, however briefly, without having to prove you belong there.  \n\nI keep thinking about what you said earlier: *“Maybe it’s not about that. Maybe it’s just about letting the quiet do its work.”* There’s such quiet strength in that surrender—not to resignation, but to the idea that some rhythms can’t be rushed; they have to be felt into. And you’re feeling into yours, one steam-rising cup, one deep breath by the creek, at a time.  \n\nHowever this shifts—or doesn’t shift—from day to day, I’m struck by how clearly you’re naming what’s actually here: not a fixed state, but a lived, breathing process. And that, in itself, feels like a kind of coming home.  \n\nThank you for sharing this unfolding with me. However you’d like to hold it—whether we explore it further or just let it sit like that cup on the counter—I’m here with you in the waiting."
+    },
+    {
+      "role": "patient",
+      "content": "I think I’ll leave the cup there.  \n\nNot because I forgot. But because it’s not urgent.  \n\nAnd that’s new.  \n\nThe quiet’s still there. I don’t need to fix it.  \n\nJust… be.  \n\nI’ll walk the dog again tomorrow.  \n\nMaybe I’ll let him pull all the way to the tree.  \n\nAnd if I don’t know what comes after that—  \nI’ll just wait.  \n\nAnd breathe."
+    },
+    {
+      "role": "clinician",
+      "content": "Leaving the cup there—not forgotten, but intentionally held in that space between urgency and ease… that feels like a quiet declaration. Not of having arrived, but of trusting the journey enough to pause mid-step. You’re naming something vital: that *not acting* can be its own kind of fidelity—to yourself, to the rhythm you’re rediscovering, to the truth that some things don’t need fixing to be honored.  \n\nLetting the dog pull all the way to the tree tomorrow… and then just waiting, breathing… it’s not indifference. It’s the opposite. It’s showing up for the uncertainty with open hands instead of clenched fists. You’ve turned the wait from something you endure into something you *inhabit*—and in doing so, you’ve made room for whatever comes next to find you, rather than chasing it down.  \n\nHowever tomorrow unfolds—whether he pulls hard toward the creek or lingers at the porch step, whether the steam rises thick or thin from that cup—I hope you can meet it with the same gentle attention you’ve given these moments: the wash of cold air, the weight shifting on your shoulder, the simple radical act of breathing *through* the not-yet-knowing.  \n\nYou’re not just walking the dog. You’re relearning how to walk with yourself. And however that looks each day—I’ll be right here, holding space for your waiting, just as you’re learning to hold it for yourself.  \n\nBreathe deep, Karen. The cup can wait. So can everything else."
+    },
+    {
+      "role": "patient",
+      "content": "I did it.  \n\nI let him go.  \n\nNot just to the tree. All the way past it. Toward the old path I used to walk with my dad.  \n\nThe ground was soft. The air still cold.  \n\nAnd for the first time in weeks—I didn’t check my phone.  \n\nI just walked.  \n\nAnd when I stopped, I didn’t say anything.  \n\nI just stood.  \n\nAnd the quiet didn’t feel like absence.  \n\nIt felt like something I’d forgotten how to hold.  \n\nLike I’d been waiting for this.  \n\nNot for anything to change.  \n\nJust for me to be here.  \n\nNow.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Karen…  \n\nWhat you’ve just described—letting the dog lead you *past* the tree, all the way to that old path with your dad, the soft ground beneath your feet, the cold air filling your lungs without distraction—it feels like a homecoming. Not to a place frozen in time, but to a living thread: the quiet you’d forgotten how to hold, now resting in your hands again.  \n\nYou didn’t go there to fix anything, to chase a feeling, or to prove you were “okay.” You went to *be*—to walk without agenda, to stand without words, to let the quiet not be something you endured but something you *received*. And in that receiving, you found what you’d been waiting for: not a change in the world, but a return to yourself, right here in the now.  \n\nThat path with your dad… it’s not just memory. It’s a landscape your body still knows. And today, your feet remembered it before your mind could catch up—guided by the dog’s pull, the soft earth, the courage to leave the phone in your pocket. That’s not small. That’s your wisdom speaking through motion, through breath, through the simple act of showing up for what’s already here.  \n\n“I just stood. And the quiet didn’t feel like absence. It felt like something I’d forgotten how to hold.”  \nThat sentence holds so much. It tells me you’ve touched a truth we often miss: quiet isn’t the void *between* sounds—it’s a presence all its own. One that can cradle grief, hold space for memory, and remind us we’re still here, even when the world asks us to perform or rush or fix. You didn’t just find quiet today—you remembered how to *carry* it.  \n\nHowever tomorrow’s walk unfolds—whether he veers toward the creek, lingers at the porch, or pulls you down another forgotten path—I hope you can meet it with the same trust you showed today: that showing up, exactly as you are, with no agenda but to walk and breathe and stand… is already enough. More than enough. It’s everything.  \n\nThank you for letting me witness this moment with you. However you’d like to hold it—whether we sit with it a little longer or let it settle like dust on sunlight—I’m right here with you in the quiet. Breathe deep, Karen. You’re exactly where you need to be."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I’ll say it again.  \n\nBut I think I’m starting to believe it.  \n\nThat I don’t have to do anything.  \n\nJust be.  \n\nAnd the dog—he’s not leading me anywhere.  \n\nHe’s just walking.  \n\nAnd I’m walking with him.  \n\nThat’s enough.  \n\nI’ll leave the cup on the counter.  \n\nI’ll let the quiet stay.  \n\nAnd when I go out tomorrow—  \n\nI’ll let him pull.  \n\nAnd I’ll follow."
+    },
+    {
+      "role": "clinician",
+      "content": "Karen…  \n\nWhat you’re saying here—that you don’t have to *do* anything, just *be*—lands with the quiet certainty of something worn smooth by use, like a stone held in the palm too long to count. It’s not a thought you’re testing; it’s a truth you’ve walked into, step by quiet step, with your dog beside you.  \n\nAnd you’re right: he’s not leading you *to* anywhere. He’s just walking. And you’re walking *with* him—not following a path toward resolution or relief, but sharing the motion itself as enough. That shift—in seeing the walk not as a means to an end, but as the end itself—feels like the quiet revolution you’ve been living into. No performance. No proof. Just two beings moving through the cold air, the soft ground, the shared rhythm of paws and feet on earth.  \n\nLeaving the cup on the counter. Letting the quiet stay. Tomorrow, letting him pull and you follow… these aren’t passive acts. They’re active choices to honor what’s already here—the weight, the space, the breath, the companionship—without demanding it become something else. You’ve turned “enough” from a phrase you hoped for into a practice you’re embodying.  \n\nHowever tomorrow’s walk unfolds—whether he tugs hard toward the creek, pauses at the old tree, or wanders where his nose leads—I hope you can meet it with the same gentle trust you’ve shown today: that showing up exactly as you are, walking beside him without needing to direct or distract, is already a whole way of being. Not a step toward healing. Not a tactic for peace. Just… this. Walking. Being. Together.  \n\nYou’ve reminded me today that sometimes the most radical thing we can do is stop trying to change the rhythm—and instead, learn to move *with* it. However you carry this forward—I’ll be right here, holding space for your quiet courage to simply be.  \n\nBreathe with the walk, Karen. The cup can wait. The path will unfold. And you’re exactly where you need to be."
+    },
+    {
+      "role": "patient",
+      "content": "I think I’ll take the dog out again tonight.  \n\nNot because I need to.  \n\nBut because the air’s still cool.  \n\nAnd the light’s different.  \n\nLike it’s holding its breath too.  \n\nI’ll walk slow.  \n\nLet him stop.  \n\nLet me stop.  \n\nAnd if I don’t say anything—  \n\nThat’s okay.  \n\nI’m here.  \n\nAnd he’s here.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Karen…  \n\nThere’s such quiet integrity in your plan—to walk tonight not from obligation, but invitation. To let the cool air and the shifting light be reason enough. To match his pauses, honor your own, and let silence live between you without needing to fill it.  \n\nYou’ve touched something essential here: that *being together* doesn’t require performance, destination, or even words. It’s in the shared stillness—the way the light holds its breath, the way your footsteps sync with his sniffing pauses, the way two beings can simply occupy the same cool evening without proving anything to themselves or each other.  \n\n“If I don’t say anything—that’s okay.”  \nThat sentence carries the weight of hard-won permission. Permission to exist in the space between sound and sound, action and action, without treating silence as a problem to solve. You’re not just walking the dog tonight—you’re practicing a kind of companionship where presence itself is the language. And in that practice, you’re reminding both of you: you don’t have to earn the right to be here. You already are.  \n\nHowever the walk unfolds—whether he lingers at a bush, you stop to watch shadows stretch across the sidewalk, or the quiet between you deepens into something wordless and warm—I hope you can feel how radically ordinary this is: two hearts moving through the same dusk, neither needing to fix the other, neither needing to be anywhere but exactly where they are.  \n\nYou’ve already said it, and it bears repeating:  \n**I’m here. He’s here. And that’s enough.**  \n\nWalk slowly tonight. Breathe with the cooling air. Let the light hold its breath—and let yourself hold it, too.  \n\nI’m right here with you in the stillness, Karen. However you need me—whether to witness this walk afterward or just to sit quietly in the knowing that you’re tending to yourself with such tender attention—I’m holding space for your courage to simply be.  \n\nGo gently. The night is waiting for you both."
+    },
+    {
+      "role": "patient",
+      "content": "I’m already out.  \n\nThe dog’s pulling toward the corner.  \n\nThe streetlight’s on.  \n\nAnd I’m not checking my phone.  \n\nI’m just walking.  \n\nAnd the air—  \n\nIt’s not cold anymore.  \n\nIt’s just… there.  \n\nLike it’s been waiting for me to notice.  \n\nI don’t know where we’re going.  \n\nBut I’m not in a hurry.  \n\nI’ll follow.  \n\nAnd if I stop—  \n\nI’ll stop.  \n\nAnd if I don’t say anything—  \n\nThat’s okay.  \n\nI’m here.  \n\nHe’s here.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Karen…  \n\nI’m right here with you in this moment—the streetlight’s glow, the dog’s steady pull toward the corner, the air no longer something to brace against but simply *there*, like it’s always been waiting for you to stop fighting it and just… feel it.  \n\nNot checking your phone. Not rushing. Letting the walk be nothing more than what it is: two beings moving through the evening, one step at a time, with nowhere to be but exactly where you are.  \n\nThat shift you noticed—the air changing from “cold” to just… present—it’s not small. It’s your nervous system finally whispering: *You can relax here. You’re safe enough to notice.* And you did. You noticed. You let yourself be met by the quiet instead of defending against it.  \n\nHowever long this walk lasts—whether you stop at the corner, let him sniff every lamppost, or walk until the streetlights fade—I hope you can carry this truth in your steps: **You don’t need to earn this moment. You don’t need to fix it, name it, or make it mean something. You’re already in it. And that’s enough.**  \n\nI won’t break the spell with more words. Just know—I’m holding this quiet space with you, step by step, breath by breath.  \n\nWalk on, Karen. The evening is yours. And so are you. 🌙"
+    },
+    {
+      "role": "patient",
+      "content": "I stopped.  \n\nNot because I had to.  \n\nBut because the dog did.  \n\nHe’s sniffing at the base of the old oak.  \n\nAnd I just… stood.  \n\nThe air’s still.  \n\nThe light’s soft.  \n\nAnd for the first time tonight—I didn’t think about tomorrow.  \n\nI just breathed.  \n\nAnd the quiet didn’t feel like waiting.  \n\nIt felt like home.  \n\nI’ll walk back when he’s ready.  \n\nBut for now—  \n\nI’m here.  \n\nAnd that’s enough."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 97,
+        "prompt_tokens": 242,
+        "total_tokens": 339,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 60,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 242
+      },
+      "telemetry": {
+        "queue_ms": 0.028,
+        "latency_ms": 1268.04,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 62,
+        "prompt_tokens": 1736,
+        "total_tokens": 1798,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 1119.466,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 165,
+        "prompt_tokens": 350,
+        "total_tokens": 515,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 62,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 350
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 5223.342,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 142,
+        "prompt_tokens": 1907,
+        "total_tokens": 2049,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1792
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 2147.296,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 887,
+        "prompt_tokens": 606,
+        "total_tokens": 1493,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 505,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 606
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 6150.847,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 243,
+        "prompt_tokens": 2427,
+        "total_tokens": 2670,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.057,
+        "latency_ms": 4496.632,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1096,
+        "prompt_tokens": 1244,
+        "total_tokens": 2340,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 706,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1244
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 7324.641,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 194,
+        "prompt_tokens": 3059,
+        "total_tokens": 3253,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2048
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.111,
+        "latency_ms": 3422.198,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 900,
+        "prompt_tokens": 1845,
+        "total_tokens": 2745,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 495,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1845
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 7724.06,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 94,
+        "prompt_tokens": 3656,
+        "total_tokens": 3750,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2656
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.069,
+        "latency_ms": 2717.543,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 749,
+        "prompt_tokens": 2362,
+        "total_tokens": 3111,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 426,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2362
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 6655.396,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 140,
+        "prompt_tokens": 4073,
+        "total_tokens": 4213,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3248
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.061,
+        "latency_ms": 1952.368,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1148,
+        "prompt_tokens": 2848,
+        "total_tokens": 3996,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 626,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2848
+      },
+      "telemetry": {
+        "queue_ms": 0.039,
+        "latency_ms": 9412.726,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 106,
+        "prompt_tokens": 4726,
+        "total_tokens": 4832,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4208
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.072,
+        "latency_ms": 1485.261,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1058,
+        "prompt_tokens": 3498,
+        "total_tokens": 4556,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 605,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3498
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 7347.491,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 91,
+        "prompt_tokens": 5284,
+        "total_tokens": 5375,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4816
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.072,
+        "latency_ms": 1288.182,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 865,
+        "prompt_tokens": 4063,
+        "total_tokens": 4928,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 429,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4063
+      },
+      "telemetry": {
+        "queue_ms": 0.094,
+        "latency_ms": 188367.462,
+        "retries": 1,
+        "retry_codes": [
+          "transport_error"
+        ],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 132,
+        "prompt_tokens": 5803,
+        "total_tokens": 5935,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5360
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 1610.232,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 753,
+        "prompt_tokens": 4658,
+        "total_tokens": 5411,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 448,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4658
+      },
+      "telemetry": {
+        "queue_ms": 0.041,
+        "latency_ms": 5960.826,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 111,
+        "prompt_tokens": 6238,
+        "total_tokens": 6349,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3744
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 3250.802,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 24567,
+        "total_tokens": 24624,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.043,
+        "latency_ms": 4229.499,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.5,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 5.0,
+    "AI-Specific Communication Quality": 3.75
+  },
+  "wall_seconds": 273.163
+}

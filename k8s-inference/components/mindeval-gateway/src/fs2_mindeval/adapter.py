@@ -157,7 +157,14 @@ class TokenFactoryAdapter:
         limit: int = 5,
     ) -> dict:
         started, queue_ms, retry_codes = time.monotonic(), 0.0, []
+        invalid_completions = []
         payload = {"model": model, "messages": messages, "temperature": temperature, "stream": False}
+        # NVIDIA documents this template flag for a visible final answer. Keep
+        # reasoning enabled, but never treat a reasoning-only response as speech.
+        # Source: NVIDIA-Nemotron-3-Super-120B-A12B-FP8 model card, API Client.
+        template = {"force_nonempty_content": True} if model == "nvidia/nemotron-3-super-120b-a12b" else {}
+        if template:
+            payload["chat_template_kwargs"] = template
         if model in self.compatibility:
             payload["max_tokens"] = max_completion_tokens
         else:
@@ -190,6 +197,8 @@ class TokenFactoryAdapter:
                     "retries": attempt,
                     "retry_codes": retry_codes,
                     "token_parameter": "max_tokens" if "max_tokens" in payload else "max_completion_tokens",
+                    "chat_template_kwargs": template,
+                    "invalid_completions": invalid_completions,
                 }
                 return result
             except ProviderStatus as exc:
@@ -223,15 +232,29 @@ class TokenFactoryAdapter:
                 retry_codes.append("transport_error")
                 delay = min(8.0, 2**attempt)
             except GatewayError as exc:
+                # One identical-payload retry can recover a transient empty or
+                # truncated generation without leaking reasoning into a turn,
+                # changing the model/settings or increasing its token budget.
+                # Preserve rejected provider IDs/usage: retries are not free.
+                retryable = exc.code in {"reasoning_only", "empty_content", "length_finished"}
+                if retryable:
+                    invalid_completions.append({"code": exc.code, **{
+                        k: v for k, v in exc.telemetry.items() if k not in {"content", "reasoning"}
+                    }})
                 exc.telemetry.update(
                     {
                         "queue_ms": round(queue_ms, 3),
                         "latency_ms": round((time.monotonic() - started) * 1000, 3),
                         "retries": attempt,
                         "retry_codes": retry_codes,
+                        "chat_template_kwargs": template,
+                        "invalid_completions": invalid_completions,
                     }
                 )
-                raise
+                if not retryable or len(invalid_completions) > 1 or attempt + 1 >= self.attempts:
+                    raise
+                retry_codes.append(exc.code)
+                delay = 1
             if attempt + 1 < self.attempts:
                 await self.sleep(delay)
         raise GatewayError(

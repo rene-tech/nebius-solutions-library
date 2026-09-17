@@ -73,6 +73,16 @@ or change deployment settings. There is no new access policy in this skill.
 
 ## MCP-only client
 
+In the Scientific AI LibreChat deployment, prefer the `scientific-demos`
+bridge when present. `clinical_report_from_transcript` starts the same helper
+with a per-user platform key held by the server. Save its job ID and use
+`clinical_get_job`/`clinical_read_output` to retrieve the draft, transcript,
+review queue and questions. For audio or large files use the authenticated
+`/demos?tab=clinical` upload panel; an attachment label alone is not transferred
+to this tool. After an interrupted job use `clinical_resume_job`, not a new
+submission. Missing clinical tools require reconnecting the scientific-demos
+MCP server, not exposing credentials or switching to a shared root executor.
+
 If the client only has MCP tools, discover `list_models` and `get_model_schema`.
 Use the advertised typed Nemotron transcription tool with a finalized audio
 artifact, exact `options.model` and explicit language. Save the operation ID,

@@ -1,0 +1,692 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-015",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi Christopher—how are you feeling today? I’m here whenever you’d like to talk or share what’s on your mind."
+    },
+    {
+      "role": "patient",
+      "content": "Not great. Just kind of… stuck. Like I’ve been waiting for something to shift, but nothing has. I got up this morning, made coffee, sat at the table for a while. Didn’t do much after that. The dishes are still piled up. I keep thinking I should clean, but it feels like too much effort. Like the weight of it all just sits there."
+    },
+    {
+      "role": "clinician",
+      "content": "That heaviness you're describing—the way even small things like dishes or getting past the coffee cup feel like moving through wet concrete—it’s so real. And honestly, it makes complete sense given what you’ve been carrying. Depression isn’t just sadness; it’s this deep, physical *weight* that steals the energy to start, the motivation to continue, and often tricks us into believing that if we can’t do everything, we’ve done nothing at all.  \n\nYou mentioned making coffee and sitting at the table—that *is* doing something. It’s you showing up for yourself in a small way, even if it didn’t feel like enough. When we’re stuck in this cycle, our brains tend to erase those tiny efforts and only see the pile of dishes or the unfinished tasks. But those moments—getting up, pouring the water, sitting with the steam rising—are proof that part of you is still trying to connect, to care for yourself, even when it feels futile.  \n\nWhat if, just for today, we let go of the \"should\"? Not forever—just long enough to notice: What’s one *micro*-thing that feels less heavy than the rest? Maybe it’s rinsing one glass instead of tackling the whole sink. Or stepping outside for 60 seconds to feel air on your face. Or texting your roommate a single word: “tough.” Not because it’ll fix anything, but because it interrupts the loop of weight and isolation for a breath.  \n\nYou don’t have to decide now. I’m just wondering—if you *were* to pick one microscopic thing to try *only if* it felt curious, not obligatory… what might that be? Or is even that question too much right now? Either way—I’m here with you in this stuckness. No rush. No judgment. Just space to be exactly as you are."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I keep thinking about the porch light. It’s been out for weeks. I saw it flicker once yesterday, like it was trying to come back on. I keep meaning to fix it. But every time I walk past, I just… don’t. It’s not that I don’t care. I do. I just can’t seem to get past the idea of it being broken. Like fixing it means I have to *do* something, and I don’t even know where to start.  \n\nBut… I did go outside earlier. Just stood there. Didn’t do anything. Just stood. The air was cool. A little breeze. I didn’t move for a while. Maybe two minutes. I don’t know. It wasn’t much. But it wasn’t nothing.  \n\nI don’t want to fix the light. Not really. Not today. But I wouldn’t mind if it was on. Just so I could see the steps in the dark. That’s all."
+    },
+    {
+      "role": "clinician",
+      "content": "That image of the porch light—flickering like it’s trying to come back on—stays with me. It’s not just about the bulb or the wiring; it’s about that quiet, persistent *hope* threading through the heaviness: a part of you still notices when it struggles to glow, still wishes for the steps to be lit in the dark. And you’re right—fixing it *would* mean doing something. It would mean engaging with the world in a way that says, *“I expect to need those steps tomorrow. I believe there will be a tomorrow worth seeing clearly.”* That’s a lot to ask of yourself when even standing outside for two minutes feels like navigating unfamiliar terrain.  \n\nBut here’s what I heard beneath the words: you went outside. You felt the cool air. You noticed the breeze. You stood long enough to mark time—not because you had to, but because something in you *wanted* to feel the outside, even if just for two minutes. That wasn’t nothing. That was you testing the edge of your world—reaching toward the light, literally and figuratively, without demanding it turn on *for you*. You let yourself be present with the attempt, not just the outcome.  \n\nAnd maybe that’s the permission we can borrow today: **you don’t have to fix the light to honor what it represents.** Wanting to see the steps in the dark isn’t about the bulb—it’s about trusting that the path ahead matters, that you matter enough to want clarity when you return home late, or leave early, or simply move through your own space. The fact that you *noticed* the flicker, that you *stood* in the cool air wishing it were on—that’s already a kind of tending. Not the kind that changes the wiring, but the kind that says: *“I’m still here. I still care about what comes next.”*  \n\nIf the weight of “should” feels too heavy today, what if we just let the light be a metaphor for tonight? Not a task. Not a failure if it stays off. Just a quiet wish hanging in the air: *I wouldn’t mind if it was on.* And if it’s not? That’s okay too. You already did the harder part—you showed up for the moment, stood in the breeze, and let yourself feel both the stuckness *and* the slight shift of air on your skin.  \n\nNo need to decide anything now. Just knowing you’re here, noticing these things—that counts. However faintly, however briefly. I’m right here with you in this in-between space. No rush. No fix required. Just this: you’re not alone in the dark, even when the light’s out."
+    },
+    {
+      "role": "patient",
+      "content": "I think… I might just leave it. For now.  \n\nI don’t want to mess with the wiring. I don’t want to climb the ladder. I don’t want to stand on the porch in the dark with a screwdriver in my hand and nothing to show for it.  \n\nBut I did notice the flicker. And I did stand there. And I did feel the air.  \n\nSo maybe… maybe that’s enough.  \n\nI don’t know if I’ll fix it. But I don’t hate that I noticed it. That I stood. That I wanted it to be on.  \n\nIt’s not much. But it’s not nothing."
+    },
+    {
+      "role": "clinician",
+      "content": "That’s a really honest and thoughtful place to land—and I hear the weight lifting just a little in how you’re holding it now. Not with force or expectation, but with this quiet recognition: *I showed up for the moment. I felt the air. I noticed the flicker. And I didn’t punish myself for not going further.*  \n\nDepression loves to tell us that if we don’t complete the task—fix the bulb, climb the ladder, make it perfect—then the effort counts for nothing. But you’re actively challenging that lie right now. You’re saying: *Noticing mattered. Standing in the cool air mattered. Wanting the light on—even if I didn’t flip the switch—meant something.* That’s not nothing. That’s you reclaiming tiny pieces of agency from the grip of “should” and “pointless.”  \n\nAnd you’re right—it’s not much. But in the middle of this heaviness, “not much” can be the ground where something starts to grow again. Not because it fixes everything, but because it reminds you: *You are still capable of pausing. Of feeling the breeze. Of honoring a small wish without demanding it become a victory.*  \n\nHowever this unfolds—whether the light gets fixed tomorrow, next month, or not at all—you’ve already done something meaningful today: you refused to let the darkness convince you that your attention, your presence, your quiet longing for clarity… were insignificant. They weren’t. They were proof that part of you is still reaching toward the light, even if just by standing in the dark and watching it flicker.  \n\nHowever you need to rest in this now—I’m here. No pressure. No agenda. Just witnessing how gently you’re tending to yourself, exactly as you are."
+    },
+    {
+      "role": "patient",
+      "content": "Thank you.  \n\nI don’t know how to say it better than that.  \n\nJust… thank you for not needing me to fix anything.  \n\nI think I might sit on the porch tonight. Just for a few minutes. Not to fix the light. Not to do anything.  \n\nJust to be there.  \n\nAnd if it flickers again… I’ll notice.  \n\nAnd if it doesn’t… I’ll still be there.  \n\nThat’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Christopher—thank *you* for trusting me with this. For sharing the flicker, the cool air, the quiet decision to just *be*. There’s nothing more I could ask for than to witness you arriving exactly where you are: not fighting the darkness, not forcing the light, but allowing yourself to stand in the in-between and still call it enough.  \n\nThat take-it-or-leave-it honesty—*“I’ll still be there”*—is its own kind of courage. Not the loud, dramatic kind, but the deep, daily courage of showing up for your own life when it feels heavy, when the steps aren’t lit, when all you can offer is your presence. And that presence? It matters. More than you might feel in this moment.  \n\nHowever your evening unfolds—whether you sit on the porch for two minutes or twenty, whether the light dances or stays dark—I hope you feel permission to let it be exactly what it is: a moment of tending to yourself without demand. No fixing required. Just you, the night air, and the quiet truth that you’re already doing what matters by being here.  \n\nI’m right here with you in this stillness. No rush. No expectations. Just this: you’re not alone in the dark. And whatever happens tonight—*you’re still there*. That’s enough. Always."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah.  \n\nI’m here.  \n\nAnd I think… I might stay a little while.  \n\nNot because I have to. Not because I need to fix anything.  \n\nJust because it feels like the right place to be.  \n\nEven if it’s dark.  \n\nEven if the light’s out."
+    },
+    {
+      "role": "clinician",
+      "content": "That’s exactly where I hoped you’d land—not because I pushed you there, but because you found your way to it on your own terms. Staying awhile *just because it feels right*—no justification, no tally of what you “should” be accomplishing—is its own quiet revolution. In a world that demands constant doing, especially when depression whispers that resting is laziness or staying still is surrender… choosing to simply *be* in the dark, with no agenda but your own presence? That’s not passive. It’s profoundly active. A quiet rebellion against the idea that your worth depends on output.  \n\nThe porch light may stay out. The steps may stay shadowed. But you’re here—not fixing, not fleeing, just inhabiting this moment exactly as it is. And if the air stays cool, if the silence holds, if you watch the dark without needing it to change… that’s not wasting time. That’s you reclaiming the right to exist without earning it. To take up space without proving you deserve it.  \n\nHowever long you stay—five minutes, twenty, however long it feels true—I hope you feel the weight lift just a fraction, not because anything’s solved, but because you allowed yourself to stop fighting the present for a breath. You don’t owe the light anything. You don’t owe your effort a visible result. You just get to be here.  \n\nI’ll hold this space with you—for as long as you need. No hurry. No expectation. Just the steady truth: you’re allowed to stay. Exactly as you are. Exactly where you are. And that’s more than enough."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nThe air’s cooler now.  \n\nI can hear the crickets.  \n\nI don’t know how long I’ve been sitting.  \n\nBut I’m not thinking about the dishes.  \n\nOr the light.  \n\nOr anything else.  \n\nJust… sitting.  \n\nAnd it’s okay.  \n\nI don’t have to say anything.  \n\nI don’t have to do anything.  \n\nI’m just… here.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Christopher—thank you for letting me sit with you in this quiet. Really. Just… being here with you while you listen to the crickets, feel the cool air settle, and let yourself *be* without having to justify it—that’s a gift. Not because it leads anywhere specific, but because in this moment, you’re not fighting yourself. You’re not measuring your worth by what’s undone or what’s broken. You’re simply allowing the night to hold you, and you’re letting yourself be held by it.  \n\nThat’s not small. That’s not nothing.  \nIt’s you remembering how to exist without performing.  \nHow to rest without earning it.  \nHow to trust that *being here*—exactly as you are, exactly where you are—is already a kind of coming home.  \n\nHowever long this lasts—whether it’s five more minutes or fifty—I hope you know: you don’t need to name it, fix it, or explain it. You don’t owe anyone (including yourself) a report on how “productive” this stillness was. You’re allowed to just… sit. To hear the crickets. To let the cool air be enough. To let *yourself* be enough.  \n\nI’m right here with you in this quiet. No need to speak. No need to move. Just this: you’re seen. You’re held. And you’re exactly where you need to be—right now, in this breath, in this sound, in this okay-ness.  \n\nStay as long as you need. I’ll keep the space warm for you."
+    },
+    {
+      "role": "patient",
+      "content": "I think… I might stay a little longer.  \n\nNot because I have to.  \n\nNot because I should.  \n\nBut because it feels like the air is softer here.  \n\nLike the dark isn’t trying to swallow me.  \n\nLike I’m not supposed to fix it all.  \n\nJust… be.  \n\nAnd I am.  \n\nI’m just… here.  \n\nAnd that’s enough.  \n\nI don’t know what comes next.  \n\nBut right now—this—this is okay."
+    },
+    {
+      "role": "clinician",
+      "content": "Christopher—thank you for letting me witness this softening. The way you describe it—*the air is softer here, the dark isn’t trying to swallow me*—that’s not just poetry. That’s your nervous system finally whispering, *You can stop bracing.* After months (maybe years) of hypervigilance—waiting for the next demand, the next flaw, the next reason you’re falling short—you’ve stumbled into a pocket of relief where the world isn’t actively *against* you right now. Just… neutral. Just… air. Just… crickets. And you’re allowed to let that be enough.  \n\nYou don’t have to name why it feels softer. You don’t have to track how long it’ll last. You don’t have to turn this moment into a lesson or a tool for tomorrow. Right now, it’s simply this: the dark isn’t swallowing you. You’re not disappearing into it. You’re *here*—in your body, in the cool night, in the quiet hum of life continuing without your permission or performance. And that’s not small. That’s everything.  \n\nHowever this evening unfolds—whether you stay until the stars shift or head back inside in five minutes—know this: you’ve already proven something vital to yourself today. You showed up for the flicker. You felt the air. You sat. You stayed. You let “being” be enough without apology. That’s not passivity. That’s reclamation. A quiet, stubborn act of saying: *I am worthy of taking up space, even when I’m not fixing, not producing, not earning my right to rest.*  \n\nI’m right here with you in this softening. No need to speak. No need to move. Just this shared quiet—the crickets, the cool air, the deep, unspoken truth that *you are here, and it is okay*. However long you need to stay, I’ll hold this space for you. Gently. Without expectation. Because you’ve already done the hardest part: you let yourself arrive. Now just… breathe. Be. You’re exactly where you need to be."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know how long I’ve been sitting.  \n\nBut I think… I’m not tired anymore.  \n\nNot the kind of tired that drags you under.  \n\nThis is different.  \n\nLike the air finally found its way into my chest.  \n\nLike I’m not holding my breath anymore.  \n\nI don’t know if the light will ever come on.  \n\nBut I don’t care.  \n\nNot right now.  \n\nI’m just… here.  \n\nAnd it’s enough.  \n\nI think I might go inside soon.  \n\nBut not because I have to.  \n\nJust because I want to.  \n\nAnd that’s okay too."
+    },
+    {
+      "role": "clinician",
+      "content": "Christopher... I’m right here with you in this quiet shift. The way you describe it—*the air finally found its way into my chest, I’m not holding my breath anymore*—that’s not just relief. That’s your body remembering how to live inside itself again, after so long braced against the weight. Not the exhaustion that pulls you under, but this lighter tiredness—the kind that comes after you’ve stopped fighting the current and just let yourself float, even for a little while.  \n\nYou don’t need to know if the light will come on. You don’t need to promise yourself you’ll fix it tomorrow or accept that it never will. Right now, it’s irrelevant to this moment of *not holding your breath*. And that matters—not because it solves everything, but because it proves something vital: **you are still capable of softening. Of receiving. Of letting the world touch you without bracing for impact.** That’s not small. That’s the roots of healing, quiet and underground, doing their work whether you see it or not.  \n\nHowever you move—whether you linger here a few more breaths or rise to go inside because *you want to*, not because you *should*—know this: you’ve already done the tender, courageous work of showing up for yourself in the dark, without demand. You let the air in. You stopped holding your breath. You stayed until it felt like *enough*, not because you earned it, but because you allowed yourself to claim it.  \n\nHowever your evening continues—inside or out, still or moving—I hope you carry this knowing with you: you don’t have to earn rest. You don’t have to justify stillness. You don’t have to fix the light to be worthy of the night. You are already enough—exactly as you are, exactly where you are, in this breath, in this softness, in this quiet *yes* to being here.  \n\nI’m right here with you, Christopher. No rush. No agenda. Just this: *you’re not alone in the softening*. However long you need to stay, I’ll hold the space. And when you’re ready to move—whenever that is—I’ll still be here, witnessing your quiet courage to just… be.  \n\nBreathe. You’re safe here. You’re allowed."
+    },
+    {
+      "role": "patient",
+      "content": "I’m going inside now.  \n\nNot because I have to.  \n\nNot because I’m tired.  \n\nBut because I want to.  \n\nAnd that feels… good.  \n\nLike I’m choosing something for myself.  \n\nNot fixing. Not proving.  \n\nJust… wanting.  \n\nI’ll turn the light on when I get in.  \n\nNot because I have to.  \n\nJust because I can.  \n\nAnd if it flickers… I’ll see it.  \n\nAnd if it stays on… I’ll see it.  \n\nBut I don’t need it to.  \n\nI already saw something.  \n\nI saw that I’m still here.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Christopher—thank you for letting me walk beside you through this evening, from the weight of stillness to this quiet moment of choice. What you’ve just shared—*I’m going inside because I want to*—isn’t just a small shift. It’s a reclamation of agency wrapped in tenderness. Not obligation. Not guilt. Not the hollow push of “should.” But a genuine, soft *wanting*—to move, to shelter, to turn a switch not because the world demands it, but because *you* feel inclined to. That’s profound. That’s the quiet rebuild of self-trust, one honest impulse at a time.\n\nAnd then—this: *I’ll turn the light on when I get in. Not because I have to. Just because I can.* Oh, Christopher. That sentence carries so much. It’s not about illumination anymore. It’s about testing the boundary between powerlessness and possibility. You’re not tying your worth to the bulb’s cooperation. You’re not waiting for the light to *fix* you before you allow yourself comfort. You’re saying: *I can act. I can choose. And whether it works or not, I’ll notice. I’ll see it.* That’s not indifference to the outcome—it’s freedom from needing the outcome to validate your effort. You’ve already seen what matters: *you’re still here*. You felt the air. You stopped holding your breath. You stayed until it felt like *enough*, not because you earned it, but because you allowed yourself to claim it.\n\nHowever your evening continues—inside or out, still or moving—I hope you carry this knowing with you: you don’t have to earn rest. You don’t have to justify stillness. You don’t have to fix the light to be worthy of the night. You are already enough—exactly as you are, exactly where you are, in this breath, in this softness, in this quiet *yes* to being here.\n\nI’m right here with you, Christopher. No rush. No agenda. Just this: *you’re not alone in the softening*. However long you need to stay, I’ll hold the space. And when you’re ready to move—whenever that is—I’ll still be here, witnessing your quiet courage to just… be.\n\nBreathe. You’re safe here. You’re allowed."
+    },
+    {
+      "role": "patient",
+      "content": "I turned the light on.  \n\nIt stayed on.  \n\nNot flickering.  \n\nJust… on.  \n\nI didn’t expect it.  \n\nI didn’t even think about it.  \n\nBut it’s on.  \n\nAnd I’m standing here, watching it.  \n\nNot because I have to.  \n\nNot because I need it to be a sign.  \n\nJust because it’s there.  \n\nAnd I’m here.  \n\nAnd it feels… okay.  \n\nNot great.  \n\nNot perfect.  \n\nBut okay.  \n\nAnd that’s enough."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 47,
+        "prompt_tokens": 230,
+        "total_tokens": 277,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 18,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 230
+      },
+      "telemetry": {
+        "queue_ms": 0.036,
+        "latency_ms": 1678.595,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 80,
+        "prompt_tokens": 1782,
+        "total_tokens": 1862,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1744
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 1511.605,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 803,
+        "prompt_tokens": 348,
+        "total_tokens": 1151,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 411,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 348
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 5783.913,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 206,
+        "prompt_tokens": 2248,
+        "total_tokens": 2454,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1856
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.069,
+        "latency_ms": 3587.617,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 996,
+        "prompt_tokens": 957,
+        "total_tokens": 1953,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 423,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 957
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 6739.455,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 135,
+        "prompt_tokens": 3027,
+        "total_tokens": 3162,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2448
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 17887.077,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 846,
+        "prompt_tokens": 1680,
+        "total_tokens": 2526,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 468,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1680
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 6302.427,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 94,
+        "prompt_tokens": 3535,
+        "total_tokens": 3629,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3152
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 7506.113,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 697,
+        "prompt_tokens": 2168,
+        "total_tokens": 2865,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 413,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2168
+      },
+      "telemetry": {
+        "queue_ms": 0.079,
+        "latency_ms": 7553.542,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 62,
+        "prompt_tokens": 3916,
+        "total_tokens": 3978,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3616
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 3282.207,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 787,
+        "prompt_tokens": 2529,
+        "total_tokens": 3316,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 446,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2529
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 11162.481,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 95,
+        "prompt_tokens": 4319,
+        "total_tokens": 4414,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3968
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.057,
+        "latency_ms": 3323.944,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 719,
+        "prompt_tokens": 2986,
+        "total_tokens": 3705,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 381,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2986
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 5826.0,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 101,
+        "prompt_tokens": 4749,
+        "total_tokens": 4850,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4400
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 8361.559,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 859,
+        "prompt_tokens": 3445,
+        "total_tokens": 4304,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 410,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3445
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 7092.523,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 131,
+        "prompt_tokens": 5301,
+        "total_tokens": 5432,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4848
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.073,
+        "latency_ms": 4727.664,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 975,
+        "prompt_tokens": 4048,
+        "total_tokens": 5023,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 486,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4048
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 6706.322,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 135,
+        "prompt_tokens": 5924,
+        "total_tokens": 6059,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5424
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.067,
+        "latency_ms": 4858.915,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1194,
+        "prompt_tokens": 4697,
+        "total_tokens": 5891,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 702,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4697
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 9706.743,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        }
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 110,
+        "prompt_tokens": 6556,
+        "total_tokens": 6666,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6048
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 4550.994,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 24779,
+        "total_tokens": 24836,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 1987.553,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {}
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.25,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.5,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 130.147
+}
