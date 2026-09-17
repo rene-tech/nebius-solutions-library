@@ -222,6 +222,14 @@ app.kubernetes.io/component: model-controller
   value: /var/run/secrets/fs2-serve/admin-token
 - name: FS2_ADMIN_SESSION_TTL_SECONDS
   value: {{ .Values.config.adminSessionTtlSeconds | quote }}
+- name: FS2_ADMIN_SESSION_IDLE_TIMEOUT_SECONDS
+  value: {{ .Values.config.adminSessionIdleTimeoutSeconds | quote }}
+- name: FS2_ADMIN_SESSION_MAX_PER_PRINCIPAL
+  value: {{ .Values.config.adminSessionMaxPerPrincipal | quote }}
+- name: FS2_ADMIN_SESSION_EXCHANGE_ATTEMPTS
+  value: {{ .Values.config.adminSessionExchangeAttempts | quote }}
+- name: FS2_ADMIN_SESSION_EXCHANGE_WINDOW_SECONDS
+  value: {{ .Values.config.adminSessionExchangeWindowSeconds | quote }}
 {{- if .Values.adminConfiguration.enabled }}
 - name: FS2_ADMIN_CONFIGURATION_FILE
   value: /etc/fs2-serve/admin/{{ .Values.adminConfiguration.key }}

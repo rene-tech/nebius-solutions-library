@@ -722,7 +722,7 @@ def test_capabilities_route_publishes_server_authoritative_configuration_options
     cipher: object,
     hasher: object,
 ) -> None:
-    from test_admin_access_api import BOOTSTRAP_AUTH, _client, _runtime
+    from test_admin_access_api import _client, _runtime, operator_auth
 
     runtime = _runtime(registry, cipher, hasher)
     runtime.model_deployment_mutation = ModelDeploymentMutationService(
@@ -733,7 +733,7 @@ def test_capabilities_route_publishes_server_authoritative_configuration_options
         prometheus_server_address=PROMETHEUS_ADDRESS,
     )
     with _client(runtime) as client:
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         response = client.get("/admin/api/v1/model-deployments:capabilities")
 
     assert response.status_code == 200

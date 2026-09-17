@@ -105,10 +105,24 @@ class OperatorSessionRecord(StrictModel):
     digest: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
-class OperatorSessionHandoff(StrictModel):
-    """Bootstrap-authenticated selection of the server-side operator identity."""
+class OperatorCredentialRecord(StrictModel):
+    """Internal Argon2id verifier; never use as an HTTP response model."""
 
-    principal_id: UUID = BOOTSTRAP_OPERATOR_PRINCIPAL_ID
+    principal: OperatorPrincipal
+    pepper_key_id: str = Field(min_length=1, max_length=64)
+    digest: str = Field(min_length=32, max_length=512)
+
+
+class OperatorCredentialDisclosure(StrictModel):
+    """One-time disclosure returned only when an administrator rotates a credential."""
+
+    principal_id: UUID
+    credential: str = Field(min_length=64, max_length=256)
+
+
+class OperatorSessionRevocation(StrictModel):
+    principal_id: UUID
+    revoked_sessions: int = Field(ge=0)
 
 
 class AdminApiKeyCreate(TokenCreate):

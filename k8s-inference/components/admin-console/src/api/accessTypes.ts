@@ -27,6 +27,16 @@ export interface OperatorSession {
   revoked_at: string | null;
 }
 
+export interface OperatorCredentialDisclosure {
+  principal_id: string;
+  credential: string;
+}
+
+export interface OperatorSessionRevocation {
+  principal_id: string;
+  revoked_sessions: number;
+}
+
 export interface AccessMeasurement {
   value: number | null;
   unit: string;

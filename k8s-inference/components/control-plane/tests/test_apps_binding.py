@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from test_admin_access_api import BOOTSTRAP_AUTH, _client, _runtime
+from test_admin_access_api import _client, _runtime, operator_auth
 from test_apps import _context, _record
 from test_dynamic_routes import _revision
 from test_model_deployment import envelope, renderer
@@ -122,7 +122,7 @@ def test_real_apps_settings_endpoint_recovers_bootstrap_after_api_start(registry
         prometheus_server_address="http://prometheus.fs2-observability.svc:9090",
     )
     with _client(runtime) as client:
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         path = f"/admin/api/v1/apps/{default_app_id('qwen3-8b')}/settings"
         before = client.get(path).json()["data"]
         assert before["serving"] is None and not before["capabilities"]["live_settings"]

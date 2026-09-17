@@ -30,12 +30,15 @@ interface LoginProps {
   busy: boolean;
   error: AdminApiError | null;
   notice?: string | null;
-  onLogin: (token: string, principalId?: string) => Promise<void>;
+  onLogin: (credential: string) => Promise<void>;
 }
 
 function authenticationGuidance(error: AdminApiError): string | null {
   if (error.status === 401) {
-    return "Use the admin bootstrap token configured for this cluster. Inference API keys and MCP tokens cannot create an operator session.";
+    return "Use the personal operator credential issued for your principal. Bootstrap, inference, and MCP credentials cannot create an operator session.";
+  }
+  if (error.status === 429) {
+    return "Too many sign-in attempts came from this network source. Wait for the bounded exchange window before retrying.";
   }
   if (error.status === 403 || error.status === 421) {
     return "Open the published HTTPS admin URL directly. The gateway rejects untrusted origins and host names.";
@@ -47,16 +50,14 @@ function authenticationGuidance(error: AdminApiError): string | null {
 }
 
 export function LoginPage({ busy, error, notice = null, onLogin }: LoginProps) {
-  const [token, setToken] = useState("");
-  const [principalId, setPrincipalId] = useState("");
+  const [credential, setCredential] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const transientToken = token.trim();
-    const selectedPrincipal = principalId.trim() || undefined;
-    setToken("");
-    if (!transientToken) return;
-    await onLogin(transientToken, selectedPrincipal);
+    const transientCredential = credential.trim();
+    setCredential("");
+    if (!transientCredential) return;
+    await onLogin(transientCredential);
   }
 
   return (
@@ -69,41 +70,25 @@ export function LoginPage({ busy, error, notice = null, onLogin }: LoginProps) {
         <span className="eyebrow">Inference platform administration</span>
         <h1 id="login-title">Operator sign in</h1>
         <p>
-          Exchange a bootstrap credential for a short-lived, same-origin
-          operator session. The credential is cleared from this form immediately
-          and is never saved by the console.
+          Exchange your personal operator credential for a short-lived,
+          same-origin operator session. The credential is cleared from this form
+          immediately and is never saved by the console.
         </p>
         <form className="form-stack" onSubmit={(event) => void submit(event)}>
           <label>
-            Bootstrap access token
+            Personal operator credential
             <input
               autoComplete="off"
               autoFocus
               disabled={busy}
-              name="bootstrap-token"
-              onChange={(event) => setToken(event.target.value)}
+              name="operator-credential"
+              onChange={(event) => setCredential(event.target.value)}
               required
               spellCheck={false}
               type="password"
-              value={token}
+              value={credential}
             />
           </label>
-          <details className="advanced-field">
-            <summary>Use a specific operator identity</summary>
-            <label>
-              Principal UUID
-              <input
-                autoComplete="off"
-                disabled={busy}
-                name="principal-id"
-                onChange={(event) => setPrincipalId(event.target.value)}
-                pattern="[0-9a-fA-F-]{36}"
-                placeholder="Defaults to bootstrap administrator"
-                spellCheck={false}
-                value={principalId}
-              />
-            </label>
-          </details>
           {notice ? (
             <div className="inline-notice inline-notice--warning" role="status">
               {notice}
@@ -198,12 +183,12 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
       window.removeEventListener("fs2:operator-session-expired", expire);
   }, [queryClient]);
 
-  async function login(token: string, principalId?: string) {
+  async function login(credential: string) {
     setAuthenticating(true);
     setLoginError(null);
     setLoginNotice(null);
     try {
-      const session = await adminApi.createSession(token, principalId);
+      const session = await adminApi.createSession(credential);
       queryClient.clear();
       queryClient.setQueryData(["admin-session"], session);
       setOverride(session);

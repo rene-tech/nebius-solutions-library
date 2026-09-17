@@ -290,6 +290,10 @@ class Settings(BaseSettings):
     audit_retention_seconds: int = Field(default=2592000, ge=3600, le=31536000)
     usage_retention_seconds: int = Field(default=7776000, ge=86400, le=31536000)
     admin_session_ttl_seconds: int = Field(default=28800, ge=300, le=86400)
+    admin_session_idle_timeout_seconds: int = Field(default=1800, ge=60, le=3600)
+    admin_session_max_per_principal: int = Field(default=4, ge=1, le=20)
+    admin_session_exchange_attempts: int = Field(default=5, ge=1, le=100)
+    admin_session_exchange_window_seconds: int = Field(default=60, ge=1, le=3600)
     reporting_database_role: str = Field(
         default="fs2_serve_reporting", min_length=1, max_length=63, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$"
     )
@@ -366,6 +370,8 @@ class Settings(BaseSettings):
             raise ValueError("wait_poll_initial_seconds cannot exceed wait_poll_max_seconds")
         if self.max_sync_waiters < self.worker_concurrency:
             raise ValueError("max_sync_waiters cannot be lower than worker_concurrency")
+        if self.admin_session_idle_timeout_seconds > self.admin_session_ttl_seconds:
+            raise ValueError("admin session idle timeout cannot exceed its absolute TTL")
         if self.federation_routes_file.parent != self.federation_secret_dir:
             raise ValueError("federation_routes_file must be directly inside federation_secret_dir")
         if self.scientific_artifacts_enabled:

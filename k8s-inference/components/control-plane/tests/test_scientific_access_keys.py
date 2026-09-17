@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from test_admin_access_api import BOOTSTRAP_AUTH
+from test_admin_access_api import BOOTSTRAP_AUTH, operator_auth
 from test_scientific_batch_production import profile_value, scientific_runtime
 
 from fs2_serve.api import create_app
@@ -27,7 +27,7 @@ def key_request(models: list[str]) -> dict[str, Any]:
 def test_scientific_key_create_update_rotation_and_revocation(registry, cipher, hasher) -> None:
     runtime, _, _, cluster, _ = scientific_runtime(registry, cipher, hasher)
     with TestClient(create_app(runtime), base_url="https://inference.test.invalid") as client:
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         issued = client.post("/admin/api/v1/keys", json=key_request(["protein-design"]))
         assert issued.status_code == 201, issued.text
         key = issued.json()["data"]
@@ -96,7 +96,7 @@ def test_scientific_allowlist_does_not_grant_availability_or_tenant_license(
 
         monkeypatch.setattr(runtime.scientific_batches.execution_binding, "access_context", unavailable_license)
     with TestClient(create_app(runtime), base_url="https://inference.test.invalid") as client:
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         issued = client.post("/admin/api/v1/keys", json=key_request(["protein-design"]))
         assert issued.status_code == 201, issued.text
         headers = {"authorization": f"Bearer {issued.json()['data']['secret']}"}

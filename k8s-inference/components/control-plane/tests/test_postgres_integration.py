@@ -210,7 +210,7 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
             "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
             "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
             "fs2_activation_model_fences,fs2_activation_intents,"
-            "fs2_operator_sessions,fs2_usage_facts,fs2_audit_events,"
+            "fs2_operator_credentials,fs2_operator_sessions,fs2_usage_facts,fs2_audit_events,"
             "fs2_operation_events,fs2_operations,fs2_tokens "
             "RESTART IDENTITY CASCADE"
         )
@@ -226,7 +226,7 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
                 "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
                 "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
                 "fs2_activation_model_fences,fs2_activation_intents,"
-                "fs2_operator_sessions,fs2_usage_facts,fs2_audit_events,"
+                "fs2_operator_credentials,fs2_operator_sessions,fs2_usage_facts,fs2_audit_events,"
                 "fs2_operation_events,fs2_operations,fs2_tokens "
                 "RESTART IDENTITY CASCADE"
             )
@@ -667,16 +667,6 @@ async def test_admin_access_migration_sessions_rotation_rate_and_reported_units_
 ) -> None:
     pepper = PepperRing(active_key_id="pepper-v1", keys={"pepper-v1": b"p" * 32})
     sessions = OperatorSessionService(postgres_store, pepper, ttl_seconds=600)
-    issued_session = await sessions.issue_bootstrap()
-    verified_session = await sessions.verify(issued_session.cookie_value)
-    assert verified_session.principal.id == BOOTSTRAP_OPERATOR_PRINCIPAL_ID
-    replacement_session = await sessions.replace(issued_session.cookie_value)
-    with pytest.raises(AuthenticationError):
-        await sessions.verify(issued_session.cookie_value)
-    with pytest.raises(NotFoundError):
-        await sessions.replace(replacement_session.cookie_value, principal_id=uuid4())
-    assert (await sessions.verify(replacement_session.cookie_value)).principal.id == BOOTSTRAP_OPERATOR_PRINCIPAL_ID
-
     tenant_operator = await postgres_store.create_operator_principal(
         principal_id=uuid4(),
         request=OperatorPrincipalCreate(
@@ -687,6 +677,43 @@ async def test_admin_access_migration_sessions_rotation_rate_and_reported_units_
             tenant_id="tenant-access",
         ),
         actor="bootstrap-admin",
+    )
+    disclosure = await sessions.rotate_credential(tenant_operator.id, actor="bootstrap-admin")
+    assert (await sessions.authenticate_credential(disclosure.credential)).id == tenant_operator.id
+    issued_session = await sessions.issue(tenant_operator.id, actor=tenant_operator.subject)
+    verified_session = await sessions.verify(issued_session.cookie_value)
+    assert verified_session.principal.id == tenant_operator.id
+    replacement_session = await sessions.replace(
+        issued_session.cookie_value,
+        principal_id=tenant_operator.id,
+        actor=tenant_operator.subject,
+    )
+    with pytest.raises(AuthenticationError):
+        await sessions.verify(issued_session.cookie_value)
+    with pytest.raises(NotFoundError):
+        await sessions.replace(
+            replacement_session.cookie_value,
+            principal_id=uuid4(),
+            actor=tenant_operator.subject,
+        )
+    assert (await sessions.verify(replacement_session.cookie_value)).principal.id == tenant_operator.id
+    attempt_at = datetime.now(UTC)
+    assert all(
+        [
+            await postgres_store.consume_operator_session_exchange(
+                "a" * 64,
+                attempted_at=attempt_at,
+                window_seconds=60,
+                maximum_attempts=5,
+            )
+            for _ in range(5)
+        ]
+    )
+    assert not await postgres_store.consume_operator_session_exchange(
+        "a" * 64,
+        attempted_at=attempt_at,
+        window_seconds=60,
+        maximum_attempts=5,
     )
     assert [
         item.id
@@ -854,6 +881,13 @@ async def test_admin_access_migration_sessions_rotation_rate_and_reported_units_
         assert issued_session.cookie_value not in str(
             await connection.fetchval("SELECT digest FROM fs2_operator_sessions WHERE id=$1", issued_session.session.id)
         )
+        credential_row = await connection.fetchrow(
+            "SELECT digest,fingerprint FROM fs2_operator_credentials WHERE principal_id=$1",
+            tenant_operator.id,
+        )
+        assert credential_row is not None
+        assert disclosure.credential not in str(credential_row["digest"])
+        assert len(str(credential_row["fingerprint"])) == 64
 
 
 @pytest.mark.postgres
@@ -975,6 +1009,16 @@ async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_
             await migrated.execute("REVOKE UPDATE (scheduling_digest) ON fs2_scientific_batches FROM fs2_serve_runtime")
         finally:
             await migrated.close()
+
+        with pytest.raises(RuntimeError, match="database schema runtime privileges are incomplete"):
+            await PostgresStore.wait_for_schema(runtime_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
+
+        await PostgresStore.migrate_database(upgrade_url, CONTROL_ROOT / "migrations")
+        repaired = await asyncpg.connect(upgrade_url)
+        try:
+            await repaired.execute("REVOKE UPDATE ON fs2_operator_credentials FROM fs2_serve_runtime")
+        finally:
+            await repaired.close()
 
         with pytest.raises(RuntimeError, match="database schema runtime privileges are incomplete"):
             await PostgresStore.wait_for_schema(runtime_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
@@ -1234,6 +1278,10 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_pending_
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_operator_principals')")
                 == "fs2_operator_principals"
+            )
+            assert (
+                await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_operator_credentials')")
+                == "fs2_operator_credentials"
             )
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_model_deployments')")

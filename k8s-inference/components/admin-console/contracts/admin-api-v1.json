@@ -3,7 +3,7 @@
   "api_prefix": "/admin/api/v1",
   "route_profile": "fully enabled operational success surface; feature-disabled problem-only stubs are listed separately",
   "openapi_url": "/internal/openapi.json",
-  "authentication_handoff": "bootstrap bearer exchanges server-side for a same-origin HttpOnly operator session at POST /admin/api/v1/session; the bootstrap credential is never browser-stored",
+  "authentication_handoff": "a per-human opaque operator credential exchanges server-side for its own same-origin HttpOnly session at POST /admin/api/v1/session; shared bootstrap, inference and MCP credentials are refused",
   "session": {
     "endpoint": "/admin/api/v1/session",
     "cookie": "__Host-fs2_admin_session",
@@ -18,6 +18,17 @@
       "minimum": 300,
       "maximum": 86400
     },
+    "idle_timeout_seconds": {
+      "default": 1800,
+      "minimum": 60,
+      "maximum": 3600
+    },
+    "maximum_sessions_per_principal": {
+      "default": 4,
+      "minimum": 1,
+      "maximum": 20
+    },
+    "exchange_throttle": "database-backed fixed window per network-peer SHA-256 fingerprint; default 5 attempts per 60 seconds",
     "csrf_boundary": "exact trusted Host and Origin plus SameSite=Strict",
     "cache_control": "no-store"
   },
@@ -186,6 +197,20 @@
       "path": "/admin/api/v1/principals/{principal_id}",
       "success_status": 200,
       "data_schema": "OperatorPrincipal"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/api/v1/principals/{principal_id}/credential:rotate",
+      "success_status": 201,
+      "data_schema": "OperatorCredentialDisclosure",
+      "secret_disclosure": "one-time",
+      "cache_control": "no-store"
+    },
+    {
+      "method": "DELETE",
+      "path": "/admin/api/v1/principals/{principal_id}/sessions",
+      "success_status": 200,
+      "data_schema": "OperatorSessionRevocation"
     },
     {
       "method": "GET",

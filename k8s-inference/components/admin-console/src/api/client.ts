@@ -19,10 +19,12 @@ import type {
   AdminApiKeyRotateInput,
   ApiKeyList,
   AuditList,
+  OperatorCredentialDisclosure,
   OperatorPrincipal,
   OperatorPrincipalCreateInput,
   OperatorPrincipalPatchInput,
   OperatorSession,
+  OperatorSessionRevocation,
   PrincipalList,
 } from "./accessTypes";
 import type {
@@ -258,11 +260,10 @@ async function noContentRequest(path: string, method: "DELETE", signal?: AbortSi
 export const adminApi = {
   session: (signal?: AbortSignal) =>
     envelopeRequest<OperatorSession>("/session", { signal, notifySessionExpiry: false }),
-  createSession: (bootstrapToken: string, principalId?: string, signal?: AbortSignal) =>
+  createSession: (operatorCredential: string, signal?: AbortSignal) =>
     envelopeRequest<OperatorSession>("/session", {
       method: "POST",
-      authorization: `Bearer ${bootstrapToken}`,
-      body: principalId ? { principal_id: principalId } : undefined,
+      authorization: `Bearer ${operatorCredential}`,
       signal,
       notifySessionExpiry: false,
     }),
@@ -482,6 +483,16 @@ export const adminApi = {
       body: payload,
       signal,
     }),
+  rotateOperatorCredential: (principalId: string, signal?: AbortSignal) =>
+    envelopeRequest<OperatorCredentialDisclosure>(
+      `/principals/${encodeURIComponent(principalId)}/credential:rotate`,
+      { method: "POST", signal },
+    ),
+  revokeOperatorSessions: (principalId: string, signal?: AbortSignal) =>
+    envelopeRequest<OperatorSessionRevocation>(
+      `/principals/${encodeURIComponent(principalId)}/sessions`,
+      { method: "DELETE", signal },
+    ),
   keys: (tenantId?: string, signal?: AbortSignal) =>
     envelopeRequest<ApiKeyList>("/keys", { query: accessQuery(tenantId), signal }),
   issueKey: (payload: AdminApiKeyCreateInput, signal?: AbortSignal) =>

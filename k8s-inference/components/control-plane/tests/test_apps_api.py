@@ -1,13 +1,13 @@
 """Exercise the mounted API contracts, not just isolated new services."""
 
-from test_admin_access_api import BOOTSTRAP_AUTH, _client, _runtime
+from test_admin_access_api import _client, _runtime, operator_auth
 
 
 def test_apps_all_tabs_are_mounted_and_missing_observations_are_not_zero(registry, cipher, hasher):
     runtime = _runtime(registry, cipher, hasher)
     with _client(runtime) as client:
         assert client.get("/admin/api/v1/apps").status_code == 401
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         listing = client.get("/admin/api/v1/apps")
         assert listing.status_code == 200, listing.text
         items = listing.json()["data"]["items"]
@@ -25,8 +25,9 @@ def test_apps_all_tabs_are_mounted_and_missing_observations_are_not_zero(registr
 
 
 def test_users_and_capacity_summary_are_mounted(registry, cipher, hasher):
-    with _client(_runtime(registry, cipher, hasher)) as client:
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+    runtime = _runtime(registry, cipher, hasher)
+    with _client(runtime) as client:
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         for path in ("/users", "/capacity/summary"):
             response = client.get("/admin/api/v1" + path)
             assert response.status_code == 200, response.text

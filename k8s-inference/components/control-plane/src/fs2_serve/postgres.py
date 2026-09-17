@@ -10,7 +10,7 @@ import json
 import secrets
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final, NoReturn, ParamSpec, TypeVar, cast
 from uuid import UUID, uuid4
@@ -20,6 +20,7 @@ import asyncpg
 from .access_models import (
     AdminApiKeyPolicyPatch,
     AdminKeyUsageRecord,
+    OperatorCredentialRecord,
     OperatorPrincipal,
     OperatorPrincipalCreate,
     OperatorPrincipalPatch,
@@ -461,7 +462,7 @@ class PostgresStore:
                 await connection.execute(
                     f"REVOKE ALL ON fs2_schema_migrations,fs2_tokens,fs2_operations,"
                     f"fs2_operation_events,fs2_audit_events,fs2_usage_facts,"
-                    f"fs2_operator_principals,fs2_operator_sessions,"
+                    f"fs2_operator_principals,fs2_operator_credentials,fs2_operator_sessions,"
                     f"fs2_configuration_revisions,fs2_configuration_plans,"
                     f"fs2_configuration_reconciliation_events,"
                     f"fs2_model_deployment_revisions,fs2_model_deployments,"
@@ -512,7 +513,8 @@ class PostgresStore:
             )
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_tokens,fs2_operations TO {quoted_runtime}")
             await connection.execute(
-                f"GRANT SELECT,INSERT,UPDATE ON fs2_operator_principals,fs2_operator_sessions TO {quoted_runtime}"
+                f"GRANT SELECT,INSERT,UPDATE ON fs2_operator_principals,fs2_operator_credentials,"
+                f"fs2_operator_sessions TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT SELECT,INSERT ON fs2_operation_events,fs2_audit_events TO {quoted_runtime}"
@@ -736,6 +738,18 @@ class PostgresStore:
                             "'public.fs2_scientific_model_policies','INSERT')"
                             " AND has_table_privilege(current_user,"
                             "'public.fs2_scientific_model_policies','UPDATE')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_operator_credentials','SELECT')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_operator_credentials','INSERT')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_operator_credentials','UPDATE')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_operator_credentials','SELECT')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_operator_credentials','INSERT')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_operator_credentials','UPDATE')"
                             " AND has_function_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
                             " AND has_function_privilege(current_user,"
@@ -813,6 +827,14 @@ class PostgresStore:
             ),
             pepper_key_id=row["pepper_key_id"],
             digest=row["digest"],
+        )
+
+    @classmethod
+    def _operator_credential(cls, row: asyncpg.Record) -> OperatorCredentialRecord:
+        return OperatorCredentialRecord(
+            principal=cls._operator_principal(row),
+            pepper_key_id=row["credential_pepper_key_id"],
+            digest=row["credential_digest"],
         )
 
     @staticmethod
@@ -1444,6 +1466,160 @@ class PostgresStore:
             return self._operator_principal(row)
 
     @retry_serialization
+    async def replace_operator_credential(
+        self,
+        principal_id: UUID,
+        *,
+        pepper_key_id: str,
+        digest: str,
+        fingerprint: str,
+        actor: str,
+    ) -> OperatorPrincipal:
+        async with self.pool.acquire() as connection, connection.transaction():
+            principal = await connection.fetchrow(
+                """
+                SELECT * FROM fs2_operator_principals
+                WHERE id=$1 AND enabled AND kind='human' FOR UPDATE
+                """,
+                principal_id,
+            )
+            if principal is None:
+                raise NotFoundError("interactive operator principal not found")
+            rotated = bool(
+                await connection.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM fs2_operator_credentials WHERE principal_id=$1)",
+                    principal_id,
+                )
+            )
+            try:
+                await connection.execute(
+                    """
+                    INSERT INTO fs2_operator_credentials(
+                        principal_id,pepper_key_id,digest,fingerprint,created_by
+                    ) VALUES($1,$2,$3,$4,$5)
+                    ON CONFLICT (principal_id) DO UPDATE
+                    SET pepper_key_id=EXCLUDED.pepper_key_id,digest=EXCLUDED.digest,
+                        fingerprint=EXCLUDED.fingerprint,updated_at=clock_timestamp(),created_by=EXCLUDED.created_by
+                    """,
+                    principal_id,
+                    pepper_key_id,
+                    digest,
+                    fingerprint,
+                    actor,
+                )
+            except asyncpg.UniqueViolationError as exc:
+                raise ConflictError("operator credential already exists") from exc
+            revoked = int(
+                await connection.fetchval(
+                    """
+                    WITH revoked AS (
+                        UPDATE fs2_operator_sessions
+                        SET revoked_at=clock_timestamp()
+                        WHERE principal_id=$1 AND revoked_at IS NULL
+                        RETURNING 1
+                    ) SELECT count(*) FROM revoked
+                    """,
+                    principal_id,
+                )
+            )
+            await self._audit(
+                connection,
+                actor=actor,
+                tenant_id=principal["tenant_id"],
+                token_id=None,
+                action="operator_credential.rotate" if rotated else "operator_credential.issue",
+                target_type="operator_principal",
+                target_id=str(principal_id),
+                outcome="succeeded",
+                detail={"sessions_revoked": revoked},
+            )
+            return self._operator_principal(principal)
+
+    async def operator_credential_for_verification(
+        self,
+        principal_id: UUID,
+    ) -> OperatorCredentialRecord | None:
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                SELECT credential.pepper_key_id AS credential_pepper_key_id,
+                       credential.digest AS credential_digest,
+                       principal.id AS principal_id,principal.subject,principal.display_name,
+                       principal.kind,principal.role,principal.tenant_id,principal.enabled,
+                       principal.created_at AS principal_created_at,
+                       principal.created_by AS principal_created_by,principal.updated_at,principal.disabled_at
+                FROM fs2_operator_credentials credential
+                JOIN fs2_operator_principals principal ON principal.id=credential.principal_id
+                WHERE credential.principal_id=$1
+                """,
+                principal_id,
+            )
+        return self._operator_credential(row) if row is not None else None
+
+    async def rehash_operator_credential(
+        self,
+        principal_id: UUID,
+        *,
+        pepper_key_id: str,
+        digest: str,
+    ) -> None:
+        async with self.pool.acquire() as connection:
+            result = await connection.execute(
+                """
+                UPDATE fs2_operator_credentials
+                SET pepper_key_id=$2,digest=$3,updated_at=clock_timestamp()
+                WHERE principal_id=$1
+                """,
+                principal_id,
+                pepper_key_id,
+                digest,
+            )
+        if result == "UPDATE 0":
+            raise NotFoundError("operator credential not found")
+
+    @retry_serialization
+    async def consume_operator_session_exchange(
+        self,
+        source_fingerprint: str,
+        *,
+        attempted_at: datetime,
+        window_seconds: int,
+        maximum_attempts: int,
+    ) -> bool:
+        if attempted_at.tzinfo is None:
+            raise ValueError("operator exchange timestamp must be timezone-aware")
+        async with self.pool.acquire() as connection, connection.transaction():
+            await connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+                source_fingerprint,
+            )
+            attempts = int(
+                await connection.fetchval(
+                    """
+                    SELECT count(*) FROM fs2_audit_events
+                    WHERE action='session.exchange.attempt'
+                      AND target_type='network_source_fingerprint'
+                      AND target_id=$1 AND outcome='accepted' AND occurred_at>$2
+                    """,
+                    source_fingerprint,
+                    attempted_at - timedelta(seconds=window_seconds),
+                )
+            )
+            allowed = attempts < maximum_attempts
+            await self._audit(
+                connection,
+                actor="anonymous",
+                tenant_id=None,
+                token_id=None,
+                action="session.exchange.attempt",
+                target_type="network_source_fingerprint",
+                target_id=source_fingerprint,
+                outcome="accepted" if allowed else "throttled",
+                detail={"window_seconds": window_seconds, "maximum_attempts": maximum_attempts},
+            )
+            return allowed
+
+    @retry_serialization
     async def create_operator_session(
         self,
         *,
@@ -1453,6 +1629,8 @@ class PostgresStore:
         digest: str,
         expires_at: datetime,
         actor: str,
+        max_active_sessions: int,
+        active_after: datetime,
     ) -> OperatorSession:
         async with self.pool.acquire() as connection, connection.transaction():
             principal = await connection.fetchrow(
@@ -1460,6 +1638,19 @@ class PostgresStore:
             )
             if principal is None:
                 raise NotFoundError("operator principal not found")
+            active = int(
+                await connection.fetchval(
+                    """
+                    SELECT count(*) FROM fs2_operator_sessions
+                    WHERE principal_id=$1 AND revoked_at IS NULL
+                      AND expires_at>clock_timestamp() AND last_seen_at>$2
+                    """,
+                    principal_id,
+                    active_after,
+                )
+            )
+            if active >= max_active_sessions:
+                raise ConflictError("operator session cap reached")
             try:
                 row = await connection.fetchrow(
                     """
@@ -1511,6 +1702,8 @@ class PostgresStore:
         digest: str,
         expires_at: datetime,
         actor: str,
+        max_active_sessions: int,
+        active_after: datetime,
     ) -> OperatorSession:
         if (prior_session_id is None) != (prior_digest is None):
             raise ValueError("prior operator session verifier is incomplete")
@@ -1527,6 +1720,28 @@ class PostgresStore:
                     prior_session_id,
                     prior_digest,
                 )
+            replaceable_id = (
+                prior_session_id
+                if prior is not None
+                and prior["principal_id"] == principal_id
+                and prior["revoked_at"] is None
+                else None
+            )
+            active = int(
+                await connection.fetchval(
+                    """
+                    SELECT count(*) FROM fs2_operator_sessions
+                    WHERE principal_id=$1 AND revoked_at IS NULL
+                      AND expires_at>clock_timestamp() AND last_seen_at>$2
+                      AND ($3::uuid IS NULL OR id<>$3)
+                    """,
+                    principal_id,
+                    active_after,
+                    replaceable_id,
+                )
+            )
+            if active >= max_active_sessions:
+                raise ConflictError("operator session cap reached")
             try:
                 row = await connection.fetchrow(
                     """
@@ -1652,6 +1867,41 @@ class PostgresStore:
                 outcome="succeeded",
             )
             return record.session
+
+    @retry_serialization
+    async def revoke_operator_sessions(self, principal_id: UUID, *, actor: str) -> int:
+        async with self.pool.acquire() as connection, connection.transaction():
+            principal = await connection.fetchrow(
+                "SELECT * FROM fs2_operator_principals WHERE id=$1 FOR UPDATE",
+                principal_id,
+            )
+            if principal is None:
+                raise NotFoundError("operator principal not found")
+            revoked = int(
+                await connection.fetchval(
+                    """
+                    WITH revoked AS (
+                        UPDATE fs2_operator_sessions
+                        SET revoked_at=clock_timestamp()
+                        WHERE principal_id=$1 AND revoked_at IS NULL
+                        RETURNING 1
+                    ) SELECT count(*) FROM revoked
+                    """,
+                    principal_id,
+                )
+            )
+            await self._audit(
+                connection,
+                actor=actor,
+                tenant_id=principal["tenant_id"],
+                token_id=None,
+                action="session.revoke_all",
+                target_type="operator_principal",
+                target_id=str(principal_id),
+                outcome="succeeded",
+                detail={"revoked_sessions": revoked},
+            )
+            return revoked
 
     async def append_audit_event(
         self,

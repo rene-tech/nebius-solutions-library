@@ -11,6 +11,7 @@ from uuid import UUID
 from .access_models import (
     AdminApiKeyPolicyPatch,
     AdminKeyUsageRecord,
+    OperatorCredentialRecord,
     OperatorPrincipal,
     OperatorPrincipalCreate,
     OperatorPrincipalPatch,
@@ -155,6 +156,38 @@ class Store(Protocol):
         self, principal_id: UUID, *, request: OperatorPrincipalPatch, actor: str
     ) -> OperatorPrincipal: ...
 
+    async def replace_operator_credential(
+        self,
+        principal_id: UUID,
+        *,
+        pepper_key_id: str,
+        digest: str,
+        fingerprint: str,
+        actor: str,
+    ) -> OperatorPrincipal: ...
+
+    async def operator_credential_for_verification(
+        self,
+        principal_id: UUID,
+    ) -> OperatorCredentialRecord | None: ...
+
+    async def rehash_operator_credential(
+        self,
+        principal_id: UUID,
+        *,
+        pepper_key_id: str,
+        digest: str,
+    ) -> None: ...
+
+    async def consume_operator_session_exchange(
+        self,
+        source_fingerprint: str,
+        *,
+        attempted_at: datetime,
+        window_seconds: int,
+        maximum_attempts: int,
+    ) -> bool: ...
+
     async def create_operator_session(
         self,
         *,
@@ -164,6 +197,8 @@ class Store(Protocol):
         digest: str,
         expires_at: datetime,
         actor: str,
+        max_active_sessions: int,
+        active_after: datetime,
     ) -> OperatorSession: ...
 
     async def replace_operator_session(
@@ -177,6 +212,8 @@ class Store(Protocol):
         digest: str,
         expires_at: datetime,
         actor: str,
+        max_active_sessions: int,
+        active_after: datetime,
     ) -> OperatorSession: ...
 
     async def operator_session_for_verification(self, session_id: UUID) -> OperatorSessionRecord | None: ...
@@ -184,6 +221,8 @@ class Store(Protocol):
     async def touch_operator_session(self, session_id: UUID, *, seen_at: datetime) -> None: ...
 
     async def revoke_operator_session(self, session_id: UUID, *, actor: str) -> OperatorSession: ...
+
+    async def revoke_operator_sessions(self, principal_id: UUID, *, actor: str) -> int: ...
 
     async def append_audit_event(
         self,

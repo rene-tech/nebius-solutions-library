@@ -16,7 +16,12 @@ from uuid import UUID, uuid4
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
-from .access_models import BOOTSTRAP_OPERATOR_PRINCIPAL_ID, AdminApiKeyPolicyPatch, OperatorSession
+from .access_models import (
+    AdminApiKeyPolicyPatch,
+    OperatorCredentialDisclosure,
+    OperatorPrincipal,
+    OperatorSession,
+)
 from .models import OperationView, Principal, Scope, TokenCreate, TokenIssued, TokenView
 from .store import ConflictError, NotFoundError, Store
 
@@ -25,6 +30,9 @@ MAX_PAT_LENGTH = 256
 SESSION_MARKER = "fs2_admin"
 MAX_OPERATOR_SESSION_LENGTH = 256
 OPERATOR_SESSION_DIGEST_CONTEXT = b"fs2-serve.admin-session/v1\0"
+OPERATOR_CREDENTIAL_MARKER = "fs2_operator"
+MAX_OPERATOR_CREDENTIAL_LENGTH = 256
+OPERATOR_CREDENTIAL_DIGEST_CONTEXT = b"fs2-serve.operator-credential/v1\0"
 
 
 class AuthenticationError(PermissionError):
@@ -306,14 +314,31 @@ class TokenService:
 
 
 class OperatorSessionService:
-    """Issue and verify durable opaque browser sessions with a separated HMAC domain."""
+    """Verify personal credentials and issue durable opaque browser sessions."""
 
-    def __init__(self, store: Store, peppers: PepperRing, *, ttl_seconds: int = 8 * 60 * 60) -> None:
+    def __init__(
+        self,
+        store: Store,
+        peppers: PepperRing,
+        *,
+        ttl_seconds: int = 8 * 60 * 60,
+        idle_timeout_seconds: int | None = None,
+        max_sessions_per_principal: int = 4,
+    ) -> None:
         if not 5 * 60 <= ttl_seconds <= 24 * 60 * 60:
             raise ValueError("operator session TTL is outside the bound")
+        if idle_timeout_seconds is None:
+            idle_timeout_seconds = min(30 * 60, ttl_seconds)
+        if not 60 <= idle_timeout_seconds <= ttl_seconds:
+            raise ValueError("operator session idle timeout is outside the bound")
+        if not 1 <= max_sessions_per_principal <= 20:
+            raise ValueError("operator session cap is outside the bound")
         self.store = store
         self._peppers = peppers
+        self._hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2, hash_len=32, salt_len=16)
         self.ttl_seconds = ttl_seconds
+        self.idle_timeout_seconds = idle_timeout_seconds
+        self.max_sessions_per_principal = max_sessions_per_principal
 
     def _digest(self, cookie_value: str, key_id: str) -> str:
         try:
@@ -334,8 +359,72 @@ class OperatorSessionService:
         except ValueError as exc:
             raise AuthenticationError("invalid operator session") from exc
 
-    async def issue_bootstrap(self) -> IssuedOperatorSession:
-        return await self.issue(BOOTSTRAP_OPERATOR_PRINCIPAL_ID, actor="bootstrap-admin")
+    def _credential_prehash(self, credential: str, key_id: str) -> str:
+        try:
+            pepper = self._peppers.keys[key_id]
+        except KeyError as exc:
+            raise AuthenticationError("operator credential key is unavailable") from exc
+        return hmac.new(
+            pepper,
+            OPERATOR_CREDENTIAL_DIGEST_CONTEXT + credential.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+
+    @staticmethod
+    def _parse_credential(credential: str) -> UUID:
+        if len(credential) > MAX_OPERATOR_CREDENTIAL_LENGTH:
+            raise AuthenticationError("invalid operator credential")
+        parts = credential.split("_", 3)
+        if len(parts) != 4 or parts[0] != "fs2" or parts[1] != "operator" or len(parts[3]) < 32:
+            raise AuthenticationError("invalid operator credential")
+        try:
+            return UUID(hex=parts[2])
+        except ValueError as exc:
+            raise AuthenticationError("invalid operator credential") from exc
+
+    async def rotate_credential(
+        self,
+        principal_id: UUID,
+        *,
+        actor: str,
+    ) -> OperatorCredentialDisclosure:
+        secret = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+        credential = f"{OPERATOR_CREDENTIAL_MARKER}_{principal_id.hex}_{secret}"
+        pepper_key_id = self._peppers.active_key_id
+        digest = self._hasher.hash(self._credential_prehash(credential, pepper_key_id))
+        fingerprint = hashlib.sha256(credential.encode()).hexdigest()
+        principal = await self.store.replace_operator_credential(
+            principal_id,
+            pepper_key_id=pepper_key_id,
+            digest=digest,
+            fingerprint=fingerprint,
+            actor=actor,
+        )
+        return OperatorCredentialDisclosure(principal_id=principal.id, credential=credential)
+
+    async def authenticate_credential(self, credential: str) -> OperatorPrincipal:
+        principal_id = self._parse_credential(credential)
+        record = await self.store.operator_credential_for_verification(principal_id)
+        if record is None or not record.principal.enabled or str(record.principal.kind) != "human":
+            raise AuthenticationError("invalid operator credential")
+        try:
+            valid = self._hasher.verify(
+                record.digest,
+                self._credential_prehash(credential, record.pepper_key_id),
+            )
+        except (InvalidHashError, VerifyMismatchError) as exc:
+            raise AuthenticationError("invalid operator credential") from exc
+        if not valid:
+            raise AuthenticationError("invalid operator credential")
+        if record.pepper_key_id != self._peppers.active_key_id:
+            active_id = self._peppers.active_key_id
+            replacement = self._hasher.hash(self._credential_prehash(credential, active_id))
+            await self.store.rehash_operator_credential(
+                principal_id,
+                pepper_key_id=active_id,
+                digest=replacement,
+            )
+        return record.principal
 
     def _new_material(self) -> tuple[UUID, str, str, str]:
         session_id = uuid4()
@@ -347,13 +436,16 @@ class OperatorSessionService:
 
     async def issue(self, principal_id: UUID, *, actor: str) -> IssuedOperatorSession:
         session_id, cookie_value, pepper_key_id, digest = self._new_material()
+        now = datetime.now(UTC)
         session = await self.store.create_operator_session(
             session_id=session_id,
             principal_id=principal_id,
             pepper_key_id=pepper_key_id,
             digest=digest,
-            expires_at=datetime.now(UTC) + timedelta(seconds=self.ttl_seconds),
+            expires_at=now + timedelta(seconds=self.ttl_seconds),
             actor=actor,
+            max_active_sessions=self.max_sessions_per_principal,
+            active_after=now - timedelta(seconds=self.idle_timeout_seconds),
         )
         return IssuedOperatorSession(session=session, cookie_value=cookie_value)
 
@@ -361,8 +453,8 @@ class OperatorSessionService:
         self,
         prior_cookie_value: str | None,
         *,
-        principal_id: UUID = BOOTSTRAP_OPERATOR_PRINCIPAL_ID,
-        actor: str = "bootstrap-admin",
+        principal_id: UUID,
+        actor: str,
     ) -> IssuedOperatorSession:
         prior_session_id: UUID | None = None
         prior_digest: str | None = None
@@ -376,6 +468,7 @@ class OperatorSessionService:
             except AuthenticationError:
                 pass
         session_id, cookie_value, pepper_key_id, digest = self._new_material()
+        now = datetime.now(UTC)
         session = await self.store.replace_operator_session(
             prior_session_id=prior_session_id,
             prior_digest=prior_digest,
@@ -383,8 +476,10 @@ class OperatorSessionService:
             principal_id=principal_id,
             pepper_key_id=pepper_key_id,
             digest=digest,
-            expires_at=datetime.now(UTC) + timedelta(seconds=self.ttl_seconds),
+            expires_at=now + timedelta(seconds=self.ttl_seconds),
             actor=actor,
+            max_active_sessions=self.max_sessions_per_principal,
+            active_after=now - timedelta(seconds=self.idle_timeout_seconds),
         )
         return IssuedOperatorSession(session=session, cookie_value=cookie_value)
 
@@ -398,7 +493,13 @@ class OperatorSessionService:
             raise AuthenticationError("invalid operator session")
         now = datetime.now(UTC)
         session = record.session
-        if session.revoked_at is not None or session.expires_at <= now or not session.principal.enabled:
+        idle_at = session.last_seen_at + timedelta(seconds=self.idle_timeout_seconds)
+        if (
+            session.revoked_at is not None
+            or session.expires_at <= now
+            or idle_at <= now
+            or not session.principal.enabled
+        ):
             raise AuthenticationError("invalid operator session")
         await self.store.touch_operator_session(session.id, seen_at=now)
         return session.model_copy(update={"last_seen_at": now})
@@ -414,3 +515,6 @@ class OperatorSessionService:
             await self.revoke(cookie_value, actor=actor)
         except (AuthenticationError, NotFoundError):
             return
+
+    async def revoke_all(self, principal_id: UUID, *, actor: str) -> int:
+        return await self.store.revoke_operator_sessions(principal_id, actor=actor)

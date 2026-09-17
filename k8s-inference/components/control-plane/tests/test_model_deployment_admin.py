@@ -8,11 +8,11 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from test_admin_access_api import (
-    BOOTSTRAP_AUTH,
     _client,
     _create_principal,
     _principal_cookie,
     _runtime,
+    operator_auth,
 )
 from test_model_deployment import model_spec
 
@@ -281,7 +281,7 @@ def test_authenticated_read_routes_are_tenant_scoped_and_writers_stay_unmounted(
 
     with _client(runtime) as client:
         unauthenticated = client.get("/admin/api/v1/model-deployments")
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         global_page = client.get("/admin/api/v1/model-deployments", params={"limit": 1})
         global_history = client.get("/admin/api/v1/model-deployments/qwen-live/history")
         unavailable_status = client.get("/admin/api/v1/model-deployments/qwen-live/status")

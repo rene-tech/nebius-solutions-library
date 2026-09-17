@@ -1706,7 +1706,7 @@ def test_preview_http_routes_are_feature_gated_and_mutations_return_501(
     cipher: object,
     hasher: object,
 ) -> None:
-    from test_admin_access_api import BOOTSTRAP_AUTH, _runtime
+    from test_admin_access_api import _runtime, operator_auth
 
     default_runtime = _runtime(registry, cipher, hasher)
     with TestClient(create_app(default_runtime), base_url="https://inference.test.invalid") as client:
@@ -1721,7 +1721,7 @@ def test_preview_http_routes_are_feature_gated_and_mutations_return_501(
     )
     payload = ModelDeploymentPreviewProposal(name="qwen-live", spec=model_spec()).model_dump(mode="json", by_alias=True)
     with TestClient(create_app(runtime), base_url="https://inference.test.invalid") as client:
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         preview = client.post("/admin/api/v1/model-deployments:plan-preview", json=payload)
         assert preview.status_code == 200 and preview.json()["data"]["mutation_supported"] is False
         blocked = client.post(

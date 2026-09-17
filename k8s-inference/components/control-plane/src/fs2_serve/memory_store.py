@@ -17,6 +17,7 @@ from .access_models import (
     BOOTSTRAP_OPERATOR_PRINCIPAL_ID,
     AdminApiKeyPolicyPatch,
     AdminKeyUsageRecord,
+    OperatorCredentialRecord,
     OperatorPrincipal,
     OperatorPrincipalCreate,
     OperatorPrincipalPatch,
@@ -179,7 +180,9 @@ class MemoryStore:
                 updated_at=now,
             )
         }
+        self.operator_credentials: dict[UUID, tuple[str, str, str]] = {}
         self.operator_sessions: dict[UUID, OperatorSessionRecord] = {}
+        self.operator_session_exchange_attempts: dict[str, list[datetime]] = {}
         self.configuration_revisions: dict[int, ConfigurationRevision] = {}
         self.configuration_plans: dict[UUID, ConfigurationPlan] = {}
         self.configuration_status_events: dict[UUID, list[ReconciliationStatus]] = {}
@@ -762,6 +765,108 @@ class MemoryStore:
             )
             return principal.model_copy(deep=True)
 
+    async def replace_operator_credential(
+        self,
+        principal_id: UUID,
+        *,
+        pepper_key_id: str,
+        digest: str,
+        fingerprint: str,
+        actor: str,
+    ) -> OperatorPrincipal:
+        async with self._lock:
+            principal = self.operator_principals.get(principal_id)
+            if principal is None or not principal.enabled or principal.kind is not PrincipalKind.HUMAN:
+                raise NotFoundError("interactive operator principal not found")
+            if any(
+                stored_fingerprint == fingerprint and stored_principal_id != principal_id
+                for stored_principal_id, (_, _, stored_fingerprint) in self.operator_credentials.items()
+            ):
+                raise ConflictError("operator credential already exists")
+            rotated = principal_id in self.operator_credentials
+            self.operator_credentials[principal_id] = (pepper_key_id, digest, fingerprint)
+            now = datetime.now(UTC)
+            revoked = 0
+            for session_id, record in tuple(self.operator_sessions.items()):
+                if record.session.principal.id != principal_id or record.session.revoked_at is not None:
+                    continue
+                session = record.session.model_copy(update={"revoked_at": now})
+                self.operator_sessions[session_id] = record.model_copy(update={"session": session})
+                revoked += 1
+            self._audit(
+                actor=actor,
+                tenant_id=principal.tenant_id,
+                token_id=None,
+                action="operator_credential.rotate" if rotated else "operator_credential.issue",
+                target_type="operator_principal",
+                target_id=str(principal_id),
+                outcome="succeeded",
+                detail={"sessions_revoked": revoked},
+            )
+            return principal.model_copy(deep=True)
+
+    async def operator_credential_for_verification(
+        self,
+        principal_id: UUID,
+    ) -> OperatorCredentialRecord | None:
+        async with self._lock:
+            stored = self.operator_credentials.get(principal_id)
+            principal = self.operator_principals.get(principal_id)
+            if stored is None or principal is None:
+                return None
+            pepper_key_id, digest, _ = stored
+            return OperatorCredentialRecord(
+                principal=principal.model_copy(deep=True),
+                pepper_key_id=pepper_key_id,
+                digest=digest,
+            )
+
+    async def rehash_operator_credential(
+        self,
+        principal_id: UUID,
+        *,
+        pepper_key_id: str,
+        digest: str,
+    ) -> None:
+        async with self._lock:
+            stored = self.operator_credentials.get(principal_id)
+            if stored is None:
+                raise NotFoundError("operator credential not found")
+            self.operator_credentials[principal_id] = (pepper_key_id, digest, stored[2])
+
+    async def consume_operator_session_exchange(
+        self,
+        source_fingerprint: str,
+        *,
+        attempted_at: datetime,
+        window_seconds: int,
+        maximum_attempts: int,
+    ) -> bool:
+        if attempted_at.tzinfo is None:
+            raise ValueError("operator exchange timestamp must be timezone-aware")
+        async with self._lock:
+            window_start = attempted_at - timedelta(seconds=window_seconds)
+            attempts = [
+                observed
+                for observed in self.operator_session_exchange_attempts.get(source_fingerprint, [])
+                if observed > window_start
+            ]
+            allowed = len(attempts) < maximum_attempts
+            if allowed:
+                attempts.append(attempted_at)
+                self.operator_session_exchange_attempts[source_fingerprint] = attempts
+            self._audit(
+                actor="anonymous",
+                tenant_id=None,
+                token_id=None,
+                action="session.exchange.attempt",
+                target_type="network_source_fingerprint",
+                target_id=source_fingerprint,
+                outcome="accepted" if allowed else "throttled",
+                detail={"window_seconds": window_seconds, "maximum_attempts": maximum_attempts},
+            )
+            return allowed
+
     async def create_operator_session(
         self,
         *,
@@ -771,6 +876,8 @@ class MemoryStore:
         digest: str,
         expires_at: datetime,
         actor: str,
+        max_active_sessions: int,
+        active_after: datetime,
     ) -> OperatorSession:
         async with self._lock:
             principal = self.operator_principals.get(principal_id)
@@ -781,6 +888,16 @@ class MemoryStore:
                 raise ConflictError("operator session already exists")
             if expires_at <= now:
                 raise ValueError("operator session expiry must be in the future")
+            active = sum(
+                1
+                for record in self.operator_sessions.values()
+                if record.session.principal.id == principal_id
+                and record.session.revoked_at is None
+                and record.session.expires_at > now
+                and record.session.last_seen_at > active_after
+            )
+            if active >= max_active_sessions:
+                raise ConflictError("operator session cap reached")
             session = OperatorSession(
                 id=session_id,
                 principal=principal,
@@ -816,6 +933,8 @@ class MemoryStore:
         digest: str,
         expires_at: datetime,
         actor: str,
+        max_active_sessions: int,
+        active_after: datetime,
     ) -> OperatorSession:
         if (prior_session_id is None) != (prior_digest is None):
             raise ValueError("prior operator session verifier is incomplete")
@@ -829,6 +948,26 @@ class MemoryStore:
             if expires_at <= now:
                 raise ValueError("operator session expiry must be in the future")
             prior = self.operator_sessions.get(prior_session_id) if prior_session_id is not None else None
+            replaceable_id = (
+                prior.session.id
+                if prior is not None
+                and prior_digest is not None
+                and secrets.compare_digest(prior.digest, prior_digest)
+                and prior.session.principal.id == principal_id
+                and prior.session.revoked_at is None
+                else None
+            )
+            active = sum(
+                1
+                for record in self.operator_sessions.values()
+                if record.session.id != replaceable_id
+                and record.session.principal.id == principal_id
+                and record.session.revoked_at is None
+                and record.session.expires_at > now
+                and record.session.last_seen_at > active_after
+            )
+            if active >= max_active_sessions:
+                raise ConflictError("operator session cap reached")
             if (
                 prior is not None
                 and prior_digest is not None
@@ -913,6 +1052,31 @@ class MemoryStore:
                 outcome="succeeded",
             )
             return session.model_copy(deep=True)
+
+    async def revoke_operator_sessions(self, principal_id: UUID, *, actor: str) -> int:
+        async with self._lock:
+            principal = self.operator_principals.get(principal_id)
+            if principal is None:
+                raise NotFoundError("operator principal not found")
+            now = datetime.now(UTC)
+            revoked = 0
+            for session_id, record in tuple(self.operator_sessions.items()):
+                if record.session.principal.id != principal_id or record.session.revoked_at is not None:
+                    continue
+                session = record.session.model_copy(update={"revoked_at": now})
+                self.operator_sessions[session_id] = record.model_copy(update={"session": session})
+                revoked += 1
+            self._audit(
+                actor=actor,
+                tenant_id=principal.tenant_id,
+                token_id=None,
+                action="session.revoke_all",
+                target_type="operator_principal",
+                target_id=str(principal_id),
+                outcome="succeeded",
+                detail={"revoked_sessions": revoked},
+            )
+            return revoked
 
     async def append_audit_event(
         self,

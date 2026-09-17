@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from test_admin_access_api import operator_auth
 
 from fs2_serve.access_models import OperatorPrincipalCreate, OperatorRole, PrincipalKind
 from fs2_serve.admin import AdminProblemError, AdminReadService
@@ -671,12 +672,13 @@ def test_run_query_rejects_unbounded_windows_and_limits() -> None:
 
 
 def test_authenticated_admin_routes_use_the_real_bff_service(registry, cipher, hasher) -> None:
-    client = TestClient(create_app(_runtime(registry, cipher, hasher)), base_url="https://inference.test.invalid")
+    runtime = _runtime(registry, cipher, hasher)
+    client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
     assert client.get("/admin/api/v1/scientific-runs").status_code == 401
 
     session = client.post(
         "/admin/api/v1/session",
-        headers={"authorization": f"Bearer {'a' * 32}"},
+        headers=operator_auth(runtime),
     )
     assert session.status_code == 200
 
@@ -742,7 +744,7 @@ def test_admin_artifact_download_uses_existing_tenant_authority_and_exact_bytes(
     client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
     endpoint = f"/admin/api/v1/scientific-runs/{OPERATION_ID}/artifacts/{artifact_id}/content"
     assert client.get(endpoint).status_code == 401
-    assert client.post("/admin/api/v1/session", headers={"authorization": f"Bearer {'a' * 32}"}).status_code == 200
+    assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
     response = client.get(endpoint)
     assert response.status_code == 200
     assert response.content == content
@@ -813,7 +815,7 @@ def test_cancel_route_requires_the_operator_role_and_is_absent_without_a_writer(
         runs=RunAdapter(), models=ModelAdapter(), clock=lambda: FIXED_NOW
     )
     read_only_client = TestClient(create_app(read_only), base_url="https://inference.test.invalid")
-    session = read_only_client.post("/admin/api/v1/session", headers={"authorization": f"Bearer {'a' * 32}"})
+    session = read_only_client.post("/admin/api/v1/session", headers=operator_auth(read_only))
     assert session.status_code == 200
     capabilities = read_only_client.get("/admin/api/v1/scientific-capabilities")
     assert capabilities.json()["data"]["run_control"]["available"] is False
@@ -827,7 +829,7 @@ def test_absent_run_reader_removes_only_run_routes(registry, cipher, hasher) -> 
     runtime = _runtime(registry, cipher, hasher)
     runtime.scientific_admin = ScientificAdminReadService(models=ModelAdapter(), clock=lambda: FIXED_NOW)
     client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
-    assert client.post("/admin/api/v1/session", headers={"authorization": f"Bearer {'a' * 32}"}).status_code == 200
+    assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
 
     capabilities = client.get("/admin/api/v1/scientific-capabilities")
     assert capabilities.status_code == 200
@@ -969,7 +971,7 @@ def test_policy_routes_require_the_operator_role_and_are_absent_without_a_reposi
     assert client.get("/admin/api/v1/scientific-model-policies").status_code == 401
     assert client.put("/admin/api/v1/scientific-model-policies/rfdiffusion", json=body).status_code == 401
 
-    assert client.post("/admin/api/v1/session", headers={"authorization": f"Bearer {'a' * 32}"}).status_code == 200
+    assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
     capabilities = client.get("/admin/api/v1/scientific-capabilities")
     assert capabilities.json()["data"]["model_policy"] == {"available": True, "reason": None}
     listed = client.get("/admin/api/v1/scientific-model-policies")
@@ -1037,7 +1039,7 @@ def test_policy_routes_require_the_operator_role_and_are_absent_without_a_reposi
     )
     read_only_client = TestClient(create_app(read_only), base_url="https://inference.test.invalid")
     assert (
-        read_only_client.post("/admin/api/v1/session", headers={"authorization": f"Bearer {'a' * 32}"}).status_code
+        read_only_client.post("/admin/api/v1/session", headers=operator_auth(read_only)).status_code
         == 200
     )
     assert (

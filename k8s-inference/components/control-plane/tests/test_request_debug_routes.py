@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from test_admin_access_api import BOOTSTRAP_AUTH, _client, _create_principal, _principal_cookie, _runtime
+from test_admin_access_api import _client, _create_principal, _principal_cookie, _runtime, operator_auth
 
 from fs2_serve.access_models import OperatorRole
 from fs2_serve.api import ADMIN_SESSION_COOKIE
@@ -37,7 +37,7 @@ def test_capture_is_opt_in_and_admin_traffic_is_not_captured(registry, cipher, h
     runtime.request_debug_store = store
     with _client(runtime) as client:
         client.get("/v1/models")
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         assert client.get("/admin/api/v1/requests").json()["data"]["items"] == []
     assert not asyncio.run(store.list()).items
 
@@ -66,7 +66,7 @@ def test_malformed_authenticated_payload_is_captured_without_a_run_or_auth_secre
         )
         assert response.status_code in {400, 422}
         assert client.get("/admin/api/v1/requests").status_code == 401
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         listing = client.get("/admin/api/v1/requests")
         assert listing.status_code == 200, listing.text
         (summary,) = listing.json()["data"]["items"]
@@ -93,7 +93,7 @@ def test_app_operation_filters_and_full_error_detail(registry, cipher, hasher):
     for exchange in (expected, foreign_model, _exchange(tenant=None, model=None)):
         asyncio.run(store.record(exchange))
     with _client(runtime) as client:
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         app = next(
             item
             for item in client.get("/admin/api/v1/apps").json()["data"]["items"]

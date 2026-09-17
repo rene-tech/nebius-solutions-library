@@ -6,12 +6,12 @@ import { testEnvelope, testSession } from "../test/accessFixtures";
 import { LoginPage, SessionBoundary, useSession } from "./SessionContext";
 
 describe("operator login", () => {
-  it("clears the bootstrap credential immediately after submit and never stores it", async () => {
-    const transient = "bootstrap-test-" + "z".repeat(40);
+  it("clears the personal operator credential immediately after submit and never stores it", async () => {
+    const transient = "fs2_operator_test_" + "z".repeat(40);
     const login = vi.fn().mockResolvedValue(undefined);
     const storageSpy = vi.spyOn(Storage.prototype, "setItem");
     render(<LoginPage busy={false} error={null} onLogin={login} />);
-    const input = screen.getByLabelText("Bootstrap access token");
+    const input = screen.getByLabelText("Personal operator credential");
     fireEvent.change(input, { target: { value: transient } });
     fireEvent.submit(input.closest("form")!);
     expect(input).toHaveValue("");
@@ -20,11 +20,11 @@ describe("operator login", () => {
     expect(window.location.href).not.toContain(transient);
   });
 
-  it("explains that an inference key cannot satisfy admin authentication", () => {
-    render(<LoginPage busy={false} error={new AdminApiError("admin authentication is required", 401, null, "authentication_error")} onLogin={async () => undefined} />);
-    expect(screen.getByText("admin authentication is required")).toBeInTheDocument();
-    expect(screen.getByText(/Use the admin bootstrap token configured for this cluster/)).toBeInTheDocument();
-    expect(screen.getByText(/Inference API keys and MCP tokens cannot create an operator session/)).toBeInTheDocument();
+  it("explains that shared bootstrap, inference, and MCP credentials cannot sign in", () => {
+    render(<LoginPage busy={false} error={new AdminApiError("operator credential is invalid", 401, null, "operator_credential_invalid")} onLogin={async () => undefined} />);
+    expect(screen.getByText("operator credential is invalid")).toBeInTheDocument();
+    expect(screen.getByText(/Use the personal operator credential issued for your principal/)).toBeInTheDocument();
+    expect(screen.getByText(/Bootstrap, inference, and MCP credentials cannot create an operator session/)).toBeInTheDocument();
   });
 
   it("moves from unauthenticated to cookie-backed session and back through logout", async () => {
@@ -39,11 +39,11 @@ describe("operator login", () => {
     }
 
     render(<QueryClientProvider client={queryClient}><SessionBoundary><Protected /></SessionBoundary></QueryClientProvider>);
-    const token = "boundary-test-" + "b".repeat(40);
-    fireEvent.change(await screen.findByLabelText("Bootstrap access token"), { target: { value: token } });
+    const credential = "fs2_operator_boundary_" + "b".repeat(40);
+    fireEvent.change(await screen.findByLabelText("Personal operator credential"), { target: { value: credential } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByText("Signed in as Admin operator")).toBeInTheDocument();
-    expect(create).toHaveBeenCalledWith(token, undefined);
+    expect(create).toHaveBeenCalledWith(credential);
     fireEvent.click(screen.getByRole("button", { name: "Sign out now" }));
     expect(await screen.findByRole("heading", { name: "Operator sign in" })).toBeInTheDocument();
     expect(remove).toHaveBeenCalledOnce();

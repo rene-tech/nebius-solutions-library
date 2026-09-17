@@ -334,8 +334,14 @@ config:
   patRetentionSeconds: "604800"
   auditRetentionSeconds: "2592000"
   usageRetentionSeconds: "7776000"
-  # Opaque browser operator session lifetime; bounded to 5 minutes..24 hours.
+  # Opaque browser operator session controls. Absolute expiry remains eight
+  # hours, while inactivity expires a session after 30 minutes.
   adminSessionTtlSeconds: "28800"
+  adminSessionIdleTimeoutSeconds: "1800"
+  adminSessionMaxPerPrincipal: "4"
+  # Shared, database-backed exchange throttle per network-peer fingerprint.
+  adminSessionExchangeAttempts: "5"
+  adminSessionExchangeWindowSeconds: "60"
   syncWaitSeconds: "2"
   maxSyncWaitSeconds: "30"
   maxSyncWaiters: "32"
@@ -364,11 +370,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e
-    migrationSetSha256: 9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2
-    migrationCount: 29
+    contractPayloadSha256: 2db60ae50d28edfb6ead9ff5144ecaa1680843c03e155d655a3d5df7a19ef6f9
+    migrationSetSha256: 24f3abc3997de473e1343f9d3467e84babb535cab889369de3620d7fb99c44c3
+    migrationCount: 30
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0029_request_debug.sql
+    lastMigrationVersion: 0030_operator_credentials.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:

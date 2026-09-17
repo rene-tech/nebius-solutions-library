@@ -9,10 +9,11 @@ The browser never receives a Kubernetes, database or observability credential.
 1. `GET /admin/api/v1/session` checks the same-origin opaque operator session.
 2. An unauthenticated browser renders the sign-in boundary before any fleet,
    principal, key or audit query is mounted.
-3. The submitted bootstrap credential is used only in the `Authorization`
+3. The submitted personal operator credential is used only in the `Authorization`
    header of `POST /admin/api/v1/session` and is cleared from the controlled
    input before the request completes. It is not written to local storage,
-   session storage, a URL or the query cache.
+   session storage, a URL or the query cache. The credential selects only its
+   own server-side principal; there is no caller-controlled identity handoff.
 4. The response installs the server-owned `Secure`, `HttpOnly`,
    `SameSite=Strict` cookie. JavaScript retains only the secret-free
    `OperatorSession` projection.
@@ -22,6 +23,9 @@ The browser never receives a Kubernetes, database or observability credential.
 
 Any authenticated API response with status 401 signals the session boundary,
 clears secret-free cached tenant data and returns to sign-in.
+Five exchange attempts from one network-peer fingerprint are allowed per
+60-second default window; later attempts return 429 without credential work.
+Sessions also expire after 30 minutes of inactivity by default.
 
 ## Role behavior
 

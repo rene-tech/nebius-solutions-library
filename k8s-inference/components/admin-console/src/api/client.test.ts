@@ -187,21 +187,21 @@ describe("same-origin admin API boundary", () => {
     await expect(adminApi.overview(new URLSearchParams())).rejects.toThrow("incompatible envelope");
   });
 
-  it("exchanges a bootstrap token only in the authorization header and never persists or logs it", async () => {
-    const transient = "bootstrap-value-" + "x".repeat(40);
+  it("exchanges a personal credential only in the authorization header and never persists or logs it", async () => {
+    const transient = "fs2_operator_value_" + "x".repeat(40);
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
     const storageSpy = vi.spyOn(Storage.prototype, "setItem");
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.stubGlobal("fetch", fetchMock);
 
-    await adminApi.createSession(transient, "00000000-0000-0000-0000-000000000001");
+    await adminApi.createSession(transient);
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/admin/api/v1/session");
     expect(url).not.toContain(transient);
     expect(init.method).toBe("POST");
     expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${transient}`);
-    expect(init.body).toBe(JSON.stringify({ principal_id: "00000000-0000-0000-0000-000000000001" }));
+    expect(init.body).toBeUndefined();
     expect(String(init.body)).not.toContain(transient);
     expect(storageSpy).not.toHaveBeenCalled();
     expect(consoleSpy).not.toHaveBeenCalled();
@@ -237,6 +237,22 @@ describe("same-origin admin API boundary", () => {
     expect(url).toBe("/admin/api/v1/session");
     expect(init.method).toBe("DELETE");
     expect(init.credentials).toBe("same-origin");
+  });
+
+  it("uses principal-scoped credential rotation and revoke-all routes without request bodies", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const principalId = "11111111-1111-4111-8111-111111111111";
+
+    await adminApi.rotateOperatorCredential(principalId);
+    await adminApi.revokeOperatorSessions(principalId);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `/admin/api/v1/principals/${principalId}/credential:rotate`,
+      `/admin/api/v1/principals/${principalId}/sessions`,
+    ]);
+    expect(fetchMock.mock.calls.map(([, init]) => (init as RequestInit).method)).toEqual(["POST", "DELETE"]);
+    expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).body === undefined)).toBe(true);
   });
 
   it("forwards only bounded observability selectors and never unrelated URL data", async () => {

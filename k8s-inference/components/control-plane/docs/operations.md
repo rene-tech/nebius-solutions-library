@@ -188,34 +188,61 @@ retention and fencing contract.
 ### Operator session and API-key workflow
 
 The SPA owns `/admin/login`; the FastAPI control plane owns only the versioned
-`/admin/api/v1/*` BFF boundary. Bootstrap without JavaScript by using a
-mode-0600 cookie jar. This flow works directly against the chart-owned HTTPS
-endpoint and does not assume an auth proxy:
+`/admin/api/v1/*` BFF boundary. Sign in without JavaScript by using a mode-0600
+cookie jar and the opaque credential issued for one human operator principal.
+This flow works directly against the chart-owned HTTPS endpoint and does not
+assume an auth proxy:
 
 ```bash
 set -eu
 FS2_ADMIN_BASE=https://203.0.113.10
 umask 077
 FS2_ADMIN_COOKIE_JAR=$(mktemp)
-read -r -s -p 'Bootstrap token: ' FS2_BOOTSTRAP_TOKEN
-printf '\nheader = "Authorization: Bearer %s"\n' "$FS2_BOOTSTRAP_TOKEN" |
+read -r -s -p 'Personal operator credential: ' FS2_OPERATOR_CREDENTIAL
+printf '\nheader = "Authorization: Bearer %s"\n' "$FS2_OPERATOR_CREDENTIAL" |
   curl --fail --silent --show-error --config - --request POST \
     --cookie-jar "$FS2_ADMIN_COOKIE_JAR" \
     "$FS2_ADMIN_BASE/admin/api/v1/session"
-unset FS2_BOOTSTRAP_TOKEN
+unset FS2_OPERATOR_CREDENTIAL
 curl --fail --silent --show-error --cookie "$FS2_ADMIN_COOKIE_JAR" \
   "$FS2_ADMIN_BASE/admin/api/v1/keys?tenant_id=tenant-a"
 ```
 
 The session exchange replaces any prior valid session with a random
-`__Host-fs2_admin_session` cookie. The cookie is `Secure`, `HttpOnly`,
-`SameSite=Strict`, has `Path=/`, and has no `Domain`. Neither the response body
-nor any redirect contains the bootstrap credential or opaque session secret.
+`__Host-fs2_admin_session` cookie. The verified credential determines the
+principal; callers cannot select or impersonate another identity. The cookie is
+`Secure`, `HttpOnly`, `SameSite=Strict`, has `Path=/`, and has no `Domain`.
+Neither the response body nor any redirect contains the credential or opaque
+session secret.
 
-An administrator can hand off a scoped viewer/operator/admin identity by adding
-the bounded JSON body `{"principal_id":"<operator-principal-uuid>"}` to the
-session `POST`. The bootstrap credential authorizes that handoff; the selected
-principal's role and tenant are enforced on every later request by the server.
+An authenticated administrator issues or rotates a human principal's personal
+credential with `POST /admin/api/v1/principals/{principal_id}/credential:rotate`.
+The raw value is disclosed exactly once; only its keyed Argon2id verifier is
+stored alongside a non-secret SHA-256 fingerprint. Rotation revokes that
+principal's existing sessions. Because the
+bootstrap service principal is not human, it cannot receive an interactive
+credential. The shared bootstrap bearer remains limited to the legacy
+`/admin/v1/*` automation routes and is refused by the browser session exchange.
+
+Rollout is deliberately staged: retain one valid global-admin cookie jar before
+replacing the old exchange; after the migration and application are up, use
+that cookie to issue credentials for named human administrators, prove a
+personal sign-in, and only then end the retained session. If that prerequisite
+is unavailable, roll back instead of exposing a bootstrap-only enrollment
+route.
+
+Sessions have both the configured absolute TTL and a 30-minute default idle
+timeout. No principal may hold more than four active, non-idle sessions by
+default. The exchange consumes a database-backed per-network-source attempt
+budget before credential verification; repeated attempts return 429. An admin
+can invalidate every session for an in-scope principal with
+`DELETE /admin/api/v1/principals/{principal_id}/sessions`.
+The bounded settings are `FS2_ADMIN_SESSION_IDLE_TIMEOUT_SECONDS`,
+`FS2_ADMIN_SESSION_MAX_PER_PRINCIPAL`,
+`FS2_ADMIN_SESSION_EXCHANGE_ATTEMPTS`, and
+`FS2_ADMIN_SESSION_EXCHANGE_WINDOW_SECONDS`.
+
+The authenticated principal's role and tenant are enforced on every later request by the server.
 Tenant-bound principals cannot enumerate another tenant or consume global
 fleet aggregates. Every enabled viewer can read `/admin/api/v1/context`, so a
 tenant session can initialize the SPA and select its deployment context. The
@@ -241,10 +268,10 @@ inference. Native imaging/BioNeMo modality totals remain unavailable unless a
 runtime adapter explicitly reports them. GPU-seconds are explicitly marked
 `estimated` when derived from admission reservations. Legacy `/admin/v1/*` CLI
 routes continue to accept the bootstrap bearer credential but are not browser
-BFF routes.
+BFF routes and cannot mint an interactive session.
 
-Deferred after this MVP: external OIDC/SSO and independent per-user login,
-CSRF nonces beyond exact Origin enforcement plus `SameSite=Strict`, automatic
+Deferred after this MVP: external OIDC/SSO, CSRF nonces beyond exact Origin
+enforcement plus `SameSite=Strict`, automatic
 expired-session row cleanup, and measured rather than reservation-estimated GPU
 accounting. These do not change the current session, tenant, audit, or
 one-time-disclosure contracts.

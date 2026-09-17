@@ -616,6 +616,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             store,
             peppers,
             ttl_seconds=settings.admin_session_ttl_seconds,
+            idle_timeout_seconds=settings.admin_session_idle_timeout_seconds,
+            max_sessions_per_principal=settings.admin_session_max_per_principal,
         ),
         lifecycle=lifecycle,
         route_revalidator=route_revalidator,

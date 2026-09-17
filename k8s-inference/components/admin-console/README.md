@@ -5,9 +5,10 @@ navigation is Apps, Users and Capacity. Each independently identified app has
 Runs, Metrics, App Logs, Containers, Usage and Settings. Existing operations,
 scientific run IDs, model views and low-level diagnostics remain accessible
 through their original routes and Advanced navigation.
-It exchanges the cluster's admin bootstrap credential for a Secure, HttpOnly,
-SameSite operator session and applies the server-published viewer, operator, and
-administrator roles.
+It exchanges a human principal's personal operator credential for a Secure,
+HttpOnly, SameSite operator session and applies the server-published viewer,
+operator, and administrator roles. The shared automation bootstrap credential
+cannot create an interactive session.
 
 The BFF joins the durable PostgreSQL ledger, catalog identity, current
 Kubernetes state, and bounded Prometheus data. The browser never receives
@@ -93,9 +94,10 @@ build. It must never be used as a deployment image.
 2. Confirm the runtime is wired to reviewed Kubernetes and Prometheus adapters,
    then verify real model states, operations, capacity, observability, users,
    API-key lifecycle, configuration handoff, and audit in a browser.
-3. Confirm login with the admin bootstrap token, cookie renewal/expiry, role
-   boundaries, logout, and correlated error messages. An inference or MCP API
-   key is intentionally not an admin login credential.
+3. Confirm personal-credential login, 429 throttling, idle and absolute expiry,
+   the per-principal session cap, revoke-all, role boundaries, logout, and
+   correlated error messages. Bootstrap, inference, and MCP credentials are
+   intentionally not admin login credentials.
 4. Verify the approved unmodified logo, palette, readable charts/tables and
    responsive navigation in the integrated production build.
 

@@ -11,6 +11,7 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from test_admin_access_api import operator_auth
 
 from fs2_serve.admin import (
     AdminContextConfig,
@@ -182,7 +183,7 @@ def _runtime(registry: Any, cipher: Any, hasher: Any, *, failing_kubernetes: boo
 def _client(runtime: AppRuntime, *, authenticated: bool = True) -> TestClient:
     client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
     if authenticated:
-        response = client.post("/admin/api/v1/session", headers=ADMIN_AUTH)
+        response = client.post("/admin/api/v1/session", headers=operator_auth(runtime))
         assert response.status_code == 200, response.text
     return client
 
@@ -490,7 +491,7 @@ def test_admin_bff_enforces_auth_and_same_origin_transport(registry: Any, cipher
     runtime = _runtime(registry, cipher, hasher)
     with _client(runtime, authenticated=False) as client:
         unauthenticated = client.get("/admin/api/v1/context")
-        login = client.post("/admin/api/v1/session", headers=ADMIN_AUTH)
+        login = client.post("/admin/api/v1/session", headers=operator_auth(runtime))
         assert login.status_code == 200
         cross_origin = client.get(
             "/admin/api/v1/context",

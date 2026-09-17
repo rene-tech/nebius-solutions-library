@@ -1,6 +1,7 @@
 """FastAPI public/admin surface for durable fs2-serve admission."""
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -25,7 +26,6 @@ from starlette.types import Scope as ASGIScope
 
 from .access import AdminAccessService
 from .access_models import (
-    BOOTSTRAP_OPERATOR_PRINCIPAL_ID,
     AdminApiKey,
     AdminApiKeyCreate,
     AdminApiKeyDisclosure,
@@ -34,12 +34,13 @@ from .access_models import (
     AdminApiKeyRotate,
     AdminAuditList,
     AdminPrincipalList,
+    OperatorCredentialDisclosure,
     OperatorPrincipal,
     OperatorPrincipalCreate,
     OperatorPrincipalPatch,
     OperatorRole,
     OperatorSession,
-    OperatorSessionHandoff,
+    OperatorSessionRevocation,
 )
 from .activation_health import activation_set
 from .admin import AdminProblemError, AdminReadService
@@ -744,13 +745,45 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     async def replace_operator_session(
         cookie_value: str | None,
         *,
-        principal_id: UUID | None = None,
+        principal: OperatorPrincipal,
     ) -> tuple[OperatorSession, str]:
         issued = await runtime.operator_sessions.replace(
             cookie_value,
-            principal_id=principal_id if principal_id is not None else BOOTSTRAP_OPERATOR_PRINCIPAL_ID,
+            principal_id=principal.id,
+            actor=principal.subject,
         )
         return issued.session, issued.cookie_value
+
+    async def operator_exchange_failure() -> None:
+        try:
+            await runtime.store.append_audit_event(
+                actor="anonymous",
+                tenant_id=None,
+                token_id=None,
+                action="session.authenticate",
+                target_type="operator_credential",
+                target_id="unresolved",
+                outcome="failed",
+                detail={"reason": "invalid_operator_credential"},
+            )
+        except (OSError, RuntimeError, ValueError):
+            pass
+
+    async def admit_operator_exchange(request: Request) -> None:
+        source = request.client.host if request.client is not None else "unresolved"
+        source_fingerprint = hashlib.sha256(f"network-peer:{source}".encode()).hexdigest()
+        allowed = await runtime.store.consume_operator_session_exchange(
+            source_fingerprint,
+            attempted_at=datetime.now(UTC),
+            window_seconds=runtime.settings.admin_session_exchange_window_seconds,
+            maximum_attempts=runtime.settings.admin_session_exchange_attempts,
+        )
+        if not allowed:
+            raise AdminProblemError(
+                429,
+                "operator_session_exchange_throttled",
+                "operator session exchange is temporarily rate limited",
+            )
 
     def access_envelope(data: Any, params: AdminContextParameters | None = None) -> AdminEnvelope[Any]:
         context = selected_context(params or AdminContextParameters())
@@ -1471,15 +1504,23 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         responses=admin_problem_responses,
     )
     async def create_operator_session(
+        request: Request,
         response: Response,
-        _: Annotated[str, Depends(admin)],
-        payload: OperatorSessionHandoff | None = None,
+        authorization: Annotated[str | None, Header()] = None,
         cookie_value: Annotated[str | None, Cookie(alias=ADMIN_SESSION_COOKIE)] = None,
     ) -> AdminEnvelope[OperatorSession]:
-        session, secret = await replace_operator_session(
-            cookie_value,
-            principal_id=payload.principal_id if payload is not None else None,
-        )
+        await admit_operator_exchange(request)
+        try:
+            principal = await runtime.operator_sessions.authenticate_credential(_bearer(authorization))
+        except AuthenticationError:
+            runtime.metrics.auth_failures.labels("invalid_operator_credential").inc()
+            await operator_exchange_failure()
+            raise AdminProblemError(
+                401,
+                "operator_credential_invalid",
+                "operator credential is invalid",
+            ) from None
+        session, secret = await replace_operator_session(cookie_value, principal=principal)
         set_operator_cookie(response, secret)
         return access_envelope(session)
 
@@ -1584,6 +1625,58 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         identity: Annotated[OperatorPrincipal, Depends(operator)],
     ) -> AdminEnvelope[OperatorPrincipal]:
         return access_envelope(await admin_access.update_principal(identity, principal_id, payload))
+
+    async def authorize_principal_administration(
+        identity: OperatorPrincipal,
+        principal_id: UUID,
+        *,
+        action: str,
+    ) -> OperatorPrincipal:
+        target = await runtime.store.get_operator_principal(principal_id)
+        if target.tenant_id is None:
+            await admin_access.authorize_global(identity, OperatorRole.ADMIN, action=action)
+        else:
+            await admin_access.authorize_resource_tenant(
+                identity,
+                OperatorRole.ADMIN,
+                action=action,
+                tenant_id=target.tenant_id,
+            )
+        return target
+
+    @app.post(
+        "/admin/api/v1/principals/{principal_id}/credential:rotate",
+        response_model=AdminEnvelope[OperatorCredentialDisclosure],
+        status_code=status.HTTP_201_CREATED,
+        responses=admin_problem_responses,
+    )
+    async def admin_rotate_operator_credential(
+        principal_id: UUID,
+        identity: Annotated[OperatorPrincipal, Depends(operator)],
+    ) -> AdminEnvelope[OperatorCredentialDisclosure]:
+        await authorize_principal_administration(
+            identity,
+            principal_id,
+            action="operator_credential.rotate",
+        )
+        return access_envelope(
+            await runtime.operator_sessions.rotate_credential(principal_id, actor=identity.subject)
+        )
+
+    @app.delete(
+        "/admin/api/v1/principals/{principal_id}/sessions",
+        response_model=AdminEnvelope[OperatorSessionRevocation],
+        responses=admin_problem_responses,
+    )
+    async def admin_revoke_operator_sessions(
+        principal_id: UUID,
+        identity: Annotated[OperatorPrincipal, Depends(operator)],
+    ) -> AdminEnvelope[OperatorSessionRevocation]:
+        await authorize_principal_administration(identity, principal_id, action="session.revoke_all")
+        revoked = await runtime.operator_sessions.revoke_all(principal_id, actor=identity.subject)
+        return access_envelope(
+            OperatorSessionRevocation(principal_id=principal_id, revoked_sessions=revoked)
+        )
 
     @app.get(
         "/admin/api/v1/keys",

@@ -32,6 +32,7 @@ BOOTSTRAP_TOKEN = "a" * 32
 BOOTSTRAP_AUTH = {"authorization": f"Bearer {BOOTSTRAP_TOKEN}"}
 REJECTED_CREDENTIAL = "REJECTED_BOOTSTRAP_MUST_NEVER_APPEAR_9481"
 REJECTED_POLICY_VALUE = "REJECTED_POLICY_VALUE_MUST_NOT_APPEAR_9481"
+TEST_ADMIN_ID = UUID("00000000-0000-0000-0000-000000000016")
 
 
 def _runtime(registry: Any, cipher: Any, hasher: Any) -> AppRuntime:
@@ -79,6 +80,35 @@ def _cookie_from(response: Any) -> str:
     return value
 
 
+def operator_auth(runtime: AppRuntime, principal_id: UUID = TEST_ADMIN_ID) -> dict[str, str]:
+    """Provision and retain one credential only in the isolated test harness."""
+
+    assert isinstance(runtime.store, MemoryStore)
+    credentials = getattr(runtime, "_test_operator_credentials", {})
+    credential = credentials.get(principal_id)
+    if credential is None:
+        if principal_id not in runtime.store.operator_principals:
+            asyncio.run(
+                runtime.store.create_operator_principal(
+                    principal_id=principal_id,
+                    request=OperatorPrincipalCreate(
+                        subject=f"test-operator-{principal_id}",
+                        display_name="Test operator",
+                        kind=PrincipalKind.HUMAN,
+                        role=OperatorRole.ADMIN,
+                        tenant_id=None,
+                    ),
+                    actor="test-bootstrap",
+                )
+            )
+        credential = asyncio.run(
+            runtime.operator_sessions.rotate_credential(principal_id, actor="test-bootstrap")
+        ).credential
+        credentials[principal_id] = credential
+        setattr(runtime, "_test_operator_credentials", credentials)
+    return {"authorization": f"Bearer {credential}"}
+
+
 def test_admin_lifecycle_routes_expose_persisted_payload_free_workloads(
     registry: Any,
     cipher: Any,
@@ -109,7 +139,7 @@ def test_admin_lifecycle_routes_expose_persisted_payload_free_workloads(
     runtime.lifecycle = lifecycle
 
     with _client(runtime) as client:
-        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
         listing = client.get(f"/admin/api/v1/telemetry/workloads?operation_id={operation_id}")
         detail = client.get(f"/admin/api/v1/telemetry/workloads/{operation_id}")
 
@@ -138,7 +168,7 @@ def test_authenticated_configuration_routes_plan_and_stop_at_terraform(
     )
     with _client(runtime) as client:
         unauthorized = client.get("/admin/api/v1/configuration")
-        session = client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH)
+        session = client.post("/admin/api/v1/session", headers=operator_auth(runtime))
         current = client.get("/admin/api/v1/configuration")
         desired = with_cooldown(initial, 301)
         proposal = ConfigurationProposal(
@@ -198,7 +228,7 @@ def _principal_cookie(runtime: AppRuntime, principal_id: UUID) -> str:
     return asyncio.run(runtime.operator_sessions.issue(principal_id, actor="test-bootstrap")).cookie_value
 
 
-def test_curl_session_handoff_is_no_store_strict_cookie_and_never_reflects_credentials(
+def test_personal_session_exchange_is_no_store_strict_cookie_and_never_reflects_credentials(
     registry: Any, cipher: Any, hasher: Any, caplog: Any
 ) -> None:
     runtime = _runtime(registry, cipher, hasher)
@@ -209,10 +239,8 @@ def test_curl_session_handoff_is_no_store_strict_cookie_and_never_reflects_crede
             "/admin/api/v1/session",
             headers={"authorization": f"Bearer {REJECTED_CREDENTIAL}"},
         )
-        accepted = client.post(
-            "/admin/api/v1/session",
-            headers=BOOTSTRAP_AUTH,
-        )
+        personal_auth = operator_auth(runtime)
+        accepted = client.post("/admin/api/v1/session", headers=personal_auth)
         session = client.get("/admin/api/v1/session")
 
     assert rejected.status_code == 401
@@ -220,8 +248,9 @@ def test_curl_session_handoff_is_no_store_strict_cookie_and_never_reflects_crede
     assert REJECTED_CREDENTIAL not in str(runtime.store.audit)
     assert rejected.headers["cache-control"] == "no-store"
     assert accepted.status_code == 200
-    assert BOOTSTRAP_TOKEN not in accepted.text
-    assert BOOTSTRAP_TOKEN not in str(dict(accepted.headers))
+    personal_credential = personal_auth["authorization"].removeprefix("Bearer ")
+    assert personal_credential not in accepted.text
+    assert personal_credential not in str(dict(accepted.headers))
     set_cookie = accepted.headers["set-cookie"]
     assert set_cookie.startswith(f"{ADMIN_SESSION_COOKIE}=")
     assert "Secure" in set_cookie
@@ -235,9 +264,126 @@ def test_curl_session_handoff_is_no_store_strict_cookie_and_never_reflects_crede
     assert "cookie_value" not in session.text
     cookie_value = _cookie_from(accepted)
     assert cookie_value not in repr(runtime.store.operator_sessions)
-    assert BOOTSTRAP_TOKEN not in caplog.text
+    assert personal_credential not in caplog.text
     assert REJECTED_CREDENTIAL not in caplog.text
     assert cookie_value not in caplog.text
+
+
+def test_session_exchange_refuses_missing_and_shared_bootstrap_credentials(
+    registry: Any, cipher: Any, hasher: Any
+) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    assert isinstance(runtime.store, MemoryStore)
+    with _client(runtime) as client:
+        missing = client.post("/admin/api/v1/session")
+        bootstrap = client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH)
+
+    assert missing.status_code == bootstrap.status_code == 401
+    assert missing.json()["code"] == bootstrap.json()["code"] == "operator_credential_invalid"
+    assert BOOTSTRAP_TOKEN not in missing.text + bootstrap.text + str(runtime.store.audit)
+    assert runtime.store.operator_sessions == {}
+
+
+def test_repeated_session_exchange_failures_are_throttled_per_network_source(
+    registry: Any, cipher: Any, hasher: Any
+) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    with _client(runtime) as client:
+        rejected = [
+            client.post(
+                "/admin/api/v1/session",
+                headers={"authorization": f"Bearer invalid-operator-credential-{attempt}"},
+            )
+            for attempt in range(runtime.settings.admin_session_exchange_attempts)
+        ]
+        throttled = client.post(
+            "/admin/api/v1/session",
+            headers={"authorization": "Bearer valid-shape-is-not-required-after-throttle"},
+        )
+
+    assert {response.status_code for response in rejected} == {401}
+    assert throttled.status_code == 429
+    assert throttled.json()["code"] == "operator_session_exchange_throttled"
+
+
+def test_admin_rotates_one_time_personal_credential_and_revokes_target_sessions(
+    registry: Any, cipher: Any, hasher: Any
+) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    assert isinstance(runtime.store, MemoryStore)
+    target_id = _create_principal(
+        runtime,
+        role=OperatorRole.VIEWER,
+        tenant_id="tenant-a",
+        subject="tenant-a-interactive-viewer",
+    )
+    with _client(runtime) as client:
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
+        first_rotation = client.post(
+            f"/admin/api/v1/principals/{target_id}/credential:rotate"
+        )
+        first_credential = first_rotation.json()["data"]["credential"]
+        client.cookies.clear()
+        target_login = client.post(
+            "/admin/api/v1/session",
+            headers={"authorization": f"Bearer {first_credential}"},
+            json={"principal_id": str(TEST_ADMIN_ID)},
+        )
+        target_cookie = _cookie_from(target_login)
+        client.cookies.clear()
+        assert client.post("/admin/api/v1/session", headers=operator_auth(runtime)).status_code == 200
+        second_rotation = client.post(
+            f"/admin/api/v1/principals/{target_id}/credential:rotate"
+        )
+        replayed_session = client.get(
+            "/admin/api/v1/session",
+            headers={"cookie": f"{ADMIN_SESSION_COOKIE}={target_cookie}"},
+        )
+        old_credential = client.post(
+            "/admin/api/v1/session",
+            headers={"authorization": f"Bearer {first_credential}"},
+        )
+
+    assert first_rotation.status_code == second_rotation.status_code == 201
+    assert target_login.status_code == 200
+    assert target_login.json()["data"]["principal"]["id"] == str(target_id)
+    assert first_credential != second_rotation.json()["data"]["credential"]
+    assert first_credential not in repr(runtime.store.operator_credentials)
+    assert first_credential not in str(runtime.store.audit)
+    assert replayed_session.status_code == old_credential.status_code == 401
+
+
+def test_per_principal_session_cap_and_admin_revoke_all_are_enforced(
+    registry: Any, cipher: Any, hasher: Any
+) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    personal_auth = operator_auth(runtime)
+    cookies: list[str] = []
+    responses = []
+    for _ in range(runtime.settings.admin_session_max_per_principal + 1):
+        with _client(runtime) as client:
+            response = client.post("/admin/api/v1/session", headers=personal_auth)
+            responses.append(response)
+            if response.status_code == 200:
+                cookies.append(_cookie_from(response))
+
+    assert [response.status_code for response in responses] == [200, 200, 200, 200, 409]
+    with _client(runtime) as client:
+        revoke_all = client.delete(
+            f"/admin/api/v1/principals/{TEST_ADMIN_ID}/sessions",
+            headers={"cookie": f"{ADMIN_SESSION_COOKIE}={cookies[0]}"},
+        )
+        replay = client.get(
+            "/admin/api/v1/session",
+            headers={"cookie": f"{ADMIN_SESSION_COOKIE}={cookies[1]}"},
+        )
+
+    assert revoke_all.status_code == 200
+    assert revoke_all.json()["data"] == {
+        "principal_id": str(TEST_ADMIN_ID),
+        "revoked_sessions": runtime.settings.admin_session_max_per_principal,
+    }
+    assert replay.status_code == 401
 
 
 def test_legacy_bootstrap_routes_keep_cli_auth_status_contract(registry: Any, cipher: Any, hasher: Any) -> None:
@@ -265,9 +411,10 @@ def test_session_rotation_fixation_logout_and_replay_are_denied(registry: Any, c
     attacker_cookie = "fs2_admin_00000000000000000000000000000000_" + "z" * 43
     with _client(runtime) as client:
         client.cookies.set(ADMIN_SESSION_COOKIE, attacker_cookie, path="/")
-        first = client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH)
+        personal_auth = operator_auth(runtime)
+        first = client.post("/admin/api/v1/session", headers=personal_auth)
         first_cookie = _cookie_from(first)
-        second = client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH)
+        second = client.post("/admin/api/v1/session", headers=personal_auth)
         second_cookie = _cookie_from(second)
         assert first_cookie != attacker_cookie
         assert second_cookie != first_cookie
@@ -306,16 +453,17 @@ def test_wrong_host_and_origin_precede_session_side_effects(registry: Any, ciphe
     with _client(runtime) as client:
         wrong_origin = client.post(
             "/admin/api/v1/session",
-            headers={**BOOTSTRAP_AUTH, "origin": "https://attacker.example.invalid"},
+            headers={**operator_auth(runtime), "origin": "https://attacker.example.invalid"},
         )
         wrong_host = client.post(
             "/admin/api/v1/session",
-            headers={**BOOTSTRAP_AUTH, "host": "attacker.example.invalid"},
+            headers={**operator_auth(runtime), "host": "attacker.example.invalid"},
         )
     assert wrong_origin.status_code == 403
     assert wrong_host.status_code == 421
     assert wrong_origin.headers["cache-control"] == wrong_host.headers["cache-control"] == "no-store"
     assert len(runtime.store.operator_sessions) == sessions_before
+    assert runtime.store.operator_session_exchange_attempts == {}
 
 
 def test_expired_revoked_and_disabled_principal_sessions_fail_closed(registry: Any, cipher: Any, hasher: Any) -> None:
@@ -333,6 +481,18 @@ def test_expired_revoked_and_disabled_principal_sessions_fail_closed(registry: A
     runtime.store.operator_sessions[expired_id] = record.model_copy(
         update={"session": record.session.model_copy(update={"expires_at": datetime.now(UTC) - timedelta(seconds=1)})}
     )
+    idle_cookie = _principal_cookie(runtime, principal_id)
+    idle_id = runtime.operator_sessions._parse(idle_cookie)
+    idle_record = runtime.store.operator_sessions[idle_id]
+    idle_at = datetime.now(UTC) - timedelta(seconds=61)
+    runtime.operator_sessions.idle_timeout_seconds = 60
+    runtime.store.operator_sessions[idle_id] = idle_record.model_copy(
+        update={
+            "session": idle_record.session.model_copy(
+                update={"created_at": idle_at, "last_seen_at": idle_at}
+            )
+        }
+    )
     revoked_cookie = _principal_cookie(runtime, principal_id)
     asyncio.run(runtime.operator_sessions.revoke(revoked_cookie, actor="test-bootstrap"))
     disabled_cookie = _principal_cookie(runtime, principal_id)
@@ -349,6 +509,10 @@ def test_expired_revoked_and_disabled_principal_sessions_fail_closed(registry: A
             "/admin/api/v1/session",
             headers={"cookie": f"{ADMIN_SESSION_COOKIE}={expired_cookie}"},
         )
+        idle = client.get(
+            "/admin/api/v1/session",
+            headers={"cookie": f"{ADMIN_SESSION_COOKIE}={idle_cookie}"},
+        )
         revoked = client.get(
             "/admin/api/v1/session",
             headers={"cookie": f"{ADMIN_SESSION_COOKIE}={revoked_cookie}"},
@@ -358,8 +522,8 @@ def test_expired_revoked_and_disabled_principal_sessions_fail_closed(registry: A
             headers={"cookie": f"{ADMIN_SESSION_COOKIE}={disabled_cookie}"},
         )
 
-    assert expired.status_code == revoked.status_code == disabled.status_code == 401
-    assert all(response.headers["cache-control"] == "no-store" for response in (expired, revoked, disabled))
+    assert expired.status_code == idle.status_code == revoked.status_code == disabled.status_code == 401
+    assert all(response.headers["cache-control"] == "no-store" for response in (expired, idle, revoked, disabled))
 
 
 def test_tenant_and_role_isolation_key_disclosure_rotation_and_cross_origin(
@@ -394,11 +558,7 @@ def test_tenant_and_role_isolation_key_disclosure_rotation_and_cross_origin(
     }
 
     with _client(runtime) as client:
-        handoff = client.post(
-            "/admin/api/v1/session",
-            headers=BOOTSTRAP_AUTH,
-            json={"principal_id": str(operator_id)},
-        )
+        handoff = client.post("/admin/api/v1/session", headers=operator_auth(runtime, operator_id))
         operator_cookie = _cookie_from(handoff)
         issued = client.post(
             "/admin/api/v1/keys",

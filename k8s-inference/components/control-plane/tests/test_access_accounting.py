@@ -115,9 +115,22 @@ async def test_operator_session_is_domain_separated_opaque_and_replay_fenced(cip
         peppers,
         ttl_seconds=600,
     )
+    principal = await store.create_operator_principal(
+        principal_id=uuid4(),
+        request=OperatorPrincipalCreate(
+            subject="session-operator@example.test",
+            display_name="Session operator",
+            kind=PrincipalKind.HUMAN,
+            role=OperatorRole.ADMIN,
+            tenant_id=None,
+        ),
+        actor="bootstrap-admin",
+    )
+    disclosure = await sessions.rotate_credential(principal.id, actor="bootstrap-admin")
+    assert (await sessions.authenticate_credential(disclosure.credential)).id == principal.id
     attacker_cookie = "fs2_admin_00000000000000000000000000000000_fixed-session-value-must-not-survive"
-    first = await sessions.issue_bootstrap()
-    second = await sessions.issue_bootstrap()
+    first = await sessions.issue(principal.id, actor=principal.subject)
+    second = await sessions.issue(principal.id, actor=principal.subject)
     assert first.cookie_value != second.cookie_value != attacker_cookie
     assert first.cookie_value not in repr(store.operator_sessions)
     stored = store.operator_sessions[first.session.id]
@@ -128,12 +141,12 @@ async def test_operator_session_is_domain_separated_opaque_and_replay_fenced(cip
     tampered = first.cookie_value[:-1] + ("A" if first.cookie_value[-1] != "A" else "B")
     with pytest.raises(AuthenticationError, match="invalid operator session"):
         await sessions.verify(tampered)
-    replacement = await sessions.replace(first.cookie_value)
+    replacement = await sessions.replace(first.cookie_value, principal_id=principal.id, actor=principal.subject)
     with pytest.raises(AuthenticationError, match="invalid operator session"):
         await sessions.verify(first.cookie_value)
     assert (await sessions.verify(replacement.cookie_value)).principal.role is OperatorRole.ADMIN
     with pytest.raises(NotFoundError, match="operator principal not found"):
-        await sessions.replace(replacement.cookie_value, principal_id=uuid4())
+        await sessions.replace(replacement.cookie_value, principal_id=uuid4(), actor=principal.subject)
     assert (await sessions.verify(replacement.cookie_value)).principal.role is OperatorRole.ADMIN
     await sessions.revoke(replacement.cookie_value, actor="bootstrap-admin")
 

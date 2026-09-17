@@ -89,9 +89,11 @@ Before deploying the admin UI, the retained release owner must:
    ClusterRole must allow `list` on core `nodes`. Set
    `FS2_ADMIN_KUBERNETES_CACHE_TTL_SECONDS` within 1..60 seconds (default 15).
    The exact Prometheus service remains private.
-3. Verify the bootstrap credential is accepted only by the same-origin session
-   exchange and that every admin route then enforces the server-side operator
-   session and role. Never place the bootstrap token in browser storage.
+3. Verify the same-origin session exchange accepts only a personal human
+   operator credential, derives that credential's own principal, and refuses
+   the shared bootstrap, inference, and MCP credentials. Confirm 429 throttling,
+   idle expiry, the per-principal cap, and revoke-all. Never place an operator
+   credential in browser storage.
 4. Generate frontend types from the immutable image's
    `/internal/openapi.json`, compare the fully enabled route profile with
    `contracts/admin-api-v1.json`, and fail the build on drift.
