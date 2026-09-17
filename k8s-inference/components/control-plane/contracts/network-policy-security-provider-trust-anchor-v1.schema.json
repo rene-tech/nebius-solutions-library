@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/contracts/network-policy-security-provider-trust-anchor-v1.schema.json",
+  "title": "Externally pinned provider directory trust anchor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "provider",
+    "adapter",
+    "tenant_sha256",
+    "query_sha256",
+    "snapshot_public_key",
+    "snapshot_signer_key_id",
+    "valid_from",
+    "expires_at"
+  ],
+  "properties": {
+    "schema": { "const": "fs2-serve.nebius.ai/security-provider-trust-anchor/v1" },
+    "provider": { "const": "nebius-iam" },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sha256"],
+      "properties": {
+        "id": { "const": "fs2-serve.nebius.ai/nebius-iam-human-directory/v1" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "tenant_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "query_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "snapshot_public_key": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+    "snapshot_signer_key_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "valid_from": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" }
+  }
+}

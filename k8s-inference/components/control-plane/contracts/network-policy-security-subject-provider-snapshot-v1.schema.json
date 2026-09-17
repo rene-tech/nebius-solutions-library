@@ -13,6 +13,8 @@
         "schema",
         "snapshot_id",
         "provider",
+        "adapter",
+        "trust_anchor_sha256",
         "tenant_sha256",
         "query_sha256",
         "complete",
@@ -27,6 +29,16 @@
         "schema": { "const": "fs2-serve.nebius.ai/security-subject-provider-snapshot/v1" },
         "snapshot_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{8,128}$" },
         "provider": { "type": "string", "pattern": "^[a-z][a-z0-9.-]{2,63}$" },
+        "adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "sha256"],
+          "properties": {
+            "id": { "const": "fs2-serve.nebius.ai/nebius-iam-human-directory/v1" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        "trust_anchor_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "tenant_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "query_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "complete": { "const": true },

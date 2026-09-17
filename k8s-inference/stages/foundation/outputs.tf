@@ -67,12 +67,20 @@ output "network_policy_boundary_contract" {
     service_account         = local.control_plane_network_policy_service_account
     security_owner          = local.control_plane_network_policy_security_owner
     security_handoff        = local.control_plane_network_policy_security_handoff
-    lease_name              = local.control_plane_network_policy_state_name
-    receipt_name            = local.control_plane_network_policy_state_name
-    topology_name           = local.control_plane_network_policy_topology_name
-    parameter_name          = local.control_plane_network_policy_parameter_name
-    policy_names            = local.control_plane_network_policy_names
-    admission_policy        = "fs2-network-policy-boundary"
-    admission_binding       = "fs2-network-policy-boundary"
+    epoch_retirement = {
+      schema           = "fs2-serve.nebius.ai/network-policy-epoch-retirement/v1"
+      verified         = data.external.control_plane_network_policy_epoch_retirement.result.verified == "true"
+      contract_sha256  = data.external.control_plane_network_policy_epoch_retirement.result.contract_sha256
+      preflight_sha256 = data.external.control_plane_network_policy_security_preflight_v2.result.contract_sha256
+      identity_epoch   = var.network_policy_boundary.identity_epoch
+      prior_epoch      = var.network_policy_boundary.prior_identity_epoch
+    }
+    lease_name        = local.control_plane_network_policy_state_name
+    receipt_name      = local.control_plane_network_policy_state_name
+    topology_name     = local.control_plane_network_policy_topology_name
+    parameter_name    = local.control_plane_network_policy_parameter_name
+    policy_names      = local.control_plane_network_policy_names
+    admission_policy  = "fs2-network-policy-boundary"
+    admission_binding = "fs2-network-policy-boundary"
   }
 }

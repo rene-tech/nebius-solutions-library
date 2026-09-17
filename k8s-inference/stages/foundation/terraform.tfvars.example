@@ -15,27 +15,42 @@ project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 # Supply the three current and two prior exact userInfo tuples, including UID,
 # sorted groups/extras and cryptographically verified expiry. Principals are
 # derived from distinct prior/current/successor epochs; callers cannot choose a
-# stable username. The prior credentials remain unexpired during the proof so
-# SubjectAccessReviews demonstrate that the prior epoch has actually lost
-# authorization, rather than relying on expiry.
+# stable username. The prior credentials remain unexpired during the plan-time
+# proof: on a fresh rotation the prior runtime owner must still have its exact
+# current authority and the prior bootstrap may retain only the imported
+# auditor's exact named ClusterRoleBinding rotation authority. It remains
+# denied protected-object mutation. A retry may contain only exact prior/target
+# binding states with matching permissions. An
+# apply-deferred postflight requires both prior credentials to be denied after
+# the binding rotation.
 # Supply the recovery-signed v2 subject inventory plus the separately signed,
 # mode-0600 provider/IAM snapshot named by
-# `security_subject_provider_snapshot_path`. Pin the independent provider key,
-# expected tenant hash and exact enumeration-query hash. The provider receipt
-# includes a complete bounded pagination chain; the recovery-signed inventory
-# must match its users/groups and provenance byte-for-byte and remain valid
-# through rollback. Bootstrap also paginates every live Namespace and every
-# namespace-local ServiceAccount twice, then checks exact token, CSR,
-# impersonation, namespace/finalize and RBAC-delegation denial.
-# The bootstrap credential creates the permanent boundary but is expired before
-# workloads may plan; the runtime owner has only exact-name get/patch/update.
+# `security_subject_provider_snapshot_path`. Callers cannot supply the provider
+# key, tenant or query. External security pins them in the root-owned, mode-0400
+# `/etc/fs2/security/network-policy-provider-trust-anchor-v1.json`, including the
+# SHA-256 of the source-fixed Nebius IAM adapter. The provider receipt includes
+# a complete bounded pagination chain; the recovery-signed inventory must match
+# its users/groups and provenance byte-for-byte and remain valid through
+# rollback. Bootstrap paginates every live Namespace, ServiceAccount, Role and
+# ClusterRole twice, then checks exact token, CSR, impersonation,
+# namespace/finalize and exhaustive RBAC-delegation denial.
+# The bootstrap credential only updates the externally preprovisioned permanent
+# boundary and is expired before workloads may plan; the runtime owner has only
+# exact-name get/patch/update plus exact postflight reads.
 # Every rotation advances prior/current/successor epochs. The prior applied
-# RoleBindings already preauthorize only the current <=15-minute bootstrap; the
-# new desired bindings retain only the current runtime owner and the next
-# successor bootstrap, so the prior owner/bootstrap lose authorization without
-# deleting an object. All credential, snapshot and key files are immutable
-# within the current epoch directory. External security automation precreates the
-# socket parent as enforcer-UID:peer-GID mode 02710; no process needs CAP_CHOWN.
+# RoleBindings preauthorize the current runtime owner and <=15-minute bootstrap;
+# the desired bindings retain only the new current runtime owner and next
+# successor identities. External security must first preprovision the exact
+# stable auditor ClusterRole/ClusterRoleBinding; declarative import adopts them,
+# with prior/current bootstraps as bounded pre-apply subjects. The desired
+# binding retains current/successor bootstraps for exact binding rotation and
+# refresh-only crash retry; it cannot mutate Roles or protected runtime state.
+# Mutation bindings still retire the prior/current bootstrap authority.
+# Bootstrap is permitted exact-name update but not create or delete, and
+# postflight binds exact object UID/RV/spec state.
+# All credential, snapshot and key files are immutable within the current epoch
+# directory. External security automation precreates the socket parent as
+# enforcer-UID:peer-GID mode 02710; no process needs CAP_CHOWN.
 
 # Pass the exact infra-disposable `target_contract` output. It is required and
 # authoritative for project, region, network, tenant, and source-registry

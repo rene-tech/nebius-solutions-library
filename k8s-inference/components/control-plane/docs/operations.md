@@ -785,9 +785,24 @@ selected allow or the policy protecting it. Every permanent object has
 Terraform `prevent_destroy` and an ownership label. Kubernetes deliberately
 does not invoke API-based admission for its own policy and binding resources,
 so this design does not claim self-protection. The security-owned installation
-provisions and imports the permanent objects once; an epoch bootstrap cannot
-create or delete admission or boundary objects and may only update the exact
-pre-existing names. Its cryptographic expiry is at most 15 minutes. Release and
+continues to own its existing permanent objects. The newly required auditor
+ClusterRole and ClusterRoleBinding are additively preprovisioned by external
+security automation and are not created by this foundation: their
+declarative import blocks fail closed if that handoff is missing, and the
+protected contract records the handoff mechanism, names, exact observed hash,
+prior/current pre-apply subjects and current/successor desired subjects.
+Preflight requires the role's exact read/SAR inventory rules, exact-name
+patch/update of only the two epoch ClusterRoleBindings, and the binding's
+exact prior/current subjects; postflight re-reads their UID, resourceVersion,
+rules, roleRef and current/successor subjects. Retaining the current bootstrap
+as the bounded auditor subject lets a failed postflight refresh state and retry
+the exact binding rotation without restoring protected-object mutation
+authority. Each namespace transition Role independently permits patch/update
+of only its own RoleBinding. Every mutation binding is accepted only in its exact prior
+or target subject set, so a mixed but bounded interrupted apply is resumable;
+any third state fails closed. An epoch bootstrap
+cannot create or delete admission, RBAC or boundary objects and may only update
+the exact pre-existing names. Its cryptographic expiry is at most 15 minutes. Release and
 runtime-enforcer credentials are at most eight hours and their common validity
 must extend beyond bootstrap expiry by the configured rollback floor (two hours
 by default). The bootstrap
@@ -801,16 +816,23 @@ to the same API server and exact `kube-system` UID, compares canonical full
 and permits only the common authenticated/service-account baseline groups. It
 is a plan-time external data check, not a creation-only provisioner; every plan
 reruns it and binds its query hash into protected topology. Human coverage has
-two independent signatures. The authoritative identity provider/IAM export is
-signed by its dedicated directory authority and includes the exact tenant and
-enumeration-query hashes, a bounded contiguous page receipt, terminal cursor,
-counts and validity window. The separately recovery-signed cluster inventory
+two independent signatures. The authoritative Nebius IAM export is normalized
+by the source-fixed `network_policy_subject_provider_adapter.py`; its source
+SHA-256, dedicated directory public key, tenant hash and enumeration-query hash
+are pinned in the root-owned, mode-0400/0444
+`/etc/fs2/security/network-policy-provider-trust-anchor-v1.json`. Those values
+are not Terraform inputs. The signed provider snapshot binds the exact trust
+anchor and adapter hashes plus a bounded contiguous page receipt, terminal
+cursor, counts and validity window. The separately recovery-signed cluster inventory
 must reproduce that provider snapshot's users, groups and provenance exactly
 while also binding the API-server hash, `kube-system` UID and rollback window.
 The two signing keys must differ. Release-operator subject lists and an
 unreconciled completeness assertion are not accepted. The preflight also reads
-all Namespaces and all namespace-local ServiceAccounts through bounded server
-pagination twice and rejects concurrent drift. Every provider-enumerated human
+all Namespaces, every namespace-local ServiceAccount and Role, and all
+ClusterRoles through bounded server pagination twice and rejects concurrent
+drift. Every provider-enumerated user and group, discovered ServiceAccount and
+discovered Role/ClusterRole name is covered by unnamed and exact-name
+impersonation, token and delegation negatives. Every provider-enumerated human
 and prior-epoch non-human tuple is checked through nonpersistent
 SubjectAccessReviews for protected mutation, every namespace and
 `namespaces/finalize`, every ServiceAccount token subresource, certificate
@@ -824,9 +846,12 @@ UID or user-extra, or bind/escalate or rewrite the boundary RBAC delegation.
 The security identity can patch/update only the exact governed objects and
 cannot delete them, collection-delete their resource types, bind, escalate, or
 delegate its authority.
-Before foundation apply, provision distinct mode-0600 runtime-owner,
-short-lived bootstrap, and still-valid prior owner/bootstrap kubeconfigs for
-their exact epoch-derived non-human identities. The apply fails closed unless
+Before foundation apply, external security preprovisions the exact stable
+auditor ClusterRole/ClusterRoleBinding, and operators declare their import;
+neither bootstrap nor runtime credentials may create them. Provision distinct
+mode-0600 runtime-owner, short-lived bootstrap, and still-valid prior
+owner/bootstrap kubeconfigs for their exact epoch-derived non-human identities.
+The plan fails closed unless
 the three current files are under the current epoch, both prior files are under
 the prior epoch, and exact named runtime permissions,
 unnamed/collection negatives, token/impersonation/delegation negatives, and
@@ -890,16 +915,24 @@ still-valid credential from an older epoch cannot inherit a stable RoleBinding
 subject. Stable `fs2-network-policy-security-owner` and `-auditor` strings name
 RBAC objects only; they are never user subjects. Each protected mutation
 RoleBinding contains only the current runtime owner plus the next successor
-runtime owner and bootstrap, while the read/SAR auditor binds only the successor
-bootstrap. Admission does not authorize the dormant successor owner until its
+runtime owner and bootstrap, while the read/SAR auditor retains the current and
+successor bootstraps for exact binding rotation and refresh-only retries. The
+auditor cannot mutate Roles, protected policies, receipts, Leases, parameters,
+namespaces, admission objects or any unnamed RBAC object. Admission does not
+authorize the dormant successor owner until its
 epoch becomes current. That preauthorization lets the next short-lived
 bootstrap advance admission and object state and lets the exact next runtime
-owner pass the pre-apply named-authority proof; a dependency-ordered apply then
-updates gateway, controller, cluster and finally state bindings, retiring the
-current bootstrap without deleting any authorization object. The every-plan
-preflight submits the full prior owner/bootstrap username, UID, groups and extras
-while those credentials remain valid and requires denial for every governed
-capability.
+owner pass the pre-apply named-authority proof. A fresh pre-apply check
+deliberately requires the still-current prior owner to retain its exact
+authority; requiring denial at this point would deadlock rotation. A retry may
+instead observe a bounded mix of exact prior/target bindings and checks each
+corresponding effective permission. A dependency-ordered apply updates
+gateway, controller, cluster and finally state bindings without deleting any
+authorization object. An apply-deferred postflight then uses the exact
+still-valid, hashed prior kubeconfigs to require both prior owner and prior
+bootstrap to be denied every named mutation, delete and collection-delete. Its
+proof hash is exported with the preflight hash and exact prior/current epochs;
+workloads reject missing or mismatched retirement evidence.
 
 Before the rollback window closes, security automation creates the next epoch
 directory plus immutable kubeconfig, provider snapshot and key paths, issues a

@@ -475,6 +475,7 @@ class SecurityEnforcer:
             raise EnforcerError("protected topology evidence changed")
         handoff = contract.get("security_handoff", {})
         identity = handoff.get("identity_boundary", {})
+        auditor_bootstrap = handoff.get("auditor_bootstrap", {})
         epoch = str(identity.get("identity_epoch", ""))
         prior_epoch = str(identity.get("prior_identity_epoch", ""))
         successor_epoch = str(identity.get("successor_identity_epoch", ""))
@@ -504,6 +505,24 @@ class SecurityEnforcer:
             or handoff.get("cluster") != self.expected_cluster
             or handoff.get("allowed_actions") != ["transition-mutation", "set-admission-recovery"]
             or handoff.get("delete_allowed") is not False
+            or auditor_bootstrap
+            != {
+                "mechanism": "external-preprovision-declarative-import",
+                "cluster_role": "fs2-network-policy-security-auditor",
+                "cluster_role_binding": "fs2-network-policy-security-auditor",
+                "preapply_subjects": [
+                    expected_principals["prior_bootstrap"],
+                    expected_principals["security_bootstrap"],
+                ],
+                "desired_subjects": [
+                    expected_principals["security_bootstrap"],
+                    expected_principals["successor_bootstrap"],
+                ],
+                "observed_sha256": identity.get("auditor_bootstrap_sha256"),
+                "bootstrap_create": False,
+                "bootstrap_exact_update": True,
+                "delete_allowed": False,
+            }
             or identity.get("schema") != "fs2-serve.nebius.ai/network-policy-identity-boundary/v3"
             or any(
                 not re.fullmatch(r"[a-z0-9][a-z0-9-]{7,63}", value)
@@ -523,7 +542,12 @@ class SecurityEnforcer:
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("prior_bootstrap_kubeconfig_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("security_subject_inventory_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_subject_snapshot_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_trust_anchor_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_adapter_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("kubernetes_subject_inventory_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("auditor_bootstrap_sha256", "")))
+            or identity.get("plan_rotation_phase") not in {"preapply", "resume", "postapply"}
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("rotation_binding_state_sha256", "")))
             or identity.get("plan_preflight_verified") is not True
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("plan_preflight_sha256", "")))
             or identity.get("bootstrap_must_be_expired") is not True
@@ -540,7 +564,11 @@ class SecurityEnforcer:
                 "prior_security_owner_identity": expected_principals["prior_owner"],
                 "prior_bootstrap_identity": expected_principals["prior_bootstrap"],
                 "new_paths_required": True,
-                "prior_epoch_authorization_denied": True,
+                "allowed_plan_phases": ["preapply", "resume", "postapply"],
+                "mutation_binding_states": ["before", "target"],
+                "fresh_preapply_prior_owner_authorized": True,
+                "prior_bootstrap_protected_mutation_denied": True,
+                "postapply_retirement_required": True,
             }
         ):
             raise EnforcerError("live topology does not authorize this enforcer")
@@ -1323,9 +1351,24 @@ class SecurityEnforcer:
                 "provider_subject_snapshot_sha256": contract.get("security_handoff", {})
                 .get("identity_boundary", {})
                 .get("provider_subject_snapshot_sha256"),
+                "provider_trust_anchor_sha256": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("provider_trust_anchor_sha256"),
+                "provider_adapter_sha256": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("provider_adapter_sha256"),
                 "kubernetes_subject_inventory_sha256": contract.get("security_handoff", {})
                 .get("identity_boundary", {})
                 .get("kubernetes_subject_inventory_sha256"),
+                "auditor_bootstrap_sha256": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("auditor_bootstrap_sha256"),
+                "plan_rotation_phase": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("plan_rotation_phase"),
+                "rotation_binding_state_sha256": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("rotation_binding_state_sha256"),
             }
         elif action == "transition-mutation":
             result = self._transition_mutation(body)

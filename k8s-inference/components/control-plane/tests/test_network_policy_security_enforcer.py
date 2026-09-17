@@ -198,7 +198,12 @@ def _fixture() -> tuple[
                 "prior_bootstrap_kubeconfig_sha256": "4" * 64,
                 "security_subject_inventory_sha256": "d" * 64,
                 "provider_subject_snapshot_sha256": "1" * 64,
+                "provider_trust_anchor_sha256": "5" * 64,
+                "provider_adapter_sha256": "6" * 64,
                 "kubernetes_subject_inventory_sha256": "2" * 64,
+                "auditor_bootstrap_sha256": "7" * 64,
+                "plan_rotation_phase": "preapply",
+                "rotation_binding_state_sha256": "8" * 64,
                 "plan_preflight_verified": True,
                 "plan_preflight_sha256": "e" * 64,
                 "release_expires_at": (now + dt.timedelta(hours=3)).isoformat().replace("+00:00", "Z"),
@@ -214,7 +219,11 @@ def _fixture() -> tuple[
                     "prior_security_owner_identity": _principal("security-owner", PRIOR_IDENTITY_EPOCH),
                     "prior_bootstrap_identity": _principal("security-bootstrap", PRIOR_IDENTITY_EPOCH),
                     "new_paths_required": True,
-                    "prior_epoch_authorization_denied": True,
+                    "allowed_plan_phases": ["preapply", "resume", "postapply"],
+                    "mutation_binding_states": ["before", "target"],
+                    "fresh_preapply_prior_owner_authorized": True,
+                    "prior_bootstrap_protected_mutation_denied": True,
+                    "postapply_retirement_required": True,
                 },
                 "bootstrap_must_be_expired": True,
                 "permitted_shared_groups": ["system:authenticated", "system:serviceaccounts"],
@@ -222,6 +231,23 @@ def _fixture() -> tuple[
             "cluster": CLUSTER,
             "allowed_actions": ["transition-mutation", "set-admission-recovery"],
             "delete_allowed": False,
+            "auditor_bootstrap": {
+                "mechanism": "external-preprovision-declarative-import",
+                "cluster_role": "fs2-network-policy-security-auditor",
+                "cluster_role_binding": "fs2-network-policy-security-auditor",
+                "preapply_subjects": [
+                    _principal("security-bootstrap", PRIOR_IDENTITY_EPOCH),
+                    _principal("security-bootstrap", IDENTITY_EPOCH),
+                ],
+                "desired_subjects": [
+                    _principal("security-bootstrap", IDENTITY_EPOCH),
+                    _principal("security-bootstrap", SUCCESSOR_IDENTITY_EPOCH),
+                ],
+                "observed_sha256": "7" * 64,
+                "bootstrap_create": False,
+                "bootstrap_exact_update": True,
+                "delete_allowed": False,
+            },
         },
     }
     topology = {
@@ -420,6 +446,8 @@ def test_enforcer_requires_peer_uid_and_client_signature_and_signs_response() ->
     assert response["signed"]["result"]["security_user_info_sha256"] == ENFORCER.sha256_json(
         SECURITY_USER_INFO
     )
+    assert response["signed"]["result"]["auditor_bootstrap_sha256"] == "7" * 64
+    assert response["signed"]["result"]["plan_rotation_phase"] == "preapply"
     assert api.patches == []
 
     with pytest.raises(ENFORCER.EnforcerError, match="peer UID"):

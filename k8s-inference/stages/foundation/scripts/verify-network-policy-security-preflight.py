@@ -20,9 +20,37 @@ from urllib.parse import quote
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
+PROVIDER_ADAPTER_ID = "fs2-serve.nebius.ai/nebius-iam-human-directory/v1"
+PROVIDER_TRUST_ANCHOR_PATH = Path("/etc/fs2/security/network-policy-provider-trust-anchor-v1.json")
+
 
 class PreflightError(RuntimeError):
     """The plan-time security boundary is not exact."""
+
+
+def descriptor_bytes(path: Path, *, maximum: int, label: str) -> tuple[bytes, os.stat_result]:
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+        try:
+            metadata = os.fstat(descriptor)
+            chunks: list[bytes] = []
+            size = 0
+            while True:
+                chunk = os.read(descriptor, min(65536, maximum + 1 - size))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                size += len(chunk)
+                if size > maximum:
+                    raise PreflightError(f"{label} exceeds its size bound")
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise PreflightError(f"{label} cannot be opened safely") from error
+    return b"".join(chunks), metadata
 
 
 def canonical(value: Any) -> str:
@@ -98,20 +126,87 @@ def normalized_subjects(
     return normalized_users, sorted(groups)
 
 
+def verified_provider_trust_anchor(
+    path: Path,
+    adapter_path: Path,
+    *,
+    rollback_valid_until: int,
+) -> tuple[dict[str, Any], str, str]:
+    if path != PROVIDER_TRUST_ANCHOR_PATH:
+        raise PreflightError("provider trust anchor path is not source-fixed")
+    expected_adapter = Path(__file__).resolve().parents[3] / (
+        "components/control-plane/scripts/network_policy_subject_provider_adapter.py"
+    )
+    if adapter_path.resolve() != expected_adapter:
+        raise PreflightError("provider adapter path is not source-fixed")
+    try:
+        trust_bytes, trust_metadata = descriptor_bytes(path, maximum=65536, label="provider trust anchor")
+        adapter_bytes, adapter_metadata = descriptor_bytes(
+            adapter_path,
+            maximum=1048576,
+            label="provider adapter",
+        )
+        trust = json.loads(trust_bytes.decode("utf-8"))
+        adapter_sha256 = hashlib.sha256(adapter_bytes).hexdigest()
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise PreflightError("provider trust custody is unavailable") from error
+    expected_fields = {
+        "schema",
+        "provider",
+        "adapter",
+        "tenant_sha256",
+        "query_sha256",
+        "snapshot_public_key",
+        "snapshot_signer_key_id",
+        "valid_from",
+        "expires_at",
+    }
+    now = dt.datetime.now(dt.UTC)
+    valid_from = dt.datetime.fromisoformat(str(trust.get("valid_from", "")).replace("Z", "+00:00"))
+    expires = dt.datetime.fromisoformat(str(trust.get("expires_at", "")).replace("Z", "+00:00"))
+    public_key = trust.get("snapshot_public_key")
+    if (
+        not stat.S_ISREG(trust_metadata.st_mode)
+        or trust_metadata.st_uid != 0
+        or trust_metadata.st_gid != 0
+        or stat.S_IMODE(trust_metadata.st_mode) not in {0o400, 0o444}
+        or not stat.S_ISREG(adapter_metadata.st_mode)
+        or set(trust) != expected_fields
+        or trust.get("schema") != "fs2-serve.nebius.ai/security-provider-trust-anchor/v1"
+        or trust.get("provider") != "nebius-iam"
+        or trust.get("adapter") != {"id": PROVIDER_ADAPTER_ID, "sha256": adapter_sha256}
+        or not re.fullmatch(r"[0-9a-f]{64}", str(trust.get("tenant_sha256", "")))
+        or not re.fullmatch(r"[0-9a-f]{64}", str(trust.get("query_sha256", "")))
+        or not isinstance(public_key, str)
+        or trust.get("snapshot_signer_key_id") != hashlib.sha256(public_key.encode()).hexdigest()
+        or valid_from.tzinfo is None
+        or expires.tzinfo is None
+        or valid_from.astimezone(dt.UTC) > now
+        or expires.astimezone(dt.UTC) <= now
+        or int(expires.timestamp()) < rollback_valid_until
+    ):
+        raise PreflightError("provider trust anchor is not exact, root-owned or rollback-valid")
+    decode_base64url(public_key, size=32)
+    return trust, hashlib.sha256(canonical(trust).encode()).hexdigest(), adapter_sha256
+
+
 def verified_provider_snapshot(
     raw_snapshot: str,
-    provider_public_key: str,
+    trust: dict[str, Any],
     *,
-    expected_tenant_sha256: str,
-    expected_query_sha256: str,
+    trust_anchor_sha256: str,
+    adapter_sha256: str,
     rollback_valid_until: int,
     forbidden_usernames: set[str],
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str], str]:
+    provider_public_key = trust["snapshot_public_key"]
     signed = verified_envelope(raw_snapshot, provider_public_key, label="provider/IAM subject snapshot")
     expected_fields = {
         "schema",
         "snapshot_id",
         "provider",
+        "adapter",
+        "trust_anchor_sha256",
         "tenant_sha256",
         "query_sha256",
         "complete",
@@ -131,9 +226,11 @@ def verified_provider_snapshot(
         signed.get("schema") != "fs2-serve.nebius.ai/security-subject-provider-snapshot/v1"
         or signed.get("complete") is not True
         or not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", str(signed.get("snapshot_id", "")))
-        or not re.fullmatch(r"[a-z][a-z0-9.-]{2,63}", str(signed.get("provider", "")))
-        or signed.get("tenant_sha256") != expected_tenant_sha256
-        or signed.get("query_sha256") != expected_query_sha256
+        or signed.get("provider") != trust["provider"]
+        or signed.get("adapter") != {"id": PROVIDER_ADAPTER_ID, "sha256": adapter_sha256}
+        or signed.get("trust_anchor_sha256") != trust_anchor_sha256
+        or signed.get("tenant_sha256") != trust["tenant_sha256"]
+        or signed.get("query_sha256") != trust["query_sha256"]
         or captured.tzinfo is None
         or expires.tzinfo is None
         or captured.astimezone(dt.UTC) > now
@@ -220,6 +317,8 @@ def verified_subject_inventory(
         "sha256": provider_snapshot_sha256,
         "snapshot_id": provider_signed["snapshot_id"],
         "provider": provider_signed["provider"],
+        "adapter": provider_signed["adapter"],
+        "trust_anchor_sha256": provider_signed["trust_anchor_sha256"],
         "tenant_sha256": provider_signed["tenant_sha256"],
         "query_sha256": provider_signed["query_sha256"],
         "page_count": provider_signed["pagination"]["page_count"],
@@ -420,10 +519,15 @@ def paginated_collection(
 def kubernetes_subject_inventory(
     kubeconfig: Path,
     context: str,
-) -> tuple[dict[str, list[dict[str, str]]], str]:
-    """Enumerate every namespace-local ServiceAccount twice and fail on drift."""
+) -> tuple[
+    dict[str, list[dict[str, str]]],
+    dict[str, list[dict[str, str]]],
+    list[dict[str, str]],
+    str,
+]:
+    """Enumerate every namespace, ServiceAccount, Role and ClusterRole twice."""
 
-    def discover() -> dict[str, list[dict[str, str]]]:
+    def discover() -> dict[str, Any]:
         page_budget = [2048]
         object_budget = [100000]
         namespaces = paginated_collection(
@@ -435,7 +539,8 @@ def kubernetes_subject_inventory(
         )
         if not namespaces or len({item["name"] for item in namespaces}) != len(namespaces):
             raise PreflightError("Kubernetes namespace inventory is empty or duplicated")
-        inventory: dict[str, list[dict[str, str]]] = {}
+        service_account_inventory: dict[str, list[dict[str, str]]] = {}
+        role_inventory: dict[str, list[dict[str, str]]] = {}
         for namespace in sorted(namespaces, key=lambda value: value["name"]):
             name = namespace["name"]
             service_accounts = paginated_collection(
@@ -447,15 +552,234 @@ def kubernetes_subject_inventory(
             )
             if len({item["name"] for item in service_accounts}) != len(service_accounts):
                 raise PreflightError("Kubernetes ServiceAccount inventory contains duplicates")
-            inventory[name] = sorted(service_accounts, key=lambda value: value["name"])
-        return inventory
+            roles = paginated_collection(
+                kubeconfig,
+                context,
+                f"/apis/rbac.authorization.k8s.io/v1/namespaces/{quote(name, safe='')}/roles",
+                page_budget=page_budget,
+                object_budget=object_budget,
+            )
+            if len({item["name"] for item in roles}) != len(roles):
+                raise PreflightError("Kubernetes Role inventory contains duplicates")
+            service_account_inventory[name] = sorted(service_accounts, key=lambda value: value["name"])
+            role_inventory[name] = sorted(roles, key=lambda value: value["name"])
+        cluster_roles = paginated_collection(
+            kubeconfig,
+            context,
+            "/apis/rbac.authorization.k8s.io/v1/clusterroles",
+            page_budget=page_budget,
+            object_budget=object_budget,
+        )
+        if len({item["name"] for item in cluster_roles}) != len(cluster_roles):
+            raise PreflightError("Kubernetes ClusterRole inventory contains duplicates")
+        return {
+            "namespaces": sorted(namespaces, key=lambda value: value["name"]),
+            "service_accounts": service_account_inventory,
+            "roles": role_inventory,
+            "cluster_roles": sorted(cluster_roles, key=lambda value: value["name"]),
+        }
 
     first = discover()
     second = discover()
     if first != second:
         raise PreflightError("Kubernetes subject inventory drifted during authorization proof")
     digest = hashlib.sha256(canonical(first).encode()).hexdigest()
-    return first, digest
+    return first["service_accounts"], first["roles"], first["cluster_roles"], digest
+
+
+def rotation_binding_contract(
+    kubeconfig: Path,
+    context: str,
+    *,
+    resource: str,
+    name: str,
+    namespace: str,
+    role_kind: str,
+    role_name: str,
+    before_subjects: list[str],
+    target_subjects: list[str],
+) -> tuple[dict[str, Any], str]:
+    try:
+        arguments = ["get", resource, name, "-o", "json"]
+        if namespace:
+            arguments.extend(["--namespace", namespace])
+        binding = json.loads(run(kubeconfig, context, *arguments))
+    except json.JSONDecodeError as error:
+        raise PreflightError("epoch rotation binding is not valid JSON") from error
+    metadata = binding.get("metadata", {}) if isinstance(binding, dict) else {}
+    labels = metadata.get("labels", {}) if isinstance(metadata, dict) else {}
+    identity = {
+        "name": metadata.get("name"),
+        "namespace": metadata.get("namespace", ""),
+        "uid": metadata.get("uid"),
+        "resourceVersion": metadata.get("resourceVersion"),
+    }
+    expected_role_ref = {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": role_kind,
+        "name": role_name,
+    }
+    def subject_set(values: list[str]) -> list[dict[str, str]]:
+        return sorted(
+            [
+                {"apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": value}
+                for value in values
+            ],
+            key=canonical,
+        )
+    live_subjects = binding.get("subjects") if isinstance(binding, dict) else None
+    before = subject_set(before_subjects)
+    target = subject_set(target_subjects)
+    normalized_live = sorted(live_subjects, key=canonical) if isinstance(live_subjects, list) else []
+    state = "before" if normalized_live == before else "target" if normalized_live == target else "invalid"
+    if (
+        identity["name"] != name
+        or identity["namespace"] != namespace
+        or not all(
+            isinstance(item, str) and item
+            for item in (identity["name"], identity["uid"], identity["resourceVersion"])
+        )
+        or labels.get("fs2.nebius.ai/network-policy-boundary") != "permanent"
+        or binding.get("roleRef") != expected_role_ref
+        or state == "invalid"
+    ):
+        raise PreflightError("epoch rotation binding is outside its exact before/target states")
+    return {
+        "metadata": identity,
+        "roleRef": binding["roleRef"],
+        "subjects": normalized_live,
+        "state": state,
+    }, state
+
+
+def auditor_bootstrap_contract(
+    kubeconfig: Path,
+    context: str,
+    bootstrap_username: str,
+    prior_bootstrap_username: str,
+    successor_bootstrap_username: str,
+) -> tuple[str, str, dict[str, Any]]:
+    """Verify the externally provisioned, non-destructively imported auditor."""
+    try:
+        role = json.loads(
+            run(
+                kubeconfig,
+                context,
+                "get",
+                "clusterrole",
+                "fs2-network-policy-security-auditor",
+                "-o",
+                "json",
+            )
+        )
+    except json.JSONDecodeError as error:
+        raise PreflightError("external auditor handoff is not valid JSON") from error
+
+    expected_rules = [
+        {"apiGroups": [""], "resources": ["namespaces", "serviceaccounts"], "verbs": ["get", "list"]},
+        {
+            "apiGroups": ["authorization.k8s.io"],
+            "resources": ["subjectaccessreviews"],
+            "verbs": ["create"],
+        },
+        {
+            "apiGroups": ["rbac.authorization.k8s.io"],
+            "resources": ["roles", "clusterroles"],
+            "verbs": ["get", "list"],
+        },
+        {
+            "apiGroups": ["rbac.authorization.k8s.io"],
+            "resources": ["clusterrolebindings"],
+            "resourceNames": [
+                "fs2-network-policy-security-owner",
+                "fs2-network-policy-security-auditor",
+            ],
+            "verbs": ["get", "patch", "update"],
+        },
+        {
+            "apiGroups": ["rbac.authorization.k8s.io"],
+            "resources": ["rolebindings"],
+            "resourceNames": [
+                "fs2-network-policy-transition",
+                "fs2-network-policy-transition-gateway",
+                "fs2-network-policy-transition-controller",
+            ],
+            "verbs": ["get"],
+        },
+        {
+            "apiGroups": [""],
+            "resources": ["configmaps"],
+            "resourceNames": [
+                "fs2-network-policy-transition",
+                "fs2-network-policy-boundary-topology",
+                "fs2-network-policy-boundary-parameters",
+            ],
+            "verbs": ["get"],
+        },
+        {
+            "apiGroups": ["coordination.k8s.io"],
+            "resources": ["leases"],
+            "resourceNames": ["fs2-network-policy-transition"],
+            "verbs": ["get"],
+        },
+        {
+            "apiGroups": ["networking.k8s.io"],
+            "resources": ["networkpolicies"],
+            "resourceNames": [
+                "fs2-serve-control-plane-public-envoy-transition-guard",
+                "fs2-serve-control-plane-envoy-controller-xds-transition-guard",
+                "fs2-serve-control-plane-envoy-default-deny",
+            ],
+            "verbs": ["get"],
+        },
+        {
+            "apiGroups": ["admissionregistration.k8s.io"],
+            "resources": ["validatingadmissionpolicies", "validatingadmissionpolicybindings"],
+            "resourceNames": ["fs2-network-policy-boundary"],
+            "verbs": ["get"],
+        },
+    ]
+
+    def metadata(value: Any) -> dict[str, str]:
+        raw = value.get("metadata", {}) if isinstance(value, dict) else {}
+        labels = raw.get("labels", {}) if isinstance(raw, dict) else {}
+        result = {
+            "name": raw.get("name"),
+            "uid": raw.get("uid"),
+            "resourceVersion": raw.get("resourceVersion"),
+        }
+        if (
+            result["name"] != "fs2-network-policy-security-auditor"
+            or not all(isinstance(item, str) and item for item in result.values())
+            or labels.get("fs2.nebius.ai/network-policy-boundary") != "permanent"
+        ):
+            raise PreflightError("external auditor identity or ownership is not exact")
+        return result
+
+    role_metadata = metadata(role)
+    rules = role.get("rules") if isinstance(role, dict) else None
+    if not isinstance(rules, list) or sorted(rules, key=canonical) != sorted(expected_rules, key=canonical):
+        raise PreflightError("external auditor role is not least-privilege exact")
+    binding_evidence, state = rotation_binding_contract(
+        kubeconfig,
+        context,
+        resource="clusterrolebinding",
+        name="fs2-network-policy-security-auditor",
+        namespace="",
+        role_kind="ClusterRole",
+        role_name="fs2-network-policy-security-auditor",
+        before_subjects=[prior_bootstrap_username, bootstrap_username],
+        target_subjects=[bootstrap_username, successor_bootstrap_username],
+    )
+    evidence = {
+        "role": {"metadata": role_metadata, "rules": rules},
+        "binding": binding_evidence,
+    }
+    return hashlib.sha256(
+        canonical(
+            evidence
+        ).encode()
+    ).hexdigest(), state, evidence
 
 
 def can_i(kubeconfig: Path, context: str, expected: str, *arguments: str) -> None:
@@ -540,9 +864,8 @@ def parse_query() -> dict[str, Any]:
         "prior_bootstrap_identity",
         "subject_inventory",
         "provider_snapshot_path",
-        "provider_public_key",
-        "provider_tenant_sha256",
-        "provider_query_sha256",
+        "provider_trust_anchor_path",
+        "provider_adapter_path",
         "recovery_public_key",
         "minimum_rollback_seconds",
         "gateway_namespace",
@@ -614,12 +937,17 @@ def main() -> int:
         for path in paths.values():
             exact_file(path)
         provider_snapshot_path = Path(query["provider_snapshot_path"])
+        provider_trust_anchor_path = Path(query["provider_trust_anchor_path"])
+        provider_adapter_path = Path(query["provider_adapter_path"])
         live_identity_uids: list[str] = []
         live_identity_groups: list[str] = []
         live_identity_extra_keys: list[str] = []
         if query["mode"] == "public":
             exact_file(provider_snapshot_path, label="provider/IAM subject snapshot")
-            if any(paths[role].parent.name != query["identity_epoch"] for role in ("release", "security", "bootstrap")):
+            if any(
+                paths[role].parent.name != query["identity_epoch"]
+                for role in ("release", "security", "bootstrap")
+            ):
                 raise PreflightError("current credential files are not in the current immutable epoch")
             if any(
                 paths[role].parent.name != query["prior_identity_epoch"]
@@ -766,15 +1094,39 @@ def main() -> int:
                 or rollback_valid_until < expiries["bootstrap"] + minimum_rollback_seconds
             ):
                 raise PreflightError("boundary credentials do not preserve the minimum post-bootstrap rollback window")
-            if query["provider_public_key"] == query["recovery_public_key"]:
+            provider_trust, provider_trust_anchor_sha256, provider_adapter_sha256 = (
+                verified_provider_trust_anchor(
+                    provider_trust_anchor_path,
+                    provider_adapter_path,
+                    rollback_valid_until=rollback_valid_until,
+                )
+            )
+            if provider_trust["snapshot_public_key"] == query["recovery_public_key"]:
                 raise PreflightError("provider/IAM and recovery inventory authorities must be disjoint")
-            provider_signed, provider_users, provider_groups, provider_snapshot_sha256 = verified_provider_snapshot(
-                provider_snapshot_path.read_text(encoding="utf-8"),
-                query["provider_public_key"],
-                expected_tenant_sha256=query["provider_tenant_sha256"],
-                expected_query_sha256=query["provider_query_sha256"],
-                rollback_valid_until=rollback_valid_until,
-                forbidden_usernames=set(expected_principals.values()),
+            provider_snapshot_bytes, provider_snapshot_metadata = descriptor_bytes(
+                provider_snapshot_path,
+                maximum=16777216,
+                label="provider/IAM subject snapshot",
+            )
+            if (
+                not stat.S_ISREG(provider_snapshot_metadata.st_mode)
+                or stat.S_IMODE(provider_snapshot_metadata.st_mode) != 0o600
+                or provider_snapshot_metadata.st_uid != os.geteuid()
+            ):
+                raise PreflightError("provider/IAM subject snapshot custody changed")
+            try:
+                provider_snapshot_text = provider_snapshot_bytes.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise PreflightError("provider/IAM subject snapshot is not UTF-8") from error
+            provider_signed, provider_users, provider_groups, provider_snapshot_sha256 = (
+                verified_provider_snapshot(
+                    provider_snapshot_text,
+                    provider_trust,
+                    trust_anchor_sha256=provider_trust_anchor_sha256,
+                    adapter_sha256=provider_adapter_sha256,
+                    rollback_valid_until=rollback_valid_until,
+                    forbidden_usernames=set(expected_principals.values()),
+                )
             )
             humans, inventory_sha256 = verified_subject_inventory(
                 query["subject_inventory"],
@@ -790,8 +1142,13 @@ def main() -> int:
         else:
             humans = []
             prior_expected = {}
+            provider_users = []
+            provider_groups = []
             inventory_sha256 = hashlib.sha256(b"internal-only").hexdigest()
             provider_snapshot_sha256 = hashlib.sha256(b"internal-only-provider").hexdigest()
+            provider_trust_anchor_sha256 = hashlib.sha256(b"internal-only-trust-anchor").hexdigest()
+            provider_adapter_sha256 = hashlib.sha256(b"internal-only-provider-adapter").hexdigest()
+            auditor_bootstrap_sha256 = hashlib.sha256(b"internal-only-auditor-bootstrap").hexdigest()
 
         release = paths["release"]
         security = paths["security"]
@@ -799,6 +1156,95 @@ def main() -> int:
         prior_security = paths["prior_security"]
         prior_bootstrap = paths["prior_bootstrap"]
         context = query["context"]
+        if query["mode"] == "public":
+            auditor_bootstrap_sha256, auditor_state, auditor_evidence = auditor_bootstrap_contract(
+                bootstrap,
+                context,
+                expected_principals["bootstrap"],
+                expected_principals["prior_bootstrap"],
+                expected_principals["successor_bootstrap"],
+            )
+            before_mutation_subjects = [
+                expected_principals["prior_security"],
+                expected_principals["security"],
+                expected_principals["bootstrap"],
+            ]
+            target_mutation_subjects = [
+                expected_principals["security"],
+                expected_principals["successor_security"],
+                expected_principals["successor_bootstrap"],
+            ]
+            binding_specs = (
+                (
+                    "cluster",
+                    "clusterrolebinding",
+                    "fs2-network-policy-security-owner",
+                    "",
+                    "ClusterRole",
+                    "fs2-network-policy-security-owner",
+                ),
+                (
+                    "state",
+                    "rolebinding",
+                    "fs2-network-policy-transition",
+                    "fs2-system",
+                    "Role",
+                    "fs2-network-policy-transition",
+                ),
+                (
+                    "gateway",
+                    "rolebinding",
+                    "fs2-network-policy-transition-gateway",
+                    query["gateway_namespace"],
+                    "Role",
+                    "fs2-network-policy-transition-gateway",
+                ),
+                (
+                    "controller",
+                    "rolebinding",
+                    "fs2-network-policy-transition-controller",
+                    query["controller_namespace"],
+                    "Role",
+                    "fs2-network-policy-transition-controller",
+                ),
+            )
+            rotation_binding_states = {"auditor": auditor_state}
+            rotation_binding_evidence = {"auditor": auditor_evidence}
+            for key, resource, name, namespace, role_kind, role_name in binding_specs:
+                evidence, state = rotation_binding_contract(
+                    bootstrap,
+                    context,
+                    resource=resource,
+                    name=name,
+                    namespace=namespace,
+                    role_kind=role_kind,
+                    role_name=role_name,
+                    before_subjects=before_mutation_subjects,
+                    target_subjects=target_mutation_subjects,
+                )
+                rotation_binding_states[key] = state
+                rotation_binding_evidence[key] = evidence
+            state_values = set(rotation_binding_states.values())
+            rotation_phase = (
+                "preapply"
+                if state_values == {"before"}
+                else "postapply"
+                if state_values == {"target"}
+                else "resume"
+            )
+            rotation_binding_state_sha256 = hashlib.sha256(
+                canonical(rotation_binding_evidence).encode()
+            ).hexdigest()
+        else:
+            rotation_binding_states = {
+                "auditor": "target",
+                "cluster": "target",
+                "state": "target",
+                "gateway": "target",
+                "controller": "target",
+            }
+            rotation_phase = "postapply"
+            rotation_binding_state_sha256 = hashlib.sha256(b"internal-only-rotation-state").hexdigest()
         protected_cluster = (
             "validatingadmissionpolicies.admissionregistration.k8s.io",
             "validatingadmissionpolicybindings.admissionregistration.k8s.io",
@@ -809,8 +1255,22 @@ def main() -> int:
                 can_i(security, context, "no", verb, resource)
                 can_i(security, context, "yes", verb, resource, "--resource-name=fs2-network-policy-boundary")
                 can_i(bootstrap, context, "no", verb, resource)
-                can_i(bootstrap, context, "yes", verb, resource, "--resource-name=fs2-network-policy-boundary")
-                can_i(prior_security, context, "no", verb, resource, "--resource-name=fs2-network-policy-boundary")
+                can_i(
+                    bootstrap,
+                    context,
+                    "yes" if rotation_binding_states["cluster"] == "before" else "no",
+                    verb,
+                    resource,
+                    "--resource-name=fs2-network-policy-boundary",
+                )
+                can_i(
+                    prior_security,
+                    context,
+                    "yes" if rotation_binding_states["cluster"] == "before" else "no",
+                    verb,
+                    resource,
+                    "--resource-name=fs2-network-policy-boundary",
+                )
                 can_i(prior_bootstrap, context, "no", verb, resource, "--resource-name=fs2-network-policy-boundary")
             can_i(release, context, "no", "delete", resource, "--resource-name=fs2-network-policy-boundary")
             can_i(security, context, "no", "delete", resource)
@@ -878,6 +1338,14 @@ def main() -> int:
             ),
         )
         for resource, name, namespace in namespaced:
+            binding_key = (
+                "gateway"
+                if resource.startswith("networkpolicies.")
+                and name != "fs2-serve-control-plane-envoy-controller-xds-transition-guard"
+                else "controller"
+                if resource.startswith("networkpolicies.")
+                else "state"
+            )
             for verb in ("patch", "update"):
                 can_i(release, context, "no", verb, resource, f"--resource-name={name}", "--namespace", namespace)
                 can_i(security, context, "no", verb, resource, "--namespace", namespace)
@@ -892,11 +1360,25 @@ def main() -> int:
                     namespace,
                 )
                 can_i(bootstrap, context, "no", verb, resource, "--namespace", namespace)
-                can_i(bootstrap, context, "yes", verb, resource, f"--resource-name={name}", "--namespace", namespace)
+                can_i(
+                    bootstrap,
+                    context,
+                    "yes" if rotation_binding_states[binding_key] == "before" else "no",
+                    verb,
+                    resource,
+                    f"--resource-name={name}",
+                    "--namespace",
+                    namespace,
+                )
                 can_i(
                     prior_security,
                     context,
-                    "no",
+                    (
+                        "yes"
+                        if rotation_binding_states[binding_key] == "before"
+                        and name != "fs2-network-policy-boundary-topology"
+                        else "no"
+                    ),
                     verb,
                     resource,
                     f"--resource-name={name}",
@@ -925,60 +1407,115 @@ def main() -> int:
 
         for resource, name, namespace in rbac_objects:
             suffix = ("--namespace", namespace) if namespace else ()
-            for identity in (release, security, prior_security, prior_bootstrap):
+            is_binding = resource.startswith("clusterrolebindings.") or resource.startswith("rolebindings.")
+            binding_key = (
+                "auditor"
+                if name == "fs2-network-policy-security-auditor"
+                else "cluster"
+                if not namespace
+                else "state"
+                if name == "fs2-network-policy-transition"
+                else "gateway"
+                if name.endswith("-gateway")
+                else "controller"
+            )
+            for identity in (release, security, prior_security):
                 for verb in ("create", "patch", "update", "delete"):
                     can_i(identity, context, "no", verb, resource, *suffix)
                     can_i(identity, context, "no", verb, resource, f"--resource-name={name}", *suffix)
                 can_i(identity, context, "no", "deletecollection", resource, *suffix)
+            for verb in ("create", "delete"):
+                can_i(prior_bootstrap, context, "no", verb, resource, *suffix)
+                can_i(prior_bootstrap, context, "no", verb, resource, f"--resource-name={name}", *suffix)
+            can_i(prior_bootstrap, context, "no", "deletecollection", resource, *suffix)
             can_i(bootstrap, context, "no", "create", resource, *suffix)
             can_i(bootstrap, context, "no", "delete", resource, f"--resource-name={name}", *suffix)
             can_i(bootstrap, context, "no", "deletecollection", resource, *suffix)
             for verb in ("patch", "update"):
                 can_i(bootstrap, context, "no", verb, resource, *suffix)
-                can_i(bootstrap, context, "yes", verb, resource, f"--resource-name={name}", *suffix)
+                can_i(
+                    bootstrap,
+                    context,
+                    (
+                        "yes"
+                        if is_binding
+                        and (
+                            not namespace
+                            or rotation_binding_states[binding_key] == "before"
+                        )
+                        else "no"
+                    ),
+                    verb,
+                    resource,
+                    f"--resource-name={name}",
+                    *suffix,
+                )
+                can_i(prior_bootstrap, context, "no", verb, resource, *suffix)
+                can_i(
+                    prior_bootstrap,
+                    context,
+                    (
+                        "yes"
+                        if is_binding
+                        and not namespace
+                        and rotation_binding_states["auditor"] == "before"
+                        else "no"
+                    ),
+                    verb,
+                    resource,
+                    f"--resource-name={name}",
+                    *suffix,
+                )
 
         can_i(bootstrap, context, "yes", "list", "namespaces")
         can_i(bootstrap, context, "yes", "list", "serviceaccounts", "--all-namespaces")
-        service_accounts, kubernetes_subject_inventory_sha256 = kubernetes_subject_inventory(bootstrap, context)
-
+        can_i(bootstrap, context, "yes", "list", "roles.rbac.authorization.k8s.io", "--all-namespaces")
+        can_i(bootstrap, context, "yes", "list", "clusterroles.rbac.authorization.k8s.io")
+        service_accounts, roles, cluster_roles, kubernetes_subject_inventory_sha256 = (
+            kubernetes_subject_inventory(bootstrap, context)
+        )
         identities = (release, security, bootstrap, prior_security, prior_bootstrap)
         impersonation_targets = tuple(
-            [("users", name) for name in sorted(set(expected_principals.values()))]
+            [("users", name, "") for name in sorted(set(expected_principals.values()))]
         ) + (
-            ("users", "fs2-network-policy-security-probe"),
-            ("groups", "system:masters"),
-            ("groups", "system:authenticated"),
-            ("groups", "system:serviceaccounts"),
-            ("groups", "system:serviceaccounts:fs2-system"),
-            ("serviceaccounts", "system:serviceaccount:fs2-system:fs2-network-policy-transition"),
-            ("uids.authentication.k8s.io", query["peer_uid"]),
-            ("userextras.authentication.k8s.io", "scopes"),
+            ("users", "fs2-network-policy-security-probe", ""),
+            ("groups", "system:masters", ""),
+            ("groups", "system:authenticated", ""),
+            ("groups", "system:serviceaccounts", ""),
+            ("groups", "system:serviceaccounts:fs2-system", ""),
+            ("serviceaccounts", "fs2-network-policy-transition", "fs2-system"),
+            ("uids.authentication.k8s.io", query["peer_uid"], ""),
+            ("userextras.authentication.k8s.io", "scopes", ""),
         )
-        impersonation_targets += tuple(("groups", group) for group in live_identity_groups)
+        impersonation_targets += tuple(("groups", group, "") for group in live_identity_groups)
+        impersonation_targets += tuple(("users", user["username"], "") for user in provider_users)
         impersonation_targets += tuple(
-            ("serviceaccounts", f"{namespace}:{account['name']}")
+            ("groups", group, "")
+            for group in sorted(
+                {
+                    *provider_groups,
+                    *(group for user in provider_users for group in user["groups"]),
+                }
+            )
+        )
+        impersonation_targets += tuple(
+            ("serviceaccounts", account["name"], namespace)
             for namespace, accounts in service_accounts.items()
             for account in accounts
         )
-        impersonation_targets += tuple(("uids.authentication.k8s.io", uid) for uid in live_identity_uids)
         impersonation_targets += tuple(
-            ("userextras.authentication.k8s.io", key) for key in live_identity_extra_keys
+            ("uids.authentication.k8s.io", uid, "") for uid in live_identity_uids
+        )
+        impersonation_targets += tuple(
+            ("userextras.authentication.k8s.io", key, "") for key in live_identity_extra_keys
         )
         impersonation_targets = tuple(sorted(set(impersonation_targets)))
-        delegation_targets = (
-            ("clusterroles.rbac.authorization.k8s.io", "fs2-network-policy-security-owner", ""),
-            ("clusterroles.rbac.authorization.k8s.io", "fs2-network-policy-security-auditor", ""),
-            ("roles.rbac.authorization.k8s.io", "fs2-network-policy-transition", "fs2-system"),
-            (
-                "roles.rbac.authorization.k8s.io",
-                "fs2-network-policy-transition-gateway",
-                query["gateway_namespace"],
-            ),
-            (
-                "roles.rbac.authorization.k8s.io",
-                "fs2-network-policy-transition-controller",
-                query["controller_namespace"],
-            ),
+        delegation_targets = tuple(
+            ("clusterroles.rbac.authorization.k8s.io", role["name"], "") for role in cluster_roles
+        ) + tuple(
+            ("roles.rbac.authorization.k8s.io", role["name"], namespace)
+            for namespace, namespace_roles in roles.items()
+            for role in namespace_roles
         )
         signer_names = (
             "kubernetes.io/kube-apiserver-client",
@@ -994,8 +1531,11 @@ def main() -> int:
                 "userextras.authentication.k8s.io",
             ):
                 can_i(identity, context, "no", "impersonate", resource)
-            for resource, name in impersonation_targets:
-                can_i(identity, context, "no", "impersonate", resource, f"--resource-name={name}")
+            for resource, name, namespace in impersonation_targets:
+                arguments = ("impersonate", resource, f"--resource-name={name}")
+                if namespace:
+                    arguments += ("--namespace", namespace)
+                can_i(identity, context, "no", *arguments)
             can_i(identity, context, "no", "create", "serviceaccounts", "--subresource=token", "--all-namespaces")
             for namespace, accounts in service_accounts.items():
                 can_i(
@@ -1062,16 +1602,17 @@ def main() -> int:
                 can_i(identity, context, "no", "update", "namespaces/finalize", f"--resource-name={namespace}")
 
         can_i(bootstrap, context, "yes", "create", "subjectaccessreviews.authorization.k8s.io")
-        retired_subjects = [
+        preapply_retired_subjects = [
             {
                 "username": value["username"],
                 "uid": value["uid"],
                 "groups": sorted(value["groups"]),
                 "extra": {key: sorted(items) for key, items in sorted(value["extra"].items())},
             }
-            for value in prior_expected.values()
+            for role, value in prior_expected.items()
+            if role == "prior_bootstrap"
         ]
-        for subject in [*humans, *retired_subjects]:
+        for subject in [*humans, *preapply_retired_subjects]:
             for resource, name, namespace in namespaced:
                 if resource.startswith("networkpolicies."):
                     group, short_resource = "networking.k8s.io", "networkpolicies"
@@ -1183,7 +1724,7 @@ def main() -> int:
                 ("authentication.k8s.io", "userextras"),
             ):
                 subject_denied(bootstrap, context, subject, verb="impersonate", group=group, resource=resource)
-            for resource, name in impersonation_targets:
+            for resource, name, namespace in impersonation_targets:
                 if resource.endswith(".authentication.k8s.io"):
                     group, short_resource = "authentication.k8s.io", resource.split(".", maxsplit=1)[0]
                 else:
@@ -1195,6 +1736,7 @@ def main() -> int:
                     verb="impersonate",
                     group=group,
                     resource=short_resource,
+                    namespace=namespace,
                     name=name,
                 )
             subject_denied(
@@ -1278,7 +1820,12 @@ def main() -> int:
                     "query": query,
                     "credential_set_sha256": credential_set_sha256,
                     "provider_snapshot_sha256": provider_snapshot_sha256,
+                    "provider_trust_anchor_sha256": provider_trust_anchor_sha256,
+                    "provider_adapter_sha256": provider_adapter_sha256,
                     "kubernetes_subject_inventory_sha256": kubernetes_subject_inventory_sha256,
+                    "auditor_bootstrap_sha256": auditor_bootstrap_sha256,
+                    "rotation_phase": rotation_phase,
+                    "rotation_binding_state_sha256": rotation_binding_state_sha256,
                 }
             ).encode()
         ).hexdigest()
@@ -1289,7 +1836,12 @@ def main() -> int:
                     "contract_sha256": digest,
                     "subject_inventory_sha256": inventory_sha256,
                     "provider_snapshot_sha256": provider_snapshot_sha256,
+                    "provider_trust_anchor_sha256": provider_trust_anchor_sha256,
+                    "provider_adapter_sha256": provider_adapter_sha256,
                     "kubernetes_subject_inventory_sha256": kubernetes_subject_inventory_sha256,
+                    "auditor_bootstrap_sha256": auditor_bootstrap_sha256,
+                    "rotation_phase": rotation_phase,
+                    "rotation_binding_state_sha256": rotation_binding_state_sha256,
                     "credential_set_sha256": credential_set_sha256,
                     "release_kubeconfig_sha256": credential_hashes["release"],
                     "security_kubeconfig_sha256": credential_hashes["security"],

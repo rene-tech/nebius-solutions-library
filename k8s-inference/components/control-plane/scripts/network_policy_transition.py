@@ -595,6 +595,7 @@ class Transition:
         cluster_server, kube_system_uid = self._cluster_identity(self.bootstrap_kubectl)
         contract = topology["contract"]
         handoff_contract = contract.get("security_handoff", {})
+        auditor_bootstrap = handoff_contract.get("auditor_bootstrap", {})
         cluster = {
             "api_server_sha256": sha256_text(cluster_server),
             "kube_system_uid": kube_system_uid,
@@ -639,6 +640,24 @@ class Transition:
             or handoff_contract.get("cluster") != cluster
             or handoff_contract.get("allowed_actions") != ["transition-mutation", "set-admission-recovery"]
             or handoff_contract.get("delete_allowed") is not False
+            or auditor_bootstrap
+            != {
+                "mechanism": "external-preprovision-declarative-import",
+                "cluster_role": "fs2-network-policy-security-auditor",
+                "cluster_role_binding": "fs2-network-policy-security-auditor",
+                "preapply_subjects": [
+                    expected_principals["prior_bootstrap"],
+                    expected_principals["security_bootstrap"],
+                ],
+                "desired_subjects": [
+                    expected_principals["security_bootstrap"],
+                    expected_principals["successor_bootstrap"],
+                ],
+                "observed_sha256": identity_boundary.get("auditor_bootstrap_sha256"),
+                "bootstrap_create": False,
+                "bootstrap_exact_update": True,
+                "delete_allowed": False,
+            }
             or handoff_contract.get("recovery_modes") != ["Audit", "Warn", "Deny"]
             or identity_boundary.get("schema")
             != "fs2-serve.nebius.ai/network-policy-identity-boundary/v3"
@@ -672,7 +691,16 @@ class Transition:
                 r"[0-9a-f]{64}", str(identity_boundary.get("provider_subject_snapshot_sha256", ""))
             )
             or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity_boundary.get("provider_trust_anchor_sha256", ""))
+            )
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("provider_adapter_sha256", "")))
+            or not re.fullmatch(
                 r"[0-9a-f]{64}", str(identity_boundary.get("kubernetes_subject_inventory_sha256", ""))
+            )
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("auditor_bootstrap_sha256", "")))
+            or identity_boundary.get("plan_rotation_phase") not in {"preapply", "resume", "postapply"}
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity_boundary.get("rotation_binding_state_sha256", ""))
             )
             or identity_boundary.get("plan_preflight_verified") is not True
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("plan_preflight_sha256", "")))
@@ -694,7 +722,11 @@ class Transition:
                 "prior_security_owner_identity": expected_principals["prior_owner"],
                 "prior_bootstrap_identity": expected_principals["prior_bootstrap"],
                 "new_paths_required": True,
-                "prior_epoch_authorization_denied": True,
+                "allowed_plan_phases": ["preapply", "resume", "postapply"],
+                "mutation_binding_states": ["before", "target"],
+                "fresh_preapply_prior_owner_authorized": True,
+                "prior_bootstrap_protected_mutation_denied": True,
+                "postapply_retirement_required": True,
             }
         ):
             raise TransitionError("signed handoff does not match protected same-cluster topology")
@@ -717,7 +749,12 @@ class Transition:
             "security_user_info_sha256": identity_boundary.get("security_user_info_sha256"),
             "identity_epoch": epoch,
             "provider_subject_snapshot_sha256": identity_boundary.get("provider_subject_snapshot_sha256"),
+            "provider_trust_anchor_sha256": identity_boundary.get("provider_trust_anchor_sha256"),
+            "provider_adapter_sha256": identity_boundary.get("provider_adapter_sha256"),
             "kubernetes_subject_inventory_sha256": identity_boundary.get("kubernetes_subject_inventory_sha256"),
+            "auditor_bootstrap_sha256": identity_boundary.get("auditor_bootstrap_sha256"),
+            "plan_rotation_phase": identity_boundary.get("plan_rotation_phase"),
+            "rotation_binding_state_sha256": identity_boundary.get("rotation_binding_state_sha256"),
         }:
             raise TransitionError("security automation attestation is not the exact narrow contract")
         self.security_handoff = handoff

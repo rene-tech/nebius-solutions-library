@@ -132,16 +132,21 @@ variable "network_policy_boundary" {
           kube_system_uid   = string
         })
         provider_snapshot = object({
-          sha256        = string
-          snapshot_id   = string
-          provider      = string
-          tenant_sha256 = string
-          query_sha256  = string
-          page_count    = number
-          record_count  = number
-          captured_at   = string
-          expires_at    = string
-          signer_key_id = string
+          sha256      = string
+          snapshot_id = string
+          provider    = string
+          adapter = object({
+            id     = string
+            sha256 = string
+          })
+          trust_anchor_sha256 = string
+          tenant_sha256       = string
+          query_sha256        = string
+          page_count          = number
+          record_count        = number
+          captured_at         = string
+          expires_at          = string
+          signer_key_id       = string
         })
         human_users = list(object({
           username = string
@@ -155,9 +160,6 @@ variable "network_policy_boundary" {
       signature = string
     }))
     security_subject_provider_snapshot_path  = optional(string)
-    security_subject_provider_public_key     = optional(string)
-    security_subject_provider_tenant_sha256  = optional(string)
-    security_subject_provider_query_sha256   = optional(string)
     security_handoff_socket_path             = optional(string, "/run/fs2/network-policy-security.sock")
     security_handoff_server_public_key       = optional(string)
     security_handoff_client_public_key       = optional(string)
@@ -277,6 +279,9 @@ variable "network_policy_boundary" {
       var.network_policy_boundary.security_subject_inventory.signed.cluster.kube_system_uid == var.kube_system_uid &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.cluster.api_server_sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.sha256)) &&
+      var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.adapter.id == "fs2-serve.nebius.ai/nebius-iam-human-directory/v1" &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.adapter.sha256)) &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.trust_anchor_sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.tenant_sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.query_sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.signer_key_id)) &&
@@ -287,14 +292,7 @@ variable "network_policy_boundary" {
       var.network_policy_boundary.security_subject_provider_snapshot_path != null &&
       startswith(var.network_policy_boundary.security_subject_provider_snapshot_path, "/") &&
       !strcontains(var.network_policy_boundary.security_subject_provider_snapshot_path, "..") &&
-      var.network_policy_boundary.security_subject_provider_public_key != null &&
-      can(regex("^[A-Za-z0-9_-]{43}$", var.network_policy_boundary.security_subject_provider_public_key)) &&
-      var.network_policy_boundary.security_subject_provider_tenant_sha256 != null &&
-      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_provider_tenant_sha256)) &&
-      var.network_policy_boundary.security_subject_provider_query_sha256 != null &&
-      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_provider_query_sha256)) &&
-      sha256(var.network_policy_boundary.security_subject_provider_public_key) !=
-      sha256(var.network_policy_boundary.security_handoff_recovery_public_key),
+      var.network_policy_boundary.security_handoff_recovery_public_key != null,
       false,
     )
     error_message = "Public boundary identities must be exact epoch-derived non-human principals with distinct prior/current/successor epochs, and the recovery-signed inventory must bind an independently signed provider/IAM snapshot."
@@ -347,7 +345,6 @@ variable "network_policy_boundary" {
           var.network_policy_boundary.security_handoff_server_public_key,
           var.network_policy_boundary.security_handoff_client_public_key,
           var.network_policy_boundary.security_handoff_recovery_public_key,
-          var.network_policy_boundary.security_subject_provider_public_key,
         ] : value == null || can(regex("^[A-Za-z0-9_-]{43}$", value))
       ])
     )

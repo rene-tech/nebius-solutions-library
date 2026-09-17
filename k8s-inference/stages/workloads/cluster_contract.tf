@@ -135,7 +135,7 @@ resource "terraform_data" "cluster_contract" {
           toset([
             "schema", "owner_stage", "deletion_protected", "external_security_owner", "mode",
             "gateway_namespace", "controller_namespace", "service_account", "security_owner",
-            "security_handoff", "lease_name", "receipt_name", "topology_name", "parameter_name",
+            "security_handoff", "epoch_retirement", "lease_name", "receipt_name", "topology_name", "parameter_name",
             "policy_names", "admission_policy", "admission_binding",
           ]),
         ) &&
@@ -210,7 +210,12 @@ resource "terraform_data" "cluster_contract" {
         can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.prior_bootstrap_kubeconfig_sha256)) &&
         can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.security_subject_inventory_sha256)) &&
         can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.provider_subject_snapshot_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.provider_trust_anchor_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.provider_adapter_sha256)) &&
         can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.kubernetes_subject_inventory_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.auditor_bootstrap_sha256)) &&
+        contains(["preapply", "resume", "postapply"], data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.plan_rotation_phase) &&
+        can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.rotation_binding_state_sha256)) &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.plan_preflight_verified &&
         can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.plan_preflight_sha256)) &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.bootstrap_must_be_expired &&
@@ -223,15 +228,28 @@ resource "terraform_data" "cluster_contract" {
           data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.rollback_valid_until,
         ) <= 0 &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.rotation_contract == {
-          mechanism                         = "preauthorized-successor-epoch"
-          bootstrap_update_identity         = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.security_bootstrap
-          successor_security_owner_identity = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.successor_owner
-          successor_bootstrap_identity      = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.successor_bootstrap
-          prior_security_owner_identity     = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.prior_owner
-          prior_bootstrap_identity          = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.prior_bootstrap
-          new_paths_required                = true
-          prior_epoch_authorization_denied  = true
+          mechanism                                 = "preauthorized-successor-epoch"
+          bootstrap_update_identity                 = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.security_bootstrap
+          successor_security_owner_identity         = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.successor_owner
+          successor_bootstrap_identity              = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.successor_bootstrap
+          prior_security_owner_identity             = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.prior_owner
+          prior_bootstrap_identity                  = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.prior_bootstrap
+          new_paths_required                        = true
+          allowed_plan_phases                       = ["preapply", "resume", "postapply"]
+          mutation_binding_states                   = ["before", "target"]
+          fresh_preapply_prior_owner_authorized     = true
+          prior_bootstrap_protected_mutation_denied = true
+          postapply_retirement_required             = true
         } &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.epoch_retirement == {
+          schema           = "fs2-serve.nebius.ai/network-policy-epoch-retirement/v1"
+          verified         = true
+          contract_sha256  = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.epoch_retirement.contract_sha256
+          preflight_sha256 = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.plan_preflight_sha256
+          identity_epoch   = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.identity_epoch
+          prior_epoch      = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.prior_identity_epoch
+        } &&
+        can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.epoch_retirement.contract_sha256)) &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.permitted_shared_groups == ["system:authenticated", "system:serviceaccounts"] &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.cluster == {
           api_server_sha256 = sha256(local.selected_api_server)
@@ -239,6 +257,23 @@ resource "terraform_data" "cluster_contract" {
         } &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.allowed_actions == ["transition-mutation", "set-admission-recovery"] &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.recovery_modes == ["Audit", "Warn", "Deny"] &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.auditor_bootstrap == {
+          mechanism            = "external-preprovision-declarative-import"
+          cluster_role         = "fs2-network-policy-security-auditor"
+          cluster_role_binding = "fs2-network-policy-security-auditor"
+          preapply_subjects = [
+            data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.prior_bootstrap,
+            data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.security_bootstrap,
+          ]
+          desired_subjects = [
+            data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.security_bootstrap,
+            data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.successor_bootstrap,
+          ]
+          observed_sha256        = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.auditor_bootstrap_sha256
+          bootstrap_create       = false
+          bootstrap_exact_update = true
+          delete_allowed         = false
+        } &&
         !data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.delete_allowed,
         false,
       )
