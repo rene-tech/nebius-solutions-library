@@ -15,7 +15,7 @@ locals {
   control_plane_network_policy_prior_bootstrap            = "fs2-np-security-bootstrap-${local.control_plane_network_policy_prior_suffix}"
   control_plane_network_policy_successor_owner            = "fs2-np-security-owner-${local.control_plane_network_policy_successor_suffix}"
   control_plane_network_policy_successor_bootstrap        = "fs2-np-security-bootstrap-${local.control_plane_network_policy_successor_suffix}"
-  control_plane_network_policy_provider_trust_anchor_path = "/etc/fs2/security/network-policy-provider-trust-anchor-v1.json"
+  control_plane_network_policy_provider_trust_anchor_path = "/etc/fs2/security/network-policy-provider-trust-anchor-v2.json"
   control_plane_network_policy_provider_adapter_path = abspath(
     "${path.module}/../../components/control-plane/scripts/network_policy_subject_provider_adapter.py"
   )
@@ -50,6 +50,12 @@ locals {
     controller_normal = "${local.control_plane_network_policy_release_name}-envoy-controller-xds"
     controller_guard  = "${local.control_plane_network_policy_release_name}-envoy-controller-xds-transition-guard"
     default_deny      = "${local.control_plane_network_policy_release_name}-envoy-default-deny"
+  }
+  control_plane_network_policy_bootstrap_names = {
+    cluster    = "fs2-network-policy-security-bootstrap"
+    state      = "${local.control_plane_network_policy_state_name}-bootstrap"
+    gateway    = "${local.control_plane_network_policy_state_name}-gateway-bootstrap"
+    controller = "${local.control_plane_network_policy_state_name}-controller-bootstrap"
   }
   control_plane_network_policy_boundary_labels = {
     "app.kubernetes.io/instance"            = local.control_plane_network_policy_release_name
@@ -175,6 +181,10 @@ locals {
         data.external.control_plane_network_policy_security_preflight_v2.result.auditor_bootstrap_sha256,
         null,
       )
+      external_role_bundle_sha256 = try(
+        data.external.control_plane_network_policy_security_preflight_v2.result.external_role_bundle_sha256,
+        null,
+      )
       plan_rotation_phase = try(
         data.external.control_plane_network_policy_security_preflight_v2.result.rotation_phase,
         null,
@@ -211,12 +221,19 @@ locals {
       mechanism              = "external-preprovision-declarative-import"
       cluster_role           = "fs2-network-policy-security-auditor"
       cluster_role_binding   = "fs2-network-policy-security-auditor"
-      preapply_subjects      = [local.control_plane_network_policy_prior_bootstrap, local.control_plane_network_policy_security_bootstrap]
-      desired_subjects       = [local.control_plane_network_policy_security_bootstrap, local.control_plane_network_policy_successor_bootstrap]
-      observed_sha256        = try(data.external.control_plane_network_policy_security_preflight_v2.result.auditor_bootstrap_sha256, null)
-      bootstrap_create       = false
-      bootstrap_exact_update = true
-      delete_allowed         = false
+      bootstrap_cluster_role = local.control_plane_network_policy_bootstrap_names.cluster
+      bootstrap_namespaced_roles = {
+        state      = local.control_plane_network_policy_bootstrap_names.state
+        gateway    = local.control_plane_network_policy_bootstrap_names.gateway
+        controller = local.control_plane_network_policy_bootstrap_names.controller
+      }
+      immutable_role_bundle_sha256 = try(data.external.control_plane_network_policy_security_preflight_v2.result.external_role_bundle_sha256, null)
+      preapply_subjects            = [local.control_plane_network_policy_prior_bootstrap, local.control_plane_network_policy_security_bootstrap]
+      desired_subjects             = [local.control_plane_network_policy_security_bootstrap, local.control_plane_network_policy_successor_bootstrap]
+      observed_sha256              = try(data.external.control_plane_network_policy_security_preflight_v2.result.auditor_bootstrap_sha256, null)
+      bootstrap_create             = false
+      bootstrap_exact_update       = true
+      delete_allowed               = false
     }
   }
 }
@@ -273,6 +290,7 @@ data "external" "control_plane_network_policy_security_preflight_v2" {
         can(regex("^[0-9a-f]{64}$", self.result.provider_adapter_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.kubernetes_subject_inventory_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.auditor_bootstrap_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.external_role_bundle_sha256)) &&
         contains(["preapply", "resume", "postapply"], self.result.rotation_phase) &&
         can(regex("^[0-9a-f]{64}$", self.result.rotation_binding_state_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.credential_set_sha256)) &&
@@ -954,14 +972,10 @@ resource "kubernetes_role_v1" "control_plane_network_policy_transition_state" {
     ]
     verbs = ["get", "patch", "update"]
   }
-  rule {
-    api_groups     = ["rbac.authorization.k8s.io"]
-    resources      = ["rolebindings"]
-    resource_names = [local.control_plane_network_policy_state_name]
-    verbs          = ["get", "patch", "update"]
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
   }
-
-  lifecycle { prevent_destroy = true }
 
   depends_on = [terraform_data.control_plane_network_policy_security_owner_preflight]
 }
@@ -1000,7 +1014,10 @@ resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_own
     verbs = ["get"]
   }
 
-  lifecycle { prevent_destroy = true }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
 
   depends_on = [terraform_data.control_plane_network_policy_security_owner_preflight]
 }
@@ -1067,20 +1084,19 @@ resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_aud
     verbs      = ["get", "list"]
   }
   rule {
-    api_groups     = ["rbac.authorization.k8s.io"]
-    resources      = ["clusterrolebindings"]
-    resource_names = ["fs2-network-policy-security-owner", "fs2-network-policy-security-auditor"]
-    verbs          = ["get"]
+    api_groups = ["certificates.k8s.io"]
+    resources  = ["certificatesigningrequests"]
+    verbs      = ["get", "list"]
   }
   rule {
     api_groups = ["rbac.authorization.k8s.io"]
-    resources  = ["rolebindings"]
+    resources  = ["clusterrolebindings"]
     resource_names = [
-      local.control_plane_network_policy_state_name,
-      "${local.control_plane_network_policy_state_name}-gateway",
-      "${local.control_plane_network_policy_state_name}-controller",
+      "fs2-network-policy-security-owner",
+      "fs2-network-policy-security-auditor",
+      local.control_plane_network_policy_bootstrap_names.cluster,
     ]
-    verbs = ["get", "patch", "update"]
+    verbs = ["get"]
   }
   rule {
     api_groups = [""]
@@ -1115,7 +1131,10 @@ resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_aud
     verbs          = ["get"]
   }
 
-  lifecycle { prevent_destroy = true }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
 
   depends_on = [terraform_data.control_plane_network_policy_security_owner_preflight]
 }
@@ -1148,11 +1167,86 @@ resource "kubernetes_cluster_role_binding_v1" "control_plane_network_policy_secu
   depends_on = [kubernetes_manifest.control_plane_network_policy_boundary_admission_binding]
 }
 
-// These two objects do not exist in the accepted parent state and the epoch
-// bootstrap is deliberately denied create. External security automation must
-// provision the exact stable objects first; declarative import adopts them
-// without replacement or deletion, after which the short-lived bootstrap may
-// perform only the exact-name subject rotation proven by preflight.
+// Subject rotation is a separate capability. The read-only auditor cannot
+// mutate bindings, and the runtime security owner cannot rotate its own
+// subjects. This externally provisioned role is limited to the three exact
+// cluster bindings; namespace-local companions below avoid a cluster-wide
+// resourceNames grant for RoleBindings.
+resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_bootstrap" {
+  provider = kubernetes.network_policy_security_owner
+
+  metadata {
+    name   = local.control_plane_network_policy_bootstrap_names.cluster
+    labels = local.control_plane_network_policy_boundary_labels
+  }
+  rule {
+    api_groups = ["rbac.authorization.k8s.io"]
+    resources  = ["clusterrolebindings"]
+    resource_names = [
+      "fs2-network-policy-security-owner",
+      "fs2-network-policy-security-auditor",
+      local.control_plane_network_policy_bootstrap_names.cluster,
+    ]
+    verbs = ["get", "patch", "update"]
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.control_plane_network_policy_security_owner_preflight]
+}
+
+resource "kubernetes_cluster_role_binding_v1" "control_plane_network_policy_security_bootstrap" {
+  provider = kubernetes.network_policy_security_owner
+
+  metadata {
+    name   = local.control_plane_network_policy_bootstrap_names.cluster
+    labels = local.control_plane_network_policy_boundary_labels
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = local.control_plane_network_policy_bootstrap_names.cluster
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_security_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
+
+  lifecycle { prevent_destroy = true }
+
+  // Rotate the bootstrap's own authority only after every binding it governs.
+  depends_on = [
+    kubernetes_cluster_role_binding_v1.control_plane_network_policy_security_owner,
+    kubernetes_cluster_role_binding_v1.control_plane_network_policy_security_auditor,
+    kubernetes_role_binding_v1.control_plane_network_policy_transition_state_bootstrap,
+    kubernetes_role_binding_v1.control_plane_network_policy_transition_gateway_bootstrap,
+    kubernetes_role_binding_v1.control_plane_network_policy_transition_controller_bootstrap,
+  ]
+}
+
+// All role definitions and initial bindings are installed by the external
+// security authority and adopted at stable addresses. Terraform may rotate
+// exact binding subjects, but it cannot create, replace, delete, or reconcile
+// the immutable permission definitions with the short-lived bootstrap.
+import {
+  to = kubernetes_cluster_role_v1.control_plane_network_policy_security_owner
+  id = "fs2-network-policy-security-owner"
+}
+
+import {
+  to = kubernetes_cluster_role_binding_v1.control_plane_network_policy_security_owner
+  id = "fs2-network-policy-security-owner"
+}
+
 import {
   to = kubernetes_cluster_role_v1.control_plane_network_policy_security_auditor
   id = "fs2-network-policy-security-auditor"
@@ -1161,6 +1255,76 @@ import {
 import {
   to = kubernetes_cluster_role_binding_v1.control_plane_network_policy_security_auditor
   id = "fs2-network-policy-security-auditor"
+}
+
+import {
+  to = kubernetes_cluster_role_v1.control_plane_network_policy_security_bootstrap
+  id = "fs2-network-policy-security-bootstrap"
+}
+
+import {
+  to = kubernetes_cluster_role_binding_v1.control_plane_network_policy_security_bootstrap
+  id = "fs2-network-policy-security-bootstrap"
+}
+
+import {
+  to = kubernetes_role_v1.control_plane_network_policy_transition_state
+  id = "fs2-system/fs2-network-policy-transition"
+}
+
+import {
+  to = kubernetes_role_binding_v1.control_plane_network_policy_transition_state
+  id = "fs2-system/fs2-network-policy-transition"
+}
+
+import {
+  to = kubernetes_role_v1.control_plane_network_policy_transition_state_bootstrap
+  id = "fs2-system/fs2-network-policy-transition-bootstrap"
+}
+
+import {
+  to = kubernetes_role_binding_v1.control_plane_network_policy_transition_state_bootstrap
+  id = "fs2-system/fs2-network-policy-transition-bootstrap"
+}
+
+import {
+  to = kubernetes_role_v1.control_plane_network_policy_transition_gateway
+  id = "${local.control_plane_network_policy_gateway_namespace}/fs2-network-policy-transition-gateway"
+}
+
+import {
+  to = kubernetes_role_binding_v1.control_plane_network_policy_transition_gateway
+  id = "${local.control_plane_network_policy_gateway_namespace}/fs2-network-policy-transition-gateway"
+}
+
+import {
+  to = kubernetes_role_v1.control_plane_network_policy_transition_gateway_bootstrap
+  id = "${local.control_plane_network_policy_gateway_namespace}/fs2-network-policy-transition-gateway-bootstrap"
+}
+
+import {
+  to = kubernetes_role_binding_v1.control_plane_network_policy_transition_gateway_bootstrap
+  id = "${local.control_plane_network_policy_gateway_namespace}/fs2-network-policy-transition-gateway-bootstrap"
+}
+
+import {
+  to = kubernetes_role_v1.control_plane_network_policy_transition_controller
+  id = "${local.control_plane_network_policy_controller_namespace}/fs2-network-policy-transition-controller"
+}
+
+import {
+  to = kubernetes_role_binding_v1.control_plane_network_policy_transition_controller
+  id = "${local.control_plane_network_policy_controller_namespace}/fs2-network-policy-transition-controller"
+}
+
+import {
+  to = kubernetes_role_v1.control_plane_network_policy_transition_controller_bootstrap
+  id = "${local.control_plane_network_policy_controller_namespace}/fs2-network-policy-transition-controller-bootstrap"
+}
+
+import {
+  to = kubernetes_role_binding_v1.control_plane_network_policy_transition_controller_bootstrap
+  id = "${local.control_plane_network_policy_controller_namespace}/fs2-network-policy-transition-controller-bootstrap"
 }
 
 resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_state" {
@@ -1202,6 +1366,61 @@ resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_s
   ]
 }
 
+resource "kubernetes_role_v1" "control_plane_network_policy_transition_state_bootstrap" {
+  provider = kubernetes.network_policy_security_owner
+
+  metadata {
+    name      = local.control_plane_network_policy_bootstrap_names.state
+    namespace = "fs2-system"
+    labels    = local.control_plane_network_policy_boundary_labels
+  }
+  rule {
+    api_groups = ["rbac.authorization.k8s.io"]
+    resources  = ["rolebindings"]
+    resource_names = [
+      local.control_plane_network_policy_state_name,
+      local.control_plane_network_policy_bootstrap_names.state,
+    ]
+    verbs = ["get", "patch", "update"]
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.control_plane_network_policy_security_owner_preflight]
+}
+
+resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_state_bootstrap" {
+  provider = kubernetes.network_policy_security_owner
+
+  metadata {
+    name      = local.control_plane_network_policy_bootstrap_names.state
+    namespace = "fs2-system"
+    labels    = local.control_plane_network_policy_boundary_labels
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = local.control_plane_network_policy_bootstrap_names.state
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_security_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
+
+  lifecycle { prevent_destroy = true }
+
+  depends_on = [kubernetes_role_binding_v1.control_plane_network_policy_transition_state]
+}
+
 resource "kubernetes_role_v1" "control_plane_network_policy_transition_gateway" {
   provider = kubernetes.network_policy_security_owner
 
@@ -1228,13 +1447,10 @@ resource "kubernetes_role_v1" "control_plane_network_policy_transition_gateway" 
     ]
     verbs = ["patch", "update"]
   }
-  rule {
-    api_groups     = ["rbac.authorization.k8s.io"]
-    resources      = ["rolebindings"]
-    resource_names = ["${local.control_plane_network_policy_state_name}-gateway"]
-    verbs          = ["get", "patch", "update"]
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
   }
-  lifecycle { prevent_destroy = true }
 
   depends_on = [terraform_data.control_plane_network_policy_security_owner_preflight]
 }
@@ -1277,6 +1493,61 @@ resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_g
   ]
 }
 
+resource "kubernetes_role_v1" "control_plane_network_policy_transition_gateway_bootstrap" {
+  provider = kubernetes.network_policy_security_owner
+
+  metadata {
+    name      = local.control_plane_network_policy_bootstrap_names.gateway
+    namespace = local.control_plane_network_policy_gateway_namespace
+    labels    = local.control_plane_network_policy_boundary_labels
+  }
+  rule {
+    api_groups = ["rbac.authorization.k8s.io"]
+    resources  = ["rolebindings"]
+    resource_names = [
+      "${local.control_plane_network_policy_state_name}-gateway",
+      local.control_plane_network_policy_bootstrap_names.gateway,
+    ]
+    verbs = ["get", "patch", "update"]
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.control_plane_network_policy_security_owner_preflight]
+}
+
+resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_gateway_bootstrap" {
+  provider = kubernetes.network_policy_security_owner
+
+  metadata {
+    name      = local.control_plane_network_policy_bootstrap_names.gateway
+    namespace = local.control_plane_network_policy_gateway_namespace
+    labels    = local.control_plane_network_policy_boundary_labels
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = local.control_plane_network_policy_bootstrap_names.gateway
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_security_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
+
+  lifecycle { prevent_destroy = true }
+
+  depends_on = [kubernetes_role_binding_v1.control_plane_network_policy_transition_gateway]
+}
+
 resource "kubernetes_role_v1" "control_plane_network_policy_transition_controller" {
   provider = kubernetes.network_policy_security_owner
 
@@ -1299,13 +1570,10 @@ resource "kubernetes_role_v1" "control_plane_network_policy_transition_controlle
     resource_names = [local.control_plane_network_policy_names.controller_guard]
     verbs          = ["patch", "update"]
   }
-  rule {
-    api_groups     = ["rbac.authorization.k8s.io"]
-    resources      = ["rolebindings"]
-    resource_names = ["${local.control_plane_network_policy_state_name}-controller"]
-    verbs          = ["get", "patch", "update"]
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
   }
-  lifecycle { prevent_destroy = true }
 
   depends_on = [terraform_data.control_plane_network_policy_security_owner_preflight]
 }
@@ -1342,9 +1610,64 @@ resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_c
   lifecycle { prevent_destroy = true }
 
   depends_on = [
-    kubernetes_role_binding_v1.control_plane_network_policy_transition_gateway,
+    kubernetes_role_binding_v1.control_plane_network_policy_transition_gateway_bootstrap,
     kubernetes_network_policy_v1.control_plane_envoy_controller_boundary,
   ]
+}
+
+resource "kubernetes_role_v1" "control_plane_network_policy_transition_controller_bootstrap" {
+  provider = kubernetes.network_policy_security_owner
+
+  metadata {
+    name      = local.control_plane_network_policy_bootstrap_names.controller
+    namespace = local.control_plane_network_policy_controller_namespace
+    labels    = local.control_plane_network_policy_boundary_labels
+  }
+  rule {
+    api_groups = ["rbac.authorization.k8s.io"]
+    resources  = ["rolebindings"]
+    resource_names = [
+      "${local.control_plane_network_policy_state_name}-controller",
+      local.control_plane_network_policy_bootstrap_names.controller,
+    ]
+    verbs = ["get", "patch", "update"]
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.control_plane_network_policy_security_owner_preflight]
+}
+
+resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_controller_bootstrap" {
+  provider = kubernetes.network_policy_security_owner
+
+  metadata {
+    name      = local.control_plane_network_policy_bootstrap_names.controller
+    namespace = local.control_plane_network_policy_controller_namespace
+    labels    = local.control_plane_network_policy_boundary_labels
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = local.control_plane_network_policy_bootstrap_names.controller
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_security_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
+
+  lifecycle { prevent_destroy = true }
+
+  depends_on = [kubernetes_role_binding_v1.control_plane_network_policy_transition_controller]
 }
 
 resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission" {
@@ -1438,6 +1761,106 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission"
         },
         {
           expression = <<-CEL
+            request.operation != 'UPDATE' ||
+            oldObject.apiVersion != 'rbac.authorization.k8s.io/v1' ||
+            !(oldObject.kind in ['Role', 'ClusterRole'])
+          CEL
+          message    = "externally owned permanent Role and ClusterRole definitions are immutable"
+          reason     = "Forbidden"
+        },
+        {
+          expression = <<-CEL
+            request.operation != 'UPDATE' ||
+            oldObject.apiVersion != 'rbac.authorization.k8s.io/v1' ||
+            !(oldObject.kind in ['RoleBinding', 'ClusterRoleBinding']) ||
+            (
+              request.userInfo.username in [
+                '${local.control_plane_network_policy_security_bootstrap}',
+                '${local.control_plane_network_policy_successor_bootstrap}'
+              ] &&
+              object.roleRef.apiGroup == 'rbac.authorization.k8s.io' &&
+              object.roleRef.name == object.metadata.name &&
+              (
+                (
+                  object.kind == 'ClusterRoleBinding' &&
+                  object.roleRef.kind == 'ClusterRole' &&
+                  object.metadata.name in [
+                    'fs2-network-policy-security-owner',
+                    'fs2-network-policy-security-auditor',
+                    'fs2-network-policy-security-bootstrap'
+                  ]
+                ) ||
+                (
+                  object.kind == 'RoleBinding' &&
+                  object.roleRef.kind == 'Role' &&
+                  (
+                    (object.metadata.namespace == 'fs2-system' && object.metadata.name in [
+                      '${local.control_plane_network_policy_state_name}',
+                      '${local.control_plane_network_policy_bootstrap_names.state}'
+                    ]) ||
+                    (object.metadata.namespace == '${local.control_plane_network_policy_gateway_namespace}' && object.metadata.name in [
+                      '${local.control_plane_network_policy_state_name}-gateway',
+                      '${local.control_plane_network_policy_bootstrap_names.gateway}'
+                    ]) ||
+                    (object.metadata.namespace == '${local.control_plane_network_policy_controller_namespace}' && object.metadata.name in [
+                      '${local.control_plane_network_policy_state_name}-controller',
+                      '${local.control_plane_network_policy_bootstrap_names.controller}'
+                    ])
+                  )
+                )
+              ) &&
+              (
+                (
+                  object.metadata.name in [
+                    'fs2-network-policy-security-owner',
+                    '${local.control_plane_network_policy_state_name}',
+                    '${local.control_plane_network_policy_state_name}-gateway',
+                    '${local.control_plane_network_policy_state_name}-controller'
+                  ] &&
+                  size(object.subjects) == 3 &&
+                  object.subjects.all(subject,
+                    subject.apiGroup == 'rbac.authorization.k8s.io' &&
+                    subject.kind == 'User' &&
+                    subject.name in [
+                      '${local.control_plane_network_policy_security_owner}',
+                      '${local.control_plane_network_policy_successor_owner}',
+                      '${local.control_plane_network_policy_successor_bootstrap}'
+                    ]) &&
+                  [
+                    '${local.control_plane_network_policy_security_owner}',
+                    '${local.control_plane_network_policy_successor_owner}',
+                    '${local.control_plane_network_policy_successor_bootstrap}'
+                  ].all(name, object.subjects.exists(subject, subject.name == name))
+                ) ||
+                (
+                  object.metadata.name in [
+                    'fs2-network-policy-security-auditor',
+                    'fs2-network-policy-security-bootstrap',
+                    '${local.control_plane_network_policy_bootstrap_names.state}',
+                    '${local.control_plane_network_policy_bootstrap_names.gateway}',
+                    '${local.control_plane_network_policy_bootstrap_names.controller}'
+                  ] &&
+                  size(object.subjects) == 2 &&
+                  object.subjects.all(subject,
+                    subject.apiGroup == 'rbac.authorization.k8s.io' &&
+                    subject.kind == 'User' &&
+                    subject.name in [
+                      '${local.control_plane_network_policy_security_bootstrap}',
+                      '${local.control_plane_network_policy_successor_bootstrap}'
+                    ]) &&
+                  [
+                    '${local.control_plane_network_policy_security_bootstrap}',
+                    '${local.control_plane_network_policy_successor_bootstrap}'
+                  ].all(name, object.subjects.exists(subject, subject.name == name))
+                )
+              )
+            )
+          CEL
+          message    = "permanent RBAC bindings require the exact next-epoch role and user-only subject set"
+          reason     = "Forbidden"
+        },
+        {
+          expression = <<-CEL
             request.operation != 'UPDATE' || (
               has(object.metadata.labels) &&
               object.metadata.labels['fs2.nebius.ai/network-policy-boundary'] == 'permanent' &&
@@ -1512,38 +1935,46 @@ data "external" "control_plane_network_policy_epoch_retirement" {
     "${path.module}/scripts/verify-network-policy-epoch-retirement.py",
   ]
   query = {
-    mode                              = var.network_policy_boundary.mode
-    context                           = var.kube_context
-    kube_system_uid                   = var.kube_system_uid
-    identity_epoch                    = coalesce(var.network_policy_boundary.identity_epoch, "unconfigured")
-    prior_identity_epoch              = coalesce(var.network_policy_boundary.prior_identity_epoch, "unconfigured-prior")
-    successor_identity_epoch          = coalesce(var.network_policy_boundary.successor_identity_epoch, "unconfigured-successor")
-    preflight_sha256                  = data.external.control_plane_network_policy_security_preflight_v2.result.contract_sha256
-    current_owner_kubeconfig          = abspath(local.control_plane_network_policy_security_owner_kubeconfig_path)
-    prior_owner_kubeconfig            = abspath(local.control_plane_network_policy_prior_security_owner_kubeconfig_path)
-    prior_bootstrap_kubeconfig        = abspath(local.control_plane_network_policy_prior_security_bootstrap_kubeconfig_path)
-    current_owner_username            = local.control_plane_network_policy_security_owner
-    current_bootstrap_username        = local.control_plane_network_policy_security_bootstrap
-    prior_owner_username              = local.control_plane_network_policy_prior_security_owner
-    prior_bootstrap_username          = local.control_plane_network_policy_prior_bootstrap
-    successor_owner_username          = local.control_plane_network_policy_successor_owner
-    successor_bootstrap_username      = local.control_plane_network_policy_successor_bootstrap
-    current_owner_user_info_sha256    = coalesce(local.control_plane_network_policy_security_handoff.identity_boundary.security_user_info_sha256, "unconfigured")
-    prior_owner_user_info_sha256      = coalesce(local.control_plane_network_policy_security_handoff.identity_boundary.prior_security_user_info_sha256, "unconfigured")
-    prior_bootstrap_user_info_sha256  = coalesce(local.control_plane_network_policy_security_handoff.identity_boundary.prior_bootstrap_user_info_sha256, "unconfigured")
-    current_owner_kubeconfig_sha256   = data.external.control_plane_network_policy_security_preflight_v2.result.security_kubeconfig_sha256
-    prior_owner_kubeconfig_sha256     = data.external.control_plane_network_policy_security_preflight_v2.result.prior_security_kubeconfig_sha256
-    prior_bootstrap_kubeconfig_sha256 = data.external.control_plane_network_policy_security_preflight_v2.result.prior_bootstrap_kubeconfig_sha256
-    gateway_namespace                 = local.control_plane_network_policy_gateway_namespace
-    controller_namespace              = local.control_plane_network_policy_controller_namespace
+    mode                                = var.network_policy_boundary.mode
+    context                             = var.kube_context
+    kube_system_uid                     = var.kube_system_uid
+    identity_epoch                      = coalesce(var.network_policy_boundary.identity_epoch, "unconfigured")
+    prior_identity_epoch                = coalesce(var.network_policy_boundary.prior_identity_epoch, "unconfigured-prior")
+    successor_identity_epoch            = coalesce(var.network_policy_boundary.successor_identity_epoch, "unconfigured-successor")
+    preflight_sha256                    = data.external.control_plane_network_policy_security_preflight_v2.result.contract_sha256
+    current_owner_kubeconfig            = abspath(local.control_plane_network_policy_security_owner_kubeconfig_path)
+    current_bootstrap_kubeconfig        = abspath(local.control_plane_network_policy_security_bootstrap_kubeconfig_path)
+    prior_owner_kubeconfig              = abspath(local.control_plane_network_policy_prior_security_owner_kubeconfig_path)
+    prior_bootstrap_kubeconfig          = abspath(local.control_plane_network_policy_prior_security_bootstrap_kubeconfig_path)
+    current_owner_username              = local.control_plane_network_policy_security_owner
+    current_bootstrap_username          = local.control_plane_network_policy_security_bootstrap
+    prior_owner_username                = local.control_plane_network_policy_prior_security_owner
+    prior_bootstrap_username            = local.control_plane_network_policy_prior_bootstrap
+    successor_owner_username            = local.control_plane_network_policy_successor_owner
+    successor_bootstrap_username        = local.control_plane_network_policy_successor_bootstrap
+    current_owner_user_info_sha256      = coalesce(local.control_plane_network_policy_security_handoff.identity_boundary.security_user_info_sha256, "unconfigured")
+    current_bootstrap_user_info_sha256  = coalesce(local.control_plane_network_policy_security_handoff.identity_boundary.bootstrap_user_info_sha256, "unconfigured")
+    prior_owner_user_info_sha256        = coalesce(local.control_plane_network_policy_security_handoff.identity_boundary.prior_security_user_info_sha256, "unconfigured")
+    prior_bootstrap_user_info_sha256    = coalesce(local.control_plane_network_policy_security_handoff.identity_boundary.prior_bootstrap_user_info_sha256, "unconfigured")
+    current_owner_kubeconfig_sha256     = data.external.control_plane_network_policy_security_preflight_v2.result.security_kubeconfig_sha256
+    current_bootstrap_kubeconfig_sha256 = data.external.control_plane_network_policy_security_preflight_v2.result.bootstrap_kubeconfig_sha256
+    prior_owner_kubeconfig_sha256       = data.external.control_plane_network_policy_security_preflight_v2.result.prior_security_kubeconfig_sha256
+    prior_bootstrap_kubeconfig_sha256   = data.external.control_plane_network_policy_security_preflight_v2.result.prior_bootstrap_kubeconfig_sha256
+    external_role_bundle_sha256         = data.external.control_plane_network_policy_security_preflight_v2.result.external_role_bundle_sha256
+    gateway_namespace                   = local.control_plane_network_policy_gateway_namespace
+    controller_namespace                = local.control_plane_network_policy_controller_namespace
   }
 
   depends_on = [
     kubernetes_cluster_role_binding_v1.control_plane_network_policy_security_owner,
     kubernetes_cluster_role_binding_v1.control_plane_network_policy_security_auditor,
+    kubernetes_cluster_role_binding_v1.control_plane_network_policy_security_bootstrap,
     kubernetes_role_binding_v1.control_plane_network_policy_transition_state,
+    kubernetes_role_binding_v1.control_plane_network_policy_transition_state_bootstrap,
     kubernetes_role_binding_v1.control_plane_network_policy_transition_gateway,
+    kubernetes_role_binding_v1.control_plane_network_policy_transition_gateway_bootstrap,
     kubernetes_role_binding_v1.control_plane_network_policy_transition_controller,
+    kubernetes_role_binding_v1.control_plane_network_policy_transition_controller_bootstrap,
     kubernetes_manifest.control_plane_network_policy_boundary_admission,
     kubernetes_manifest.control_plane_network_policy_boundary_admission_binding,
   ]

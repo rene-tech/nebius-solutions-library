@@ -154,21 +154,17 @@ def auditor_role_evidence(value: dict[str, Any]) -> dict[str, Any]:
             "verbs": ["get", "list"],
         },
         {
+            "apiGroups": ["certificates.k8s.io"],
+            "resources": ["certificatesigningrequests"],
+            "verbs": ["get", "list"],
+        },
+        {
             "apiGroups": ["rbac.authorization.k8s.io"],
             "resources": ["clusterrolebindings"],
             "resourceNames": [
                 "fs2-network-policy-security-owner",
                 "fs2-network-policy-security-auditor",
-            ],
-            "verbs": ["get", "patch", "update"],
-        },
-        {
-            "apiGroups": ["rbac.authorization.k8s.io"],
-            "resources": ["rolebindings"],
-            "resourceNames": [
-                "fs2-network-policy-transition",
-                "fs2-network-policy-transition-gateway",
-                "fs2-network-policy-transition-controller",
+                "fs2-network-policy-security-bootstrap",
             ],
             "verbs": ["get"],
         },
@@ -217,6 +213,51 @@ def auditor_role_evidence(value: dict[str, Any]) -> dict[str, Any]:
     return {"metadata": identity, "rules": rules}
 
 
+def external_role_bundle_evidence(
+    kubeconfig: Path,
+    context: str,
+    *,
+    gateway_namespace: str,
+    controller_namespace: str,
+) -> list[dict[str, Any]]:
+    specs = (
+        ("clusterrole", "fs2-network-policy-security-auditor", ""),
+        ("clusterrole", "fs2-network-policy-security-owner", ""),
+        ("clusterrole", "fs2-network-policy-security-bootstrap", ""),
+        ("role", "fs2-network-policy-transition", "fs2-system"),
+        ("role", "fs2-network-policy-transition-bootstrap", "fs2-system"),
+        ("role", "fs2-network-policy-transition-gateway", gateway_namespace),
+        ("role", "fs2-network-policy-transition-gateway-bootstrap", gateway_namespace),
+        ("role", "fs2-network-policy-transition-controller", controller_namespace),
+        ("role", "fs2-network-policy-transition-controller-bootstrap", controller_namespace),
+    )
+    evidence = []
+    for resource, name, namespace in specs:
+        arguments = [resource, name]
+        if namespace:
+            arguments.extend(["--namespace", namespace])
+        value = get_json(kubeconfig, context, *arguments)
+        metadata = value.get("metadata", {})
+        labels = metadata.get("labels", {}) if isinstance(metadata, dict) else {}
+        identity = {
+            "name": metadata.get("name"),
+            "namespace": metadata.get("namespace", ""),
+            "uid": metadata.get("uid"),
+            "resourceVersion": metadata.get("resourceVersion"),
+        }
+        rules = value.get("rules")
+        if (
+            identity["name"] != name
+            or identity["namespace"] != namespace
+            or not all(isinstance(item, str) and item for item in identity.values() if item != "")
+            or labels.get("fs2.nebius.ai/network-policy-boundary") != "permanent"
+            or not isinstance(rules, list)
+        ):
+            raise RetirementError("external immutable role bundle changed after apply")
+        evidence.append({"resource": resource, "metadata": identity, "rules": rules})
+    return evidence
+
+
 def can_i(kubeconfig: Path, context: str, expected: str, *arguments: str) -> None:
     result = subprocess.run(
         ["kubectl", "--kubeconfig", str(kubeconfig), "--context", context, "auth", "can-i", *arguments],
@@ -240,6 +281,7 @@ def main() -> int:
             "successor_identity_epoch",
             "preflight_sha256",
             "current_owner_kubeconfig",
+            "current_bootstrap_kubeconfig",
             "prior_owner_kubeconfig",
             "prior_bootstrap_kubeconfig",
             "current_owner_username",
@@ -249,11 +291,14 @@ def main() -> int:
             "successor_owner_username",
             "successor_bootstrap_username",
             "current_owner_user_info_sha256",
+            "current_bootstrap_user_info_sha256",
             "prior_owner_user_info_sha256",
             "prior_bootstrap_user_info_sha256",
             "current_owner_kubeconfig_sha256",
+            "current_bootstrap_kubeconfig_sha256",
             "prior_owner_kubeconfig_sha256",
             "prior_bootstrap_kubeconfig_sha256",
+            "external_role_bundle_sha256",
             "gateway_namespace",
             "controller_namespace",
         }
@@ -288,14 +333,16 @@ def main() -> int:
         ):
             raise RetirementError("epoch retirement principal binding is invalid")
         current = Path(query["current_owner_kubeconfig"])
+        current_bootstrap = Path(query["current_bootstrap_kubeconfig"])
         prior_owner = Path(query["prior_owner_kubeconfig"])
         prior_bootstrap = Path(query["prior_bootstrap_kubeconfig"])
-        paths = (current, prior_owner, prior_bootstrap)
-        if len({str(path) for path in paths}) != 3:
+        paths = (current, current_bootstrap, prior_owner, prior_bootstrap)
+        if len({str(path) for path in paths}) != 4:
             raise RetirementError("epoch retirement credentials are not disjoint")
         hashes = [exact_file(path) for path in paths]
         if hashes != [
             query["current_owner_kubeconfig_sha256"],
+            query["current_bootstrap_kubeconfig_sha256"],
             query["prior_owner_kubeconfig_sha256"],
             query["prior_bootstrap_kubeconfig_sha256"],
         ]:
@@ -303,10 +350,12 @@ def main() -> int:
         identities = [user_info(path, query["context"]) for path in paths]
         if [identity["username"] for identity in identities] != [
             query["current_owner_username"],
+            query["current_bootstrap_username"],
             query["prior_owner_username"],
             query["prior_bootstrap_username"],
         ] or [hashlib.sha256(canonical(identity).encode()).hexdigest() for identity in identities] != [
             query["current_owner_user_info_sha256"],
+            query["current_bootstrap_user_info_sha256"],
             query["prior_owner_user_info_sha256"],
             query["prior_bootstrap_user_info_sha256"],
         ]:
@@ -408,6 +457,10 @@ def main() -> int:
             query["successor_owner_username"],
             query["successor_bootstrap_username"],
         ]
+        expected_bootstrap_subjects = [
+            query["current_bootstrap_username"],
+            query["successor_bootstrap_username"],
+        ]
         binding_specs = (
             (
                 "clusterrolebinding",
@@ -426,12 +479,28 @@ def main() -> int:
                 [query["current_bootstrap_username"], query["successor_bootstrap_username"]],
             ),
             (
+                "clusterrolebinding",
+                "fs2-network-policy-security-bootstrap",
+                "",
+                "ClusterRole",
+                "fs2-network-policy-security-bootstrap",
+                expected_bootstrap_subjects,
+            ),
+            (
                 "rolebinding",
                 "fs2-network-policy-transition",
                 "fs2-system",
                 "Role",
                 "fs2-network-policy-transition",
                 expected_mutation_subjects,
+            ),
+            (
+                "rolebinding",
+                "fs2-network-policy-transition-bootstrap",
+                "fs2-system",
+                "Role",
+                "fs2-network-policy-transition-bootstrap",
+                expected_bootstrap_subjects,
             ),
             (
                 "rolebinding",
@@ -443,21 +512,47 @@ def main() -> int:
             ),
             (
                 "rolebinding",
+                "fs2-network-policy-transition-gateway-bootstrap",
+                query["gateway_namespace"],
+                "Role",
+                "fs2-network-policy-transition-gateway-bootstrap",
+                expected_bootstrap_subjects,
+            ),
+            (
+                "rolebinding",
                 "fs2-network-policy-transition-controller",
                 query["controller_namespace"],
                 "Role",
                 "fs2-network-policy-transition-controller",
                 expected_mutation_subjects,
             ),
+            (
+                "rolebinding",
+                "fs2-network-policy-transition-controller-bootstrap",
+                query["controller_namespace"],
+                "Role",
+                "fs2-network-policy-transition-controller-bootstrap",
+                expected_bootstrap_subjects,
+            ),
         )
         auditor_role = auditor_role_evidence(
             get_json(
-                current,
+                current_bootstrap,
                 query["context"],
                 "clusterrole",
                 "fs2-network-policy-security-auditor",
             )
         )
+        external_roles = external_role_bundle_evidence(
+            current_bootstrap,
+            query["context"],
+            gateway_namespace=query["gateway_namespace"],
+            controller_namespace=query["controller_namespace"],
+        )
+        if hashlib.sha256(canonical(external_roles).encode()).hexdigest() != query[
+            "external_role_bundle_sha256"
+        ]:
+            raise RetirementError("external immutable role bundle changed after preflight")
         bindings = []
         for resource, name, namespace, role_kind, role_name, subjects in binding_specs:
             arguments = [resource, name]
@@ -465,7 +560,7 @@ def main() -> int:
                 arguments.extend(["--namespace", namespace])
             bindings.append(
                 binding_evidence(
-                    get_json(current, query["context"], *arguments),
+                    get_json(current_bootstrap, query["context"], *arguments),
                     name=name,
                     namespace=namespace,
                     role_kind=role_kind,
@@ -485,6 +580,16 @@ def main() -> int:
                     current,
                     query["context"],
                     "no",
+                    verb,
+                    authorization_resource,
+                    f"--resource-name={name}",
+                    *suffix,
+                )
+                can_i(current_bootstrap, query["context"], "no", verb, authorization_resource, *suffix)
+                can_i(
+                    current_bootstrap,
+                    query["context"],
+                    "yes",
                     verb,
                     authorization_resource,
                     f"--resource-name={name}",
@@ -520,6 +625,7 @@ def main() -> int:
                     "identities": identities,
                     "clusters": sorted(clusters),
                     "auditor_role": auditor_role,
+                    "external_roles": external_roles,
                     "bindings": bindings,
                 }
             ).encode()

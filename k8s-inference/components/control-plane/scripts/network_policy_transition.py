@@ -645,6 +645,13 @@ class Transition:
                 "mechanism": "external-preprovision-declarative-import",
                 "cluster_role": "fs2-network-policy-security-auditor",
                 "cluster_role_binding": "fs2-network-policy-security-auditor",
+                "bootstrap_cluster_role": "fs2-network-policy-security-bootstrap",
+                "bootstrap_namespaced_roles": {
+                    "state": "fs2-network-policy-transition-bootstrap",
+                    "gateway": "fs2-network-policy-transition-gateway-bootstrap",
+                    "controller": "fs2-network-policy-transition-controller-bootstrap",
+                },
+                "immutable_role_bundle_sha256": identity_boundary.get("external_role_bundle_sha256"),
                 "preapply_subjects": [
                     expected_principals["prior_bootstrap"],
                     expected_principals["security_bootstrap"],
@@ -698,6 +705,7 @@ class Transition:
                 r"[0-9a-f]{64}", str(identity_boundary.get("kubernetes_subject_inventory_sha256", ""))
             )
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("auditor_bootstrap_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("external_role_bundle_sha256", "")))
             or identity_boundary.get("plan_rotation_phase") not in {"preapply", "resume", "postapply"}
             or not re.fullmatch(
                 r"[0-9a-f]{64}", str(identity_boundary.get("rotation_binding_state_sha256", ""))
@@ -753,6 +761,7 @@ class Transition:
             "provider_adapter_sha256": identity_boundary.get("provider_adapter_sha256"),
             "kubernetes_subject_inventory_sha256": identity_boundary.get("kubernetes_subject_inventory_sha256"),
             "auditor_bootstrap_sha256": identity_boundary.get("auditor_bootstrap_sha256"),
+            "external_role_bundle_sha256": identity_boundary.get("external_role_bundle_sha256"),
             "plan_rotation_phase": identity_boundary.get("plan_rotation_phase"),
             "rotation_binding_state_sha256": identity_boundary.get("rotation_binding_state_sha256"),
         }:

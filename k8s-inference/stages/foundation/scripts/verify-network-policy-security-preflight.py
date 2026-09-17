@@ -20,8 +20,8 @@ from urllib.parse import quote
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-PROVIDER_ADAPTER_ID = "fs2-serve.nebius.ai/nebius-iam-human-directory/v1"
-PROVIDER_TRUST_ANCHOR_PATH = Path("/etc/fs2/security/network-policy-provider-trust-anchor-v1.json")
+PROVIDER_ADAPTER_ID = "fs2-serve.nebius.ai/nebius-iam-human-directory/v2"
+PROVIDER_TRUST_ANCHOR_PATH = Path("/etc/fs2/security/network-policy-provider-trust-anchor-v2.json")
 
 
 class PreflightError(RuntimeError):
@@ -108,10 +108,9 @@ def normalized_subjects(
         if (
             not isinstance(subject, dict)
             or set(subject) != {"username", "groups"}
-            or not re.fullmatch(r"[A-Za-z0-9:@._/-]{3,253}", str(subject.get("username", "")))
+            or not re.fullmatch(r"[A-Za-z0-9:@._+/-]{3,253}", str(subject.get("username", "")))
             or subject.get("username") in forbidden_usernames
             or not isinstance(subject.get("groups"), list)
-            or not subject["groups"]
             or len(subject["groups"]) != len(set(subject["groups"]))
             or any(
                 not isinstance(group, str) or not re.fullmatch(r"[A-Za-z0-9:@._/-]{1,253}", group)
@@ -154,6 +153,7 @@ def verified_provider_trust_anchor(
         "schema",
         "provider",
         "adapter",
+        "directory_query",
         "tenant_sha256",
         "query_sha256",
         "snapshot_public_key",
@@ -165,6 +165,7 @@ def verified_provider_trust_anchor(
     valid_from = dt.datetime.fromisoformat(str(trust.get("valid_from", "")).replace("Z", "+00:00"))
     expires = dt.datetime.fromisoformat(str(trust.get("expires_at", "")).replace("Z", "+00:00"))
     public_key = trust.get("snapshot_public_key")
+    directory_query = trust.get("directory_query", {})
     if (
         not stat.S_ISREG(trust_metadata.st_mode)
         or trust_metadata.st_uid != 0
@@ -172,9 +173,40 @@ def verified_provider_trust_anchor(
         or stat.S_IMODE(trust_metadata.st_mode) not in {0o400, 0o444}
         or not stat.S_ISREG(adapter_metadata.st_mode)
         or set(trust) != expected_fields
-        or trust.get("schema") != "fs2-serve.nebius.ai/security-provider-trust-anchor/v1"
+        or trust.get("schema") != "fs2-serve.nebius.ai/security-provider-trust-anchor/v2"
         or trust.get("provider") != "nebius-iam"
         or trust.get("adapter") != {"id": PROVIDER_ADAPTER_ID, "sha256": adapter_sha256}
+        or not isinstance(trust.get("directory_query"), dict)
+        or set(directory_query)
+        != {
+            "cli_path",
+            "config_path",
+            "profile",
+            "tenant_id",
+            "page_size",
+            "max_pages",
+            "max_records",
+            "timeout_seconds",
+            "snapshot_ttl_seconds",
+        }
+        or directory_query.get("cli_path") != "/usr/local/bin/nebius"
+        or directory_query.get("config_path") != "/etc/fs2/security/nebius-directory-reader.yaml"
+        or not re.fullmatch(r"[A-Za-z0-9._-]{3,128}", str(directory_query.get("profile", "")))
+        or not re.fullmatch(r"tenant-[A-Za-z0-9-]{8,128}", str(directory_query.get("tenant_id", "")))
+        or not isinstance(directory_query.get("page_size"), int)
+        or not 1 <= directory_query["page_size"] <= 1000
+        or not isinstance(directory_query.get("max_pages"), int)
+        or not 1 <= directory_query["max_pages"] <= 10000
+        or not isinstance(directory_query.get("max_records"), int)
+        or not 1 <= directory_query["max_records"] <= 100000
+        or not isinstance(directory_query.get("timeout_seconds"), int)
+        or not 1 <= directory_query["timeout_seconds"] <= 120
+        or not isinstance(directory_query.get("snapshot_ttl_seconds"), int)
+        or not 300 <= directory_query["snapshot_ttl_seconds"] <= 3600
+        or trust.get("tenant_sha256")
+        != hashlib.sha256(str(trust["directory_query"].get("tenant_id", "")).encode()).hexdigest()
+        or trust.get("query_sha256")
+        != hashlib.sha256(canonical(trust["directory_query"]).encode()).hexdigest()
         or not re.fullmatch(r"[0-9a-f]{64}", str(trust.get("tenant_sha256", "")))
         or not re.fullmatch(r"[0-9a-f]{64}", str(trust.get("query_sha256", "")))
         or not isinstance(public_key, str)
@@ -223,7 +255,7 @@ def verified_provider_snapshot(
     captured = dt.datetime.fromisoformat(str(signed.get("captured_at", "")).replace("Z", "+00:00"))
     expires = dt.datetime.fromisoformat(str(signed.get("expires_at", "")).replace("Z", "+00:00"))
     if (
-        signed.get("schema") != "fs2-serve.nebius.ai/security-subject-provider-snapshot/v1"
+        signed.get("schema") != "fs2-serve.nebius.ai/security-subject-provider-snapshot/v2"
         or signed.get("complete") is not True
         or not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", str(signed.get("snapshot_id", "")))
         or signed.get("provider") != trust["provider"]
@@ -244,6 +276,7 @@ def verified_provider_snapshot(
         "page_size",
         "page_count",
         "record_count",
+        "subject_count",
         "terminal_cursor",
         "pages",
     }:
@@ -258,7 +291,9 @@ def verified_provider_snapshot(
         or not isinstance(pages, list)
         or len(pages) != page_count
         or pagination.get("terminal_cursor") != ""
-        or pagination.get("record_count") != len(users) + len(groups)
+        or pagination.get("subject_count") != len(users) + len(groups)
+        or not isinstance(pagination.get("record_count"), int)
+        or not pagination["subject_count"] <= pagination["record_count"] <= 100000
     ):
         raise PreflightError("provider/IAM pagination counts are incomplete")
     expected_request = hashlib.sha256(b"").hexdigest()
@@ -466,11 +501,13 @@ def paginated_collection(
     *,
     page_budget: list[int],
     object_budget: list[int],
-) -> list[dict[str, str]]:
+    include_rbac_rules: bool = False,
+    include_csr_signer: bool = False,
+) -> list[dict[str, Any]]:
     """Read one exact List snapshot with bounded Kubernetes pagination."""
     cursor = ""
     snapshot_resource_version = ""
-    result: list[dict[str, str]] = []
+    result: list[dict[str, Any]] = []
     while True:
         page_budget[0] -= 1
         if page_budget[0] < 0:
@@ -502,7 +539,28 @@ def paginated_collection(
             resource_version = item_metadata.get("resourceVersion")
             if not all(isinstance(value, str) and value for value in (name, uid, resource_version)):
                 raise PreflightError("Kubernetes subject discovery item identity is incomplete")
-            result.append({"name": name, "uid": uid, "resourceVersion": resource_version})
+            projected: dict[str, Any] = {
+                "name": name,
+                "uid": uid,
+                "resourceVersion": resource_version,
+            }
+            if include_rbac_rules:
+                rules = item.get("rules", [])
+                aggregation_rule = item.get("aggregationRule")
+                if not isinstance(rules, list) or any(not isinstance(rule, dict) for rule in rules):
+                    raise PreflightError("Kubernetes RBAC inventory contains invalid rules")
+                projected["rules"] = rules
+                if aggregation_rule is not None:
+                    if not isinstance(aggregation_rule, dict):
+                        raise PreflightError("Kubernetes RBAC aggregation is invalid")
+                    projected["aggregationRule"] = aggregation_rule
+            if include_csr_signer:
+                spec = item.get("spec", {})
+                signer_name = spec.get("signerName") if isinstance(spec, dict) else None
+                if not isinstance(signer_name, str) or not signer_name:
+                    raise PreflightError("Kubernetes CSR inventory contains an invalid signer")
+                projected["signerName"] = signer_name
+            result.append(projected)
             object_budget[0] -= 1
             if object_budget[0] < 0:
                 raise PreflightError("Kubernetes subject discovery exceeded its object bound")
@@ -520,12 +578,13 @@ def kubernetes_subject_inventory(
     kubeconfig: Path,
     context: str,
 ) -> tuple[
-    dict[str, list[dict[str, str]]],
-    dict[str, list[dict[str, str]]],
-    list[dict[str, str]],
+    dict[str, list[dict[str, Any]]],
+    dict[str, list[dict[str, Any]]],
+    list[dict[str, Any]],
+    list[str],
     str,
 ]:
-    """Enumerate every namespace, ServiceAccount, Role and ClusterRole twice."""
+    """Enumerate every namespace, SA, Role, ClusterRole and CSR twice."""
 
     def discover() -> dict[str, Any]:
         page_budget = [2048]
@@ -558,6 +617,7 @@ def kubernetes_subject_inventory(
                 f"/apis/rbac.authorization.k8s.io/v1/namespaces/{quote(name, safe='')}/roles",
                 page_budget=page_budget,
                 object_budget=object_budget,
+                include_rbac_rules=True,
             )
             if len({item["name"] for item in roles}) != len(roles):
                 raise PreflightError("Kubernetes Role inventory contains duplicates")
@@ -569,14 +629,27 @@ def kubernetes_subject_inventory(
             "/apis/rbac.authorization.k8s.io/v1/clusterroles",
             page_budget=page_budget,
             object_budget=object_budget,
+            include_rbac_rules=True,
         )
         if len({item["name"] for item in cluster_roles}) != len(cluster_roles):
             raise PreflightError("Kubernetes ClusterRole inventory contains duplicates")
+        certificate_signing_requests = paginated_collection(
+            kubeconfig,
+            context,
+            "/apis/certificates.k8s.io/v1/certificatesigningrequests",
+            page_budget=page_budget,
+            object_budget=object_budget,
+            include_csr_signer=True,
+        )
         return {
             "namespaces": sorted(namespaces, key=lambda value: value["name"]),
             "service_accounts": service_account_inventory,
             "roles": role_inventory,
             "cluster_roles": sorted(cluster_roles, key=lambda value: value["name"]),
+            "certificate_signing_requests": sorted(
+                certificate_signing_requests,
+                key=lambda value: value["name"],
+            ),
         }
 
     first = discover()
@@ -584,7 +657,71 @@ def kubernetes_subject_inventory(
     if first != second:
         raise PreflightError("Kubernetes subject inventory drifted during authorization proof")
     digest = hashlib.sha256(canonical(first).encode()).hexdigest()
-    return first["service_accounts"], first["roles"], first["cluster_roles"], digest
+    csr_signers = sorted(
+        {item["signerName"] for item in first["certificate_signing_requests"]}
+    )
+    return first["service_accounts"], first["roles"], first["cluster_roles"], csr_signers, digest
+
+
+def rbac_rule_authorization_targets(
+    roles: dict[str, list[dict[str, Any]]],
+    cluster_roles: list[dict[str, Any]],
+) -> tuple[set[tuple[str, str, str]], set[tuple[str, str, str]], set[str]]:
+    """Derive every named impersonation, delegation and signer grant."""
+    impersonation: set[tuple[str, str, str]] = set()
+    delegation: set[tuple[str, str, str]] = set()
+    signers: set[str] = set()
+    scoped_roles = [
+        (namespace, role)
+        for namespace, namespace_roles in roles.items()
+        for role in namespace_roles
+    ] + [("", role) for role in cluster_roles]
+    for role_namespace, role in scoped_roles:
+        for rule in role.get("rules", []):
+            api_groups = rule.get("apiGroups", [])
+            resources = rule.get("resources", [])
+            verbs = rule.get("verbs", [])
+            resource_names = rule.get("resourceNames", [])
+            if not all(
+                isinstance(values, list) and all(isinstance(value, str) for value in values)
+                for values in (api_groups, resources, verbs, resource_names)
+            ):
+                raise PreflightError("Kubernetes RBAC rule fields are not exact")
+            verb_set = set(verbs)
+            resource_set = set(resources)
+            group_set = set(api_groups)
+            if "impersonate" in verb_set or "*" in verb_set:
+                for name in resource_names:
+                    for resource, group in (
+                        ("users", ""),
+                        ("groups", ""),
+                        ("serviceaccounts", ""),
+                        ("uids", "authentication.k8s.io"),
+                        ("userextras", "authentication.k8s.io"),
+                    ):
+                        if (group in group_set or "*" in group_set) and (
+                            resource in resource_set or "*" in resource_set
+                        ):
+                            qualified = (
+                                f"{resource}.authentication.k8s.io"
+                                if group == "authentication.k8s.io"
+                                else resource
+                            )
+                            target_namespace = role_namespace if resource == "serviceaccounts" else ""
+                            impersonation.add((qualified, name, target_namespace))
+            if {"bind", "escalate", "*"} & verb_set and (
+                "rbac.authorization.k8s.io" in group_set or "*" in group_set
+            ):
+                for name in resource_names:
+                    if "clusterroles" in resource_set or "*" in resource_set:
+                        delegation.add(("clusterroles.rbac.authorization.k8s.io", name, ""))
+                    if "roles" in resource_set or "*" in resource_set:
+                        delegation.add(("roles.rbac.authorization.k8s.io", name, role_namespace))
+            if {"approve", "sign", "*"} & verb_set and (
+                "certificates.k8s.io" in group_set or "*" in group_set
+            ) and ("signers" in resource_set or "*" in resource_set):
+                signers.update(resource_names)
+    return impersonation, delegation, signers
 
 
 def rotation_binding_contract(
@@ -652,29 +789,53 @@ def rotation_binding_contract(
     }, state
 
 
+def external_role_contract(
+    kubeconfig: Path,
+    context: str,
+    *,
+    resource: str,
+    name: str,
+    namespace: str,
+    expected_rules: list[dict[str, Any]],
+) -> dict[str, Any]:
+    arguments = ["get", resource, name, "-o", "json"]
+    if namespace:
+        arguments.extend(["--namespace", namespace])
+    try:
+        role = json.loads(run(kubeconfig, context, *arguments))
+    except json.JSONDecodeError as error:
+        raise PreflightError("external role handoff is not valid JSON") from error
+    metadata = role.get("metadata", {}) if isinstance(role, dict) else {}
+    labels = metadata.get("labels", {}) if isinstance(metadata, dict) else {}
+    identity = {
+        "name": metadata.get("name"),
+        "namespace": metadata.get("namespace", ""),
+        "uid": metadata.get("uid"),
+        "resourceVersion": metadata.get("resourceVersion"),
+    }
+    rules = role.get("rules") if isinstance(role, dict) else None
+    if (
+        identity["name"] != name
+        or identity["namespace"] != namespace
+        or not all(isinstance(item, str) and item for item in identity.values() if item != "")
+        or labels.get("fs2.nebius.ai/network-policy-boundary") != "permanent"
+        or not isinstance(rules, list)
+        or sorted(rules, key=canonical) != sorted(expected_rules, key=canonical)
+    ):
+        raise PreflightError("external immutable role definition is not least-privilege exact")
+    return {"resource": resource, "metadata": identity, "rules": rules}
+
+
 def auditor_bootstrap_contract(
     kubeconfig: Path,
     context: str,
     bootstrap_username: str,
     prior_bootstrap_username: str,
     successor_bootstrap_username: str,
-) -> tuple[str, str, dict[str, Any]]:
+    gateway_namespace: str,
+    controller_namespace: str,
+) -> tuple[str, str, dict[str, Any], str]:
     """Verify the externally provisioned, non-destructively imported auditor."""
-    try:
-        role = json.loads(
-            run(
-                kubeconfig,
-                context,
-                "get",
-                "clusterrole",
-                "fs2-network-policy-security-auditor",
-                "-o",
-                "json",
-            )
-        )
-    except json.JSONDecodeError as error:
-        raise PreflightError("external auditor handoff is not valid JSON") from error
-
     expected_rules = [
         {"apiGroups": [""], "resources": ["namespaces", "serviceaccounts"], "verbs": ["get", "list"]},
         {
@@ -688,21 +849,17 @@ def auditor_bootstrap_contract(
             "verbs": ["get", "list"],
         },
         {
+            "apiGroups": ["certificates.k8s.io"],
+            "resources": ["certificatesigningrequests"],
+            "verbs": ["get", "list"],
+        },
+        {
             "apiGroups": ["rbac.authorization.k8s.io"],
             "resources": ["clusterrolebindings"],
             "resourceNames": [
                 "fs2-network-policy-security-owner",
                 "fs2-network-policy-security-auditor",
-            ],
-            "verbs": ["get", "patch", "update"],
-        },
-        {
-            "apiGroups": ["rbac.authorization.k8s.io"],
-            "resources": ["rolebindings"],
-            "resourceNames": [
-                "fs2-network-policy-transition",
-                "fs2-network-policy-transition-gateway",
-                "fs2-network-policy-transition-controller",
+                "fs2-network-policy-security-bootstrap",
             ],
             "verbs": ["get"],
         },
@@ -740,26 +897,205 @@ def auditor_bootstrap_contract(
         },
     ]
 
-    def metadata(value: Any) -> dict[str, str]:
-        raw = value.get("metadata", {}) if isinstance(value, dict) else {}
-        labels = raw.get("labels", {}) if isinstance(raw, dict) else {}
-        result = {
-            "name": raw.get("name"),
-            "uid": raw.get("uid"),
-            "resourceVersion": raw.get("resourceVersion"),
-        }
-        if (
-            result["name"] != "fs2-network-policy-security-auditor"
-            or not all(isinstance(item, str) and item for item in result.values())
-            or labels.get("fs2.nebius.ai/network-policy-boundary") != "permanent"
-        ):
-            raise PreflightError("external auditor identity or ownership is not exact")
-        return result
-
-    role_metadata = metadata(role)
-    rules = role.get("rules") if isinstance(role, dict) else None
-    if not isinstance(rules, list) or sorted(rules, key=canonical) != sorted(expected_rules, key=canonical):
-        raise PreflightError("external auditor role is not least-privilege exact")
+    roles = [
+        external_role_contract(
+            kubeconfig,
+            context,
+            resource="clusterrole",
+            name="fs2-network-policy-security-auditor",
+            namespace="",
+            expected_rules=expected_rules,
+        ),
+        external_role_contract(
+            kubeconfig,
+            context,
+            resource="clusterrole",
+            name="fs2-network-policy-security-owner",
+            namespace="",
+            expected_rules=[
+                {
+                    "apiGroups": ["admissionregistration.k8s.io"],
+                    "resources": ["validatingadmissionpolicies", "validatingadmissionpolicybindings"],
+                    "resourceNames": ["fs2-network-policy-boundary"],
+                    "verbs": ["get", "patch", "update"],
+                },
+                {
+                    "apiGroups": [""],
+                    "resources": ["namespaces"],
+                    "resourceNames": list(
+                        dict.fromkeys(
+                            ["kube-system", "fs2-system", gateway_namespace, controller_namespace]
+                        )
+                    ),
+                    "verbs": ["get"],
+                },
+                {
+                    "apiGroups": ["rbac.authorization.k8s.io"],
+                    "resources": ["clusterroles", "clusterrolebindings"],
+                    "resourceNames": [
+                        "fs2-network-policy-security-owner",
+                        "fs2-network-policy-security-auditor",
+                    ],
+                    "verbs": ["get"],
+                },
+            ],
+        ),
+        external_role_contract(
+            kubeconfig,
+            context,
+            resource="clusterrole",
+            name="fs2-network-policy-security-bootstrap",
+            namespace="",
+            expected_rules=[
+                {
+                    "apiGroups": ["rbac.authorization.k8s.io"],
+                    "resources": ["clusterrolebindings"],
+                    "resourceNames": [
+                        "fs2-network-policy-security-owner",
+                        "fs2-network-policy-security-auditor",
+                        "fs2-network-policy-security-bootstrap",
+                    ],
+                    "verbs": ["get", "patch", "update"],
+                }
+            ],
+        ),
+        external_role_contract(
+            kubeconfig,
+            context,
+            resource="role",
+            name="fs2-network-policy-transition",
+            namespace="fs2-system",
+            expected_rules=[
+                {
+                    "apiGroups": ["coordination.k8s.io"],
+                    "resources": ["leases"],
+                    "resourceNames": ["fs2-network-policy-transition"],
+                    "verbs": ["get", "patch", "update"],
+                },
+                {
+                    "apiGroups": [""],
+                    "resources": ["configmaps"],
+                    "resourceNames": [
+                        "fs2-network-policy-transition",
+                        "fs2-network-policy-boundary-topology",
+                        "fs2-network-policy-boundary-parameters",
+                    ],
+                    "verbs": ["get"],
+                },
+                {
+                    "apiGroups": [""],
+                    "resources": ["configmaps"],
+                    "resourceNames": [
+                        "fs2-network-policy-transition",
+                        "fs2-network-policy-boundary-parameters",
+                    ],
+                    "verbs": ["get", "patch", "update"],
+                },
+            ],
+        ),
+        external_role_contract(
+            kubeconfig,
+            context,
+            resource="role",
+            name="fs2-network-policy-transition-bootstrap",
+            namespace="fs2-system",
+            expected_rules=[
+                {
+                    "apiGroups": ["rbac.authorization.k8s.io"],
+                    "resources": ["rolebindings"],
+                    "resourceNames": [
+                        "fs2-network-policy-transition",
+                        "fs2-network-policy-transition-bootstrap",
+                    ],
+                    "verbs": ["get", "patch", "update"],
+                }
+            ],
+        ),
+        external_role_contract(
+            kubeconfig,
+            context,
+            resource="role",
+            name="fs2-network-policy-transition-gateway",
+            namespace=gateway_namespace,
+            expected_rules=[
+                {
+                    "apiGroups": ["networking.k8s.io"],
+                    "resources": ["networkpolicies"],
+                    "resourceNames": [
+                        "fs2-serve-control-plane-public-envoy-transition-guard",
+                        "fs2-serve-control-plane-envoy-default-deny",
+                    ],
+                    "verbs": ["get"],
+                },
+                {
+                    "apiGroups": ["networking.k8s.io"],
+                    "resources": ["networkpolicies"],
+                    "resourceNames": [
+                        "fs2-serve-control-plane-public-envoy-transition-guard",
+                        "fs2-serve-control-plane-envoy-default-deny",
+                    ],
+                    "verbs": ["patch", "update"],
+                },
+            ],
+        ),
+        external_role_contract(
+            kubeconfig,
+            context,
+            resource="role",
+            name="fs2-network-policy-transition-gateway-bootstrap",
+            namespace=gateway_namespace,
+            expected_rules=[
+                {
+                    "apiGroups": ["rbac.authorization.k8s.io"],
+                    "resources": ["rolebindings"],
+                    "resourceNames": [
+                        "fs2-network-policy-transition-gateway",
+                        "fs2-network-policy-transition-gateway-bootstrap",
+                    ],
+                    "verbs": ["get", "patch", "update"],
+                }
+            ],
+        ),
+        external_role_contract(
+            kubeconfig,
+            context,
+            resource="role",
+            name="fs2-network-policy-transition-controller",
+            namespace=controller_namespace,
+            expected_rules=[
+                {
+                    "apiGroups": ["networking.k8s.io"],
+                    "resources": ["networkpolicies"],
+                    "resourceNames": ["fs2-serve-control-plane-envoy-controller-xds-transition-guard"],
+                    "verbs": ["get"],
+                },
+                {
+                    "apiGroups": ["networking.k8s.io"],
+                    "resources": ["networkpolicies"],
+                    "resourceNames": ["fs2-serve-control-plane-envoy-controller-xds-transition-guard"],
+                    "verbs": ["patch", "update"],
+                },
+            ],
+        ),
+        external_role_contract(
+            kubeconfig,
+            context,
+            resource="role",
+            name="fs2-network-policy-transition-controller-bootstrap",
+            namespace=controller_namespace,
+            expected_rules=[
+                {
+                    "apiGroups": ["rbac.authorization.k8s.io"],
+                    "resources": ["rolebindings"],
+                    "resourceNames": [
+                        "fs2-network-policy-transition-controller",
+                        "fs2-network-policy-transition-controller-bootstrap",
+                    ],
+                    "verbs": ["get", "patch", "update"],
+                }
+            ],
+        ),
+    ]
     binding_evidence, state = rotation_binding_contract(
         kubeconfig,
         context,
@@ -772,14 +1108,14 @@ def auditor_bootstrap_contract(
         target_subjects=[bootstrap_username, successor_bootstrap_username],
     )
     evidence = {
-        "role": {"metadata": role_metadata, "rules": rules},
+        "roles": roles,
         "binding": binding_evidence,
     }
     return hashlib.sha256(
         canonical(
             evidence
         ).encode()
-    ).hexdigest(), state, evidence
+    ).hexdigest(), state, evidence, hashlib.sha256(canonical(roles).encode()).hexdigest()
 
 
 def can_i(kubeconfig: Path, context: str, expected: str, *arguments: str) -> None:
@@ -1149,6 +1485,7 @@ def main() -> int:
             provider_trust_anchor_sha256 = hashlib.sha256(b"internal-only-trust-anchor").hexdigest()
             provider_adapter_sha256 = hashlib.sha256(b"internal-only-provider-adapter").hexdigest()
             auditor_bootstrap_sha256 = hashlib.sha256(b"internal-only-auditor-bootstrap").hexdigest()
+            external_role_bundle_sha256 = hashlib.sha256(b"internal-only-role-bundle").hexdigest()
 
         release = paths["release"]
         security = paths["security"]
@@ -1157,12 +1494,19 @@ def main() -> int:
         prior_bootstrap = paths["prior_bootstrap"]
         context = query["context"]
         if query["mode"] == "public":
-            auditor_bootstrap_sha256, auditor_state, auditor_evidence = auditor_bootstrap_contract(
+            (
+                auditor_bootstrap_sha256,
+                auditor_state,
+                auditor_evidence,
+                external_role_bundle_sha256,
+            ) = auditor_bootstrap_contract(
                 bootstrap,
                 context,
                 expected_principals["bootstrap"],
                 expected_principals["prior_bootstrap"],
                 expected_principals["successor_bootstrap"],
+                query["gateway_namespace"],
+                query["controller_namespace"],
             )
             before_mutation_subjects = [
                 expected_principals["prior_security"],
@@ -1174,6 +1518,14 @@ def main() -> int:
                 expected_principals["successor_security"],
                 expected_principals["successor_bootstrap"],
             ]
+            before_bootstrap_subjects = [
+                expected_principals["prior_bootstrap"],
+                expected_principals["bootstrap"],
+            ]
+            target_bootstrap_subjects = [
+                expected_principals["bootstrap"],
+                expected_principals["successor_bootstrap"],
+            ]
             binding_specs = (
                 (
                     "cluster",
@@ -1182,6 +1534,18 @@ def main() -> int:
                     "",
                     "ClusterRole",
                     "fs2-network-policy-security-owner",
+                    before_mutation_subjects,
+                    target_mutation_subjects,
+                ),
+                (
+                    "cluster_bootstrap",
+                    "clusterrolebinding",
+                    "fs2-network-policy-security-bootstrap",
+                    "",
+                    "ClusterRole",
+                    "fs2-network-policy-security-bootstrap",
+                    before_bootstrap_subjects,
+                    target_bootstrap_subjects,
                 ),
                 (
                     "state",
@@ -1190,6 +1554,18 @@ def main() -> int:
                     "fs2-system",
                     "Role",
                     "fs2-network-policy-transition",
+                    before_mutation_subjects,
+                    target_mutation_subjects,
+                ),
+                (
+                    "state_bootstrap",
+                    "rolebinding",
+                    "fs2-network-policy-transition-bootstrap",
+                    "fs2-system",
+                    "Role",
+                    "fs2-network-policy-transition-bootstrap",
+                    before_bootstrap_subjects,
+                    target_bootstrap_subjects,
                 ),
                 (
                     "gateway",
@@ -1198,6 +1574,18 @@ def main() -> int:
                     query["gateway_namespace"],
                     "Role",
                     "fs2-network-policy-transition-gateway",
+                    before_mutation_subjects,
+                    target_mutation_subjects,
+                ),
+                (
+                    "gateway_bootstrap",
+                    "rolebinding",
+                    "fs2-network-policy-transition-gateway-bootstrap",
+                    query["gateway_namespace"],
+                    "Role",
+                    "fs2-network-policy-transition-gateway-bootstrap",
+                    before_bootstrap_subjects,
+                    target_bootstrap_subjects,
                 ),
                 (
                     "controller",
@@ -1206,11 +1594,32 @@ def main() -> int:
                     query["controller_namespace"],
                     "Role",
                     "fs2-network-policy-transition-controller",
+                    before_mutation_subjects,
+                    target_mutation_subjects,
+                ),
+                (
+                    "controller_bootstrap",
+                    "rolebinding",
+                    "fs2-network-policy-transition-controller-bootstrap",
+                    query["controller_namespace"],
+                    "Role",
+                    "fs2-network-policy-transition-controller-bootstrap",
+                    before_bootstrap_subjects,
+                    target_bootstrap_subjects,
                 ),
             )
             rotation_binding_states = {"auditor": auditor_state}
             rotation_binding_evidence = {"auditor": auditor_evidence}
-            for key, resource, name, namespace, role_kind, role_name in binding_specs:
+            for (
+                key,
+                resource,
+                name,
+                namespace,
+                role_kind,
+                role_name,
+                before_subjects,
+                target_subjects,
+            ) in binding_specs:
                 evidence, state = rotation_binding_contract(
                     bootstrap,
                     context,
@@ -1219,8 +1628,8 @@ def main() -> int:
                     namespace=namespace,
                     role_kind=role_kind,
                     role_name=role_name,
-                    before_subjects=before_mutation_subjects,
-                    target_subjects=target_mutation_subjects,
+                    before_subjects=before_subjects,
+                    target_subjects=target_subjects,
                 )
                 rotation_binding_states[key] = state
                 rotation_binding_evidence[key] = evidence
@@ -1242,6 +1651,10 @@ def main() -> int:
                 "state": "target",
                 "gateway": "target",
                 "controller": "target",
+                "cluster_bootstrap": "target",
+                "state_bootstrap": "target",
+                "gateway_bootstrap": "target",
+                "controller_bootstrap": "target",
             }
             rotation_phase = "postapply"
             rotation_binding_state_sha256 = hashlib.sha256(b"internal-only-rotation-state").hexdigest()
@@ -1314,11 +1727,25 @@ def main() -> int:
             ("clusterrolebindings.rbac.authorization.k8s.io", "fs2-network-policy-security-owner", ""),
             ("clusterroles.rbac.authorization.k8s.io", "fs2-network-policy-security-auditor", ""),
             ("clusterrolebindings.rbac.authorization.k8s.io", "fs2-network-policy-security-auditor", ""),
+            ("clusterroles.rbac.authorization.k8s.io", "fs2-network-policy-security-bootstrap", ""),
+            ("clusterrolebindings.rbac.authorization.k8s.io", "fs2-network-policy-security-bootstrap", ""),
             ("roles.rbac.authorization.k8s.io", "fs2-network-policy-transition", "fs2-system"),
             ("rolebindings.rbac.authorization.k8s.io", "fs2-network-policy-transition", "fs2-system"),
+            ("roles.rbac.authorization.k8s.io", "fs2-network-policy-transition-bootstrap", "fs2-system"),
+            ("rolebindings.rbac.authorization.k8s.io", "fs2-network-policy-transition-bootstrap", "fs2-system"),
             (
                 "roles.rbac.authorization.k8s.io",
                 "fs2-network-policy-transition-gateway",
+                query["gateway_namespace"],
+            ),
+            (
+                "roles.rbac.authorization.k8s.io",
+                "fs2-network-policy-transition-gateway-bootstrap",
+                query["gateway_namespace"],
+            ),
+            (
+                "rolebindings.rbac.authorization.k8s.io",
+                "fs2-network-policy-transition-gateway-bootstrap",
                 query["gateway_namespace"],
             ),
             (
@@ -1334,6 +1761,16 @@ def main() -> int:
             (
                 "rolebindings.rbac.authorization.k8s.io",
                 "fs2-network-policy-transition-controller",
+                query["controller_namespace"],
+            ),
+            (
+                "roles.rbac.authorization.k8s.io",
+                "fs2-network-policy-transition-controller-bootstrap",
+                query["controller_namespace"],
+            ),
+            (
+                "rolebindings.rbac.authorization.k8s.io",
+                "fs2-network-policy-transition-controller-bootstrap",
                 query["controller_namespace"],
             ),
         )
@@ -1408,17 +1845,16 @@ def main() -> int:
         for resource, name, namespace in rbac_objects:
             suffix = ("--namespace", namespace) if namespace else ()
             is_binding = resource.startswith("clusterrolebindings.") or resource.startswith("rolebindings.")
-            binding_key = (
-                "auditor"
-                if name == "fs2-network-policy-security-auditor"
-                else "cluster"
+            scope_key = (
+                "cluster"
                 if not namespace
                 else "state"
-                if name == "fs2-network-policy-transition"
+                if namespace == "fs2-system"
                 else "gateway"
-                if name.endswith("-gateway")
+                if namespace == query["gateway_namespace"]
                 else "controller"
             )
+            bootstrap_binding_key = f"{scope_key}_bootstrap"
             for identity in (release, security, prior_security):
                 for verb in ("create", "patch", "update", "delete"):
                     can_i(identity, context, "no", verb, resource, *suffix)
@@ -1437,13 +1873,7 @@ def main() -> int:
                     bootstrap,
                     context,
                     (
-                        "yes"
-                        if is_binding
-                        and (
-                            not namespace
-                            or rotation_binding_states[binding_key] == "before"
-                        )
-                        else "no"
+                        "yes" if is_binding else "no"
                     ),
                     verb,
                     resource,
@@ -1456,9 +1886,7 @@ def main() -> int:
                     context,
                     (
                         "yes"
-                        if is_binding
-                        and not namespace
-                        and rotation_binding_states["auditor"] == "before"
+                        if is_binding and rotation_binding_states[bootstrap_binding_key] == "before"
                         else "no"
                     ),
                     verb,
@@ -1471,8 +1899,18 @@ def main() -> int:
         can_i(bootstrap, context, "yes", "list", "serviceaccounts", "--all-namespaces")
         can_i(bootstrap, context, "yes", "list", "roles.rbac.authorization.k8s.io", "--all-namespaces")
         can_i(bootstrap, context, "yes", "list", "clusterroles.rbac.authorization.k8s.io")
-        service_accounts, roles, cluster_roles, kubernetes_subject_inventory_sha256 = (
+        can_i(
+            bootstrap,
+            context,
+            "yes",
+            "list",
+            "certificatesigningrequests.certificates.k8s.io",
+        )
+        service_accounts, roles, cluster_roles, csr_signers, kubernetes_subject_inventory_sha256 = (
             kubernetes_subject_inventory(bootstrap, context)
+        )
+        rule_impersonation_targets, rule_delegation_targets, rule_signers = (
+            rbac_rule_authorization_targets(roles, cluster_roles)
         )
         identities = (release, security, bootstrap, prior_security, prior_bootstrap)
         impersonation_targets = tuple(
@@ -1509,18 +1947,26 @@ def main() -> int:
         impersonation_targets += tuple(
             ("userextras.authentication.k8s.io", key, "") for key in live_identity_extra_keys
         )
+        impersonation_targets += tuple(rule_impersonation_targets)
         impersonation_targets = tuple(sorted(set(impersonation_targets)))
-        delegation_targets = tuple(
+        delegation_targets = set(
             ("clusterroles.rbac.authorization.k8s.io", role["name"], "") for role in cluster_roles
-        ) + tuple(
+        ) | set(
             ("roles.rbac.authorization.k8s.io", role["name"], namespace)
             for namespace, namespace_roles in roles.items()
             for role in namespace_roles
         )
-        signer_names = (
-            "kubernetes.io/kube-apiserver-client",
-            "kubernetes.io/kube-apiserver-client-kubelet",
-            "kubernetes.io/legacy-unknown",
+        delegation_targets = tuple(sorted(delegation_targets | rule_delegation_targets))
+        signer_names = tuple(
+            sorted(
+                {
+                    "kubernetes.io/kube-apiserver-client",
+                    "kubernetes.io/kube-apiserver-client-kubelet",
+                    "kubernetes.io/legacy-unknown",
+                    *csr_signers,
+                    *rule_signers,
+                }
+            )
         )
         for identity in identities:
             for resource in (
@@ -1824,6 +2270,7 @@ def main() -> int:
                     "provider_adapter_sha256": provider_adapter_sha256,
                     "kubernetes_subject_inventory_sha256": kubernetes_subject_inventory_sha256,
                     "auditor_bootstrap_sha256": auditor_bootstrap_sha256,
+                    "external_role_bundle_sha256": external_role_bundle_sha256,
                     "rotation_phase": rotation_phase,
                     "rotation_binding_state_sha256": rotation_binding_state_sha256,
                 }
@@ -1840,6 +2287,7 @@ def main() -> int:
                     "provider_adapter_sha256": provider_adapter_sha256,
                     "kubernetes_subject_inventory_sha256": kubernetes_subject_inventory_sha256,
                     "auditor_bootstrap_sha256": auditor_bootstrap_sha256,
+                    "external_role_bundle_sha256": external_role_bundle_sha256,
                     "rotation_phase": rotation_phase,
                     "rotation_binding_state_sha256": rotation_binding_state_sha256,
                     "credential_set_sha256": credential_set_sha256,

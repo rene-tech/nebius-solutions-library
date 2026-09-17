@@ -58,7 +58,7 @@
               "additionalProperties": false,
               "required": ["id", "sha256"],
               "properties": {
-                "id": { "const": "fs2-serve.nebius.ai/nebius-iam-human-directory/v1" },
+                "id": { "const": "fs2-serve.nebius.ai/nebius-iam-human-directory/v2" },
                 "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
               }
             },
@@ -81,10 +81,9 @@
             "additionalProperties": false,
             "required": ["username", "groups"],
             "properties": {
-              "username": { "type": "string", "pattern": "^[A-Za-z0-9:@._/-]{3,253}$" },
+              "username": { "type": "string", "pattern": "^[A-Za-z0-9:@._+/-]{3,253}$" },
               "groups": {
                 "type": "array",
-                "minItems": 1,
                 "uniqueItems": true,
                 "items": { "type": "string", "pattern": "^[A-Za-z0-9:@._/-]{1,253}$" }
               }

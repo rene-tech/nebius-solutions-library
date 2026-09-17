@@ -279,7 +279,7 @@ variable "network_policy_boundary" {
       var.network_policy_boundary.security_subject_inventory.signed.cluster.kube_system_uid == var.kube_system_uid &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.cluster.api_server_sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.sha256)) &&
-      var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.adapter.id == "fs2-serve.nebius.ai/nebius-iam-human-directory/v1" &&
+      var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.adapter.id == "fs2-serve.nebius.ai/nebius-iam-human-directory/v2" &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.adapter.sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.trust_anchor_sha256)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.tenant_sha256)) &&

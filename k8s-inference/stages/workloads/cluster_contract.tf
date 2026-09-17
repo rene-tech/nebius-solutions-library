@@ -214,6 +214,7 @@ resource "terraform_data" "cluster_contract" {
         can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.provider_adapter_sha256)) &&
         can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.kubernetes_subject_inventory_sha256)) &&
         can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.auditor_bootstrap_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.external_role_bundle_sha256)) &&
         contains(["preapply", "resume", "postapply"], data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.plan_rotation_phase) &&
         can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.rotation_binding_state_sha256)) &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.plan_preflight_verified &&
@@ -258,9 +259,16 @@ resource "terraform_data" "cluster_contract" {
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.allowed_actions == ["transition-mutation", "set-admission-recovery"] &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.recovery_modes == ["Audit", "Warn", "Deny"] &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.auditor_bootstrap == {
-          mechanism            = "external-preprovision-declarative-import"
-          cluster_role         = "fs2-network-policy-security-auditor"
-          cluster_role_binding = "fs2-network-policy-security-auditor"
+          mechanism              = "external-preprovision-declarative-import"
+          cluster_role           = "fs2-network-policy-security-auditor"
+          cluster_role_binding   = "fs2-network-policy-security-auditor"
+          bootstrap_cluster_role = "fs2-network-policy-security-bootstrap"
+          bootstrap_namespaced_roles = {
+            state      = "fs2-network-policy-transition-bootstrap"
+            gateway    = "fs2-network-policy-transition-gateway-bootstrap"
+            controller = "fs2-network-policy-transition-controller-bootstrap"
+          }
+          immutable_role_bundle_sha256 = data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.external_role_bundle_sha256
           preapply_subjects = [
             data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.prior_bootstrap,
             data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.epoch_principals.security_bootstrap,

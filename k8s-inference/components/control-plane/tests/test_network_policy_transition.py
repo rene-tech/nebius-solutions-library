@@ -28,10 +28,10 @@ SUBJECT_INVENTORY_SCHEMA = (
     CONTROL_ROOT / "contracts" / "network-policy-security-subject-inventory-v2.schema.json"
 )
 PROVIDER_SNAPSHOT_SCHEMA = (
-    CONTROL_ROOT / "contracts" / "network-policy-security-subject-provider-snapshot-v1.schema.json"
+    CONTROL_ROOT / "contracts" / "network-policy-security-subject-provider-snapshot-v2.schema.json"
 )
 PROVIDER_TRUST_ANCHOR_SCHEMA = (
-    CONTROL_ROOT / "contracts" / "network-policy-security-provider-trust-anchor-v1.schema.json"
+    CONTROL_ROOT / "contracts" / "network-policy-security-provider-trust-anchor-v2.schema.json"
 )
 PROVIDER_ADAPTER = CONTROL_ROOT / "scripts" / "network_policy_subject_provider_adapter.py"
 EPOCH_RETIREMENT = (
@@ -422,6 +422,7 @@ def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
                     "provider_adapter_sha256": "7" * 64,
                     "kubernetes_subject_inventory_sha256": "3" * 64,
                     "auditor_bootstrap_sha256": "8" * 64,
+                    "external_role_bundle_sha256": "1" * 64,
                     "plan_rotation_phase": "preapply",
                     "rotation_binding_state_sha256": "9" * 64,
                     "plan_preflight_verified": True,
@@ -456,6 +457,13 @@ def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
                     "mechanism": "external-preprovision-declarative-import",
                     "cluster_role": "fs2-network-policy-security-auditor",
                     "cluster_role_binding": "fs2-network-policy-security-auditor",
+                    "bootstrap_cluster_role": "fs2-network-policy-security-bootstrap",
+                    "bootstrap_namespaced_roles": {
+                        "state": "fs2-network-policy-transition-bootstrap",
+                        "gateway": "fs2-network-policy-transition-gateway-bootstrap",
+                        "controller": "fs2-network-policy-transition-controller-bootstrap",
+                    },
+                    "immutable_role_bundle_sha256": "1" * 64,
                     "preapply_subjects": [
                         principal("security-bootstrap", prior_epoch),
                         principal("security-bootstrap", epoch),
@@ -1758,7 +1766,7 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
     assert "decommission-receipt-sha256" not in boundary
     assert "permanent boundary objects are never deleted" in boundary
     assert boundary.count("prevent_destroy = true") >= 21
-    assert boundary.count("provider = kubernetes.network_policy_security_owner") == 20
+    assert boundary.count("provider = kubernetes.network_policy_security_owner") >= 28
     assert 'ordinary_named_can "$verb" "$resource" fs2-network-policy-boundary' in boundary
     assert 'ordinary_can deletecollection "$resource"' in boundary
     assert 'security_can deletecollection "$resource"' in boundary
@@ -1845,7 +1853,8 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
     assert 'resources  = ["namespaces", "serviceaccounts"]' in auditor
     assert 'resources  = ["roles", "clusterroles"]' in auditor
     assert 'resources      = ["clusterrolebindings"]' in auditor
-    assert 'verbs          = ["get", "patch", "update"]' in auditor
+    assert 'verbs          = ["get"]' in auditor
+    assert 'resources  = ["certificatesigningrequests"]' in auditor
     assert 'resources  = ["pods"]' not in auditor
     assert 'resources      = ["networkpolicies"]' in boundary
     assert 'resources      = ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]' in boundary
@@ -1896,7 +1905,7 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
         "snapshot_public_key": provider_public_value,
     }
     provider_signed = {
-        "schema": "fs2-serve.nebius.ai/security-subject-provider-snapshot/v1",
+        "schema": "fs2-serve.nebius.ai/security-subject-provider-snapshot/v2",
         "snapshot_id": "provider-snapshot-epoch-001",
         "provider": "nebius-iam",
         "adapter": {"id": PREFLIGHT.PROVIDER_ADAPTER_ID, "sha256": adapter_sha256},
@@ -1908,6 +1917,7 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
             "page_size": 200,
             "page_count": 1,
             "record_count": 2,
+            "subject_count": 2,
             "terminal_cursor": "",
             "pages": [
                 {
@@ -2059,18 +2069,20 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert 'tuple(("users", user["username"], "") for user in provider_users)' in preflight
     assert 'for group in sorted(' in preflight
 
-    assert "security-subject-provider-snapshot/v1" in preflight
+    assert "security-subject-provider-snapshot/v2" in preflight
     assert "security_subject_provider_public_key" not in variables
     assert "security_subject_provider_tenant_sha256" not in variables
     assert "security_subject_provider_query_sha256" not in variables
-    assert 'Path("/etc/fs2/security/network-policy-provider-trust-anchor-v1.json")' in preflight
+    assert 'Path("/etc/fs2/security/network-policy-provider-trust-anchor-v2.json")' in preflight
     assert "path is not source-fixed" in preflight
     assert "trust_metadata.st_uid != 0" in preflight
     assert "trust_metadata.st_gid != 0" in preflight
     assert "adapter_path.resolve() != expected_adapter" in preflight
     assert "PROVIDER_ADAPTER_ID" in provider_adapter
-    assert "pages" in provider_adapter
-    assert "provider page exceeds the pinned page size" in provider_adapter
+    assert "tenant-user-account-with-attributes" in provider_adapter
+    assert "group-membership" in provider_adapter
+    assert "provider enumeration exceeded its page bound" in provider_adapter
+    assert "json.load(sys.stdin)" not in provider_adapter
     assert "pagination chain is invalid" in preflight
     assert "provider_snapshot_bytes" in preflight
     assert "inventory_users != provider_users" in preflight
@@ -2091,8 +2103,8 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert 'else "resume"' in preflight
     assert "rotation_binding_state_sha256" in preflight
     assert 'is_binding = resource.startswith("clusterrolebindings.")' in preflight
-    assert 'rotation_binding_states["auditor"] == "before"' in preflight
-    assert 'get_json(current, query["context"]' in retirement
+    assert 'rotation_binding_states[bootstrap_binding_key] == "before"' in preflight
+    assert 'get_json(current_bootstrap, query["context"]' in retirement
     assert "binding_evidence" in retirement
     assert "auditor_role_evidence" in retirement
 
@@ -2103,43 +2115,171 @@ def test_provider_trust_anchor_schema_pins_adapter_and_signing_custody() -> None
 
     assert properties["provider"] == {"const": "nebius-iam"}
     assert properties["adapter"]["properties"]["id"] == {
-        "const": "fs2-serve.nebius.ai/nebius-iam-human-directory/v1"
+        "const": "fs2-serve.nebius.ai/nebius-iam-human-directory/v2"
     }
     assert properties["adapter"]["properties"]["sha256"]["pattern"] == "^[0-9a-f]{64}$"
+    assert properties["directory_query"]["properties"]["cli_path"] == {
+        "const": "/usr/local/bin/nebius"
+    }
+    assert properties["directory_query"]["properties"]["config_path"] == {
+        "const": "/etc/fs2/security/nebius-directory-reader.yaml"
+    }
     assert properties["snapshot_public_key"]["pattern"] == "^[A-Za-z0-9_-]{43}$"
 
 
-def test_provider_adapter_derives_subjects_from_bounded_provider_pages() -> None:
-    raw = {
-        "schema": "fs2-serve.nebius.ai/nebius-iam-human-directory-pages/v1",
-        "snapshot_id": "provider-snapshot-001",
-        "provider": "nebius-iam",
+def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(monkeypatch: Any) -> None:
+    query = {
+        "cli_path": "/usr/local/bin/nebius",
+        "config_path": "/etc/fs2/security/nebius-directory-reader.yaml",
+        "profile": "directory-reader",
+        "tenant_id": "tenant-example0001",
+        "page_size": 200,
+        "max_pages": 20,
+        "max_records": 100,
+        "timeout_seconds": 10,
+        "snapshot_ttl_seconds": 900,
+    }
+    trust = {
+        "directory_query": query,
         "tenant_sha256": "a" * 64,
         "query_sha256": "b" * 64,
-        "page_size": 200,
-        "pages": [
-            {
-                "request_cursor": "",
-                "response": {
-                    "human_users": [{"username": "reviewer@example.invalid", "groups": ["reviewers"]}],
-                    "human_groups": ["reviewers"],
-                },
-                "next_cursor": "",
-            }
-        ],
-        "captured_at": "2026-09-17T00:00:00+00:00",
-        "expires_at": "2026-09-18T00:00:00+00:00",
-        "signer_key_id": "c" * 64,
-        "trust_anchor_sha256": "d" * 64,
+        "snapshot_signer_key_id": "c" * 64,
     }
+    monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_trust_anchor", lambda: (trust, "d" * 64))
 
-    normalized = PROVIDER_ADAPTER_MODULE.normalize(raw)
+    def pages(_query: Any, command: list[str], operation: str, _budgets: Any) -> Any:
+        receipt = [{
+            "operation": operation,
+            "request_token": "",
+            "response": {"items": []},
+            "next_token": "",
+        }]
+        if "tenant-user-account-with-attributes" in command:
+            _budgets["records"] -= 1
+            return ([{
+                "tenant_user_account": {
+                    "metadata": {"id": "tenantuseraccount-001", "name": "reviewer"}
+                },
+                "attributes": {"email": "reviewer@example.invalid"},
+            }], receipt)
+        if command[1:3] == ["group", "list"]:
+            _budgets["records"] -= 1
+            return ([{
+                "metadata": {"id": "group-reviewers-001", "name": "reviewers"}
+            }], receipt)
+        _budgets["records"] -= 1
+        return ([{
+            "metadata": {"parent_id": "group-reviewers-001"},
+            "spec": {"member_id": "tenantuseraccount-001"},
+        }], receipt)
 
-    assert normalized["human_users"] == raw["pages"][0]["response"]["human_users"]
-    assert normalized["human_groups"] == raw["pages"][0]["response"]["human_groups"]
-    assert normalized["pagination"]["record_count"] == 2
-    with pytest.raises(PROVIDER_ADAPTER_MODULE.AdapterError, match="fields are not exact"):
-        PROVIDER_ADAPTER_MODULE.normalize({**raw, "subjects": raw["pages"][0]["response"]})
+    monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_list_pages", pages)
+    captured = PROVIDER_ADAPTER_MODULE.capture()
+
+    assert captured["human_users"] == [
+        {"username": "reviewer@example.invalid", "groups": ["reviewers"]}
+    ]
+    assert captured["human_groups"] == ["reviewers"]
+    assert captured["complete"] is True
+    assert captured["adapter"]["id"].endswith("/v2")
+
+
+def test_external_rbac_boundary_separates_runtime_audit_and_subject_rotation() -> None:
+    boundary = BOUNDARY_TERRAFORM.read_text()
+    preflight = BOUNDARY_PREFLIGHT.read_text()
+    retirement = EPOCH_RETIREMENT.read_text()
+
+    imported_roles = (
+        "kubernetes_cluster_role_v1.control_plane_network_policy_security_owner",
+        "kubernetes_cluster_role_v1.control_plane_network_policy_security_auditor",
+        "kubernetes_cluster_role_v1.control_plane_network_policy_security_bootstrap",
+        "kubernetes_role_v1.control_plane_network_policy_transition_state",
+        "kubernetes_role_v1.control_plane_network_policy_transition_state_bootstrap",
+        "kubernetes_role_v1.control_plane_network_policy_transition_gateway",
+        "kubernetes_role_v1.control_plane_network_policy_transition_gateway_bootstrap",
+        "kubernetes_role_v1.control_plane_network_policy_transition_controller",
+        "kubernetes_role_v1.control_plane_network_policy_transition_controller_bootstrap",
+    )
+    for resource in imported_roles:
+        assert f"to = {resource}" in boundary
+    assert boundary.count("ignore_changes  = all") >= 9
+    assert 'message    = "externally owned permanent Role and ClusterRole definitions are immutable"' in boundary
+    assert (
+        'message    = "permanent RBAC bindings require the exact next-epoch role '
+        'and user-only subject set"'
+    ) in boundary
+    assert "subject.kind == 'User'" in boundary
+    assert "size(object.subjects) == 3" in boundary
+    assert "size(object.subjects) == 2" in boundary
+
+    auditor = boundary.split(
+        'resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_auditor"',
+        maxsplit=1,
+    )[1].split('resource "kubernetes_cluster_role_binding_v1"', maxsplit=1)[0]
+    assert 'resources  = ["rolebindings"]' not in auditor
+    assert 'resources  = ["certificatesigningrequests"]' in auditor
+    assert 'verbs          = ["get"]' in auditor
+
+    runtime_state = boundary.split(
+        'resource "kubernetes_role_v1" "control_plane_network_policy_transition_state"',
+        maxsplit=1,
+    )[1].split('resource "kubernetes_cluster_role_v1"', maxsplit=1)[0]
+    assert 'resources      = ["rolebindings"]' not in runtime_state
+    assert 'resources  = ["clusterroles", "clusterrolebindings"]' in boundary
+    assert 'verbs = ["get", "patch", "update"]' in boundary
+    assert "for identity in (release, security, prior_security):" in preflight
+    assert 'can_i(identity, context, "no", verb, resource' in preflight
+    assert "external_role_contract" in preflight
+    assert "external_role_bundle_sha256" in preflight
+    assert "external_role_bundle_evidence" in retirement
+    assert "current_bootstrap_kubeconfig" in retirement
+
+
+def test_rbac_inventory_derives_named_impersonation_delegation_and_custom_signers() -> None:
+    roles = {
+        "tenant-a": [
+            {
+                "name": "named-grants",
+                "rules": [
+                    {
+                        "apiGroups": [""],
+                        "resources": ["users", "groups", "serviceaccounts"],
+                        "resourceNames": ["future-principal"],
+                        "verbs": ["impersonate"],
+                    },
+                    {
+                        "apiGroups": ["rbac.authorization.k8s.io"],
+                        "resources": ["roles"],
+                        "resourceNames": ["future-role"],
+                        "verbs": ["bind"],
+                    },
+                ],
+            }
+        ]
+    }
+    cluster_roles = [
+        {
+            "name": "signer-grant",
+            "rules": [
+                {
+                    "apiGroups": ["certificates.k8s.io"],
+                    "resources": ["signers"],
+                    "resourceNames": ["example.invalid/custom-signer"],
+                    "verbs": ["approve"],
+                }
+            ],
+        }
+    ]
+
+    impersonation, delegation, signers = PREFLIGHT.rbac_rule_authorization_targets(
+        roles, cluster_roles
+    )
+
+    assert ("users", "future-principal", "") in impersonation
+    assert ("groups", "future-principal", "") in impersonation
+    assert ("serviceaccounts", "future-principal", "tenant-a") in impersonation
+    assert ("roles.rbac.authorization.k8s.io", "future-role", "tenant-a") in delegation
+    assert signers == {"example.invalid/custom-signer"}
 
 
 def test_rotation_binding_contract_accepts_only_exact_crash_resume_states(monkeypatch: Any) -> None:
