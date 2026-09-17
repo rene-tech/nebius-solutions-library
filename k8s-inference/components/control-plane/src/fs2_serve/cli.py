@@ -713,6 +713,7 @@ async def reconcile_user_storage(settings: Settings) -> None:
     from .user_storage_models import StoragePolicy
     from .user_storage_nebius import NebiusUserStorage
     from .user_storage_repository import PostgresUserStorageRepository
+    from .storage_reconciler_activation import StorageReconcilerActivationFence
 
     required = (
         settings.user_storage_project_id,
@@ -751,6 +752,17 @@ async def reconcile_user_storage(settings: Settings) -> None:
         poll_seconds=settings.user_storage_poll_seconds,
         action_timeout_seconds=settings.user_storage_action_timeout_seconds,
         rotation_window_days=settings.user_storage_rotation_window_days,
+        activation_fence=StorageReconcilerActivationFence(
+            endpoint=settings.user_storage_activation_endpoint,
+            generation=settings.user_storage_reconciler_generation,
+            cluster_id=settings.user_storage_activation_cluster_id,
+            authority_manifest_sha256=settings.user_storage_activation_authority_sha256,
+            image_digest=settings.user_storage_activation_image_digest,
+            cutover_receipt_sha256=settings.user_storage_activation_cutover_receipt_sha256,
+            public_key_file=settings.user_storage_activation_public_key_file,
+            ca_file=settings.user_storage_activation_ca_file,
+            minimum_epoch=settings.user_storage_activation_minimum_epoch,
+        ),
     )
     try:
         await service._run()

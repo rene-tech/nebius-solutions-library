@@ -14,7 +14,8 @@ from typing import Any
 
 MAX_BYTES = 64 * 1024
 SCHEMA = "fs2-serve.nebius.ai/sai-08-integration-dependencies/v6"
-REJECTED_SAI10 = "1ae009b858924138de70932ac84b8e595a2656a1"
+ACCEPTED_SAI10 = "057386a3e0c616d79735adb43a97c19c48046608"
+ACCEPTED_SAI10_TREE = "a244a4264b1ad5ad782848eed04d9986524921b4"
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -148,15 +149,10 @@ def verify(record: dict[str, Any], expected: dict[str, str]) -> dict[str, str]:
         raise ValueError("accepted SAI-10 commit/tree identity is invalid")
     if _git("show", "-s", "--format=%T", commit) != tree:
         raise ValueError("accepted SAI-10 commit does not have the recorded tree")
-    if _is_ancestor(REJECTED_SAI10, commit):
-        raise ValueError(
-            "accepted SAI-10 custody descends from the rejected SAI-10 lineage"
-        )
-    if _is_ancestor(REJECTED_SAI10, "HEAD"):
-        raise ValueError(
-            "SAI-08 must be integrated on a clean lineage that excludes rejected SAI-10"
-        )
-    _git("merge-base", "--is-ancestor", commit, "HEAD")
+    if commit != ACCEPTED_SAI10 or tree != ACCEPTED_SAI10_TREE:
+        raise ValueError("SAI-10 custody is not the independently accepted exact successor")
+    if not _is_ancestor(ACCEPTED_SAI10, "HEAD"):
+        raise ValueError("SAI-08 is not transplanted onto accepted SAI-10 custody")
     canonical = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
     return {
         "authorized": "true",

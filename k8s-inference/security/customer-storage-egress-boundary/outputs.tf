@@ -20,8 +20,8 @@ output "current_handoff" {
       for role, observer in data.kubernetes_resource.protected_observer : role => {
         uid                 = observer.object.metadata.uid
         spec_sha256         = sha256(jsonencode(observer.object.spec))
-        snapshot_generation = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-generation"], "")
-        snapshot_sha256     = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-sha256"], "")
+        snapshot_generation = var.provider_authority.protected_observers[role].class == "critical-blanket-agent" ? var.provider_authority.protected_observers[role].snapshot_generation : null
+        snapshot_sha256     = var.provider_authority.protected_observers[role].class == "critical-blanket-agent" ? var.provider_authority.protected_observers[role].snapshot_sha256 : null
       }
     }))
     provider_authority = var.provider_authority

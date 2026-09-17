@@ -106,6 +106,7 @@ resource "terraform_data" "external_authority" {
     daemonset_list_resource_version = data.external.authority.result.daemonset_list_resource_version
     daemonset_admission_fence     = data.external.authority.result.daemonset_admission_fence_receipt_sha256
     daemonset_snapshot_ledger     = data.external.authority.result.daemonset_snapshot_ledger_head_sha256
+    reconciler_cutover_receipt    = data.external.authority.result.reconciler_cutover_receipt_sha256
     kubernetes_rbac_inventory     = data.external.authority.result.kubernetes_rbac_inventory_sha256
     kubernetes_rbac_receipt       = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256
     accepted_sai10_commit         = data.external.authority.result.accepted_sai10_commit

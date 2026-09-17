@@ -26,6 +26,7 @@ def main() -> int:
         "expected_receipt_sha256",
         "expected_snapshot_ledger_head_sha256",
         "expected_agents_json",
+        "expected_controller_identity_json",
     }:
         raise ValueError("DaemonSet fence verifier query fields differ")
     receipt, receipt_sha256 = verify_live_daemonset_admission_fence(
@@ -33,6 +34,9 @@ def main() -> int:
         expected_inventory_sha256=str(query["expected_inventory_sha256"]),
         expected_list_resource_version=str(query["expected_list_resource_version"]),
         expected_agents=json.loads(str(query["expected_agents_json"])),
+        expected_controller_identity=json.loads(
+            str(query["expected_controller_identity_json"])
+        ),
     )
     if (
         receipt_sha256 != query["expected_receipt_sha256"]

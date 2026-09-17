@@ -40,6 +40,33 @@ class PostgresUserStorageRepository:
             finally:
                 await connection.execute("SELECT pg_advisory_unlock(hashtextextended($1,31))", tenant)
 
+    @asynccontextmanager
+    async def reconciler_lease(self) -> AsyncIterator[bool]:
+        """Hold the one database-backed customer-storage controller lease.
+
+        The activation authority chooses the eligible immutable generation;
+        this independent session lock prevents two eligible processes from
+        scanning or mutating provider state concurrently during process or
+        Pod overlap.  Closing the connection releases the lease, so a crash
+        cannot strand leadership and no row deletion is part of recovery.
+        """
+
+        async with self.pool.acquire() as connection:
+            acquired = bool(
+                await connection.fetchval(
+                    "SELECT pg_try_advisory_lock(hashtextextended($1,34))",
+                    "fs2-customer-storage-reconciler-singleton",
+                )
+            )
+            try:
+                yield acquired
+            finally:
+                if acquired:
+                    await connection.execute(
+                        "SELECT pg_advisory_unlock(hashtextextended($1,34))",
+                        "fs2-customer-storage-reconciler-singleton",
+                    )
+
     async def policy(self, tenant: str, default: StoragePolicy) -> StoragePolicy:
         row = await self.pool.fetchrow(
             "SELECT layout_mode,enabled,quota_bytes FROM fs2_storage_policies WHERE tenant_id=$1",

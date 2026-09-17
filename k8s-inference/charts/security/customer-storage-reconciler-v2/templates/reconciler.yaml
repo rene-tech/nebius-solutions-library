@@ -10,7 +10,7 @@
 {{- if ne .Release.Name $expectedRelease }}{{ fail "each additive rollout requires its exact generation-named Helm release" }}{{ end -}}
 {{- $name := printf "fs2-storage-v3-%s-%s" $suffix $rolloutSuffix -}}
 {{- if ne .Release.Namespace "fs2-system" }}{{ fail "customer-storage compatibility-v3 reconciler is restricted to fs2-system" }}{{ end -}}
-{{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v9" }}{{ fail "provider authority handoff is required" }}{{ end -}}
+{{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v12" }}{{ fail "provider authority handoff is required" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.protectedNodeSchedulingLabelsSha256) }}{{ fail "complete protected-node scheduling-label custody is required" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.releaseValuesSha256) }}{{ fail "externally signed release-values digest is required" }}{{ end -}}
 {{- if or (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.priorHeadReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.iamInventoryReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.rbacInventoryReceiptSha256)) }}{{ fail "separately anchored prior head and exact provider IAM/RBAC receipts are required" }}{{ end -}}
@@ -28,6 +28,8 @@
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.boundaryPolicySha256) }}{{ fail "content-bound admission policy digest is required" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.workloadPolicySha256) }}{{ fail "content-bound workload admission policy digest is required" }}{{ end -}}
 {{- if hasPrefix "1ae009b85" .Values.custody.acceptedSai10Commit }}{{ fail "rejected SAI-10 custody lineage is forbidden" }}{{ end -}}
+{{- if not (regexMatch "^https://[^/]+/v1/storage-reconciler/activation$" .Values.activation.endpoint) }}{{ fail "external activation authority endpoint is required" }}{{ end -}}
+{{- if not (regexMatch "^[a-f0-9]{64}$" .Values.activation.cutoverReceiptSha256) }}{{ fail "signed cutover receipt is required" }}{{ end -}}
 {{- if or (not (regexMatch "^[a-f0-9]{40}$" .Values.custody.acceptedSai10Tree)) (eq .Values.custody.acceptedSai10Commit .Values.custody.acceptedSai10Tree) }}{{ fail "accepted SAI-10 commit and tree custody must be distinct exact Git identities" }}{{ end -}}
 apiVersion: v1
 kind: ServiceAccount
@@ -57,10 +59,12 @@ metadata:
     fs2.nebius.ai/storage-egress-generation: {{ $generation | quote }}
     fs2.nebius.ai/storage-rollout-generation: {{ $rolloutGeneration | quote }}
 spec:
-  replicas: 1
+  # Every additive generation is installed passive. The external security
+  # owner may scale exactly one generation to one only after its signed
+  # predecessor-quiescence receipt is live; retained predecessors stay at zero.
+  replicas: 0
   strategy:
-    type: RollingUpdate
-    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+    type: Recreate
   selector:
     matchLabels: *labels
   template:
@@ -78,6 +82,7 @@ spec:
         fs2.nebius.ai/storage-custody-commit: {{ .Values.custody.acceptedSai10Commit | quote }}
         fs2.nebius.ai/storage-custody-tree: {{ .Values.custody.acceptedSai10Tree | quote }}
         fs2.nebius.ai/storage-custody-review: {{ .Values.custody.independentReviewReceiptSha256 | quote }}
+        fs2.nebius.ai/cutover-receipt-sha256: {{ .Values.activation.cutoverReceiptSha256 | quote }}
     spec:
       serviceAccountName: {{ $name }}
       automountServiceAccountToken: false
@@ -162,6 +167,15 @@ spec:
             - {name: FS2_USER_STORAGE_KEY_TTL_DAYS, value: {{ .Values.storage.keyTtlDays | quote }}}
             - {name: FS2_USER_STORAGE_ROTATION_WINDOW_DAYS, value: {{ .Values.storage.rotationWindowDays | quote }}}
             - {name: FS2_USER_STORAGE_ACTION_TIMEOUT_SECONDS, value: {{ .Values.storage.actionTimeoutSeconds | quote }}}
+            - {name: FS2_USER_STORAGE_RECONCILER_GENERATION, value: {{ $rolloutGeneration | quote }}}
+            - {name: FS2_USER_STORAGE_ACTIVATION_ENDPOINT, value: {{ .Values.activation.endpoint | quote }}}
+            - {name: FS2_USER_STORAGE_ACTIVATION_CLUSTER_ID, value: {{ .Values.activation.clusterId | quote }}}
+            - {name: FS2_USER_STORAGE_ACTIVATION_AUTHORITY_SHA256, value: {{ .Values.authority.manifestSha256 | quote }}}
+            - {name: FS2_USER_STORAGE_ACTIVATION_IMAGE_DIGEST, value: {{ .Values.image.digest | quote }}}
+            - {name: FS2_USER_STORAGE_ACTIVATION_CUTOVER_RECEIPT_SHA256, value: {{ .Values.activation.cutoverReceiptSha256 | quote }}}
+            - {name: FS2_USER_STORAGE_ACTIVATION_PUBLIC_KEY_FILE, value: /var/run/fs2-storage-activation/public-key.pem}
+            - {name: FS2_USER_STORAGE_ACTIVATION_CA_FILE, value: /var/run/fs2-storage-activation/ca.crt}
+            - {name: FS2_USER_STORAGE_ACTIVATION_MINIMUM_EPOCH, value: {{ .Values.activation.minimumEpoch | quote }}}
             - {name: FS2_USER_STORAGE_RESOURCE_CREDENTIALS_FILE, value: /var/run/secrets/fs2-serve/customer-storage/resource/credentials.json}
             - {name: FS2_USER_STORAGE_IAM_CREDENTIALS_FILE, value: /var/run/secrets/fs2-serve/customer-storage/iam/credentials.json}
           volumeMounts:
@@ -169,6 +183,8 @@ spec:
             - {name: database-ca, mountPath: /tls, readOnly: true}
             - {name: customer-storage-resource, mountPath: /var/run/secrets/fs2-serve/customer-storage/resource, readOnly: true}
             - {name: customer-storage-iam, mountPath: /var/run/secrets/fs2-serve/customer-storage/iam, readOnly: true}
+            - {name: storage-activation-trust, mountPath: /var/run/fs2-storage-activation/public-key.pem, subPath: public-key.pem, readOnly: true}
+            - {name: storage-activation-ca, mountPath: /var/run/fs2-storage-activation/ca.crt, subPath: ca.crt, readOnly: true}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
@@ -215,3 +231,13 @@ spec:
             secretName: {{ .Values.storage.iamCredentialsSecretName | quote }}
             defaultMode: 0400
             items: [{key: credentials.json, path: credentials.json}]
+        - name: storage-activation-trust
+          configMap:
+            name: {{ .Values.activation.publicKeyConfigMapName | quote }}
+            defaultMode: 0400
+            items: [{key: public-key.pem, path: public-key.pem}]
+        - name: storage-activation-ca
+          configMap:
+            name: {{ .Values.activation.caConfigMapName | quote }}
+            defaultMode: 0400
+            items: [{key: ca.crt, path: ca.crt}]

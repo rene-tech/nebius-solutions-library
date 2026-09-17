@@ -200,7 +200,7 @@ def main() -> None:
             or generation.get("min_node_count") != 1
             or generation.get("max_node_count") != 1
             or generation.get("node_lifecycle_mode")
-            != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
+            != "PARALLEL_GENERATIONAL_SINGLETON_CUTOVER_RETAIN_PREDECESSOR"
             or any(
                 not isinstance(generation.get(field), str) or not generation[field]
                 for field in (

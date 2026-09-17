@@ -2,8 +2,8 @@
   "schema": "fs2-serve.nebius.ai/sai-08-integration-dependencies/v6",
   "status": "blocked",
   "dependencies": {
-    "sai_10_accepted_commit": null,
-    "sai_10_accepted_tree": null,
+    "sai_10_accepted_commit": "057386a3e0c616d79735adb43a97c19c48046608",
+    "sai_10_accepted_tree": "a244a4264b1ad5ad782848eed04d9986524921b4",
     "sai_10_independent_review_receipt_sha256": null,
     "provider_authority_manifest_sha256": null,
     "provider_authority_prior_head_receipt_sha256": null,
@@ -23,7 +23,7 @@
   },
   "requirements": [
     "accepted SAI-10 lineage with customer-storage cipher and name key generations",
-    "clean integration lineage in which rejected SAI-10 is not an ancestor of accepted custody or HEAD",
+    "exact independently accepted SAI-10 successor 057386a3e0c616d79735adb43a97c19c48046608 with tree a244a4264b1ad5ad782848eed04d9986524921b4 as an ancestor of HEAD",
     "two separately mounted read-only authority anchors approved outside Terraform state with provider, boundary and workloads backend lineage/serial/address custody",
     "provider-native effective authority graph covering inherited, federated and external principals plus exact project IAM inventory",
     "fresh signed target-cluster RBAC inventory covering every role, binding and reconciled subject",

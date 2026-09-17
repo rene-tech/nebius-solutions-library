@@ -59,7 +59,7 @@ def main() -> int:
         or receipt.get("schema")
         != "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v3"
         or receipt.get("node_lifecycle_mode")
-        != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
+        != "PARALLEL_GENERATIONAL_SINGLETON_CUTOVER_RETAIN_PREDECESSOR"
         or not re.fullmatch(
             r"[a-f0-9]{64}",
             str(receipt.get("daemonset_admission_fence_receipt_sha256", "")),

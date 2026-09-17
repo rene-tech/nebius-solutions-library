@@ -24,46 +24,19 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
+from daemonset_fence_policy import POLICY_SPEC, agent_contract
+
 REGISTRY_PATH = Path(
     "/var/lib/fs2-security-checkpoints-ro/kubernetes-daemonset-admission-fence.json"
 )
 ADAPTER_PATH = Path("/usr/libexec/fs2-security/kubernetes-daemonset-admission-fence")
+POLICY_SOURCE_PATH = Path(__file__).with_name("daemonset_fence_policy.py")
+RUNTIME_SOURCE_PATH = Path(__file__).with_name("daemonset_fence_runtime.py")
+SERVER_SOURCE_PATH = Path(__file__).with_name("daemonset_fence_server.py")
 MAX_BYTES = 1024 * 1024
 UID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
-# This is the complete normalized contract that the separately owned adapter
-# must derive from the live enforcer. The signed receipt cannot substitute a
-# different policy: both the receipt and independent live result are compared
-# with these source-defined bytes below.
-POLICY_SPEC = {
-    "schema": "fs2-serve.nebius.ai/daemonset-snapshot-fence-policy/v2",
-    "evaluator": "CANONICAL_JSON_SHA256",
-    "action": "Deny",
-    "scope": "Cluster",
-    "namespace_exclusions": [],
-    "object_selector": {},
-    "failure_policy": "Fail",
-    "match_policy": "Equivalent",
-    "daemonset_operations": ["UPDATE"],
-    "pod_operations": ["CREATE"],
-    "resources": ["apps/v1/daemonsets", "v1/pods"],
-    "ledger_mode": "APPEND_ONLY_HASH_CHAIN",
-    "validations": [
-        "authenticated-maintainer-identity",
-        "canonical-daemonset-spec-sha256",
-        "canonical-pod-template-sha256",
-        "exact-daemonset-uid",
-        "new-snapshot-ledger-membership",
-        "no-ephemeral-containers",
-        "no-node-name",
-        "old-snapshot-ledger-membership",
-        "pod-owner-reference",
-        "pod-spec-sha256",
-    ],
-}
-
-
 def _sha256(value: object) -> str:
     return hashlib.sha256(canonical(value)).hexdigest()
 
@@ -73,10 +46,10 @@ def _validate_binding(
     *,
     cluster_id: str,
     policy_uid: str,
-    enforcer_artifact_sha256: str,
+    enforcer_bundle_sha256: str,
 ) -> dict[str, Any]:
     expected = {
-        "schema": "fs2-serve.nebius.ai/daemonset-snapshot-fence-binding/v2",
+        "schema": "fs2-serve.nebius.ai/daemonset-snapshot-fence-binding/v4",
         "cluster_id": cluster_id,
         "policy_uid": policy_uid,
         "scope": "Cluster",
@@ -84,9 +57,26 @@ def _validate_binding(
         "object_selector": {},
         "failure_policy": "Fail",
         "match_policy": "Equivalent",
-        "side_effects": "None",
+        "admission_review_versions": ["v1"],
+        "side_effects": "NoneOnDryRun",
         "timeout_seconds": 5,
-        "enforcer_artifact_sha256": enforcer_artifact_sha256,
+        "rules": [
+            {
+                "api_groups": ["apps"],
+                "api_versions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["daemonsets"],
+                "scope": "Namespaced",
+            },
+            {
+                "api_groups": [""],
+                "api_versions": ["v1"],
+                "operations": ["CREATE"],
+                "resources": ["pods"],
+                "scope": "Namespaced",
+            },
+        ],
+        "enforcer_bundle_sha256": enforcer_bundle_sha256,
     }
     if value != expected:
         raise ValueError("DaemonSet fence binding semantics differ")
@@ -165,12 +155,14 @@ def _validate_snapshot_ledger(
                 "daemonset_spec_sha256",
                 "pod_template_sha256",
                 "owner_identity_sha256",
+                "snapshot_generation",
                 "snapshot_sha256",
             }
             if not isinstance(entry, dict) or set(entry) != fields:
                 raise ValueError("DaemonSet snapshot entry fields differ")
             snapshot_body = {
-                key: entry[key] for key in sorted(fields - {"snapshot_sha256"})
+                key: entry[key]
+                for key in sorted(fields - {"snapshot_generation", "snapshot_sha256"})
             }
             identity = (
                 str(entry.get("namespace", "")),
@@ -191,10 +183,16 @@ def _validate_snapshot_ledger(
                     )
                 )
                 or entry["snapshot_sha256"] != _sha256(snapshot_body)
+                or not re.fullmatch(
+                    r"s[0-9]{14}-[a-f0-9]{12}",
+                    str(entry.get("snapshot_generation", "")),
+                )
+                or str(entry["snapshot_generation"])[-12:]
+                != str(entry["snapshot_sha256"])[0:12]
             ):
                 raise ValueError("DaemonSet snapshot entry is invalid or duplicated")
             generation_entries.add(identity)
-            entries.append({**entry, "snapshot_generation": generation})
+            entries.append(entry)
         generations.add(generation)
         predecessor = content_sha256
         last_generation = generation
@@ -295,6 +293,35 @@ def _safe_read(path: Path) -> bytes:
         os.close(descriptor)
 
 
+def _source_sha256(path: Path) -> str:
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        before = os.fstat(descriptor)
+        payload = os.read(descriptor, before.st_size + 1)
+        after = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_size <= 0
+            or before.st_size > MAX_BYTES
+            or len(payload) != before.st_size
+            or (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+            != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+        ):
+            raise ValueError("canonical DaemonSet policy source changed during read")
+        return hashlib.sha256(payload).hexdigest()
+    finally:
+        os.close(descriptor)
+
+
+def _source_bundle() -> tuple[dict[str, str], str]:
+    sources = {
+        "daemonset_fence_policy.py": _source_sha256(POLICY_SOURCE_PATH),
+        "daemonset_fence_runtime.py": _source_sha256(RUNTIME_SOURCE_PATH),
+        "daemonset_fence_server.py": _source_sha256(SERVER_SOURCE_PATH),
+    }
+    return sources, _sha256(sources)
+
+
 def _open_adapter(expected_sha256: str) -> tuple[int, os.stat_result]:
     directory = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -348,6 +375,7 @@ def verify_live_daemonset_admission_fence(
     expected_inventory_sha256: str,
     expected_list_resource_version: str,
     expected_agents: dict[str, dict[str, Any]],
+    expected_controller_identity: dict[str, Any],
 ) -> tuple[dict[str, Any], str]:
     if (
         not isinstance(expected_agents, dict)
@@ -360,6 +388,19 @@ def verify_live_daemonset_admission_fence(
         )
     ):
         raise ValueError("signed active DaemonSet inventory is absent or malformed")
+    if (
+        not isinstance(expected_controller_identity, dict)
+        or set(expected_controller_identity) != {"username", "uid", "groups"}
+        or not all(
+            isinstance(expected_controller_identity.get(field), str)
+            and expected_controller_identity[field]
+            for field in ("username", "uid")
+        )
+        or not isinstance(expected_controller_identity.get("groups"), list)
+        or expected_controller_identity["groups"]
+        != sorted(set(expected_controller_identity["groups"]))
+    ):
+        raise ValueError("authenticated DaemonSet-controller identity is malformed")
     registry = _object(_safe_read(REGISTRY_PATH), "DaemonSet fence registry")
     if (
         set(registry)
@@ -367,16 +408,24 @@ def verify_live_daemonset_admission_fence(
             "schema",
             "checkpoint_public_key_pem",
             "adapter_sha256",
-            "enforcer_artifact_sha256",
+            "enforcer_bundle_sha256",
+            "enforcer_image_digest",
+            "runtime_state_head_sha256",
             "snapshot_ledger_anchor_sha256",
             "fence_receipt",
         }
         or registry.get("schema")
-        != "fs2-serve.nebius.ai/kubernetes-daemonset-admission-fence-registry/v2"
+        != "fs2-serve.nebius.ai/kubernetes-daemonset-admission-fence-registry/v4"
         or not re.fullmatch(r"[a-f0-9]{64}", str(registry.get("adapter_sha256", "")))
         or not re.fullmatch(
             r"[a-f0-9]{64}",
-            str(registry.get("enforcer_artifact_sha256", "")),
+            str(registry.get("enforcer_bundle_sha256", "")),
+        )
+        or not re.fullmatch(
+            r"[^@]+@sha256:[a-f0-9]{64}", str(registry.get("enforcer_image_digest", ""))
+        )
+        or not re.fullmatch(
+            r"[a-f0-9]{64}", str(registry.get("runtime_state_head_sha256", ""))
         )
         or not re.fullmatch(
             r"[a-f0-9]{64}",
@@ -384,6 +433,10 @@ def verify_live_daemonset_admission_fence(
         )
     ):
         raise ValueError("DaemonSet fence registry fields differ")
+    source_digests, source_bundle_sha256 = _source_bundle()
+    policy_source_sha256 = source_digests["daemonset_fence_policy.py"]
+    if registry["enforcer_bundle_sha256"] != source_bundle_sha256:
+        raise ValueError("live DaemonSet enforcer is not the canonical source bundle")
     receipt = registry.get("fence_receipt")
     receipt_fields = {
         "schema",
@@ -393,6 +446,13 @@ def verify_live_daemonset_admission_fence(
         "policy_resource_version",
         "policy_spec",
         "policy_spec_sha256",
+        "policy_source_sha256",
+        "source_digests",
+        "source_bundle_sha256",
+        "enforcer_image_digest",
+        "runtime_state_head_sha256",
+        "agent_contract_sha256",
+        "daemonset_controller_identity_sha256",
         "binding_uid",
         "binding_resource_version",
         "binding_spec",
@@ -410,7 +470,7 @@ def verify_live_daemonset_admission_fence(
         not isinstance(receipt, dict)
         or set(receipt) != receipt_fields
         or receipt.get("schema")
-        != "fs2-serve.nebius.ai/kubernetes-daemonset-admission-fence/v2"
+        != "fs2-serve.nebius.ai/kubernetes-daemonset-admission-fence/v4"
         or receipt.get("cluster_id") != cluster_id
         or not re.fullmatch(
             r"f[0-9]{14}-[a-f0-9]{12}", str(receipt.get("fence_generation", ""))
@@ -421,13 +481,22 @@ def verify_live_daemonset_admission_fence(
         != expected_list_resource_version
         or receipt.get("policy_spec") != POLICY_SPEC
         or receipt.get("policy_spec_sha256") != _sha256(POLICY_SPEC)
+        or receipt.get("policy_source_sha256") != policy_source_sha256
+        or receipt.get("source_digests") != source_digests
+        or receipt.get("source_bundle_sha256") != source_bundle_sha256
+        or receipt.get("enforcer_image_digest") != registry["enforcer_image_digest"]
+        or receipt.get("runtime_state_head_sha256")
+        != registry["runtime_state_head_sha256"]
+        or receipt.get("agent_contract_sha256") != _sha256(agent_contract(expected_agents))
+        or receipt.get("daemonset_controller_identity_sha256")
+        != _sha256(expected_controller_identity)
     ):
         raise ValueError("DaemonSet fence receipt identity or inventory differs")
     binding_spec = _validate_binding(
         receipt.get("binding_spec"),
         cluster_id=cluster_id,
         policy_uid=str(receipt.get("policy_uid", "")),
-        enforcer_artifact_sha256=str(registry["enforcer_artifact_sha256"]),
+        enforcer_bundle_sha256=str(registry["enforcer_bundle_sha256"]),
     )
     if receipt.get("binding_spec_sha256") != _sha256(binding_spec):
         raise ValueError("DaemonSet fence binding digest differs from canonical bytes")
@@ -443,6 +512,14 @@ def verify_live_daemonset_admission_fence(
         "cluster_id": cluster_id,
         "policy_uid": receipt["policy_uid"],
         "policy_spec_sha256": receipt["policy_spec_sha256"],
+        "policy_source_sha256": receipt["policy_source_sha256"],
+        "source_bundle_sha256": receipt["source_bundle_sha256"],
+        "enforcer_image_digest": receipt["enforcer_image_digest"],
+        "runtime_state_head_sha256": receipt["runtime_state_head_sha256"],
+        "agent_contract_sha256": receipt["agent_contract_sha256"],
+        "daemonset_controller_identity_sha256": receipt[
+            "daemonset_controller_identity_sha256"
+        ],
         "binding_uid": receipt["binding_uid"],
         "binding_spec_sha256": receipt["binding_spec_sha256"],
         "snapshot_ledger_head_sha256": ledger_head,
@@ -450,12 +527,17 @@ def verify_live_daemonset_admission_fence(
         "daemonset_list_resource_version": receipt[
             "daemonset_list_resource_version"
         ],
-        "enforcer_artifact_sha256": registry["enforcer_artifact_sha256"],
+        "enforcer_bundle_sha256": registry["enforcer_bundle_sha256"],
     }
     if str(receipt["fence_generation"])[-12:] != _sha256(fence_content)[:12]:
         raise ValueError("DaemonSet fence generation is not content-bound")
     for field in (
         "policy_spec_sha256",
+        "policy_source_sha256",
+        "source_bundle_sha256",
+        "runtime_state_head_sha256",
+        "agent_contract_sha256",
+        "daemonset_controller_identity_sha256",
         "binding_spec_sha256",
         "daemonset_inventory_sha256",
         "snapshot_ledger_head_sha256",
@@ -498,12 +580,20 @@ def verify_live_daemonset_admission_fence(
 
     descriptor, before = _open_adapter(str(registry["adapter_sha256"]))
     request = {
-        "schema": "fs2-serve.nebius.ai/kubernetes-daemonset-admission-fence-query/v2",
+        "schema": "fs2-serve.nebius.ai/kubernetes-daemonset-admission-fence-query/v4",
         "cluster_id": cluster_id,
         "fence_generation": receipt["fence_generation"],
         "policy_uid": receipt["policy_uid"],
         "binding_uid": receipt["binding_uid"],
         "policy_spec_sha256": receipt["policy_spec_sha256"],
+        "policy_source_sha256": receipt["policy_source_sha256"],
+        "source_bundle_sha256": receipt["source_bundle_sha256"],
+        "enforcer_image_digest": receipt["enforcer_image_digest"],
+        "runtime_state_head_sha256": receipt["runtime_state_head_sha256"],
+        "agent_contract_sha256": receipt["agent_contract_sha256"],
+        "daemonset_controller_identity_sha256": receipt[
+            "daemonset_controller_identity_sha256"
+        ],
         "binding_spec_sha256": receipt["binding_spec_sha256"],
         "snapshot_ledger_head_sha256": receipt["snapshot_ledger_head_sha256"],
     }
@@ -531,12 +621,21 @@ def verify_live_daemonset_admission_fence(
         raise ValueError("DaemonSet fence adapter failed or changed during verification")
     live = _object(result.stdout, "DaemonSet fence adapter response")
     expected_live = {
-        "schema": "fs2-serve.nebius.ai/kubernetes-daemonset-admission-fence-evidence/v2",
+        "schema": "fs2-serve.nebius.ai/kubernetes-daemonset-admission-fence-evidence/v4",
         "cluster_id": cluster_id,
         "fence_generation": receipt["fence_generation"],
         "policy_uid": receipt["policy_uid"],
         "policy_resource_version": receipt["policy_resource_version"],
         "policy_spec": receipt["policy_spec"],
+        "policy_source_sha256": receipt["policy_source_sha256"],
+        "source_digests": receipt["source_digests"],
+        "source_bundle_sha256": receipt["source_bundle_sha256"],
+        "enforcer_image_digest": receipt["enforcer_image_digest"],
+        "runtime_state_head_sha256": receipt["runtime_state_head_sha256"],
+        "agent_contract_sha256": receipt["agent_contract_sha256"],
+        "daemonset_controller_identity_sha256": receipt[
+            "daemonset_controller_identity_sha256"
+        ],
         "binding_uid": receipt["binding_uid"],
         "binding_resource_version": receipt["binding_resource_version"],
         "binding_spec": receipt["binding_spec"],

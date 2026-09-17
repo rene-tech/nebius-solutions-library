@@ -221,29 +221,37 @@ def _blanket_tolerating_agents(
         namespace = metadata.get("namespace")
         name = metadata.get("name")
         uid = metadata.get("uid")
-        annotations = metadata.get("annotations", {})
-        snapshot_generation = (
-            annotations.get("security.fs2.nebius.ai/daemonset-snapshot-generation")
-            if isinstance(annotations, dict)
-            else None
-        )
-        snapshot_sha256 = (
-            annotations.get("security.fs2.nebius.ai/daemonset-snapshot-sha256")
-            if isinstance(annotations, dict)
-            else None
-        )
         if not all(isinstance(value, str) and value for value in (namespace, name, uid)):
             raise ValueError("blanket-tolerating DaemonSet identity is incomplete")
-        if not re.fullmatch(
-            r"s[0-9]{14}-[a-f0-9]{12}", str(snapshot_generation)
-        ) or not re.fullmatch(r"[a-f0-9]{64}", str(snapshot_sha256)):
-            raise ValueError(
-                "blanket-tolerating DaemonSet is absent from the signed snapshot ledger"
-            )
         key = f"{namespace}/{name}"
         maintainer = maintainers.get(key)
         if not isinstance(maintainer, dict):
             raise ValueError("blanket-tolerating DaemonSet has no audit-proven maintainer")
+        created = metadata.get("creationTimestamp")
+        try:
+            created_at = datetime.fromisoformat(str(created).replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("blanket-tolerating DaemonSet creation time is invalid") from exc
+        if created_at.tzinfo is None:
+            raise ValueError("blanket-tolerating DaemonSet creation time has no timezone")
+        spec_sha256 = hashlib.sha256(_canonical(spec)).hexdigest()
+        snapshot_body = {
+            "namespace": namespace,
+            "name": name,
+            "uid": uid,
+            "daemonset_spec_sha256": spec_sha256,
+            "pod_template_sha256": hashlib.sha256(
+                _canonical(spec.get("template"))
+            ).hexdigest(),
+            "owner_identity_sha256": hashlib.sha256(
+                _canonical(maintainer["identity"])
+            ).hexdigest(),
+        }
+        snapshot_sha256 = hashlib.sha256(_canonical(snapshot_body)).hexdigest()
+        snapshot_generation = (
+            f"s{created_at.astimezone(UTC).strftime('%Y%m%d%H%M%S')}"
+            f"-{snapshot_sha256[:12]}"
+        )
         agents[key] = {
             "namespace": namespace,
             "name": name,
@@ -251,7 +259,7 @@ def _blanket_tolerating_agents(
             "snapshot_generation": snapshot_generation,
             "snapshot_sha256": snapshot_sha256,
             "daemonset_spec": spec,
-            "daemonset_spec_sha256": hashlib.sha256(_canonical(spec)).hexdigest(),
+            "daemonset_spec_sha256": spec_sha256,
             "maintenance_identity": maintainer["identity"],
             "maintenance_audit_sha256": maintainer["event_sha256"],
         }

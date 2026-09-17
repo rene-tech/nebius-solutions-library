@@ -31,6 +31,7 @@ class UserStorageService:
         poll_seconds: float = 60,
         action_timeout_seconds: float = 30,
         rotation_window_days: int = 14,
+        activation_fence: Any | None = None,
     ) -> None:
         self.repository = repository
         self.provider = provider
@@ -40,8 +41,13 @@ class UserStorageService:
         self.poll_seconds = poll_seconds
         self.action_timeout_seconds = action_timeout_seconds
         self.rotation_window_days = rotation_window_days
+        self.activation_fence = activation_fence
         self.task: asyncio.Task[None] | None = None
         self.provisioning_retry_at = 0.0
+
+    async def _assert_active(self) -> None:
+        if self.activation_fence is not None:
+            await self.activation_fence.assert_active()
 
     async def policy(self, tenant: str) -> StoragePolicy:
         if tenant in self.excluded_tenants:
@@ -70,6 +76,7 @@ class UserStorageService:
         return UserStorage.model_validate(await self.repository.view(tenant, principal, await self.policy(tenant)))
 
     async def _provider_state(self, resource_id: str) -> str:
+        await self._assert_active()
         state = cast(str, await self.provider.key_state(resource_id))
         if state not in {_ACTIVE, *_INACTIVE}:
             raise RuntimeError("provider returned an indeterminate storage-key state")
@@ -80,9 +87,12 @@ class UserStorageService:
         if enabled and state != _ACTIVE:
             if state in {"EXPIRED", "DELETING", "DELETED"}:
                 raise RuntimeError("expired or deleted storage key cannot be activated")
+            await self._assert_active()
             await self.provider.set_enabled(resource_id, True)
         elif not enabled and state not in _INACTIVE:
+            await self._assert_active()
             await self.provider.set_enabled(resource_id, False)
+        await self._assert_active()
         observed = await self._provider_state(resource_id)
         if enabled and observed != _ACTIVE:
             raise RuntimeError("storage key activation did not reach ACTIVE")
@@ -132,6 +142,7 @@ class UserStorageService:
             return cast(dict[str, Any], await self.repository.credential(tenant, principal))
 
         if replacement is None:
+            await self._assert_active()
             value = await self.provider.prepare_rotation(
                 tenant,
                 principal,
@@ -213,6 +224,7 @@ class UserStorageService:
         if self.provider is None:
             raise RuntimeError("customer storage cloud operations are isolated to the reconciler")
         async with self.repository.tenant_lock(user.tenant_id):
+            await self._assert_active()
             configured_reader = getattr(self.users, "configured", None)
             configured = (
                 await configured_reader(user.tenant_id, user.principal_id) if configured_reader is not None else None
@@ -250,6 +262,7 @@ class UserStorageService:
                     and credential["revoked_at"] is None
                     and not credential["policy_suspension_requested"]
                 )
+                await self._assert_active()
                 ownership_verified = await self.provider.reconcile_key_inventory(
                     user.tenant_id,
                     user.principal_id,
@@ -383,6 +396,7 @@ class UserStorageService:
 
             # Always inspect the bucket and its exact policy; quota equality is
             # not sufficient evidence that IAM drift has not occurred.
+            await self._assert_active()
             bucket = await self.provider.ensure_bucket(
                 user.tenant_id,
                 owner,
@@ -391,6 +405,7 @@ class UserStorageService:
             )
             await self.repository.save_bucket(user.tenant_id, owner, bucket)
             if credential is None:
+                await self._assert_active()
                 value = await self.provider.ensure_credentials(
                     user.tenant_id,
                     user.principal_id,
@@ -401,6 +416,7 @@ class UserStorageService:
                 assert credential is not None
                 await self._finish_pending(user, credential, bucket)
             else:
+                await self._assert_active()
                 await self.provider.ensure_identity_access(
                     bucket["group_id"],
                     credential["service_account_id"],
@@ -432,6 +448,7 @@ class UserStorageService:
         return [*pending, *users.values()]
 
     async def reconcile_once(self) -> dict[str, int]:
+        await self._assert_active()
         counts = {"ready": 0, "skipped": 0, "failed": 0}
         inventory = list(await self.users.list(None))
         for user in await self._pending_users(inventory):
@@ -549,7 +566,17 @@ class UserStorageService:
     async def _run(self) -> None:
         while True:
             try:
-                await self.reconcile_once()
+                await self._assert_active()
+                lease = getattr(self.repository, "reconciler_lease", None)
+                if lease is None:
+                    raise RuntimeError("storage repository lacks the singleton reconciler lease")
+                async with lease() as acquired:
+                    if acquired:
+                        # Recheck after acquiring the independent database
+                        # lease.  A cutover epoch may have changed while this
+                        # generation waited behind its predecessor.
+                        await self._assert_active()
+                        await self.reconcile_once()
             except Exception as exc:
                 LOG.warning("user storage inventory failed error_type=%s", type(exc).__name__)
             await asyncio.sleep(self.poll_seconds)

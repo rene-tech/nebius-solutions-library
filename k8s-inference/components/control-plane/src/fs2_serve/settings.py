@@ -90,6 +90,19 @@ class Settings(BaseSettings):
     user_storage_key_ttl_days: int = Field(default=90, ge=1, le=365)
     user_storage_rotation_window_days: int = Field(default=14, ge=1, le=364)
     user_storage_action_timeout_seconds: float = Field(default=30, ge=1, le=120)
+    user_storage_reconciler_generation: str = ""
+    user_storage_activation_endpoint: str = ""
+    user_storage_activation_cluster_id: str = ""
+    user_storage_activation_authority_sha256: str = ""
+    user_storage_activation_image_digest: str = ""
+    user_storage_activation_cutover_receipt_sha256: str = ""
+    user_storage_activation_public_key_file: Path = Path(
+        "/var/run/fs2-storage-activation/public-key.pem"
+    )
+    user_storage_activation_ca_file: Path = Path(
+        "/var/run/fs2-storage-activation/ca.crt"
+    )
+    user_storage_activation_minimum_epoch: int = Field(default=1, ge=1)
     user_storage_disclosure_url: str = Field(
         default="http://fs2-serve-control-plane-storage-disclosure:8082",
         min_length=8,
@@ -397,6 +410,34 @@ class Settings(BaseSettings):
             raise ValueError("sync_wait_seconds cannot exceed max_sync_wait_seconds")
         if self.user_storage_rotation_window_days >= self.user_storage_key_ttl_days:
             raise ValueError("user storage rotation window must be shorter than the key TTL")
+        if self.user_storage_enabled:
+            activation = urlsplit(self.user_storage_activation_endpoint)
+            if (
+                activation.scheme != "https"
+                or activation.hostname is None
+                or activation.path != "/v1/storage-reconciler/activation"
+                or activation.query
+                or activation.fragment
+            ):
+                raise ValueError("storage reconciler activation must use its exact external HTTPS path")
+            if not re.fullmatch(
+                r"r[0-9]{14}-[a-f0-9]{12}", self.user_storage_reconciler_generation
+            ):
+                raise ValueError("storage reconciler generation is invalid")
+            if not self.user_storage_activation_cluster_id:
+                raise ValueError("storage reconciler activation cluster is required")
+            if not re.fullmatch(
+                r"[a-f0-9]{64}", self.user_storage_activation_authority_sha256
+            ):
+                raise ValueError("storage reconciler activation authority digest is invalid")
+            if not re.fullmatch(
+                r"sha256:[a-f0-9]{64}", self.user_storage_activation_image_digest
+            ):
+                raise ValueError("storage reconciler activation image digest is invalid")
+            if not re.fullmatch(
+                r"[a-f0-9]{64}", self.user_storage_activation_cutover_receipt_sha256
+            ):
+                raise ValueError("storage reconciler activation cutover receipt is invalid")
         disclosure = urlsplit(self.user_storage_disclosure_url)
         if disclosure.scheme != "http" or disclosure.hostname is None or disclosure.path not in {"", "/"}:
             raise ValueError("user storage disclosure URL must be an internal HTTP authority")

@@ -184,7 +184,7 @@ def validate_contract(value: object) -> dict[str, Any]:
         raise ValueError("DaemonSet list resourceVersion is absent")
     if (
         value.get("node_lifecycle_mode")
-        != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
+        != "PARALLEL_GENERATIONAL_SINGLETON_CUTOVER_RETAIN_PREDECESSOR"
     ):
         raise ValueError("protected lane is not a retained generational singleton")
     node_health = value.get("node_health_mutation")
@@ -491,28 +491,41 @@ def _observer_daemonset_cel(contract: dict[str, Any]) -> str:
     choices: list[str] = []
     for observer in contract["observers"].values():
         if observer["class"] == "critical-blanket-agent":
-            snapshot_transition = " ".join(
-                [
-                    f"({_snapshot_metadata_cel('object.metadata')}) &&",
-                    f"({_snapshot_metadata_cel('oldObject.metadata')})",
-                ]
+            transition = "security.fs2.nebius.ai/daemonset-transition-sha256"
+            choices.append(
+                " ".join(
+                    [
+                        f"(request.namespace == {_q(observer['namespace'])} &&",
+                        f"request.name == {_q(observer['name'])} &&",
+                        f"({_identity_cel(observer['owner_identity'])}) &&",
+                        "(request.operation == 'UPDATE' &&",
+                        f"object.metadata.uid == {_q(observer['uid'])} && oldObject.metadata.uid == {_q(observer['uid'])} &&",
+                        "has(object.metadata.annotations) &&",
+                        f"{_q(transition)} in object.metadata.annotations && object.metadata.annotations[{_q(transition)}].matches('^[a-f0-9]{{64}}$')))",
+                    ]
+                )
             )
-        else:
-            snapshot_transition = " ".join(
-                [
-                    f"object.spec == {json.dumps(observer['daemonset_spec'], sort_keys=True, separators=(',', ':'))} &&",
-                    f"oldObject.spec == {json.dumps(observer['daemonset_spec'], sort_keys=True, separators=(',', ':'))}",
-                ]
-            )
+            continue
+        spec = json.dumps(
+            observer["daemonset_spec"], sort_keys=True, separators=(",", ":")
+        )
+        transition = "security.fs2.nebius.ai/daemonset-transition-sha256"
         choices.append(
             " ".join(
                 [
                     f"(request.namespace == {_q(observer['namespace'])} &&",
                     f"request.name == {_q(observer['name'])} &&",
                     f"({_identity_cel(observer['owner_identity'])}) &&",
-                    "request.operation == 'UPDATE' &&",
+                    "((request.operation == 'UPDATE' &&",
                     f"object.metadata.uid == {_q(observer['uid'])} && oldObject.metadata.uid == {_q(observer['uid'])} &&",
-                    f"{snapshot_transition})",
+                    f"object.spec == {spec} && oldObject.spec == {spec}) ||",
+                    "(request.operation == 'CREATE' &&",
+                    f"object.spec == {spec} && has(object.metadata.annotations) &&",
+                    f"{_q(transition)} in object.metadata.annotations && object.metadata.annotations[{_q(transition)}].matches('^[a-f0-9]{{64}}$')) ||",
+                    "(request.operation == 'DELETE' &&",
+                    f"oldObject.metadata.uid == {_q(observer['uid'])} && oldObject.spec == {spec} &&",
+                    f"has(oldObject.metadata.annotations) && {_q(transition)} in oldObject.metadata.annotations &&",
+                    f"oldObject.metadata.annotations[{_q(transition)}].matches('^[a-f0-9]{{64}}$'))))",
                 ]
             )
         )
@@ -523,57 +536,23 @@ def _observer_pod_cel(contract: dict[str, Any]) -> str:
     choices: list[str] = []
     controller = _identity_cel(contract["controller_identities"]["daemonset"])
     for observer in contract["observers"].values():
-        if observer["class"] == "critical-blanket-agent":
-            choices.append(
-                " ".join(
-                    [
-                        f"(request.namespace == {_q(observer['namespace'])} && ({controller}) &&",
-                        "request.operation == 'CREATE' && size(object.metadata.ownerReferences) == 1 &&",
-                        "object.metadata.ownerReferences[0].apiVersion == 'apps/v1' && object.metadata.ownerReferences[0].kind == 'DaemonSet' &&",
-                        f"object.metadata.ownerReferences[0].name == {_q(observer['name'])} && object.metadata.ownerReferences[0].uid == {_q(observer['uid'])} &&",
-                        "object.metadata.ownerReferences[0].controller == true && object.metadata.ownerReferences[0].blockOwnerDeletion == true &&",
-                        f"({_snapshot_metadata_cel('object.metadata')}) &&",
-                        "(!has(object.spec.nodeName) || object.spec.nodeName == '') &&",
-                        "(!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0))",
-                    ]
-                )
-            )
-            continue
         labels = observer["daemonset_spec"]["template"]["metadata"]["labels"]
         pod_spec = observer["daemonset_spec"]["template"]["spec"]
         labels_json = json.dumps(labels, sort_keys=True, separators=(",", ":"))
-        required_spec_fields = (
-            "tolerations",
-            "containers",
-        )
-        exact_spec = " && ".join(
-            f"object.spec.{field} == {json.dumps(pod_spec[field], sort_keys=True, separators=(',', ':'))}"
-            for field in required_spec_fields
-        )
-        optional_spec_fields = (
-            "serviceAccountName",
-            "automountServiceAccountToken",
-            "nodeSelector",
-            "initContainers",
-            "volumes",
-            "imagePullSecrets",
-            "securityContext",
-            "runtimeClassName",
-            "priorityClassName",
-            "dnsPolicy",
-            "dnsConfig",
-            "hostNetwork",
-            "hostPID",
-            "hostIPC",
-            "shareProcessNamespace",
-        )
-        exact_optional = " && ".join(
-            (
-                f"object.spec.{field} == {json.dumps(pod_spec[field], sort_keys=True, separators=(',', ':'))}"
-                if field in pod_spec
-                else f"!has(object.spec.{field})"
+        pod_spec_json = json.dumps(pod_spec, sort_keys=True, separators=(",", ":"))
+        exact_workload = (
+            "true"
+            if observer["class"] == "critical-blanket-agent"
+            else " ".join(
+                [
+                    f"{labels_json}.all(key, value, key in object.metadata.labels && object.metadata.labels[key] == value) &&",
+                    f"object.metadata.labels.all(key, value, (key in {labels_json} && {labels_json}[key] == value) ||",
+                    "(key in ['controller-revision-hash','pod-template-generation'] && value != '')) &&",
+                    f"object.spec == {pod_spec_json} &&",
+                    "(!has(object.spec.nodeName) || object.spec.nodeName == '') &&",
+                    "(!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0)",
+                ]
             )
-            for field in optional_spec_fields
         )
         choices.append(
             " ".join(
@@ -583,12 +562,7 @@ def _observer_pod_cel(contract: dict[str, Any]) -> str:
                     "object.metadata.ownerReferences[0].apiVersion == 'apps/v1' && object.metadata.ownerReferences[0].kind == 'DaemonSet' &&",
                     f"object.metadata.ownerReferences[0].name == {_q(observer['name'])} && object.metadata.ownerReferences[0].uid == {_q(observer['uid'])} &&",
                     "object.metadata.ownerReferences[0].controller == true && object.metadata.ownerReferences[0].blockOwnerDeletion == true &&",
-                    f"{labels_json}.all(key, value, key in object.metadata.labels && object.metadata.labels[key] == value) &&",
-                    f"object.metadata.labels.all(key, value, (key in {labels_json} && {labels_json}[key] == value) ||",
-                    "(key in ['controller-revision-hash','pod-template-generation'] && value != '')) &&",
-                    f"{exact_spec} && {exact_optional} &&",
-                    "(!has(object.spec.nodeName) || object.spec.nodeName == '') &&",
-                    "(!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0))",
+                    f"({exact_workload}))",
                 ]
             )
         )
@@ -768,7 +742,11 @@ def _observer_for_request(
     request: dict[str, Any], contract: dict[str, Any]
 ) -> dict[str, Any] | None:
     namespace = request.get("namespace")
-    obj = request.get("object") or {}
+    obj = (
+        request.get("old_object")
+        if request.get("operation") == "DELETE"
+        else request.get("object")
+    ) or {}
     metadata = obj.get("metadata") or {}
     for observer in contract["observers"].values():
         if namespace == observer["namespace"] and metadata.get("name") == observer["name"]:
@@ -802,11 +780,28 @@ def _snapshot_metadata_valid(metadata: object) -> bool:
     )
 
 
+def _transition_metadata_valid(metadata: object) -> bool:
+    if not isinstance(metadata, dict):
+        return False
+    annotations = metadata.get("annotations")
+    return bool(
+        isinstance(annotations, dict)
+        and re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(
+                annotations.get(
+                    "security.fs2.nebius.ai/daemonset-transition-sha256", ""
+                )
+            ),
+        )
+    )
+
+
 def successor_allows(request: dict[str, Any], contract: object) -> bool:
     value = validate_contract(contract)
     if not request_targets_lane(request, value):
         return True
-    if request.get("operation") == "DELETE":
+    if request.get("operation") == "DELETE" and request.get("resource") != "daemonsets":
         return False
     if request.get("storage_contract") is True:
         return True
@@ -819,18 +814,31 @@ def successor_allows(request: dict[str, Any], contract: object) -> bool:
     metadata = obj.get("metadata") or {}
     if request.get("resource") == "daemonsets" and observer is not None:
         old = request.get("old_object") or {}
+        operation = request.get("operation")
+        if not _request_identity_matches(request, observer["owner_identity"]):
+            return False
         if observer["class"] == "critical-blanket-agent":
+            if operation != "UPDATE" or not _transition_metadata_valid(metadata):
+                return False
+            old_metadata = old.get("metadata") or {}
             return bool(
-                request.get("operation") == "UPDATE"
-                and _request_identity_matches(request, observer["owner_identity"])
-                and metadata.get("uid") == observer["uid"]
-                and (old.get("metadata") or {}).get("uid") == observer["uid"]
-                and _snapshot_metadata_valid(metadata)
-                and _snapshot_metadata_valid(old.get("metadata"))
+                metadata.get("uid") == observer["uid"]
+                and old_metadata.get("uid") == observer["uid"]
             )
-        return (
-            request.get("operation") == "UPDATE"
-            and _request_identity_matches(request, observer["owner_identity"])
+        if operation == "CREATE":
+            return bool(
+                obj.get("spec") == observer["daemonset_spec"]
+                and _transition_metadata_valid(metadata)
+            )
+        if operation == "DELETE":
+            old_metadata = old.get("metadata") or {}
+            return bool(
+                old_metadata.get("uid") == observer["uid"]
+                and old.get("spec") == observer["daemonset_spec"]
+                and _transition_metadata_valid(old_metadata)
+            )
+        return bool(
+            operation == "UPDATE"
             and metadata.get("uid") == observer["uid"]
             and (old.get("metadata") or {}).get("uid") == observer["uid"]
             and obj.get("spec") == observer["daemonset_spec"]
@@ -859,12 +867,11 @@ def successor_allows(request: dict[str, Any], contract: object) -> bool:
                 }
             ):
                 if candidate["class"] == "critical-blanket-agent":
-                    actual_spec = obj.get("spec") or {}
-                    return bool(
-                        _snapshot_metadata_valid(metadata)
-                        and actual_spec.get("nodeName") in {None, ""}
-                        and actual_spec.get("ephemeralContainers") in (None, [], ())
-                    )
+                    # Every append-only ordinary policy delegates the mutable
+                    # spec to the separately owned signed transition fence.
+                    # Pinning a generation-local spec here would make retained
+                    # Deny bindings conjunctively deadlock the next upgrade.
+                    return True
                 required = candidate["daemonset_spec"]["template"]["metadata"]["labels"]
                 observed = metadata.get("labels")
                 if not isinstance(observed, dict):
@@ -878,34 +885,7 @@ def successor_allows(request: dict[str, Any], contract: object) -> bool:
                 )
                 expected_spec = candidate["daemonset_spec"]["template"]["spec"]
                 actual_spec = obj.get("spec") or {}
-                required_spec_fields = {
-                    "tolerations",
-                    "containers",
-                }
-                optional_spec_fields = {
-                    "serviceAccountName",
-                    "automountServiceAccountToken",
-                    "nodeSelector",
-                    "initContainers",
-                    "volumes",
-                    "imagePullSecrets",
-                    "securityContext",
-                    "runtimeClassName",
-                    "priorityClassName",
-                    "dnsPolicy",
-                    "dnsConfig",
-                    "hostNetwork",
-                    "hostPID",
-                    "hostIPC",
-                    "shareProcessNamespace",
-                }
-                spec_matches = all(
-                    actual_spec.get(field) == expected_spec.get(field)
-                    for field in required_spec_fields
-                ) and all(
-                    actual_spec.get(field) == expected_spec.get(field)
-                    for field in optional_spec_fields
-                )
+                spec_matches = actual_spec == expected_spec
                 no_pivots = actual_spec.get("nodeName") in {None, ""} and actual_spec.get(
                     "ephemeralContainers"
                 ) in (None, [], ())

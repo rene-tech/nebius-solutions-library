@@ -187,14 +187,63 @@ ports, priorities, and no extra route. The NodeGroup must carry only that
 security group, exact labels/template label/taint, and one exact member.
 
 Each provisioning generation is a one-member NodeGroup declared
-`GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR`: `min=1`, `max=1`,
+`PARALLEL_GENERATIONAL_SINGLETON_CUTOVER_RETAIN_PREDECESSOR`: `min=1`, `max=1`,
 `max_surge=0`, `max_unavailable=0`. Admission denies an in-place second member,
 replacement or deletion for that generation. The only permitted source action
 is to prepare a new content-bound provisioning generation with a new lane ID,
 security group, NodeGroup, attested Node and admission generation while the
-predecessor stays retained. Preparation is not repair, cutover or retirement.
-A customer-safe quiesce and drain must precede application cutover. The active
-no-delete rule does not authorize Pod eviction, workload teardown or
-predecessor retirement, so execution stops at source preparation until an
-independently reviewed lifecycle protocol exists. Provider behavior that cannot
-honor frozen per-generation membership is a deployment blocker.
+predecessor stays retained. Preparation is not itself repair, cutover or
+retirement. The v13 protocol below supplies the separately fenced workload
+handoff while retaining every predecessor object and provider generation.
+
+## v13 mutation-free adoption and reconciler cutover
+
+Existing blanket-tolerating DaemonSets are adopted from a complete exact
+double read. Their snapshot generation is derived from immutable creation
+time, UID, canonical full spec and audit-proven maintainer identity; no
+annotation or other object mutation is required. Ordinary append-only Deny
+policies bind the adopted name/UID and authenticated maintainer/controller but
+deliberately do not freeze the mutable full spec. Every retained ordinary
+generation therefore delegates old/new spec equality to the separately owned
+webhook instead of conjunctively deadlocking an upgrade.
+Blanket-agent CREATE and DELETE are still evaluated by that webhook but are
+always denied: an authorized transition updates the adopted UID in place, so
+every retained ordinary generation continues to recognize its controller
+children without a delete/recreate gap.
+
+The external fence includes executable policy, signed-state verifier and TLS
+AdmissionReview server source. Its versioned webhook covers DaemonSet
+CREATE/UPDATE/DELETE and blanket-tolerating Pod CREATE. Runtime state is a
+root-owned read-only Ed25519-signed hash chain containing the complete adopted
+agent set, authenticated controller identity, exact predecessor/successor
+specs, readiness evidence and one content-bound transition. A durable local
+transaction makes retries idempotent and forbids reuse of a transition token
+for different request bytes. Pod comparison permits only the narrow canonical
+node-affinity and pressure/unreachable tolerations injected by the DaemonSet
+controller; all other bytes remain equal to the signed template.
+
+The immutable workload configuration pins the cutover registry anchor, public
+key, source bundle and enforcer image—not a mutable activation-envelope hash.
+Every short-lived envelope carries that exact anchor, the current signed-state
+head and a transition ID. Running processes additionally require each higher
+epoch to name the prior envelope body hash, so ordinary activation and rollback
+do not require replacing a retained Deployment or its immutable trust mount.
+
+Node repair creates a distinct signed lane/NodeGroup generation while the old
+generation remains present. Every reconciler Helm generation is initially
+installed with zero replicas under the exact ordinary workload VAP, then its
+server-assigned UID/spec are adopted into the external ledger. A second
+external webhook admits only the executable signed sequence: predecessor `1 -> 0`, independently
+attested zero-Pod/zero-inflight quiescence, and successor `0 -> 1`. It denies
+DELETE and denies Pods whose rollout generation is not the current signed
+activation generation. The reconciler also re-fetches that short-lived signed
+activation epoch before each provider operation, so a retained or accidentally
+recreated stale Pod remains cloud-inert.
+
+Rollback is another monotonically higher signed epoch, never an old-state
+rollback. It first quiesces the successor to zero and requires exact receipts
+for zero in-flight actions, schema compatibility, provider continuity and
+successor quiescence before the retained predecessor may return to one.
+Objects, NodeGroups, credentials and customer data are retained throughout.
+This task defines the source protocol only; no scale, drain, apply, rotation or
+other live action is authorized here.

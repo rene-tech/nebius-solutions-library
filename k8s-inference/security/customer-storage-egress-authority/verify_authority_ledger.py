@@ -27,7 +27,11 @@ if os.fspath(SECURITY_ROOT) not in sys.path:
 from rbac_authority import CONTROLLER_ROLES, verify_subject_inventory  # noqa: E402
 from verify_controller_audit import verify_live_controller_audit  # noqa: E402
 from verify_daemonset_admission_fence import (  # noqa: E402
+    _source_sha256,
     verify_live_daemonset_admission_fence,
+)
+from storage_reconciler_cutover_runtime import (  # noqa: E402
+    load_verified_state as load_cutover_state,
 )
 
 REGISTRY_PATH = Path("/etc/fs2-security-ro/authority/customer-storage-egress-authority.json")
@@ -36,11 +40,12 @@ PRIOR_HEAD_PATH = Path(
 )
 REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v9"
 PRIOR_HEAD_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-prior-head/v5"
-MANIFEST_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-ledger/v8"
+MANIFEST_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-ledger/v9"
 MAX_BYTES = 1024 * 1024
 NEBIUS_TERRAFORM_PROVIDER_VERSION = "0.5.232"
 LANE_CUSTODY_ADAPTER = Path("/usr/libexec/fs2-security/lane-provisioning-custody")
-REJECTED_SAI10_COMMIT = "1ae009b858924138de70932ac84b8e595a2656a1"
+ACCEPTED_SAI10_COMMIT = "057386a3e0c616d79735adb43a97c19c48046608"
+ACCEPTED_SAI10_TREE = "a244a4264b1ad5ad782848eed04d9986524921b4"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 LEGACY_GENERATION_FIELDS = {
     "generation",
@@ -106,6 +111,11 @@ GENERATION_FIELDS = PROTECTED_LANE_V5_GENERATION_FIELDS | {
     "daemonset_admission_fence_receipt_sha256",
     "daemonset_snapshot_ledger_head_sha256",
     "node_lifecycle_mode",
+    "reconciler_cutover_receipt_sha256",
+    "reconciler_activation_endpoint",
+    "reconciler_activation_public_key_config_map_name",
+    "reconciler_activation_ca_config_map_name",
+    "reconciler_activation_minimum_epoch",
 }
 PROVISIONING_V2_FIELDS = {
     "lane_id",
@@ -741,7 +751,7 @@ def verify_lane_network_contract(
         or receipt.get("network_contract_sha256")
         != hashlib.sha256(canonical(network_contract)).hexdigest()
         or receipt.get("node_lifecycle_mode")
-        != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
+        != "PARALLEL_GENERATIONAL_SINGLETON_CUTOVER_RETAIN_PREDECESSOR"
     ):
         raise ValueError("lane SG, exact egress, state, or singleton contract differs")
 
@@ -858,16 +868,16 @@ def verify_live_lane_custody(
     require_fresh_timestamp(live.get("observed_at"), "live lane custody")
 
 
-def rejected_sai10_is_ancestor(descendant: str) -> bool:
+def git_is_ancestor(ancestor: str, descendant: str) -> bool:
     result = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", REJECTED_SAI10_COMMIT, descendant],
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
         cwd=REPOSITORY_ROOT,
         check=False,
         capture_output=True,
         timeout=10,
     )
     if result.returncode not in {0, 1}:
-        raise ValueError("accepted SAI-10 ancestry could not be verified")
+        raise ValueError("accepted Git ancestry could not be verified")
     return result.returncode == 0
 
 
@@ -1364,7 +1374,7 @@ def verify(manifest_json: str) -> dict[str, str]:
                 or (
                     v3
                     and receipt.get("node_lifecycle_mode")
-                    != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
+                    != "PARALLEL_GENERATIONAL_SINGLETON_CUTOVER_RETAIN_PREDECESSOR"
                 )
             ):
                 raise ValueError("lane provisioning live provider/backend custody differs")
@@ -1617,6 +1627,10 @@ def verify(manifest_json: str) -> dict[str, str]:
                 rbac_receipt["daemonset_list_resource_version"]
             ),
             expected_agents=blanket_tolerating_agents,
+            expected_controller_identity={
+                field: controller_users["daemonset"][field]
+                for field in ("username", "uid", "groups")
+            },
         )
     )
     if daemonset_fence != declared_daemonset_fence:
@@ -1761,8 +1775,12 @@ def verify(manifest_json: str) -> dict[str, str]:
         custody["independent_review_receipt_sha256"],
         "accepted SAI-10 review receipt",
     )
-    if rejected_sai10_is_ancestor(custody["sai10_commit"]) or rejected_sai10_is_ancestor("HEAD"):
-        raise ValueError("rejected SAI-10 ancestry cannot authorize customer storage")
+    if (
+        custody["sai10_commit"] != ACCEPTED_SAI10_COMMIT
+        or custody["sai10_tree"] != ACCEPTED_SAI10_TREE
+        or not git_is_ancestor(ACCEPTED_SAI10_COMMIT, "HEAD")
+    ):
+        raise ValueError("customer storage is not based on accepted exact SAI-10 custody")
 
     expected_prior_fields = {
         "schema",
@@ -1988,15 +2006,32 @@ def verify(manifest_json: str) -> dict[str, str]:
                 if (
                     frozenset(retained)
                     == frozenset(PROTECTED_LANE_V5_GENERATION_FIELDS)
-                    and any(
-                        observer.get("class") == "critical-blanket-agent"
-                        for observer in observers.values()
-                    )
                 ):
-                    raise ValueError(
-                        "retained pre-fence protected-lane policy cannot be "
-                        "composed without destructive retirement"
-                    )
+                    # Pre-fence Deny policies remain active forever.  Migration
+                    # therefore adopts each live blanket DaemonSet without an
+                    # object update: exact namespace/name/UID/spec/maintainer
+                    # must equal the independently inventoried agent already
+                    # admitted by every retained policy.  The v3 external fence
+                    # then protects CREATE/UPDATE/DELETE and exact child Pods.
+                    for observer in observers.values():
+                        if observer.get("class") != "critical-blanket-agent":
+                            continue
+                        key = f"{observer['namespace']}/{observer['name']}"
+                        live_agent = blanket_tolerating_agents.get(key)
+                        if (
+                            not isinstance(live_agent, dict)
+                            or live_agent.get("uid") != observer.get("uid")
+                            or live_agent.get("daemonset_spec")
+                            != observer.get("daemonset_spec")
+                            or live_agent.get("daemonset_spec_sha256")
+                            != observer.get("daemonset_spec_sha256")
+                            or live_agent.get("maintenance_identity")
+                            != observer.get("owner_identity")
+                        ):
+                            raise ValueError(
+                                "retained blanket DaemonSet cannot be adopted "
+                                "unchanged into the continuous fence"
+                            )
             if (
                 retained.get("scheduling_key") != expected_scheduling_key
                 or retained.get("protected_observer_inventory_sha256")
@@ -2361,6 +2396,24 @@ def verify(manifest_json: str) -> dict[str, str]:
     )
     if registry["approved_manifest_sha256"] != manifest_digest:
         raise ValueError("authority manifest is not the exact externally approved ledger")
+    cutover_state = load_cutover_state()
+    cutover_receipt_sha256 = cutover_state["registry_anchor_sha256"]
+    cutover_sources = {
+        name: _source_sha256(Path(__file__).with_name(name))
+        for name in (
+            "storage_reconciler_cutover_policy.py",
+            "storage_reconciler_cutover_runtime.py",
+            "storage_reconciler_cutover_server.py",
+            "storage_reconciler_cutover_executor.py",
+        )
+    }
+    if (
+        cutover_state.get("cluster_id") != manifest.get("cluster_id")
+        or cutover_state.get("authority_manifest_sha256") != manifest_digest
+        or cutover_state.get("source_bundle_sha256")
+        != hashlib.sha256(canonical(cutover_sources)).hexdigest()
+    ):
+        raise ValueError("live reconciler cutover state differs from the authority manifest")
     if manifest.get("authority_project_id") != registry["authority_project_id"]:
         raise ValueError("authority manifest project differs from the external registry")
     if not isinstance(manifest.get("cluster_id"), str) or not manifest["cluster_id"]:
@@ -2444,6 +2497,7 @@ def verify(manifest_json: str) -> dict[str, str]:
             "daemonset_inventory_sha256",
             "daemonset_admission_fence_receipt_sha256",
             "daemonset_snapshot_ledger_head_sha256",
+            "reconciler_cutover_receipt_sha256",
         ):
             value = entry.get(field)
             if (
@@ -2587,7 +2641,7 @@ def verify(manifest_json: str) -> dict[str, str]:
             != daemonset_snapshot_ledger_head_sha256
             or entry.get("node_health_mutation") != node_health_mutation
             or entry.get("node_lifecycle_mode")
-            != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
+            != "PARALLEL_GENERATIONAL_SINGLETON_CUTOVER_RETAIN_PREDECESSOR"
             or not all(
                 observer["owner_identity"]
                 in [
@@ -2602,6 +2656,20 @@ def verify(manifest_json: str) -> dict[str, str]:
             )
             or entry.get("min_node_count") != 1
             or entry.get("max_node_count") != 1
+            or not re.fullmatch(
+                r"https://[^/]+/v1/storage-reconciler/activation",
+                str(entry.get("reconciler_activation_endpoint", "")),
+            )
+            or not re.fullmatch(
+                r"fs2-storage-activation-trust-r[0-9]{14}-[a-f0-9]{12}",
+                str(entry.get("reconciler_activation_public_key_config_map_name", "")),
+            )
+            or not re.fullmatch(
+                r"fs2-storage-activation-ca-r[0-9]{14}-[a-f0-9]{12}",
+                str(entry.get("reconciler_activation_ca_config_map_name", "")),
+            )
+            or not isinstance(entry.get("reconciler_activation_minimum_epoch"), int)
+            or entry["reconciler_activation_minimum_epoch"] < 1
         ):
             raise ValueError("authority generation protected-lane custody differs")
         if (
@@ -2618,6 +2686,34 @@ def verify(manifest_json: str) -> dict[str, str]:
         predecessor = content_digest
     if manifest.get("current_generation") != list(normalized)[-1]:
         raise ValueError("current authority generation must be the final signed generation")
+    current_entry = normalized[manifest["current_generation"]]
+    transition_generations = {
+        value
+        for value in (
+            cutover_state.get("transition", {}).get("predecessor_generation"),
+            cutover_state.get("transition", {}).get("successor_generation"),
+        )
+        if isinstance(value, str)
+    }
+    if (
+        current_entry.get("reconciler_cutover_receipt_sha256")
+        != cutover_receipt_sha256
+        or (
+            cutover_state.get("active_generation") is not None
+            and cutover_state.get("active_generation") not in transition_generations
+        )
+        or (
+            cutover_state.get("active_generation") is None
+            and cutover_state.get("transition", {}).get("phase")
+            not in {
+                "QUIESCE_PREDECESSOR",
+                "PREDECESSOR_QUIESCED",
+                "ROLLBACK_QUIESCE",
+                "ROLLBACK_SUCCESSOR_QUIESCED",
+            }
+        )
+    ):
+        raise ValueError("authority head does not bind the live signed reconciler cutover")
     expected_provider_addresses = ["terraform_data.external_authority"]
     expected_provider_addresses.extend(
         f"terraform_data.external_authority_v4[{json.dumps(generation)}]"
@@ -2716,6 +2812,7 @@ def verify(manifest_json: str) -> dict[str, str]:
         "daemonset_snapshot_ledger_head_sha256": (
             daemonset_snapshot_ledger_head_sha256
         ),
+        "reconciler_cutover_receipt_sha256": cutover_receipt_sha256,
         "provider_project_iam_inventory_receipt_sha256": iam_receipt_sha256,
         "provider_effective_authority_graph_receipt_sha256": authority_graph_sha256,
         "provider_authority_adapter_sha256": registry["provider_authority_adapter_sha256"],

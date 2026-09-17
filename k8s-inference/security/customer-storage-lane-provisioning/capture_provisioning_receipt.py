@@ -160,7 +160,7 @@ def _expected_managed_addresses(manifest: dict[str, Any]) -> list[str]:
         or generation_ids != list(dict.fromkeys(generation_ids))
     ):
         raise ValueError("provisioning generation address keys are ambiguous")
-    return sorted(
+    return ["terraform_data.parallel_cutover_contract"] + sorted(
         f"{resource}[{json.dumps(generation)}]"
         for generation in generation_ids
         for resource in resources
@@ -428,7 +428,7 @@ def main() -> int:
             }
         ]
         or generation.get("node_lifecycle_mode")
-        != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
+        != "PARALLEL_GENERATIONAL_SINGLETON_CUTOVER_RETAIN_PREDECESSOR"
     ):
         raise ValueError("live lane resources differ from the signed provisioning contract")
     members = node_group.get("members")
@@ -482,7 +482,7 @@ def main() -> int:
         "daemonset_admission_fence_receipt_sha256": registry[
             "daemonset_admission_fence_receipt_sha256"
         ],
-        "node_lifecycle_mode": "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR",
+        "node_lifecycle_mode": "PARALLEL_GENERATIONAL_SINGLETON_CUTOVER_RETAIN_PREDECESSOR",
         "custody_adapter_sha256": adapter_sha256,
         "observed_at": observed_at,
     }

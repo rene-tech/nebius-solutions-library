@@ -431,6 +431,15 @@ locals {
     { name = "FS2_USER_STORAGE_KEY_TTL_DAYS", value = tostring(local.current_release.key_ttl_days) },
     { name = "FS2_USER_STORAGE_ROTATION_WINDOW_DAYS", value = tostring(local.current_release.rotation_window_days) },
     { name = "FS2_USER_STORAGE_ACTION_TIMEOUT_SECONDS", value = tostring(local.current_release.action_timeout_seconds) },
+    { name = "FS2_USER_STORAGE_RECONCILER_GENERATION", value = var.current_release_generation },
+    { name = "FS2_USER_STORAGE_ACTIVATION_ENDPOINT", value = var.provider_authority.reconciler_activation_endpoint },
+    { name = "FS2_USER_STORAGE_ACTIVATION_CLUSTER_ID", value = var.provider_authority.cluster_id },
+    { name = "FS2_USER_STORAGE_ACTIVATION_AUTHORITY_SHA256", value = var.provider_authority.authority_manifest_sha256 },
+    { name = "FS2_USER_STORAGE_ACTIVATION_IMAGE_DIGEST", value = local.current_release.image_digest },
+    { name = "FS2_USER_STORAGE_ACTIVATION_CUTOVER_RECEIPT_SHA256", value = var.provider_authority.reconciler_cutover_receipt_sha256 },
+    { name = "FS2_USER_STORAGE_ACTIVATION_PUBLIC_KEY_FILE", value = "/var/run/fs2-storage-activation/public-key.pem" },
+    { name = "FS2_USER_STORAGE_ACTIVATION_CA_FILE", value = "/var/run/fs2-storage-activation/ca.crt" },
+    { name = "FS2_USER_STORAGE_ACTIVATION_MINIMUM_EPOCH", value = tostring(var.provider_authority.reconciler_activation_minimum_epoch) },
     { name = "FS2_USER_STORAGE_RESOURCE_CREDENTIALS_FILE", value = "/var/run/secrets/fs2-serve/customer-storage/resource/credentials.json" },
     { name = "FS2_USER_STORAGE_IAM_CREDENTIALS_FILE", value = "/var/run/secrets/fs2-serve/customer-storage/iam/credentials.json" },
   ])
@@ -451,6 +460,8 @@ locals {
     { name = "database-ca", mountPath = "/tls", readOnly = true },
     { name = "customer-storage-resource", mountPath = "/var/run/secrets/fs2-serve/customer-storage/resource", readOnly = true },
     { name = "customer-storage-iam", mountPath = "/var/run/secrets/fs2-serve/customer-storage/iam", readOnly = true },
+    { name = "storage-activation-trust", mountPath = "/var/run/fs2-storage-activation/public-key.pem", subPath = "public-key.pem", readOnly = true },
+    { name = "storage-activation-ca", mountPath = "/var/run/fs2-storage-activation/ca.crt", subPath = "ca.crt", readOnly = true },
   ])
   expected_init_env_cel = jsonencode([
     {
@@ -498,7 +509,7 @@ locals {
     "[POD.containers[0], POD.initContainers[0]].all(container, has(container.securityContext) && container.securityContext.allowPrivilegeEscalation == false && container.securityContext.readOnlyRootFilesystem == true && container.securityContext.capabilities.drop == ['ALL'] && (!has(container.securityContext.privileged) || container.securityContext.privileged == false)) &&",
     "(!has(POD.ephemeralContainers) || size(POD.ephemeralContainers) == 0) &&",
     "(!has(POD.imagePullSecrets) || POD.imagePullSecrets == ${local.expected_pull_secrets_cel}) &&",
-    "size(POD.volumes) == 7 && POD.volumes.all(volume, volume.name in ['egress-contract', 'egress-trust', 'kubernetes-api', 'customer-storage-crypto', 'database-ca', 'customer-storage-resource', 'customer-storage-iam']) &&",
+    "size(POD.volumes) == 9 && POD.volumes.all(volume, volume.name in ['egress-contract', 'egress-trust', 'kubernetes-api', 'customer-storage-crypto', 'database-ca', 'customer-storage-resource', 'customer-storage-iam', 'storage-activation-trust', 'storage-activation-ca']) &&",
     "size(POD.volumes.filter(volume, has(volume.secret))) == size(${local.allowed_secret_names_cel}) &&",
     "POD.volumes.filter(volume, has(volume.secret)).all(volume, volume.secret.secretName in ${local.allowed_secret_names_cel}) &&",
     "${local.allowed_secret_names_cel}.all(secretName, POD.volumes.exists(volume, has(volume.secret) && volume.secret.secretName == secretName)) &&",
@@ -508,6 +519,8 @@ locals {
     "POD.volumes.exists(volume, volume.name == 'customer-storage-iam' && has(volume.secret) && volume.secret.secretName == '${local.current_release.iam_credentials_secret_name}') &&",
     "POD.volumes.exists(volume, volume.name == 'egress-contract' && has(volume.configMap) && volume.configMap.name == '${local.successor_contract_names[var.current_generation]}') &&",
     "POD.volumes.exists(volume, volume.name == 'egress-trust' && has(volume.configMap) && volume.configMap.name == '${local.successor_trust_names[local.current_contract.trust_generation]}') &&",
+    "POD.volumes.exists(volume, volume.name == 'storage-activation-trust' && has(volume.configMap) && volume.configMap.name == '${var.provider_authority.reconciler_activation_public_key_config_map_name}') &&",
+    "POD.volumes.exists(volume, volume.name == 'storage-activation-ca' && has(volume.configMap) && volume.configMap.name == '${var.provider_authority.reconciler_activation_ca_config_map_name}') &&",
     "POD.volumes.filter(volume, has(volume.projected)).all(volume,",
     "volume.name == 'kubernetes-api' && size(volume.projected.sources) == 2 &&",
     "volume.projected.sources.exists(source, has(source.serviceAccountToken) && source.serviceAccountToken.audience == 'kubernetes.default.svc' && source.serviceAccountToken.expirationSeconds == 600 && source.serviceAccountToken.path == 'token') &&",
@@ -535,11 +548,11 @@ locals {
   observer_pod_allow_cel          = data.external.protected_lane_admission.result.observer_pod_allow_cel
   protected_node_target_cel = join(" ", [
     "(request.resource.resource == 'pods' && request.subResource == '' &&",
-    "(request.operation == 'UPDATE' ? ((${local.protected_node_pod_cel}) || (${local.protected_node_old_pod_cel})) : (${local.protected_node_pod_cel}))) ||",
+    "(request.operation in ['UPDATE','DELETE'] ? ((${local.protected_node_pod_cel}) || (${local.protected_node_old_pod_cel})) : (${local.protected_node_pod_cel}))) ||",
     "(request.resource.resource in ['deployments','daemonsets','statefulsets','replicasets','jobs'] &&",
-    "(request.operation == 'UPDATE' ? ((${local.protected_node_template_cel}) || (${local.protected_node_old_template_cel})) : (${local.protected_node_template_cel}))) ||",
+    "(request.operation in ['UPDATE','DELETE'] ? ((${local.protected_node_template_cel}) || (${local.protected_node_old_template_cel})) : (${local.protected_node_template_cel}))) ||",
     "(request.resource.resource == 'cronjobs' &&",
-    "(request.operation == 'UPDATE' ? ((${local.protected_node_cronjob_cel}) || (${local.protected_node_old_cronjob_cel})) : (${local.protected_node_cronjob_cel})))",
+    "(request.operation in ['UPDATE','DELETE'] ? ((${local.protected_node_cronjob_cel}) || (${local.protected_node_old_cronjob_cel})) : (${local.protected_node_cronjob_cel})))",
   ])
   workload_policy_spec = {
     failurePolicy = "Fail"
@@ -563,8 +576,8 @@ locals {
         {
           apiGroups   = ["apps"]
           apiVersions = ["v1"]
-          operations  = ["CREATE", "UPDATE"]
-          resources   = ["deployments", "daemonsets", "statefulsets", "replicasets"]
+          operations  = ["CREATE", "UPDATE", "DELETE"]
+          resources   = ["deployments", "deployments/scale", "daemonsets", "statefulsets", "replicasets"]
           scope       = "Namespaced"
         },
         {
@@ -632,13 +645,17 @@ locals {
       {
         expression = join(" ", [
           "request.resource.resource == 'nodes' || request.resource.resource != 'deployments' ||",
-          "(request.operation == 'CREATE' && object.metadata.name == '${local.current_release_name}' &&",
+          "((request.operation == 'CREATE' && object.metadata.name == '${local.current_release_name}' &&",
           "object.metadata.labels == ${local.v3_pod_labels_cel} &&",
-          "object.spec.replicas == 1 && object.spec.selector.matchLabels == ${local.v3_pod_labels_cel} &&",
+          "object.spec.replicas == 0 && object.spec.selector.matchLabels == ${local.v3_pod_labels_cel} &&",
           "object.spec.template.metadata.labels == ${local.v3_pod_labels_cel} &&",
-          "(${local.deployment_pod_spec_cel}))",
+          "(${local.deployment_pod_spec_cel})) ||",
+          "(request.operation == 'UPDATE' && request.userInfo.groups.exists(group, group == '${var.security_owner_group}') &&",
+          "object.metadata.name == '${local.current_release_name}' && object.metadata.uid == oldObject.metadata.uid &&",
+          "has(object.metadata.annotations) && 'fs2.nebius.ai/storage-cutover-transition-sha256' in object.metadata.annotations &&",
+          "object.metadata.annotations['fs2.nebius.ai/storage-cutover-transition-sha256'].matches('^[a-f0-9]{64}$'))))",
         ])
-        message = "The release Deployment differs from the signed generation, Secret allowlist, or protected scheduling contract."
+        message = "The release Deployment must start passive; only a signed externally fenced owner transition may scale it."
         reason  = "Forbidden"
       },
       {
@@ -668,13 +685,13 @@ locals {
         expression = join(" ", [
           "request.resource.resource == 'nodes' || request.resource.resource != 'replicasets' ||",
           "((${local.controller_identity_cel.deployment}) &&",
-          "request.operation == 'CREATE' && object.metadata.name.startsWith('${local.current_release_name}-') &&",
+          "request.operation in ['CREATE','UPDATE'] && object.metadata.name.startsWith('${local.current_release_name}-') &&",
           "size(object.metadata.ownerReferences) == 1 && object.metadata.ownerReferences[0].apiVersion == 'apps/v1' && object.metadata.ownerReferences[0].kind == 'Deployment' &&",
           "object.metadata.ownerReferences[0].name == '${local.current_release_name}' && object.metadata.ownerReferences[0].controller == true && object.metadata.ownerReferences[0].blockOwnerDeletion == true &&",
           "object.metadata.labels.all(key, value, (key in ${local.v3_pod_labels_cel} && ${local.v3_pod_labels_cel}[key] == value) || key == 'pod-template-hash') &&",
           "'pod-template-hash' in object.metadata.labels && object.metadata.labels['pod-template-hash'] != '' &&",
           "${local.v3_pod_labels_cel}.all(key, value, key in object.metadata.labels && object.metadata.labels[key] == value) &&",
-          "object.spec.replicas == 1 && object.spec.selector.matchLabels == object.metadata.labels &&",
+          "object.spec.replicas in [0,1] && object.spec.selector.matchLabels == object.metadata.labels &&",
           "object.spec.template.metadata.labels == object.metadata.labels && (${local.deployment_pod_spec_cel}))",
         ])
         message = "Only the approved Deployment controller may create the exact successor ReplicaSet child."
@@ -752,6 +769,14 @@ locals {
         kubernetesApiCidrs = sort(tolist(local.current_contract.kubernetes_api_cidrs))
       }
       rollout = { generation = generation }
+      activation = {
+        endpoint                   = var.provider_authority.reconciler_activation_endpoint
+        clusterId                  = var.provider_authority.cluster_id
+        publicKeyConfigMapName     = var.provider_authority.reconciler_activation_public_key_config_map_name
+        caConfigMapName            = var.provider_authority.reconciler_activation_ca_config_map_name
+        minimumEpoch               = var.provider_authority.reconciler_activation_minimum_epoch
+        cutoverReceiptSha256       = var.provider_authority.reconciler_cutover_receipt_sha256
+      }
       predecessor = {
         schema               = "fs2-serve.nebius.ai/customer-storage-egress-predecessor/v1"
         receiptSha256        = local.predecessor_compatibility_sha256
@@ -1033,6 +1058,11 @@ data "external" "daemonset_admission_fence" {
     expected_receipt_sha256                     = var.provider_authority.daemonset_admission_fence_receipt_sha256
     expected_snapshot_ledger_head_sha256        = var.provider_authority.daemonset_snapshot_ledger_head_sha256
     expected_agents_json                        = jsonencode(local.signed_blanket_agents)
+    expected_controller_identity_json = jsonencode({
+      username = var.provider_authority.controller_identities["daemonset"].username
+      uid      = var.provider_authority.controller_identities["daemonset"].uid
+      groups   = var.provider_authority.controller_identities["daemonset"].groups
+    })
   }
 }
 
@@ -1164,8 +1194,8 @@ resource "terraform_data" "separate_security_owner" {
       for role, observer in data.kubernetes_resource.protected_observer : role => {
         uid                 = observer.object.metadata.uid
         spec_sha256         = sha256(jsonencode(observer.object.spec))
-        snapshot_generation = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-generation"], "")
-        snapshot_sha256     = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-sha256"], "")
+        snapshot_generation = var.provider_authority.protected_observers[role].class == "critical-blanket-agent" ? var.provider_authority.protected_observers[role].snapshot_generation : null
+        snapshot_sha256     = var.provider_authority.protected_observers[role].class == "critical-blanket-agent" ? var.provider_authority.protected_observers[role].snapshot_sha256 : null
       }
     }))
     predecessor_network_policy_uid = data.kubernetes_resource.predecessor_network_policy.object.metadata.uid
@@ -1207,10 +1237,6 @@ resource "terraform_data" "separate_security_owner" {
         try(data.kubernetes_resource.protected_observer[role].object.metadata.uid, "") == expected.uid &&
         try(data.kubernetes_resource.protected_observer[role].object.spec, null) == expected.daemonset_spec &&
         sha256(jsonencode(try(data.kubernetes_resource.protected_observer[role].object.spec, null))) == expected.daemonset_spec_sha256 &&
-        (expected.class != "critical-blanket-agent" || (
-          try(data.kubernetes_resource.protected_observer[role].object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-generation"], "") == expected.snapshot_generation &&
-          try(data.kubernetes_resource.protected_observer[role].object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-sha256"], "") == expected.snapshot_sha256
-        )) &&
         length([
           for identity in var.kubernetes_service_account_inventory : identity.name
           if "system:serviceaccount:${identity.namespace}:${identity.name}" == expected.owner_identity.username &&
@@ -1409,8 +1435,8 @@ resource "terraform_data" "security_generation_v4" {
       for role, observer in data.kubernetes_resource.protected_observer : role => {
         uid                 = observer.object.metadata.uid
         spec_sha256         = sha256(jsonencode(observer.object.spec))
-        snapshot_generation = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-generation"], "")
-        snapshot_sha256     = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-sha256"], "")
+        snapshot_generation = var.provider_authority.protected_observers[role].class == "critical-blanket-agent" ? var.provider_authority.protected_observers[role].snapshot_generation : null
+        snapshot_sha256     = var.provider_authority.protected_observers[role].class == "critical-blanket-agent" ? var.provider_authority.protected_observers[role].snapshot_sha256 : null
       }
     }))
     boundary_backend_config_sha256          = data.external.backend_custody.result.backend_config_sha256

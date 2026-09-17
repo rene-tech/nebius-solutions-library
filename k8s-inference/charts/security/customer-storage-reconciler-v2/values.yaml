@@ -36,6 +36,14 @@ contract:
 rollout:
   generation: ""
 
+activation:
+  endpoint: ""
+  clusterId: ""
+  publicKeyConfigMapName: ""
+  caConfigMapName: ""
+  minimumEpoch: 1
+  cutoverReceiptSha256: ""
+
 predecessor:
   schema: ""
   receiptSha256: ""

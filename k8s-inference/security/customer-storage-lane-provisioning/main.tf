@@ -29,6 +29,45 @@ locals {
   }
 }
 
+# Repair is a parallel generation cutover, never an in-place replacement. A
+# successor manifest retains every predecessor map entry, gives the successor
+# a distinct lane ID and scheduling key, and makes it current. The successor
+# NodeGroup can be created and attested before the workload moves; all older
+# provider objects remain retained under prevent_destroy and ignore_changes.
+# Workload activity is transferred only by the separately signed, CAS-bound
+# executor after a QUIESCED activation epoch, not by this provider root.
+resource "terraform_data" "parallel_cutover_contract" {
+  input = {
+    ordered_generations = keys(local.lanes)
+    current_generation  = local.current_generation
+    lane_ids            = [for lane in values(local.lanes) : lane.lane_id]
+    scheduling_keys     = [for lane in values(local.lanes) : lane.scheduling_key]
+    phase                = length(local.lanes) > 1 ? "SUCCESSOR_PREPARE_ATTEST_EXTERNAL_QUIESCE_CAS_SHIFT" : "STEADY_SINGLETON"
+    predecessor_action   = "RETAIN_PROVIDER_AND_WORKLOAD_OBJECTS_QUIESCE_RECONCILER_TO_ZERO"
+    workload_shift       = "SIGNED_STORAGE_RECONCILER_CUTOVER_EXECUTOR"
+    rollback             = "HIGHER_EPOCH_ZERO_INFLIGHT_SCHEMA_AND_PROVIDER_CONTINUITY"
+    daemonset_action     = "ADOPT_EXISTING_UID_AND_IN_PLACE_SIGNED_TRANSITION"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    precondition {
+      condition = (
+        contains(keys(local.lanes), local.current_generation) &&
+        length(distinct([for lane in values(local.lanes) : lane.lane_id])) == length(local.lanes) &&
+        length(distinct([for lane in values(local.lanes) : lane.scheduling_key])) == length(local.lanes) &&
+        alltrue([
+          for lane in values(local.lanes) :
+          lane.min_node_count == 1 &&
+          lane.max_node_count == 1 &&
+          lane.node_lifecycle_mode == "PARALLEL_GENERATIONAL_SINGLETON_CUTOVER_RETAIN_PREDECESSOR"
+        ])
+      )
+      error_message = "Lane repair requires a distinct additive singleton generation while every predecessor remains retained."
+    }
+  }
+}
+
 resource "terraform_data" "signed_provisioning" {
   for_each = local.lanes
   input = {
@@ -163,8 +202,8 @@ resource "nebius_mk8s_v1_node_group" "lane" {
   }
   strategy = {
     # One generation never repairs or replaces its attested member in place.
-    # A new lane/NodeGroup may be prepared additively, but cutover and
-    # predecessor retirement require a separately reviewed lifecycle protocol.
+    # Repair creates a distinct generation above, attests its provider member,
+    # shifts the workload, and leaves the predecessor active and retained.
     max_surge       = { count = 0 }
     max_unavailable = { count = 0 }
     drain_timeout   = "30m"
@@ -203,6 +242,7 @@ resource "nebius_mk8s_v1_node_group" "lane" {
     ignore_changes  = all
   }
   depends_on = [
+    terraform_data.parallel_cutover_contract,
     nebius_vpc_v1_security_rule.private_ingress,
     nebius_vpc_v1_security_rule.dns_egress,
     nebius_vpc_v1_security_rule.database_egress,

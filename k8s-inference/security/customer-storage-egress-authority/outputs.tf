@@ -48,6 +48,11 @@ output "current_handoff" {
     daemonset_admission_fence_receipt_sha256          = data.external.authority.result.daemonset_admission_fence_receipt_sha256
     daemonset_snapshot_ledger_head_sha256             = data.external.authority.result.daemonset_snapshot_ledger_head_sha256
     node_lifecycle_mode                               = local.generations[local.authority.current_generation].node_lifecycle_mode
+    reconciler_cutover_receipt_sha256                 = local.generations[local.authority.current_generation].reconciler_cutover_receipt_sha256
+    reconciler_activation_endpoint                    = local.generations[local.authority.current_generation].reconciler_activation_endpoint
+    reconciler_activation_public_key_config_map_name  = local.generations[local.authority.current_generation].reconciler_activation_public_key_config_map_name
+    reconciler_activation_ca_config_map_name          = local.generations[local.authority.current_generation].reconciler_activation_ca_config_map_name
+    reconciler_activation_minimum_epoch               = local.generations[local.authority.current_generation].reconciler_activation_minimum_epoch
     kubernetes_rbac_inventory_sha256                  = data.external.authority.result.kubernetes_rbac_inventory_sha256
     kubernetes_rbac_effective_authority_sha256        = data.external.authority.result.kubernetes_rbac_effective_authority_sha256
     kubernetes_rbac_inventory_receipt_sha256          = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256
