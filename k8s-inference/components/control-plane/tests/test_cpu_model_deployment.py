@@ -417,8 +417,9 @@ async def test_existing_controller_bootstraps_cpu_at_zero_and_hands_off_to_keda(
     deployment = next(item for item in api.resources.values() if item.observed.kind == "Deployment")
     assert deployment.raw["spec"]["replicas"] == 0
     assert not effective_pod_requests(deployment.raw["spec"]["template"]["spec"]).accelerators
-    assert (await controller.reconcile(key, fence())).action == "autoscaler-handoff"
-    assert api.status_writes[-1]["phase"] == "Ready"
+    assert (await controller.reconcile(key, fence())).action == "autoscaler-install-pending"
+    assert api.status_writes[-1]["phase"] == "Cold"
+    assert api.status_writes[-1]["publication"]["mcp"] is True
     assert api.status_writes[-1]["admittedPoolRef"] == "batch-cpu"
     assert api.status_writes[-1]["endpoint"]["serviceName"] == "clinical-phenoage"
 

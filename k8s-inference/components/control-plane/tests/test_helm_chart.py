@@ -35,6 +35,9 @@ TEST_CATALOG_ROLLOUT_DIGEST = "sha256:" + "3" * 64
 HELM = shutil.which("helm")
 assert HELM is not None, "helm is required for chart tests"
 POSTGRESQL_CONTRACT = json.loads((CONTROL_ROOT / "contracts" / "postgresql-release-contract.json").read_text())
+SCALE_OWNERSHIP_SECURITY_BOUNDARY = json.loads(
+    (CONTROL_ROOT / "contracts" / "scale-ownership-security-boundary-v1.json").read_text()
+)
 POSTGRESQL_ANNOTATIONS = {
     "fs2.nebius.ai/postgresql-contract-schema": POSTGRESQL_CONTRACT["schema"],
     "fs2.nebius.ai/postgresql-contract-payload-sha256": POSTGRESQL_CONTRACT["contract_payload_sha256"],
@@ -882,6 +885,67 @@ def test_activation_controller_is_owned_by_the_separate_child_and_absent_from_th
         assert forbidden not in rendered
 
 
+def test_scale_ownership_security_boundary_is_external_signed_and_non_destructive() -> None:
+    contract = SCALE_OWNERSHIP_SECURITY_BOUNDARY
+    assert contract["schema"] == "fs2.scale-ownership-security-boundary/v1"
+    assert contract["status"] == "external-release-prerequisite"
+    assert len(contract["protected_resources"]) == 8
+    normal_release = contract["normal_release_boundary"]
+    assert normal_release["mutating_verbs"] == [] and normal_release["delete_verbs"] == []
+    assert set(normal_release["trusted_identities_forbidden"]) == {
+        "system:serviceaccount:fs2-security:fs2-admission-owner",
+        "system:serviceaccount:fs2-security:fs2-admission-release-automation",
+        "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller",
+        "system:serviceaccount:keda:keda-operator",
+    }
+    assert normal_release["human_access"] == {
+        "protected_resource_mutation": "forbidden",
+        "trusted_identity_impersonation": "forbidden",
+        "security_automation_identity_use": "forbidden",
+    }
+    identity_paths = normal_release["forbidden_identity_paths"]
+    assert identity_paths["rbac_verbs"] == ["bind", "escalate", "impersonate"]
+    assert "uids" in identity_paths["impersonate"]
+    assert identity_paths["token_request"] == ["serviceaccounts/token"]
+    assert {"rolebindings", "clusterrolebindings", "system:auth-delegator"}.issubset(identity_paths["delegation"])
+    deletion = contract["deletion_admission"]
+    assert deletion["operations"] == ["DELETE"] and deletion["validation_actions"] == ["Deny"]
+    assert deletion["externally_owned"] is True
+    assert deletion["policy"] in contract["protected_resources"]
+    assert deletion["binding"] in contract["protected_resources"]
+    assert "external RBAC" in deletion["self_protection"]
+    assert contract["runtime_writers"]["model_controller"]["verbs"] == ["get", "patch"]
+    assert contract["runtime_writers"]["keda_operator"]["protected_resource_verbs"] == []
+    handoff = contract["security_automation_handoff"]
+    assert {
+        "immutable bundle digest",
+        "detached signature",
+        "bounded expiry",
+        "short-lived release identity evidence",
+    }.issubset(handoff["required"])
+    assert handoff["replay_allowed"] is False
+    assert handoff["release_identity"] == "system:serviceaccount:fs2-security:fs2-admission-release-automation"
+    assert handoff["identity_constraints"] == {
+        "use": "automation-only",
+        "human_use_allowed": False,
+        "credential": "bound short-lived service account token",
+        "audience": "fs2-scale-ownership-release",
+        "maximum_lifetime_seconds": 900,
+    }
+    assert contract["recovery"] == {
+        "temporary_validation_actions": ["Audit", "Warn"],
+        "requires_signed_handoff": True,
+        "must_restore": ["Deny"],
+        "delete_protected_resources": False,
+    }
+    assert contract["enforcement_dependency"] == {
+        "source_contract_only": True,
+        "externally_owned_rbac_and_admission_required": True,
+        "retained_live_authorization_evidence_required": True,
+    }
+    assert contract["release_gate"].startswith("NO-GO")
+
+
 def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> None:
     documents = render(
         "--set",
@@ -952,6 +1016,20 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert not any("daemonsets" in rule["resources"] for rule in model_role["rules"])
     assert not any("serviceaccounts" in rule["resources"] for rule in model_role["rules"])
     assert not any("networkpolicies" in rule["resources"] for rule in model_role["rules"])
+    scale_rules = [rule for rule in model_role["rules"] if rule["resources"] == ["deployments/scale"]]
+    assert scale_rules == [{"apiGroups": ["apps"], "resources": ["deployments/scale"], "verbs": ["patch"]}]
+    assert all("deployments/scale" not in rule["resources"] for rule in model_role["rules"] if rule not in scale_rules)
+    assert deployment["spec"]["revisionHistoryLimit"] == 5
+    rollback_image = f"{TEST_REPOSITORY}@{TEST_DIGEST}"
+    assert deployment["metadata"]["annotations"] == {
+        "inference.fs2.nebius.ai/ownership-compatible-rollback-image": rollback_image,
+        "inference.fs2.nebius.ai/scale-ownership-protocol": "2",
+    }
+    assert deployment["spec"]["template"]["metadata"]["annotations"] == {
+        "fs2.nebius.ai/image-digest": TEST_DIGEST,
+        "inference.fs2.nebius.ai/ownership-compatible-rollback-image": rollback_image,
+        "inference.fs2.nebius.ai/scale-ownership-protocol": "2",
+    }
     assert not any(
         document["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "model-controller" in document["metadata"]["name"]
         for document in documents
@@ -963,6 +1041,65 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert policy["spec"]["failurePolicy"] == "Fail"
     assert policy["spec"]["matchConstraints"]["resourceRules"][0]["operations"] == ["DELETE"]
     assert "observedGeneration == oldObject.metadata.generation" in policy["spec"]["validations"][0]["expression"]
+    release_policy = named[("ValidatingAdmissionPolicy", "fs2-serve-control-plane-model-controller-release")]
+    release_binding = named[("ValidatingAdmissionPolicyBinding", "fs2-serve-control-plane-model-controller-release")]
+    assert release_policy["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
+    assert release_binding["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
+    assert release_policy["spec"]["failurePolicy"] == "Fail"
+    assert release_policy["spec"]["matchConstraints"]["resourceRules"] == [
+        {
+            "apiGroups": ["apps"],
+            "apiVersions": ["v1"],
+            "operations": ["CREATE", "UPDATE"],
+            "resources": ["deployments"],
+            "scope": "Namespaced",
+        }
+    ]
+    assert release_policy["spec"]["matchConditions"] == [
+        {
+            "name": "exact-model-controller",
+            "expression": "object.metadata.name == 'fs2-serve-control-plane-model-controller'",
+        }
+    ]
+    release_expression = release_policy["spec"]["validations"][0]["expression"]
+    assert "scale-ownership-protocol'] == '2'" in release_expression
+    assert "containers.size() == 1" in release_expression
+    assert "containers.all(c" in release_expression
+    assert "params.data.exists(k, params.data[k] == c.image)" in release_expression
+    release_images = named[("ConfigMap", "fs2-serve-control-plane-model-controller-release-images")]
+    assert release_images["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
+    assert release_images["data"] == {"current": rollback_image}
+    assert release_binding["spec"] == {
+        "policyName": "fs2-serve-control-plane-model-controller-release",
+        "paramRef": {
+            "name": "fs2-serve-control-plane-model-controller-release-images",
+            "namespace": "fs2-system",
+            "parameterNotFoundAction": "Deny",
+        },
+        "validationActions": ["Deny"],
+        "matchResources": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}},
+    }
+    scale_gate = named[("ConfigMap", "fs2-model-controller-scale-gates")]
+    assert scale_gate["metadata"]["namespace"] == "fs2-models"
+    assert scale_gate["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
+    gate_policy = named[("ValidatingAdmissionPolicy", "fs2-serve-control-plane-model-controller-scale-gates")]
+    assert gate_policy["spec"]["paramKind"] == {"apiVersion": "v1", "kind": "ConfigMap"}
+    gate_validation = gate_policy["spec"]["validations"][0]
+    assert gate_validation["message"] == "fixed-scale gate blocks autoscaler targetRef creation"
+    assert gate_validation["reason"] == "Forbidden"
+    gate_expression = gate_validation["expression"]
+    assert "params.data.exists(k, v" in gate_expression
+    assert "k.startsWith('target.')" in gate_expression
+    assert "k.startsWith('scaledobject.')" in gate_expression
+    assert "k.startsWith('hpa.')" in gate_expression
+    assert "object.spec.scaleTargetRef.apiVersion" in gate_expression
+    assert "object.spec.scaleTargetRef.kind" in gate_expression
+    assert "object.spec.scaleTargetRef.name" in gate_expression
+    assert "request.namespace" in gate_expression
+    assert "ownerReferences.filter" in gate_expression
+    assert "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller" in gate_expression
+    assert "system:serviceaccount:keda:keda-operator" in gate_expression
+    assert not any("admission-protector" in name for _, name in named)
     network = named[("NetworkPolicy", "fs2-serve-control-plane-model-controller")]
     egress = network["spec"]["egress"]
     assert next(rule for rule in egress if rule["ports"] == [{"port": 443, "protocol": "TCP"}])["to"] == [
@@ -970,6 +1107,56 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     ]
     assert any(rule["ports"] == [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}] for rule in egress)
     assert any(rule["ports"] == [{"port": 9090, "protocol": "TCP"}] for rule in egress)
+
+
+def test_model_controller_release_gate_accepts_only_explicit_immutable_rollback_images() -> None:
+    approved = "registry.nebius.cloud/unit/fs2-serve-control-plane@sha256:" + "4" * 64
+    documents = render(
+        "--set",
+        "modelController.enabled=true",
+        "--set",
+        "modelController.admission.enabled=true",
+        "--set",
+        f"modelController.admission.compatibleRollbackImages[0]={approved}",
+        "--set",
+        "modelController.infrastructureEnvelopeConfigMapName=fs2-model-envelope",
+        "--set",
+        "modelController.rendererBundlesConfigMapName=fs2-model-bundles",
+        "--set",
+        "networkPolicy.kubernetesApiCidrs[0]=10.0.0.1/32",
+    )
+    release_images = next(
+        document
+        for document in documents
+        if document["kind"] == "ConfigMap"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-model-controller-release-images"
+    )
+    assert release_images["data"] == {
+        "current": f"{TEST_REPOSITORY}@{TEST_DIGEST}",
+        "rollback-0": approved,
+    }
+
+    rejected = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        render_command(
+            "--set",
+            "modelController.enabled=true",
+            "--set",
+            "modelController.admission.enabled=true",
+            "--set-string",
+            "modelController.admission.compatibleRollbackImages[0]=registry.invalid/controller:latest",
+            "--set",
+            "modelController.infrastructureEnvelopeConfigMapName=fs2-model-envelope",
+            "--set",
+            "modelController.rendererBundlesConfigMapName=fs2-model-bundles",
+            "--set",
+            "networkPolicy.kubernetesApiCidrs[0]=10.0.0.1/32",
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "compatibleRollbackImages" in rejected.stderr and "sha256" in rejected.stderr
 
 
 def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() -> None:

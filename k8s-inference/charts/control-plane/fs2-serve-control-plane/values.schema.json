@@ -751,11 +751,29 @@
         "admission": {
           "type": "object",
           "required": [
-            "enabled"
+            "enabled",
+            "kedaServiceAccountUsername",
+            "compatibleRollbackImages"
           ],
           "properties": {
             "enabled": {
               "type": "boolean"
+            },
+            "kedaServiceAccountUsername": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253,
+              "pattern": "^system:serviceaccount:[a-z0-9]([-a-z0-9]*[a-z0-9])?:[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            },
+            "compatibleRollbackImages": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "maxLength": 2048,
+                "pattern": "^[^@]+@sha256:[a-f0-9]{64}$"
+              }
             }
           },
           "additionalProperties": false

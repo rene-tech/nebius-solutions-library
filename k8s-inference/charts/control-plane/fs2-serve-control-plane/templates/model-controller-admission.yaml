@@ -39,4 +39,194 @@ spec:
     namespaceSelector:
       matchLabels:
         kubernetes.io/metadata.name: {{ .Values.modelController.modelNamespace }}
+---
+{{- range $image := .Values.modelController.admission.compatibleRollbackImages }}
+{{- if not (regexMatch "^[^@]+@sha256:[0-9a-f]{64}$" $image) }}
+{{- fail "modelController.admission.compatibleRollbackImages entries must be immutable sha256 image references" }}
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-release-images
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+data:
+  current: {{ include "fs2-serve.image" . | quote }}
+  {{- range $index, $image := .Values.modelController.admission.compatibleRollbackImages }}
+  rollback-{{ $index }}: {{ $image | quote }}
+  {{- end }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-release
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments"]
+        scope: Namespaced
+  matchConditions:
+    - name: exact-model-controller
+      expression: object.metadata.name == '{{ include "fs2-serve.fullname" . }}-model-controller'
+  validations:
+    - expression: >-
+        has(object.metadata.annotations) &&
+        object.metadata.annotations['inference.fs2.nebius.ai/scale-ownership-protocol'] == '2' &&
+        has(object.spec.template.metadata.annotations) &&
+        object.spec.template.metadata.annotations['inference.fs2.nebius.ai/scale-ownership-protocol'] == '2' &&
+        object.spec.template.spec.containers.size() == 1 &&
+        object.spec.template.spec.containers.all(c,
+          c.name == 'model-controller' &&
+          has(params.data) && params.data.exists(k, params.data[k] == c.image))
+      message: Model controller releases and rollbacks require a protocol-v2 compatible immutable image
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-release
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  policyName: {{ include "fs2-serve.fullname" . }}-model-controller-release
+  paramRef:
+    name: {{ include "fs2-serve.fullname" . }}-model-controller-release-images
+    namespace: {{ .Release.Namespace }}
+    parameterNotFoundAction: Deny
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fs2-model-controller-scale-gates
+  namespace: {{ .Values.modelController.modelNamespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+data: {}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-scale-gates
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["autoscaling"]
+        apiVersions: ["v2"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["horizontalpodautoscalers"]
+        scope: Namespaced
+      - apiGroups: ["keda.sh"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["scaledobjects"]
+        scope: Namespaced
+  validations:
+    - expression: >-
+        !has(params.data) ||
+        !params.data.exists(k, v,
+          k.startsWith('target.') &&
+          v.startsWith(
+            '{"version":1,"target":{"apiVersion":"' +
+            (has(object.spec.scaleTargetRef.apiVersion) ? object.spec.scaleTargetRef.apiVersion : 'apps/v1') +
+            '","kind":"' +
+            (has(object.spec.scaleTargetRef.kind) ? object.spec.scaleTargetRef.kind : 'Deployment') +
+            '","namespace":"' + request.namespace +
+            '","name":"' + object.spec.scaleTargetRef.name +
+            '"},"authorization":"')) ||
+        (
+          object.kind == 'ScaledObject' &&
+          request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:{{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "controller") }}' &&
+          has(object.metadata.ownerReferences) &&
+          object.metadata.ownerReferences.filter(r, has(r.controller) && r.controller).size() == 1 &&
+          object.metadata.ownerReferences.exists(r,
+            has(r.controller) && r.controller &&
+            r.apiVersion == 'inference.fs2.nebius.ai/v1alpha1' &&
+            r.kind == 'ModelDeployment' &&
+            params.data.exists(k, v,
+              k.startsWith('scaledobject.') &&
+              v ==
+                '{"version":1,"target":{"apiVersion":"' +
+                (has(object.spec.scaleTargetRef.apiVersion) ? object.spec.scaleTargetRef.apiVersion : 'apps/v1') +
+                '","kind":"' +
+                (has(object.spec.scaleTargetRef.kind) ? object.spec.scaleTargetRef.kind : 'Deployment') +
+                '","namespace":"' + request.namespace +
+                '","name":"' + object.spec.scaleTargetRef.name +
+                '"},"targeter":{"apiVersion":"keda.sh/v1alpha1","kind":"ScaledObject","namespace":"' +
+                request.namespace + '","name":"' + object.metadata.name +
+                '","ownerUID":"' + r.uid + '"}}'))
+        ) ||
+        (
+          object.kind == 'HorizontalPodAutoscaler' &&
+          request.userInfo.username == '{{ required "modelController.admission.kedaServiceAccountUsername is required when admission is enabled" .Values.modelController.admission.kedaServiceAccountUsername }}' &&
+          has(object.metadata.ownerReferences) &&
+          object.metadata.ownerReferences.filter(r, has(r.controller) && r.controller).size() == 1 &&
+          object.metadata.ownerReferences.exists(r,
+            has(r.controller) && r.controller &&
+            r.apiVersion == 'keda.sh/v1alpha1' &&
+            r.kind == 'ScaledObject' &&
+            params.data.exists(k, v,
+              k.startsWith('hpa.') &&
+              v ==
+                '{"version":1,"target":{"apiVersion":"' + object.spec.scaleTargetRef.apiVersion +
+                '","kind":"' + object.spec.scaleTargetRef.kind +
+                '","namespace":"' + request.namespace +
+                '","name":"' + object.spec.scaleTargetRef.name +
+                '"},"targeter":{"apiVersion":"autoscaling/v2","kind":"HorizontalPodAutoscaler","namespace":"' +
+                request.namespace + '","name":"' + object.metadata.name +
+                '","ownerUID":"' + r.uid + '"}}'))
+        )
+      message: fixed-scale gate blocks autoscaler targetRef creation
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-scale-gates
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  policyName: {{ include "fs2-serve.fullname" . }}-model-controller-scale-gates
+  paramRef:
+    name: fs2-model-controller-scale-gates
+    namespace: {{ .Values.modelController.modelNamespace }}
+    parameterNotFoundAction: Deny
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.modelController.modelNamespace }}
 {{- end }}

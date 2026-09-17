@@ -90,9 +90,19 @@ async def test_ready_hot_route_survives_independent_burst_scaleup(burst_phase: s
 @pytest.mark.parametrize(
     "control",
     [
-        "healthy-hot", "terminating-burst", "stale-hot", "no-hot", "foreign-hpa",
-        "wrong-hpa-target", "stale-hpa-generation", "unhealthy-hpa", "metrics-error",
-        "unhealthy-scaler", "replicas-not-relinquished", "target-not-zero", "hpa-not-zero",
+        "healthy-hot",
+        "terminating-burst",
+        "stale-hot",
+        "no-hot",
+        "foreign-hpa",
+        "wrong-hpa-target",
+        "stale-hpa-generation",
+        "unhealthy-hpa",
+        "metrics-error",
+        "unhealthy-scaler",
+        "replicas-not-relinquished",
+        "target-not-zero",
+        "hpa-not-zero",
     ],
 )
 async def test_hot_route_survives_verified_idle_hpa_acknowledgement_lag(control: str, monkeypatch) -> None:
@@ -106,16 +116,21 @@ async def test_hot_route_survives_verified_idle_hpa_acknowledgement_lag(control:
     raw["spec"] = spec.model_dump(mode="json", by_alias=True)
     api = FakeApi(raw)
     subject = ModelDeploymentController(
-        api=api, envelope=reserved_and_preemptible_envelope(), renderer=renderer(),
-        namespace="fs2-models", holder_identity="fs2-system/controller:pod-uid",
-        prometheus_server_address="http://prometheus:9090", writes_enabled=True,
+        api=api,
+        envelope=reserved_and_preemptible_envelope(),
+        renderer=renderer(),
+        namespace="fs2-models",
+        holder_identity="fs2-system/controller:pod-uid",
+        prometheus_server_address="http://prometheus:9090",
+        writes_enabled=True,
         active_operations=ZeroActiveOperations(),
     )
     key = ModelKey(namespace="fs2-models", name="qwen-live")
     for _ in range(3):
         await subject.reconcile(key, fence())
     hot = next(
-        item for item in api.resources.values()
+        item
+        for item in api.resources.values()
         if item.observed.kind == "Deployment"
         and item.raw["metadata"]["annotations"]["fs2-serve.nebius.ai/workload-role"] == "hot"
     )
@@ -132,7 +147,10 @@ async def test_hot_route_survives_verified_idle_hpa_acknowledgement_lag(control:
     elif control == "stale-hot":
         hot.observed_generation = 0
     elif control == "no-hot":
-        hot.desired_replicas = hot.replicas = hot.updated_replicas = 0
+        # Keep the admitted fixed target at one replica while observing no
+        # running hot Pod. Changing the desired count itself is now repaired
+        # by the receipt-backed /scale reconciler before status publication.
+        hot.replicas = hot.updated_replicas = 0
         hot.ready_replicas = hot.available_replicas = hot.unavailable_replicas = 0
     elif control == "foreign-hpa":
         hpa.observed.controller_owner_uid = "another-scaler"

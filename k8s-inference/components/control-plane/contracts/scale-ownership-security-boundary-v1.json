@@ -1,0 +1,96 @@
+{
+  "schema": "fs2.scale-ownership-security-boundary/v1",
+  "status": "external-release-prerequisite",
+  "security_owner": "system:serviceaccount:fs2-security:fs2-admission-owner",
+  "protected_resources": [
+    "admissionregistration.k8s.io/validatingadmissionpolicies/fs2-security-model-controller-protected-deletion",
+    "admissionregistration.k8s.io/validatingadmissionpolicies/fs2-serve-control-plane-model-controller-release",
+    "admissionregistration.k8s.io/validatingadmissionpolicies/fs2-serve-control-plane-model-controller-scale-gates",
+    "admissionregistration.k8s.io/validatingadmissionpolicybindings/fs2-security-model-controller-protected-deletion",
+    "admissionregistration.k8s.io/validatingadmissionpolicybindings/fs2-serve-control-plane-model-controller-release",
+    "admissionregistration.k8s.io/validatingadmissionpolicybindings/fs2-serve-control-plane-model-controller-scale-gates",
+    "v1/namespaces/fs2-system/configmaps/fs2-serve-control-plane-model-controller-release-images",
+    "v1/namespaces/fs2-models/configmaps/fs2-model-controller-scale-gates"
+  ],
+  "normal_release_boundary": {
+    "mutating_verbs": [],
+    "delete_verbs": [],
+    "trusted_identities_forbidden": [
+      "system:serviceaccount:fs2-security:fs2-admission-owner",
+      "system:serviceaccount:fs2-security:fs2-admission-release-automation",
+      "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller",
+      "system:serviceaccount:keda:keda-operator"
+    ],
+    "human_access": {
+      "protected_resource_mutation": "forbidden",
+      "trusted_identity_impersonation": "forbidden",
+      "security_automation_identity_use": "forbidden"
+    },
+    "forbidden_identity_paths": {
+      "impersonate": ["users", "groups", "serviceaccounts", "userextras", "uids"],
+      "token_request": ["serviceaccounts/token"],
+      "workload_service_account_use": ["pods", "deployments", "replicasets", "statefulsets", "daemonsets", "jobs", "cronjobs"],
+      "delegation": ["roles", "clusterroles", "rolebindings", "clusterrolebindings", "system:auth-delegator"],
+      "rbac_verbs": ["bind", "escalate", "impersonate"]
+    }
+  },
+  "deletion_admission": {
+    "policy": "admissionregistration.k8s.io/validatingadmissionpolicies/fs2-security-model-controller-protected-deletion",
+    "binding": "admissionregistration.k8s.io/validatingadmissionpolicybindings/fs2-security-model-controller-protected-deletion",
+    "owner": "system:serviceaccount:fs2-security:fs2-admission-owner",
+    "operations": ["DELETE"],
+    "validation_actions": ["Deny"],
+    "externally_owned": true,
+    "self_protection": "authoritative external RBAC; admission policy deletion is never treated as self-protected"
+  },
+  "runtime_writers": {
+    "model_controller": {
+      "resource": "v1/namespaces/fs2-models/configmaps/fs2-model-controller-scale-gates",
+      "verbs": ["get", "patch"],
+      "mutation_scope": "data keys for exact receipt, targeter allowance, and tombstone state only",
+      "autoscaler_transition_record": {
+        "model_fence": ["uid", "resourceVersion", "generation", "specDigest"],
+        "scaler_fence": ["uid", "resourceVersion", "generation", "projectedManifestDigest"],
+        "phases": ["prepared", "applied", "closed"],
+        "prepared_semantics": "authorize exactly absent-or-recorded-old to desired digest once",
+        "applied_semantics": "read-only durable postcondition; no further ScaledObject mutation",
+        "fixed_reversal": "a newer exact fixed generation persists a closed record and removes every older allowance before any fixed write"
+      }
+    },
+    "keda_operator": {
+      "protected_resource_verbs": []
+    }
+  },
+  "security_automation_handoff": {
+    "release_identity": "system:serviceaccount:fs2-security:fs2-admission-release-automation",
+    "identity_constraints": {
+      "use": "automation-only",
+      "human_use_allowed": false,
+      "credential": "bound short-lived service account token",
+      "audience": "fs2-scale-ownership-release",
+      "maximum_lifetime_seconds": 900
+    },
+    "required": [
+      "immutable bundle digest",
+      "detached signature",
+      "review ticket",
+      "approver identity",
+      "bounded expiry",
+      "short-lived release identity evidence"
+    ],
+    "mutation_scope": "the eight protected resources only",
+    "replay_allowed": false
+  },
+  "recovery": {
+    "temporary_validation_actions": ["Audit", "Warn"],
+    "requires_signed_handoff": true,
+    "must_restore": ["Deny"],
+    "delete_protected_resources": false
+  },
+  "enforcement_dependency": {
+    "source_contract_only": true,
+    "externally_owned_rbac_and_admission_required": true,
+    "retained_live_authorization_evidence_required": true
+  },
+  "release_gate": "NO-GO until an external security owner enforces this contract and supplies retained authorization evidence"
+}
