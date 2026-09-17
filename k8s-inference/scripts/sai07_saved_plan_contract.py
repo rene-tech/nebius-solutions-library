@@ -28,8 +28,12 @@ MAX_TERRAFORM_BYTES = 256 * 1024 * 1024
 MAX_PLAN_BYTES = 512 * 1024 * 1024
 MAX_PLAN_JSON_BYTES = 512 * 1024 * 1024
 ALLOWED_ACTIONS = {("create",), ("no-op",), ("read",), ("update",)}
+SYNCHRONOUS_SETTLEMENT_PROVIDERS = {
+    "registry.terraform.io/hashicorp/kubernetes",
+    "terraform.io/builtin/terraform",
+}
 SHA256_HEX = frozenset("0123456789abcdef")
-CAPSULE_FD_RE = re.compile(r"^/proc/1/fd/(?:19[1-4]|197|198)$")
+CAPSULE_FD_RE = re.compile(r"^/proc/1/fd/(?:19[1-4]|197|198|201|202)$")
 REQUIRED_MEMFD_SEALS = (
     fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
 )
@@ -128,6 +132,242 @@ def _root_variable(plan: dict[str, Any], name: str) -> Any:
     if not isinstance(entry, dict) or set(entry) != {"value"}:
         raise SavedPlanError(f"saved plan omits exact root variable {name}")
     return entry["value"]
+
+
+def _known_projection(value: Any, unknown: Any) -> Any:
+    """Retain exact planned values while representing provider-computed leaves."""
+
+    if unknown is True:
+        return {"provider_computed": True}
+    if isinstance(value, dict):
+        unknown_fields = unknown if isinstance(unknown, dict) else {}
+        return {
+            key: _known_projection(item, unknown_fields.get(key, False))
+            for key, item in sorted(value.items())
+        }
+    if isinstance(value, list):
+        unknown_items = unknown if isinstance(unknown, list) else []
+        return [
+            _known_projection(
+                item, unknown_items[index] if index < len(unknown_items) else False
+            )
+            for index, item in enumerate(value)
+        ]
+    return value
+
+
+def _show_plan_document(
+    executable: str, terraform_fd: int, plan_fd: int, label: str
+) -> dict[str, Any]:
+    payload = _run_bounded(
+        [executable, "show", "-json", f"/proc/self/fd/{plan_fd}"],
+        (terraform_fd, plan_fd),
+        label,
+    )
+    try:
+        document = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SavedPlanError(f"{label} is not JSON") from error
+    if (
+        not isinstance(document, dict)
+        or not isinstance(document.get("configuration"), dict)
+        or not isinstance(document.get("planned_values"), dict)
+        or not isinstance(document.get("resource_changes"), list)
+    ):
+        raise SavedPlanError(f"{label} is incomplete")
+    return document
+
+
+def _resource_change_map(
+    plan: dict[str, Any], label: str
+) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for index, raw in enumerate(plan["resource_changes"]):
+        if not isinstance(raw, dict):
+            raise SavedPlanError(f"{label} resource_changes[{index}] is malformed")
+        address = raw.get("address")
+        change = raw.get("change")
+        actions = change.get("actions") if isinstance(change, dict) else None
+        if (
+            not isinstance(address, str)
+            or not address
+            or address in result
+            or not isinstance(actions, list)
+        ):
+            raise SavedPlanError(f"{label} contains a malformed or duplicate change")
+        result[address] = raw
+    return result
+
+
+def verify_settled_plans(
+    original_plan_path: Path,
+    settlement_plan_a_path: Path,
+    settlement_plan_b_path: Path,
+    terraform_path: Path,
+    expected_terraform_sha256: str,
+    expected_terraform_version: str,
+) -> dict[str, str]:
+    """Prove two fresh provider reads converge on the exact planned postconditions."""
+
+    terraform_fd, terraform_metadata = _open_regular(
+        terraform_path, "Terraform executable", MAX_TERRAFORM_BYTES
+    )
+    opened: list[tuple[int, os.stat_result, str]] = []
+    try:
+        if _hash_descriptor(
+            terraform_fd, terraform_metadata, "Terraform executable"
+        ) != expected_terraform_sha256:
+            raise SavedPlanError("Terraform executable differs from the capsule pin")
+        for path, label in (
+            (original_plan_path, "authorized saved plan"),
+            (settlement_plan_a_path, "first settlement plan"),
+            (settlement_plan_b_path, "second settlement plan"),
+        ):
+            descriptor, metadata = _open_regular(path, label, MAX_PLAN_BYTES)
+            if (
+                str(path).startswith("/proc/1/fd/")
+                and fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & REQUIRED_MEMFD_SEALS
+                != REQUIRED_MEMFD_SEALS
+            ):
+                raise SavedPlanError(f"{label} descriptor is not write sealed")
+            opened.append((descriptor, metadata, label))
+        executable = f"/proc/self/fd/{terraform_fd}"
+        version_bytes = _run_bounded(
+            [executable, "version", "-json"],
+            (terraform_fd,),
+            "Terraform version query",
+        )
+        try:
+            version_document = json.loads(version_bytes)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise SavedPlanError("Terraform version response is not JSON") from error
+        if version_document.get("terraform_version") != expected_terraform_version:
+            raise SavedPlanError("Terraform version differs from the capsule pin")
+        documents = [
+            _show_plan_document(executable, terraform_fd, descriptor, label)
+            for descriptor, _metadata, label in opened
+        ]
+        original, first, second = documents
+        configuration_sha256 = _digest_member(original, "configuration")
+        variables_sha256 = _digest_member(original, "variables")
+        if any(
+            document.get("terraform_version") != expected_terraform_version
+            or _digest_member(document, "configuration") != configuration_sha256
+            or _digest_member(document, "variables") != variables_sha256
+            for document in (first, second)
+        ):
+            raise SavedPlanError(
+                "settlement plans differ from the authorized configuration or variables"
+            )
+        original_changes = _resource_change_map(original, "authorized plan")
+        settlement_maps = (
+            _resource_change_map(first, "first settlement plan"),
+            _resource_change_map(second, "second settlement plan"),
+        )
+        postconditions: list[dict[str, Any]] = []
+        for address, raw in sorted(original_changes.items()):
+            if raw.get("mode") != "managed":
+                continue
+            provider = raw.get("provider_name")
+            change = raw["change"]
+            actions = tuple(change.get("actions", []))
+            if (
+                actions not in {("create",), ("update",), ("no-op",)}
+                or (
+                    actions != ("no-op",)
+                    and provider not in SYNCHRONOUS_SETTLEMENT_PROVIDERS
+                )
+            ):
+                raise SavedPlanError(
+                    "authorized mutation lacks synchronous Kubernetes settlement semantics"
+                )
+            expected = _known_projection(
+                change.get("after"), change.get("after_unknown", False)
+            )
+            observations: list[Any] = []
+            for settlement in settlement_maps:
+                observed = settlement.get(address)
+                observed_change = (
+                    observed.get("change") if isinstance(observed, dict) else None
+                )
+                if (
+                    not isinstance(observed_change, dict)
+                    or tuple(observed_change.get("actions", [])) != ("no-op",)
+                    or observed.get("mode") != "managed"
+                    or observed.get("provider_name") != provider
+                ):
+                    raise SavedPlanError(
+                        "refreshed settlement plan has an absent or non-no-op managed object"
+                    )
+                projection = _known_projection(
+                    observed_change.get("before"), change.get("after_unknown", False)
+                )
+                if projection != expected:
+                    raise SavedPlanError(
+                        "refreshed live state differs from an exact planned-object postcondition"
+                    )
+                observations.append(projection)
+            if observations[0] != observations[1]:
+                raise SavedPlanError("planned-object postcondition did not settle twice")
+            postconditions.append(
+                {
+                    "address": address,
+                    "known_after_sha256": hashlib.sha256(
+                        canonical(expected)
+                    ).hexdigest(),
+                    "provider_name": provider,
+                    "type": raw.get("type"),
+                }
+            )
+        if not any(
+            item["provider_name"] == "registry.terraform.io/hashicorp/kubernetes"
+            for item in postconditions
+        ):
+            raise SavedPlanError(
+                "settlement proof contains no authoritative Kubernetes object"
+            )
+        for settlement in settlement_maps:
+            for raw in settlement.values():
+                if raw.get("mode") == "managed" and tuple(
+                    raw.get("change", {}).get("actions", [])
+                ) != ("no-op",):
+                    raise SavedPlanError(
+                        "authoritative refreshed state has an unsettled managed action"
+                    )
+        first_state = {
+            "planned_values": first.get("planned_values"),
+            "resource_changes": first.get("resource_changes"),
+            "resource_drift": first.get("resource_drift"),
+        }
+        second_state = {
+            "planned_values": second.get("planned_values"),
+            "resource_changes": second.get("resource_changes"),
+            "resource_drift": second.get("resource_drift"),
+        }
+        if first_state != second_state:
+            raise SavedPlanError(
+                "two authoritative provider refreshes did not reach the same state"
+            )
+        return {
+            "authoritative_refreshed_state_sha256": hashlib.sha256(
+                canonical(second_state)
+            ).hexdigest(),
+            "first_settlement_plan_sha256": _hash_descriptor(
+                opened[1][0], opened[1][1], opened[1][2]
+            ),
+            "planned_object_postconditions_sha256": hashlib.sha256(
+                canonical(postconditions)
+            ).hexdigest(),
+            "second_settlement_plan_sha256": _hash_descriptor(
+                opened[2][0], opened[2][1], opened[2][2]
+            ),
+            "settled_object_count": str(len(postconditions)),
+            "status": "authoritative-provider-settlement-proved",
+        }
+    finally:
+        for descriptor, _metadata, _label in opened:
+            os.close(descriptor)
+        os.close(terraform_fd)
 
 
 def inspect_saved_plan(

@@ -22,7 +22,9 @@ import hashlib
 import json
 import os
 import re
+import signal
 import stat
+import struct
 import subprocess
 import sys
 import time
@@ -55,12 +57,13 @@ MAX_JSON_BYTES = 8 * 1024 * 1024
 MAX_KUBECONFIG_BYTES = 4 * 1024 * 1024
 MAX_PLAN_BYTES = 512 * 1024 * 1024
 MAX_RUNTIME_FILE_BYTES = 512 * 1024 * 1024
-PLAN_TIMEOUT_SECONDS = 180
-ACK_WAIT_SECONDS = 180
-APPLY_TIMEOUT_SECONDS = 180
+PLAN_TIMEOUT_SECONDS = 90
+ACK_WAIT_SECONDS = 90
+APPLY_TIMEOUT_SECONDS = 120
+SETTLEMENT_PLAN_TIMEOUT_SECONDS = 45
 POST_APPLY_FENCE_SECONDS = 30
-VERIFIER_TIMEOUT_SECONDS = 120
-KUBERNETES_READ_TIMEOUT_SECONDS = 10
+VERIFIER_TIMEOUT_SECONDS = 60
+KUBERNETES_READ_TIMEOUT_SECONDS = 5
 MAX_ADMISSION_OBJECTS = 8
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 OCI_DIGEST_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
@@ -80,6 +83,7 @@ FDS = {
     "provider_authority_key": 186,
     "backend_authority_key": 187,
     "epoch_admission": 188,
+    "image_provenance": 189,
     "source_bundle": 190,
     "python": 191,
     "openssl": 192,
@@ -90,6 +94,9 @@ FDS = {
     "saved_plan": 197,
     "platform_kubeconfig": 198,
     "cluster_ca": 199,
+    "image_sbom": 200,
+    "settlement_plan_a": 201,
+    "settlement_plan_b": 202,
 }
 
 
@@ -426,18 +433,218 @@ def seal_path(
     return seal_bytes(payload, target_fd, label, maximum)
 
 
-def create_plan_fd() -> None:
+def verify_static_elf(descriptor: int, label: str) -> None:
+    """Reject a bootstrap executable that can load any unpinned runtime code."""
+
+    header = os.pread(descriptor, 64, 0)
+    if (
+        len(header) != 64
+        or header[:4] != b"\x7fELF"
+        or header[4] != 2  # ELFCLASS64
+        or header[5] != 1  # ELFDATA2LSB
+        or header[6] != 1  # EV_CURRENT
+    ):
+        raise AuthorizedApplyV4Error(f"{label} is not a supported 64-bit ELF")
+    unpacked = struct.unpack("<16sHHIQQQIHHHHHH", header)
+    machine = unpacked[2]
+    program_offset = unpacked[5]
+    program_entry_size = unpacked[9]
+    program_count = unpacked[10]
+    if (
+        machine not in {62, 183}  # EM_X86_64, EM_AARCH64
+        or program_entry_size != 56
+        or program_count <= 0
+        or program_count > 256
+    ):
+        raise AuthorizedApplyV4Error(f"{label} ELF architecture/table is unsupported")
+    dynamic_segments: list[tuple[int, int]] = []
+    for index in range(program_count):
+        entry = os.pread(
+            descriptor,
+            program_entry_size,
+            program_offset + index * program_entry_size,
+        )
+        if len(entry) != program_entry_size:
+            raise AuthorizedApplyV4Error(f"{label} ELF program table is truncated")
+        program_type, _flags, offset, _vaddr, _paddr, file_size, _mem_size, _align = (
+            struct.unpack("<IIQQQQQQ", entry)
+        )
+        if program_type == 3:  # PT_INTERP
+            raise AuthorizedApplyV4Error(f"{label} has an unpinned ELF interpreter")
+        if program_type == 2:  # PT_DYNAMIC
+            dynamic_segments.append((offset, file_size))
+    for offset, file_size in dynamic_segments:
+        if file_size % 16 or file_size > 1024 * 1024:
+            raise AuthorizedApplyV4Error(f"{label} ELF dynamic table is malformed")
+        dynamic = os.pread(descriptor, file_size, offset)
+        if len(dynamic) != file_size:
+            raise AuthorizedApplyV4Error(f"{label} ELF dynamic table is truncated")
+        for entry_offset in range(0, len(dynamic), 16):
+            tag, _value = struct.unpack(
+                "<qQ", dynamic[entry_offset : entry_offset + 16]
+            )
+            if tag == 1:  # DT_NEEDED
+                raise AuthorizedApplyV4Error(
+                    f"{label} has an unpinned shared-library dependency"
+                )
+            if tag == 0:  # DT_NULL
+                break
+
+
+def read_sealed_json_descriptor(
+    descriptor: int, expected_sha256: str, label: str
+) -> dict[str, Any]:
+    metadata = os.fstat(descriptor)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_size <= 0
+        or metadata.st_size > MAX_JSON_BYTES
+        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & SEALS != SEALS
+    ):
+        raise AuthorizedApplyV4Error(f"{label} is not a bounded sealed file")
+    payload = os.pread(descriptor, metadata.st_size, 0)
+    if len(payload) != metadata.st_size or sha256(payload) != expected_sha256:
+        raise AuthorizedApplyV4Error(f"{label} differs from its signed digest")
+    try:
+        document = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise AuthorizedApplyV4Error(f"{label} is not JSON") from error
+    if not isinstance(document, dict) or payload != canonical(document):
+        raise AuthorizedApplyV4Error(f"{label} is not canonical JSON")
+    return document
+
+
+def validate_image_evidence(
+    image: dict[str, Any],
+    pod_claim: dict[str, Any],
+    runtime_files_contract: dict[str, Any],
+) -> None:
+    digest = image.get("digest")
+    reference = image.get("reference")
+    image_id = pod_claim.get("image_id")
+    provenance_sha256 = image.get("provenance_sha256")
+    sbom_sha256 = image.get("sbom_sha256")
+    if (
+        not isinstance(digest, str)
+        or not OCI_DIGEST_RE.fullmatch(digest)
+        or pod_claim.get("image_digest") != digest
+        or not isinstance(reference, str)
+        or reference.count("@") != 1
+        or reference.rsplit("@", 1)[1] != digest
+        or not isinstance(image_id, str)
+        or re.search(r"(?:@|://)(sha256:[a-f0-9]{64})$", image_id) is None
+        or re.search(r"(?:@|://)(sha256:[a-f0-9]{64})$", image_id).group(1)
+        != digest
+        or not isinstance(provenance_sha256, str)
+        or not SHA256_RE.fullmatch(provenance_sha256)
+        or provenance_sha256 == "0" * 64
+        or not isinstance(sbom_sha256, str)
+        or not SHA256_RE.fullmatch(sbom_sha256)
+        or sbom_sha256 == "0" * 64
+    ):
+        raise AuthorizedApplyV4Error(
+            "signed image reference, resolved image ID, and digest are not cross-bound"
+        )
+    provenance_contract = exact(
+        runtime_files_contract.get("image_provenance"),
+        {"fd", "path", "sha256"},
+        "image provenance runtime file",
+    )
+    sbom_contract = exact(
+        runtime_files_contract.get("image_sbom"),
+        {"fd", "path", "sha256"},
+        "image SBOM runtime file",
+    )
+    if (
+        provenance_contract["fd"] != FDS["image_provenance"]
+        or provenance_contract["sha256"] != provenance_sha256
+        or sbom_contract["fd"] != FDS["image_sbom"]
+        or sbom_contract["sha256"] != sbom_sha256
+    ):
+        raise AuthorizedApplyV4Error(
+            "signed image evidence differs from the capsule descriptor pins"
+        )
+    provenance = exact(
+        read_sealed_json_descriptor(
+            FDS["image_provenance"], provenance_sha256, "image provenance"
+        ),
+        {
+            "build_type",
+            "builder_id",
+            "image",
+            "materials_sha256",
+            "predicate_type",
+            "schema",
+        },
+        "image provenance",
+    )
+    provenance_image = exact(
+        provenance["image"], {"digest", "reference"}, "provenance image"
+    )
+    if (
+        provenance["schema"] != "fs2-serve.nebius.ai/image-provenance/v1"
+        or provenance["predicate_type"] != "https://slsa.dev/provenance/v1"
+        or not isinstance(provenance["builder_id"], str)
+        or not provenance["builder_id"]
+        or not isinstance(provenance["build_type"], str)
+        or not provenance["build_type"]
+        or not isinstance(provenance["materials_sha256"], str)
+        or not SHA256_RE.fullmatch(provenance["materials_sha256"])
+        or provenance["materials_sha256"] == "0" * 64
+        or provenance_image != {"digest": digest, "reference": reference}
+    ):
+        raise AuthorizedApplyV4Error(
+            "image provenance is incomplete or selects another image"
+        )
+    sbom = exact(
+        read_sealed_json_descriptor(FDS["image_sbom"], sbom_sha256, "image SBOM"),
+        {"document", "format", "image", "schema"},
+        "image SBOM envelope",
+    )
+    sbom_image = exact(sbom["image"], {"digest", "reference"}, "SBOM image")
+    document = sbom["document"]
+    described = document.get("documentDescribes") if isinstance(document, dict) else None
+    packages = document.get("packages") if isinstance(document, dict) else None
+    package_ids = {
+        package.get("SPDXID")
+        for package in packages or []
+        if isinstance(package, dict) and isinstance(package.get("SPDXID"), str)
+    }
+    if (
+        sbom["schema"] != "fs2-serve.nebius.ai/image-sbom/v1"
+        or sbom["format"] != "spdx-json"
+        or sbom_image != {"digest": digest, "reference": reference}
+        or not isinstance(document, dict)
+        or document.get("spdxVersion") != "SPDX-2.3"
+        or document.get("SPDXID") != "SPDXRef-DOCUMENT"
+        or document.get("dataLicense") != "CC0-1.0"
+        or not isinstance(document.get("name"), str)
+        or not document["name"]
+        or not isinstance(document.get("documentNamespace"), str)
+        or not document["documentNamespace"].startswith("https://")
+        or not isinstance(document.get("creationInfo"), dict)
+        or not isinstance(described, list)
+        or not described
+        or not isinstance(packages, list)
+        or not packages
+        or any(not isinstance(value, str) or value not in package_ids for value in described)
+    ):
+        raise AuthorizedApplyV4Error("image SBOM is incomplete or selects another image")
+
+
+def create_plan_fd(
+    descriptor_number: int = FDS["saved_plan"], label: str = "sai07-saved-plan"
+) -> None:
     descriptor = os.memfd_create(
-        "sai07-saved-plan", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING
+        label, os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING
     )
     try:
-        os.dup2(descriptor, FDS["saved_plan"], inheritable=True)
+        os.dup2(descriptor, descriptor_number, inheritable=True)
     finally:
         os.close(descriptor)
 
 
-def seal_plan_fd() -> str:
-    descriptor = FDS["saved_plan"]
+def seal_plan_fd(descriptor: int = FDS["saved_plan"], label: str = "saved plan") -> str:
     metadata = os.fstat(descriptor)
     if (
         not stat.S_ISREG(metadata.st_mode)
@@ -445,12 +652,12 @@ def seal_plan_fd() -> str:
         or metadata.st_size > MAX_PLAN_BYTES
     ):
         raise AuthorizedApplyV4Error(
-            "Terraform did not create a bounded nonempty saved plan"
+            f"Terraform did not create a bounded nonempty {label}"
         )
     os.fsync(descriptor)
     fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, SEALS)
     if fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & SEALS != SEALS:
-        raise AuthorizedApplyV4Error("saved-plan descriptor is not write sealed")
+        raise AuthorizedApplyV4Error(f"{label} descriptor is not write sealed")
     os.lseek(descriptor, 0, os.SEEK_SET)
     digest = hashlib.sha256()
     remaining = metadata.st_size
@@ -461,7 +668,7 @@ def seal_plan_fd() -> str:
         digest.update(chunk)
         remaining -= len(chunk)
     if remaining:
-        raise AuthorizedApplyV4Error("saved plan became short while hashing")
+        raise AuthorizedApplyV4Error(f"{label} became short while hashing")
     return digest.hexdigest()
 
 
@@ -544,6 +751,7 @@ def verify_attestation(
         "bootstrap OpenSSL",
         MAX_RUNTIME_FILE_BYTES,
     )
+    verify_static_elf(FDS["openssl"], "bootstrap OpenSSL")
     public_key = read_regular(ATTESTATION_KEY_PATH, "attestation public key", 65536)
     attestation_bytes, attestation = load_canonical(
         RUNTIME_ATTESTATION_PATH, "runtime attestation"
@@ -599,6 +807,24 @@ def verify_attestation(
     if (
         image["digest"] != pod_claim["image_digest"]
         or not OCI_DIGEST_RE.fullmatch(str(image["digest"]))
+        or not isinstance(image["reference"], str)
+        or image["reference"].count("@") != 1
+        or image["reference"].rsplit("@", 1)[1] != image["digest"]
+        or not isinstance(pod_claim["image_id"], str)
+        or re.search(
+            r"(?:@|://)(sha256:[a-f0-9]{64})$", pod_claim["image_id"]
+        )
+        is None
+        or re.search(
+            r"(?:@|://)(sha256:[a-f0-9]{64})$", pod_claim["image_id"]
+        ).group(1)
+        != image["digest"]
+        or any(
+            not isinstance(image[field], str)
+            or not SHA256_RE.fullmatch(image[field])
+            or image[field] == "0" * 64
+            for field in ("provenance_sha256", "sbom_sha256")
+        )
         or os.environ.get("FS2_SAI07_POD_NAME") != pod_claim["name"]
         or os.environ.get("FS2_SAI07_POD_NAMESPACE") != pod_claim["namespace"]
         or os.environ.get("FS2_SAI07_POD_UID") != pod_claim["uid"]
@@ -804,26 +1030,136 @@ def run_json(
     input_bytes: bytes | None = None,
     timeout_seconds: int = VERIFIER_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
-    completed = subprocess.run(
+    process = subprocess.Popen(
         command,
-        check=False,
-        input=input_bytes,
-        capture_output=True,
+        stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
         env=environment,
         pass_fds=pass_fds,
-        timeout=timeout_seconds,
+        start_new_session=True,
     )
-    if completed.returncode != 0 or len(completed.stdout) > MAX_JSON_BYTES:
+    try:
+        stdout, _stderr = process.communicate(
+            input=input_bytes,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as error:
+        fence_capsule_descendants(process.pid, label)
+        process.wait(timeout=1)
+        raise AuthorizedApplyV4Error(f"{label} exceeded its time bound") from error
+    fence_capsule_descendants(process.pid, label)
+    if process.returncode != 0 or len(stdout) > MAX_JSON_BYTES:
         raise AuthorizedApplyV4Error(
             f"{label} rejected, failed, or exceeded the output bound"
         )
     try:
-        value = json.loads(completed.stdout)
+        value = json.loads(stdout)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise AuthorizedApplyV4Error(f"{label} output is not JSON") from error
     if not isinstance(value, dict):
         raise AuthorizedApplyV4Error(f"{label} output is not an object")
     return value
+
+
+def capsule_descendants() -> list[int]:
+    if os.getpid() != 1:
+        raise AuthorizedApplyV4Error("descendant fencing requires capsule PID 1")
+    result: list[int] = []
+    for entry in Path("/proc").iterdir():
+        if entry.name.isdigit() and int(entry.name) != 1:
+            result.append(int(entry.name))
+    return sorted(result)
+
+
+def reap_capsule_children() -> None:
+    while True:
+        try:
+            pid, _status = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if pid == 0:
+            return
+
+
+def fence_capsule_descendants(process_group: int, label: str) -> None:
+    """Stop, terminate, reap, and prove absence of every capsule descendant."""
+
+    if not capsule_descendants():
+        return
+    try:
+        os.killpg(process_group, signal.SIGSTOP)
+    except ProcessLookupError:
+        pass
+    deadline = time.monotonic() + 10
+    while True:
+        descendants = capsule_descendants()
+        for pid in descendants:
+            try:
+                os.kill(pid, signal.SIGSTOP)
+            except ProcessLookupError:
+                pass
+        for selected_signal in (signal.SIGTERM, signal.SIGKILL):
+            for pid in descendants:
+                try:
+                    os.kill(pid, selected_signal)
+                except ProcessLookupError:
+                    pass
+            until = min(deadline, time.monotonic() + 1)
+            while time.monotonic() < until:
+                reap_capsule_children()
+                if not capsule_descendants():
+                    return
+                time.sleep(0.05)
+        if time.monotonic() >= deadline:
+            raise AuthorizedApplyV4Error(
+                f"{label} descendants did not reach a proven empty PID namespace"
+            )
+
+
+def run_terraform_supervised(
+    command: list[str],
+    pass_fds: tuple[int, ...],
+    environment: dict[str, str],
+    timeout_seconds: int,
+    label: str,
+) -> tuple[int | None, bool]:
+    if capsule_descendants():
+        raise AuthorizedApplyV4Error(
+            f"{label} cannot start with an unowned capsule descendant"
+        )
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=environment,
+        pass_fds=pass_fds,
+        start_new_session=True,
+    )
+    timed_out = False
+    try:
+        return_code = process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        return_code = None
+    finally:
+        # A provider helper may have double-forked, changed process group, or
+        # been reparented to capsule PID 1. The complete PID namespace, not
+        # merely Terraform's original process, is therefore the fence scope.
+        fence_capsule_descendants(process.pid, label)
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired as error:
+            raise AuthorizedApplyV4Error(
+                f"{label} parent survived complete descendant fencing"
+            ) from error
+        reap_capsule_children()
+        if capsule_descendants():
+            raise AuthorizedApplyV4Error(
+                f"{label} left a descendant after the terminal fence"
+            )
+    return return_code, timed_out
 
 
 def runtime_files(
@@ -883,7 +1219,16 @@ def runtime_files(
         )
     files = exact(
         runtime["runtime_files"],
-        {"kubectl", "openssl", "python", "source_bundle", "terraform", "terraform_cli_config"},
+        {
+            "image_provenance",
+            "image_sbom",
+            "kubectl",
+            "openssl",
+            "python",
+            "source_bundle",
+            "terraform",
+            "terraform_cli_config",
+        },
         "capsule runtime files",
     )
     for name, maximum in (
@@ -893,6 +1238,8 @@ def runtime_files(
         ("terraform", MAX_RUNTIME_FILE_BYTES),
         ("terraform_cli_config", MAX_JSON_BYTES),
         ("source_bundle", MAX_RUNTIME_FILE_BYTES),
+        ("image_provenance", MAX_JSON_BYTES),
+        ("image_sbom", MAX_JSON_BYTES),
     ):
         item = exact(files[name], {"fd", "path", "sha256"}, f"capsule {name}")
         if item["fd"] != FDS[name]:
@@ -1117,6 +1464,7 @@ def verify_live_identity(
         {"digest", "provenance_sha256", "reference", "sbom_sha256"},
         "attested image",
     )
+    validate_image_evidence(image, pod_claim, capsule["runtime"]["runtime_files"])
     if (
         image["digest"] != pod_claim["image_digest"]
         or not OCI_DIGEST_RE.fullmatch(str(image["digest"]))
@@ -1335,8 +1683,11 @@ def reject_secret_inheritance(
 
 
 def build_query(
-    plan_contract: dict[str, Any], ack_path: Path, capsule_sha256: str,
-    attestation_sha256: str, source_bundle_sha256: str
+    plan_contract: dict[str, Any],
+    ack_path: Path,
+    capsule_sha256: str,
+    attestation_sha256: str,
+    source_bundle_sha256: str,
 ) -> dict[str, str]:
     required = {
         "action",
@@ -1386,6 +1737,82 @@ def build_query(
     if plan_contract["execution_source_bundle_sha256"] != source_bundle_sha256:
         raise AuthorizedApplyV4Error("saved plan selects another source bundle")
     return query
+
+
+def prove_provider_settlement(
+    terraform_root: str,
+    stage: str,
+    environment: dict[str, str],
+    public_fds: tuple[int, ...],
+) -> dict[str, str]:
+    settlement_digests: list[str] = []
+    for descriptor_name, label in (
+        ("settlement_plan_a", "first authoritative settlement plan"),
+        ("settlement_plan_b", "second authoritative settlement plan"),
+    ):
+        descriptor = FDS[descriptor_name]
+        create_plan_fd(descriptor, descriptor_name)
+        settlement_fds = (
+            FDS["terraform"],
+            FDS["terraform_cli_config"],
+            FDS["plan_variables"],
+            FDS["platform_kubeconfig"],
+            descriptor,
+        )
+        return_code, timed_out = run_terraform_supervised(
+            [
+                "/proc/1/fd/194",
+                f"-chdir={terraform_root}",
+                "plan",
+                "-input=false",
+                "-lock=true",
+                "-refresh=true",
+                f"-out=/proc/1/fd/{descriptor}",
+                "-var-file=/proc/1/fd/196",
+            ],
+            settlement_fds,
+            environment,
+            SETTLEMENT_PLAN_TIMEOUT_SECONDS,
+            label,
+        )
+        if timed_out or return_code != 0:
+            raise AuthorizedApplyV4Error(
+                f"{label} failed; provider-operation settlement is unproved"
+            )
+        settlement_digests.append(seal_plan_fd(descriptor, label))
+        if descriptor_name == "settlement_plan_a":
+            time.sleep(1)
+    result = run_json(
+        [
+            "/proc/1/fd/191",
+            "/proc/1/fd/190",
+            "verify-settlement",
+            "/proc/1/fd/197",
+            "/proc/1/fd/201",
+            "/proc/1/fd/202",
+            stage,
+        ],
+        (*public_fds, FDS["settlement_plan_a"], FDS["settlement_plan_b"]),
+        environment,
+        "authoritative provider-operation settlement",
+        timeout_seconds=2 * SETTLEMENT_PLAN_TIMEOUT_SECONDS,
+    )
+    if (
+        result.get("status") != "authoritative-provider-settlement-proved"
+        or result.get("first_settlement_plan_sha256") != settlement_digests[0]
+        or result.get("second_settlement_plan_sha256") != settlement_digests[1]
+        or not isinstance(result.get("authoritative_refreshed_state_sha256"), str)
+        or not SHA256_RE.fullmatch(result["authoritative_refreshed_state_sha256"])
+        or not isinstance(result.get("planned_object_postconditions_sha256"), str)
+        or not SHA256_RE.fullmatch(result["planned_object_postconditions_sha256"])
+        or not isinstance(result.get("settled_object_count"), str)
+        or not result["settled_object_count"].isdigit()
+        or int(result["settled_object_count"]) <= 0
+    ):
+        raise AuthorizedApplyV4Error(
+            "provider settlement omitted refreshed state or exact planned postconditions"
+        )
+    return result
 
 
 def execute(args: argparse.Namespace) -> dict[str, str]:
@@ -1467,7 +1894,7 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
         FDS["saved_plan"],
         FDS["platform_kubeconfig"],
     )
-    planned = subprocess.run(
+    plan_return_code, plan_timed_out = run_terraform_supervised(
         [
             "/proc/1/fd/194",
             f"-chdir={terraform_root}",
@@ -1477,15 +1904,12 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
             "-out=/proc/1/fd/197",
             "-var-file=/proc/1/fd/196",
         ],
-        check=False,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=environment,
-        pass_fds=plan_fds,
-        timeout=PLAN_TIMEOUT_SECONDS,
+        plan_fds,
+        environment,
+        PLAN_TIMEOUT_SECONDS,
+        "capsule-owned Terraform plan",
     )
-    if planned.returncode != 0:
+    if plan_timed_out or plan_return_code != 0:
         raise AuthorizedApplyV4Error("capsule-owned Terraform plan failed")
     plan_sha256 = seal_plan_fd()
     runtime_after_plan, _root, _data_root, immutable_after_plan = runtime_files(
@@ -1496,9 +1920,19 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
             "Terraform plan changed its immutable root/provider inputs"
         )
 
-    public_fds = tuple(FDS.values())
+    public_fds = tuple(
+        descriptor
+        for name, descriptor in FDS.items()
+        if name not in {"settlement_plan_a", "settlement_plan_b"}
+    )
     plan_contract = run_json(
-        ["/proc/1/fd/191", "/proc/1/fd/190", "inspect-plan", "/proc/1/fd/197", args.stage],
+        [
+            "/proc/1/fd/191",
+            "/proc/1/fd/190",
+            "inspect-plan",
+            "/proc/1/fd/197",
+            args.stage,
+        ],
         public_fds,
         environment,
         "saved-plan projection",
@@ -1537,6 +1971,7 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
     )
     lease_seconds = (
         APPLY_TIMEOUT_SECONDS
+        + 2 * SETTLEMENT_PLAN_TIMEOUT_SECONDS
         + VERIFIER_TIMEOUT_SECONDS
         + (MAX_ADMISSION_OBJECTS + 1) * KUBERNETES_READ_TIMEOUT_SECONDS
         + POST_APPLY_FENCE_SECONDS
@@ -1549,32 +1984,32 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
         lease_seconds,
         "external apply lease expiry",
     )
-    apply_timed_out = False
-    try:
-        applied = subprocess.run(
-            [
-                "/proc/1/fd/194",
-                f"-chdir={terraform_root}",
-                "apply",
-                "-input=false",
-                "-auto-approve",
-                "/proc/1/fd/197",
-            ],
-            check=False,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=environment,
-            pass_fds=public_fds,
-            timeout=APPLY_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired:
-        apply_timed_out = True
-        applied = None
-    # Always reconstruct the complete retained inventory after an attempted
-    # apply, including a bounded timeout/failure. No old plan is replayable:
-    # the retained generation handoff forces a fresh nonce and plan from the
-    # newly observed state before any resume.
+    apply_return_code, apply_timed_out = run_terraform_supervised(
+        [
+            "/proc/1/fd/194",
+            f"-chdir={terraform_root}",
+            "apply",
+            "-input=false",
+            "-auto-approve",
+            "/proc/1/fd/197",
+        ],
+        public_fds,
+        environment,
+        APPLY_TIMEOUT_SECONDS,
+        "exact sealed Terraform apply",
+    )
+    # Only after the complete descendant fence is empty may two new provider
+    # refreshes establish remote-operation settlement. Both must converge on
+    # the exact known-after projection of every authorized managed object and
+    # show no remaining managed action. A timeout/nonzero result is therefore
+    # either a proved-safe failure or an indeterminate stop; it is never called
+    # settled merely because Terraform's parent process exited.
+    settlement = prove_provider_settlement(
+        terraform_root, args.stage, environment, public_fds
+    )
+    # Reconstruct the complete retained inventory after authoritative provider
+    # settlement. No old plan is replayable: the retained generation handoff
+    # forces a fresh nonce and plan from newly observed state before any resume.
     post_apply = run_json(
         verifier,
         public_fds,
@@ -1596,13 +2031,13 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
     )
     if apply_timed_out:
         raise AuthorizedApplyV4Error(
-            "bounded Terraform apply timed out; post-fence completed and a "
-            "fresh generation is required"
+            "bounded Terraform apply timed out; descendant and authoritative "
+            "provider settlement fences completed, and a fresh generation is required"
         )
-    if applied is None or applied.returncode != 0:
+    if apply_return_code != 0:
         raise AuthorizedApplyV4Error(
-            "exact sealed Terraform apply failed; post-fence completed and a "
-            "fresh generation is required"
+            "exact sealed Terraform apply failed; descendant and authoritative "
+            "provider settlement fences completed, and a fresh generation is required"
         )
     runtime_after_apply, _root, _data_root, immutable_after_apply = runtime_files(
         capsule, args.stage
@@ -1615,6 +2050,14 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
         "capsule_contract_sha256": capsule_sha256,
         "handoff_plan_sha256": plan_sha256,
         "plan_sha256": plan_sha256,
+        "planned_object_postconditions_sha256": settlement[
+            "planned_object_postconditions_sha256"
+        ],
+        "refreshed_state_sha256": settlement[
+            "authoritative_refreshed_state_sha256"
+        ],
+        "settlement_plan_a_sha256": settlement["first_settlement_plan_sha256"],
+        "settlement_plan_b_sha256": settlement["second_settlement_plan_sha256"],
         "runtime_attestation_sha256": attestation_sha256,
         "source_bundle_sha256": source_bundle_sha256,
         "status": "applied-capsule-created-sealed-plan",

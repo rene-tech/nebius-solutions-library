@@ -266,6 +266,26 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         or capsule_runtime["runtime_files"].get("kubectl", {}).get("fd") != 193
         or capsule_runtime["runtime_files"].get("terraform", {}).get("fd") != 194
         or capsule_runtime["runtime_files"].get("source_bundle", {}).get("fd") != 190
+        or capsule_runtime["runtime_files"].get("image_provenance", {}).get("fd")
+        != 189
+        or capsule_runtime["runtime_files"].get("image_sbom", {}).get("fd") != 200
+        or not SHA256_RE.fullmatch(
+            str(
+                capsule_runtime["runtime_files"]
+                .get("image_provenance", {})
+                .get("sha256")
+            )
+        )
+        or capsule_runtime["runtime_files"]["image_provenance"]["sha256"]
+        == ZERO_SHA256
+        or not SHA256_RE.fullmatch(
+            str(
+                capsule_runtime["runtime_files"]
+                .get("image_sbom", {})
+                .get("sha256")
+            )
+        )
+        or capsule_runtime["runtime_files"]["image_sbom"]["sha256"] == ZERO_SHA256
         or os.environ.get("FS2_SAI07_SOURCE_BUNDLE_SHA256")
         != capsule_runtime["runtime_files"].get("source_bundle", {}).get("sha256")
     ):

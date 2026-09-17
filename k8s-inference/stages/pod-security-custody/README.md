@@ -175,6 +175,27 @@ The external epoch role must have only a resourceNames-scoped `get pods` edge
 for its attested Pod; its exhaustive SSAR/SSRR contract rejects namespace-wide
 Pod reads as well as any additional rule.
 
+Before the bootstrap executes OpenSSL, its independently compiled digest is
+copied into a sealed descriptor and parsed as a 64-bit ELF. `PT_INTERP` and
+every `DT_NEEDED` entry are rejected, so the first signature check cannot load
+an unauthenticated interpreter or shared library. Each role also consumes
+separate sealed canonical provenance and SPDX-envelope descriptors. The signed
+image reference must end in the signed OCI digest, the runtime `imageID` must
+resolve to that same digest, and both evidence documents must hash to their
+capsule pins and name that exact reference/digest.
+
+Terraform plan/apply children run in a new process group inside the dedicated
+PID-1 capsule. On every exit or timeout, PID 1 stops and terminates the complete
+PID namespace descendant set, including reparented provider helpers, reaps it,
+and proves it empty before continuing. Parent exit is not settlement. Two new
+bounded, provider-refreshed saved plans must be byte-sealed, stable with each
+other, contain no remaining managed action, and reconstruct every exact known
+`after` postcondition from the authorized plan. Only synchronous Kubernetes
+objects (plus the local `terraform_data` gate) are accepted. A timeout or
+nonzero apply can produce only a fenced, settled failure requiring a fresh
+generation; absent that proof, execution stops as indeterminate. These source
+contracts remain inactive while the checked-in capsule pins are null.
+
 The no-delete source contract retains both legacy and exception OTel, DCGM,
 node-exporter and GPU-observer generations in every phase. Their releases,
 DCGM registry Secrets and immutable configuration are destruction-protected.

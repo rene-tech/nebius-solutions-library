@@ -294,6 +294,23 @@ custody boundary. They may be absent only in the first signed preparation;
 subsequent generations bind their exact state address and live UID/RV/hash.
 The external executor has no RBAC mutation authority.
 
+The v4 execution capsule does not execute a dynamically linked bootstrap
+verifier before trust is established. The compiled OpenSSL digest is sealed,
+then its ELF program/dynamic tables must prove no `PT_INTERP` and no
+`DT_NEEDED`. Runtime image evidence is likewise content-bound: signed OCI
+digest, digest-qualified Pod image reference and runtime `imageID` must resolve
+to one digest, while sealed canonical provenance and SPDX-envelope documents
+must match their signed hashes and name that same image.
+
+Terraform parent timeout is not treated as mutation settlement. The dedicated
+PID-1 capsule fences and reaps every descendant, including escaped process
+groups, and proves the PID namespace empty. It then requires two independently
+refreshed, stable Kubernetes-provider plans with no remaining managed action
+and exact reconstruction of every known planned-object postcondition before a
+failure can be classified as settled or execution can continue. Otherwise the
+result is indeterminate and no later phase is authorized. All operations share
+one bounded lease budget; checked-in activation remains blocked.
+
 The handoff is non-state-forgetting. Every platform address remains in the
 platform state through active, count-correct `prevent_destroy` declarations;
 no `removed`, state rm, import, second Terraform state or dual ownership is

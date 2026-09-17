@@ -775,6 +775,33 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert "initContainers" in authorized_apply
     assert "ephemeralContainers" in authorized_apply
     assert "verify_external_capsule_live" in executor
+    generic_reader = executor.split("def read_regular", 1)[1].split(
+        "def load_canonical", 1
+    )[0]
+    external_attestation_verifier = executor.split(
+        "def verify_external_capsule_live", 1
+    )[1].split("def run_owner_authority_audit", 1)[0]
+    assert "claims[" not in generic_reader
+    assert "external runtime attestation time is malformed" in external_attestation_verifier
+    assert "verify_static_elf" in authorized_apply
+    assert "PT_INTERP" in authorized_apply
+    assert "DT_NEEDED" in authorized_apply
+    assert "validate_image_evidence" in authorized_apply
+    assert "validate_image_evidence" in executor
+    assert 'reference.count("@") != 1' in authorized_apply
+    assert "image-provenance/v1" in authorized_apply
+    assert "image-sbom/v1" in authorized_apply
+    assert capsule["runtime"]["runtime_files"]["image_provenance"]["fd"] == 189
+    assert capsule["runtime"]["runtime_files"]["image_sbom"]["fd"] == 200
+    assert "run_terraform_supervised" in authorized_apply
+    assert "start_new_session=True" in authorized_apply
+    assert "fence_capsule_descendants" in authorized_apply
+    assert '"verify-settlement"' in authorized_apply
+    assert '"-refresh=true"' in authorized_apply
+    assert "planned_object_postconditions_sha256" in authorized_apply
+    assert "verify_settled_plans" in saved_plan
+    assert "authoritative-provider-settlement-proved" in saved_plan
+    assert "unsettled managed action" in saved_plan
     assert "PLAN_TIMEOUT_SECONDS" in authorized_apply
     assert "APPLY_TIMEOUT_SECONDS" in authorized_apply
     assert "lease_expires_at" in authorized_apply

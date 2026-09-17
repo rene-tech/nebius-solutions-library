@@ -64,6 +64,8 @@ V4_PLATFORM_AUTHORITY = Path("/proc/1/fd/182")
 V4_SOURCE_LOCK = Path("/proc/1/fd/183")
 V4_RUNTIME_ATTESTATION = Path("/proc/1/fd/184")
 V4_EPOCH_ADMISSION = Path("/proc/1/fd/188")
+V4_IMAGE_PROVENANCE = Path("/proc/1/fd/189")
+V4_IMAGE_SBOM = Path("/proc/1/fd/200")
 
 
 class ExecutionV3Error(ValueError):
@@ -77,15 +79,10 @@ def canonical(value: object) -> bytes:
 def read_regular(path: Path, label: str, maximum: int) -> bytes:
     if not path.is_absolute() or ".." in path.parts:
         raise ExecutionV3Error(f"{label} path must be absolute without traversal")
-    capsule_fd = re.fullmatch(r"/proc/1/fd/(?:18[0-8]|19[0-9])", str(path)) is not None
+    capsule_fd = re.fullmatch(r"/proc/1/fd/(?:18[0-9]|19[0-9]|20[0-2])", str(path)) is not None
     descriptor = os.open(
         path, os.O_RDONLY | os.O_CLOEXEC | (0 if capsule_fd else os.O_NOFOLLOW)
     )
-    if not all(
-        isinstance(claims[field], str) and claims[field].endswith("Z")
-        for field in ("issued_at", "expires_at")
-    ):
-        raise ExecutionV3Error("external runtime attestation time is malformed")
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_size > maximum:
@@ -548,6 +545,8 @@ def repository_contract_v4() -> tuple[
     runtime_files = evidence.exact(
         capsule_runtime["runtime_files"],
         {
+            "image_provenance",
+            "image_sbom",
             "kubectl",
             "openssl",
             "python",
@@ -568,6 +567,8 @@ def repository_contract_v4() -> tuple[
         or runtime_files["kubectl"].get("fd") != 193
         or runtime_files["terraform"].get("fd") != 194
         or runtime_files["terraform_cli_config"].get("fd") != 195
+        or runtime_files["image_provenance"].get("fd") != 189
+        or runtime_files["image_sbom"].get("fd") != 200
         or os.environ.get("FS2_SAI07_SOURCE_BUNDLE_SHA256")
         != runtime_files["source_bundle"].get("sha256")
         or os.environ.get("FS2_SAI07_OPENSSL_PATH") != "/proc/1/fd/192"
@@ -845,6 +846,122 @@ def pod_security_projection(pod: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def validate_image_evidence(
+    image: dict[str, Any], pod_claim: dict[str, Any], capsule: dict[str, Any]
+) -> None:
+    digest = image.get("digest")
+    reference = image.get("reference")
+    image_id = pod_claim.get("image_id")
+    resolved = (
+        re.search(r"(?:@|://)(sha256:[a-f0-9]{64})$", image_id)
+        if isinstance(image_id, str)
+        else None
+    )
+    if (
+        not isinstance(digest, str)
+        or not re.fullmatch(r"sha256:[a-f0-9]{64}", digest)
+        or pod_claim.get("image_digest") != digest
+        or not isinstance(reference, str)
+        or reference.count("@") != 1
+        or reference.rsplit("@", 1)[1] != digest
+        or resolved is None
+        or resolved.group(1) != digest
+        or any(
+            not isinstance(image[field], str)
+            or not re.fullmatch(r"[a-f0-9]{64}", image[field])
+            or image[field] == ZERO_SHA256
+            for field in ("provenance_sha256", "sbom_sha256")
+        )
+    ):
+        raise ExecutionV3Error(
+            "signed image reference, resolved image ID, and digest are not cross-bound"
+        )
+    runtime_files = capsule["runtime"]["runtime_files"]
+    if (
+        runtime_files["image_provenance"].get("sha256")
+        != image["provenance_sha256"]
+        or runtime_files["image_sbom"].get("sha256") != image["sbom_sha256"]
+    ):
+        raise ExecutionV3Error("image evidence differs from the capsule digest pins")
+    provenance_bytes, provenance = load_canonical(
+        V4_IMAGE_PROVENANCE, "image provenance", 8 * 1024 * 1024
+    )
+    if hashlib.sha256(provenance_bytes).hexdigest() != image["provenance_sha256"]:
+        raise ExecutionV3Error("image provenance differs from its signed digest")
+    provenance = evidence.exact(
+        provenance,
+        {
+            "build_type",
+            "builder_id",
+            "image",
+            "materials_sha256",
+            "predicate_type",
+            "schema",
+        },
+        "image provenance",
+    )
+    provenance_image = evidence.exact(
+        provenance["image"], {"digest", "reference"}, "provenance image"
+    )
+    if (
+        provenance["schema"] != "fs2-serve.nebius.ai/image-provenance/v1"
+        or provenance["predicate_type"] != "https://slsa.dev/provenance/v1"
+        or not evidence.nonempty(provenance["builder_id"], "provenance builder")
+        or not evidence.nonempty(provenance["build_type"], "provenance build type")
+        or evidence.sha256(
+            provenance["materials_sha256"], "provenance materials SHA-256"
+        )
+        == ZERO_SHA256
+        or provenance_image != {"digest": digest, "reference": reference}
+    ):
+        raise ExecutionV3Error(
+            "image provenance is incomplete or selects another image"
+        )
+    sbom_bytes, sbom = load_canonical(
+        V4_IMAGE_SBOM, "image SBOM", 8 * 1024 * 1024
+    )
+    if hashlib.sha256(sbom_bytes).hexdigest() != image["sbom_sha256"]:
+        raise ExecutionV3Error("image SBOM differs from its signed digest")
+    sbom = evidence.exact(
+        sbom,
+        {"document", "format", "image", "schema"},
+        "image SBOM envelope",
+    )
+    sbom_image = evidence.exact(
+        sbom["image"], {"digest", "reference"}, "SBOM image"
+    )
+    document = sbom["document"]
+    described = document.get("documentDescribes") if isinstance(document, dict) else None
+    packages = document.get("packages") if isinstance(document, dict) else None
+    package_ids = {
+        package.get("SPDXID")
+        for package in packages or []
+        if isinstance(package, dict) and isinstance(package.get("SPDXID"), str)
+    }
+    if (
+        sbom["schema"] != "fs2-serve.nebius.ai/image-sbom/v1"
+        or sbom["format"] != "spdx-json"
+        or sbom_image != {"digest": digest, "reference": reference}
+        or not isinstance(document, dict)
+        or document.get("spdxVersion") != "SPDX-2.3"
+        or document.get("SPDXID") != "SPDXRef-DOCUMENT"
+        or document.get("dataLicense") != "CC0-1.0"
+        or not evidence.nonempty(document.get("name"), "SBOM name")
+        or not isinstance(document.get("documentNamespace"), str)
+        or not document["documentNamespace"].startswith("https://")
+        or not isinstance(document.get("creationInfo"), dict)
+        or not isinstance(described, list)
+        or not described
+        or not isinstance(packages, list)
+        or not packages
+        or any(
+            not isinstance(value, str) or value not in package_ids
+            for value in described
+        )
+    ):
+        raise ExecutionV3Error("image SBOM is incomplete or selects another image")
+
+
 def verify_external_capsule_live(
     owner_api: OwnerApi, capsule: dict[str, Any], capsule_bytes: bytes
 ) -> dict[str, str]:
@@ -878,6 +995,11 @@ def verify_external_capsule_live(
         != os.environ.get("FS2_SAI07_RUNTIME_ATTESTATION_SHA256")
     ):
         raise ExecutionV3Error("external runtime attestation identity differs")
+    if not all(
+        isinstance(claims[field], str) and claims[field].endswith("Z")
+        for field in ("issued_at", "expires_at")
+    ):
+        raise ExecutionV3Error("external runtime attestation time is malformed")
     try:
         issued = dt.datetime.fromisoformat(
             str(claims["issued_at"]).replace("Z", "+00:00")
@@ -974,6 +1096,7 @@ def verify_external_capsule_live(
         {"digest", "provenance_sha256", "reference", "sbom_sha256"},
         "external capsule image identity",
     )
+    validate_image_evidence(image, pod_claim, capsule)
     if not all(
         isinstance(pod_claim[field], str) and pod_claim[field]
         for field in (

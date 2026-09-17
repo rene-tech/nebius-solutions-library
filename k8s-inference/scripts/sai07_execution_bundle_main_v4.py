@@ -29,6 +29,28 @@ def inspect_plan(arguments: list[str]) -> int:
     return 0
 
 
+def verify_settlement(arguments: list[str]) -> int:
+    if len(arguments) != 4 or arguments[3] not in {"foundation", "workloads"}:
+        raise ValueError(
+            "verify-settlement requires authorized/first/second plan descriptors "
+            "and fixed stage"
+        )
+    import sai07_saved_plan_contract as saved_plan
+
+    capsule = json.loads(Path("/proc/1/fd/180").read_bytes())
+    runtime = capsule["runtime"]
+    result = saved_plan.verify_settled_plans(
+        Path(arguments[0]),
+        Path(arguments[1]),
+        Path(arguments[2]),
+        Path("/proc/1/fd/194"),
+        runtime["runtime_files"]["terraform"]["sha256"],
+        runtime["terraform_version"],
+    )
+    sys.stdout.write(json.dumps(result, sort_keys=True, separators=(",", ":")))
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         raise ValueError("SAI-07 bundle command is required")
@@ -36,6 +58,8 @@ def main() -> int:
     arguments = sys.argv[2:]
     if command == "inspect-plan":
         return inspect_plan(arguments)
+    if command == "verify-settlement":
+        return verify_settlement(arguments)
     if command == "external-execute":
         import run_sai07_external_execution_v3 as executor
 
