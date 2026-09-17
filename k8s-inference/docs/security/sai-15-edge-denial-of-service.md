@@ -187,24 +187,43 @@ external boundary. Both mutation fences reread and hash the
 external policy/binding together with both CAS objects, so drift fails closed.
 
 The boundary signature does not authenticate a summary alone. The fixed run
-root must also contain three private, stable regular files named
+root must also contain four private, stable regular files named
 `public-edge-preventive-provider-iam-export.json`,
 `public-edge-preventive-apiserver-enforcement-export.json`, and
-`public-edge-preventive-identity-path-review.json`. The signed evidence hashes
-those exact bytes. The apply-time verifier reopens and parses them, then
-reconstructs the enforcement join: provider IAM must be default-deny with one
-exact controller binding over all six protected policy/binding names and four
-mutation actions; API-server enforcement must be fail-closed and match the
-same names/actions/controller; RBAC must contain the one exact controller rule,
-no impersonation grant, and an exhaustive denial result for every enrolled
-identity path. It recomputes the RBAC and impersonation review digests from the
-raw structures instead of accepting opaque digest-shaped assertions. Each
-export also binds the authoritative endpoint, collector executable and
-configuration, request IDs, response attestation, resource version, and
-collection time. The external Ed25519 receipt binds all three raw-file digests,
-the live approval projection, project/cluster, source/controller provenance,
-and exact boundary identifiers. The empty source trust registry prevents an
+`public-edge-preventive-identity-path-review.json`, plus
+`public-edge-preventive-certificate-authority-history.json`. The signed
+evidence hashes those exact bytes. The apply-time verifier reopens and parses
+them, then reconstructs the enforcement join. Provider IAM must be
+default-deny with one exact controller binding over resource-specific action,
+API group, version, namespace, and name contracts. Credential Secret reads,
+Pod connection subresources, TokenRequest, certificate authority, and fixed
+admission roots have distinct action sets. Existing objects use exact enrolled
+names; CREATE and template-changing UPDATE in a credential-bearing namespace
+use wildcard names and require semantic Secret/Pod-template classification.
+This avoids treating unrelated customer namespaces as controller-credential
+paths while preventing a fresh object name from escaping the fence.
+
+API-server enforcement must be fail-closed and match the same typed contract;
+the native RBAC inventory is joined to ServiceAccounts, content-attested Secret
+metadata, Pods and every built-in controller template, webhooks, CRDs, CSRs,
+and historical CA issuance/revocation evidence. The verifier recomputes RBAC,
+impersonation, workload-reachability, certificate-chain, and approval
+projections instead of accepting opaque digest-shaped assertions. Every export
+binds the authoritative endpoint, collector/runtime identity, request IDs,
+response attestation, resource version, common snapshot identity, and
+collection time. The snapshot must be no more than five minutes old at the
+mutation fence. The external Ed25519 receipt binds all raw-file digests, the
+live approval projection, project/cluster, source/controller provenance, and
+exact boundary identifiers. The empty source trust registry prevents an
 ordinary run-root file from self-enrolling this authority.
+
+Receipts and projections retain the 256 KiB ceiling. Complete native exports
+have separate hard limits: 16 MiB for provider IAM, 8 MiB for API-server
+configuration, 128 MiB for the paginated cluster identity/RBAC/workload
+inventory, and 32 MiB for CA history. These bounds allow production-sized
+inventories without making an unbounded JSON allocation part of the apply
+gate; an oversized collection must be split or refused by the authoritative
+collector.
 
 Terraform never launches a verifier pathname. The fixed launcher accepts only
 logical source/mode pairs and chooses the canonical root-owned manifest,

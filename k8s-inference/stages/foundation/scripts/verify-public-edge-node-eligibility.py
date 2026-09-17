@@ -46,7 +46,7 @@ PREVENTIVE_BOUNDARY_RECEIPT_SCHEMA = (
     "fs2-serve.nebius.ai/public-edge-preventive-boundary-receipt/v1"
 )
 PREVENTIVE_BOUNDARY_PAYLOAD_SCHEMA = (
-    "fs2-serve.nebius.ai/public-edge-preventive-boundary-evidence/v2"
+    "fs2-serve.nebius.ai/public-edge-preventive-boundary-evidence/v3"
 )
 MEMBERSHIP_ISSUER_ROLE = "platform-security-public-edge-membership"
 PREVENTIVE_BOUNDARY_ISSUER_ROLE = "platform-security-public-edge-preventive-boundary"
@@ -79,9 +79,22 @@ PREVENTIVE_APISERVER_EXPORT_FILENAME = (
 PREVENTIVE_IDENTITY_REVIEW_FILENAME = (
     "public-edge-preventive-identity-path-review.json"
 )
+PREVENTIVE_CA_HISTORY_FILENAME = (
+    "public-edge-preventive-certificate-authority-history.json"
+)
 MAX_RECEIPT_BYTES = 256 * 1024
+# Signed receipts and projections remain deliberately small.  Native exports
+# are separately bounded because the identity inventory contains complete,
+# paginated cluster-wide objects and cannot fit the receipt ceiling on a real
+# cluster.  These caps still bound memory/JSON work before signature and
+# semantic validation; collectors must split or reject inventories above them.
+MAX_PROVIDER_IAM_EXPORT_BYTES = 16 * 1024 * 1024
+MAX_APISERVER_EXPORT_BYTES = 8 * 1024 * 1024
+MAX_IDENTITY_EXPORT_BYTES = 128 * 1024 * 1024
+MAX_CA_EXPORT_BYTES = 32 * 1024 * 1024
 MAX_MEMBERSHIP_VALIDITY = timedelta(hours=24)
 MAX_CLOCK_SKEW = timedelta(minutes=5)
+MAX_PREVENTIVE_SNAPSHOT_AGE = timedelta(minutes=5)
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 KEY_ID_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
 EXTERNAL_QUERY: Mapping[str, Any] | None = None
@@ -137,7 +150,13 @@ def no_duplicate_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def read_descriptor(descriptor: int, name: str, *, private: bool) -> bytes:
+def read_descriptor(
+    descriptor: int,
+    name: str,
+    *,
+    private: bool,
+    maximum_bytes: int = MAX_RECEIPT_BYTES,
+) -> bytes:
     before = os.fstat(descriptor)
     if not stat.S_ISREG(before.st_mode):
         fail(f"{name} is not a regular file")
@@ -149,13 +168,13 @@ def read_descriptor(descriptor: int, name: str, *, private: bool) -> bytes:
     chunks: list[bytes] = []
     total = 0
     while True:
-        chunk = os.read(descriptor, min(65536, MAX_RECEIPT_BYTES + 1 - total))
+        chunk = os.read(descriptor, min(65536, maximum_bytes + 1 - total))
         if not chunk:
             break
         chunks.append(chunk)
         total += len(chunk)
-        if total > MAX_RECEIPT_BYTES:
-            fail(f"{name} exceeds {MAX_RECEIPT_BYTES} bytes")
+        if total > maximum_bytes:
+            fail(f"{name} exceeds {maximum_bytes} bytes")
     after = os.fstat(descriptor)
     stable = (
         before.st_dev,
@@ -177,7 +196,12 @@ def read_descriptor(descriptor: int, name: str, *, private: bool) -> bytes:
     return b"".join(chunks)
 
 
-def open_regular_file(path: Path, *, private: bool) -> bytes:
+def open_regular_file(
+    path: Path,
+    *,
+    private: bool,
+    maximum_bytes: int = MAX_RECEIPT_BYTES,
+) -> bytes:
     if not path.is_absolute():
         fail("membership input paths must be absolute")
     flags = os.O_RDONLY | os.O_CLOEXEC
@@ -188,7 +212,12 @@ def open_regular_file(path: Path, *, private: bool) -> bytes:
     except OSError as exc:
         raise GateError(f"cannot open required membership input {path.name}") from exc
     try:
-        return read_descriptor(descriptor, path.name, private=private)
+        return read_descriptor(
+            descriptor,
+            path.name,
+            private=private,
+            maximum_bytes=maximum_bytes,
+        )
     finally:
         os.close(descriptor)
 
@@ -237,6 +266,157 @@ def b64url(value: object, label: str, expected_size: int) -> bytes:
     if len(decoded) != expected_size or canonical != text:
         fail(f"{label} has the wrong size or encoding")
     return decoded
+
+
+def canonical_base64(
+    value: object,
+    label: str,
+    *,
+    minimum_size: int = 1,
+    maximum_size: int = 1024 * 1024,
+) -> bytes:
+    text = string_value(value, label)
+    try:
+        decoded = base64.b64decode(text, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise GateError(f"{label} is not canonical base64") from exc
+    if (
+        not minimum_size <= len(decoded) <= maximum_size
+        or base64.b64encode(decoded).decode("ascii") != text
+    ):
+        fail(f"{label} has the wrong size or encoding")
+    return decoded
+
+
+def canonical_pem_blocks(
+    raw: bytes,
+    *,
+    pem_label: str,
+    label: str,
+    maximum_blocks: int,
+) -> list[bytes]:
+    """Decode an exact newline-terminated PEM sequence without ignored bytes."""
+
+    try:
+        text = raw.decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise GateError(f"{label} is not ASCII PEM") from exc
+    if not text.endswith("\n") or "\r" in text:
+        fail(f"{label} is not canonical newline-terminated PEM")
+    begin = f"-----BEGIN {pem_label}-----"
+    end = f"-----END {pem_label}-----"
+    lines = text.splitlines()
+    blocks: list[bytes] = []
+    cursor = 0
+    while cursor < len(lines):
+        if lines[cursor] != begin:
+            fail(f"{label} contains text outside its PEM blocks")
+        cursor += 1
+        encoded_lines: list[str] = []
+        while cursor < len(lines) and lines[cursor] != end:
+            line = lines[cursor]
+            if not line or len(line) > 64 or re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", line) is None:
+                fail(f"{label} has a malformed PEM body")
+            encoded_lines.append(line)
+            cursor += 1
+        if cursor >= len(lines) or not encoded_lines:
+            fail(f"{label} has an unterminated PEM block")
+        cursor += 1
+        encoded = "".join(encoded_lines)
+        try:
+            der = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise GateError(f"{label} PEM body is not canonical base64") from exc
+        canonical_lines = [
+            base64.b64encode(der).decode("ascii")[offset : offset + 64]
+            for offset in range(0, len(base64.b64encode(der)), 64)
+        ]
+        if encoded_lines != canonical_lines or not der:
+            fail(f"{label} PEM body is not canonical")
+        blocks.append(der)
+        if len(blocks) > maximum_blocks:
+            fail(f"{label} contains too many PEM blocks")
+    if not blocks:
+        fail(f"{label} is empty")
+    return blocks
+
+
+def pem_encode_der(der: bytes, pem_label: str) -> bytes:
+    encoded = base64.b64encode(der).decode("ascii")
+    body = "\n".join(
+        encoded[offset : offset + 64] for offset in range(0, len(encoded), 64)
+    )
+    return (
+        f"-----BEGIN {pem_label}-----\n{body}\n"
+        f"-----END {pem_label}-----\n"
+    ).encode("ascii")
+
+
+def openssl_verify_certificate_chain(
+    *,
+    leaf_der: bytes,
+    intermediate_der: Sequence[bytes],
+    trust_bundle_pem: bytes,
+    purpose: str,
+    verification_time: datetime,
+) -> bytes:
+    leaf_pem = pem_encode_der(leaf_der, "CERTIFICATE")
+    intermediate_pem = b"".join(
+        pem_encode_der(item, "CERTIFICATE") for item in intermediate_der
+    )
+    descriptors = [
+        sealed_memfd("public-edge-leaf-certificate", leaf_pem),
+        sealed_memfd("public-edge-ca-trust-bundle", trust_bundle_pem),
+    ]
+    if intermediate_pem:
+        descriptors.append(
+            sealed_memfd("public-edge-intermediate-certificates", intermediate_pem)
+        )
+    command = [
+        openssl_binary(),
+        "verify",
+        "-x509_strict",
+        "-purpose",
+        purpose,
+        "-attime",
+        str(int(verification_time.timestamp())),
+        "-CAfile",
+        f"/proc/self/fd/{descriptors[1]}",
+    ]
+    if intermediate_pem:
+        command.extend(("-untrusted", f"/proc/self/fd/{descriptors[2]}"))
+    command.append(f"/proc/self/fd/{descriptors[0]}")
+    try:
+        result = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            close_fds=True,
+            pass_fds=tuple(sorted({*descriptors, *CAPSULE_COMMAND_FDS})),
+            env={
+                "HOME": "/nonexistent",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "OPENSSL_CONF": "/dev/null",
+                "PATH": CAPSULE_TOOL_BIN or "/usr/bin:/bin",
+            },
+            cwd="/",
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GateError("pinned OpenSSL chain verification timed out") from exc
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+    if result.returncode or result.stdout != b"/proc/self/fd/0: OK\n":
+        # OpenSSL names the descriptor path, not the certificate subject. Keep
+        # the check exact without persisting stderr or customer-controlled data.
+        expected = f"/proc/self/fd/{descriptors[0]}: OK\n".encode("ascii")
+        if result.returncode or result.stdout != expected:
+            fail("certificate chain does not verify to the enrolled trust bundle")
+    return result.stdout
 
 
 def openssl_binary() -> str:
@@ -332,6 +512,7 @@ def verify_ed25519(public_key: bytes, signature: bytes, message: bytes) -> None:
             pass_fds=tuple(sorted({*descriptors, *CAPSULE_COMMAND_FDS})),
             env={
                 "HOME": "/nonexistent",
+                "OPENSSL_CONF": "/dev/null",
                 "PATH": CAPSULE_TOOL_BIN or "/usr/bin:/bin",
                 "LANG": "C",
                 "LC_ALL": "C",
@@ -342,6 +523,152 @@ def verify_ed25519(public_key: bytes, signature: bytes, message: bytes) -> None:
             os.close(descriptor)
     if result is None or result.returncode != 0:
         fail("public-edge membership signature verification failed")
+
+
+def openssl_der_output(
+    data: bytes,
+    *,
+    command: str,
+    arguments: Sequence[str],
+    input_format: str = "DER",
+) -> bytes:
+    """Run the policy-pinned OpenSSL over one sealed certificate/CSR snapshot."""
+
+    descriptor = sealed_memfd(f"public-edge-{command}", data)
+    try:
+        result = subprocess.run(
+            [
+                openssl_binary(),
+                command,
+                "-inform",
+                input_format,
+                "-in",
+                f"/proc/self/fd/{descriptor}",
+                *arguments,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            close_fds=True,
+            pass_fds=tuple(sorted({descriptor, *CAPSULE_COMMAND_FDS})),
+            env={
+                "HOME": "/nonexistent",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "OPENSSL_CONF": "/dev/null",
+                "PATH": CAPSULE_TOOL_BIN or "/usr/bin:/bin",
+            },
+            cwd="/",
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GateError("pinned OpenSSL certificate parsing timed out") from exc
+    finally:
+        os.close(descriptor)
+    if result.returncode or len(result.stdout) > 4 * 1024 * 1024:
+        fail("pinned OpenSSL rejected the certificate-authority evidence")
+    return result.stdout
+
+
+def openssl_public_key_sha256(data: bytes, *, command: str, input_format: str) -> str:
+    public_key_pem = openssl_der_output(
+        data,
+        command=command,
+        input_format=input_format,
+        arguments=["-pubkey", "-noout"],
+    )
+    public_key_der = openssl_der_output(
+        public_key_pem,
+        command="pkey",
+        input_format="PEM",
+        arguments=["-pubin", "-outform", "DER"],
+    )
+    return hashlib.sha256(public_key_der).hexdigest()
+
+
+def openssl_name_fields(data: bytes, *, command: str, input_format: str) -> dict[str, str]:
+    arguments = ["-noout", "-subject", "-nameopt", "RFC2253,utf8"]
+    if command == "x509":
+        arguments.extend(
+            ["-issuer", "-serial", "-dates", "-dateopt", "iso_8601"]
+        )
+    lines = openssl_der_output(
+        data,
+        command=command,
+        input_format=input_format,
+        arguments=arguments,
+    ).decode("utf-8", errors="strict").splitlines()
+    fields: dict[str, str] = {}
+    for line in lines:
+        key, separator, value = line.partition("=")
+        if not separator or key in fields:
+            fail("pinned OpenSSL returned ambiguous certificate identity output")
+        fields[key] = value
+    required = {"subject"}
+    if command == "x509":
+        required.update({"issuer", "serial", "notBefore", "notAfter"})
+    if set(fields) != required:
+        fail("pinned OpenSSL omitted exact certificate identity fields")
+    return fields
+
+
+def openssl_time(value: str, label: str) -> datetime:
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError as exc:
+        raise GateError(f"{label} is not pinned OpenSSL ISO-8601 output") from exc
+    return parsed
+
+
+def openssl_sans(data: bytes, *, command: str, input_format: str) -> dict[str, list[str]]:
+    if command == "x509":
+        output = openssl_der_output(
+            data,
+            command="x509",
+            input_format=input_format,
+            arguments=["-noout", "-ext", "subjectAltName"],
+        ).decode("utf-8", errors="strict")
+    else:
+        output = openssl_der_output(
+            data,
+            command="req",
+            input_format=input_format,
+            arguments=["-noout", "-text"],
+        ).decode("utf-8", errors="strict")
+    marker = "X509v3 Subject Alternative Name:"
+    if marker not in output:
+        return {"dns_names": [], "ip_addresses": [], "uris": []}
+    suffix = output.split(marker, 1)[1]
+    value_lines: list[str] = []
+    for line in suffix.splitlines()[1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("X509v3 ") or stripped.startswith("Signature Algorithm:"):
+            break
+        value_lines.append(stripped)
+    values = ", ".join(value_lines).split(", ") if value_lines else []
+    result = {"dns_names": [], "ip_addresses": [], "uris": []}
+    prefixes = {
+        "DNS:": "dns_names",
+        "IP Address:": "ip_addresses",
+        "URI:": "uris",
+    }
+    for value in values:
+        matches = [prefix for prefix in prefixes if value.startswith(prefix)]
+        if len(matches) != 1:
+            fail("certificate contains an unsupported or ambiguous SAN authority")
+        prefix = matches[0]
+        result[prefixes[prefix]].append(value.removeprefix(prefix))
+    for key, entries in result.items():
+        if not entries or entries == sorted(set(entries)):
+            result[key] = sorted(entries)
+        else:
+            fail("certificate SAN extension contains duplicate identities")
+    return result
 
 
 def trusted_membership_key(
@@ -1339,6 +1666,112 @@ def native_list_items(
     return items, resource_version
 
 
+def native_ca_history_records(
+    value: object,
+    *,
+    label: str,
+    cluster_id: str,
+    record_key: str,
+) -> tuple[list[Mapping[str, Any]], datetime, datetime]:
+    """Reconstruct one complete, terminal native CA history pagination."""
+
+    export = exact_object(
+        value,
+        {
+            "history_start",
+            "observed_through",
+            "page_count",
+            "pages",
+            "record_count",
+        },
+        label,
+    )
+    history_start = timestamp(export["history_start"], f"{label} history_start")
+    observed_through = timestamp(
+        export["observed_through"], f"{label} observed_through"
+    )
+    pages = list_value(export["pages"], f"{label} pages")
+    if (
+        history_start >= observed_through
+        or export["page_count"] != len(pages)
+        or not pages
+    ):
+        fail(f"{label} is not a bounded complete native history")
+    expected_cursor = ""
+    previous_remaining: int | None = None
+    records: list[Mapping[str, Any]] = []
+    seen_keys: set[str] = set()
+    for index, raw_page in enumerate(pages):
+        page = exact_object(
+            raw_page,
+            {"request", "request_id", "response", "response_attestation_sha256"},
+            f"{label} page {index}",
+        )
+        request = exact_object(
+            page["request"],
+            {
+                "cluster_id",
+                "cursor",
+                "history_start",
+                "limit",
+                "observed_through",
+            },
+            f"{label} page {index} request",
+        )
+        response = exact_object(
+            page["response"],
+            {"next_cursor", "records", "remaining_count"},
+            f"{label} page {index} response",
+        )
+        remaining = response["remaining_count"]
+        next_cursor = response["next_cursor"]
+        if (
+            request
+            != {
+                "cluster_id": cluster_id,
+                "cursor": expected_cursor,
+                "history_start": export["history_start"],
+                "limit": 500,
+                "observed_through": export["observed_through"],
+            }
+            or not isinstance(next_cursor, str)
+            or not isinstance(remaining, int)
+            or isinstance(remaining, bool)
+            or remaining < 0
+            or (index + 1 == len(pages) and (next_cursor or remaining != 0))
+            or (
+                previous_remaining is not None
+                and remaining >= previous_remaining
+            )
+            or re.fullmatch(
+                r"[A-Za-z0-9._:/-]{8,256}", str(page["request_id"])
+            )
+            is None
+        ):
+            fail(f"{label} pagination is incomplete or inconsistent")
+        digest(
+            page["response_attestation_sha256"],
+            f"{label} page {index} native response attestation",
+        )
+        page_records = list_value(
+            response["records"], f"{label} page {index} records"
+        )
+        for raw_record in page_records:
+            record = object_value(raw_record, f"{label} native record")
+            key = string_value(record.get(record_key), f"{label} {record_key}")
+            if key in seen_keys:
+                fail(f"{label} repeats native record {key}")
+            seen_keys.add(key)
+            records.append(record)
+        expected_cursor = next_cursor
+        previous_remaining = remaining
+        if index + 1 < len(pages) and not expected_cursor:
+            fail(f"{label} terminated before its declared last page")
+    if expected_cursor or export["record_count"] != len(records):
+        fail(f"{label} is not a terminal complete history")
+    return records, history_start, observed_through
+
+
 def native_rule_matches(
     rule: Mapping[str, Any],
     *,
@@ -1420,31 +1853,69 @@ def validate_preventive_raw_exports(
     provider_raw: bytes,
     apiserver_raw: bytes,
     identity_raw: bytes,
+    ca_history_raw: bytes,
     provider_summary: Mapping[str, Any],
     apiserver_summary: Mapping[str, Any],
     identity_summary: Mapping[str, Any],
+    ca_history_summary: Mapping[str, Any],
     boundary: Mapping[str, Any],
+    approval_projection: Mapping[str, Any],
     project_id: str,
     cluster_id: str,
     collected_at: datetime,
     response_authorities: Sequence[object],
 ) -> None:
-    protected_names = [
-        "fs2-public-edge-cas-bootstrap",
-        "fs2-public-edge-cas-bootstrap-binding",
-        "fs2-public-edge-node-authority",
-        "fs2-public-edge-node-authority-binding",
-        "fs2-public-edge-node-authority-cas",
-        "fs2-public-edge-node-authority-cas-binding",
-        "fs2-public-edge-node-authority-approval",
-        "publicedgenodeauthorityapprovals.security.fs2.nebius.ai",
-    ]
-    protected_resource_contract = [
+    controller_username_parts = str(boundary["controller_username"]).split(":")
+    controller_namespace_contract = (
+        controller_username_parts[2]
+        if len(controller_username_parts) == 4
+        and controller_username_parts[:2] == ["system", "serviceaccount"]
+        else ""
+    )
+    credential_secret_names: dict[str, set[str]] = {}
+    for index, raw_secret in enumerate(boundary["enrolled_credential_secrets"]):
+        secret = object_value(raw_secret, f"enrolled credential Secret {index}")
+        credential_secret_names.setdefault(
+            string_value(secret.get("namespace"), "enrolled credential Secret namespace"),
+            set(),
+        ).add(string_value(secret.get("name"), "enrolled credential Secret name"))
+
+    credential_workload_names: dict[tuple[str, str, str], set[str]] = {}
+    credential_pod_names: dict[str, set[str]] = {}
+    credential_service_account_names: dict[str, set[str]] = {}
+    for index, raw_workload in enumerate(boundary["enrolled_credential_workloads"]):
+        workload = object_value(raw_workload, f"enrolled credential workload {index}")
+        namespace = string_value(
+            workload.get("namespace"), "enrolled credential workload namespace"
+        )
+        kind = string_value(workload.get("kind"), "enrolled credential workload kind")
+        name = string_value(workload.get("name"), "enrolled credential workload name")
+        api_version = string_value(
+            workload.get("api_version"), "enrolled credential workload apiVersion"
+        )
+        api_group, _, version = api_version.partition("/")
+        if not version:
+            api_group, version = "", api_group
+        credential_workload_names.setdefault(
+            (api_group, version, kind), set()
+        ).add(f"{namespace}/{name}")
+        if kind == "Pod":
+            credential_pod_names.setdefault(namespace, set()).add(name)
+        service_account_name = workload.get("service_account_name")
+        if isinstance(service_account_name, str) and service_account_name:
+            credential_service_account_names.setdefault(namespace, set()).add(
+                service_account_name
+            )
+
+    protected_resource_contract: list[dict[str, Any]] = [
         {
+            "actions": ["create", "delete", "deletecollection", "patch", "update"],
             "api_group": "admissionregistration.k8s.io",
             "api_version": "v1",
-            "resource": "validatingadmissionpolicies",
+            "resources": ["validatingadmissionpolicies"],
             "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "exact-name-immutable",
             "names": [
                 "fs2-public-edge-cas-bootstrap",
                 "fs2-public-edge-node-authority",
@@ -1452,10 +1923,13 @@ def validate_preventive_raw_exports(
             ],
         },
         {
+            "actions": ["create", "delete", "deletecollection", "patch", "update"],
             "api_group": "admissionregistration.k8s.io",
             "api_version": "v1",
-            "resource": "validatingadmissionpolicybindings",
+            "resources": ["validatingadmissionpolicybindings"],
             "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "exact-name-immutable",
             "names": [
                 "fs2-public-edge-cas-bootstrap-binding",
                 "fs2-public-edge-node-authority-binding",
@@ -1463,23 +1937,259 @@ def validate_preventive_raw_exports(
             ],
         },
         {
+            "actions": ["create", "delete", "deletecollection", "patch", "update"],
             "api_group": "apiextensions.k8s.io",
             "api_version": "v1",
-            "resource": "customresourcedefinitions",
+            "resources": ["customresourcedefinitions"],
             "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "exact-name-immutable",
             "names": [
                 "publicedgenodeauthorityapprovals.security.fs2.nebius.ai"
             ],
         },
         {
+            "actions": ["create", "delete", "deletecollection", "patch", "update"],
             "api_group": "security.fs2.nebius.ai",
             "api_version": "v1",
-            "resource": "publicedgenodeauthorityapprovals",
+            "resources": ["publicedgenodeauthorityapprovals"],
             "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "exact-name-immutable",
             "names": ["fs2-public-edge-node-authority-approval"],
         },
+        {
+            "actions": ["bind", "create", "delete", "deletecollection", "escalate", "patch", "update"],
+            "api_group": "rbac.authorization.k8s.io",
+            "api_version": "v1",
+            "resources": ["clusterrolebindings", "clusterroles", "rolebindings", "roles"],
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": list(boundary["credential_namespaces"]),
+            "semantic_guard": "deny-non-enrolled-authority-path",
+            "names": ["*"],
+        },
+        {
+            "actions": ["approve", "create", "delete", "deletecollection", "get", "list", "patch", "sign", "update", "watch"],
+            "api_group": "certificates.k8s.io",
+            "api_version": "v1",
+            "resources": ["certificatesigningrequests", "certificatesigningrequests/approval"],
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "deny-non-enrolled-certificate-path",
+            "names": ["*"],
+        },
+        {
+            "actions": ["create", "delete", "deletecollection", "patch", "update"],
+            "api_group": "admissionregistration.k8s.io",
+            "api_version": "v1",
+            "resources": ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"],
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "deny-authority-intersecting-webhook-change",
+            "names": ["*"],
+        },
+        {
+            "actions": ["connect", "get", "list", "patch", "update", "watch"],
+            "api_group": "",
+            "api_version": "v1",
+            "resources": ["nodes", "nodes/proxy"],
+            "operations": ["CONNECT", "CREATE", "DELETE", "UPDATE"],
+            "namespaces": [],
+            "semantic_guard": "deny-controller-credential-path",
+            "names": ["*"],
+        },
     ]
-    protected_actions = ["create", "delete", "patch", "update"]
+
+    def add_scoped_contract(
+        *,
+        actions: Sequence[str],
+        api_group: str,
+        api_version: str,
+        resources: Sequence[str],
+        operations: Sequence[str],
+        namespace: str,
+        names: Sequence[str],
+        semantic_guard: str,
+    ) -> None:
+        if not names:
+            return
+        protected_resource_contract.append(
+            {
+                "actions": sorted(set(actions)),
+                "api_group": api_group,
+                "api_version": api_version,
+                "resources": sorted(set(resources)),
+                "operations": sorted(set(operations)),
+                "namespaces": [namespace],
+                "semantic_guard": semantic_guard,
+                "names": sorted(set(names)),
+            }
+        )
+
+    for namespace, names in sorted(credential_secret_names.items()):
+        add_scoped_contract(
+            actions=[
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ],
+            api_group="",
+            api_version="v1",
+            resources=["secrets"],
+            operations=["DELETE", "UPDATE"],
+            namespace=namespace,
+            names=sorted(names),
+            semantic_guard="deny-controller-credential-secret-path",
+        )
+    for namespace, names in sorted(credential_pod_names.items()):
+        add_scoped_contract(
+            actions=[
+                "delete",
+                "deletecollection",
+                "get",
+                "list",
+                "patch",
+                "update",
+                "watch",
+            ],
+            api_group="",
+            api_version="v1",
+            resources=["pods"],
+            operations=["DELETE", "UPDATE"],
+            namespace=namespace,
+            names=sorted(names),
+            semantic_guard="deny-controller-credential-pod-path",
+        )
+        add_scoped_contract(
+            actions=["connect", "create", "get"],
+            api_group="",
+            api_version="v1",
+            resources=[
+                "pods/attach",
+                "pods/ephemeralcontainers",
+                "pods/exec",
+                "pods/portforward",
+            ],
+            operations=["CONNECT", "CREATE", "UPDATE"],
+            namespace=namespace,
+            names=sorted(names),
+            semantic_guard="deny-controller-credential-pod-subresource-path",
+        )
+    for namespace, names in sorted(credential_service_account_names.items()):
+        add_scoped_contract(
+            actions=["delete", "deletecollection", "get", "list", "patch", "update", "watch"],
+            api_group="",
+            api_version="v1",
+            resources=["serviceaccounts"],
+            operations=["DELETE", "UPDATE"],
+            namespace=namespace,
+            names=sorted(names),
+            semantic_guard="deny-controller-service-account-path",
+        )
+        add_scoped_contract(
+            actions=["create", "get"],
+            api_group="",
+            api_version="v1",
+            resources=["serviceaccounts/token"],
+            operations=["CREATE"],
+            namespace=namespace,
+            names=sorted(names),
+            semantic_guard="deny-controller-tokenrequest-path",
+        )
+
+    for namespace in sorted(set(boundary["credential_namespaces"])):
+        add_scoped_contract(
+            actions=["create", "patch", "update"],
+            api_group="",
+            api_version="v1",
+            resources=["pods", "replicationcontrollers", "serviceaccounts"],
+            operations=["CREATE", "UPDATE"],
+            namespace=namespace,
+            names=["*"],
+            semantic_guard="inspect-new-controller-credential-reachability",
+        )
+        add_scoped_contract(
+            actions=["create", "patch", "update"],
+            api_group="",
+            api_version="v1",
+            resources=["secrets"],
+            operations=["CREATE", "UPDATE"],
+            namespace=namespace,
+            names=["*"],
+            semantic_guard="classify-secret-content-before-admission",
+        )
+        add_scoped_contract(
+            actions=["create", "patch", "update"],
+            api_group="apps",
+            api_version="v1",
+            resources=["daemonsets", "deployments", "replicasets", "statefulsets"],
+            operations=["CREATE", "UPDATE"],
+            namespace=namespace,
+            names=["*"],
+            semantic_guard="inspect-new-controller-credential-reachability",
+        )
+        add_scoped_contract(
+            actions=["create", "patch", "update"],
+            api_group="batch",
+            api_version="v1",
+            resources=["cronjobs", "jobs"],
+            operations=["CREATE", "UPDATE"],
+            namespace=namespace,
+            names=["*"],
+            semantic_guard="inspect-new-controller-credential-reachability",
+        )
+
+    workload_resource = {
+        "CronJob": "cronjobs",
+        "DaemonSet": "daemonsets",
+        "Deployment": "deployments",
+        "Job": "jobs",
+        "ReplicaSet": "replicasets",
+        "ReplicationController": "replicationcontrollers",
+        "StatefulSet": "statefulsets",
+    }
+    for (api_group, api_version, kind), qualified_names in sorted(
+        credential_workload_names.items()
+    ):
+        if kind == "Pod":
+            continue
+        resource = workload_resource.get(kind)
+        if resource is None:
+            fail("signed credential workload has an unsupported native kind")
+        names_by_namespace: dict[str, set[str]] = {}
+        for qualified_name in qualified_names:
+            namespace, name = qualified_name.split("/", 1)
+            names_by_namespace.setdefault(namespace, set()).add(name)
+        for namespace, names in sorted(names_by_namespace.items()):
+            add_scoped_contract(
+                actions=["delete", "deletecollection", "patch", "update"],
+                api_group=api_group,
+                api_version=api_version,
+                resources=[resource],
+                operations=["DELETE", "UPDATE"],
+                namespace=namespace,
+                names=sorted(names),
+                semantic_guard="deny-controller-credential-workload-path",
+            )
+
+    protected_actions = sorted(
+        {
+            action
+            for contract in protected_resource_contract
+            for action in contract["actions"]
+        }
+    )
+    protected_names = sorted(
+        {
+            name
+            for contract in protected_resource_contract
+            for name in contract["names"]
+        }
+    )
     expected_controller = {
         "username": boundary["controller_username"],
         "uid": boundary["controller_uid"],
@@ -1487,6 +2197,169 @@ def validate_preventive_raw_exports(
         "image_digest": boundary["controller_image_digest"],
         "provider_principal_id": boundary["controller_provider_principal_id"],
     }
+
+    ca_history = exact_object(
+        verify_native_authority_export(
+            ca_history_raw,
+            PREVENTIVE_CA_HISTORY_FILENAME,
+            response_authorities=response_authorities,
+            role="kubernetes-ca-native-response-attestor",
+            endpoint=f"kubernetes://{cluster_id}/certificate-authority-history",
+        ),
+        {
+            "schema",
+            "authority_snapshot_id",
+            "cluster_id",
+            "cluster_created_at",
+            "collected_at",
+            "issuer_authorities",
+            "issuance_history",
+            "revocation_history",
+        },
+        "authoritative certificate-authority history export",
+    )
+    ca_collected = timestamp(
+        ca_history["collected_at"], "certificate-authority history collected_at"
+    )
+    raw_ca_authorities = list_value(
+        ca_history["issuer_authorities"], "certificate-authority issuer inventory"
+    )
+    ca_authorities: list[dict[str, Any]] = []
+    for index, raw_authority in enumerate(raw_ca_authorities):
+        authority = exact_object(
+            raw_authority,
+            {
+                "ca_key_id",
+                "issuance_log_id",
+                "response_attestation_sha256",
+                "revocation_mode",
+                "signer_name",
+                "trust_anchor_key_ids",
+                "trust_bundle_pem_base64",
+                "trust_bundle_sha256",
+            },
+            f"certificate authority {index}",
+        )
+        if (
+            re.fullmatch(r"sha256:[a-f0-9]{64}", str(authority["ca_key_id"]))
+            is None
+            or re.fullmatch(
+                r"[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?/[A-Za-z0-9._:-]{1,253}",
+                str(authority["signer_name"]),
+            )
+            is None
+            or authority["revocation_mode"]
+            not in {"certificate-revocation-list", "ocsp+certificate-revocation-list"}
+            or re.fullmatch(
+                r"[A-Za-z0-9._:/-]{8,256}", str(authority["issuance_log_id"])
+            )
+            is None
+        ):
+            fail("certificate-authority inventory contains an unsafe issuer")
+        trust_bundle_pem = canonical_base64(
+            authority["trust_bundle_pem_base64"],
+            f"certificate authority {index} trust bundle",
+            maximum_size=4 * 1024 * 1024,
+        )
+        trust_anchor_der = canonical_pem_blocks(
+            trust_bundle_pem,
+            pem_label="CERTIFICATE",
+            label=f"certificate authority {index} trust bundle",
+            maximum_blocks=32,
+        )
+        trust_anchor_key_ids = sorted(
+            {
+                "sha256:"
+                + openssl_public_key_sha256(
+                    item, command="x509", input_format="DER"
+                )
+                for item in trust_anchor_der
+            }
+        )
+        if (
+            hashlib.sha256(trust_bundle_pem).hexdigest()
+            != digest(authority["trust_bundle_sha256"], "CA trust bundle")
+            or authority["trust_anchor_key_ids"] != trust_anchor_key_ids
+            or not trust_anchor_key_ids
+        ):
+            fail("certificate authority trust bundle does not bind its enrolled roots")
+        digest(
+            authority["response_attestation_sha256"],
+            "CA response attestation",
+        )
+        ca_authorities.append(authority)
+    ca_authorities.sort(key=canonical_sha256)
+    if ca_authorities != boundary["enrolled_certificate_authorities"]:
+        fail("native certificate-authority inventory differs from signed enrollment")
+    ca_runtime = {
+        (str(authority["signer_name"]), str(authority["ca_key_id"])): {
+            "trust_bundle_pem": canonical_base64(
+                authority["trust_bundle_pem_base64"],
+                "enrolled CA trust bundle",
+                maximum_size=4 * 1024 * 1024,
+            ),
+            "trust_anchor_der": canonical_pem_blocks(
+                canonical_base64(
+                    authority["trust_bundle_pem_base64"],
+                    "enrolled CA trust bundle",
+                    maximum_size=4 * 1024 * 1024,
+                ),
+                pem_label="CERTIFICATE",
+                label="enrolled CA trust bundle",
+                maximum_blocks=32,
+            ),
+            "trust_bundle_sha256": authority["trust_bundle_sha256"],
+        }
+        for authority in ca_authorities
+    }
+    issued_certificates, issuance_history_start, issuance_observed_through = (
+        native_ca_history_records(
+            ca_history["issuance_history"],
+            label="native certificate issuance history",
+            cluster_id=cluster_id,
+            record_key="serial_hex",
+        )
+    )
+    revocations, revocation_history_start, revocation_observed_through = (
+        native_ca_history_records(
+            ca_history["revocation_history"],
+            label="native certificate revocation history",
+            cluster_id=cluster_id,
+            record_key="serial_hex",
+        )
+    )
+    required_history_start = timestamp(
+        boundary["certificate_history_start"],
+        "signed certificate history start",
+    )
+    cluster_created_at = timestamp(
+        ca_history["cluster_created_at"],
+        "native certificate-authority cluster creation",
+    )
+    if (
+        ca_history["schema"]
+        != "fs2-serve.nebius.ai/public-edge-certificate-authority-history/v1"
+        or ca_history["cluster_id"] != cluster_id
+        or ca_history["authority_snapshot_id"] != boundary["authority_snapshot_id"]
+        or ca_history["cluster_created_at"] != boundary["cluster_created_at"]
+        or required_history_start > cluster_created_at
+        or issuance_history_start != required_history_start
+        or revocation_history_start != required_history_start
+        or issuance_observed_through != ca_collected
+        or revocation_observed_through != ca_collected
+        or ca_history_summary
+        != {
+            "cluster_id": cluster_id,
+            "authority_snapshot_id": boundary["authority_snapshot_id"],
+            "cluster_created_at": boundary["cluster_created_at"],
+            "collected_at": ca_history["collected_at"],
+            "history_start": boundary["certificate_history_start"],
+            "issuance_count": len(issued_certificates),
+            "revocation_count": len(revocations),
+            "raw_export_sha256": hashlib.sha256(ca_history_raw).hexdigest(),
+        }
+    ):
+        fail("certificate-authority history is incomplete or not receipt-bound")
 
     provider = exact_object(
         verify_native_authority_export(
@@ -1498,6 +2371,7 @@ def validate_preventive_raw_exports(
         ),
         {
             "schema",
+            "authority_snapshot_id",
             "collected_at",
             "provider_api",
             "project_id",
@@ -1545,6 +2419,74 @@ def validate_preventive_raw_exports(
         api_group="iam.nebius.ai",
         resource="accessbindings",
     )
+
+    def selector_values(value: object, label: str) -> set[str]:
+        return {
+            string_value(item, f"{label} item")
+            for item in list_value(value, label)
+        }
+
+    def selectors_overlap(actual: set[str], expected: Sequence[str]) -> bool:
+        expected_values = set(expected)
+        return (
+            not actual
+            or "*" in actual
+            or "*" in expected_values
+            or bool(actual & expected_values)
+        )
+
+    def binding_overlaps_contract(
+        *,
+        actions: set[str],
+        resource_names: set[str],
+        resource_contracts: Sequence[object],
+        expected: Mapping[str, Any],
+    ) -> bool:
+        expected_actions = set(expected["actions"])
+        if not selectors_overlap(actions, sorted(expected_actions)):
+            return False
+        if not selectors_overlap(resource_names, expected["names"]):
+            return False
+        if not resource_contracts or "*" in resource_contracts:
+            return True
+        for index, raw_selector in enumerate(resource_contracts):
+            if raw_selector == "*":
+                return True
+            selector = object_value(
+                raw_selector, f"provider protected-resource selector {index}"
+            )
+            selector_group = selector.get("api_group", "*")
+            selector_version = selector.get("api_version", "*")
+            if selector_group not in {"*", expected["api_group"]} or selector_version not in {
+                "*",
+                expected["api_version"],
+            }:
+                continue
+            selector_resources = selector_values(
+                selector.get("resources", []),
+                "provider protected-resource resources",
+            )
+            selector_namespaces = selector_values(
+                selector.get("namespaces", []),
+                "provider protected-resource namespaces",
+            )
+            selector_names = selector_values(
+                selector.get("names", []),
+                "provider protected-resource names",
+            )
+            selector_actions = selector_values(
+                selector.get("actions", []),
+                "provider protected-resource actions",
+            )
+            if (
+                selectors_overlap(selector_resources, expected["resources"])
+                and selectors_overlap(selector_namespaces, expected["namespaces"])
+                and selectors_overlap(selector_names, expected["names"])
+                and selectors_overlap(selector_actions, expected["actions"])
+            ):
+                return True
+        return False
+
     protected_bindings: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = []
     for raw_binding in bindings:
         binding = exact_object(
@@ -1567,33 +2509,25 @@ def validate_preventive_raw_exports(
             },
             "native provider access-binding spec",
         )
-        actions = set(list_value(spec["actions"], "provider access-binding actions"))
-        resources = set(
-            list_value(spec["resourceNames"], "provider access-binding resources")
+        actions = selector_values(
+            spec["actions"], "provider access-binding actions"
+        )
+        resource_names = selector_values(
+            spec["resourceNames"], "provider access-binding resource names"
         )
         resource_contracts = list_value(
             spec["protectedResources"],
             "provider access-binding protected resources",
         )
-        grants_action = "*" in actions or bool(actions & set(protected_actions))
-        grants_named_resource = (
-            not resources
-            or "*" in resources
-            or bool(resources & set(protected_names))
-        )
-        grants_typed_resource = not resource_contracts or "*" in resource_contracts
-        if not grants_typed_resource:
-            for raw_contract in resource_contracts:
-                if not isinstance(raw_contract, Mapping):
-                    fail("provider access binding has a malformed protected resource")
-                if any(
-                    raw_contract.get("api_group") in {"*", expected["api_group"]}
-                    and raw_contract.get("resource") in {"*", expected["resource"]}
-                    for expected in protected_resource_contract
-                ):
-                    grants_typed_resource = True
-                    break
-        if grants_action and grants_named_resource and grants_typed_resource:
+        if any(
+            binding_overlaps_contract(
+                actions=actions,
+                resource_names=resource_names,
+                resource_contracts=resource_contracts,
+                expected=expected,
+            )
+            for expected in protected_resource_contract
+        ):
             protected_bindings.append((binding, spec))
     if len(protected_bindings) != 1:
         fail("native provider IAM closure must contain one protected-resource binding")
@@ -1603,12 +2537,13 @@ def validate_preventive_raw_exports(
     )
     provider_condition = exact_object(
         protected_spec["condition"],
-        {"project_id", "cluster_id", "configuration_sha256"},
+        {"project_id", "cluster_id", "configuration_sha256", "authority_snapshot_id"},
         "provider controller condition",
     )
     if (
         provider["schema"]
         != "fs2-serve.nebius.ai/public-edge-provider-iam-native-export/v3"
+        or provider["authority_snapshot_id"] != boundary["authority_snapshot_id"]
         or provider["provider_api"] != provider_summary["provider_api"]
         or provider["project_id"] != project_id
         or provider["cluster_id"] != cluster_id
@@ -1644,6 +2579,7 @@ def validate_preventive_raw_exports(
             "project_id": project_id,
             "cluster_id": cluster_id,
             "configuration_sha256": boundary["configuration_sha256"],
+            "authority_snapshot_id": boundary["authority_snapshot_id"],
         }
     ):
         fail("provider-IAM raw policy does not enforce exact-controller default deny")
@@ -1658,6 +2594,7 @@ def validate_preventive_raw_exports(
         ),
         {
             "schema",
+            "authority_snapshot_id",
             "collected_at",
             "cluster_id",
             "enforcement_id",
@@ -1701,6 +2638,7 @@ def validate_preventive_raw_exports(
             "default_decision",
             "allowed_controller",
             "plugin",
+            "snapshot_fence",
         },
         "native API-server admission configuration",
     )
@@ -1738,7 +2676,6 @@ def validate_preventive_raw_exports(
     ):
         list_value(authentication[key], f"API-server {key}")
     for key in (
-        "client_certificate",
         "provider_control_plane",
         "requestheader",
         "service_accounts",
@@ -1749,9 +2686,52 @@ def validate_preventive_raw_exports(
         if not isinstance(configuration["enabled"], bool):
             fail(f"API-server {key} enabled state is not boolean")
         digest(configuration["configuration_sha256"], f"API-server {key} configuration")
+    client_certificate_authenticator = exact_object(
+        authentication["client_certificate"],
+        {
+            "configuration_sha256",
+            "enabled",
+            "issuer_inventory_sha256",
+            "maximum_status_age_seconds",
+            "revocation_fail_closed",
+            "revocation_inventory_sha256",
+            "revocation_mode",
+        },
+        "API-server client-certificate authenticator",
+    )
+    status_age = client_certificate_authenticator["maximum_status_age_seconds"]
+    if (
+        not isinstance(client_certificate_authenticator["enabled"], bool)
+        or not isinstance(status_age, int)
+        or isinstance(status_age, bool)
+        or not 1 <= status_age <= 300
+        or client_certificate_authenticator["revocation_fail_closed"] is not True
+        or client_certificate_authenticator["revocation_mode"]
+        not in {"certificate-revocation-list", "ocsp+certificate-revocation-list"}
+        or client_certificate_authenticator["issuer_inventory_sha256"]
+        != canonical_sha256(ca_authorities)
+        or client_certificate_authenticator["revocation_inventory_sha256"]
+        != canonical_sha256(revocations)
+    ):
+        fail("API-server client-certificate revocation enforcement is not exact")
+    digest(
+        client_certificate_authenticator["configuration_sha256"],
+        "API-server client-certificate configuration",
+    )
+    snapshot_fence = exact_object(
+        admission["snapshot_fence"],
+        {
+            "failure_policy",
+            "maximum_age_seconds",
+            "protected_resources_sha256",
+            "snapshot_id",
+        },
+        "API-server authority snapshot fence",
+    )
     if (
         apiserver["schema"]
-        != "fs2-serve.nebius.ai/public-edge-apiserver-native-export/v3"
+        != "fs2-serve.nebius.ai/public-edge-apiserver-native-export/v4"
+        or apiserver["authority_snapshot_id"] != boundary["authority_snapshot_id"]
         or apiserver["cluster_id"] != cluster_id
         or apiserver["enforcement_id"] != boundary["apiserver_enforcement_id"]
         or apiserver["resource_version"] != apiserver_summary["resource_version"]
@@ -1765,6 +2745,13 @@ def validate_preventive_raw_exports(
         or admission["protected_resources"] != protected_resource_contract
         or admission["default_decision"] != "Deny"
         or admission["allowed_controller"] != expected_controller
+        or snapshot_fence
+        != {
+            "failure_policy": "Fail",
+            "maximum_age_seconds": int(MAX_PREVENTIVE_SNAPSHOT_AGE.total_seconds()),
+            "protected_resources_sha256": canonical_sha256(protected_resource_contract),
+            "snapshot_id": boundary["authority_snapshot_id"],
+        }
         or authorization["modes"] != ["Node", "RBAC"]
         or authorization["webhooks"] != []
         or sorted(derived_identity_paths) != boundary["identity_paths"]
@@ -1781,6 +2768,7 @@ def validate_preventive_raw_exports(
         ),
         {
             "schema",
+            "authority_snapshot_id",
             "collected_at",
             "project_id",
             "cluster_id",
@@ -1791,7 +2779,10 @@ def validate_preventive_raw_exports(
             "certificate_signing_requests",
             "service_accounts",
             "secret_metadata",
+            "secret_authority_classifications",
             "pods",
+            "replica_sets",
+            "replication_controllers",
             "deployments",
             "stateful_sets",
             "daemon_sets",
@@ -1801,7 +2792,6 @@ def validate_preventive_raw_exports(
             "mutating_webhook_configurations",
             "custom_resource_definitions",
             "public_edge_node_authority_approvals",
-            "enrolled_identities",
         },
         "authoritative RBAC/impersonation export",
     )
@@ -1851,8 +2841,104 @@ def validate_preventive_raw_exports(
         resource="secrets",
         representation="partial-object-metadata",
     )
+    raw_secret_classifications = list_value(
+        identity["secret_authority_classifications"],
+        "content-attested Secret classifications",
+    )
+    secret_metadata_by_uid: dict[str, Mapping[str, Any]] = {
+        string_value(
+            object_value(secret.get("metadata"), "native Secret metadata").get("uid"),
+            "native Secret UID",
+        ): secret
+        for secret in secret_metadata
+    }
+    secret_classifications: list[dict[str, Any]] = []
+    authority_secret_records: list[dict[str, Any]] = []
+    authority_secret_names_by_namespace: dict[str, set[str]] = {}
+    allowed_credential_classes = {
+        "controller-kubeconfig",
+        "controller-service-account-token",
+        "provider-credential",
+        "public-edge-broker-credential",
+    }
+    seen_classified_secret_uids: set[str] = set()
+    for index, raw_classification in enumerate(raw_secret_classifications):
+        classification = exact_object(
+            raw_classification,
+            {
+                "content_attestation_sha256",
+                "credential_classes",
+                "data_key_names",
+                "kms_key_id",
+                "name",
+                "namespace",
+                "resource_version",
+                "secret_type",
+                "uid",
+            },
+            f"Secret authority classification {index}",
+        )
+        uid = string_value(classification["uid"], "classified Secret UID")
+        metadata_secret = secret_metadata_by_uid.get(uid)
+        if metadata_secret is None or uid in seen_classified_secret_uids:
+            fail("Secret authority classification is absent from the complete inventory")
+        seen_classified_secret_uids.add(uid)
+        namespace, name = native_object_identity(
+            metadata_secret, "classified native Secret metadata"
+        )
+        metadata_value = object_value(
+            metadata_secret.get("metadata"), "classified native Secret metadata"
+        )
+        credential_classes = list_value(
+            classification["credential_classes"], "Secret credential classes"
+        )
+        data_key_names = list_value(
+            classification["data_key_names"], "Secret data-key names"
+        )
+        if (
+            namespace != classification["namespace"]
+            or name != classification["name"]
+            or metadata_value.get("resourceVersion")
+            != classification["resource_version"]
+            or credential_classes != sorted(set(credential_classes))
+            or not set(credential_classes) <= allowed_credential_classes
+            or data_key_names != sorted(set(data_key_names))
+            or not all(isinstance(item, str) and item for item in data_key_names)
+            or re.fullmatch(
+                r"sha256:[a-f0-9]{64}", str(classification["kms_key_id"])
+            )
+            is None
+        ):
+            fail("Secret authority classification does not bind exact native metadata")
+        digest(
+            classification["content_attestation_sha256"],
+            "Secret content attestation",
+        )
+        normalized_classification = dict(classification)
+        secret_classifications.append(normalized_classification)
+        if credential_classes:
+            authority_secret_records.append(normalized_classification)
+            authority_secret_names_by_namespace.setdefault(namespace, set()).add(name)
+    if seen_classified_secret_uids != set(secret_metadata_by_uid):
+        fail("one or more Secrets lacks a content-bound authority classification")
+    secret_classifications.sort(key=canonical_sha256)
+    authority_secret_records.sort(key=canonical_sha256)
+    if authority_secret_records != boundary["enrolled_credential_secrets"]:
+        fail("credential-bearing Secret inventory differs from signed enrollment")
     pods, pods_rv = native_list_items(
         identity["pods"], label="Kubernetes Pods", api_group="", resource="pods"
+    )
+    replica_sets, replica_sets_rv = native_list_items(
+        identity["replica_sets"],
+        label="Kubernetes ReplicaSets",
+        api_group="apps",
+        resource="replicasets",
+    )
+    replication_controllers, replication_controllers_rv = native_list_items(
+        identity["replication_controllers"],
+        label="Kubernetes ReplicationControllers",
+        api_group="",
+        resource="replicationcontrollers",
     )
     deployments, deployments_rv = native_list_items(
         identity["deployments"],
@@ -1905,6 +2991,325 @@ def validate_preventive_raw_exports(
         api_group="security.fs2.nebius.ai",
         resource="publicedgenodeauthorityapprovals",
     )
+
+    protected_admission_resources = {
+        "": {
+            "nodes",
+            "nodes/proxy",
+            "pods",
+            "pods/attach",
+            "pods/ephemeralcontainers",
+            "pods/exec",
+            "pods/portforward",
+            "replicationcontrollers",
+            "secrets",
+            "serviceaccounts",
+            "serviceaccounts/token",
+        },
+        "admissionregistration.k8s.io": {
+            "mutatingwebhookconfigurations",
+            "validatingadmissionpolicies",
+            "validatingadmissionpolicybindings",
+            "validatingwebhookconfigurations",
+        },
+        "apiextensions.k8s.io": {"customresourcedefinitions"},
+        "apps": {"daemonsets", "deployments", "replicasets", "statefulsets"},
+        "batch": {"cronjobs", "jobs"},
+        "certificates.k8s.io": {
+            "certificatesigningrequests",
+            "certificatesigningrequests/approval",
+        },
+        "rbac.authorization.k8s.io": {
+            "clusterrolebindings",
+            "clusterroles",
+            "rolebindings",
+            "roles",
+        },
+        "security.fs2.nebius.ai": {"publicedgenodeauthorityapprovals"},
+    }
+
+    def admission_rule_intersects_authority(raw_rule: object, label: str) -> bool:
+        rule = exact_object(
+            raw_rule,
+            {"apiGroups", "apiVersions", "operations", "resources", "scope"},
+            label,
+        )
+        groups = set(list_value(rule["apiGroups"], f"{label} apiGroups"))
+        resources = set(list_value(rule["resources"], f"{label} resources"))
+        operations = set(list_value(rule["operations"], f"{label} operations"))
+        versions = list_value(rule["apiVersions"], f"{label} apiVersions")
+        if (
+            not groups
+            or not resources
+            or not versions
+            or operations.isdisjoint({"*", "CONNECT", "CREATE", "DELETE", "UPDATE"})
+            or rule["scope"] not in {"*", "Cluster", "Namespaced"}
+        ):
+            return False
+        for protected_group, protected_resources in protected_admission_resources.items():
+            if protected_group not in groups and "*" not in groups:
+                continue
+            if any(
+                candidate == "*"
+                or candidate in protected_resources
+                or any(
+                    candidate.endswith("/*")
+                    and protected.startswith(candidate.removesuffix("*"))
+                    for protected in protected_resources
+                )
+                for candidate in resources
+            ):
+                return True
+        return False
+
+    dangerous_validating_webhooks: list[dict[str, Any]] = []
+    dangerous_mutating_webhooks: list[dict[str, Any]] = []
+    for configurations, webhook_kind, output in (
+        (
+            validating_webhooks,
+            "ValidatingWebhookConfiguration",
+            dangerous_validating_webhooks,
+        ),
+        (
+            mutating_webhooks,
+            "MutatingWebhookConfiguration",
+            dangerous_mutating_webhooks,
+        ),
+    ):
+        for configuration in configurations:
+            _namespace, configuration_name = native_object_identity(
+                configuration, f"native {webhook_kind}"
+            )
+            configuration_metadata = object_value(
+                configuration.get("metadata"), f"native {webhook_kind} metadata"
+            )
+            for webhook_index, raw_webhook in enumerate(
+                list_value(
+                    configuration.get("webhooks"), f"native {webhook_kind} webhooks"
+                )
+            ):
+                webhook = object_value(
+                    raw_webhook, f"native {webhook_kind} webhook {webhook_index}"
+                )
+                rules = list_value(
+                    webhook.get("rules", []),
+                    f"native {webhook_kind} webhook {webhook_index} rules",
+                )
+                if not any(
+                    admission_rule_intersects_authority(
+                        rule,
+                        f"native {webhook_kind} webhook {webhook_index} rule",
+                    )
+                    for rule in rules
+                ):
+                    continue
+                client_config = exact_object(
+                    webhook.get("clientConfig"),
+                    {"caBundle", "service"},
+                    f"native {webhook_kind} clientConfig",
+                )
+                service = exact_object(
+                    client_config["service"],
+                    {"name", "namespace", "path", "port"},
+                    f"native {webhook_kind} service reference",
+                )
+                canonical_base64(
+                    client_config["caBundle"],
+                    f"native {webhook_kind} CA bundle",
+                    maximum_size=1024 * 1024,
+                )
+                review_versions = list_value(
+                    webhook.get("admissionReviewVersions"),
+                    f"native {webhook_kind} admissionReviewVersions",
+                )
+                timeout_seconds = webhook.get("timeoutSeconds")
+                if (
+                    review_versions != sorted(set(review_versions))
+                    or "v1" not in review_versions
+                    or not isinstance(timeout_seconds, int)
+                    or isinstance(timeout_seconds, bool)
+                    or not 1 <= timeout_seconds <= 10
+                    or webhook.get("sideEffects") not in {"None", "NoneOnDryRun"}
+                    or not all(
+                        isinstance(service.get(key), str) and service.get(key)
+                        for key in ("name", "namespace", "path")
+                    )
+                    or not isinstance(service.get("port"), int)
+                ):
+                    fail("authority-intersecting admission webhook is not bounded")
+                output.append(
+                    {
+                        "client_config_sha256": canonical_sha256(client_config),
+                        "configuration_name": configuration_name,
+                        "configuration_resource_version": configuration_metadata.get(
+                            "resourceVersion"
+                        ),
+                        "configuration_uid": configuration_metadata.get("uid"),
+                        "failure_policy": webhook.get("failurePolicy"),
+                        "kind": webhook_kind,
+                        "match_conditions_sha256": canonical_sha256(
+                            webhook.get("matchConditions", [])
+                        ),
+                        "match_policy": webhook.get("matchPolicy"),
+                        "namespace_selector_sha256": canonical_sha256(
+                            webhook.get("namespaceSelector", {})
+                        ),
+                        "object_selector_sha256": canonical_sha256(
+                            webhook.get("objectSelector", {})
+                        ),
+                        "reinvocation_policy": webhook.get("reinvocationPolicy"),
+                        "rules_sha256": canonical_sha256(rules),
+                        "side_effects": webhook.get("sideEffects"),
+                        "timeout_seconds": timeout_seconds,
+                        "webhook_name": string_value(
+                            webhook.get("name"), f"native {webhook_kind} name"
+                        ),
+                    }
+                )
+    if dangerous_mutating_webhooks:
+        fail("a mutating webhook can alter protected identity or authority resources")
+    dangerous_validating_webhooks.sort(key=canonical_sha256)
+    if (
+        any(
+            item["failure_policy"] != "Fail"
+            or item["match_policy"] != "Equivalent"
+            for item in dangerous_validating_webhooks
+        )
+        or dangerous_validating_webhooks
+        != boundary["enrolled_admission_webhooks"]
+    ):
+        fail("validating webhook authority closure differs from signed enrollment")
+
+    def native_pod_template(value: Mapping[str, Any], kind: str) -> Mapping[str, Any]:
+        spec = object_value(value.get("spec"), f"native {kind} spec")
+        if kind == "Pod":
+            return spec
+        if kind == "CronJob":
+            job_template = object_value(spec.get("jobTemplate"), "CronJob jobTemplate")
+            job_spec = object_value(job_template.get("spec"), "CronJob jobTemplate spec")
+            template = object_value(job_spec.get("template"), "CronJob Pod template")
+        else:
+            template = object_value(spec.get("template"), f"native {kind} Pod template")
+        return object_value(template.get("spec"), f"native {kind} Pod template spec")
+
+    def pod_secret_references(template: Mapping[str, Any], label: str) -> set[str]:
+        references: set[str] = set()
+        for raw_pull_secret in list_value(
+            template.get("imagePullSecrets", []), f"{label} imagePullSecrets"
+        ):
+            pull_secret = object_value(raw_pull_secret, f"{label} imagePullSecret")
+            references.add(string_value(pull_secret.get("name"), f"{label} pull Secret"))
+        for raw_volume in list_value(template.get("volumes", []), f"{label} volumes"):
+            volume = object_value(raw_volume, f"{label} volume")
+            if "secret" in volume:
+                secret = object_value(volume["secret"], f"{label} Secret volume")
+                references.add(
+                    string_value(secret.get("secretName"), f"{label} Secret volume name")
+                )
+            if "projected" in volume:
+                projected = object_value(volume["projected"], f"{label} projected volume")
+                for raw_source in list_value(
+                    projected.get("sources", []), f"{label} projected sources"
+                ):
+                    source = object_value(raw_source, f"{label} projected source")
+                    if "secret" in source:
+                        secret = object_value(source["secret"], f"{label} projected Secret")
+                        references.add(
+                            string_value(secret.get("name"), f"{label} projected Secret name")
+                        )
+        containers = [
+            *list_value(template.get("initContainers", []), f"{label} initContainers"),
+            *list_value(template.get("containers", []), f"{label} containers"),
+            *list_value(template.get("ephemeralContainers", []), f"{label} ephemeralContainers"),
+        ]
+        for raw_container in containers:
+            container = object_value(raw_container, f"{label} container")
+            for raw_env in list_value(container.get("env", []), f"{label} container env"):
+                env = object_value(raw_env, f"{label} environment entry")
+                value_from = object_value(
+                    env.get("valueFrom", {}), f"{label} environment valueFrom"
+                )
+                if "secretKeyRef" in value_from:
+                    secret_ref = object_value(
+                        value_from["secretKeyRef"], f"{label} secretKeyRef"
+                    )
+                    references.add(
+                        string_value(secret_ref.get("name"), f"{label} secretKeyRef name")
+                    )
+            for raw_env_from in list_value(
+                container.get("envFrom", []), f"{label} container envFrom"
+            ):
+                env_from = object_value(raw_env_from, f"{label} envFrom entry")
+                if "secretRef" in env_from:
+                    secret_ref = object_value(env_from["secretRef"], f"{label} envFrom Secret")
+                    references.add(
+                        string_value(secret_ref.get("name"), f"{label} envFrom Secret name")
+                    )
+        return references
+
+    credential_namespaces = sorted(
+        {
+            *authority_secret_names_by_namespace,
+            *([controller_namespace_contract] if controller_namespace_contract else []),
+        }
+    )
+    if credential_namespaces != boundary["credential_namespaces"]:
+        fail("credential-bearing namespace closure differs from signed enrollment")
+    authority_reachable_workloads: list[dict[str, Any]] = []
+    authority_pod_names_by_namespace: dict[str, set[str]] = {}
+    for items, kind in (
+        (pods, "Pod"),
+        (replica_sets, "ReplicaSet"),
+        (replication_controllers, "ReplicationController"),
+        (deployments, "Deployment"),
+        (stateful_sets, "StatefulSet"),
+        (daemon_sets, "DaemonSet"),
+        (jobs, "Job"),
+        (cron_jobs, "CronJob"),
+    ):
+        for item in items:
+            namespace, name = native_object_identity(item, f"native {kind}")
+            template = native_pod_template(item, kind)
+            references = sorted(pod_secret_references(template, f"native {kind}"))
+            authority_references = sorted(
+                set(references) & authority_secret_names_by_namespace.get(namespace, set())
+            )
+            uses_controller_sa = (
+                namespace == controller_namespace_contract
+                and template.get("serviceAccountName")
+                == (
+                    controller_username_parts[3]
+                    if len(controller_username_parts) == 4
+                    else None
+                )
+            )
+            if not authority_references and not uses_controller_sa:
+                continue
+            metadata_value = object_value(item.get("metadata"), f"native {kind} metadata")
+            record = {
+                "api_version": item.get("apiVersion"),
+                "authority_secret_names": authority_references,
+                "kind": kind,
+                "name": name,
+                "namespace": namespace,
+                "pod_template_sha256": canonical_sha256(template),
+                "service_account_name": template.get("serviceAccountName"),
+                "uid": metadata_value.get("uid"),
+            }
+            authority_reachable_workloads.append(record)
+            if kind == "Pod":
+                authority_pod_names_by_namespace.setdefault(namespace, set()).add(name)
+    authority_reachable_workloads.sort(key=canonical_sha256)
+    if authority_reachable_workloads != boundary["enrolled_credential_workloads"]:
+        fail("credential-reachable workload closure differs from signed enrollment")
+    authority_service_accounts_by_namespace: dict[str, set[str]] = {}
+    for workload in authority_reachable_workloads:
+        service_account_name = workload.get("service_account_name")
+        if isinstance(service_account_name, str) and service_account_name:
+            authority_service_accounts_by_namespace.setdefault(
+                str(workload["namespace"]), set()
+            ).add(service_account_name)
+
     role_rules: dict[tuple[str, str], Sequence[object]] = {}
     for native in [*cluster_roles, *roles]:
         namespace, name = native_object_identity(native, "native RBAC role")
@@ -1948,7 +3353,7 @@ def validate_preventive_raw_exports(
     enrolled_identities: list[dict[str, Any]] = []
     enrolled_capabilities: set[tuple[str, str]] = set()
     for index, raw_enrollment in enumerate(
-        list_value(identity["enrolled_identities"], "enrolled identity paths")
+        list_value(boundary["enrolled_identities"], "signed enrolled identity paths")
     ):
         enrollment = exact_object(
             raw_enrollment,
@@ -2045,13 +3450,37 @@ def validate_preventive_raw_exports(
             fail("RBAC binding references a role absent from the complete native lists")
         subjects = list_value(native.get("subjects", []), "native RBAC binding subjects")
         normalized_subjects = [native_rbac_subject(item, "RBAC subject") for item in subjects]
+        scoped_namespaces = (
+            set(credential_namespaces) if not namespace else {namespace}
+        )
+        reachable_secret_names = set().union(
+            *(
+                authority_secret_names_by_namespace.get(item, set())
+                for item in scoped_namespaces
+            )
+        )
+        reachable_pod_names = set().union(
+            *(
+                authority_pod_names_by_namespace.get(item, set())
+                for item in scoped_namespaces
+            )
+        )
+        reachable_service_account_names = set().union(
+            *(
+                authority_service_accounts_by_namespace.get(item, set())
+                for item in scoped_namespaces
+            )
+        )
+        reaches_credential_namespace = bool(
+            scoped_namespaces & set(credential_namespaces)
+        )
         for raw_rule in rules:
             rule = object_value(raw_rule, "native RBAC rule")
             if not namespace and native_rule_matches(
                 rule,
                 api_groups={"admissionregistration.k8s.io"},
                 resources={"validatingadmissionpolicies", "validatingadmissionpolicybindings"},
-                verbs={"create", "delete", "patch", "update"},
+                verbs={"create", "delete", "deletecollection", "patch", "update"},
                 resource_names=set(protected_names),
             ):
                 protected_subjects.extend(normalized_subjects)
@@ -2090,21 +3519,23 @@ def validate_preventive_raw_exports(
                 csr_authorities.extend(normalized_subjects)
                 credential_path_subjects["csr-authority"].extend(normalized_subjects)
             dangerous_rules = {
-                "serviceaccount-token-mint": namespace in {"", controller_namespace}
+                "serviceaccount-token-mint": bool(reachable_service_account_names)
                 and native_rule_matches(
                     rule,
                     api_groups={""},
                     resources={"serviceaccounts/token"},
                     verbs={"create"},
+                    resource_names=reachable_service_account_names,
                 ),
-                "controller-secret-read": namespace in {"", controller_namespace}
+                "controller-secret-read": bool(reachable_secret_names)
                 and native_rule_matches(
                     rule,
                     api_groups={""},
                     resources={"secrets"},
                     verbs={"get", "list", "watch"},
+                    resource_names=reachable_secret_names,
                 ),
-                "rbac-delegation": namespace in {"", controller_namespace}
+                "rbac-delegation": reaches_credential_namespace
                 and native_rule_matches(
                     rule,
                     api_groups={"rbac.authorization.k8s.io"},
@@ -2114,9 +3545,17 @@ def validate_preventive_raw_exports(
                         "rolebindings",
                         "clusterrolebindings",
                     },
-                    verbs={"bind", "escalate", "create", "update", "patch"},
+                    verbs={
+                        "bind",
+                        "escalate",
+                        "create",
+                        "delete",
+                        "deletecollection",
+                        "update",
+                        "patch",
+                    },
                 ),
-                "pod-subresource-access": namespace in {"", controller_namespace}
+                "pod-subresource-access": bool(reachable_pod_names)
                 and native_rule_matches(
                     rule,
                     api_groups={""},
@@ -2127,6 +3566,7 @@ def validate_preventive_raw_exports(
                         "pods/ephemeralcontainers",
                     },
                     verbs={"create", "get", "patch", "update"},
+                    resource_names=reachable_pod_names,
                 ),
                 "node-or-kubelet-proxy": not namespace
                 and native_rule_matches(
@@ -2146,32 +3586,39 @@ def validate_preventive_raw_exports(
                             "validatingadmissionpolicies",
                             "validatingadmissionpolicybindings",
                         },
-                        verbs={"create", "delete", "patch", "update"},
+                        verbs={"create", "delete", "deletecollection", "patch", "update"},
                     )
                     or native_rule_matches(
                         rule,
                         api_groups={"apiextensions.k8s.io"},
                         resources={"customresourcedefinitions"},
-                        verbs={"create", "delete", "patch", "update"},
+                        verbs={"create", "delete", "deletecollection", "patch", "update"},
+                    )
+                    or native_rule_matches(
+                        rule,
+                        api_groups={"security.fs2.nebius.ai"},
+                        resources={"publicedgenodeauthorityapprovals"},
+                        verbs={"create", "delete", "deletecollection", "patch", "update"},
+                        resource_names={"fs2-public-edge-node-authority-approval"},
                     )
                 ),
-                "controller-serviceaccount-mutation": namespace
-                in {"", controller_namespace}
+                "controller-serviceaccount-mutation": bool(
+                    reachable_service_account_names
+                )
                 and native_rule_matches(
                     rule,
                     api_groups={""},
                     resources={"serviceaccounts"},
-                    verbs={"create", "delete", "patch", "update"},
-                    resource_names={expected_controller_subject["name"]},
+                    verbs={"create", "delete", "deletecollection", "patch", "update"},
+                    resource_names=reachable_service_account_names,
                 ),
-                "controller-workload-mutation": namespace
-                in {"", controller_namespace}
+                "controller-workload-mutation": reaches_credential_namespace
                 and (
                     native_rule_matches(
                         rule,
                         api_groups={""},
-                        resources={"pods"},
-                        verbs={"create", "delete", "patch", "update"},
+                        resources={"pods", "replicationcontrollers"},
+                        verbs={"create", "delete", "deletecollection", "patch", "update"},
                     )
                     or native_rule_matches(
                         rule,
@@ -2182,13 +3629,13 @@ def validate_preventive_raw_exports(
                             "daemonsets",
                             "replicasets",
                         },
-                        verbs={"create", "delete", "patch", "update"},
+                        verbs={"create", "delete", "deletecollection", "patch", "update"},
                     )
                     or native_rule_matches(
                         rule,
                         api_groups={"batch"},
                         resources={"jobs", "cronjobs"},
-                        verbs={"create", "delete", "patch", "update"},
+                        verbs={"create", "delete", "deletecollection", "patch", "update"},
                     )
                 ),
             }
@@ -2227,6 +3674,13 @@ def validate_preventive_raw_exports(
         (service_accounts, "v1", "ServiceAccount", "ServiceAccount"),
         (secret_metadata, "meta.k8s.io/v1", "PartialObjectMetadata", "Secret metadata"),
         (pods, "v1", "Pod", "Pod"),
+        (replica_sets, "apps/v1", "ReplicaSet", "ReplicaSet"),
+        (
+            replication_controllers,
+            "v1",
+            "ReplicationController",
+            "ReplicationController",
+        ),
         (deployments, "apps/v1", "Deployment", "Deployment"),
         (stateful_sets, "apps/v1", "StatefulSet", "StatefulSet"),
         (daemon_sets, "apps/v1", "DaemonSet", "DaemonSet"),
@@ -2274,6 +3728,27 @@ def validate_preventive_raw_exports(
     )
     if approval_spec.get("preventiveBoundary") != boundary:
         fail("native approval parameter does not bind the signed preventive boundary")
+    native_approval_projection = {
+        "apiVersion": approval_objects[0].get("apiVersion"),
+        "kind": approval_objects[0].get("kind"),
+        "metadata": {
+            "name": approval_identities[0][1],
+            "resourceVersion": object_value(
+                approval_objects[0].get("metadata"),
+                "native approval parameter metadata",
+            ).get("resourceVersion"),
+            "uid": object_value(
+                approval_objects[0].get("metadata"),
+                "native approval parameter metadata",
+            ).get("uid"),
+        },
+        "spec": approval_spec,
+        "status": approval_objects[0].get("status"),
+    }
+    if terraform_json_sha256(native_approval_projection) != terraform_json_sha256(
+        approval_projection
+    ):
+        fail("native approval object differs from the separately signed live projection")
     approval_crds = [
         item
         for item in custom_resource_definitions
@@ -2342,21 +3817,11 @@ def validate_preventive_raw_exports(
         ):
             controller_secret_metadata.append(secret)
 
-    def pod_template(value: Mapping[str, Any], kind: str) -> Mapping[str, Any] | None:
-        spec = object_value(value.get("spec"), f"native {kind} spec")
-        if kind == "Pod":
-            return spec
-        if kind == "CronJob":
-            job_template = object_value(spec.get("jobTemplate"), "CronJob jobTemplate")
-            job_spec = object_value(job_template.get("spec"), "CronJob jobTemplate spec")
-            template = object_value(job_spec.get("template"), "CronJob Pod template")
-        else:
-            template = object_value(spec.get("template"), f"native {kind} Pod template")
-        return object_value(template.get("spec"), f"native {kind} Pod template spec")
-
-    controller_workloads: list[Mapping[str, Any]] = []
+    controller_workloads: list[dict[str, Any]] = []
     for items, kind in (
         (pods, "Pod"),
+        (replica_sets, "ReplicaSet"),
+        (replication_controllers, "ReplicationController"),
         (deployments, "Deployment"),
         (stateful_sets, "StatefulSet"),
         (daemon_sets, "DaemonSet"),
@@ -2364,8 +3829,8 @@ def validate_preventive_raw_exports(
         (cron_jobs, "CronJob"),
     ):
         for item in items:
-            namespace, _name = native_object_identity(item, f"native {kind}")
-            template = pod_template(item, kind)
+            namespace, name = native_object_identity(item, f"native {kind}")
+            template = native_pod_template(item, kind)
             if (
                 namespace == controller_namespace
                 and template.get("serviceAccountName")
@@ -2374,32 +3839,492 @@ def validate_preventive_raw_exports(
                 containers = [
                     *list_value(template.get("initContainers", []), f"{kind} initContainers"),
                     *list_value(template.get("containers", []), f"{kind} containers"),
+                    *list_value(
+                        template.get("ephemeralContainers", []),
+                        f"{kind} ephemeralContainers",
+                    ),
                 ]
-                images = [
+                images = sorted(
                     string_value(
                         object_value(container, f"{kind} container").get("image"),
                         f"{kind} container image",
                     )
                     for container in containers
-                ]
-                if not any(
-                    image.endswith("@" + str(boundary["controller_image_digest"]))
+                )
+                allowed_image_digests = set(
+                    list_value(
+                        boundary["controller_allowed_image_digests"],
+                        "signed controller image digest closure",
+                    )
+                )
+                observed_image_digests = {
+                    image.rsplit("@", 1)[1]
                     for image in images
+                    if "@" in image
+                }
+                if (
+                    not images
+                    or any(
+                        re.fullmatch(r"[^@\s]+@sha256:[a-f0-9]{64}", image) is None
+                        for image in images
+                    )
+                    or observed_image_digests - allowed_image_digests
+                    or str(boundary["controller_image_digest"])
+                    not in observed_image_digests
                 ):
-                    fail("controller workload does not use its signed immutable image digest")
-                controller_workloads.append(item)
+                    fail("controller workload image closure is not immutable and signed")
+                metadata = object_value(item.get("metadata"), f"native {kind} metadata")
+                controller_workloads.append(
+                    {
+                        "api_version": item.get("apiVersion"),
+                        "images": images,
+                        "kind": kind,
+                        "name": name,
+                        "namespace": namespace,
+                        "pod_template_sha256": canonical_sha256(template),
+                        "service_account_name": template.get("serviceAccountName"),
+                        "uid": metadata.get("uid"),
+                    }
+                )
     if expected_controller_subject["kind"] == "ServiceAccount" and not controller_workloads:
         fail("complete workload inventory does not contain the signed controller")
+    controller_workloads.sort(
+        key=lambda item: (
+            str(item["namespace"]),
+            str(item["kind"]),
+            str(item["name"]),
+            str(item["uid"]),
+        )
+    )
+    if controller_workloads != boundary["enrolled_controller_workloads"]:
+        fail("controller workload runtime closure differs from signed enrollment")
+
+    issuer_keys = {
+        (str(authority["signer_name"]), str(authority["ca_key_id"]))
+        for authority in ca_authorities
+    }
+    revocations_by_serial: dict[str, dict[str, Any]] = {}
+    for index, raw_revocation in enumerate(revocations):
+        revocation = exact_object(
+            raw_revocation,
+            {
+                "ca_key_id",
+                "certificate_sha256",
+                "reason",
+                "revoked_at",
+                "serial_hex",
+                "signer_name",
+                "status_response_sha256",
+            },
+            f"certificate revocation {index}",
+        )
+        serial_hex = string_value(
+            revocation["serial_hex"], f"certificate revocation {index} serial"
+        )
+        revoked_at = timestamp(
+            revocation["revoked_at"], f"certificate revocation {index} time"
+        )
+        if (
+            re.fullmatch(r"[0-9a-f]{1,128}", serial_hex) is None
+            or set(serial_hex) == {"0"}
+            or (
+                str(revocation["signer_name"]),
+                str(revocation["ca_key_id"]),
+            )
+            not in issuer_keys
+            or revoked_at < required_history_start
+            or revoked_at > ca_collected + MAX_CLOCK_SKEW
+            or serial_hex in revocations_by_serial
+        ):
+            fail("certificate revocation history is malformed or not issuer-bound")
+        digest(revocation["certificate_sha256"], "revoked certificate digest")
+        digest(revocation["status_response_sha256"], "revocation status response")
+        string_value(revocation["reason"], "certificate revocation reason")
+        revocations_by_serial[serial_hex] = revocation
+
+    issued_by_serial: dict[str, dict[str, Any]] = {}
+    issued_by_csr_uid: dict[str, dict[str, Any]] = {}
+    active_certificate_identities: list[dict[str, Any]] = []
+    for index, raw_issuance in enumerate(issued_certificates):
+        issuance = exact_object(
+            raw_issuance,
+            {
+                "ca_key_id",
+                "certificate_chain_der_base64",
+                "certificate_der_base64",
+                "certificate_sha256",
+                "chain_verification_sha256",
+                "csr_public_key_sha256",
+                "csr_request_der_sha256",
+                "csr_requested_sans",
+                "csr_subject_rfc2253",
+                "csr_uid",
+                "issued_at",
+                "issuer_rfc2253",
+                "not_after",
+                "not_before",
+                "public_key_sha256",
+                "requester",
+                "sans",
+                "serial_hex",
+                "signer_name",
+                "subject_rfc2253",
+                "usages",
+            },
+            f"certificate issuance {index}",
+        )
+        serial_hex = string_value(
+            issuance["serial_hex"], f"certificate issuance {index} serial"
+        )
+        csr_uid = string_value(
+            issuance["csr_uid"], f"certificate issuance {index} CSR UID"
+        )
+        certificate_der = canonical_base64(
+            issuance["certificate_der_base64"],
+            f"certificate issuance {index} certificate",
+            maximum_size=4 * 1024 * 1024,
+        )
+        certificate_chain_der: list[bytes] = []
+        for chain_index, chain_value in enumerate(
+            list_value(
+                issuance["certificate_chain_der_base64"],
+                f"certificate issuance {index} certificate chain",
+            )
+        ):
+            chain_der = canonical_base64(
+                chain_value,
+                f"certificate issuance {index} chain certificate {chain_index}",
+                maximum_size=4 * 1024 * 1024,
+            )
+            openssl_name_fields(chain_der, command="x509", input_format="DER")
+            certificate_chain_der.append(chain_der)
+        sans = exact_object(
+            issuance["sans"],
+            {"dns_names", "ip_addresses", "uris"},
+            f"certificate issuance {index} SANs",
+        )
+        requester = exact_object(
+            issuance["requester"],
+            {"extra", "groups", "uid", "username"},
+            f"certificate issuance {index} requester",
+        )
+        issued_at = timestamp(
+            issuance["issued_at"], f"certificate issuance {index} issued_at"
+        )
+        not_before = timestamp(
+            issuance["not_before"], f"certificate issuance {index} not_before"
+        )
+        not_after = timestamp(
+            issuance["not_after"], f"certificate issuance {index} not_after"
+        )
+        usages = list_value(
+            issuance["usages"], f"certificate issuance {index} usages"
+        )
+        if not all(isinstance(item, str) and item for item in usages):
+            fail("certificate usage inventory is malformed")
+        normalized_sans: dict[str, list[Any]] = {}
+        for key in ("dns_names", "ip_addresses", "uris"):
+            values = list_value(sans[key], f"certificate issuance {index} {key}")
+            if values != sorted(set(values)):
+                fail("certificate SAN inventory is not canonical")
+            normalized_sans[key] = values
+        certificate_fields = openssl_name_fields(
+            certificate_der, command="x509", input_format="DER"
+        )
+        derived_serial = certificate_fields["serial"].lower()
+        derived_not_before = openssl_time(
+            certificate_fields["notBefore"], "certificate notBefore"
+        )
+        derived_not_after = openssl_time(
+            certificate_fields["notAfter"], "certificate notAfter"
+        )
+        derived_sans = openssl_sans(
+            certificate_der, command="x509", input_format="DER"
+        )
+        derived_public_key_sha256 = openssl_public_key_sha256(
+            certificate_der, command="x509", input_format="DER"
+        )
+        runtime_authority = ca_runtime.get(
+            (str(issuance["signer_name"]), str(issuance["ca_key_id"]))
+        )
+        if runtime_authority is None:
+            fail("certificate issuance has no enrolled trust runtime")
+        if certificate_chain_der:
+            signing_certificate_der = certificate_chain_der[0]
+        else:
+            direct_signers = [
+                item
+                for item in runtime_authority["trust_anchor_der"]
+                if openssl_name_fields(
+                    item, command="x509", input_format="DER"
+                )["subject"]
+                == certificate_fields["issuer"]
+            ]
+            if len(direct_signers) != 1:
+                fail("directly issued certificate does not identify one enrolled root")
+            signing_certificate_der = direct_signers[0]
+        signing_key_id = "sha256:" + openssl_public_key_sha256(
+            signing_certificate_der,
+            command="x509",
+            input_format="DER",
+        )
+        purpose = (
+            "sslclient"
+            if "client auth" in usages
+            else ("sslserver" if "server auth" in usages else "any")
+        )
+        openssl_verify_certificate_chain(
+            leaf_der=certificate_der,
+            intermediate_der=certificate_chain_der,
+            trust_bundle_pem=runtime_authority["trust_bundle_pem"],
+            purpose=purpose,
+            verification_time=issued_at,
+        )
+        chain_verification_sha256 = canonical_sha256(
+            {
+                "certificate_sha256": hashlib.sha256(certificate_der).hexdigest(),
+                "intermediate_sha256": [
+                    hashlib.sha256(item).hexdigest()
+                    for item in certificate_chain_der
+                ],
+                "purpose": purpose,
+                "signing_key_id": signing_key_id,
+                "trust_bundle_sha256": runtime_authority["trust_bundle_sha256"],
+                "verified_at": issuance["issued_at"],
+                "verifier": "openssl-verify-x509-strict/v1",
+            }
+        )
+        for field in (
+            "csr_subject_rfc2253",
+            "issuer_rfc2253",
+            "subject_rfc2253",
+        ):
+            string_value(
+                issuance[field], f"certificate issuance {index} {field}"
+            )
+        if (
+            re.fullmatch(r"[0-9a-f]{1,128}", serial_hex) is None
+            or set(serial_hex) == {"0"}
+            or derived_serial != serial_hex
+            or (
+                str(issuance["signer_name"]),
+                str(issuance["ca_key_id"]),
+            )
+            not in issuer_keys
+            or hashlib.sha256(certificate_der).hexdigest()
+            != digest(
+                issuance["certificate_sha256"],
+                f"certificate issuance {index} certificate digest",
+            )
+            or issued_at < required_history_start
+            or not_before < required_history_start
+            or not_before > issued_at + MAX_CLOCK_SKEW
+            or not_after <= not_before
+            or not_after - not_before > timedelta(days=397)
+            or usages != sorted(set(usages))
+            or certificate_fields["subject"] != issuance["subject_rfc2253"]
+            or certificate_fields["issuer"] != issuance["issuer_rfc2253"]
+            or derived_not_before != not_before
+            or derived_not_after != not_after
+            or derived_sans != normalized_sans
+            or derived_public_key_sha256 != issuance["public_key_sha256"]
+            or signing_key_id != issuance["ca_key_id"]
+            or chain_verification_sha256
+            != issuance["chain_verification_sha256"]
+            or not string_value(
+                requester["username"],
+                f"certificate issuance {index} requester username",
+            )
+            or serial_hex in issued_by_serial
+            or csr_uid in issued_by_csr_uid
+        ):
+            fail("certificate issuance history is malformed or not issuer-bound")
+        digest(issuance["csr_request_der_sha256"], "CSR request DER digest")
+        digest(issuance["csr_public_key_sha256"], "CSR public-key digest")
+        digest(issuance["public_key_sha256"], "certificate public-key digest")
+        if issuance["csr_public_key_sha256"] != issuance["public_key_sha256"]:
+            fail("issued certificate public key differs from its CSR")
+        csr_requested_sans = exact_object(
+            issuance["csr_requested_sans"],
+            {"dns_names", "ip_addresses", "uris"},
+            "certificate issuance CSR SANs",
+        )
+        for key in ("dns_names", "ip_addresses", "uris"):
+            values = list_value(csr_requested_sans[key], f"CSR requested {key}")
+            if values != sorted(set(values)):
+                fail("CSR requested SAN inventory is not canonical")
+        requester_groups = list_value(
+            requester["groups"], f"certificate issuance {index} requester groups"
+        )
+        if requester_groups != sorted(set(requester_groups)) or not isinstance(
+            requester["extra"], Mapping
+        ):
+            fail("certificate requester identity is not canonical")
+        issued_by_serial[serial_hex] = issuance
+        issued_by_csr_uid[csr_uid] = issuance
+        revocation = revocations_by_serial.get(serial_hex)
+        if revocation is not None and (
+            revocation["certificate_sha256"] != issuance["certificate_sha256"]
+            or revocation["signer_name"] != issuance["signer_name"]
+            or revocation["ca_key_id"] != issuance["ca_key_id"]
+        ):
+            fail("certificate revocation does not identify its exact issuance")
+        revoked_at = (
+            timestamp(revocation["revoked_at"], "certificate revoked_at")
+            if revocation is not None
+            else None
+        )
+        if not_after > ca_collected and (
+            revoked_at is None or revoked_at > ca_collected
+        ):
+            active_certificate_identities.append(
+                {
+                    "ca_key_id": issuance["ca_key_id"],
+                    "certificate_sha256": issuance["certificate_sha256"],
+                    "certificate_chain_sha256": [
+                        hashlib.sha256(item).hexdigest()
+                        for item in certificate_chain_der
+                    ],
+                    "chain_verification_sha256": chain_verification_sha256,
+                    "not_after": issuance["not_after"],
+                    "public_key_sha256": issuance["public_key_sha256"],
+                    "sans": normalized_sans,
+                    "serial_hex": serial_hex,
+                    "signer_name": issuance["signer_name"],
+                    "subject_rfc2253": issuance["subject_rfc2253"],
+                    "usages": usages,
+                }
+            )
+    unknown_revocations = sorted(set(revocations_by_serial) - set(issued_by_serial))
+    if unknown_revocations:
+        fail("revocation history refers to issuance absent from complete CA history")
+    active_certificate_identities.sort(key=canonical_sha256)
+    if active_certificate_identities != boundary["enrolled_certificate_identities"]:
+        fail("a still-valid certificate identity is not independently enrolled")
 
     for csr in csrs:
         if csr.get("apiVersion") != "certificates.k8s.io/v1" or csr.get("kind") != "CertificateSigningRequest":
             fail("CSR export contains a non-native object")
+        metadata_value = object_value(csr.get("metadata"), "native CSR metadata")
         native_object_identity(csr, "native CSR")
-        if not isinstance(csr.get("spec"), Mapping) or not isinstance(csr.get("status", {}), Mapping):
-            fail("native CSR spec/status is malformed")
+        csr_uid = string_value(metadata_value.get("uid"), "native CSR UID")
+        spec = object_value(csr.get("spec"), "native CSR spec")
+        status = object_value(csr.get("status", {}), "native CSR status")
+        required_spec = {"groups", "request", "signerName", "uid", "usages", "username"}
+        allowed_spec = {*required_spec, "expirationSeconds", "extra"}
+        if not required_spec <= set(spec) <= allowed_spec or not set(status) <= {
+            "certificate",
+            "conditions",
+        }:
+            fail("native CSR spec/status contains unsupported authority fields")
+        request_pem = canonical_base64(
+            spec["request"], "native CSR request", maximum_size=1024 * 1024
+        )
+        request_blocks = canonical_pem_blocks(
+            request_pem,
+            pem_label="CERTIFICATE REQUEST",
+            label="native CSR request",
+            maximum_blocks=1,
+        )
+        request_der = request_blocks[0]
+        openssl_der_output(
+            request_pem,
+            command="req",
+            input_format="PEM",
+            arguments=["-verify", "-noout"],
+        )
+        csr_identity = openssl_name_fields(
+            request_pem, command="req", input_format="PEM"
+        )
+        csr_public_key_sha256 = openssl_public_key_sha256(
+            request_pem, command="req", input_format="PEM"
+        )
+        csr_requested_sans = openssl_sans(
+            request_pem, command="req", input_format="PEM"
+        )
+        csr_usages = list_value(spec["usages"], "native CSR usages")
+        csr_groups = list_value(spec["groups"], "native CSR groups")
+        if csr_usages != sorted(set(csr_usages)) or csr_groups != sorted(
+            set(csr_groups)
+        ):
+            fail("native CSR identity or usage set is not canonical")
+        conditions = list_value(status.get("conditions", []), "native CSR conditions")
+        condition_types: set[str] = set()
+        for condition_index, raw_condition in enumerate(conditions):
+            condition = object_value(raw_condition, "native CSR condition")
+            if not {"status", "type"} <= set(condition) <= {
+                "lastTransitionTime",
+                "lastUpdateTime",
+                "message",
+                "reason",
+                "status",
+                "type",
+            }:
+                fail("native CSR condition contains unsupported authority fields")
+            condition_type = string_value(
+                condition["type"], f"native CSR condition {condition_index} type"
+            )
+            if condition_type in condition_types or condition["status"] != "True":
+                fail("native CSR has duplicate or nonterminal authority conditions")
+            condition_types.add(condition_type)
+        certificate_text = status.get("certificate")
+        issuance = issued_by_csr_uid.get(csr_uid)
+        if certificate_text is None:
+            if issuance is not None:
+                fail("CA issuance history contains a certificate absent from live CSR status")
+            continue
+        certificate_pem_chain = canonical_base64(
+            certificate_text,
+            "native CSR issued certificate",
+            maximum_size=4 * 1024 * 1024,
+        )
+        certificate_chain_der = canonical_pem_blocks(
+            certificate_pem_chain,
+            pem_label="CERTIFICATE",
+            label="native CSR issued certificate chain",
+            maximum_blocks=8,
+        )
+        certificate_der = certificate_chain_der[0]
+        certificate_identity = openssl_name_fields(
+            certificate_der, command="x509", input_format="DER"
+        )
+        certificate_sans = openssl_sans(
+            certificate_der, command="x509", input_format="DER"
+        )
+        if (
+            issuance is None
+            or "Approved" not in condition_types
+            or "Denied" in condition_types
+            or issuance["certificate_sha256"]
+            != hashlib.sha256(certificate_der).hexdigest()
+            or issuance["csr_request_der_sha256"]
+            != hashlib.sha256(request_der).hexdigest()
+            or issuance["certificate_chain_der_base64"]
+            != [
+                base64.b64encode(item).decode("ascii")
+                for item in certificate_chain_der[1:]
+            ]
+            or issuance["csr_subject_rfc2253"] != csr_identity["subject"]
+            or issuance["csr_public_key_sha256"] != csr_public_key_sha256
+            or issuance["csr_requested_sans"] != csr_requested_sans
+            or issuance["signer_name"] != spec["signerName"]
+            or issuance["usages"] != csr_usages
+            or issuance["subject_rfc2253"] != certificate_identity["subject"]
+            or issuance["issuer_rfc2253"] != certificate_identity["issuer"]
+            or issuance["sans"] != certificate_sans
+            or issuance["requester"]
+            != {
+                "extra": spec.get("extra", {}),
+                "groups": csr_groups,
+                "uid": spec["uid"],
+                "username": spec["username"],
+            }
+        ):
+            fail("live CSR certificate does not reconcile to authoritative CA history")
     if (
         identity["schema"]
-        != "fs2-serve.nebius.ai/public-edge-kubernetes-authority-native-export/v3"
+        != "fs2-serve.nebius.ai/public-edge-kubernetes-authority-native-export/v4"
+        or identity["authority_snapshot_id"] != boundary["authority_snapshot_id"]
         or identity["project_id"] != project_id
         or identity["cluster_id"] != cluster_id
         or protected_subjects.count(expected_controller_subject) != 1
@@ -2410,12 +4335,16 @@ def validate_preventive_raw_exports(
         fail("raw RBAC/impersonation evidence does not deny every non-controller identity path")
     rbac_projection = {
         "approval_objects": approval_objects,
+        "authority_reachable_workloads": authority_reachable_workloads,
+        "authority_secret_records": authority_secret_records,
         "cluster_roles": cluster_roles,
         "cluster_role_bindings": cluster_bindings,
         "credential_path_subjects": credential_path_subjects,
         "controller_workloads": controller_workloads,
         "controller_secret_metadata": controller_secret_metadata,
         "custom_resource_definitions": custom_resource_definitions,
+        "dangerous_mutating_webhooks": dangerous_mutating_webhooks,
+        "dangerous_validating_webhooks": dangerous_validating_webhooks,
         "daemon_sets": daemon_sets,
         "deployments": deployments,
         "enrolled_identities": enrolled_identities,
@@ -2423,9 +4352,12 @@ def validate_preventive_raw_exports(
         "cron_jobs": cron_jobs,
         "mutating_webhook_configurations": mutating_webhooks,
         "pods": pods,
+        "replica_sets": replica_sets,
+        "replication_controllers": replication_controllers,
         "roles": roles,
         "role_bindings": role_bindings,
         "secret_metadata": secret_metadata,
+        "secret_authority_classifications": secret_classifications,
         "service_accounts": service_accounts,
         "stateful_sets": stateful_sets,
         "validating_webhook_configurations": validating_webhooks,
@@ -2440,6 +4372,8 @@ def validate_preventive_raw_exports(
             "jobs": jobs_rv,
             "mutating_webhook_configurations": mutating_webhooks_rv,
             "pods": pods_rv,
+            "replica_sets": replica_sets_rv,
+            "replication_controllers": replication_controllers_rv,
             "roles": roles_rv,
             "role_bindings": role_bindings_rv,
             "secret_metadata": secrets_rv,
@@ -2465,7 +4399,12 @@ def validate_preventive_raw_exports(
         fail("RBAC/impersonation review digests do not derive from reopened exports")
     if any(
         abs((observed - collected_at).total_seconds()) > MAX_CLOCK_SKEW.total_seconds()
-        for observed in (provider_collected, apiserver_collected, identity_collected)
+        for observed in (
+            provider_collected,
+            apiserver_collected,
+            identity_collected,
+            ca_collected,
+        )
     ):
         fail("preventive-boundary raw exports were not collected with the signed evidence")
 
@@ -2494,13 +4433,24 @@ def load_preventive_boundary_contract(
         run_root / PREVENTIVE_BOUNDARY_EVIDENCE_FILENAME, private=True
     )
     provider_raw = open_regular_file(
-        run_root / PREVENTIVE_PROVIDER_IAM_EXPORT_FILENAME, private=True
+        run_root / PREVENTIVE_PROVIDER_IAM_EXPORT_FILENAME,
+        private=True,
+        maximum_bytes=MAX_PROVIDER_IAM_EXPORT_BYTES,
     )
     apiserver_raw = open_regular_file(
-        run_root / PREVENTIVE_APISERVER_EXPORT_FILENAME, private=True
+        run_root / PREVENTIVE_APISERVER_EXPORT_FILENAME,
+        private=True,
+        maximum_bytes=MAX_APISERVER_EXPORT_BYTES,
     )
     identity_raw = open_regular_file(
-        run_root / PREVENTIVE_IDENTITY_REVIEW_FILENAME, private=True
+        run_root / PREVENTIVE_IDENTITY_REVIEW_FILENAME,
+        private=True,
+        maximum_bytes=MAX_IDENTITY_EXPORT_BYTES,
+    )
+    ca_history_raw = open_regular_file(
+        run_root / PREVENTIVE_CA_HISTORY_FILENAME,
+        private=True,
+        maximum_bytes=MAX_CA_EXPORT_BYTES,
     )
     trust_raw = open_regular_file(PREVENTIVE_BOUNDARY_TRUST_STORE, private=False)
     if hashlib.sha256(trust_raw).hexdigest() != digest(
@@ -2596,11 +4546,23 @@ def load_preventive_boundary_contract(
             "kind",
             "provider_iam_policy_id",
             "apiserver_enforcement_id",
+            "authority_snapshot_id",
             "controller_username",
             "controller_uid",
             "controller_groups",
+            "controller_allowed_image_digests",
             "controller_image_digest",
             "controller_provider_principal_id",
+            "certificate_history_start",
+            "cluster_created_at",
+            "credential_namespaces",
+            "enrolled_certificate_authorities",
+            "enrolled_certificate_identities",
+            "enrolled_admission_webhooks",
+            "enrolled_controller_workloads",
+            "enrolled_credential_secrets",
+            "enrolled_credential_workloads",
+            "enrolled_identities",
             "identity_paths",
             "configuration_sha256",
             "provenance_attestation_sha256",
@@ -2622,10 +4584,87 @@ def load_preventive_boundary_contract(
     if boundary != observed_boundary or boundary["receipt_sha256"] != receipt_sha256:
         fail("live approval is not bound to the reopened signed boundary receipt")
     groups = list_value(boundary["controller_groups"], "boundary controller groups")
+    allowed_image_digests = list_value(
+        boundary["controller_allowed_image_digests"],
+        "boundary controller image digest closure",
+    )
     identity_paths = list_value(boundary["identity_paths"], "boundary identity paths")
+    enrolled_identities = list_value(
+        boundary["enrolled_identities"], "boundary enrolled identities"
+    )
+    enrolled_workloads = list_value(
+        boundary["enrolled_controller_workloads"],
+        "boundary enrolled controller workloads",
+    )
+    signed_credential_namespaces = list_value(
+        boundary["credential_namespaces"], "boundary credential namespaces"
+    )
+    enrolled_credential_secrets = list_value(
+        boundary["enrolled_credential_secrets"],
+        "boundary credential-bearing Secrets",
+    )
+    enrolled_credential_workloads = list_value(
+        boundary["enrolled_credential_workloads"],
+        "boundary credential-reachable workloads",
+    )
+    enrolled_admission_webhooks = list_value(
+        boundary["enrolled_admission_webhooks"],
+        "boundary enrolled admission webhooks",
+    )
+    enrolled_ca_authorities = list_value(
+        boundary["enrolled_certificate_authorities"],
+        "boundary enrolled certificate authorities",
+    )
+    enrolled_certificate_identities = list_value(
+        boundary["enrolled_certificate_identities"],
+        "boundary enrolled certificate identities",
+    )
+    certificate_history_start = timestamp(
+        boundary["certificate_history_start"],
+        "boundary certificate history start",
+    )
+    cluster_created_at = timestamp(
+        boundary["cluster_created_at"], "boundary cluster creation"
+    )
     if (
         boundary["kind"] != "provider-iam+apiserver-admission"
+        or re.fullmatch(r"sha256:[a-f0-9]{64}", str(boundary["authority_snapshot_id"]))
+        is None
+        or allowed_image_digests != sorted(set(allowed_image_digests))
+        or boundary["controller_image_digest"] not in allowed_image_digests
+        or not all(
+            re.fullmatch(r"sha256:[a-f0-9]{64}", str(item)) is not None
+            for item in allowed_image_digests
+        )
         or groups != sorted(set(groups))
+        or not signed_credential_namespaces
+        or signed_credential_namespaces != sorted(set(signed_credential_namespaces))
+        or enrolled_credential_secrets
+        != sorted(enrolled_credential_secrets, key=canonical_sha256)
+        or enrolled_credential_workloads
+        != sorted(enrolled_credential_workloads, key=canonical_sha256)
+        or not enrolled_identities
+        or enrolled_identities
+        != sorted(enrolled_identities, key=canonical_sha256)
+        or not enrolled_workloads
+        or enrolled_workloads
+        != sorted(
+            enrolled_workloads,
+            key=lambda item: (
+                str(object_value(item, "enrolled controller workload").get("namespace")),
+                str(item.get("kind")),
+                str(item.get("name")),
+                str(item.get("uid")),
+            ),
+        )
+        or enrolled_admission_webhooks
+        != sorted(enrolled_admission_webhooks, key=canonical_sha256)
+        or not enrolled_ca_authorities
+        or enrolled_ca_authorities != sorted(enrolled_ca_authorities, key=canonical_sha256)
+        or enrolled_certificate_identities
+        != sorted(enrolled_certificate_identities, key=canonical_sha256)
+        or certificate_history_start > cluster_created_at
+        or cluster_created_at > issued_at + MAX_CLOCK_SKEW
         or identity_paths != sorted(set(identity_paths))
         or identity_paths
         != [
@@ -2679,6 +4718,7 @@ def load_preventive_boundary_contract(
             "preventive_boundary",
             "provider_iam_export",
             "apiserver_enforcement_export",
+            "certificate_authority_export",
             "controller_provenance",
             "identity_path_review",
         },
@@ -2695,9 +4735,12 @@ def load_preventive_boundary_contract(
     )
     if collected_at < issued_at - MAX_CLOCK_SKEW or collected_at > issued_at + MAX_CLOCK_SKEW:
         fail("preventive-boundary evidence was not collected with the receipt")
+    if collected_at > now + MAX_CLOCK_SKEW or now - collected_at > MAX_PREVENTIVE_SNAPSHOT_AGE:
+        fail("preventive-boundary authority snapshot is stale at mutation time")
     provider_export = exact_object(
         evidence["provider_iam_export"],
         {
+            "authority_snapshot_id",
             "policy_id",
             "project_id",
             "provider_api",
@@ -2710,6 +4753,7 @@ def load_preventive_boundary_contract(
     apiserver_export = exact_object(
         evidence["apiserver_enforcement_export"],
         {
+            "authority_snapshot_id",
             "enforcement_id",
             "cluster_id",
             "resource_version",
@@ -2718,6 +4762,20 @@ def load_preventive_boundary_contract(
         },
         "API-server enforcement export",
     )
+    ca_history_export = exact_object(
+        evidence["certificate_authority_export"],
+        {
+            "authority_snapshot_id",
+            "cluster_created_at",
+            "cluster_id",
+            "collected_at",
+            "history_start",
+            "issuance_count",
+            "raw_export_sha256",
+            "revocation_count",
+        },
+        "certificate-authority export",
+    )
     controller_provenance = exact_object(
         evidence["controller_provenance"],
         {"image_digest", "source_repository", "source_commit", "source_tree", "attestation_sha256"},
@@ -2725,26 +4783,34 @@ def load_preventive_boundary_contract(
     )
     identity_review = exact_object(
         evidence["identity_path_review"],
-        {"identity_paths", "impersonation_review_sha256", "rbac_review_sha256", "raw_export_sha256"},
+        {"authority_snapshot_id", "identity_paths", "impersonation_review_sha256", "rbac_review_sha256", "raw_export_sha256"},
         "boundary identity-path review",
     )
     if (
         provider_export["policy_id"] != boundary["provider_iam_policy_id"]
+        or provider_export["authority_snapshot_id"] != boundary["authority_snapshot_id"]
         or provider_export["project_id"] != project_id
         or apiserver_export["enforcement_id"] != boundary["apiserver_enforcement_id"]
         or apiserver_export["cluster_id"] != cluster_id
+        or apiserver_export["authority_snapshot_id"] != boundary["authority_snapshot_id"]
         or apiserver_export["configuration_sha256"] != boundary["configuration_sha256"]
+        or ca_history_export["cluster_id"] != cluster_id
+        or ca_history_export["authority_snapshot_id"] != boundary["authority_snapshot_id"]
+        or ca_history_export["cluster_created_at"] != boundary["cluster_created_at"]
+        or ca_history_export["history_start"] != boundary["certificate_history_start"]
         or controller_provenance["image_digest"] != boundary["controller_image_digest"]
         or controller_provenance["source_repository"] != boundary["source_repository"]
         or controller_provenance["source_commit"] != boundary["source_commit"]
         or controller_provenance["source_tree"] != boundary["source_tree"]
         or controller_provenance["attestation_sha256"] != boundary["provenance_attestation_sha256"]
         or identity_review["identity_paths"] != boundary["identity_paths"]
+        or identity_review["authority_snapshot_id"] != boundary["authority_snapshot_id"]
     ):
         fail("preventive-boundary raw evidence does not join to its signed authority")
     for record, key in (
         (provider_export, "raw_export_sha256"),
         (apiserver_export, "raw_export_sha256"),
+        (ca_history_export, "raw_export_sha256"),
         (identity_review, "raw_export_sha256"),
         (identity_review, "impersonation_review_sha256"),
         (identity_review, "rbac_review_sha256"),
@@ -2757,16 +4823,21 @@ def load_preventive_boundary_contract(
         != hashlib.sha256(apiserver_raw).hexdigest()
         or identity_review["raw_export_sha256"]
         != hashlib.sha256(identity_raw).hexdigest()
+        or ca_history_export["raw_export_sha256"]
+        != hashlib.sha256(ca_history_raw).hexdigest()
     ):
         fail("preventive-boundary summaries do not bind the reopened raw exports")
     validate_preventive_raw_exports(
         provider_raw=provider_raw,
         apiserver_raw=apiserver_raw,
         identity_raw=identity_raw,
+        ca_history_raw=ca_history_raw,
         provider_summary=provider_export,
         apiserver_summary=apiserver_export,
         identity_summary=identity_review,
+        ca_history_summary=ca_history_export,
         boundary=boundary,
+        approval_projection=approval_projection,
         project_id=project_id,
         cluster_id=cluster_id,
         collected_at=collected_at,
@@ -3178,10 +5249,15 @@ def validate_boundary_approval(
         projection = {
             "apiVersion": api_version,
             "kind": kind,
-            "metadata": {"name": name},
+            "metadata": {
+                "name": name,
+                "resourceVersion": item_metadata.get("resourceVersion"),
+                "uid": item_metadata.get("uid"),
+            },
             "spec": object_value(
                 resource.get("spec"), f"boundary approval {label}.spec"
             ),
+            "status": resource.get("status"),
         }
         projections.append(
             (
@@ -4323,10 +6399,21 @@ def main() -> int:
     boundary_approval_projection = {
         "apiVersion": boundary_approval_api_version,
         "kind": boundary_approval_kind,
-        "metadata": {"name": boundary_approval_name},
+        "metadata": {
+            "name": boundary_approval_name,
+            "resourceVersion": object_value(
+                boundary_approval_after.get("metadata"),
+                "boundary approval after.metadata",
+            ).get("resourceVersion"),
+            "uid": object_value(
+                boundary_approval_after.get("metadata"),
+                "boundary approval after.metadata",
+            ).get("uid"),
+        },
         "spec": object_value(
             boundary_approval_after.get("spec"), "boundary approval after.spec"
         ),
+        "status": boundary_approval_after.get("status"),
     }
     preventive_boundary = load_preventive_boundary_contract(
         root,

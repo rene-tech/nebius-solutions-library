@@ -675,13 +675,17 @@ def test_preventive_boundary_reconstructs_transitive_native_credential_paths() -
         / "stages/foundation/scripts/verify-public-edge-node-eligibility.py"
     ).read_text(encoding="utf-8")
 
-    assert "public-edge-kubernetes-authority-native-export/v3" in verifier
+    assert "public-edge-kubernetes-authority-native-export/v4" in verifier
     assert "public-edge-provider-iam-native-export/v3" in verifier
-    assert "public-edge-apiserver-native-export/v3" in verifier
+    assert "public-edge-apiserver-native-export/v4" in verifier
+    assert "public-edge-certificate-authority-history/v1" in verifier
     for inventory in (
         'identity["service_accounts"]',
         'identity["secret_metadata"]',
+        'identity["secret_authority_classifications"]',
         'identity["pods"]',
+        'identity["replica_sets"]',
+        'identity["replication_controllers"]',
         'identity["deployments"]',
         'identity["stateful_sets"]',
         'identity["daemon_sets"]',
@@ -714,6 +718,42 @@ def test_preventive_boundary_reconstructs_transitive_native_credential_paths() -
     assert "publicedgenodeauthorityapprovals.security.fs2.nebius.ai" in verifier
     assert '"api_group": "security.fs2.nebius.ai"' in verifier
     assert '"resource": "publicedgenodeauthorityapprovals"' in verifier
+    assert "certificate-authority history is incomplete or not receipt-bound" in verifier
+    assert "issued certificate chain is not rooted in an enrolled trust anchor" in verifier
+
+
+def test_preventive_provider_policy_uses_resource_specific_actions_and_names() -> None:
+    verifier = (
+        ROOT
+        / "stages/foundation/scripts/verify-public-edge-node-eligibility.py"
+    ).read_text(encoding="utf-8")
+
+    assert "def binding_overlaps_contract(" in verifier
+    assert '"actions": ["connect", "create", "get"]' in verifier
+    assert '"deletecollection"' in verifier
+    assert '"get"' in verifier and '"list"' in verifier and '"watch"' in verifier
+    assert 'semantic_guard="classify-secret-content-before-admission"' in verifier
+    assert 'semantic_guard="inspect-new-controller-credential-reachability"' in verifier
+    assert 'resources=["serviceaccounts/token"]' in verifier
+    assert '"pods/attach"' in verifier
+    assert "credential_secret_names" in verifier
+    assert "credential_pod_names" in verifier
+    assert "credential_service_account_names" in verifier
+
+
+def test_preventive_native_exports_have_separate_bounded_inventory_limits() -> None:
+    verifier = (
+        ROOT
+        / "stages/foundation/scripts/verify-public-edge-node-eligibility.py"
+    ).read_text(encoding="utf-8")
+
+    assert "MAX_RECEIPT_BYTES = 256 * 1024" in verifier
+    assert "MAX_PROVIDER_IAM_EXPORT_BYTES = 16 * 1024 * 1024" in verifier
+    assert "MAX_APISERVER_EXPORT_BYTES = 8 * 1024 * 1024" in verifier
+    assert "MAX_IDENTITY_EXPORT_BYTES = 128 * 1024 * 1024" in verifier
+    assert "maximum_bytes=MAX_PROVIDER_IAM_EXPORT_BYTES" in verifier
+    assert "maximum_bytes=MAX_APISERVER_EXPORT_BYTES" in verifier
+    assert "maximum_bytes=MAX_IDENTITY_EXPORT_BYTES" in verifier
 
 
 def test_debug_authority_lookup_cannot_delay_customer_requests() -> None:

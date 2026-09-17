@@ -193,9 +193,12 @@ locals {
     apiVersion = try(local.public_edge_observed_node_authority_approval.apiVersion, "")
     kind       = try(local.public_edge_observed_node_authority_approval.kind, "")
     metadata = {
-      name = try(local.public_edge_observed_node_authority_approval.metadata.name, "")
+      name            = try(local.public_edge_observed_node_authority_approval.metadata.name, "")
+      resourceVersion = try(local.public_edge_observed_node_authority_approval.metadata.resourceVersion, "")
+      uid             = try(local.public_edge_observed_node_authority_approval.metadata.uid, "")
     }
     spec = try(local.public_edge_observed_node_authority_approval.spec, null)
+    status = try(local.public_edge_observed_node_authority_approval.status, null)
   }
   public_edge_node_authority_approval_sha256 = sha256(jsonencode(local.public_edge_node_authority_approval_projection))
   public_edge_observed_preventive_boundary = try(
@@ -209,12 +212,24 @@ locals {
   public_edge_observed_preventive_boundary_well_formed = try(
     keys(local.public_edge_observed_preventive_boundary) == sort([
       "apiserver_enforcement_id",
+      "authority_snapshot_id",
+      "certificate_history_start",
+      "cluster_created_at",
       "configuration_sha256",
+      "credential_namespaces",
+      "controller_allowed_image_digests",
       "controller_groups",
       "controller_image_digest",
       "controller_provider_principal_id",
       "controller_uid",
       "controller_username",
+      "enrolled_controller_workloads",
+      "enrolled_credential_secrets",
+      "enrolled_credential_workloads",
+      "enrolled_admission_webhooks",
+      "enrolled_certificate_authorities",
+      "enrolled_certificate_identities",
+      "enrolled_identities",
       "identity_paths",
       "kind",
       "provenance_attestation_sha256",
@@ -225,7 +240,18 @@ locals {
       "source_tree",
     ]) &&
     local.public_edge_observed_preventive_boundary.kind == "provider-iam+apiserver-admission" &&
+    local.public_edge_observed_preventive_boundary.controller_allowed_image_digests == sort(distinct(local.public_edge_observed_preventive_boundary.controller_allowed_image_digests)) &&
+    contains(local.public_edge_observed_preventive_boundary.controller_allowed_image_digests, local.public_edge_observed_preventive_boundary.controller_image_digest) &&
+    alltrue([
+      for image_digest in local.public_edge_observed_preventive_boundary.controller_allowed_image_digests :
+      can(regex("^sha256:[a-f0-9]{64}$", image_digest))
+    ]) &&
     local.public_edge_observed_preventive_boundary.controller_groups == sort(distinct(local.public_edge_observed_preventive_boundary.controller_groups)) &&
+    try(length(local.public_edge_observed_preventive_boundary.enrolled_identities) > 0, false) &&
+    try(length(local.public_edge_observed_preventive_boundary.enrolled_controller_workloads) > 0, false) &&
+    try(length(local.public_edge_observed_preventive_boundary.enrolled_certificate_authorities) > 0, false) &&
+    try(length(local.public_edge_observed_preventive_boundary.credential_namespaces) > 0, false) &&
+    local.public_edge_observed_preventive_boundary.credential_namespaces == sort(distinct(local.public_edge_observed_preventive_boundary.credential_namespaces)) &&
     local.public_edge_observed_preventive_boundary.identity_paths == local.public_edge_required_identity_paths &&
     can(regex("^sha256:[a-f0-9]{64}$", local.public_edge_observed_preventive_boundary.controller_image_digest)) &&
     can(regex("^serviceaccount-[a-z0-9]+$", local.public_edge_observed_preventive_boundary.controller_provider_principal_id)) &&
