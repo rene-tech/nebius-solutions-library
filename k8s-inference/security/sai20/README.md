@@ -121,3 +121,40 @@ file, applies write/grow/shrink/seal seals, and executes only that immutable
 descriptor. The original open descriptor is retained solely for a secondary
 metadata-stability check. No observer, credential, packet or root is included
 here; the empty registries continue to fail closed.
+
+## Post-`948e1836` credential and renewal closure
+
+Exact `948e1836b4058779aff2c0c91c62aa898968da5d` remains rejected. A
+replacement packet must inventory Secret identities in every namespace using
+only Kubernetes `PartialObjectMetadataList` responses; Secret values are
+forbidden from the evidence packet. It must derive generic and exact
+resource-name Secret-read and base-ServiceAccount-mutation SARs from the full
+Role/ClusterRole closure and refresh those decisions for every exact principal
+at final apply. Secret readers and ServiceAccount mutators are dangerous
+authority and may resolve only to exact custodian subjects.
+
+The signed collector `kubectl` is no longer reopened by pathname. It must be a
+root-owned, non-group/world-writable static ELF whose exact signed bytes are
+copied to and executed from a sealed memory descriptor for all apply-time
+identity, inventory and authorization reads. Script or dynamic-interpreter
+execution fails closed.
+
+The kubeconfig is separately copied into a sealed descriptor and every
+`kubectl` process receives that descriptor rather than the caller pathname.
+Only a direct HTTPS server, inline CA, and either an inline token or inline
+client certificate/key are accepted for the selected context; exec,
+auth-provider, token-file, external credential/CA files, proxy and extension
+configuration fail exact-key validation. Both `kubectl` and the provider
+observer receive a minimal explicit environment, and the observer must also
+be a root-owned sealed static ELF. Identity and final apply must report the
+same sealed kubeconfig digest.
+
+Successor admission activation is a signed state transition. `INITIAL` binds
+an empty predecessor set; `RENEWAL` binds the exact prior protected object
+set. Both bind the digest of the eight source-rendered successor
+policy/binding manifests. The final unknown-nonce reread compares their exact
+specs and source metadata—not merely their names—and Terraform requires the
+live digest to equal the signed planned digest. This supports a reviewed
+second rollout pass and ordinary reapply while retaining exact old/new
+custody. It does not enroll a root or authorize activation; the empty
+registries remain the integration gate.

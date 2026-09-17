@@ -12,9 +12,13 @@ from __future__ import annotations
 
 import base64
 import copy
+import fcntl
 import hashlib
 import json
+import os
 import re
+import stat
+import struct
 import subprocess
 import sys
 import urllib.parse
@@ -22,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import yaml
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
@@ -61,6 +66,7 @@ V4_RBAC_LISTS = v3.RBAC_LISTS | {
 NAMESPACE_ENDPOINT = "/api/v1/namespaces"
 NAMESPACED_RBAC_RESOURCES = ("roles", "rolebindings")
 CLUSTER_RBAC_RESOURCES = ("clusterroles", "clusterrolebindings")
+SECRET_METADATA_ACCEPT = "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"
 NETWORK_POLICY_ENDPOINT = "/apis/networking.k8s.io/v1/namespaces/fs2-data/networkpolicies"
 DATABASE_POD_ENDPOINT = (
     "/api/v1/namespaces/fs2-data/pods?labelSelector="
@@ -109,19 +115,102 @@ def service_account_endpoints(namespaces: list[str]) -> dict[str, str]:
     }
 
 
+def secret_metadata_endpoints(namespaces: list[str]) -> dict[str, str]:
+    return {
+        namespace: f"/api/v1/namespaces/{namespace}/secrets"
+        for namespace in namespaces
+    }
+
+
 def dangerous_reviews(
     namespaces: list[str],
     service_accounts: list[dict[str, str]],
+    secrets: list[dict[str, str]],
     custodians: list[dict[str, Any]],
+    entries: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, str]]:
     reviews = dict(DANGEROUS_REVIEWS)
+    secret_resource_names: set[tuple[str, str, str]] = set()
+    service_account_resource_names: set[tuple[str, str, str]] = set()
+    for namespace, resource in sorted(rbac_endpoints(namespaces)):
+        if resource not in {"roles", "clusterroles"}:
+            continue
+        items = entries[f"k8s/rbac/{namespace or '_cluster'}/{resource}"]["body"]["items"]
+        target_namespaces = [namespace] if resource == "roles" else namespaces
+        for role in items:
+            for rule in role.get("rules", []):
+                groups = set(rule.get("apiGroups", []))
+                resources = set(rule.get("resources", []))
+                verbs = set(rule.get("verbs", []))
+                if {"", "*"} & groups and {"secrets", "*"} & resources:
+                    secret_verbs = ({"get", "list", "watch"} & verbs) | (
+                        {"get", "list", "watch"} if "*" in verbs else set()
+                    )
+                    for verb in sorted(secret_verbs):
+                        for name in rule.get("resourceNames", []):
+                            if isinstance(name, str) and name:
+                                secret_resource_names.update(
+                                    (target_namespace, verb, name)
+                                    for target_namespace in target_namespaces
+                                )
+                if {"", "*"} & groups and {"serviceaccounts", "*"} & resources:
+                    service_account_verbs = ({"create", "update", "patch"} & verbs) | (
+                        {"create", "update", "patch"} if "*" in verbs else set()
+                    )
+                    for verb in sorted(service_account_verbs):
+                        for name in rule.get("resourceNames", []):
+                            if isinstance(name, str) and name:
+                                service_account_resource_names.update(
+                                    (target_namespace, verb, name)
+                                    for target_namespace in target_namespaces
+                                )
     for namespace in namespaces:
+        for verb in ("get", "list", "watch"):
+            reviews[f"read-secrets/{namespace}/{verb}/_all"] = {
+                "group": "",
+                "resource": "secrets",
+                "verb": verb,
+                "namespace": namespace,
+            }
+    secret_resource_names.update(
+        (secret["namespace"], "get", secret["name"])
+        for secret in secrets
+    )
+    for namespace, verb, name in sorted(secret_resource_names):
+        reviews[f"read-secret/{namespace}/{verb}/{digest(name)[:16]}"] = {
+            "group": "",
+            "resource": "secrets",
+            "verb": verb,
+            "namespace": namespace,
+            "name": name,
+        }
+    for namespace in namespaces:
+        for verb in ("create", "update", "patch"):
+            reviews[f"mutate-serviceaccounts/{namespace}/{verb}/_all"] = {
+                "group": "",
+                "resource": "serviceaccounts",
+                "verb": verb,
+                "namespace": namespace,
+            }
         reviews[f"create-serviceaccount-tokens/{namespace}/_all"] = {
             "group": "",
             "resource": "serviceaccounts",
             "subresource": "token",
             "verb": "create",
             "namespace": namespace,
+        }
+    service_account_resource_names.update(
+        (account["namespace"], verb, account["name"])
+        for account in service_accounts
+        for verb in ("update", "patch")
+    )
+    for namespace, verb, name in sorted(service_account_resource_names):
+        reviews[f"mutate-serviceaccount/{namespace}/{verb}/{digest(name)[:16]}"] = {
+            "group": "",
+            "resource": "serviceaccounts",
+            "verb": verb,
+            "namespace": namespace,
+            "name": name,
         }
     for account in service_accounts:
         reviews[f"create-serviceaccount-token/{account['namespace']}/{account['name']}"] = {
@@ -391,7 +480,7 @@ def verify_transcript_entry(entry: Any, cluster: dict[str, Any], where: str) -> 
     response = entry["response"]
     require(isinstance(transport, dict) and isinstance(request, dict) and isinstance(response, dict), f"{where} transcript sections invalid")
     exact_keys(transport, {"endpoint_sha256", "ca_sha256", "tls_spki_sha256"}, f"{where}.transport")
-    exact_keys(request, {"method", "path", "body_base64", "body_sha256", "credential_subject_sha256"}, f"{where}.request")
+    exact_keys(request, {"method", "path", "headers", "body_base64", "body_sha256", "credential_subject_sha256"}, f"{where}.request")
     exact_keys(response, {"status", "content_type", "audit_id", "request_id", "observed_at", "body_base64", "body_sha256"}, f"{where}.response")
     for key in ("endpoint_sha256", "ca_sha256", "tls_spki_sha256"):
         sha256(transport[key], f"{where}.transport.{key}")
@@ -402,6 +491,18 @@ def verify_transcript_entry(entry: Any, cluster: dict[str, Any], where: str) -> 
         require(transport["endpoint_sha256"] == cluster["provider_iam_endpoint_sha256"], f"{where} provider IAM endpoint mismatch")
         require(transport["ca_sha256"] == cluster["provider_iam_ca_sha256"], f"{where} provider IAM CA mismatch")
     request_body_bytes = decode_base64(request["body_base64"], f"{where}.request.body_base64")
+    headers = request["headers"]
+    require(
+        isinstance(headers, dict)
+        and all(
+            isinstance(key, str)
+            and key == key.lower()
+            and isinstance(value, str)
+            and value
+            for key, value in headers.items()
+        ),
+        f"{where}.request.headers must be a lowercase string map",
+    )
     require(hashlib.sha256(request_body_bytes).hexdigest() == request["body_sha256"], f"{where}.request body digest mismatch")
     sha256(request["credential_subject_sha256"], f"{where}.request.credential_subject_sha256")
     require(request["method"] in {"GET", "POST"}, f"{where}.request.method invalid")
@@ -476,6 +577,50 @@ def verify_service_account_inventory(
     return normalized, digest(normalized)
 
 
+def verify_secret_metadata_inventory(
+    entries: dict[str, dict[str, Any]],
+    namespaces: list[str],
+) -> tuple[list[dict[str, str]], str]:
+    normalized: list[dict[str, str]] = []
+    for namespace, endpoint in sorted(secret_metadata_endpoints(namespaces).items()):
+        entry_name = f"k8s/secret-metadata/{namespace}"
+        require(entry_name in entries, f"metadata-only Secret list is missing for {namespace}")
+        entry = entries[entry_name]
+        require(
+            entry["request"]["headers"] == {"accept": SECRET_METADATA_ACCEPT},
+            f"{entry_name} did not request PartialObjectMetadataList",
+        )
+        body = list_body(entry, endpoint, entry_name)
+        require(
+            body.get("apiVersion") == "meta.k8s.io/v1"
+            and body.get("kind") == "PartialObjectMetadataList",
+            f"{entry_name} returned secret-bearing objects instead of metadata-only objects",
+        )
+        for index, item in enumerate(body["items"]):
+            where = f"{entry_name}.items[{index}]"
+            require(
+                isinstance(item, dict)
+                and set(item) == {"apiVersion", "kind", "metadata"}
+                and item.get("apiVersion") == "meta.k8s.io/v1"
+                and item.get("kind") == "PartialObjectMetadata",
+                f"{where} is not strict metadata-only Secret evidence",
+            )
+            metadata = item["metadata"]
+            require(isinstance(metadata, dict) and metadata.get("namespace") == namespace, f"{where} namespace mismatch")
+            normalized.append(
+                {
+                    "namespace": namespace,
+                    "name": text(metadata.get("name"), f"{where}.name"),
+                    "uid": text(metadata.get("uid"), f"{where}.uid"),
+                    "resource_version": text(metadata.get("resourceVersion"), f"{where}.resourceVersion"),
+                }
+            )
+    normalized.sort(key=lambda item: (item["namespace"], item["name"], item["uid"]))
+    identities = [(item["namespace"], item["name"]) for item in normalized]
+    require(len(identities) == len(set(identities)), "Secret metadata inventory contains duplicate identities")
+    return normalized, digest(normalized)
+
+
 def custodian_identities(
     entries: dict[str, dict[str, Any]],
     principals: list[dict[str, Any]],
@@ -516,6 +661,7 @@ def expected_transcript_names(
         for namespace, resource in rbac_endpoints(namespaces)
     )
     names.update(f"k8s/serviceaccounts/{namespace}" for namespace in namespaces)
+    names.update(f"k8s/secret-metadata/{namespace}" for namespace in namespaces)
     for principal in principals:
         principal_id = principal["id"]
         names.add(f"k8s/identity/{principal_id}/selfsubjectreview")
@@ -804,6 +950,16 @@ def dangerous_rbac_subjects(raw_objects: dict[tuple[str, str], list[dict[str, An
                     and {"certificatesigningrequests/approval", "signers", "*"}
                     & set(rule.get("resources", []))
                 )
+                or (
+                    {"get", "list", "watch", "*"} & set(rule.get("verbs", []))
+                    and {"secrets", "*"} & set(rule.get("resources", []))
+                    and {"", "*"} & set(rule.get("apiGroups", []))
+                )
+                or (
+                    {"create", "update", "patch", "*"} & set(rule.get("verbs", []))
+                    and {"serviceaccounts", "*"} & set(rule.get("resources", []))
+                    and {"", "*"} & set(rule.get("apiGroups", []))
+                )
                 for rule in rules
             )
             if not dangerous:
@@ -827,6 +983,7 @@ def sensitive_mutation_subjects(raw_objects: dict[tuple[str, str], list[dict[str
     sensitive_resources = {
         "pods", "replicationcontrollers", "deployments", "statefulsets",
         "daemonsets", "replicasets", "jobs", "cronjobs", "networkpolicies",
+        "secrets", "serviceaccounts", "serviceaccounts/token",
         "roles", "rolebindings", "clusterroles", "clusterrolebindings",
         "validatingadmissionpolicies", "validatingadmissionpolicybindings",
     }
@@ -1261,8 +1418,9 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
     require(observed_times and min(observed_times) >= observed and max(observed_times) <= valid_until, "transcript observations fall outside bundle window")
     namespaces, namespace_inventory_sha256 = verify_namespace_inventory(entries)
     service_accounts, service_account_inventory_sha256 = verify_service_account_inventory(entries, namespaces)
+    secrets, secret_metadata_inventory_sha256 = verify_secret_metadata_inventory(entries, namespaces)
     custodians = custodian_identities(entries, legacy["rbac_inventory"]["principals"])
-    reviews = dangerous_reviews(namespaces, service_accounts, custodians)
+    reviews = dangerous_reviews(namespaces, service_accounts, secrets, custodians, entries)
     require(
         set(entries) == expected_transcript_names(
             legacy["rbac_inventory"]["principals"],
@@ -1283,6 +1441,7 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
         {
             "executor_principal_id", "dangerous_rbac_subjects", "sensitive_mutation_subjects",
             "namespace_inventory_sha256", "service_account_inventory_sha256",
+            "secret_metadata_inventory_sha256",
             "rbac_inventory_sha256", "effective_permissions_sha256",
             "impersonation_receipts_sha256", "provider_group_response_sha256",
         },
@@ -1290,6 +1449,7 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
     )
     for field in (
         "namespace_inventory_sha256", "service_account_inventory_sha256",
+        "secret_metadata_inventory_sha256",
         "rbac_inventory_sha256", "effective_permissions_sha256",
         "impersonation_receipts_sha256", "provider_group_response_sha256",
     ):
@@ -1301,6 +1461,10 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
     require(
         service_account_inventory_sha256 == authorization["service_account_inventory_sha256"],
         "ServiceAccount inventory digest is not content-derived",
+    )
+    require(
+        secret_metadata_inventory_sha256 == authorization["secret_metadata_inventory_sha256"],
+        "metadata-only Secret inventory digest is not content-derived",
     )
     verify_rbac(entries, legacy, authorization, namespaces)
     executor, principal_identities, signed_decisions = verify_identities(
@@ -1349,6 +1513,12 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
             sort_keys=True,
             separators=(",", ":"),
         ),
+        "secret_metadata_inventory_sha256": secret_metadata_inventory_sha256,
+        "secret_names_json": json.dumps(
+            [{"namespace": item["namespace"], "name": item["name"]} for item in secrets],
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
         "executor_principal_id": executor["id"],
         "executor_uid": executor["uid"],
         "executor_username": executor["username"],
@@ -1385,17 +1555,264 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
         "entries": entries,
         "executor": executor,
         "namespaces": namespaces,
+        "secret_names": sorted((item["namespace"], item["name"]) for item in secrets),
         "principal_identities": principal_identities,
         "authority_reviews": reviews,
         "signed_authority_decisions": signed_decisions,
     }, roots
 
 
-def kubectl(query: dict[str, str], args: list[str], stdin: bytes | None = None) -> bytes:
+def require_static_elf(descriptor: int, size: int, label: str) -> None:
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    elf_header = os.read(descriptor, 64)
+    require(
+        len(elf_header) >= 52 and elf_header[:4] == b"\x7fELF",
+        f"{label} must be a native ELF executable",
+    )
+    require(
+        elf_header[4] in {1, 2} and elf_header[5] in {1, 2},
+        f"{label} ELF class or byte order is invalid",
+    )
+    endian = "<" if elf_header[5] == 1 else ">"
+    if elf_header[4] == 2:
+        program_offset = struct.unpack_from(f"{endian}Q", elf_header, 32)[0]
+        program_entry_size = struct.unpack_from(f"{endian}H", elf_header, 54)[0]
+        program_count = struct.unpack_from(f"{endian}H", elf_header, 56)[0]
+    else:
+        program_offset = struct.unpack_from(f"{endian}I", elf_header, 28)[0]
+        program_entry_size = struct.unpack_from(f"{endian}H", elf_header, 42)[0]
+        program_count = struct.unpack_from(f"{endian}H", elf_header, 44)[0]
+    require(
+        0 < program_count <= 1024 and program_entry_size >= 4,
+        f"{label} ELF program table is invalid",
+    )
+    require(
+        program_offset + program_entry_size * program_count <= size,
+        f"{label} ELF program table exceeds the authenticated snapshot",
+    )
+    for index in range(program_count):
+        os.lseek(descriptor, program_offset + index * program_entry_size, os.SEEK_SET)
+        program_header = os.read(descriptor, 4)
+        require(len(program_header) == 4, f"{label} ELF program header is truncated")
+        program_type = struct.unpack(f"{endian}I", program_header)[0]
+        require(program_type != 3, f"{label} must be a static ELF with no external interpreter")
+    os.lseek(descriptor, 0, os.SEEK_SET)
+
+
+def validate_self_contained_kubeconfig(config_bytes: bytes, expected_context: str) -> None:
+    try:
+        config = yaml.safe_load(config_bytes)
+    except yaml.YAMLError as exc:
+        raise v3.ContractError("kubeconfig is not valid YAML") from exc
+    require(isinstance(config, dict), "kubeconfig must be a YAML object")
+    require(
+        config.get("apiVersion") == "v1"
+        and config.get("kind") == "Config"
+        and config.get("current-context") == expected_context,
+        "kubeconfig API identity or current context mismatch",
+    )
+    require(
+        set(config) <= {
+            "apiVersion", "kind", "preferences", "clusters", "contexts",
+            "users", "current-context",
+        },
+        "kubeconfig contains an external extension or unsupported top-level field",
+    )
+    require(not config.get("extensions"), "kubeconfig extensions are forbidden")
+
+    def named_items(field: str) -> dict[str, dict[str, Any]]:
+        items = config.get(field)
+        require(isinstance(items, list), f"kubeconfig {field} must be a list")
+        normalized: dict[str, dict[str, Any]] = {}
+        singular = {"clusters": "cluster", "contexts": "context", "users": "user"}[field]
+        for index, item in enumerate(items):
+            require(isinstance(item, dict), f"kubeconfig {field}[{index}] must be an object")
+            require(set(item) == {"name", singular}, f"kubeconfig {field}[{index}] contains an external extension")
+            name = text(item.get("name"), f"kubeconfig {field}[{index}].name")
+            value = item.get(singular)
+            require(isinstance(value, dict), f"kubeconfig {field}[{index}].{singular} must be an object")
+            require(name not in normalized, f"kubeconfig {field} contains duplicate {name}")
+            normalized[name] = value
+        return normalized
+
+    clusters = named_items("clusters")
+    contexts = named_items("contexts")
+    users = named_items("users")
+    require(expected_context in contexts, "kubeconfig does not contain the selected context")
+    selected_context = contexts[expected_context]
+    require(
+        set(selected_context) <= {"cluster", "user", "namespace"}
+        and isinstance(selected_context.get("cluster"), str)
+        and isinstance(selected_context.get("user"), str),
+        "selected kubeconfig context contains an external extension or incomplete identity",
+    )
+    require(
+        selected_context["cluster"] in clusters and selected_context["user"] in users,
+        "selected kubeconfig context references an unknown cluster or user",
+    )
+    cluster = clusters[selected_context["cluster"]]
+    require(
+        set(cluster) == {"server", "certificate-authority-data"},
+        "selected kubeconfig cluster must use only an inline CA and direct server",
+    )
+    server = text(cluster["server"], "kubeconfig cluster server")
+    require(server.startswith("https://"), "kubeconfig cluster server must use HTTPS")
+    ca_data = text(cluster["certificate-authority-data"], "kubeconfig inline CA")
+    try:
+        base64.b64decode(ca_data, validate=True)
+    except ValueError as exc:
+        raise v3.ContractError("kubeconfig inline CA must be canonical base64") from exc
+
+    user = users[selected_context["user"]]
+    token_identity = set(user) == {"token"} and isinstance(user.get("token"), str) and bool(user["token"])
+    certificate_identity = set(user) == {"client-certificate-data", "client-key-data"}
+    require(
+        token_identity or certificate_identity,
+        "selected kubeconfig user must use only an inline token or inline client certificate/key",
+    )
+    if certificate_identity:
+        for field in ("client-certificate-data", "client-key-data"):
+            value = text(user[field], f"kubeconfig user {field}")
+            try:
+                base64.b64decode(value, validate=True)
+            except ValueError as exc:
+                raise v3.ContractError(f"kubeconfig user {field} must be canonical base64") from exc
+
+
+def prepare_kubectl(query: dict[str, str], context: dict[str, Any]) -> None:
+    if "_kubectl_fd" in context:
+        return
+    binary = Path(query["kubectl_path"])
+    require(binary.is_absolute(), "kubectl_path must be absolute")
+    source_fd = os.open(str(binary), os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    sealed_fd = -1
+    kubeconfig_source_fd = -1
+    kubeconfig_fd = -1
+    try:
+        before = os.fstat(source_fd)
+        require(stat.S_ISREG(before.st_mode), "kubectl must be a regular file")
+        require(before.st_uid == 0, "kubectl must be owned by root")
+        require(before.st_mode & 0o022 == 0, "kubectl must not be group- or world-writable")
+        require(before.st_mode & 0o111 != 0, "kubectl must be executable")
+        require(before.st_size > 0 and before.st_size <= 256 * 1024 * 1024, "kubectl size is invalid")
+        sealed_fd = os.memfd_create("sai20-kubectl", os.MFD_ALLOW_SEALING)
+        kubectl_hash = hashlib.sha256()
+        remaining = before.st_size
+        while remaining > 0:
+            chunk = os.read(source_fd, min(1024 * 1024, remaining))
+            require(chunk != b"", "kubectl changed during authenticated read")
+            kubectl_hash.update(chunk)
+            offset = 0
+            while offset < len(chunk):
+                written = os.write(sealed_fd, chunk[offset:])
+                require(written > 0, "kubectl sealed copy write failed")
+                offset += written
+            remaining -= len(chunk)
+        require(os.read(source_fd, 1) == b"", "kubectl exceeds its authenticated size")
+        require(
+            kubectl_hash.hexdigest() == context["payload"]["collector"]["kubectl_sha256"],
+            "apply-time kubectl differs from the signed collector tool",
+        )
+        require_static_elf(sealed_fd, before.st_size, "kubectl")
+        after = os.fstat(source_fd)
+        require(
+            (before.st_dev, before.st_ino, before.st_mode, before.st_uid, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+            == (after.st_dev, after.st_ino, after.st_mode, after.st_uid, after.st_size, after.st_mtime_ns, after.st_ctime_ns),
+            "kubectl source changed during authenticated copy",
+        )
+        os.fchmod(sealed_fd, before.st_mode & 0o555)
+        seal_mask = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL
+        fcntl.fcntl(sealed_fd, fcntl.F_ADD_SEALS, seal_mask)
+        require(fcntl.fcntl(sealed_fd, fcntl.F_GET_SEALS) == seal_mask, "kubectl snapshot is not immutable")
+        os.lseek(sealed_fd, 0, os.SEEK_SET)
+
+        kubeconfig = Path(query["kubeconfig_path"])
+        require(kubeconfig.is_absolute(), "kubeconfig_path must be absolute")
+        kubeconfig_source_fd = os.open(str(kubeconfig), os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        kubeconfig_before = os.fstat(kubeconfig_source_fd)
+        require(stat.S_ISREG(kubeconfig_before.st_mode), "kubeconfig must be a regular file")
+        require(kubeconfig_before.st_uid in {0, os.geteuid()}, "kubeconfig must be owned by root or the verifier user")
+        require(kubeconfig_before.st_mode & 0o022 == 0, "kubeconfig must not be group- or world-writable")
+        require(0 < kubeconfig_before.st_size <= 4 * 1024 * 1024, "kubeconfig size is invalid")
+        kubeconfig_fd = os.memfd_create("sai20-kubeconfig", os.MFD_ALLOW_SEALING)
+        kubeconfig_hash = hashlib.sha256()
+        kubeconfig_bytes = bytearray()
+        remaining = kubeconfig_before.st_size
+        while remaining > 0:
+            chunk = os.read(kubeconfig_source_fd, min(1024 * 1024, remaining))
+            require(chunk != b"", "kubeconfig changed during authenticated read")
+            kubeconfig_hash.update(chunk)
+            kubeconfig_bytes.extend(chunk)
+            offset = 0
+            while offset < len(chunk):
+                written = os.write(kubeconfig_fd, chunk[offset:])
+                require(written > 0, "kubeconfig sealed copy write failed")
+                offset += written
+            remaining -= len(chunk)
+        require(os.read(kubeconfig_source_fd, 1) == b"", "kubeconfig exceeds its authenticated size")
+        validate_self_contained_kubeconfig(bytes(kubeconfig_bytes), query["kube_context"])
+        kubeconfig_bytes.clear()
+        kubeconfig_after = os.fstat(kubeconfig_source_fd)
+        require(
+            (
+                kubeconfig_before.st_dev,
+                kubeconfig_before.st_ino,
+                kubeconfig_before.st_mode,
+                kubeconfig_before.st_uid,
+                kubeconfig_before.st_size,
+                kubeconfig_before.st_mtime_ns,
+                kubeconfig_before.st_ctime_ns,
+            )
+            == (
+                kubeconfig_after.st_dev,
+                kubeconfig_after.st_ino,
+                kubeconfig_after.st_mode,
+                kubeconfig_after.st_uid,
+                kubeconfig_after.st_size,
+                kubeconfig_after.st_mtime_ns,
+                kubeconfig_after.st_ctime_ns,
+            ),
+            "kubeconfig source changed during authenticated copy",
+        )
+        os.fchmod(kubeconfig_fd, 0o400)
+        fcntl.fcntl(kubeconfig_fd, fcntl.F_ADD_SEALS, seal_mask)
+        require(fcntl.fcntl(kubeconfig_fd, fcntl.F_GET_SEALS) == seal_mask, "kubeconfig snapshot is not immutable")
+        os.lseek(kubeconfig_fd, 0, os.SEEK_SET)
+        context["_kubectl_fd"] = sealed_fd
+        context["_kubeconfig_fd"] = kubeconfig_fd
+        context["_kubeconfig_sha256"] = kubeconfig_hash.hexdigest()
+        sealed_fd = -1
+        kubeconfig_fd = -1
+    finally:
+        if kubeconfig_fd >= 0:
+            os.close(kubeconfig_fd)
+        if kubeconfig_source_fd >= 0:
+            os.close(kubeconfig_source_fd)
+        if sealed_fd >= 0:
+            os.close(sealed_fd)
+        os.close(source_fd)
+
+
+def close_kubectl(context: dict[str, Any]) -> None:
+    for field in ("_kubectl_fd", "_kubeconfig_fd"):
+        descriptor = context.pop(field, None)
+        if isinstance(descriptor, int):
+            os.close(descriptor)
+
+
+def kubectl(
+    query: dict[str, str],
+    context: dict[str, Any],
+    args: list[str],
+    stdin: bytes | None = None,
+) -> bytes:
+    prepare_kubectl(query, context)
+    descriptor = context["_kubectl_fd"]
+    kubeconfig_descriptor = context["_kubeconfig_fd"]
     completed = subprocess.run(
         [
-            query["kubectl_path"],
-            "--kubeconfig", query["kubeconfig_path"],
+            f"/proc/self/fd/{descriptor}",
+            "--kubeconfig", f"/proc/self/fd/{kubeconfig_descriptor}",
             "--context", query["kube_context"],
             *args,
         ],
@@ -1403,27 +1820,43 @@ def kubectl(query: dict[str, str], args: list[str], stdin: bytes | None = None) 
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        pass_fds=(descriptor, kubeconfig_descriptor),
+        env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C"},
     )
     require(completed.returncode == 0, f"apply-time Kubernetes re-observation failed for {' '.join(args[:2])}")
     return completed.stdout
 
 
-def live_get(query: dict[str, str], path: str) -> bytes:
-    return kubectl(query, ["get", "--raw", path])
+def live_get(query: dict[str, str], context: dict[str, Any], path: str) -> bytes:
+    return kubectl(query, context, ["get", "--raw", path])
 
 
-def live_post(query: dict[str, str], path: str, body: dict[str, Any]) -> bytes:
-    return kubectl(query, ["create", f"--raw={path}", "-f", "-"], v3.canonical(body))
+def live_post(query: dict[str, str], context: dict[str, Any], path: str, body: dict[str, Any]) -> bytes:
+    return kubectl(query, context, ["create", f"--raw={path}", "-f", "-"], v3.canonical(body))
+
+
+def live_secret_names(query: dict[str, str], context: dict[str, Any]) -> list[tuple[str, str]]:
+    output = kubectl(
+        query,
+        context,
+        ["get", "secrets", "--all-namespaces", "--server-print=true", "--no-headers", "-o", "wide"],
+    ).decode("utf-8")
+    names: list[tuple[str, str]] = []
+    for index, line in enumerate(output.splitlines()):
+        if not line.strip():
+            continue
+        fields = line.split()
+        require(len(fields) >= 2, f"metadata-only Secret table row {index} is malformed")
+        names.append((fields[0], fields[1]))
+    require(len(names) == len(set(names)), "metadata-only Secret table contains duplicate identities")
+    return sorted(names)
 
 
 def verify_apply_identity(query: dict[str, str], context: dict[str, Any]) -> None:
     payload = context["payload"]
-    collector = payload["collector"]
-    binary = Path(query["kubectl_path"])
-    require(binary.is_absolute() and binary.is_file(), "kubectl_path must resolve to a regular absolute file")
-    require(hashlib.sha256(v3.safe_read(str(binary), "kubectl_path", 256 * 1024 * 1024)).hexdigest() == collector["kubectl_sha256"], "apply-time kubectl binary differs from signed collector tool")
+    prepare_kubectl(query, context)
 
-    config = parse_json_bytes(kubectl(query, ["config", "view", "--minify", "--flatten", "-o", "json"]), "apply kubeconfig view")
+    config = parse_json_bytes(kubectl(query, context, ["config", "view", "--minify", "--flatten", "-o", "json"]), "apply kubeconfig view")
     require(config.get("current-context") == query["kube_context"], "apply kubeconfig current context mismatch")
     require(
         hashlib.sha256(query["kube_context"].encode()).hexdigest() == payload["cluster"]["context_sha256"],
@@ -1437,7 +1870,7 @@ def verify_apply_identity(query: dict[str, str], context: dict[str, Any]) -> Non
     require(hashlib.sha256(base64.b64decode(ca_data)).hexdigest() == payload["cluster"]["ca_sha256"], "apply cluster CA differs")
 
     self_review_request = {"apiVersion": "authentication.k8s.io/v1", "kind": "SelfSubjectReview"}
-    live_identity = subject_from_review(parse_json_bytes(live_post(query, SELF_SUBJECT_REVIEW_ENDPOINT, self_review_request), "apply SelfSubjectReview"), "apply executor")
+    live_identity = subject_from_review(parse_json_bytes(live_post(query, context, SELF_SUBJECT_REVIEW_ENDPOINT, self_review_request), "apply SelfSubjectReview"), "apply executor")
     require(
         live_identity["uid"] == context["executor"]["uid"]
         and live_identity["username"] == context["executor"]["username"]
@@ -1453,9 +1886,15 @@ def verify_apply(query: dict[str, str], context: dict[str, Any], _roots: dict[st
     for name, entry in context["entries"].items():
         if entry["origin"] != "kubernetes-api" or entry["request"]["method"] != "GET":
             continue
+        if name.startswith("k8s/secret-metadata/"):
+            continue
         path = entry["request"]["path"]
-        current = parse_json_bytes(live_get(query, path), f"apply {name}")
+        current = parse_json_bytes(live_get(query, context, path), f"apply {name}")
         require(digest(stable_object(current)) == digest(stable_object(entry["body"])), f"apply-time re-observation differs: {name}")
+    require(
+        live_secret_names(query, context) == context["secret_names"],
+        "metadata-only Secret inventory changed at apply",
+    )
 
     for namespace in context["namespaces"]:
         request = {
@@ -1463,7 +1902,7 @@ def verify_apply(query: dict[str, str], context: dict[str, Any], _roots: dict[st
             "kind": "SelfSubjectRulesReview",
             "spec": {"namespace": namespace},
         }
-        body = parse_json_bytes(live_post(query, SELF_SUBJECT_RULES_REVIEW_ENDPOINT, request), f"apply SSRR {namespace}")
+        body = parse_json_bytes(live_post(query, context, SELF_SUBJECT_RULES_REVIEW_ENDPOINT, request), f"apply SSRR {namespace}")
         require(body.get("status", {}).get("incomplete") is False, f"apply SSRR {namespace} is incomplete")
         signed = context["entries"][f"k8s/identity/{context['executor']['id']}/selfsubjectrulesreview/{namespace}"]["body"]
         require(digest(body.get("status", {})) == digest(signed.get("status", {})), f"apply SSRR changed in {namespace}")
@@ -1481,7 +1920,7 @@ def verify_apply(query: dict[str, str], context: dict[str, Any], _roots: dict[st
                 },
             }
             body = parse_json_bytes(
-                live_post(query, SUBJECT_ACCESS_REVIEW_ENDPOINT, request),
+                live_post(query, context, SUBJECT_ACCESS_REVIEW_ENDPOINT, request),
                 f"apply SAR {principal_id}/{review_name}",
             )
             require(body.get("kind") == "SubjectAccessReview", f"apply SAR kind mismatch: {principal_id}/{review_name}")
@@ -1514,16 +1953,19 @@ def main() -> int:
         if query["mode"] == "identity":
             verify_apply_identity(query, context)
             result["apply_nonce"] = text(query["apply_nonce"], "apply_nonce")
+            result["sealed_kubeconfig_sha256"] = context["_kubeconfig_sha256"]
             result["identity_reobserved"] = "true"
             result["apply_reobserved"] = "false"
         elif query["mode"] == "apply":
             verify_apply(query, context, roots)
             result["apply_nonce"] = text(query["apply_nonce"], "apply_nonce")
+            result["sealed_kubeconfig_sha256"] = context["_kubeconfig_sha256"]
             result["identity_reobserved"] = "true"
             result["apply_reobserved"] = "true"
         else:
             result["identity_reobserved"] = "false"
             result["apply_reobserved"] = "false"
+        close_kubectl(context)
         json.dump(result, sys.stdout, sort_keys=True, separators=(",", ":"))
         sys.stdout.write("\n")
         return 0

@@ -36,6 +36,7 @@ REJECTED_COMMITS = {
     "d5c19b3a8b3345acbec7b16bd5a2c00a455874d8",
     "efb29e684e0c91b06553d76b43c487a8531016f2",
     "a51b1d80738a66774eaef945c6870ba79549a816",
+    "948e1836b4058779aff2c0c91c62aa898968da5d",
 }
 ROLLOUT_LINEAGE_LABEL = "security.fs2.nebius.ai/sai20-rollout-lineage"
 PEER_NAMESPACES = ("fs2-data", "cnpg-system")
@@ -62,6 +63,16 @@ SUPPLEMENTAL_ENDPOINTS = {
     "k8s/cnpg-cluster/fs2-data/fs2-control-db": CNPG_CLUSTER_ENDPOINT,
     "k8s/admission/validatingadmissionpolicies": ADMISSION_POLICY_ENDPOINT,
     "k8s/admission/validatingadmissionpolicybindings": ADMISSION_BINDING_ENDPOINT,
+}
+TRANSITION_ADMISSION_NAMES = {
+    "fs2-database-authority-object-custody-v4",
+    "fs2-database-authority-object-custody-binding-v4",
+    "fs2-database-policy-freeze-v4",
+    "fs2-database-policy-freeze-binding-v4",
+    "fs2-database-exact-owner-v4",
+    "fs2-database-exact-owner-binding-v4",
+    "fs2-database-peer-identity-v5",
+    "fs2-database-peer-identity-binding-v5",
 }
 SUCCESSOR_SOURCE_PATHS = {
     "k8s-inference/security/sai20/enrollment-authorities-v1.json",
@@ -296,7 +307,8 @@ def binding_authority_records(
         "pods", "replicationcontrollers", "deployments", "statefulsets", "daemonsets",
         "replicasets", "jobs", "cronjobs", "networkpolicies", "roles", "rolebindings",
         "clusterroles", "clusterrolebindings", "validatingadmissionpolicies",
-        "validatingadmissionpolicybindings", "serviceaccounts/token",
+        "validatingadmissionpolicybindings", "secrets", "serviceaccounts",
+        "serviceaccounts/token",
         "certificatesigningrequests", "certificatesigningrequests/approval", "signers",
     }
 
@@ -317,6 +329,14 @@ def binding_authority_records(
         if verbs & {"update", "patch"} and (
             "certificatesigningrequests/approval" in resources or "*" in resources
         ):
+            return True
+        if verbs & {"get", "list", "watch"} and (
+            "secrets" in resources or "*" in resources
+        ) and ("" in groups or "*" in groups):
+            return True
+        if verbs & {"create", "update", "patch"} and (
+            "serviceaccounts" in resources or "*" in resources
+        ) and ("" in groups or "*" in groups):
             return True
         return bool(
             "impersonate" in verbs
@@ -662,12 +682,62 @@ def render_bootstrap_contract(contract: dict[str, Any], executor: dict[str, Any]
     return visit(contract)
 
 
+def normalized_admission_object(item: Any, where: str) -> dict[str, Any]:
+    require(isinstance(item, dict), f"{where} must be an object")
+    metadata = item.get("metadata", {})
+    require(isinstance(metadata, dict), f"{where}.metadata must be an object")
+    labels = metadata.get("labels", {})
+    annotations = metadata.get("annotations", {})
+    require(
+        isinstance(labels, dict)
+        and all(isinstance(key, str) and isinstance(value, str) for key, value in labels.items()),
+        f"{where}.metadata.labels must be a string map",
+    )
+    require(
+        isinstance(annotations, dict)
+        and all(isinstance(key, str) and isinstance(value, str) for key, value in annotations.items()),
+        f"{where}.metadata.annotations must be a string map",
+    )
+    require(
+        item.get("apiVersion") == "admissionregistration.k8s.io/v1"
+        and item.get("kind") in {"ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding"},
+        f"{where} API identity is invalid",
+    )
+    return {
+        "api_version": item["apiVersion"],
+        "kind": item["kind"],
+        "name": text(metadata.get("name"), f"{where}.metadata.name"),
+        "uid": metadata.get("uid", ""),
+        "resource_version": metadata.get("resourceVersion", ""),
+        "labels": dict(sorted(labels.items())),
+        "annotations": dict(sorted(annotations.items())),
+        "spec": item.get("spec", {}),
+    }
+
+
+def admission_source_surface(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in item.items()
+        if key not in {"uid", "resource_version"}
+    }
+
+
+def admission_objects_by_name(items: list[Any], where: str) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for index, item in enumerate(items):
+        normalized = normalized_admission_object(item, f"{where}[{index}]")
+        require(normalized["name"] not in result, f"{where} contains duplicate {normalized['name']}")
+        result[normalized["name"]] = normalized
+    return result
+
+
 def verify_bootstrap_guard(
     entries: dict[str, dict[str, Any]],
     query: dict[str, str],
     executor: dict[str, Any],
     authorization: dict[str, Any],
-) -> str:
+) -> tuple[str, dict[str, Any]]:
     contract = source_json(query, "bootstrap_guard_contract_path", "expected_bootstrap_guard_contract_sha256", "bootstrap guard contract")
     exact_keys(contract, {"schema", "protected_names", "policy", "binding"}, "bootstrap guard contract")
     require(contract["schema"] == "fs2-serve.nebius.ai/sai20-bootstrap-guard/v5", "bootstrap guard contract schema mismatch")
@@ -681,11 +751,44 @@ def verify_bootstrap_guard(
         rendered["policy"]["name"],
         rendered["binding"]["name"],
     }
-    preexisting_successor_names = {
-        item.get("metadata", {}).get("name")
-        for item in policy_body["items"] + binding_body["items"]
-    } & reserved_successor_names
-    require(not preexisting_successor_names, "a reserved v4/v5 successor admission object already exists before guarded activation")
+    require(TRANSITION_ADMISSION_NAMES < reserved_successor_names, "bootstrap contract omits a transition admission name")
+    live_admission = admission_objects_by_name(
+        policy_body["items"] + binding_body["items"],
+        "pre-activation admission objects",
+    )
+    preexisting_successor_names = set(live_admission) & reserved_successor_names
+    if not preexisting_successor_names:
+        mode = "INITIAL"
+    else:
+        require(
+            preexisting_successor_names == reserved_successor_names,
+            "guarded successor admission set is partial and cannot be renewed",
+        )
+        mode = "RENEWAL"
+    old_objects = [live_admission[name] for name in sorted(preexisting_successor_names)]
+    require(
+        all(
+            isinstance(item["uid"], str)
+            and bool(item["uid"])
+            and isinstance(item["resource_version"], str)
+            and bool(item["resource_version"])
+            for item in old_objects
+        ),
+        "renewal predecessor admission objects require exact live UID and resourceVersion",
+    )
+    transition = authorization["successor_transition"]
+    require(isinstance(transition, dict), "successor_transition must be an object")
+    exact_keys(
+        transition,
+        {"mode", "old_objects_sha256", "planned_objects_sha256"},
+        "successor_transition",
+    )
+    require(transition["mode"] == mode, "signed successor transition mode differs from live state")
+    require(
+        transition["old_objects_sha256"] == digest(old_objects),
+        "signed successor transition does not bind the exact old admission objects",
+    )
+    sha256(transition["planned_objects_sha256"], "successor_transition.planned_objects_sha256")
     policy = policies[0]
     binding = bindings[0]
     require(policy.get("spec") == rendered["policy"]["spec"], "pre-existing bootstrap guard policy differs from source contract")
@@ -699,9 +802,18 @@ def verify_bootstrap_guard(
         "binding_uid": text(binding.get("metadata", {}).get("uid"), "bootstrap binding UID"),
         "binding_resource_version": text(binding.get("metadata", {}).get("resourceVersion"), "bootstrap binding resourceVersion"),
         "binding_spec_sha256": digest(binding["spec"]),
+        "transition_mode": mode,
+        "old_objects_sha256": transition["old_objects_sha256"],
+        "planned_objects_sha256": transition["planned_objects_sha256"],
     }
     require(digest(identity) == authorization["bootstrap_guard_sha256"], "bootstrap guard receipt is not content-derived")
-    return authorization["bootstrap_guard_sha256"]
+    return authorization["bootstrap_guard_sha256"], {
+        "mode": mode,
+        "reserved_names": reserved_successor_names,
+        "old_objects": {item["name"]: item for item in old_objects},
+        "old_objects_sha256": transition["old_objects_sha256"],
+        "planned_objects_sha256": transition["planned_objects_sha256"],
+    }
 
 
 def verify_supplemental_bundle(
@@ -762,7 +874,7 @@ def verify_supplemental_bundle(
             "cluster_authority_review_sha256", "peer_workload_inventory_sha256",
             "cnpg_cluster_identity_sha256", "authorized_peer_parents",
             "cnpg_controller_usernames", "rollout_lineages", "principal_uids",
-            "bootstrap_guard_sha256",
+            "bootstrap_guard_sha256", "successor_transition",
             "provider_group_response_sha256", "provider_observer_sha256",
             "provider_observer_credential_subject_sha256",
         },
@@ -835,7 +947,7 @@ def verify_supplemental_bundle(
 
     executor = v4_context["executor"]
     peer_result = verify_peer_inventory(entries, v4_context, authorization)
-    bootstrap_sha = verify_bootstrap_guard(entries, query, executor, authorization)
+    bootstrap_sha, successor_transition = verify_bootstrap_guard(entries, query, executor, authorization)
     review = payload["independent_review"]
     require(isinstance(review, dict), "v5 independent_review must be an object")
     exact_keys(review, {"verdict", "commit", "tree", "reviewer_principal_id", "reviewed_at", "findings_sha256"}, "v5 independent_review")
@@ -862,6 +974,9 @@ def verify_supplemental_bundle(
         "external_enrollment_receipts_sha256": enrollment_receipts_sha256,
         "cluster_authority_review_sha256": authorization["cluster_authority_review_sha256"],
         "bootstrap_guard_sha256": bootstrap_sha,
+        "successor_transition_mode": successor_transition["mode"],
+        "successor_old_objects_sha256": successor_transition["old_objects_sha256"],
+        "successor_planned_objects_sha256": successor_transition["planned_objects_sha256"],
         "provider_observer_sha256": authorization["provider_observer_sha256"],
         "principal_identities_json": json.dumps(
             principal_identities,
@@ -873,9 +988,29 @@ def verify_supplemental_bundle(
         "payload": payload,
         "entries": entries,
         "authorization": authorization,
+        "successor_transition": successor_transition,
         "v4": v4_context,
     }
     return result, context
+
+
+def expected_transition_admission_objects(
+    query: dict[str, str],
+    context: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    value = v4.parse_json_bytes(
+        query["expected_successor_admission_objects_json"].encode("utf-8"),
+        "source-rendered successor admission objects",
+    )
+    require(isinstance(value, list), "source-rendered successor admission objects must be a list")
+    normalized = admission_objects_by_name(value, "source-rendered successor admission objects")
+    require(set(normalized) == TRANSITION_ADMISSION_NAMES, "source-rendered successor admission object set differs")
+    surfaces = [admission_source_surface(normalized[name]) for name in sorted(normalized)]
+    require(
+        digest(surfaces) == context["successor_transition"]["planned_objects_sha256"],
+        "source-rendered successor admission digest differs from the signed transition",
+    )
+    return normalized
 
 
 def reobserve_supplemental_kubernetes(
@@ -883,9 +1018,15 @@ def reobserve_supplemental_kubernetes(
     context: dict[str, Any],
     *,
     allow_successor_admission_additions: bool = False,
-) -> None:
+) -> str:
+    expected_objects = (
+        expected_transition_admission_objects(query, context)
+        if allow_successor_admission_additions
+        else {}
+    )
+    observed_transition_objects: dict[str, dict[str, Any]] = {}
     for name, entry in context["entries"].items():
-        current = v4.parse_json_bytes(v4.live_get(query, entry["request"]["path"]), f"apply {name}")
+        current = v4.parse_json_bytes(v4.live_get(query, context["v4"], entry["request"]["path"]), f"apply {name}")
         if name == "k8s/cnpg-cluster/fs2-data/fs2-control-db":
             require(
                 digest(v4.stable_object(current)) == digest(v4.stable_object(entry["body"])),
@@ -899,34 +1040,63 @@ def reobserve_supplemental_kubernetes(
             "k8s/admission/validatingadmissionpolicies",
             "k8s/admission/validatingadmissionpolicybindings",
         }:
-            before = {
-                item["metadata"]["name"]: v4.stable_object(item)
-                for item in entry["body"]["items"]
+            before = admission_objects_by_name(entry["body"]["items"], f"signed {name}")
+            after = admission_objects_by_name(current["items"], f"apply {name}")
+            transition_names = set(after) & TRANSITION_ADMISSION_NAMES
+            expected_names = {
+                object_name
+                for object_name, expected in expected_objects.items()
+                if expected["kind"] == (
+                    "ValidatingAdmissionPolicy"
+                    if name.endswith("validatingadmissionpolicies")
+                    else "ValidatingAdmissionPolicyBinding"
+                )
             }
-            after = {
-                item["metadata"]["name"]: v4.stable_object(item)
-                for item in current["items"]
-            }
-            require(all(item in after and after[item] == value for item, value in before.items()), f"v5 apply changed a pre-existing admission object: {name}")
-            allowed_additions = {
-                "fs2-database-authority-object-custody-v4",
-                "fs2-database-authority-object-custody-binding-v4",
-                "fs2-database-policy-freeze-v4",
-                "fs2-database-policy-freeze-binding-v4",
-                "fs2-database-exact-owner-v4",
-                "fs2-database-exact-owner-binding-v4",
-                "fs2-database-peer-identity-v5",
-                "fs2-database-peer-identity-binding-v5",
-            }
-            added = set(after) - set(before)
-            require(added <= allowed_additions, f"v5 apply introduced an unreviewed admission object: {name}")
-            if name.endswith("validatingadmissionpolicies"):
-                required = {item for item in allowed_additions if not item.endswith("binding-v4") and not item.endswith("binding-v5")}
+            require(transition_names == expected_names, f"v5 apply transition object set differs: {name}")
+            mode = context["successor_transition"]["mode"]
+            if mode == "INITIAL":
+                require(
+                    set(after) - set(before) == expected_names
+                    and not (set(before) & expected_names),
+                    f"initial activation did not add exactly the source-rendered successor set: {name}",
+                )
             else:
-                required = {item for item in allowed_additions if item.endswith("binding-v4") or item.endswith("binding-v5")}
-            require(added == required, f"v5 apply did not establish the exact guarded admission-object set: {name}")
+                require(set(after) == set(before), f"renewal changed admission object names: {name}")
+                for object_name in expected_names:
+                    require(
+                        before[object_name]["uid"]
+                        and before[object_name]["uid"] == after[object_name]["uid"],
+                        f"renewal replaced protected admission object: {object_name}",
+                    )
+            for object_name, old_object in before.items():
+                if object_name not in expected_names:
+                    require(
+                        object_name in after and after[object_name] == old_object,
+                        f"v5 apply changed a non-transition admission object: {object_name}",
+                    )
+            for object_name in expected_names:
+                observed = after[object_name]
+                require(
+                    admission_source_surface(observed)
+                    == admission_source_surface(expected_objects[object_name]),
+                    f"v5 apply successor object is not source-exact: {object_name}",
+                )
+                observed_transition_objects[object_name] = observed
             continue
         require(digest(v4.stable_object(current)) == digest(v4.stable_object(entry["body"])), f"v5 apply-time re-observation differs: {name}")
+    if not allow_successor_admission_additions:
+        return ""
+    require(set(observed_transition_objects) == TRANSITION_ADMISSION_NAMES, "source-exact successor activation is incomplete")
+    observed_surfaces = [
+        admission_source_surface(observed_transition_objects[name])
+        for name in sorted(observed_transition_objects)
+    ]
+    observed_digest = digest(observed_surfaces)
+    require(
+        observed_digest == context["successor_transition"]["planned_objects_sha256"],
+        "live successor admission digest differs from signed source render",
+    )
+    return observed_digest
 
 
 def reobserve_provider_group(query: dict[str, str], context: dict[str, Any]) -> None:
@@ -958,6 +1128,7 @@ def reobserve_provider_group(query: dict[str, str], context: dict[str, Any]) -> 
         require(os.read(observer_fd, 1) == b"", "provider group observer exceeds its authenticated size")
         authorization = context["authorization"]
         require(observer_hash.hexdigest() == authorization["provider_observer_sha256"], "apply provider observer differs from the signed executable")
+        v4.require_static_elf(sealed_fd, before.st_size, "provider group observer")
         os.fchmod(sealed_fd, before.st_mode & 0o555)
         seal_mask = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL
         fcntl.fcntl(sealed_fd, fcntl.F_ADD_SEALS, seal_mask)
@@ -981,6 +1152,7 @@ def reobserve_provider_group(query: dict[str, str], context: dict[str, Any]) -> 
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             pass_fds=(sealed_fd,),
+            env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C"},
         )
         after = os.fstat(observer_fd)
         require(
@@ -1036,37 +1208,50 @@ def main() -> int:
             "root_enrollment_receipts_path", "expected_root_enrollment_receipts_sha256",
             "bootstrap_guard_contract_path", "expected_bootstrap_guard_contract_sha256",
         }
-        apply = {"kubeconfig_path", "kube_context", "kubectl_path", "provider_group_observer_path", "apply_nonce"}
+        runtime = {"kubeconfig_path", "kube_context", "kubectl_path", "provider_group_observer_path", "apply_nonce"}
+        apply_only = {"expected_successor_admission_objects_json"}
         require(query.get("mode") in {"plan", "identity", "apply"}, "v5 mode must be plan, identity or apply")
-        require(set(query) == common | (apply if query["mode"] in {"identity", "apply"} else set()), "Terraform v5 external query keys invalid")
+        required = set(common)
+        if query["mode"] in {"identity", "apply"}:
+            required |= runtime
+        if query["mode"] == "apply":
+            required |= apply_only
+        require(set(query) == required, "Terraform v5 external query keys invalid")
         base_result, base_context, roots = v4.verify_bundle(v4_query(query))
         result, context = verify_supplemental_bundle(query, base_result, base_context, roots)
         if query["mode"] == "identity":
             v4.verify_apply_identity(v4_query(query), base_context)
             reobserve_supplemental_kubernetes(query, context)
             result["apply_nonce"] = text(query["apply_nonce"], "apply_nonce")
+            result["sealed_kubeconfig_sha256"] = base_context["_kubeconfig_sha256"]
             result["identity_reobserved"] = "true"
             result["apply_reobserved"] = "false"
             result["bootstrap_reobserved"] = "true"
             result["provider_group_reobserved"] = "false"
+            result["successor_source_exact_reobserved"] = "false"
         elif query["mode"] == "apply":
             v4.verify_apply(v4_query(query), base_context, roots)
-            reobserve_supplemental_kubernetes(
+            successor_activation_sha256 = reobserve_supplemental_kubernetes(
                 query,
                 context,
                 allow_successor_admission_additions=True,
             )
             reobserve_provider_group(query, context)
             result["apply_nonce"] = text(query["apply_nonce"], "apply_nonce")
+            result["sealed_kubeconfig_sha256"] = base_context["_kubeconfig_sha256"]
             result["identity_reobserved"] = "true"
             result["apply_reobserved"] = "true"
             result["bootstrap_reobserved"] = "true"
             result["provider_group_reobserved"] = "true"
+            result["successor_source_exact_reobserved"] = "true"
+            result["successor_activation_sha256"] = successor_activation_sha256
         else:
             result["identity_reobserved"] = "false"
             result["apply_reobserved"] = "false"
             result["bootstrap_reobserved"] = "false"
             result["provider_group_reobserved"] = "false"
+            result["successor_source_exact_reobserved"] = "false"
+        v4.close_kubectl(base_context)
         json.dump(result, sys.stdout, sort_keys=True, separators=(",", ":"))
         sys.stdout.write("\n")
         return 0

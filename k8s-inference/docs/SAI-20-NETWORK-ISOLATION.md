@@ -440,3 +440,73 @@ package manager, scanner, cluster, provider, database, registry, credential,
 deployment, probe, cleanup or deletion action ran. This remains an additive
 candidate for independent static review only and makes no SOURCE GO,
 integration, deployment or live claim.
+
+## Final independent-review correction after `948e1836`
+
+Independent review rejected exact commit
+`948e1836b4058779aff2c0c91c62aa898968da5d` / tree
+`6c42121eb240f81dbc169d7beb0d7910e39a6697`. Preserve it as negative
+evidence. Although that source completed all-namespace RBAC and all-principal
+SAR closure, sealed the provider observer and retained an empty fail-closed
+root registry, it omitted stored-credential reads and base ServiceAccount
+mutation, reopened `kubectl` by pathname after hashing, could activate its
+successor admission set only once, and checked only successor names at the
+final reread.
+
+The additive correction keeps the accepted database-client, debugging,
+network, observability and fail-closed activation boundaries and adds four
+source contracts:
+
+- Every namespace has a signed Kubernetes
+  `PartialObjectMetadataList` inventory of Secret names, UIDs and resource
+  versions. The transcript is rejected unless its request carries the exact
+  metadata-only Accept header and every returned item contains only
+  `apiVersion`, `kind` and `metadata`; Secret `data` and `stringData` never
+  enter the packet. The unknown-nonce apply stage compares a server-rendered
+  non-payload Secret table with the signed name closure. Generic and exact
+  resource-name Secret `get`/`list`/`watch` decisions are included for every
+  principal.
+- Base ServiceAccount `create`/`update`/`patch` authority is now dangerous,
+  not merely a generic workload mutation. Generic and resource-name-specific
+  reviews are derived from the full Role/ClusterRole inventory and every live
+  ServiceAccount name. Dangerous bindings remain limited to exact custodian
+  subjects, and the final apply repeats every resulting SAR for every exact
+  admitted principal.
+- `kubectl` is opened once with `O_NOFOLLOW`, required to be root-owned,
+  executable and not group/world writable, and copied from that descriptor
+  into a sealed anonymous memory file. The copy must match the signed
+  collector digest and be a native static ELF with no `PT_INTERP`; scripts and
+  dynamically interpreted executables fail closed. Every kubeconfig,
+  identity, inventory and SAR operation executes that same immutable
+  descriptor, so no later pathname lookup can substitute evidence.
+- The kubeconfig is independently opened with `O_NOFOLLOW`, restricted to a
+  stable regular file owned by root or the verifier user, copied to a second
+  sealed descriptor, and reused for every invocation. The selected cluster
+  must contain only an HTTPS server and inline CA. The selected user must
+  contain only an inline token or inline client certificate/key; exec,
+  auth-provider, token-file, external CA/key/certificate, proxy and extension
+  paths are therefore rejected by exact key closure. `kubectl` and the
+  provider observer run with only explicit `HOME`, `LANG` and `LC_ALL`
+  variables. The observer is also required to be a static ELF, so neither
+  path can acquire a credential helper or executable from ambient state. The
+  sealed kubeconfig digest must remain identical across identity and final
+  apply gates.
+- The dual-signed authorization declares an `INITIAL` or `RENEWAL`
+  transition, a digest of the exact old protected admission objects and a
+  digest of the exact planned eight-object successor set. Initial activation
+  requires those eight names to be absent; renewal requires the complete
+  protected predecessor set and stable object UIDs. Terraform supplies the
+  actual source-rendered policy and binding manifests to the final verifier.
+  The live reread compares every policy/binding spec, label, annotation, kind
+  and name with that render, rejects any non-transition change, and exposes
+  the observed digest to a Terraform precondition. This permits an ordinary
+  reapply or reviewed CNPG second pass without weakening exact old/new
+  custody.
+
+The packet-shape additions deliberately invalidate prior evidence. The
+source-owned root and enrollment registries remain empty and authorize no
+activation. Regression assertions were authored but not executed. No test,
+parser, formatter, Terraform, Helm, build, package manager, scanner, cluster,
+provider, database, registry, credential, deployment, probe, cleanup or
+deletion action ran. This is a source-only candidate for fresh independent
+review and makes no SOURCE GO, integration, deployment or live claim.

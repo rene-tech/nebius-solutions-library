@@ -1,8 +1,8 @@
 """Unexecuted regressions for the additive SAI-20 v5 successor gate.
 
 The coordinator explicitly forbids executing tests or parsers in this task.
-These assertions include the final three blocker groups reported against
-a51b1d80738a66774eaef945c6870ba79549a816. They are authored evidence only;
+These assertions include the four final blocker groups reported against
+948e1836b4058779aff2c0c91c62aa898968da5d. They are authored evidence only;
 this task's coordinator boundary forbids executing them.
 """
 
@@ -42,6 +42,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("d5c19b3a8b3345acbec7b16bd5a2c00a455874d8", self.v5_py)
         self.assertIn("efb29e684e0c91b06553d76b43c487a8531016f2", self.v5_py)
         self.assertIn("a51b1d80738a66774eaef945c6870ba79549a816", self.v5_py)
+        self.assertIn("948e1836b4058779aff2c0c91c62aa898968da5d", self.v5_py)
         self.assertIn("source is a preserved rejected candidate", self.v5_py)
         self.assertIn("sai20_database_authority_v5_plan.output.successor_verified", self.v4_tf)
         self.assertIn("sai20_database_authority_v5_identity.output.bootstrap_reobserved", self.v4_tf)
@@ -83,7 +84,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("variables.exactOperatorParent", self.v5_tf)
         self.assertIn("variables.controllerIdentity", self.v5_tf)
 
-    def test_preexisting_guard_closes_create_before_binding_window(self) -> None:
+    def test_preexisting_guard_supports_exact_initial_and_renewal_transitions(self) -> None:
         self.assertEqual(
             self.bootstrap["policy"]["name"],
             "fs2-database-authority-bootstrap-guard-v5",
@@ -98,12 +99,71 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("validatingadmissionpolicies", self.v5_py)
         self.assertIn("validatingadmissionpolicybindings", self.v5_py)
         self.assertIn("pre-existing bootstrap guard policy and binding must both be uniquely active", self.v5_py)
-        self.assertIn("reserved v4/v5 successor admission object already exists", self.v5_py)
+        self.assertIn('mode = "INITIAL"', self.v5_py)
+        self.assertIn('mode = "RENEWAL"', self.v5_py)
+        self.assertIn('"successor_transition"', self.v5_py)
+        self.assertIn("signed successor transition does not bind the exact old admission objects", self.v5_py)
         self.assertIn("reobserve_supplemental_kubernetes(query, context)", self.v5_py)
-        self.assertIn("v5 apply changed a pre-existing admission object", self.v5_py)
-        self.assertIn("v5 apply introduced an unreviewed admission object", self.v5_py)
-        self.assertIn("v5 apply did not establish the exact guarded admission-object set", self.v5_py)
+        self.assertIn("renewal replaced protected admission object", self.v5_py)
+        self.assertIn("source-exact successor activation is incomplete", self.v5_py)
+        self.assertIn("expected_successor_admission_objects_json", self.v5_tf)
+        self.assertIn("successor_source_exact_reobserved", self.v5_tf)
+        self.assertIn("successor_activation_sha256", self.v5_tf)
         self.assertNotIn('resource "kubernetes_manifest" "sai20_database_authority_bootstrap_guard_v5"', self.v5_tf)
+
+    def test_secret_reads_and_base_service_account_mutation_are_closed_without_payloads(self) -> None:
+        self.assertIn("SECRET_METADATA_ACCEPT", self.v4_py)
+        self.assertIn("PartialObjectMetadataList", self.v4_py)
+        self.assertIn('set(item) == {"apiVersion", "kind", "metadata"}', self.v4_py)
+        self.assertIn("secret_metadata_inventory_sha256", self.v4_tf)
+        self.assertIn("secret_metadata_inventory_sha256", self.v5_tf)
+        self.assertIn("read-secret/", self.v4_py)
+        self.assertIn("secret_resource_names", self.v4_py)
+        self.assertIn("mutate-serviceaccounts/", self.v4_py)
+        self.assertIn("service_account_resource_names", self.v4_py)
+        self.assertIn('"secrets" in resources', self.v5_py)
+        self.assertIn('"serviceaccounts" in resources', self.v5_py)
+        self.assertIn("metadata-only Secret inventory changed at apply", self.v4_py)
+
+    def test_kubectl_is_executed_only_from_a_sealed_static_elf_snapshot(self) -> None:
+        self.assertIn('os.memfd_create("sai20-kubectl"', self.v4_py)
+        self.assertIn("before.st_uid == 0", self.v4_py)
+        self.assertIn("before.st_mode & 0o022 == 0", self.v4_py)
+        self.assertIn("fcntl.F_SEAL_WRITE", self.v4_py)
+        self.assertIn("kubectl must be a native ELF executable", self.v4_py)
+        self.assertIn("kubectl must be a static ELF with no external interpreter", self.v4_py)
+        self.assertIn('f"/proc/self/fd/{descriptor}"', self.v4_py)
+        self.assertIn("pass_fds=(descriptor, kubeconfig_descriptor)", self.v4_py)
+        self.assertNotIn("[str(binary)", self.v4_py)
+
+    def test_kubeconfig_and_credential_transport_are_sealed_and_self_contained(self) -> None:
+        self.assertIn('os.memfd_create("sai20-kubeconfig"', self.v4_py)
+        self.assertIn("validate_self_contained_kubeconfig", self.v4_py)
+        self.assertIn("selected kubeconfig cluster must use only an inline CA and direct server", self.v4_py)
+        self.assertIn("selected kubeconfig user must use only an inline token or inline client certificate/key", self.v4_py)
+        self.assertIn('"--kubeconfig", f"/proc/self/fd/{kubeconfig_descriptor}"', self.v4_py)
+        self.assertIn("pass_fds=(descriptor, kubeconfig_descriptor)", self.v4_py)
+        self.assertIn('env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C"}', self.v4_py)
+        self.assertIn("sealed_kubeconfig_sha256", self.v4_tf)
+        self.assertIn("sealed_kubeconfig_sha256", self.v5_tf)
+        self.assertNotIn('"--kubeconfig", query["kubeconfig_path"]', self.v4_py)
+
+    def test_successor_activation_is_bound_to_exact_source_rendered_objects(self) -> None:
+        for resource in (
+            "sai20_database_authority_object_custody_v4.manifest",
+            "sai20_database_authority_object_custody_binding_v4.manifest",
+            "sai20_database_policy_freeze_v4.manifest",
+            "sai20_database_policy_freeze_binding_v4.manifest",
+            "sai20_database_exact_owner_v4.manifest",
+            "sai20_database_exact_owner_binding_v4.manifest",
+            "sai20_database_peer_identity_v5.manifest",
+            "sai20_database_peer_identity_binding_v5.manifest",
+        ):
+            self.assertIn(resource, self.v5_tf)
+        self.assertIn("source-rendered successor admission object set differs", self.v5_py)
+        self.assertIn("source-rendered successor admission digest differs from the signed transition", self.v5_py)
+        self.assertIn("v5 apply successor object is not source-exact", self.v5_py)
+        self.assertIn("live successor admission digest differs from signed source render", self.v5_py)
 
     def test_root_enrollment_requires_preexisting_external_signature(self) -> None:
         self.assertEqual(self.roots["status"], "ENROLLMENT_REQUIRED")
@@ -191,6 +251,8 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn('f"/proc/self/fd/{sealed_fd}"', self.v5_py)
         self.assertIn("pass_fds=(sealed_fd,)", self.v5_py)
         self.assertIn("provider group observer changed while it was executing", self.v5_py)
+        self.assertIn('v4.require_static_elf(sealed_fd, before.st_size, "provider group observer")', self.v5_py)
+        self.assertIn('env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C"}', self.v5_py)
         self.assertNotIn("[str(observer)]", self.v5_py)
 
     def test_authority_closure_is_cluster_wide_name_exact_and_fresh_for_every_principal(self) -> None:

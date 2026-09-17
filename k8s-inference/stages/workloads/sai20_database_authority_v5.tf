@@ -68,7 +68,9 @@ resource "terraform_data" "sai20_database_authority_v5_plan" {
         data.external.sai20_database_authority_v5_plan.result.successor_verified == "true" &&
         data.external.sai20_database_authority_v5_plan.result.identity_reobserved == "false" &&
         data.external.sai20_database_authority_v5_plan.result.bootstrap_reobserved == "false" &&
-        data.external.sai20_database_authority_v5_plan.result.provider_group_reobserved == "false",
+        data.external.sai20_database_authority_v5_plan.result.provider_group_reobserved == "false" &&
+        data.external.sai20_database_authority_v5_plan.result.successor_source_exact_reobserved == "false" &&
+        contains(["INITIAL", "RENEWAL"], data.external.sai20_database_authority_v5_plan.result.successor_transition_mode),
         false,
       )
       error_message = "SAI-20 v5 planning requires externally enrolled roots and an exact dual-signed successor envelope."
@@ -115,6 +117,7 @@ resource "terraform_data" "sai20_database_authority_v5_identity" {
         data.external.sai20_database_authority_v5_identity.result.identity_reobserved == "true" &&
         data.external.sai20_database_authority_v5_identity.result.bootstrap_reobserved == "true" &&
         data.external.sai20_database_authority_v5_identity.result.provider_group_reobserved == "false" &&
+        data.external.sai20_database_authority_v5_identity.result.successor_source_exact_reobserved == "false" &&
         data.external.sai20_database_authority_v5_identity.result.apply_nonce == terraform_data.sai20_database_authority_v5_identity_nonce.output.nonce &&
         data.external.sai20_database_authority_v5_identity.result.successor_bundle_sha256 == terraform_data.sai20_database_authority_v5_plan.output.successor_bundle_sha256 &&
         data.external.sai20_database_authority_v5_identity.result.bootstrap_guard_sha256 == terraform_data.sai20_database_authority_v5_plan.output.bootstrap_guard_sha256 &&
@@ -122,6 +125,11 @@ resource "terraform_data" "sai20_database_authority_v5_identity" {
         data.external.sai20_database_authority_v5_identity.result.namespace_names_json == terraform_data.sai20_database_authority_v5_plan.output.namespace_names_json &&
         data.external.sai20_database_authority_v5_identity.result.service_account_inventory_sha256 == terraform_data.sai20_database_authority_v5_plan.output.service_account_inventory_sha256 &&
         data.external.sai20_database_authority_v5_identity.result.service_account_names_json == terraform_data.sai20_database_authority_v5_plan.output.service_account_names_json &&
+        data.external.sai20_database_authority_v5_identity.result.secret_metadata_inventory_sha256 == terraform_data.sai20_database_authority_v5_plan.output.secret_metadata_inventory_sha256 &&
+        data.external.sai20_database_authority_v5_identity.result.secret_names_json == terraform_data.sai20_database_authority_v5_plan.output.secret_names_json &&
+        data.external.sai20_database_authority_v5_identity.result.successor_transition_mode == terraform_data.sai20_database_authority_v5_plan.output.successor_transition_mode &&
+        data.external.sai20_database_authority_v5_identity.result.successor_old_objects_sha256 == terraform_data.sai20_database_authority_v5_plan.output.successor_old_objects_sha256 &&
+        data.external.sai20_database_authority_v5_identity.result.successor_planned_objects_sha256 == terraform_data.sai20_database_authority_v5_plan.output.successor_planned_objects_sha256 &&
         data.external.sai20_database_authority_v5_identity.result.executor_uid == terraform_data.sai20_database_authority_v5_plan.output.executor_uid &&
         data.external.sai20_database_authority_v5_identity.result.principal_identities_json == terraform_data.sai20_database_authority_v5_plan.output.principal_identities_json &&
         data.external.sai20_database_authority_v5_identity.result.rollout_lineages_json == terraform_data.sai20_database_authority_v5_plan.output.rollout_lineages_json &&
@@ -471,6 +479,16 @@ data "external" "sai20_database_authority_v5_apply" {
     kubectl_path                 = var.sai20_database_authority_v4.kubectl_path
     provider_group_observer_path = var.sai20_database_authority_v5.provider_group_observer_path
     apply_nonce                  = terraform_data.sai20_database_authority_v5_apply_nonce.output.nonce
+    expected_successor_admission_objects_json = jsonencode([
+      kubernetes_manifest.sai20_database_authority_object_custody_v4.manifest,
+      kubernetes_manifest.sai20_database_authority_object_custody_binding_v4.manifest,
+      kubernetes_manifest.sai20_database_policy_freeze_v4.manifest,
+      kubernetes_manifest.sai20_database_policy_freeze_binding_v4.manifest,
+      kubernetes_manifest.sai20_database_exact_owner_v4.manifest,
+      kubernetes_manifest.sai20_database_exact_owner_binding_v4.manifest,
+      kubernetes_manifest.sai20_database_peer_identity_v5.manifest,
+      kubernetes_manifest.sai20_database_peer_identity_binding_v5.manifest,
+    ])
   })
 }
 
@@ -486,6 +504,7 @@ resource "terraform_data" "sai20_database_authority_v5_apply" {
         data.external.sai20_database_authority_v5_apply.result.apply_reobserved == "true" &&
         data.external.sai20_database_authority_v5_apply.result.bootstrap_reobserved == "true" &&
         data.external.sai20_database_authority_v5_apply.result.provider_group_reobserved == "true" &&
+        data.external.sai20_database_authority_v5_apply.result.successor_source_exact_reobserved == "true" &&
         data.external.sai20_database_authority_v5_apply.result.apply_nonce == terraform_data.sai20_database_authority_v5_apply_nonce.output.nonce &&
         data.external.sai20_database_authority_v5_apply.result.successor_bundle_sha256 == terraform_data.sai20_database_authority_v5_plan.output.successor_bundle_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.bootstrap_guard_sha256 == terraform_data.sai20_database_authority_v5_identity.output.bootstrap_guard_sha256 &&
@@ -493,6 +512,13 @@ resource "terraform_data" "sai20_database_authority_v5_apply" {
         data.external.sai20_database_authority_v5_apply.result.namespace_names_json == terraform_data.sai20_database_authority_v5_identity.output.namespace_names_json &&
         data.external.sai20_database_authority_v5_apply.result.service_account_inventory_sha256 == terraform_data.sai20_database_authority_v5_identity.output.service_account_inventory_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.service_account_names_json == terraform_data.sai20_database_authority_v5_identity.output.service_account_names_json &&
+        data.external.sai20_database_authority_v5_apply.result.secret_metadata_inventory_sha256 == terraform_data.sai20_database_authority_v5_identity.output.secret_metadata_inventory_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.secret_names_json == terraform_data.sai20_database_authority_v5_identity.output.secret_names_json &&
+        data.external.sai20_database_authority_v5_apply.result.sealed_kubeconfig_sha256 == terraform_data.sai20_database_authority_v5_identity.output.sealed_kubeconfig_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.successor_transition_mode == terraform_data.sai20_database_authority_v5_identity.output.successor_transition_mode &&
+        data.external.sai20_database_authority_v5_apply.result.successor_old_objects_sha256 == terraform_data.sai20_database_authority_v5_identity.output.successor_old_objects_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.successor_planned_objects_sha256 == terraform_data.sai20_database_authority_v5_identity.output.successor_planned_objects_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.successor_activation_sha256 == terraform_data.sai20_database_authority_v5_identity.output.successor_planned_objects_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.executor_uid == terraform_data.sai20_database_authority_v5_identity.output.executor_uid &&
         data.external.sai20_database_authority_v5_apply.result.principal_identities_json == terraform_data.sai20_database_authority_v5_identity.output.principal_identities_json &&
         data.external.sai20_database_authority_v5_apply.result.rollout_lineages_json == terraform_data.sai20_database_authority_v5_identity.output.rollout_lineages_json &&
@@ -500,6 +526,11 @@ resource "terraform_data" "sai20_database_authority_v5_apply" {
         data.external.sai20_database_authority_v5_apply.result.cluster_authority_review_sha256 == terraform_data.sai20_database_authority_v5_plan.output.cluster_authority_review_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.namespace_inventory_sha256 == terraform_data.sai20_database_authority_v5_plan.output.namespace_inventory_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.service_account_inventory_sha256 == terraform_data.sai20_database_authority_v5_plan.output.service_account_inventory_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.secret_metadata_inventory_sha256 == terraform_data.sai20_database_authority_v5_plan.output.secret_metadata_inventory_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.secret_names_json == terraform_data.sai20_database_authority_v5_plan.output.secret_names_json &&
+        data.external.sai20_database_authority_v5_apply.result.successor_transition_mode == terraform_data.sai20_database_authority_v5_plan.output.successor_transition_mode &&
+        data.external.sai20_database_authority_v5_apply.result.successor_old_objects_sha256 == terraform_data.sai20_database_authority_v5_plan.output.successor_old_objects_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.successor_planned_objects_sha256 == terraform_data.sai20_database_authority_v5_plan.output.successor_planned_objects_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.source_commit == terraform_data.sai20_database_authority_v5_plan.output.source_commit &&
         data.external.sai20_database_authority_v5_apply.result.source_tree == terraform_data.sai20_database_authority_v5_plan.output.source_tree,
         false,
