@@ -269,6 +269,7 @@ class Settings(BaseSettings):
     artifact_store_credentials_file: Path = Path("/var/run/secrets/fs2-serve/artifact-store/credentials.json")
     artifact_handle_ttl_seconds: int = Field(default=600, ge=30, le=900)
     artifact_max_bytes: int = Field(default=1 << 40, ge=1024, le=1 << 40)
+    artifact_tenant_quota_bytes: int = Field(default=1 << 40, ge=1024, le=1 << 40)
     # The exact ceiling for artifact bytes carried through the public gateway
     # itself. A larger object remains reachable only through a presigned
     # handle, so this bound must never exceed what the edge will accept.
@@ -381,6 +382,8 @@ class Settings(BaseSettings):
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed max_request_bytes")
             if self.artifact_inline_content_max_bytes > self.artifact_max_bytes:
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed artifact_max_bytes")
+            if self.artifact_tenant_quota_bytes < self.artifact_max_bytes:
+                raise ValueError("artifact_tenant_quota_bytes cannot be smaller than artifact_max_bytes")
         database_roles = {
             self.reporting_database_role,
             self.runtime_database_role,

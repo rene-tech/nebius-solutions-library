@@ -360,6 +360,7 @@ output "scientific_artifacts_status" {
     credential_revision = local.scientific_artifacts_revision
     handle_ttl_seconds  = var.scientific_artifacts.handle_ttl_seconds
     max_artifact_bytes  = var.scientific_artifacts.max_artifact_bytes
+    tenant_quota_bytes  = var.scientific_artifacts.tenant_quota_bytes
     media_types         = sort(var.scientific_artifacts.media_types)
     batch = {
       enabled        = var.scientific_batch.enabled

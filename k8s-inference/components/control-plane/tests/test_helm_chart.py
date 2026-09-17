@@ -3419,6 +3419,7 @@ def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> N
 
     # Every artifact value must survive Helm's float64 number handling.
     assert environment["FS2_ARTIFACT_MAX_BYTES"] == "1099511627776"
+    assert environment["FS2_ARTIFACT_TENANT_QUOTA_BYTES"] == "1099511627776"
     assert environment["FS2_ARTIFACT_RETENTION_SECONDS"] == "7776000"
     assert environment["FS2_ARTIFACT_HANDLE_TTL_SECONDS"] == "600"
     assert "e+" not in "".join(value or "" for value in environment.values())
@@ -3447,6 +3448,7 @@ def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> N
     )
     assert settings.scientific_artifacts_enabled is True
     assert settings.artifact_max_bytes == 1099511627776
+    assert settings.artifact_tenant_quota_bytes == 1099511627776
     assert "chemical/x-pdb" in settings.artifact_media_types_set()
     assert {
         "application/x-tar",

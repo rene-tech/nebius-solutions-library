@@ -126,6 +126,7 @@ from .scientific_artifacts import (
     ArtifactContentTooLargeError,
     ArtifactNotFoundError,
     ArtifactPolicyError,
+    ArtifactQuotaExceededError,
     ArtifactVerificationError,
     ScientificArtifactControllerPort,
 )
@@ -864,6 +865,10 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     @app.exception_handler(ArtifactPolicyError)
     async def artifact_policy(_: Request, __: ArtifactPolicyError) -> JSONResponse:
         return _error(422, "artifact_policy_rejected", "scientific artifact policy rejected the request")
+
+    @app.exception_handler(ArtifactQuotaExceededError)
+    async def artifact_quota_exceeded(_: Request, __: ArtifactQuotaExceededError) -> JSONResponse:
+        return _error(429, "artifact_quota_exceeded", "tenant artifact byte quota is exhausted")
 
     @app.exception_handler(ArtifactVerificationError)
     async def artifact_verification(_: Request, __: ArtifactVerificationError) -> JSONResponse:

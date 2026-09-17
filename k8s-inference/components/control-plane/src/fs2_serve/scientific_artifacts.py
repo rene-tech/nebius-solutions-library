@@ -63,6 +63,8 @@ from .scientific_run_result import (
 ARTIFACT_RECORD_SCHEMA: Final = "fs2-serve.nebius.ai/scientific-artifact-record/v1"
 SCIENTIFIC_ARTIFACT_MIGRATION = "0014_scientific_artifact_results.sql"
 MAX_ARTIFACT_BYTES = 1 << 40
+DEFAULT_TENANT_QUOTA_BYTES = 1 << 40
+MAX_TENANT_QUOTA_BYTES = 1 << 40
 MAX_INLINE_CONTENT_BYTES = 256 * 1024 * 1024
 DEFAULT_INLINE_CONTENT_BYTES = 16 * 1024 * 1024
 MAX_HANDLE_TTL = timedelta(minutes=15)
@@ -121,6 +123,12 @@ class ArtifactVerificationError(ArtifactServiceError):
 
 class ArtifactPolicyError(ArtifactServiceError):
     code = "artifact_policy_rejected"
+
+
+class ArtifactQuotaExceededError(ArtifactServiceError):
+    """A tenant has no remaining capacity for another immutable reservation."""
+
+    code = "artifact_quota_exceeded"
 
 
 class ArtifactContentTooLargeError(ArtifactServiceError):
@@ -791,7 +799,12 @@ class ArtifactRepository(Protocol):
     async def list_attempts(self, operation_id: UUID, *, tenant_id: str) -> list[StageAttemptRecord]: ...
 
     async def begin_upload(
-        self, request: BeginArtifactUpload, storage_key: str, *, retention: timedelta
+        self,
+        request: BeginArtifactUpload,
+        storage_key: str,
+        *,
+        retention: timedelta,
+        tenant_quota_bytes: int,
     ) -> UploadIntent: ...
 
     async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent: ...
@@ -940,6 +953,7 @@ class ScientificArtifactService:
         object_store: ArtifactObjectStorePort,
         allowed_media_types: Iterable[str],
         max_artifact_bytes: int = MAX_ARTIFACT_BYTES,
+        tenant_quota_bytes: int = DEFAULT_TENANT_QUOTA_BYTES,
         max_inline_content_bytes: int = DEFAULT_INLINE_CONTENT_BYTES,
         max_handle_ttl: timedelta = MAX_HANDLE_TTL,
         default_handle_ttl: timedelta = DEFAULT_HANDLE_TTL,
@@ -952,6 +966,8 @@ class ScientificArtifactService:
             raise ValueError("allowed media types must be a non-empty exact allowlist")
         if not 0 < max_artifact_bytes <= MAX_ARTIFACT_BYTES:
             raise ValueError("the artifact ceiling is outside the supported range")
+        if not max_artifact_bytes <= tenant_quota_bytes <= MAX_TENANT_QUOTA_BYTES:
+            raise ValueError("the tenant artifact quota must cover one maximum-size artifact")
         if not 0 < max_inline_content_bytes <= MAX_INLINE_CONTENT_BYTES:
             raise ValueError("the inline content ceiling is outside the supported range")
         if not timedelta(0) < max_handle_ttl <= MAX_HANDLE_TTL:
@@ -964,6 +980,7 @@ class ScientificArtifactService:
         self._store = object_store
         self._allowed_media_types = allowed
         self._max_artifact_bytes = max_artifact_bytes
+        self._tenant_quota_bytes = tenant_quota_bytes
         self._max_inline_content_bytes = min(max_inline_content_bytes, max_artifact_bytes)
         self._max_handle_ttl = max_handle_ttl
         self._default_handle_ttl = default_handle_ttl
@@ -1020,7 +1037,12 @@ class ScientificArtifactService:
             digest=request.expected_digest,
         )
         lifetime = self._ttl(handle_ttl)
-        intent = await self._repository.begin_upload(request, storage_key, retention=self._retention)
+        intent = await self._repository.begin_upload(
+            request,
+            storage_key,
+            retention=self._retention,
+            tenant_quota_bytes=self._tenant_quota_bytes,
+        )
         if not _same_upload_request(intent, request, storage_key):
             raise ArtifactConflictError("upload identity is already bound to different content")
         handle = await self._store.presign_upload(
@@ -1474,7 +1496,12 @@ class MemoryArtifactRepository:
             ]
 
     async def begin_upload(
-        self, request: BeginArtifactUpload, storage_key: str, *, retention: timedelta
+        self,
+        request: BeginArtifactUpload,
+        storage_key: str,
+        *,
+        retention: timedelta,
+        tenant_quota_bytes: int,
     ) -> UploadIntent:
         async with self._lock:
             self._assert_writable(request.operation_id, request.tenant_id)
@@ -1489,6 +1516,11 @@ class MemoryArtifactRepository:
             existing = self._uploads.get(request.upload_id)
             if existing is not None:
                 return existing
+            reserved_bytes = sum(
+                item.expected_size_bytes for item in self._uploads.values() if item.tenant_id == request.tenant_id
+            )
+            if reserved_bytes + request.expected_size_bytes > tenant_quota_bytes:
+                raise ArtifactQuotaExceededError("tenant artifact byte quota is exhausted")
             now = self._clock()
             intent = UploadIntent(
                 upload_id=request.upload_id,
@@ -2084,10 +2116,32 @@ class PostgresArtifactRepository:
         return [_attempt_from_row(row) for row in rows]
 
     async def begin_upload(
-        self, request: BeginArtifactUpload, storage_key: str, *, retention: timedelta
+        self,
+        request: BeginArtifactUpload,
+        storage_key: str,
+        *,
+        retention: timedelta,
+        tenant_quota_bytes: int,
     ) -> UploadIntent:
         try:
             async with self.pool.acquire() as connection, connection.transaction():
+                # Serialize reservations for one tenant. The query counts both
+                # finalized objects and unfinished upload intents exactly once,
+                # because a finalized upload retains its immutable intent row
+                # until the same retention purge removes both records.
+                await connection.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1, 7221))",
+                    request.tenant_id,
+                )
+                existing = await connection.fetchrow(
+                    f"SELECT {_UPLOAD_COLUMNS} FROM fs2_scientific_uploads WHERE id=$1 FOR UPDATE",  # noqa: S608
+                    request.upload_id,
+                )
+                if existing is not None:
+                    intent = _upload_from_row(existing)
+                    if intent.tenant_id != request.tenant_id:
+                        raise ArtifactNotFoundError("upload not found")
+                    return intent
                 attempt = await connection.fetchrow(
                     "SELECT stage_id,shard_id FROM fs2_scientific_stage_attempts "
                     "WHERE attempt_id=$1 AND operation_id=$2 AND tenant_id=$3",
@@ -2097,6 +2151,13 @@ class PostgresArtifactRepository:
                 )
                 if attempt is None:
                     raise ArtifactNotFoundError("attempt not found")
+                reserved_bytes = await connection.fetchval(
+                    "SELECT COALESCE(sum(expected_size_bytes),0)::bigint "
+                    "FROM fs2_scientific_uploads WHERE tenant_id=$1",
+                    request.tenant_id,
+                )
+                if int(reserved_bytes) + request.expected_size_bytes > tenant_quota_bytes:
+                    raise ArtifactQuotaExceededError("tenant artifact byte quota is exhausted")
                 row = await connection.fetchrow(
                     f"""
                     INSERT INTO fs2_scientific_uploads

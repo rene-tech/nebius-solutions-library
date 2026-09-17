@@ -133,6 +133,8 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.scientificArtifacts.handleTtlSeconds | int64 | quote }}
 - name: FS2_ARTIFACT_MAX_BYTES
   value: {{ .Values.scientificArtifacts.maxBytes | int64 | quote }}
+- name: FS2_ARTIFACT_TENANT_QUOTA_BYTES
+  value: {{ .Values.scientificArtifacts.tenantQuotaBytes | int64 | quote }}
 - name: FS2_ARTIFACT_INLINE_CONTENT_MAX_BYTES
   value: {{ .Values.scientificArtifacts.inlineContentMaxBytes | int64 | quote }}
 - name: FS2_ARTIFACT_RETENTION_SECONDS

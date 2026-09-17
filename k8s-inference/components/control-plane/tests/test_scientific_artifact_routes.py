@@ -31,13 +31,22 @@ def iso(value: datetime) -> str:
 
 
 class Harness:
-    def __init__(self, scopes: frozenset[str] = WRITE_SCOPES, tenant: str = TENANT) -> None:
+    def __init__(
+        self,
+        scopes: frozenset[str] = WRITE_SCOPES,
+        tenant: str = TENANT,
+        *,
+        max_artifact_bytes: int = 1 << 40,
+        tenant_quota_bytes: int = 1 << 40,
+    ) -> None:
         self.repository = MemoryArtifactRepository()
         self.store = FakeObjectStore()
         self.service = ScientificArtifactService(
             repository=self.repository,
             object_store=self.store,
             allowed_media_types=ALLOWED_MEDIA_TYPES,
+            max_artifact_bytes=max_artifact_bytes,
+            tenant_quota_bytes=tenant_quota_bytes,
             clock=lambda: NOW,
         )
         self.operation_id = uuid4()
@@ -141,6 +150,32 @@ def publish(
     body = finalize.json()
     assert set(body) <= {"artifact_id", "sha256", "size_bytes", "media_type", "compression"}
     return str(body["artifact_id"])
+
+
+async def test_begin_upload_maps_tenant_quota_exhaustion_to_429() -> None:
+    item = Harness(max_artifact_bytes=10, tenant_quota_bytes=12)
+    await item.repository.register_operation(item.operation_id, tenant_id=TENANT)
+    client = item.client()
+    attempt_id = open_attempt(client, item.operation_id)
+
+    def begin(size: int):
+        return client.post(
+            "/internal/scientific-artifacts/uploads",
+            json={
+                "upload_id": str(uuid4()),
+                "attempt_id": str(attempt_id),
+                "operation_id": str(item.operation_id),
+                "direction": "output",
+                "sha256": digest(str(size).encode()).removeprefix("sha256:"),
+                "size_bytes": size,
+                "media_type": "chemical/x-pdb",
+            },
+        )
+
+    assert begin(8).status_code == 201
+    rejected = begin(5)
+    assert rejected.status_code == 429
+    assert rejected.json()["detail"]["type"] == "artifact_quota_exceeded"
 
 
 async def test_full_flow_publishes_a_canonical_result_without_leaking_internals(harness) -> None:

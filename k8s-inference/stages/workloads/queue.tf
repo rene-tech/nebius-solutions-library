@@ -63,9 +63,10 @@ locals {
       cluster_queue       = var.academic_assets.execution.cluster_queue
       fair_sharing_weight = 1
       model_ids           = toset(local.academic_model_ids)
-      # The operator owns this asset namespace and queue. Customer model
-      # grants are checked by the API; all authorized customers share it.
-      tenant_ids = toset([])
+      # The bootstrap principal is bound to this exact tenant. A different
+      # customer must receive a separately declared LocalQueue before the
+      # scientific admission resolver will accept GPU work.
+      tenant_ids = toset([var.academic_assets.tenant_id])
       service_classes = toset([
         "platform-critical",
         "presentation",

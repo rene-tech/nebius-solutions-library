@@ -486,6 +486,15 @@ class SchedulingContractResolver:
             if any(default_route.get(key) != [] for key in ("model_ids", "tenant_ids", "service_classes")):
                 raise SchedulingContractError("Kueue fallback LocalQueue is not explicitly unrestricted")
             local_queue_name = default_local_queue
+        selected_route = _object(
+            self.local_queue_routes.get(local_queue_name),
+            "selected Kueue LocalQueue route",
+        )
+        tenant_selectors = selected_route.get("tenant_ids")
+        if tenant_selectors != [tenant_id]:
+            raise SchedulingContractError(
+                "scientific admission requires an exact per-tenant Kueue LocalQueue"
+            )
         return self._route_identity(local_queue_name)
 
     def _route_identity(self, local_queue_name: str) -> tuple[str, str, str]:

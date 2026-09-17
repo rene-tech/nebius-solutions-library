@@ -323,9 +323,10 @@ run "storage_only_projects_the_canonical_chart_values" {
     condition = (
       terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.handleTtlSeconds == 600 &&
       terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.maxBytes == 1099511627776 &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.tenantQuotaBytes == 1099511627776 &&
       terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.retentionSeconds == 90 * 86400
     )
-    error_message = "Handle lifetime, maximum artifact size and the retention window must reach the chart exactly."
+    error_message = "Handle lifetime, maximum artifact size, tenant byte quota and the retention window must reach the chart exactly."
   }
 
   assert {

@@ -133,6 +133,7 @@ from fs2_serve.scientific_batch.worker import ScientificBatchWorker
 from fs2_serve.scientific_batch.workload_routes import scientific_workload_artifact_router
 from fs2_serve.scientific_input_uploads import ScientificInputUploadService
 from fs2_serve.settings import Settings
+from fs2_serve.store import BudgetExceededError
 from fs2_serve.telemetry import Metrics
 
 PARAMETER_SCHEMA = "fs2-serve.nebius.ai/example-parameters/v1"
@@ -272,7 +273,7 @@ def scheduling() -> SchedulingContractResolver:
                     "namespace": "fs2-models",
                     "cluster_queue": "inference",
                     "model_ids": [],
-                    "tenant_ids": [],
+                    "tenant_ids": ["tenant-a"],
                     "service_classes": [],
                 }
             },
@@ -609,7 +610,7 @@ class FakePlanFactory:
         )
 
 
-async def principal(store: MemoryStore) -> Principal:
+async def principal(store: MemoryStore, *, gpu_seconds_budget: float | None = None) -> Principal:
     token_id = uuid4()
     scopes = {
         Scope.CATALOG_READ,
@@ -628,6 +629,7 @@ async def principal(store: MemoryStore) -> Principal:
             tenant_id="tenant-a",
             scopes=scopes,
             models={"protein-design"},
+            gpu_seconds_budget=gpu_seconds_budget,
             max_concurrency=4,
         ),
         created_by="test",
@@ -1212,7 +1214,7 @@ async def test_customer_upload_is_idempotent_verified_downloadable_and_never_wor
 @pytest.mark.asyncio
 async def test_submit_freezes_public_profile_and_never_enters_generic_worker(cipher, hasher) -> None:
     store = MemoryStore(cipher, hasher)
-    identity = await principal(store)
+    identity = await principal(store, gpu_seconds_budget=10000)
     repository = FakeScientificBatchRepository()
     cluster = FakeScientificBatchCluster()
     controller = ScientificBatchController(
@@ -1259,6 +1261,20 @@ async def test_submit_freezes_public_profile_and_never_enters_generic_worker(cip
     state = repository.records[operation_id]
     assert replay["operation"]["id"] == first["operation"]["id"]
     assert replay["operation"]["reused"] is True
+    admitted_operation = await store.get_operation(operation_id, tenant_id="tenant-a")
+    charged_token = await store.get_token(identity.token_id)
+    assert admitted_operation.estimated_gpu_seconds == 7200
+    assert admitted_operation.reserved_gpu_seconds == 0
+    assert charged_token.gpu_seconds_used == 7200
+    assert charged_token.gpu_seconds_reserved == 0
+    with pytest.raises(BudgetExceededError, match="GPU-seconds"):
+        await service.submit(
+            principal=identity,
+            model_id="protein-design",
+            request=request,
+            idempotency_key="scientific-idempotency-0002",
+        )
+    assert len(store.operations) == 1
     assert state.model_id == "protein-design"
     assert state.scheduling.service_class is ServiceClass.CUSTOMER_BATCH
     assert state.scheduling.stages[0].resolved_pool_preference == ("h100-preemptible",)
@@ -1776,6 +1792,19 @@ def test_scheduling_resolver_enforces_canonical_tenant_route_and_priority() -> N
             plan=batch_plan,
         )
 
+    unrestricted = scheduling()
+    unrestricted_route = unrestricted.local_queue_routes["scientific"]
+    assert isinstance(unrestricted_route, dict)
+    unrestricted_route["tenant_ids"] = []
+    with pytest.raises(SchedulingContractError, match="exact per-tenant"):
+        unrestricted.freeze(
+            service_class="customer-batch",
+            model_id="protein-design",
+            tenant_id="tenant-a",
+            profile=profile_value(),
+            plan=batch_plan,
+        )
+
     priority_resolver = scheduling()
     priority = priority_resolver.priority_classes["standard"]
     assert isinstance(priority, dict)
@@ -1968,14 +1997,17 @@ def test_scheduling_route_specificity_is_explicit_and_selector_bypasses_fail_clo
     del contract["local_queues"]["tenant-model"]
     del contract["local_queue_routes"]["tenant-model"]
     resolver = SchedulingContractResolver(contract)
-    # More constrained model+class routing beats tenant-only routing.
-    assert resolver._resolve_route(**args)[0] == "model-class"
+    # A cross-tenant model+class route can be more specific, but it must never
+    # become a fairness bypass for a tenant-bound scientific GPU request.
+    with pytest.raises(SchedulingContractError, match="exact per-tenant"):
+        resolver._resolve_route(**args)
 
     # Selectors for another class or tenant never act as wildcard bypasses.
     bypass_args = dict(args)
     bypass_args["tenant_id"] = "tenant-b"
     bypass_args["service_class"] = "interactive"
-    assert resolver._resolve_route(**bypass_args)[0] == "scientific"
+    with pytest.raises(SchedulingContractError, match="fallback LocalQueue"):
+        resolver._resolve_route(**bypass_args)
 
     add_route("model-class-shadow", model_ids=["protein-design"], service_classes=["customer-batch"])
     resolver = SchedulingContractResolver(contract)

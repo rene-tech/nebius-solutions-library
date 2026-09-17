@@ -158,7 +158,7 @@ def test_final_cpu_stages_bind_only_molecules_and_use_the_storage_attached_lane(
         assert invocation.runtime_mounts[0].mount_path == "/opt/fs2/artifacts/boltzgen-inference-molecules"
 
     profile = catalog.get(boltzgen.MODEL_ID)
-    scheduling = _scheduling().freeze(
+    scheduling = _scheduling(tenant_id="boltz-final-stage-test").freeze(
         service_class="customer-batch",
         model_id=boltzgen.MODEL_ID,
         tenant_id="boltz-final-stage-test",
@@ -178,6 +178,8 @@ def test_final_cpu_stages_bind_only_molecules_and_use_the_storage_attached_lane(
 
 def _scheduling(
     pool_preference: tuple[str, ...] = ("h100-reserved-8x", "h100-1x"),
+    *,
+    tenant_id: str = "boltz-production-test",
 ) -> SchedulingContractResolver:
     return SchedulingContractResolver(
         {
@@ -215,7 +217,7 @@ def _scheduling(
                     "namespace": "fs2-models",
                     "cluster_queue": "inference",
                     "model_ids": [],
-                    "tenant_ids": [],
+                    "tenant_ids": [tenant_id],
                     "service_classes": [],
                 },
                 "model-reference-data": {
@@ -444,7 +446,7 @@ async def test_one_gpu_stage_can_freeze_and_render_on_each_eligible_pool(pool_id
     profile = catalog.get(boltzgen.MODEL_ID)
     access = renderer.access_context(profile, tenant_id="boltz-pool-test")
     localizations = renderer.verify_runtime_artifacts(profile, plan, access)
-    scheduling = _scheduling((pool_id,)).freeze(
+    scheduling = _scheduling((pool_id,), tenant_id="boltz-pool-test").freeze(
         service_class="customer-batch",
         model_id=boltzgen.MODEL_ID,
         tenant_id="boltz-pool-test",

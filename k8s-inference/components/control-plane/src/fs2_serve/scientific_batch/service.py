@@ -27,7 +27,9 @@ from .models import (
     BatchStatus,
     FailureKind,
     LifecyclePhase,
+    ResourceClass,
     RuntimeArtifactLocalization,
+    SchedulingSnapshot,
     ScientificBatchPlan,
     ScientificBatchState,
     ScientificInputAdmission,
@@ -113,6 +115,38 @@ class ScientificStartupPolicyResolver(Protocol):
         model_id: str,
         tenant_id: str,
     ) -> Mapping[str, Mapping[str, Any]]: ...
+
+
+def estimate_scientific_gpu_seconds(
+    *,
+    plan: ScientificBatchPlan,
+    scheduling: SchedulingSnapshot,
+    execution_plan: AdapterExecutionPlan | None,
+) -> float:
+    """Return a fail-closed worst-case GPU charge for durable admission.
+
+    The estimate covers every declared retry and every concurrently expanded
+    Pod.  A service-class execution bound takes precedence; deployments that
+    omit it must supply the operator-reviewed per-stage active deadline.
+    """
+
+    binding_deadlines = {
+        binding.stage_id: binding.active_deadline_seconds
+        for binding in (() if execution_plan is None else execution_plan.stage_bindings)
+    }
+    total = 0
+    for stage in plan.stages:
+        if stage.resource_class is ResourceClass.CPU:
+            continue
+        decision = scheduling.stage(stage.stage_id)
+        deadline_seconds = decision.max_execution_seconds or binding_deadlines.get(stage.stage_id)
+        if deadline_seconds is None:
+            raise ScientificProfileError(
+                f"scientific GPU stage {stage.stage_id!r} lacks a bounded execution duration"
+            )
+        replicas = stage.gang_size if stage.gang_size is not None else len(stage.shards)
+        total += decision.accelerator_count * replicas * stage.max_attempts * deadline_seconds
+    return float(total)
 
 
 class CatalogScientificPlanFactory:
@@ -520,6 +554,7 @@ class ScientificBatchService:
         except CatalogProfileAdapterError as error:
             raise ScientificProfileError("scientific workload profile cannot form an execution plan") from error
         plan = preflight.controller_plan if isinstance(preflight, AdapterExecutionPlan) else preflight
+        bound_preflight: AdapterExecutionPlan | None = None
         try:
             runtime_artifacts = (
                 self.execution_binding.verify_runtime_artifacts(profile, preflight, access_context)
@@ -540,8 +575,11 @@ class ScientificBatchService:
         except CatalogProfileAdapterError as error:
             raise ScientificProfileError("scientific runtime binding cannot admit this profile") from error
         if isinstance(preflight, AdapterExecutionPlan) and startup_overrides:
+            assert bound_preflight is not None
             try:
-                self.execution_binding.bind_startup_policies(profile, bound_preflight, startup_overrides)
+                bound_preflight = self.execution_binding.bind_startup_policies(
+                    profile, bound_preflight, startup_overrides
+                )
             except CatalogProfileAdapterError as error:
                 startup_error = ScientificProfileError("scientific startup policy cannot admit this profile")
                 startup_error.__cause__ = error
@@ -552,7 +590,7 @@ class ScientificBatchService:
         # The real snapshot is recaptured below at the durable accepted_at so
         # concurrent idempotent submissions derive byte-identical state.
         try:
-            self.scheduling.freeze(
+            preflight_scheduling = self.scheduling.freeze(
                 service_class=validated["service_class"],
                 model_id=model_id,
                 tenant_id=principal.tenant_id,
@@ -563,6 +601,11 @@ class ScientificBatchService:
             )
         except SchedulingContractError as error:
             raise ScientificProfileError("Kueue scheduling contract cannot admit this profile") from error
+        estimated_gpu_seconds = estimate_scientific_gpu_seconds(
+            plan=plan,
+            scheduling=preflight_scheduling,
+            execution_plan=bound_preflight,
+        )
         body = json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
         def freeze_admission(operation: OperationView) -> dict[str, object]:
@@ -608,6 +651,15 @@ class ScientificBatchService:
                     raise ScientificProfileError("scientific runtime binding changed during admission") from error
             else:
                 execution_plan = None
+            if (
+                estimate_scientific_gpu_seconds(
+                    plan=plan,
+                    scheduling=snapshot,
+                    execution_plan=execution_plan,
+                )
+                != estimated_gpu_seconds
+            ):
+                raise ScientificProfileError("scientific GPU estimate changed during durable admission")
             return state_to_value(
                 ScientificBatchState.admit(
                     operation_id=operation.id,
@@ -636,10 +688,12 @@ class ScientificBatchService:
                 traceparent=traceparent,
             ),
             model_revision=profile.model_revision,
-            # Stage/resource exact accounting is emitted by the lifecycle
-            # ledger; no guessed reservation is charged to the generic worker.
-            reserved_gpu_seconds=0,
+            # Charge the conservative retry-complete estimate once. Scientific
+            # lifecycle telemetry remains the authority for observed usage,
+            # but cannot retroactively make admission-budget enforcement safe.
+            reserved_gpu_seconds=estimated_gpu_seconds,
             max_attempts=1,
+            charge_gpu_seconds_at_admission=True,
             scientific_admission_factory=freeze_admission,
         )
         state = None

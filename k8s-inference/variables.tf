@@ -539,6 +539,9 @@ variable "deployment" {
         # these handles and never a static S3 credential.
         handle_ttl_seconds = optional(number, 600)
         max_artifact_bytes = optional(number, 1099511627776)
+        # Sum of retained upload reservations one tenant may own. Admission is
+        # serialized per tenant before any object-store handle is returned.
+        tenant_quota_bytes = optional(number, 1099511627776)
         # Exact object-storage addresses, /32 or /128 only, that the control
         # plane may reach on 443 to issue handles and stream a stored object
         # back for digest verification.
@@ -1229,11 +1232,15 @@ variable "deployment" {
         var.deployment.storage.scientific_artifacts.handle_ttl_seconds <= 900 &&
         floor(var.deployment.storage.scientific_artifacts.max_artifact_bytes) == var.deployment.storage.scientific_artifacts.max_artifact_bytes &&
         var.deployment.storage.scientific_artifacts.max_artifact_bytes >= 1024 &&
-        var.deployment.storage.scientific_artifacts.max_artifact_bytes <= 1099511627776
+        var.deployment.storage.scientific_artifacts.max_artifact_bytes <= 1099511627776 &&
+        floor(var.deployment.storage.scientific_artifacts.tenant_quota_bytes) == var.deployment.storage.scientific_artifacts.tenant_quota_bytes &&
+        var.deployment.storage.scientific_artifacts.tenant_quota_bytes >= var.deployment.storage.scientific_artifacts.max_artifact_bytes &&
+        var.deployment.storage.scientific_artifacts.tenant_quota_bytes <= 1099511627776 &&
+        var.deployment.storage.scientific_artifacts.tenant_quota_bytes <= var.deployment.storage.scientific_artifacts.object_storage.max_size_gib * 1073741824
       ),
       false,
     )
-    error_message = "enabled storage.scientific_artifacts requires an explicit retain or disposable lifecycle, an optional valid bucket name, 16-65536 whole GiB of capacity, a 1-3650 day application retention window, a 30-900 second signed-handle lifetime and a 1 KiB-1 TiB maximum artifact size."
+    error_message = "enabled storage.scientific_artifacts requires an explicit retain or disposable lifecycle, an optional valid bucket name, 16-65536 whole GiB of capacity, a 1-3650 day application retention window, a 30-900 second signed-handle lifetime, a 1 KiB-1 TiB maximum artifact size, and a whole-byte tenant quota from one maximum artifact through the bucket capacity."
   }
 
   validation {

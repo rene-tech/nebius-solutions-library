@@ -2444,6 +2444,7 @@ class PostgresStore:
         model_revision: str,
         reserved_gpu_seconds: float,
         max_attempts: int,
+        charge_gpu_seconds_at_admission: bool = False,
         dispatch_snapshot: str | None = None,
         dynamic_fence: DynamicAdmissionFence | None = None,
         scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None = None,
@@ -2507,6 +2508,8 @@ class PostgresStore:
                 return operation
             if (dynamic_fence is None) != (dispatch_snapshot is None):
                 raise ConflictError("dynamic admission fence and dispatch snapshot must be supplied together")
+            if charge_gpu_seconds_at_admission and admission.protocol != "scientific-batch-v1":
+                raise ConflictError("admission-time GPU charge requires a scientific batch Operation")
             if dynamic_fence is not None:
                 await self._model_deployment_lock(
                     connection,
@@ -2569,6 +2572,8 @@ class PostgresStore:
                 admission.request_body,
                 aad=self.cipher.aad(operation_id, principal.tenant_id, admission.model_id, "request"),
             )
+            charged_gpu_seconds = reserved_gpu_seconds if charge_gpu_seconds_at_admission else 0.0
+            held_gpu_seconds = 0.0 if charge_gpu_seconds_at_admission else reserved_gpu_seconds
             try:
                 row = await connection.fetchrow(
                     """
@@ -2576,9 +2581,9 @@ class PostgresStore:
                         (id,tenant_id,principal_id,token_id,model_id,model_revision,protocol,operation,
                          idempotency_key,request_hmac_key_id,request_hmac,request_key_id,request_nonce,
                          request_ciphertext,request_content_type,traceparent,deadline_at,payload_expires_at,
-                         max_attempts,reserved_gpu_seconds,dispatch_snapshot)
+                         max_attempts,estimated_gpu_seconds,reserved_gpu_seconds,dispatch_snapshot)
                     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-                           clock_timestamp()+make_interval(secs=>$18::double precision),$19,$20,$21::jsonb)
+                           clock_timestamp()+make_interval(secs=>$18::double precision),$19,$20,$21,$22::jsonb)
                     RETURNING *
                     """,
                     operation_id,
@@ -2600,7 +2605,8 @@ class PostgresStore:
                     admission.deadline_at,
                     self.payload_ttl_seconds,
                     max_attempts,
-                    reserved_gpu_seconds,
+                    charged_gpu_seconds,
+                    held_gpu_seconds,
                     dispatch_snapshot,
                 )
             except asyncpg.UniqueViolationError as exc:
@@ -2615,14 +2621,16 @@ class PostgresStore:
             await connection.execute(
                 """
                 UPDATE fs2_tokens
-                SET requests_used=requests_used+1,last_used_at=$5,
-                    gpu_seconds_reserved=gpu_seconds_reserved+$2,
-                    rate_window_started_at=$3,
-                    rate_window_requests=CASE WHEN rate_limit_requests IS NULL THEN 0 ELSE $4 END
+                SET requests_used=requests_used+1,last_used_at=$6,
+                    gpu_seconds_used=gpu_seconds_used+$2,
+                    gpu_seconds_reserved=gpu_seconds_reserved+$3,
+                    rate_window_started_at=$4,
+                    rate_window_requests=CASE WHEN rate_limit_requests IS NULL THEN 0 ELSE $5 END
                 WHERE id=$1
                 """,
                 principal.token_id,
-                reserved_gpu_seconds,
+                charged_gpu_seconds,
+                held_gpu_seconds,
                 rate_started,
                 rate_requests + 1 if token["rate_limit_requests"] is not None else 0,
                 now,
@@ -2637,7 +2645,11 @@ class PostgresStore:
                 target_type="operation",
                 target_id=str(operation_id),
                 outcome="queued",
-                detail={"model_id": admission.model_id, "protocol": admission.protocol},
+                detail={
+                    "model_id": admission.model_id,
+                    "protocol": admission.protocol,
+                    "admission_gpu_seconds": charged_gpu_seconds,
+                },
             )
             return operation
 

@@ -40,6 +40,7 @@ from fs2_serve.scientific_artifacts import (
     ArtifactEventType,
     ArtifactNotFoundError,
     ArtifactPolicyError,
+    ArtifactQuotaExceededError,
     ArtifactVerificationError,
     AttemptStatus,
     BeginArtifactUpload,
@@ -715,6 +716,47 @@ async def test_media_type_allowlist_and_size_ceiling_are_enforced() -> None:
         await service.begin_upload(request("chemical/x-pdb", 2048))
 
 
+async def test_begin_upload_reserves_tenant_bytes_and_keeps_idempotency_available() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(
+        repository,
+        store,
+        max_artifact_bytes=10,
+        tenant_quota_bytes=12,
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    first = BeginArtifactUpload(
+        upload_id=uuid4(),
+        attempt_id=attempt_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        direction=ArtifactDirection.OUTPUT,
+        expected_digest=digest(b"12345678"),
+        expected_size_bytes=8,
+        media_type="chemical/x-pdb",
+    )
+    admitted = await service.begin_upload(first)
+    replay = await service.begin_upload(first)
+    assert replay.upload == admitted.upload
+
+    with pytest.raises(ArtifactQuotaExceededError, match="quota"):
+        await service.begin_upload(
+            BeginArtifactUpload(
+                upload_id=uuid4(),
+                attempt_id=attempt_id,
+                operation_id=operation_id,
+                tenant_id=TENANT,
+                direction=ArtifactDirection.OUTPUT,
+                expected_digest=digest(b"12345"),
+                expected_size_bytes=5,
+                media_type="chemical/x-pdb",
+            )
+        )
+
+
 async def test_gated_artifacts_carry_a_receipt_and_project_academic_admission() -> None:
     repository = MemoryArtifactRepository()
     operation_id = uuid4()
@@ -1061,6 +1103,18 @@ def test_settings_reject_an_insecure_artifact_store() -> None:
     assert "chemical/x-pdb" in relaxed.artifact_media_types_set()
 
 
+def test_settings_reject_tenant_quota_below_single_artifact_ceiling() -> None:
+    from fs2_serve.settings import Settings
+
+    with pytest.raises(ValidationError, match="tenant_quota"):
+        Settings(
+            scientific_artifacts_enabled=True,
+            artifact_max_bytes=2048,
+            artifact_tenant_quota_bytes=1024,
+            artifact_inline_content_max_bytes=1024,
+        )
+
+
 def test_artifact_store_credentials_come_from_a_mounted_secret(tmp_path: Path) -> None:
     from fs2_serve.settings import Settings
 
@@ -1222,6 +1276,39 @@ async def runtime_pool(postgres_store):
         yield pool
     finally:
         await pool.close()
+
+
+@pytest.mark.postgres
+async def test_postgres_serializes_concurrent_tenant_byte_reservations(runtime_pool) -> None:
+    operation_id = uuid4()
+    await insert_operation(runtime_pool, operation_id)
+    service = build_service(
+        PostgresArtifactRepository(runtime_pool),
+        FakeObjectStore(),
+        max_artifact_bytes=8,
+        tenant_quota_bytes=12,
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+
+    def request() -> BeginArtifactUpload:
+        return BeginArtifactUpload(
+            upload_id=uuid4(),
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(b"12345678"),
+            expected_size_bytes=8,
+            media_type="chemical/x-pdb",
+        )
+
+    results = await asyncio.gather(
+        service.begin_upload(request()),
+        service.begin_upload(request()),
+        return_exceptions=True,
+    )
+    assert sum(not isinstance(item, Exception) for item in results) == 1
+    assert sum(isinstance(item, ArtifactQuotaExceededError) for item in results) == 1
 
 
 @pytest.mark.postgres

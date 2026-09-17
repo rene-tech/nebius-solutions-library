@@ -226,6 +226,7 @@ variable "scientific_artifacts" {
     enabled               = bool
     handle_ttl_seconds    = number
     max_artifact_bytes    = number
+    tenant_quota_bytes    = optional(number, 1099511627776)
     retention_days        = number
     egress_cidrs          = list(string)
     media_types           = list(string)
@@ -290,6 +291,7 @@ variable "scientific_artifacts" {
     enabled               = false
     handle_ttl_seconds    = 600
     max_artifact_bytes    = 1099511627776
+    tenant_quota_bytes    = 1099511627776
     retention_days        = 90
     egress_cidrs          = []
     media_types           = []
@@ -341,12 +343,16 @@ variable "scientific_artifacts" {
         var.scientific_artifacts.handle_ttl_seconds <= 900 &&
         var.scientific_artifacts.max_artifact_bytes >= 1024 &&
         var.scientific_artifacts.max_artifact_bytes <= 1099511627776 &&
+        floor(var.scientific_artifacts.tenant_quota_bytes) == var.scientific_artifacts.tenant_quota_bytes &&
+        var.scientific_artifacts.tenant_quota_bytes >= var.scientific_artifacts.max_artifact_bytes &&
+        var.scientific_artifacts.tenant_quota_bytes <= 1099511627776 &&
+        var.scientific_artifacts.tenant_quota_bytes <= var.scientific_artifacts.storage_contract.object_storage.max_size_gib * 1073741824 &&
         var.scientific_artifacts.retention_days >= 1 &&
         var.scientific_artifacts.retention_days <= 3650
       ),
       false,
     )
-    error_message = "enabled scientific_artifacts requires the MysteryBox access handoff, at least one approved media type, at least one exact /32 or /128 object-storage egress address, and bounded handle TTL, artifact size and retention."
+    error_message = "enabled scientific_artifacts requires the MysteryBox access handoff, at least one approved media type, at least one exact /32 or /128 object-storage egress address, and bounded handle TTL, artifact size, tenant byte quota and retention."
   }
 }
 

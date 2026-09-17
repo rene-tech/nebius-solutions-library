@@ -60,6 +60,7 @@ output "effective_configuration" {
       artifact_retention_days = var.deployment.storage.scientific_artifacts.retention_days
       handle_ttl_seconds      = var.deployment.storage.scientific_artifacts.handle_ttl_seconds
       max_artifact_bytes      = var.deployment.storage.scientific_artifacts.max_artifact_bytes
+      tenant_quota_bytes      = var.deployment.storage.scientific_artifacts.tenant_quota_bytes
       media_types             = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
       egress_cidrs            = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
       secret_delivery         = "MYSTERY_BOX"

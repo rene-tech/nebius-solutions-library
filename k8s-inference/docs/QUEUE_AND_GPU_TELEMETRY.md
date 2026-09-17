@@ -287,9 +287,11 @@ things follow, and Terraform enforces all of them:
 An operator can add primary and secondary scientific lanes by supplying
 LocalQueues with different weights and model/tenant sets. The contract exports
 these bindings separately from Kubernetes manifests. A scientific resolver
-must choose one exact tenant+model+service-class route, then one
-wildcard-tenant model+service-class route, then the service-class default.
-Multiple matches at either rank are a configuration error, never a lexical
+may rank model and service-class selectors, but a GPU admission is valid only
+when the selected LocalQueue has exactly one `tenant_ids` entry equal to the
+requesting tenant. Wildcard-tenant and cross-tenant fallbacks are refused;
+every enabled scientific customer therefore needs a separate LocalQueue.
+Multiple equal-rank matches are a configuration error, never a lexical
 tie-break. Terraform rejects duplicate bindings. Native
 BindCraft/PyRosetta and AlphaFold3 Jobs additionally require the academic
 access profile and immutable asset/access receipt before Job creation.

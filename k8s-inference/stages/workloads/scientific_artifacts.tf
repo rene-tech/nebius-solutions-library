@@ -208,6 +208,7 @@ locals {
         verifyTls        = var.scientific_artifacts.storage_contract.object_storage.verify_tls
         handleTtlSeconds = var.scientific_artifacts.handle_ttl_seconds
         maxBytes         = var.scientific_artifacts.max_artifact_bytes
+        tenantQuotaBytes = var.scientific_artifacts.tenant_quota_bytes
         retentionSeconds = var.scientific_artifacts.retention_days * 86400
         mediaTypes       = sort(var.scientific_artifacts.media_types)
         egressCidrs      = sort(var.scientific_artifacts.egress_cidrs)

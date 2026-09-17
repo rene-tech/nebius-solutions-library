@@ -337,7 +337,7 @@ def test_protenix_handoff_payload_matches_the_upstream_array_contract() -> None:
             secondary_structure._protenix_jobs(json.dumps(invalid).encode())  # noqa: SLF001
 
 
-def scheduling() -> SchedulingContractResolver:
+def scheduling(tenant_id: str = "secondary-test") -> SchedulingContractResolver:
     model_ids = list(MODULES)
     return SchedulingContractResolver(
         {
@@ -380,7 +380,7 @@ def scheduling() -> SchedulingContractResolver:
                     "namespace": "fs2-models",
                     "cluster_queue": "inference",
                     "model_ids": [],
-                    "tenant_ids": [],
+                    "tenant_ids": [tenant_id],
                     "service_classes": [],
                 },
                 "general-cpu": {
@@ -856,7 +856,7 @@ def test_explicit_stage_envelopes_freeze_against_cpu_and_accelerator_lanes(model
     plan = compile_fixture(model_id, POSITIVE_FIXTURES[model_id][0]).controller_plan
     assert all(stage.placement_class is not None and stage.resources is not None for stage in plan.stages)
 
-    snapshot = scheduling().freeze(
+    snapshot = scheduling("secondary-adapter-test").freeze(
         service_class="customer-batch",
         model_id=model_id,
         tenant_id="secondary-adapter-test",

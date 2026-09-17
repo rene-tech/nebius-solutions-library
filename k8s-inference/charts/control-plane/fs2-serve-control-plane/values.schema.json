@@ -2441,6 +2441,7 @@
         "verifyTls",
         "handleTtlSeconds",
         "maxBytes",
+        "tenantQuotaBytes",
         "inlineContentMaxBytes",
         "retentionSeconds",
         "mediaTypes",
@@ -2479,6 +2480,11 @@
           "maximum": 900
         },
         "maxBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 1099511627776
+        },
+        "tenantQuotaBytes": {
           "type": "integer",
           "minimum": 1024,
           "maximum": 1099511627776

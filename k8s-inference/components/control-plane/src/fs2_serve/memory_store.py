@@ -1379,6 +1379,7 @@ class MemoryStore:
         model_revision: str,
         reserved_gpu_seconds: float,
         max_attempts: int,
+        charge_gpu_seconds_at_admission: bool = False,
         dispatch_snapshot: str | None = None,
         dynamic_fence: DynamicAdmissionFence | None = None,
         scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None = None,
@@ -1390,6 +1391,7 @@ class MemoryStore:
                 model_revision=model_revision,
                 reserved_gpu_seconds=reserved_gpu_seconds,
                 max_attempts=max_attempts,
+                charge_gpu_seconds_at_admission=charge_gpu_seconds_at_admission,
                 dispatch_snapshot=dispatch_snapshot,
                 dynamic_fence=dynamic_fence,
                 scientific_admission_factory=scientific_admission_factory,
@@ -1403,6 +1405,7 @@ class MemoryStore:
         model_revision: str,
         reserved_gpu_seconds: float,
         max_attempts: int,
+        charge_gpu_seconds_at_admission: bool,
         dispatch_snapshot: str | None,
         dynamic_fence: DynamicAdmissionFence | None,
         scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None,
@@ -1441,6 +1444,8 @@ class MemoryStore:
                 return operation
             if (dynamic_fence is None) != (dispatch_snapshot is None):
                 raise ConflictError("dynamic admission fence and dispatch snapshot must be supplied together")
+            if charge_gpu_seconds_at_admission and admission.protocol != "scientific-batch-v1":
+                raise ConflictError("admission-time GPU charge requires a scientific batch Operation")
             if dynamic_fence is not None:
                 revisions = self.model_deployment_revisions.get(
                     (dynamic_fence.namespace, dynamic_fence.name),
@@ -1482,6 +1487,8 @@ class MemoryStore:
                 admission.request_body,
                 aad=self.cipher.aad(operation_id, principal.tenant_id, admission.model_id, "request"),
             )
+            charged_gpu_seconds = reserved_gpu_seconds if charge_gpu_seconds_at_admission else 0.0
+            held_gpu_seconds = 0.0 if charge_gpu_seconds_at_admission else reserved_gpu_seconds
             view = OperationView(
                 id=operation_id,
                 tenant_id=principal.tenant_id,
@@ -1498,7 +1505,8 @@ class MemoryStore:
                 deadline_at=admission.deadline_at,
                 payload_expires_at=now + timedelta(seconds=self.payload_ttl_seconds),
                 max_attempts=max_attempts,
-                reserved_gpu_seconds=reserved_gpu_seconds,
+                estimated_gpu_seconds=charged_gpu_seconds,
+                reserved_gpu_seconds=held_gpu_seconds,
             )
             row = _Operation(
                 view=view,
@@ -1516,7 +1524,8 @@ class MemoryStore:
                 update={
                     "requests_used": token.view.requests_used + 1,
                     "last_used_at": now,
-                    "gpu_seconds_reserved": token.view.gpu_seconds_reserved + reserved_gpu_seconds,
+                    "gpu_seconds_used": token.view.gpu_seconds_used + charged_gpu_seconds,
+                    "gpu_seconds_reserved": token.view.gpu_seconds_reserved + held_gpu_seconds,
                     "rate_window_started_at": rate_started,
                     "rate_window_requests": rate_requests + 1 if token.view.rate_limit_requests is not None else 0,
                 }
@@ -1529,7 +1538,11 @@ class MemoryStore:
                 target_type="operation",
                 target_id=str(operation_id),
                 outcome="queued",
-                detail={"model_id": admission.model_id, "protocol": admission.protocol},
+                detail={
+                    "model_id": admission.model_id,
+                    "protocol": admission.protocol,
+                    "admission_gpu_seconds": charged_gpu_seconds,
+                },
             )
             return self._metadata(row)
 

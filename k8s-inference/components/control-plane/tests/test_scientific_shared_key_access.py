@@ -29,7 +29,7 @@ from fs2_serve.scientific_artifacts import ArtifactNotFoundError
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
 from fs2_serve.scientific_batch.models import ArtifactAccessContext, ScientificBatchPlan, ScientificStagePlan
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileError, ScientificWorkloadProfile
-from fs2_serve.scientific_batch.scheduling import SchedulingContractResolver
+from fs2_serve.scientific_batch.scheduling import SchedulingContractError, SchedulingContractResolver
 from fs2_serve.store import NotFoundError
 
 MODEL = "protein-design"
@@ -86,6 +86,21 @@ def shared_runtime(registry, cipher, hasher):
     runtime, controller, repository, cluster, _ = scientific_runtime(
         registry, cipher, hasher, profile_document=document
     )
+    contract = runtime.scientific_batches.scheduling.contract
+    for tenant in ("operator-assets", "kopra", "another-customer"):
+        queue_name = f"scientific-{tenant}"
+        contract["local_queues"][queue_name] = {
+            "metadata": {"name": queue_name, "namespace": "fs2-models"},
+            "spec": {"clusterQueue": "inference"},
+        }
+        contract["local_queue_routes"][queue_name] = {
+            "namespace": "fs2-models",
+            "cluster_queue": "inference",
+            "model_ids": [MODEL],
+            "tenant_ids": [tenant],
+            "service_classes": ["customer-batch"],
+        }
+    runtime.scientific_batches.scheduling = SchedulingContractResolver(contract)
     runtime.scientific_batches.execution_binding = PlatformBinding()
     runtime.scientific_batches.artifacts = CustomerInputs()
     return runtime, controller, repository, cluster
@@ -132,21 +147,19 @@ def test_actual_academic_renderer_retains_platform_receipt_and_customer_tenant(t
 
 @pytest.mark.parametrize("model_id", ["alphafold3", "bindcraft"])
 @pytest.mark.parametrize("tenant", ["kopra", "another-customer"])
-def test_shared_scientific_queue_keeps_existing_platform_asset_namespace(model_id, tenant):
+def test_unrestricted_scientific_queue_cannot_bypass_per_tenant_fairness(model_id, tenant):
     contract = scheduling_with_academic_route()
     # The operator-owned queue route is shared. Model grants are checked by the
     # service, not encoded as a second customer allow-list in infrastructure.
     contract["local_queue_routes"]["academic-scientific"]["tenant_ids"] = []
     model_profile = {**profile_value(), "model_id": model_id}
-    snapshot = SchedulingContractResolver(contract).freeze(
-        service_class="customer-batch", model_id=model_id, tenant_id=tenant,
-        profile=model_profile,
-        plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
-        workload_namespace="fs2-academic-poc",
-    )
-    assert snapshot.workload_namespace == snapshot.route_namespace == "fs2-academic-poc"
-    assert snapshot.stage("design").resolved_local_queue == "academic-scientific"
-    assert snapshot.stage("design").resolved_cluster_queue == "inference-accelerators"
+    with pytest.raises(SchedulingContractError, match="exact per-tenant"):
+        SchedulingContractResolver(contract).freeze(
+            service_class="customer-batch", model_id=model_id, tenant_id=tenant,
+            profile=model_profile,
+            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
+            workload_namespace="fs2-academic-poc",
+        )
 
 
 @pytest.mark.asyncio
@@ -185,9 +198,13 @@ async def test_customers_share_execution_but_keep_distinct_operations_inputs_and
             idempotency_key="foreign-input-rejected",
         )
     assert len(runtime.store.operations) == 2
-    # Both durable plans target the same platform model/queue, without changing
-    # either customer owner into the platform's historical asset owner.
-    assert {state.scheduling.tenant_queue for state in repository.records.values()} == {"scientific"}
+    # Both durable plans target the same platform model without changing either
+    # customer owner into the historical asset owner, but their quota lanes are
+    # distinct and tenant-bound.
+    assert {state.scheduling.tenant_queue for state in repository.records.values()} == {
+        "scientific-another-customer",
+        "scientific-kopra",
+    }
 
 
 @pytest.mark.asyncio

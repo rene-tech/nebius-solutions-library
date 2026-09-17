@@ -475,9 +475,9 @@ locals {
       cluster_queue       = local.root_academic_cluster_queue_name
       fair_sharing_weight = 1
       model_ids           = toset(local.root_academic_model_ids)
-      # Model grants authorize customers before scheduling. The licensed
-      # asset namespace belongs to the platform, not to a customer tenant.
-      tenant_ids = toset([])
+      # The bootstrap principal is bound to this exact tenant. Other tenants
+      # require separately owned LocalQueues and cannot borrow this lane.
+      tenant_ids = toset([var.academic_assets.tenant_id])
       service_classes = toset([
         "platform-critical",
         "presentation",
@@ -1045,6 +1045,7 @@ locals {
         max_size_gib = var.deployment.storage.scientific_artifacts.object_storage.max_size_gib
       }
       retention_days = var.deployment.storage.scientific_artifacts.retention_days
+      tenant_quota_bytes = var.deployment.storage.scientific_artifacts.tenant_quota_bytes
     }
     public_edge_mode         = var.deployment.edge.mode
     public_edge_source_cidrs = sort(tolist(var.deployment.edge.source_cidrs))
@@ -1169,6 +1170,7 @@ locals {
       enabled               = var.deployment.storage.scientific_artifacts.enabled
       handle_ttl_seconds    = var.deployment.storage.scientific_artifacts.handle_ttl_seconds
       max_artifact_bytes    = var.deployment.storage.scientific_artifacts.max_artifact_bytes
+      tenant_quota_bytes    = var.deployment.storage.scientific_artifacts.tenant_quota_bytes
       retention_days        = var.deployment.storage.scientific_artifacts.retention_days
       egress_cidrs          = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
       media_types           = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))

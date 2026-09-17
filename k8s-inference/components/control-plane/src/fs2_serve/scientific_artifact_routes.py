@@ -25,6 +25,7 @@ from .scientific_artifacts import (
     ArtifactEvent,
     ArtifactNotFoundError,
     ArtifactPolicyError,
+    ArtifactQuotaExceededError,
     ArtifactServiceError,
     ArtifactVerificationError,
     AttemptStatus,
@@ -55,6 +56,7 @@ _ERROR_STATUS: tuple[tuple[type[ArtifactServiceError], int], ...] = (
     (ArtifactConflictError, status.HTTP_409_CONFLICT),
     (ArtifactVerificationError, status.HTTP_422_UNPROCESSABLE_ENTITY),
     (ArtifactPolicyError, status.HTTP_422_UNPROCESSABLE_ENTITY),
+    (ArtifactQuotaExceededError, status.HTTP_429_TOO_MANY_REQUESTS),
     (ArtifactContentTooLargeError, status.HTTP_413_CONTENT_TOO_LARGE),
 )
 
