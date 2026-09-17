@@ -43,6 +43,8 @@ class ServingSnapshotBundle(StrictModel):
     accelerator_classes: list[str] = Field(min_length=1, max_length=16)
     compatibility: dict[str, str]
     tools_image: str = Field(pattern=r"^[^\s@]+@sha256:[a-f0-9]{64}$")
+    tools_size_limit: str = Field(default="4Gi", pattern=r"^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$")
+    checkpoint_size_limit: str = Field(default="1Ti", pattern=r"^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$")
     source_configmap: str = Field(pattern=r"^[a-z0-9][a-z0-9.-]{0,252}$")
     source_sha256: dict[str, str]
     entrypoint_configmap: str = Field(pattern=r"^[a-z0-9][a-z0-9.-]{0,252}$")
@@ -231,7 +233,10 @@ def configure_serving_snapshot(
         "runAsUser": 0,
         "runAsGroup": 0,
         "runAsNonRoot": False,
-        "capabilities": {"add": ["SYS_ADMIN", "SYS_PTRACE", "CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_TIME"]},
+        "capabilities": {
+            "drop": ["ALL"],
+            "add": ["CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE", "SYS_TIME"],
+        },
         "seccompProfile": {"type": "Unconfined"},
         "appArmorProfile": {"type": "Unconfined"},
     }
@@ -279,8 +284,8 @@ def configure_serving_snapshot(
     )
     pod_spec.setdefault("volumes", []).extend(
         [
-            {"name": "snapshot-tools", "emptyDir": {}},
-            {"name": "snapshot-checkpoints", "emptyDir": {}},
+            {"name": "snapshot-tools", "emptyDir": {"sizeLimit": config.tools_size_limit}},
+            {"name": "snapshot-checkpoints", "emptyDir": {"sizeLimit": config.checkpoint_size_limit}},
             {"name": "snapshot-source", "configMap": {"name": config.source_configmap, "defaultMode": 292}},
             {"name": "snapshot-entrypoint", "configMap": {"name": config.entrypoint_configmap, "defaultMode": 292}},
             {"name": "snapshot-network-source", "configMap": {"name": config.network_configmap, "defaultMode": 365}},

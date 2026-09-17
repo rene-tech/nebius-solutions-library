@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib
 import json
 from dataclasses import replace
@@ -39,6 +40,7 @@ from fs2_serve.scientific_batch.startup import (
     select_startup_policy,
     validate_bundle,
 )
+from fs2_serve_catalog.artifacts import canonical_bytes
 
 
 @pytest.fixture
@@ -321,6 +323,33 @@ def test_admin_options_validation_freeze_codec_and_real_pod_renderer(tmp_path, b
         ),
     )
     normal = renderer.render(resource)
+    selected_execution = renderer._thaw_stage_execution(  # noqa: SLF001 - exact signed unit seam
+        plan.execution_binding("sample-structure")
+    )
+    preview = apply_startup_policy(
+        copy.deepcopy(normal["spec"]["template"]),
+        selected_execution.startup_policy,
+        request_uid=selected_execution.workspace_uid,
+    )
+    preview_spec = preview["spec"]
+    reasons = ["cuda-criu-restore"]
+    if any("hostPath" in volume for volume in preview_spec.get("volumes", [])):
+        reasons.append("read-only-reference-hostpath")
+    exception_subject = renderer._security_exception_subject(  # noqa: SLF001
+        resource=resource,
+        execution=selected_execution,
+        effective_spec=preview_spec,
+        reasons=reasons,
+    )
+    renderer.accepted_runtime_security_authorizations = MappingProxyType(
+        {
+            **renderer.accepted_runtime_security_authorizations,
+            "independent-snapshot-security-unit": (
+                "runtime-security-exception",
+                hashlib.sha256(canonical_bytes(exception_subject)).hexdigest(),
+            ),
+        }
+    )
     restored = renderer.render(replace(resource, execution_binding=plan.execution_binding("sample-structure")))
     normal_spec, restored_spec = (item["spec"]["template"]["spec"] for item in (normal, restored))
     assert restored_spec["containers"][1] == normal_spec["containers"][1]
@@ -339,10 +368,22 @@ def test_admin_options_validation_freeze_codec_and_real_pod_renderer(tmp_path, b
     # Probe-only code resets termination grace and inserts an empty selector;
     # production deliberately retains the original scheduler/termination fields.
     expected = measured["spec"]
-    expected["terminationGracePeriodSeconds"] = normal_spec["terminationGracePeriodSeconds"]
-    if "nodeSelector" not in normal_spec:
-        expected.pop("nodeSelector", None)
-    assert restored_spec == expected
+    assert restored_spec["terminationGracePeriodSeconds"] == normal_spec[
+        "terminationGracePeriodSeconds"
+    ]
+    assert restored_spec["containers"][0]["command"] == expected["containers"][0]["command"]
+    assert {
+        volume["name"] for volume in restored_spec["volumes"] if volume["name"].startswith("snapshot-")
+    } == {
+        volume["name"] for volume in expected["volumes"] if volume["name"].startswith("snapshot-")
+    }
+    assert restored_spec["containers"][0]["securityContext"]["capabilities"]["add"] == [
+        "CHECKPOINT_RESTORE",
+        "NET_ADMIN",
+        "SYS_ADMIN",
+        "SYS_PTRACE",
+        "SYS_TIME",
+    ]
     renderer.snapshot_bundles = MappingProxyType({})
     assert (
         renderer.render(

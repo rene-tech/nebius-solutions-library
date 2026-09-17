@@ -131,6 +131,73 @@ locals {
       mode            = "2770"
     }
   ]
+  scientific_runtime_cache_writer_fence_name = "fs2-scientific-runtime-cache-writer-fence"
+  scientific_runtime_cache_writer_boundary_cel = [
+    for boundary in local.scientific_runtime_cache_directory_claims : format(
+      "(object.metadata.namespace == %s && object.metadata.annotations[%s] == %s && object.metadata.annotations[%s] == %s && object.spec.securityContext.supplementalGroupsPolicy == 'Strict' && object.spec.securityContext.supplementalGroups.exists(g, g == %d) && object.spec.containers.exists_one(c, c.name == 'scientific-stage' && c.securityContext.runAsUser == %d && c.securityContext.runAsGroup == %d && c.env.exists_one(e, e.name == 'FS2_RUNTIME_CACHE_ACTIVATION_ID' && e.value == %s) && c.volumeMounts.filter(m, variables.cacheVolumeNames.exists(v, v == m.name)).size() == 2 && c.volumeMounts.exists_one(m, variables.cacheVolumeNames.exists(v, v == m.name) && m.mountPath == '/cache' && m.subPath == %s && m.readOnly == false) && c.volumeMounts.exists_one(m, variables.cacheVolumeNames.exists(v, v == m.name) && m.mountPath == '/var/run/fs2-cache-writer-admission.lock' && m.subPath == '.fs2-cache-writer-admission.lock' && m.readOnly == true)) && object.spec.containers.filter(c, c.name != 'scientific-stage').all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !variables.cacheVolumeNames.exists(v, v == m.name))) && (!has(object.spec.initContainers) || object.spec.initContainers.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !variables.cacheVolumeNames.exists(v, v == m.name)))) && (!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !variables.cacheVolumeNames.exists(v, v == m.name)))))",
+      jsonencode(boundary.workload_namespace),
+      jsonencode("fs2-serve.nebius.ai/runtime-cache-activation"),
+      jsonencode(boundary.activation_id),
+      jsonencode("fs2-serve.nebius.ai/runtime-cache-boundary"),
+      jsonencode(boundary.boundary_sha256),
+      boundary.legacy_gid,
+      boundary.run_as_user,
+      boundary.run_as_group,
+      jsonencode(boundary.activation_id),
+      jsonencode(boundary.directory),
+    )
+  ]
+  scientific_runtime_cache_writer_fence_manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name = local.scientific_runtime_cache_writer_fence_name
+      labels = local.common_labels
+    }
+    spec = {
+      failurePolicy = "Fail"
+      matchConstraints = {
+        resourceRules = [{
+          apiGroups   = [""]
+          apiVersions = ["v1"]
+          operations  = ["CREATE", "UPDATE"]
+          resources   = ["pods"]
+          scope       = "Namespaced"
+        }]
+      }
+      variables = [
+        {
+          name = "cacheVolumeNames"
+          expression = "has(object.spec.volumes) ? object.spec.volumes.filter(v, has(v.persistentVolumeClaim) && v.persistentVolumeClaim.claimName == '${local.scientific_runtime_cache_claim_name}').map(v, v.name) : []"
+        },
+        {
+          name = "isBootstrap"
+          expression = "has(object.metadata.labels) && object.metadata.labels['app.kubernetes.io/component'] == 'scientific-runtime-cache-bootstrap' && has(object.metadata.ownerReferences) && object.metadata.ownerReferences.exists_one(o, o.apiVersion == 'batch/v1' && o.kind == 'Job' && o.controller == true && o.blockOwnerDeletion == true && o.name.startsWith('fs2-scientific-cache-')) && object.spec.serviceAccountName == 'fs2-scientific-cache-bootstrap' && object.spec.automountServiceAccountToken == false && object.spec.containers.size() == 1 && object.spec.containers[0].name == 'prepare' && object.spec.containers[0].image == ${jsonencode("${var.control_plane_image.repository}@${var.control_plane_image.digest}")} && object.spec.containers[0].command == ${jsonencode(["python", "-c", file("${path.module}/scripts/scientific_runtime_cache_bootstrap.py")])} && object.spec.containers[0].securityContext.runAsUser == 0 && object.spec.containers[0].securityContext.runAsGroup == 0 && object.spec.containers[0].securityContext.allowPrivilegeEscalation == false && object.spec.containers[0].securityContext.capabilities.add == ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'FSETID'] && object.spec.containers[0].securityContext.capabilities.drop == ['ALL'] && has(object.spec.containers[0].env) && object.spec.containers[0].env.exists_one(e, e.name == 'FS2_SCIENTIFIC_RUNTIME_CACHE_OWNERSHIP_JSON') && has(object.spec.containers[0].volumeMounts) && object.spec.containers[0].volumeMounts.filter(m, variables.cacheVolumeNames.exists(v, v == m.name)).size() == 1 && object.spec.containers[0].volumeMounts.exists_one(m, variables.cacheVolumeNames.exists(v, v == m.name) && m.mountPath == '/cache' && m.readOnly == false)"
+        },
+      ]
+      validations = [
+        {
+          expression = "variables.cacheVolumeNames.size() == 0 || variables.cacheVolumeNames.size() == 1"
+          message    = "a Pod may project at most one scientific runtime-cache claim"
+        },
+        {
+          expression = "variables.cacheVolumeNames.size() == 0 || object.spec.containers.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !has(m.subPathExpr))) && (!has(object.spec.initContainers) || object.spec.initContainers.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !has(m.subPathExpr)))) && (!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !has(m.subPathExpr))))"
+          message    = "scientific runtime-cache Pods may not use subPathExpr"
+        },
+        {
+          expression = "variables.cacheVolumeNames.size() == 0 || object.spec.containers.all(c, !has(c.volumeDevices) || c.volumeDevices.size() == 0) && (!has(object.spec.initContainers) || object.spec.initContainers.all(c, !has(c.volumeDevices) || c.volumeDevices.size() == 0)) && (!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.all(c, !has(c.volumeDevices) || c.volumeDevices.size() == 0))"
+          message    = "scientific runtime-cache Pods may not project block devices"
+        },
+        {
+          expression = "variables.cacheVolumeNames.size() == 0 || variables.isBootstrap || (${join(" || ", local.scientific_runtime_cache_writer_boundary_cel)})"
+          message    = "scientific runtime-cache writers require the exact activated tenant/model boundary or immutable bootstrap"
+        },
+      ]
+    }
+  }
+  scientific_runtime_cache_writer_fence_sha256 = sha256(jsonencode(
+    local.scientific_runtime_cache_writer_fence_manifest
+  ))
   scientific_runtime_cache_ownership_contract = {
     schema             = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v3"
     root               = local.scientific_runtime_cache_mount_path
@@ -139,23 +206,32 @@ locals {
   }
   scientific_runtime_cache_quiescence_valid = try(
     var.scientific_batch.runtime_cache.migration_quiescence.quiescence_sha256 == sha256(jsonencode({
-      schema          = "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v1"
+      schema          = "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v2"
       lease_name      = var.scientific_batch.runtime_cache.migration_quiescence.lease_name
       lease_uid       = var.scientific_batch.runtime_cache.migration_quiescence.lease_uid
+      lock_device     = var.scientific_batch.runtime_cache.migration_quiescence.lock_device
+      lock_inode      = var.scientific_batch.runtime_cache.migration_quiescence.lock_inode
+      lock_content_sha256 = var.scientific_batch.runtime_cache.migration_quiescence.lock_content_sha256
       zero_writers    = var.scientific_batch.runtime_cache.migration_quiescence.zero_writers
       writer_admission_fenced = var.scientific_batch.runtime_cache.migration_quiescence.writer_admission_fenced
       active_writer_count = var.scientific_batch.runtime_cache.migration_quiescence.active_writer_count
       activation_id   = var.scientific_batch.runtime_cache.migration_quiescence.activation_id
+      admission_policy_name = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_name
+      admission_policy_uid = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid
+      admission_policy_resource_version = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_resource_version
+      admission_policy_sha256 = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_sha256
+      admission_binding_name = var.scientific_batch.runtime_cache.migration_quiescence.admission_binding_name
       observed_at     = var.scientific_batch.runtime_cache.migration_quiescence.observed_at
       expires_at      = var.scientific_batch.runtime_cache.migration_quiescence.expires_at
       evidence_sha256 = var.scientific_batch.runtime_cache.migration_quiescence.evidence_sha256
     })) &&
+    var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_sha256 == local.scientific_runtime_cache_writer_fence_sha256 &&
     contains(
       keys(local.verified_runtime_security_authorizations),
       var.scientific_batch.runtime_cache.migration_quiescence.authorization_id,
     ) &&
     local.verified_runtime_security_authorizations[var.scientific_batch.runtime_cache.migration_quiescence.authorization_id].kind == "cache-migration-quiescence" &&
-    local.verified_runtime_security_authorizations[var.scientific_batch.runtime_cache.migration_quiescence.authorization_id].subject_schema == "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v1" &&
+    local.verified_runtime_security_authorizations[var.scientific_batch.runtime_cache.migration_quiescence.authorization_id].subject_schema == "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v2" &&
     local.verified_runtime_security_authorizations[var.scientific_batch.runtime_cache.migration_quiescence.authorization_id].subject_sha256 == var.scientific_batch.runtime_cache.migration_quiescence.quiescence_sha256,
     false,
   )
@@ -490,6 +566,48 @@ resource "kubernetes_persistent_volume_claim_v1" "scientific_runtime_cache_addit
   ]
 }
 
+# A cluster-scoped fail-closed admission fence prevents a legacy or
+# non-cooperating Pod from opening the RWX claim after the independent
+# zero-writer observation. The signed quiescence record binds this exact
+# manifest digest plus the already-observed policy UID/resourceVersion; a
+# boolean assertion alone is never migration authority.
+resource "kubernetes_manifest" "scientific_runtime_cache_writer_fence" {
+  count = var.scientific_batch.runtime_cache.enabled ? 1 : 0
+
+  manifest = local.scientific_runtime_cache_writer_fence_manifest
+
+  field_manager {
+    name            = "fs2-scientific-runtime-cache-security"
+    force_conflicts = false
+  }
+
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_manifest" "scientific_runtime_cache_writer_fence_binding" {
+  count = var.scientific_batch.runtime_cache.enabled ? 1 : 0
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name   = local.scientific_runtime_cache_writer_fence_name
+      labels = local.common_labels
+    }
+    spec = {
+      policyName        = local.scientific_runtime_cache_writer_fence_name
+      validationActions = ["Deny", "Audit"]
+    }
+  }
+
+  field_manager {
+    name            = "fs2-scientific-runtime-cache-security"
+    force_conflicts = false
+  }
+
+  depends_on = [kubernetes_manifest.scientific_runtime_cache_writer_fence]
+}
+
 # Root cache ownership preparation has a dedicated tokenless identity with no
 # RoleBinding. Model runtime service accounts cannot impersonate or invoke it;
 # Terraform is the only owner of the bootstrap Jobs below.
@@ -635,6 +753,7 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap" {
   depends_on = [
     kubernetes_persistent_volume_claim_v1.scientific_runtime_cache,
     kubernetes_service_account_v1.scientific_runtime_cache_bootstrap,
+    kubernetes_manifest.scientific_runtime_cache_writer_fence_binding,
     terraform_data.scientific_artifacts_contract,
   ]
 }
@@ -748,6 +867,7 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap_additional" {
   depends_on = [
     kubernetes_persistent_volume_claim_v1.scientific_runtime_cache_additional,
     kubernetes_service_account_v1.scientific_runtime_cache_bootstrap_additional,
+    kubernetes_manifest.scientific_runtime_cache_writer_fence_binding,
     terraform_data.scientific_artifacts_contract,
   ]
 }

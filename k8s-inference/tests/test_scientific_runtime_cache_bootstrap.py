@@ -61,12 +61,20 @@ def contract(root: Path, *names: str) -> dict[str, object]:
             }
         )
     quiescence = {
-        "lease_name": "unit-zero-writers",
+        "lease_name": BOOTSTRAP.WRITER_LOCK_NAME,
         "lease_uid": "1" * 64,
+        "lock_device": 0,
+        "lock_inode": 0,
+        "lock_content_sha256": "0" * 64,
         "zero_writers": True,
         "writer_admission_fenced": True,
         "active_writer_count": 0,
         "activation_id": activation_id,
+        "admission_policy_name": "fs2-scientific-runtime-cache-writer-fence",
+        "admission_policy_uid": "11111111-1111-4111-8111-111111111111",
+        "admission_policy_resource_version": "17",
+        "admission_policy_sha256": "4" * 64,
+        "admission_binding_name": "fs2-scientific-runtime-cache-writer-fence",
         "observed_at": (datetime.now(UTC) - timedelta(seconds=5)).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         ),
@@ -75,6 +83,19 @@ def contract(root: Path, *names: str) -> dict[str, object]:
         ),
         "evidence_sha256": "2" * 64,
     }
+    writer_lock = root / BOOTSTRAP.WRITER_LOCK_NAME
+    lock_bytes = BOOTSTRAP._writer_lock_bytes(quiescence)
+    if not writer_lock.exists():
+        writer_lock.write_bytes(lock_bytes)
+        writer_lock.chmod(0o444)
+    lock_status = writer_lock.stat()
+    quiescence.update(
+        {
+            "lock_device": lock_status.st_dev,
+            "lock_inode": lock_status.st_ino,
+            "lock_content_sha256": __import__("hashlib").sha256(lock_bytes).hexdigest(),
+        }
+    )
     return {
         "schema": BOOTSTRAP.CONTRACT_SCHEMA,
         "root": root.as_posix(),
@@ -84,7 +105,7 @@ def contract(root: Path, *names: str) -> dict[str, object]:
             "quiescence_sha256": __import__("hashlib").sha256(
                 json.dumps(
                     {
-                        "schema": "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v1",
+                        "schema": BOOTSTRAP.QUIESCENCE_SCHEMA,
                         **quiescence,
                     },
                     sort_keys=True,
@@ -262,17 +283,51 @@ def test_retry_rejects_extra_unjournaled_entry_before_metadata_mutation(
 
 
 def test_active_writer_shared_lock_blocks_cache_migration(tmp_path: Path) -> None:
+    document = contract(tmp_path, "mosaic")
     writer_lock = tmp_path / BOOTSTRAP.WRITER_LOCK_NAME
-    writer_lock.touch(mode=0o444)
-    writer_lock.chmod(0o444)
     descriptor = os.open(writer_lock, os.O_RDONLY | os.O_NOFOLLOW)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
         with pytest.raises(BOOTSTRAP.CacheOwnershipError, match="already held"):
-            BOOTSTRAP.prepare(contract(tmp_path, "mosaic"), expected_root=tmp_path)
+            BOOTSTRAP.prepare(document, expected_root=tmp_path)
     finally:
         fcntl.flock(descriptor, fcntl.LOCK_UN)
         os.close(descriptor)
+
+
+def test_signed_lease_must_bind_the_exact_flocked_inode_and_content(
+    tmp_path: Path,
+) -> None:
+    document = contract(tmp_path, "mosaic")
+    quiescence = document["writer_quiescence"]
+    assert isinstance(quiescence, dict)
+    quiescence["lock_inode"] += 1
+    unsigned = {
+        key: value
+        for key, value in quiescence.items()
+        if key not in {"authorization_id", "quiescence_sha256"}
+    }
+    quiescence["quiescence_sha256"] = __import__("hashlib").sha256(
+        json.dumps(
+            {"schema": BOOTSTRAP.QUIESCENCE_SCHEMA, **unsigned},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+
+    with pytest.raises(BOOTSTRAP.CacheOwnershipError, match="lease is not one regular inode"):
+        BOOTSTRAP.prepare(document, expected_root=tmp_path)
+
+
+def test_signed_lease_refuses_content_for_another_activation(tmp_path: Path) -> None:
+    document = contract(tmp_path, "mosaic")
+    writer_lock = tmp_path / BOOTSTRAP.WRITER_LOCK_NAME
+    writer_lock.chmod(0o644)
+    writer_lock.write_text('{"schema":"wrong-lease"}\n', encoding="utf-8")
+    writer_lock.chmod(0o444)
+
+    with pytest.raises(BOOTSTRAP.CacheOwnershipError, match="lease is not one regular inode"):
+        BOOTSTRAP.prepare(document, expected_root=tmp_path)
 
 
 def test_write_once_ignores_incomplete_staging_and_publishes_atomic_commit(
@@ -426,6 +481,17 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
     assert "scientific-runtime-cache-ownership/v3" in cache_source
     assert "claim.tenant_id" in cache_source
     assert "cache-boundary" in cache_source
+    assert 'kind       = "ValidatingAdmissionPolicy"' in cache_source
+    assert 'kind       = "ValidatingAdmissionPolicyBinding"' in cache_source
+    assert 'validationActions = ["Deny", "Audit"]' in cache_source
+    assert "scientific_runtime_cache_writer_boundary_cel" in cache_source
+    assert "scientific-runtime-cache Pods may not use subPathExpr" in cache_source
+    assert "scientific runtime-cache Pods may not project block devices" in cache_source
+    assert "admission_policy_uid" in cache_source
+    assert "admission_policy_resource_version" in cache_source
+    assert "lock_device" in cache_source
+    assert "lock_inode" in cache_source
+    assert "lock_content_sha256" in cache_source
     assert cache_source.count('resource "kubernetes_service_account_v1" "scientific_runtime_cache_bootstrap') == 2
     assert cache_source.count('name      = "fs2-scientific-cache-bootstrap"') == 2
     assert cache_source.count("service_account_name            = kubernetes_service_account_v1.scientific_runtime_cache_bootstrap") == 2

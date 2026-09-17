@@ -361,12 +361,20 @@ variable "scientific_batch" {
       storage_class_name = optional(string, "csi-mounted-fs-path-sc")
       size_gib           = optional(number, 128)
       migration_quiescence = optional(object({
-        lease_name      = string
-        lease_uid       = string
+        lease_name         = string
+        lease_uid          = string
+        lock_device         = number
+        lock_inode          = number
+        lock_content_sha256 = string
         zero_writers    = bool
         writer_admission_fenced = bool
         active_writer_count = number
         activation_id   = string
+        admission_policy_name             = string
+        admission_policy_uid              = string
+        admission_policy_resource_version = string
+        admission_policy_sha256           = string
+        admission_binding_name            = string
         observed_at     = string
         expires_at      = string
         evidence_sha256 = string
@@ -418,12 +426,22 @@ variable "scientific_batch" {
       var.scientific_batch.runtime_cache.size_gib >= 1 &&
       var.scientific_batch.runtime_cache.size_gib <= 65536 &&
       (!var.scientific_batch.runtime_cache.enabled || try(
-        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scientific_batch.runtime_cache.migration_quiescence.lease_name)) &&
+        var.scientific_batch.runtime_cache.migration_quiescence.lease_name == ".fs2-cache-writer-admission.lock" &&
         can(regex("^[a-f0-9]{64}$", var.scientific_batch.runtime_cache.migration_quiescence.lease_uid)) &&
+        floor(var.scientific_batch.runtime_cache.migration_quiescence.lock_device) == var.scientific_batch.runtime_cache.migration_quiescence.lock_device &&
+        var.scientific_batch.runtime_cache.migration_quiescence.lock_device >= 0 &&
+        floor(var.scientific_batch.runtime_cache.migration_quiescence.lock_inode) == var.scientific_batch.runtime_cache.migration_quiescence.lock_inode &&
+        var.scientific_batch.runtime_cache.migration_quiescence.lock_inode >= 1 &&
+        can(regex("^[a-f0-9]{64}$", var.scientific_batch.runtime_cache.migration_quiescence.lock_content_sha256)) &&
         var.scientific_batch.runtime_cache.migration_quiescence.zero_writers == true &&
         var.scientific_batch.runtime_cache.migration_quiescence.writer_admission_fenced == true &&
         var.scientific_batch.runtime_cache.migration_quiescence.active_writer_count == 0 &&
         can(regex("^[a-f0-9]{64}$", var.scientific_batch.runtime_cache.migration_quiescence.activation_id)) &&
+        var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_name == "fs2-scientific-runtime-cache-writer-fence" &&
+        can(regex("^[a-f0-9-]{36}$", var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid)) &&
+        can(regex("^[1-9][0-9]*$", var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_resource_version)) &&
+        can(regex("^[a-f0-9]{64}$", var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_sha256)) &&
+        var.scientific_batch.runtime_cache.migration_quiescence.admission_binding_name == "fs2-scientific-runtime-cache-writer-fence" &&
         can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.scientific_batch.runtime_cache.migration_quiescence.observed_at)) &&
         can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.scientific_batch.runtime_cache.migration_quiescence.expires_at)) &&
         can(regex("^[a-f0-9]{64}$", var.scientific_batch.runtime_cache.migration_quiescence.evidence_sha256)) &&
@@ -1326,7 +1344,7 @@ variable "model_runtime_security_authorizations" {
     condition = alltrue([
       for authorization_id, authorization in var.model_runtime_security_authorizations :
       can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", authorization_id)) &&
-      contains(["image-promotion", "runtime-compatibility", "scientific-image", "cache-boundary", "cache-migration-quiescence"], authorization.kind) &&
+      contains(["image-promotion", "runtime-compatibility", "runtime-security-exception", "scientific-image", "cache-boundary", "cache-migration-quiescence"], authorization.kind) &&
       can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", authorization.model_id)) &&
       can(regex("^fs2-serve\\.nebius\\.ai/[a-z0-9-]+/v[0-9]+$", authorization.subject_schema)) &&
       can(regex("^[0-9a-f]{64}$", authorization.subject_sha256)) &&
@@ -1354,13 +1372,21 @@ variable "model_runtime_security_compatibilities" {
     run_as_group         = number
     tmp_size_limit       = string
     writable_paths       = map(string)
-    writable_mounts = map(object({
-      kind      = string
-      reference = string
-      sub_path  = optional(string)
+    mounts = map(object({
+      kind          = string
+      source_sha256 = string
+      sub_path      = optional(string)
+      read_only     = bool
     }))
+    pod_supplemental_groups = optional(list(number), [])
+    pod_fs_group            = optional(number)
     capability_profile   = optional(string, "none")
     allowed_capabilities = optional(list(string), [])
+    allow_privilege_escalation = optional(bool, false)
+    privileged                  = optional(bool, false)
+    read_only_root_filesystem   = optional(bool, true)
+    seccomp_profile             = optional(string, "RuntimeDefault")
+    apparmor_profile            = optional(string, "RuntimeDefault")
     review_sha256        = string
     authorization_id     = string
     compatibility_sha256 = string
@@ -1382,9 +1408,9 @@ variable "model_runtime_security_compatibilities" {
       can(regex("^[a-z0-9](?:[-a-z0-9.]{0,61}[a-z0-9])?$", compatibility.container_name)) &&
       can(regex("^[^\\s@]+@sha256:[0-9a-f]{64}$", compatibility.image)) &&
       floor(compatibility.run_as_user) == compatibility.run_as_user &&
-      compatibility.run_as_user >= 1 && compatibility.run_as_user <= 2147483647 &&
+      compatibility.run_as_user >= 0 && compatibility.run_as_user <= 2147483647 &&
       floor(compatibility.run_as_group) == compatibility.run_as_group &&
-      compatibility.run_as_group >= 1 && compatibility.run_as_group <= 2147483647 &&
+      compatibility.run_as_group >= 0 && compatibility.run_as_group <= 2147483647 &&
       can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", compatibility.tmp_size_limit)) &&
       toset(keys(compatibility.writable_paths)) == toset([
         "CUDA_CACHE_PATH", "HF_HOME", "HOME", "JAX_COMPILATION_CACHE_DIR",
@@ -1399,36 +1425,55 @@ variable "model_runtime_security_compatibilities" {
           for segment in split("/", trimprefix(path, "/")) :
           !contains(["", ".", ".."], segment)
         ]) && anytrue([
-          for mount_path in keys(compatibility.writable_mounts) :
+          for mount_path, mount in compatibility.mounts :
           path == mount_path || startswith(path, "${trimsuffix(mount_path, "/")}/")
+          if mount.read_only == false
         ])
       ]) &&
-      contains(keys(compatibility.writable_mounts), "/tmp") &&
-      compatibility.writable_mounts["/tmp"].kind == "emptyDir" &&
-      compatibility.writable_mounts["/tmp"].reference == compatibility.tmp_size_limit &&
-      try(compatibility.writable_mounts["/tmp"].sub_path, null) == null &&
+      contains(keys(compatibility.mounts), "/tmp") &&
+      compatibility.mounts["/tmp"].kind == "emptyDir" &&
+      compatibility.mounts["/tmp"].source_sha256 == sha256(jsonencode({ emptyDir = { sizeLimit = compatibility.tmp_size_limit } })) &&
+      compatibility.mounts["/tmp"].read_only == false &&
+      try(compatibility.mounts["/tmp"].sub_path, null) == null &&
       alltrue([
-        for mount_path, mount in compatibility.writable_mounts :
+        for mount_path, mount in compatibility.mounts :
         can(regex("^/[A-Za-z0-9._/-]+$", mount_path)) &&
         !strcontains(mount_path, "..") &&
-        contains(["emptyDir", "persistentVolumeClaim"], mount.kind) &&
-        (mount.kind == "emptyDir" ? can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", mount.reference)) : can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$", mount.reference))) &&
+        contains(["configMap", "csi", "downwardAPI", "emptyDir", "ephemeral", "persistentVolumeClaim", "projected", "secret"], mount.kind) &&
+        can(regex("^[0-9a-f]{64}$", mount.source_sha256)) &&
         (
           try(mount.sub_path, null) == null || (
             can(regex("^[A-Za-z0-9._/-]+$", mount.sub_path)) && !strcontains(mount.sub_path, "..")
           )
         )
       ]) &&
-      contains(["none", "modelexpress-nixl-rdma"], compatibility.capability_profile) &&
+      compatibility.pod_supplemental_groups == [
+        for group in sort([for value in compatibility.pod_supplemental_groups : format("%010d", value)]) : tonumber(group)
+      ] &&
+      alltrue([for group in compatibility.pod_supplemental_groups : floor(group) == group && group >= 1 && group <= 2147483647]) &&
+      (try(compatibility.pod_fs_group, null) == null || contains(compatibility.pod_supplemental_groups, compatibility.pod_fs_group)) &&
+      contains(["none", "modelexpress-nixl-rdma", "host-memory-locked-residency", "serving-snapshot-runtime", "serving-snapshot-tools", "serving-snapshot-address"], compatibility.capability_profile) &&
       (
-        compatibility.capability_profile == "none" ?
-        length(compatibility.allowed_capabilities) == 0 :
-        compatibility.container_class == "containers" && compatibility.allowed_capabilities == ["IPC_LOCK"]
+        compatibility.capability_profile == "none" ? length(compatibility.allowed_capabilities) == 0 :
+        contains(["modelexpress-nixl-rdma", "host-memory-locked-residency"], compatibility.capability_profile) ? compatibility.container_class == "containers" && compatibility.allowed_capabilities == ["IPC_LOCK"] :
+        compatibility.capability_profile == "serving-snapshot-runtime" ? compatibility.container_class == "containers" && compatibility.allowed_capabilities == ["CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE", "SYS_TIME"] :
+        compatibility.capability_profile == "serving-snapshot-tools" ? compatibility.container_class == "initContainers" && length(compatibility.allowed_capabilities) == 0 :
+        compatibility.container_class == "initContainers" && compatibility.allowed_capabilities == ["NET_ADMIN"]
+      ) &&
+      (
+        startswith(compatibility.capability_profile, "serving-snapshot-") ? (
+          compatibility.run_as_user == 0 && compatibility.run_as_group == 0 && compatibility.privileged == false &&
+          (compatibility.capability_profile == "serving-snapshot-runtime" ?
+            compatibility.allow_privilege_escalation == true && compatibility.read_only_root_filesystem == false && compatibility.seccomp_profile == "Unconfined" && compatibility.apparmor_profile == "Unconfined" :
+            compatibility.allow_privilege_escalation == false && compatibility.read_only_root_filesystem == true && compatibility.seccomp_profile == "RuntimeDefault" && compatibility.apparmor_profile == "RuntimeDefault")
+        ) : (
+          compatibility.run_as_user >= 1 && compatibility.run_as_group >= 1 && compatibility.allow_privilege_escalation == false && compatibility.privileged == false && compatibility.read_only_root_filesystem == true && compatibility.seccomp_profile == "RuntimeDefault" && compatibility.apparmor_profile == "RuntimeDefault"
+        )
       ) &&
       can(regex("^[0-9a-f]{64}$", compatibility.review_sha256)) &&
       contains(keys(var.model_runtime_security_authorizations), compatibility.authorization_id) &&
       compatibility.compatibility_sha256 == sha256(jsonencode({
-        schema          = "fs2-serve.nebius.ai/runtime-security-compatibility/v2"
+        schema          = "fs2-serve.nebius.ai/runtime-security-compatibility/v4"
         model_id        = compatibility.model_id
         container_class = compatibility.container_class
         container_name  = compatibility.container_name
@@ -1437,14 +1482,21 @@ variable "model_runtime_security_compatibilities" {
         run_as_group    = compatibility.run_as_group
         tmp_size_limit  = compatibility.tmp_size_limit
         writable_paths  = compatibility.writable_paths
-        writable_mounts = compatibility.writable_mounts
+        mounts          = compatibility.mounts
+        pod_supplemental_groups = compatibility.pod_supplemental_groups
+        pod_fs_group    = try(compatibility.pod_fs_group, null)
         capability_profile = compatibility.capability_profile
         allowed_capabilities = compatibility.allowed_capabilities
+        allow_privilege_escalation = compatibility.allow_privilege_escalation
+        privileged                  = compatibility.privileged
+        read_only_root_filesystem   = compatibility.read_only_root_filesystem
+        seccomp_profile             = compatibility.seccomp_profile
+        apparmor_profile            = compatibility.apparmor_profile
         review_sha256   = compatibility.review_sha256
       })) &&
       var.model_runtime_security_authorizations[compatibility.authorization_id].kind == "runtime-compatibility" &&
       var.model_runtime_security_authorizations[compatibility.authorization_id].model_id == compatibility.model_id &&
-      var.model_runtime_security_authorizations[compatibility.authorization_id].subject_schema == "fs2-serve.nebius.ai/runtime-security-compatibility/v2" &&
+      var.model_runtime_security_authorizations[compatibility.authorization_id].subject_schema == "fs2-serve.nebius.ai/runtime-security-compatibility/v4" &&
       var.model_runtime_security_authorizations[compatibility.authorization_id].subject_sha256 == compatibility.compatibility_sha256
     ])
     error_message = "model_runtime_security_compatibilities must bind every final immutable image/container to a reviewed non-root identity and bounded /tmp writable-path contract."

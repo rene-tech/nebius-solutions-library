@@ -31,7 +31,10 @@ REPLICA_FIELD_MANAGER = "fs2-model-activation-controller"
 REPLICA_OWNERSHIP_SCHEMA = "fs2-serve.nebius.ai/replica-field-ownership/v1"
 MOUNTED_CONTENT_MODELS = frozenset({"qwen3-8b", "glm-5-2-fp8", "nv-reason-cxr-3b"})
 RUNTIME_NETWORK_POLICY_SCHEMA = "fs2-serve.nebius.ai/runtime-startup-network-policy/v1"
-NIM_OPERATOR_SECURITY_SCHEMA = "fs2-serve.nebius.ai/nim-operator-security-subject/v2"
+NIM_OPERATOR_SECURITY_SCHEMA = "fs2-serve.nebius.ai/nim-operator-security-subject/v3"
+RESTRICTED_VOLUME_SOURCES = frozenset(
+    {"configMap", "csi", "downwardAPI", "emptyDir", "ephemeral", "persistentVolumeClaim", "projected", "secret"}
+)
 
 
 def replica_field_ownership(api_version: str, kind: str) -> dict[str, Any]:
@@ -124,7 +127,10 @@ def _nim_operator_security_envelope(
         "runtime_container_name",
         "admission_policy",
         "admission_policy_sha256",
-        "pod_security_context",
+        "admission_actors",
+        "owner_reference",
+        "pod_spec",
+        "volumes",
         "containers",
         "volume_devices",
     }:
@@ -142,12 +148,50 @@ def _nim_operator_security_envelope(
         or subject["schema"] != NIM_OPERATOR_SECURITY_SCHEMA
         or subject["model_id"] != record.model_id
         or subject["resource_kind"] != expected_kind
-        or subject["pod_security_context"]
+        or not isinstance(subject["pod_spec"], Mapping)
+        or subject["pod_spec"]
         != {
-            "runAsNonRoot": True,
-            "seccompProfile": {"type": "RuntimeDefault"},
-            "supplementalGroupsPolicy": "Strict",
+            "automountServiceAccountToken": False,
+            "hostIPC": False,
+            "hostNetwork": False,
+            "hostPID": False,
+            "runtimeClassName": subject["pod_spec"].get("runtimeClassName"),
+            "securityContext": {
+                "runAsNonRoot": True,
+                "seccompProfile": {"type": "RuntimeDefault"},
+                "supplementalGroupsPolicy": "Strict",
+            },
+            "serviceAccountName": subject["pod_spec"].get("serviceAccountName"),
+            "shareProcessNamespace": False,
         }
+        or not isinstance(subject["pod_spec"].get("serviceAccountName"), str)
+        or not subject["pod_spec"]["serviceAccountName"]
+        or subject["pod_spec"].get("runtimeClassName") is not None
+        and not isinstance(subject["pod_spec"]["runtimeClassName"], str)
+        or not isinstance(subject["admission_actors"], Mapping)
+        or subject["admission_actors"]
+        != {
+            "custom_resource": subject["admission_actors"].get("custom_resource"),
+            "descendant_pod": subject["admission_actors"].get("descendant_pod"),
+        }
+        or any(
+            not isinstance(actor, str) or not actor.startswith("system:serviceaccount:")
+            for actor in subject["admission_actors"].values()
+        )
+        or not isinstance(subject["owner_reference"], Mapping)
+        or set(subject["owner_reference"])
+        != {"apiVersion", "kind", "name", "uid", "controller", "blockOwnerDeletion"}
+        or subject["owner_reference"].get("apiVersion") != "apps.nvidia.com/v1alpha1"
+        or subject["owner_reference"].get("kind") != expected_kind
+        or subject["owner_reference"].get("name") != record.model_id
+        or not isinstance(subject["owner_reference"].get("uid"), str)
+        or re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+            subject["owner_reference"].get("uid", ""),
+        )
+        is None
+        or subject["owner_reference"].get("controller") is not True
+        or subject["owner_reference"].get("blockOwnerDeletion") is not True
         or subject["volume_devices"] != "forbidden"
         or not isinstance(descendant_image, str)
         or not descendant_image.endswith("@" + runtime_digest)
@@ -161,7 +205,8 @@ def _nim_operator_security_envelope(
         or any(
             not isinstance(name, str)
             or not isinstance(contract, Mapping)
-            or set(contract) != {"image", "security_context", "writable_mounts"}
+            or set(contract) != {"container_class", "image", "security_context", "mounts"}
+            or contract["container_class"] not in {"initContainers", "containers", "ephemeralContainers"}
             or not isinstance(contract["image"], str)
             or re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", contract["image"]) is None
             or contract["image"].split("/", 1)[0] != subject["private_registry"]
@@ -169,14 +214,17 @@ def _nim_operator_security_envelope(
             or set(contract["security_context"])
             != {
                 "allowPrivilegeEscalation",
+                "appArmorProfile",
                 "capabilities",
                 "privileged",
                 "readOnlyRootFilesystem",
                 "runAsNonRoot",
                 "runAsUser",
                 "runAsGroup",
+                "seccompProfile",
             }
             or contract["security_context"]["allowPrivilegeEscalation"] is not False
+            or contract["security_context"]["appArmorProfile"] != {"type": "RuntimeDefault"}
             or contract["security_context"]["capabilities"] != {"add": [], "drop": ["ALL"]}
             or contract["security_context"]["privileged"] is not False
             or contract["security_context"]["readOnlyRootFilesystem"] is not True
@@ -187,14 +235,17 @@ def _nim_operator_security_envelope(
             or not isinstance(contract["security_context"]["runAsGroup"], int)
             or isinstance(contract["security_context"]["runAsGroup"], bool)
             or contract["security_context"]["runAsGroup"] <= 0
-            or not isinstance(contract["writable_mounts"], Mapping)
+            or contract["security_context"]["seccompProfile"] != {"type": "RuntimeDefault"}
+            or not isinstance(contract["mounts"], Mapping)
             or any(
                 not isinstance(path, str)
                 or not path.startswith("/")
                 or not isinstance(mount, Mapping)
-                or set(mount) != {"kind", "reference", "sub_path"}
-                or mount["kind"] not in {"emptyDir", "persistentVolumeClaim"}
-                or not isinstance(mount["reference"], str)
+                or set(mount) != {"kind", "source_sha256", "sub_path", "read_only"}
+                or mount["kind"] not in RESTRICTED_VOLUME_SOURCES
+                or not isinstance(mount["source_sha256"], str)
+                or re.fullmatch(r"[a-f0-9]{64}", mount["source_sha256"]) is None
+                or not isinstance(mount["read_only"], bool)
                 or mount["sub_path"] is not None
                 and (
                     not isinstance(mount["sub_path"], str)
@@ -204,7 +255,7 @@ def _nim_operator_security_envelope(
                         for part in mount["sub_path"].split("/")
                     )
                 )
-                for path, mount in contract["writable_mounts"].items()
+                for path, mount in contract["mounts"].items()
             )
             for name, contract in containers.items()
         )
@@ -215,6 +266,17 @@ def _nim_operator_security_envelope(
         or re.fullmatch(r"[a-f0-9]{64}", subject["admission_policy_sha256"]) is None
         or not isinstance(subject["operator_image_digest"], str)
         or re.fullmatch(r"[a-f0-9]{64}", subject["operator_image_digest"]) is None
+        or not isinstance(subject["volumes"], Mapping)
+        or not subject["volumes"]
+        or any(
+            not isinstance(name, str)
+            or not isinstance(volume, Mapping)
+            or set(volume) != {"kind", "source_sha256"}
+            or volume["kind"] not in RESTRICTED_VOLUME_SOURCES
+            or not isinstance(volume["source_sha256"], str)
+            or re.fullmatch(r"[a-f0-9]{64}", volume["source_sha256"]) is None
+            for name, volume in subject["volumes"].items()
+        )
         or not isinstance(custom_resource_image, Mapping)
         or (
             expected_kind == "NIMService"
@@ -281,13 +343,24 @@ def validate_nim_operator_descendant(
     if not isinstance(metadata, Mapping) or not isinstance(spec, Mapping):
         raise CatalogError("NIM Operator descendant is not a Pod object")
     annotations = metadata.get("annotations", {})
+    observed_pod_spec = {
+        "automountServiceAccountToken": spec.get("automountServiceAccountToken", True),
+        "hostIPC": spec.get("hostIPC", False),
+        "hostNetwork": spec.get("hostNetwork", False),
+        "hostPID": spec.get("hostPID", False),
+        "runtimeClassName": spec.get("runtimeClassName"),
+        "securityContext": spec.get("securityContext"),
+        "serviceAccountName": spec.get("serviceAccountName", "default"),
+        "shareProcessNamespace": spec.get("shareProcessNamespace", False),
+    }
     if (
         not isinstance(annotations, Mapping)
         or annotations.get("fs2-serve.nebius.ai/operator-security-envelope-sha256")
         != subject_sha256
-        or spec.get("securityContext") != subject["pod_security_context"]
+        or metadata.get("ownerReferences") != [subject["owner_reference"]]
+        or observed_pod_spec != subject["pod_spec"]
     ):
-        raise CatalogError("NIM Operator descendant lost its signed Pod security binding")
+        raise CatalogError("NIM Operator descendant lost its signed Pod owner/security binding")
     volumes = spec.get("volumes", [])
     if not isinstance(volumes, list):
         raise CatalogError("NIM Operator descendant volumes are invalid")
@@ -298,6 +371,26 @@ def validate_nim_operator_descendant(
     }
     if len(volumes_by_name) != len(volumes):
         raise CatalogError("NIM Operator descendant volume identities are invalid")
+    observed_volumes: dict[str, dict[str, str]] = {}
+    for name, volume in volumes_by_name.items():
+        sources = [key for key in RESTRICTED_VOLUME_SOURCES if key in volume]
+        if set(volume) != {"name", *sources} or len(sources) != 1:
+            raise CatalogError("NIM Operator descendant volume source is outside Restricted")
+        source = volume[sources[0]]
+        if not isinstance(source, Mapping):
+            raise CatalogError("NIM Operator descendant volume source is invalid")
+        if sources[0] == "emptyDir" and (
+            not isinstance(source.get("sizeLimit"), str)
+            or re.fullmatch(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)", source["sizeLimit"])
+            is None
+        ):
+            raise CatalogError("NIM Operator descendant emptyDir is not bounded")
+        observed_volumes[name] = {
+            "kind": sources[0],
+            "source_sha256": hashlib.sha256(canonical_bytes({sources[0]: source})).hexdigest(),
+        }
+    if observed_volumes != subject["volumes"]:
+        raise CatalogError("NIM Operator descendant volume sources differ from signed admission")
     observed: dict[str, dict[str, Any]] = {}
     for container_class in ("initContainers", "containers", "ephemeralContainers"):
         containers = spec.get(container_class, [])
@@ -309,7 +402,7 @@ def validate_nim_operator_descendant(
             name = container.get("name")
             if not isinstance(name, str) or name in observed:
                 raise CatalogError("NIM Operator descendant container identity is invalid")
-            writable_mounts: dict[str, dict[str, Any]] = {}
+            exact_mounts: dict[str, dict[str, Any]] = {}
             mounts = container.get("volumeMounts", [])
             if not isinstance(mounts, list):
                 raise CatalogError("NIM Operator descendant mount inventory is invalid")
@@ -318,42 +411,39 @@ def validate_nim_operator_descendant(
                     mount.get("readOnly", False), bool
                 ):
                     raise CatalogError("NIM Operator descendant mount inventory is invalid")
-                if mount.get("readOnly", False) is True:
-                    continue
+                if "subPathExpr" in mount or set(mount) - {"name", "mountPath", "readOnly", "subPath"}:
+                    raise CatalogError("NIM Operator descendant mount projection is unsafe")
                 path = mount.get("mountPath")
                 volume = volumes_by_name.get(mount.get("name"))
                 if (
                     not isinstance(path, str)
-                    or path in writable_mounts
+                    or path in exact_mounts
                     or not isinstance(volume, Mapping)
-                    or "subPathExpr" in mount
                 ):
-                    raise CatalogError("NIM Operator descendant writable mount is unsafe")
-                if isinstance(volume.get("emptyDir"), Mapping):
-                    kind = "emptyDir"
-                    reference = volume["emptyDir"].get("sizeLimit")
-                elif (
-                    isinstance(volume.get("persistentVolumeClaim"), Mapping)
-                    and isinstance(
-                        volume["persistentVolumeClaim"].get("readOnly", False), bool
-                    )
-                    and volume["persistentVolumeClaim"].get("readOnly", False) is False
+                    raise CatalogError("NIM Operator descendant mount is unsafe")
+                sub_path = mount.get("subPath")
+                if sub_path is not None and (
+                    not isinstance(sub_path, str)
+                    or sub_path.startswith("/")
+                    or any(part in {"", ".", ".."} for part in sub_path.split("/"))
                 ):
-                    kind = "persistentVolumeClaim"
-                    reference = volume["persistentVolumeClaim"].get("claimName")
-                else:
-                    raise CatalogError("NIM Operator descendant writable volume type is not admitted")
-                if not isinstance(reference, str):
-                    raise CatalogError("NIM Operator descendant writable volume lacks an exact reference")
-                writable_mounts[path] = {
-                    "kind": kind,
-                    "reference": reference,
+                    raise CatalogError("NIM Operator descendant mount subPath is unsafe")
+                signed_volume = observed_volumes[str(mount["name"])]
+                source = volume[signed_volume["kind"]]
+                exact_mounts[path] = {
+                    **signed_volume,
                     "sub_path": mount.get("subPath"),
+                    "read_only": mount.get("readOnly", False) is True
+                    or (
+                        signed_volume["kind"] == "persistentVolumeClaim"
+                        and source.get("readOnly", False) is True
+                    ),
                 }
             observed[name] = {
+                "container_class": container_class,
                 "image": container.get("image"),
                 "security_context": container.get("securityContext"),
-                "writable_mounts": writable_mounts,
+                "mounts": exact_mounts,
             }
     if (
         observed != subject["containers"]
@@ -391,18 +481,31 @@ def validate_nim_operator_admission_review(
     uid = request.get("uid")
     resource = request.get("resource")
     admitted_object = request.get("object")
+    user_info = request.get("userInfo")
     if (
         not isinstance(uid, str)
         or not uid
         or request.get("operation") not in {"CREATE", "UPDATE"}
         or request.get("namespace") != "fs2-models"
         or not isinstance(resource, Mapping)
+        or not isinstance(user_info, Mapping)
+        or not isinstance(user_info.get("username"), str)
         or not isinstance(admitted_object, Mapping)
         or not isinstance(admitted_object.get("metadata"), Mapping)
         or admitted_object["metadata"].get("namespace", "fs2-models") != "fs2-models"
     ):
         raise CatalogError("NIM Operator admission request does not target one model resource")
+    subject_sha256, admission_policy, descendant_image, custom_resource_image = _nim_operator_security_envelope(
+        security_envelope,
+        trusted_attestors=trusted_attestors,
+        expected_session_id=security_session_id,
+        expected_kind=resource_kind,
+        record=record,
+    )
+    signed_subject = security_envelope["subject"]
     if resource == {"group": "", "version": "v1", "resource": "pods"}:
+        if user_info["username"] != signed_subject["admission_actors"]["descendant_pod"]:
+            raise CatalogError("NIM Operator descendant admission actor differs")
         if admitted_object.get("apiVersion") != "v1" or admitted_object.get("kind") != "Pod":
             raise CatalogError("NIM Operator descendant admission object is not a Pod")
         validate_nim_operator_descendant(
@@ -414,6 +517,8 @@ def validate_nim_operator_admission_review(
             record=record,
         )
     else:
+        if user_info["username"] != signed_subject["admission_actors"]["custom_resource"]:
+            raise CatalogError("NIM Operator custom-resource admission actor differs")
         expected_resource = {
             "NIMCache": "nimcaches",
             "NIMService": "nimservices",
@@ -430,13 +535,6 @@ def validate_nim_operator_admission_review(
             or admitted_object.get("kind") != resource_kind
         ):
             raise CatalogError("NIM Operator custom-resource admission target differs")
-        subject_sha256, admission_policy, descendant_image, custom_resource_image = _nim_operator_security_envelope(
-            security_envelope,
-            trusted_attestors=trusted_attestors,
-            expected_session_id=security_session_id,
-            expected_kind=resource_kind,
-            record=record,
-        )
         metadata = admitted_object["metadata"]
         annotations = metadata.get("annotations")
         spec = admitted_object.get("spec")

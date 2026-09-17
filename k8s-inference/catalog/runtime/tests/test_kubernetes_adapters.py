@@ -132,12 +132,14 @@ class KubernetesAdapterTests(unittest.TestCase):
         )
         container_security = {
             "allowPrivilegeEscalation": False,
+            "appArmorProfile": {"type": "RuntimeDefault"},
             "capabilities": {"add": [], "drop": ["ALL"]},
             "privileged": False,
             "readOnlyRootFilesystem": True,
             "runAsNonRoot": True,
             "runAsUser": 1000,
             "runAsGroup": 1000,
+            "seccompProfile": {"type": "RuntimeDefault"},
         }
         companion_security = {
             **container_security,
@@ -149,7 +151,7 @@ class KubernetesAdapterTests(unittest.TestCase):
             + self.digest("nim-security-proxy")
         )
         subject: dict[str, object] = {
-            "schema": "fs2-serve.nebius.ai/nim-operator-security-subject/v2",
+            "schema": "fs2-serve.nebius.ai/nim-operator-security-subject/v3",
             "model_id": record.model_id,
             "resource_kind": resource_kind,
             "operator_image_digest": self.digest("nim-operator-image"),
@@ -159,27 +161,76 @@ class KubernetesAdapterTests(unittest.TestCase):
             "runtime_container_name": "model",
             "admission_policy": "fs2-nim-operator-restricted",
             "admission_policy_sha256": self.digest("nim-admission-policy"),
-            "pod_security_context": {
-                "runAsNonRoot": True,
-                "seccompProfile": {"type": "RuntimeDefault"},
-                "supplementalGroupsPolicy": "Strict",
+            "admission_actors": {
+                "custom_resource": "system:serviceaccount:fs2-system:fs2-model-controller",
+                "descendant_pod": "system:serviceaccount:nim-operator:nim-operator-controller",
+            },
+            "owner_reference": {
+                "apiVersion": "apps.nvidia.com/v1alpha1",
+                "kind": resource_kind,
+                "name": record.model_id,
+                "uid": "11111111-1111-4111-8111-111111111111",
+                "controller": True,
+                "blockOwnerDeletion": True,
+            },
+            "pod_spec": {
+                "automountServiceAccountToken": False,
+                "hostIPC": False,
+                "hostNetwork": False,
+                "hostPID": False,
+                "runtimeClassName": None,
+                "securityContext": {
+                    "runAsNonRoot": True,
+                    "seccompProfile": {"type": "RuntimeDefault"},
+                    "supplementalGroupsPolicy": "Strict",
+                },
+                "serviceAccountName": "nim-model-runtime",
+                "shareProcessNamespace": False,
+            },
+            "volumes": {
+                "tmp": {
+                    "kind": "emptyDir",
+                    "source_sha256": hashlib.sha256(
+                        canonical_bytes({"emptyDir": {"sizeLimit": "8Gi"}})
+                    ).hexdigest(),
+                },
+                "security-proxy-tmp": {
+                    "kind": "emptyDir",
+                    "source_sha256": hashlib.sha256(
+                        canonical_bytes({"emptyDir": {"sizeLimit": "64Mi"}})
+                    ).hexdigest(),
+                },
             },
             "containers": {
                 "model": {
+                    "container_class": "containers",
                     "image": descendant_image,
                     "security_context": container_security,
-                    "writable_mounts": {
-                        "/tmp": {"kind": "emptyDir", "reference": "8Gi", "sub_path": None}
+                    "mounts": {
+                        "/tmp": {
+                            **{
+                                "kind": "emptyDir",
+                                "source_sha256": hashlib.sha256(
+                                    canonical_bytes({"emptyDir": {"sizeLimit": "8Gi"}})
+                                ).hexdigest(),
+                            },
+                            "sub_path": None,
+                            "read_only": False,
+                        }
                     },
                 },
                 "security-proxy": {
+                    "container_class": "containers",
                     "image": companion_image,
                     "security_context": companion_security,
-                    "writable_mounts": {
+                    "mounts": {
                         "/var/run/fs2": {
                             "kind": "emptyDir",
-                            "reference": "64Mi",
+                            "source_sha256": hashlib.sha256(
+                                canonical_bytes({"emptyDir": {"sizeLimit": "64Mi"}})
+                            ).hexdigest(),
                             "sub_path": None,
+                            "read_only": False,
                         }
                     },
                 },
@@ -1219,6 +1270,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                 "request": {
                     "uid": "admission-unit-cache-cr-1",
                     "operation": "CREATE",
+                    "userInfo": {"username": cache_envelope["subject"]["admission_actors"]["custom_resource"]},
                     "namespace": "fs2-models",
                     "resource": {
                         "group": "apps.nvidia.com",
@@ -1269,6 +1321,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                 "request": {
                     "uid": "admission-unit-cr-1",
                     "operation": "CREATE",
+                    "userInfo": {"username": service_envelope["subject"]["admission_actors"]["custom_resource"]},
                     "namespace": "fs2-models",
                     "resource": {
                         "group": "apps.nvidia.com",
@@ -1295,10 +1348,11 @@ class KubernetesAdapterTests(unittest.TestCase):
                     "fs2-serve.nebius.ai/operator-security-envelope-sha256": service_envelope[
                         "subject_sha256"
                     ]
-                }
+                },
+                "ownerReferences": [subject["owner_reference"]],
             },
             "spec": {
-                "securityContext": subject["pod_security_context"],
+                **subject["pod_spec"],
                 "containers": [
                     {
                         "name": "model",
@@ -1347,6 +1401,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                 "request": {
                     "uid": "admission-unit-1",
                     "operation": "CREATE",
+                    "userInfo": {"username": subject["admission_actors"]["descendant_pod"]},
                     "namespace": "fs2-models",
                     "resource": {"group": "", "version": "v1", "resource": "pods"},
                     "object": {"apiVersion": "v1", "kind": "Pod", **descendant},
@@ -1369,6 +1424,64 @@ class KubernetesAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(CatalogError, "writable block device"):
             validate_nim_operator_descendant(
                 poisoned,
+                security_envelope=service_envelope,
+                trusted_attestors=service_attestors,
+                security_session_id=service_session,
+                resource_kind="NIMService",
+                record=boltz,
+            )
+        wrong_owner = copy.deepcopy(descendant)
+        wrong_owner["metadata"]["ownerReferences"][0]["uid"] = (
+            "22222222-2222-4222-8222-222222222222"
+        )
+        with self.assertRaisesRegex(CatalogError, "owner/security binding"):
+            validate_nim_operator_descendant(
+                wrong_owner,
+                security_envelope=service_envelope,
+                trusted_attestors=service_attestors,
+                security_session_id=service_session,
+                resource_kind="NIMService",
+                record=boltz,
+            )
+        read_only_expression = copy.deepcopy(descendant)
+        read_only_expression["spec"]["containers"][0]["volumeMounts"][0].update(
+            {"readOnly": True, "subPathExpr": "$(POD_NAME)"}
+        )
+        with self.assertRaisesRegex(CatalogError, "mount projection is unsafe"):
+            validate_nim_operator_descendant(
+                read_only_expression,
+                security_envelope=service_envelope,
+                trusted_attestors=service_attestors,
+                security_session_id=service_session,
+                resource_kind="NIMService",
+                record=boltz,
+            )
+        changed_read_only_source = copy.deepcopy(descendant)
+        changed_read_only_source["spec"]["volumes"][0]["emptyDir"]["sizeLimit"] = "9Gi"
+        with self.assertRaisesRegex(CatalogError, "volume sources differ"):
+            validate_nim_operator_descendant(
+                changed_read_only_source,
+                security_envelope=service_envelope,
+                trusted_attestors=service_attestors,
+                security_session_id=service_session,
+                resource_kind="NIMService",
+                record=boltz,
+            )
+        wrong_actor_review = {
+            "apiVersion": "admission.k8s.io/v1",
+            "kind": "AdmissionReview",
+            "request": {
+                "uid": "admission-unit-wrong-actor",
+                "operation": "CREATE",
+                "userInfo": {"username": "system:serviceaccount:fs2-models:other"},
+                "namespace": "fs2-models",
+                "resource": {"group": "", "version": "v1", "resource": "pods"},
+                "object": {"apiVersion": "v1", "kind": "Pod", **descendant},
+            },
+        }
+        with self.assertRaisesRegex(CatalogError, "admission actor differs"):
+            validate_nim_operator_admission_review(
+                wrong_actor_review,
                 security_envelope=service_envelope,
                 trusted_attestors=service_attestors,
                 security_session_id=service_session,

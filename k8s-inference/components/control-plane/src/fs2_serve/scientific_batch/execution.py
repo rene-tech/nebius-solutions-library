@@ -432,6 +432,9 @@ class FileScientificManifestRenderer:
                 subject,
             )
         self.authorized_scientific_subjects = frozenset(authorized_scientific_subjects)
+        self.accepted_runtime_security_authorizations = MappingProxyType(
+            accepted_authorizations
+        )
         raw_boundaries = root.get("runtime_cache_boundaries", [])
         if not isinstance(raw_boundaries, list) or len(raw_boundaries) > 4096:
             raise ScientificExecutionMapError("runtime cache boundaries are not a bounded array")
@@ -1722,6 +1725,73 @@ class FileScientificManifestRenderer:
             raise ScientificExecutionMapError("adapter plan is not fully bound for admission") from error
         return bound
 
+    def _security_exception_authorization(
+        self, subject: Mapping[str, Any]
+    ) -> tuple[str, str]:
+        subject_sha256 = hashlib.sha256(canonical_bytes(subject)).hexdigest()
+        matches = [
+            authorization_id
+            for authorization_id, identity in self.accepted_runtime_security_authorizations.items()
+            if identity == ("runtime-security-exception", subject_sha256)
+        ]
+        if len(matches) != 1:
+            raise ScientificExecutionMapError(
+                "scientific Pod security exception lacks one exact external authorization"
+            )
+        return matches[0], subject_sha256
+
+    def _security_exception_subject(
+        self,
+        *,
+        resource: WorkloadResource,
+        execution: StageExecution,
+        effective_spec: Mapping[str, Any],
+        reasons: list[str],
+    ) -> dict[str, Any]:
+        projection = self._security_projection(effective_spec)
+        return {
+            "schema": "fs2-serve.nebius.ai/scientific-pod-security-exception/v1",
+            "model_id": resource.model_id,
+            "stage_id": resource.stage_id,
+            "workload_namespace": resource.namespace,
+            "reasons": sorted(reasons),
+            "startup_bundle_id": execution.startup_policy.bundle_id,
+            "security_projection_sha256": hashlib.sha256(
+                canonical_bytes(projection)
+            ).hexdigest(),
+        }
+
+    @staticmethod
+    def _security_projection(pod_spec: Mapping[str, Any]) -> dict[str, Any]:
+        """Freeze every security-relevant field without request payload/env bytes."""
+
+        containers: list[dict[str, Any]] = []
+        for container_class in ("initContainers", "containers", "ephemeralContainers"):
+            for container in pod_spec.get(container_class, []):
+                containers.append(
+                    {
+                        "container_class": container_class,
+                        "name": container.get("name"),
+                        "image": container.get("image"),
+                        "security_context": container.get("securityContext"),
+                        "volume_devices": container.get("volumeDevices", []),
+                        "volume_mounts": container.get("volumeMounts", []),
+                    }
+                )
+        return {
+            "host_ipc": pod_spec.get("hostIPC", False),
+            "host_network": pod_spec.get("hostNetwork", False),
+            "host_pid": pod_spec.get("hostPID", False),
+            "share_process_namespace": pod_spec.get("shareProcessNamespace", False),
+            "security_context": pod_spec.get("securityContext"),
+            "service_account_name": pod_spec.get("serviceAccountName"),
+            "automount_service_account_token": pod_spec.get(
+                "automountServiceAccountToken", True
+            ),
+            "volumes": pod_spec.get("volumes", []),
+            "containers": containers,
+        }
+
     def _pod(self, resource: WorkloadResource, execution: StageExecution) -> dict[str, Any]:
         invocation = resource.invocation
         if not isinstance(invocation, StageInvocation):
@@ -2318,9 +2388,18 @@ class FileScientificManifestRenderer:
                 for final_mount in final_container.get("volumeMounts", []):
                     if not isinstance(final_mount, Mapping) or not isinstance(
                         final_mount.get("readOnly", False), bool
-                    ):
+                    ) or "subPathExpr" in final_mount:
                         raise ScientificExecutionMapError(
                             "scientific final container mount inventory is invalid"
+                        )
+                    sub_path = final_mount.get("subPath")
+                    if sub_path is not None and (
+                        not isinstance(sub_path, str)
+                        or sub_path.startswith("/")
+                        or any(part in {"", ".", ".."} for part in sub_path.split("/"))
+                    ):
+                        raise ScientificExecutionMapError(
+                            "scientific final container mount subPath is unsafe"
                         )
                     backing = volumes_by_name.get(final_mount.get("name"), {})
                     empty_dir = backing.get("emptyDir")
@@ -2370,14 +2449,21 @@ class FileScientificManifestRenderer:
             request_uid=effective_uid,
         )
         # Startup adapters are security-relevant Pod renderers. Validate the
-        # effective Pod after the last adapter: legacy CUDA/CRIU bundles add a
-        # root runtime, root init containers, powerful capabilities, and
-        # unconfined profiles, so they fail closed until a separately signed
-        # restricted-compatible startup contract exists.
+        # effective Pod after the last adapter. CUDA/CRIU and read-only
+        # reference hostPath use narrowly projected, externally signed
+        # exceptions; every other Pod stays inside the Restricted envelope.
         effective_spec = _object(effective_pod.get("spec"), "effective scientific Pod spec")
         if effective_spec.get("securityContext") != pod_security:
             raise ScientificExecutionMapError(
                 "scientific startup adapter changed the final Pod security context"
+            )
+        if (
+            any(effective_spec.get(field, False) is not False for field in ("hostIPC", "hostNetwork", "hostPID"))
+            or effective_spec.get("shareProcessNamespace", False) is not False
+            or "hostUsers" in effective_spec
+        ):
+            raise ScientificExecutionMapError(
+                "scientific startup adapter requested a host namespace"
             )
         effective_volumes = {
             volume.get("name"): volume
@@ -2387,6 +2473,74 @@ class FileScientificManifestRenderer:
         if len(effective_volumes) != len(effective_spec.get("volumes", [])):
             raise ScientificExecutionMapError(
                 "scientific startup adapter produced duplicate or invalid volume identities"
+            )
+        restricted_volume_sources = {
+            "configMap",
+            "csi",
+            "downwardAPI",
+            "emptyDir",
+            "ephemeral",
+            "persistentVolumeClaim",
+            "projected",
+            "secret",
+        }
+        for volume in effective_volumes.values():
+            sources = [
+                source
+                for source in (*restricted_volume_sources, "hostPath")
+                if source in volume
+            ]
+            if set(volume) != {"name", *sources} or len(sources) != 1:
+                raise ScientificExecutionMapError(
+                    "scientific startup adapter added an unreviewed volume source"
+                )
+            source = volume[sources[0]]
+            if not isinstance(source, Mapping):
+                raise ScientificExecutionMapError(
+                    "scientific startup adapter added an invalid volume source"
+                )
+            if sources[0] == "emptyDir" and not isinstance(source.get("sizeLimit"), str):
+                raise ScientificExecutionMapError(
+                    "scientific startup adapter added an unbounded emptyDir"
+                )
+            if sources[0] == "hostPath" and (
+                not isinstance(source.get("path"), str)
+                or not source["path"].startswith("/")
+                or source.get("type") not in {"Directory", "File"}
+            ):
+                raise ScientificExecutionMapError(
+                    "scientific startup adapter added an unsafe hostPath source"
+                )
+        host_path_volumes = sorted(
+            (
+                {"name": name, "source": volume["hostPath"]}
+                for name, volume in effective_volumes.items()
+                if isinstance(volume, Mapping) and isinstance(volume.get("hostPath"), Mapping)
+            ),
+            key=lambda item: str(item["name"]),
+        )
+        exception_reasons = []
+        if host_path_volumes:
+            exception_reasons.append("read-only-reference-hostpath")
+        if execution.startup_policy.backend == "cuda-criu":
+            exception_reasons.append("cuda-criu-restore")
+        exception_authorization: tuple[str, str] | None = None
+        if exception_reasons:
+            subject = self._security_exception_subject(
+                resource=resource,
+                execution=execution,
+                effective_spec=effective_spec,
+                reasons=exception_reasons,
+            )
+            exception_authorization = self._security_exception_authorization(subject)
+            effective_pod.setdefault("metadata", {}).setdefault("annotations", {}).update(
+                {
+                    "fs2-serve.nebius.ai/pod-security-exception": ",".join(
+                        sorted(exception_reasons)
+                    ),
+                    "fs2-serve.nebius.ai/pod-security-exception-authorization": exception_authorization[0],
+                    "fs2-serve.nebius.ai/pod-security-exception-subject-sha256": exception_authorization[1],
+                }
             )
         approved_registry = _immutable_image_registry(
             execution.image,
@@ -2416,20 +2570,83 @@ class FileScientificManifestRenderer:
                     )
                 security = final_container.get("securityContext")
                 seccomp = security.get("seccompProfile") if isinstance(security, Mapping) else None
-                if not isinstance(security, Mapping) or (
-                    security.get("allowPrivilegeEscalation") is not False
-                    or security.get("readOnlyRootFilesystem") is not True
-                    or security.get("runAsNonRoot") is not True
-                    or security.get("runAsUser") != effective_uid
-                    or security.get("runAsGroup") != effective_gid
-                    or security.get("capabilities") != {"drop": ["ALL"]}
-                    or security.get("privileged", False) is not False
-                    or seccomp is not None
+                restricted_security = isinstance(security, Mapping) and (
+                    set(security)
+                    <= {
+                        "allowPrivilegeEscalation",
+                        "appArmorProfile",
+                        "capabilities",
+                        "privileged",
+                        "readOnlyRootFilesystem",
+                        "runAsGroup",
+                        "runAsNonRoot",
+                        "runAsUser",
+                        "seccompProfile",
+                    }
+                    and security.get("allowPrivilegeEscalation") is False
+                    and security.get("readOnlyRootFilesystem") is True
+                    and security.get("runAsNonRoot") is True
+                    and security.get("runAsUser") == effective_uid
+                    and security.get("runAsGroup") == effective_gid
+                    and security.get("capabilities") == {"drop": ["ALL"]}
+                    and security.get("privileged", False) is False
                     and (
-                        not isinstance(seccomp, Mapping)
-                        or seccomp.get("type") != "RuntimeDefault"
+                        seccomp is None
+                        or isinstance(seccomp, Mapping)
+                        and seccomp.get("type") == "RuntimeDefault"
                     )
-                ):
+                    and security.get("appArmorProfile", {"type": "RuntimeDefault"})
+                    == {"type": "RuntimeDefault"}
+                    and "procMount" not in security
+                    and "seLinuxOptions" not in security
+                    and "windowsOptions" not in security
+                )
+                snapshot_security = (
+                    execution.startup_policy.backend == "cuda-criu"
+                    and exception_authorization is not None
+                    and isinstance(security, Mapping)
+                    and security.get("privileged", False) is False
+                    and final_container.get("name")
+                    in {STAGE_CONTAINER_NAME, "snapshot-tools"}
+                    and (
+                        final_container.get("name") == STAGE_CONTAINER_NAME
+                        and security
+                        == {
+                            "allowPrivilegeEscalation": True,
+                            "appArmorProfile": {"type": "Unconfined"},
+                            "capabilities": {
+                                "drop": ["ALL"],
+                                "add": [
+                                    "CHECKPOINT_RESTORE",
+                                    "NET_ADMIN",
+                                    "SYS_ADMIN",
+                                    "SYS_PTRACE",
+                                    "SYS_TIME",
+                                ],
+                            },
+                            "privileged": False,
+                            "readOnlyRootFilesystem": False,
+                            "runAsGroup": 0,
+                            "runAsNonRoot": False,
+                            "runAsUser": 0,
+                            "seccompProfile": {"type": "Unconfined"},
+                        }
+                        or final_container.get("name") == "snapshot-tools"
+                        and security
+                        == {
+                            "allowPrivilegeEscalation": False,
+                            "appArmorProfile": {"type": "RuntimeDefault"},
+                            "capabilities": {"drop": ["ALL"]},
+                            "privileged": False,
+                            "readOnlyRootFilesystem": True,
+                            "runAsGroup": 0,
+                            "runAsNonRoot": False,
+                            "runAsUser": 0,
+                            "seccompProfile": {"type": "RuntimeDefault"},
+                        }
+                    )
+                )
+                if not restricted_security and not snapshot_security:
                     raise ScientificExecutionMapError(
                         "scientific startup adapter weakened the final container security envelope"
                     )
@@ -2502,6 +2719,17 @@ class FileScientificManifestRenderer:
                         raise ScientificExecutionMapError(
                             "scientific startup adapter added an unreviewed writable mount"
                         )
+        mounted_volume_names = {
+            mount.get("name")
+            for container_class in ("initContainers", "containers", "ephemeralContainers")
+            for container in effective_spec.get(container_class, [])
+            for mount in container.get("volumeMounts", [])
+            if isinstance(mount, Mapping)
+        }
+        if mounted_volume_names != set(effective_volumes):
+            raise ScientificExecutionMapError(
+                "scientific startup adapter left the final volume inventory unclosed"
+            )
         return effective_pod
 
     def render(self, resource: WorkloadResource) -> Mapping[str, Any]:

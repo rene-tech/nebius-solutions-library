@@ -30,6 +30,7 @@ from fs2_serve.fast_start_mechanisms import (
     ResidencyHolder,
     RetainedCompileCache,
     WarmPageCacheReadAhead,
+    residency_agent_script,
 )
 from fs2_serve.model_deployment import (
     FIELD_MANAGER,
@@ -129,14 +130,44 @@ def runtime_security_compatibility(
     gid: int = 1000,
     tmp_size_limit: str = "8Gi",
     writable_mounts: dict[str, dict[str, str | None]] | None = None,
+    exact_mounts: dict[str, dict[str, object]] | None = None,
     capability_profile: str = "none",
     allowed_capabilities: list[str] | None = None,
+    allow_privilege_escalation: bool = False,
+    privileged: bool = False,
+    read_only_root_filesystem: bool = True,
+    seccomp_profile: str = "RuntimeDefault",
+    apparmor_profile: str = "RuntimeDefault",
 ) -> RuntimeSecurityCompatibility:
     reviewed_mounts = writable_mounts or {
         "/tmp": {"kind": "emptyDir", "reference": tmp_size_limit, "sub_path": None}
     }
+    reviewed_exact_mounts = exact_mounts or {
+        path: {
+            "kind": mount["kind"],
+            "source_sha256": hashlib.sha256(
+                json.dumps(
+                    (
+                        {"emptyDir": {"sizeLimit": mount["reference"]}}
+                        if mount["kind"] == "emptyDir"
+                        else {
+                            "persistentVolumeClaim": {
+                                "claimName": mount["reference"],
+                                "readOnly": False,
+                            }
+                        }
+                    ),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+            "sub_path": mount["sub_path"],
+            "read_only": False,
+        }
+        for path, mount in reviewed_mounts.items()
+    }
     payload = {
-        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v2",
+        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v4",
         "model_id": model_id,
         "container_class": container_class,
         "container_name": container_name,
@@ -145,9 +176,16 @@ def runtime_security_compatibility(
         "run_as_group": gid,
         "tmp_size_limit": tmp_size_limit,
         "writable_paths": WRITABLE_RUNTIME_PATHS,
-        "writable_mounts": reviewed_mounts,
+        "mounts": reviewed_exact_mounts,
+        "pod_supplemental_groups": [],
+        "pod_fs_group": None,
         "capability_profile": capability_profile,
         "allowed_capabilities": allowed_capabilities or [],
+        "allow_privilege_escalation": allow_privilege_escalation,
+        "privileged": privileged,
+        "read_only_root_filesystem": read_only_root_filesystem,
+        "seccomp_profile": seccomp_profile,
+        "apparmor_profile": apparmor_profile,
         "review_sha256": "f" * 64,
     }
     binding = hashlib.sha256(
@@ -176,7 +214,7 @@ def test_runtime_security_compatibility_reverifies_external_authority() -> None:
         "authorization_id": compatibility.authorization_id,
         "kind": "runtime-compatibility",
         "model_id": compatibility.model_id,
-        "subject_schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v2",
+        "subject_schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v4",
         "subject_sha256": compatibility.compatibility_sha256,
         "decision": "accepted",
         "reviewer_role": "independent-platform-security",
@@ -192,7 +230,7 @@ def test_runtime_security_compatibility_reverifies_external_authority() -> None:
         issued_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         expires_at=(now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
         kind="runtime-compatibility",
-        subject_schema="fs2-serve.nebius.ai/runtime-security-compatibility/v2",
+        subject_schema="fs2-serve.nebius.ai/runtime-security-compatibility/v4",
         subject_digest="sha256:" + compatibility.compatibility_sha256,
         model_id=compatibility.model_id,
         claims={
@@ -412,7 +450,82 @@ def renderer(*, runtime_memory_request: str | None = None) -> LegacyManifestRend
                 },
                 capability_profile="modelexpress-nixl-rdma",
                 allowed_capabilities=["IPC_LOCK"],
-            )
+            ),
+            runtime_security_compatibility(
+                model_id="qwen.3-8b",
+                container_class="containers",
+                container_name="residency-agent",
+                image=final_image,
+                exact_mounts={
+                    "/agent": {
+                        "kind": "configMap",
+                        "source_sha256": hashlib.sha256(
+                            json.dumps(
+                                {
+                                    "configMap": {
+                                        "name": "fs2-residency-agent-source-sha256-"
+                                        + hashlib.sha256(
+                                            residency_agent_script().encode("utf-8")
+                                        ).hexdigest(),
+                                        "defaultMode": 292,
+                                    }
+                                },
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ).encode()
+                        ).hexdigest(),
+                        "sub_path": None,
+                        "read_only": True,
+                    },
+                    "/models": {
+                        "kind": "persistentVolumeClaim",
+                        "source_sha256": hashlib.sha256(
+                            json.dumps(
+                                {
+                                    "persistentVolumeClaim": {
+                                        "claimName": "qwen-cache-rwx",
+                                        "readOnly": True,
+                                    }
+                                },
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ).encode()
+                        ).hexdigest(),
+                        "sub_path": None,
+                        "read_only": True,
+                    },
+                    "/residency": {
+                        "kind": "persistentVolumeClaim",
+                        "source_sha256": hashlib.sha256(
+                            json.dumps(
+                                {
+                                    "persistentVolumeClaim": {
+                                        "claimName": "fsm-residency-receipt-rwx"
+                                    }
+                                },
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ).encode()
+                        ).hexdigest(),
+                        "sub_path": None,
+                        "read_only": False,
+                    },
+                    "/tmp": {
+                        "kind": "emptyDir",
+                        "source_sha256": hashlib.sha256(
+                            json.dumps(
+                                {"emptyDir": {"sizeLimit": "8Gi"}},
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ).encode()
+                        ).hexdigest(),
+                        "sub_path": None,
+                        "read_only": False,
+                    },
+                },
+                capability_profile="host-memory-locked-residency",
+                allowed_capabilities=["IPC_LOCK"],
+            ),
         ],
         resources=[
             {
@@ -903,10 +1016,13 @@ def test_renderer_uses_selected_pool_resource_and_safe_derived_metadata() -> Non
     assert pod["securityContext"]["supplementalGroupsPolicy"] == "Strict"
     assert container["securityContext"] == {
         "allowPrivilegeEscalation": False,
+        "appArmorProfile": {"type": "RuntimeDefault"},
+        "privileged": False,
         "runAsNonRoot": True,
         "runAsUser": 1000,
         "runAsGroup": 1000,
         "readOnlyRootFilesystem": True,
+        "seccompProfile": {"type": "RuntimeDefault"},
         "capabilities": {"drop": ["ALL"], "add": []},
     }
     assert next(item for item in container["volumeMounts"] if item["mountPath"] == "/tmp")["readOnly"] is False
@@ -1029,6 +1145,24 @@ def test_final_render_rejects_unreviewed_container_identity_image_and_writable_p
     rejected_traversal = LegacyManifestRenderer({(source.model_ref, source.template_digest): source})
     with pytest.raises(ValueError, match="HOME differs from its reviewed writable path"):
         rejected_traversal.render(model_spec(), render_context())
+
+    runtime["env"] = []
+    runtime["volumeMounts"] = [
+        {
+            "name": "read-only-config",
+            "mountPath": "/etc/runtime",
+            "readOnly": True,
+            "subPathExpr": "$(POD_NAME)",
+        }
+    ]
+    pod.setdefault("volumes", []).append(
+        {"name": "read-only-config", "configMap": {"name": "runtime-config"}}
+    )
+    rejected_read_only_expression = LegacyManifestRenderer(
+        {(source.model_ref, source.template_digest): source}
+    )
+    with pytest.raises(ValueError, match="forbidden subPathExpr"):
+        rejected_read_only_expression.render(model_spec(), render_context())
 
     disabled = spec.model_copy(
         update={
@@ -2294,6 +2428,20 @@ def test_the_renderer_owns_the_host_memory_holder_it_depends_on() -> None:
     holder = next(item for item in holders if item.kind == "DaemonSet").manifest
     container = holder["spec"]["template"]["spec"]["containers"][0]
     assert container["resources"]["requests"]["memory"] == str(declaration.reserved_bytes)
+    assert container["securityContext"] == {
+        "allowPrivilegeEscalation": False,
+        "appArmorProfile": {"type": "RuntimeDefault"},
+        "privileged": False,
+        "runAsNonRoot": True,
+        "runAsUser": 1000,
+        "runAsGroup": 1000,
+        "readOnlyRootFilesystem": True,
+        "seccompProfile": {"type": "RuntimeDefault"},
+        "capabilities": {"drop": ["ALL"], "add": ["IPC_LOCK"]},
+    }
+    assert holder["spec"]["template"]["metadata"]["annotations"][
+        "fs2-serve.nebius.ai/pod-security-exception"
+    ] == "host-memory-locked-residency"
     # The holder is owned by the ModelDeployment, so deleting the model
     # reclaims the host RAM instead of stranding it.
     assert holder["metadata"]["ownerReferences"][0]["kind"] == "ModelDeployment"

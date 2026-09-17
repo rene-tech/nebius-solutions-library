@@ -607,9 +607,16 @@ locals {
         runAsGroup          = compatibility.run_as_group
         tmpSizeLimit        = compatibility.tmp_size_limit
         writablePaths       = compatibility.writable_paths
-        writableMounts      = compatibility.writable_mounts
+        mounts              = compatibility.mounts
+        podSupplementalGroups = compatibility.pod_supplemental_groups
+        podFsGroup          = try(compatibility.pod_fs_group, null)
         capabilityProfile   = compatibility.capability_profile
         allowedCapabilities = compatibility.allowed_capabilities
+        allowPrivilegeEscalation = compatibility.allow_privilege_escalation
+        privileged                  = compatibility.privileged
+        readOnlyRootFilesystem      = compatibility.read_only_root_filesystem
+        seccompProfile              = compatibility.seccomp_profile
+        apparmorProfile             = compatibility.apparmor_profile
         reviewSha256        = compatibility.review_sha256
         authorizationId     = compatibility.authorization_id
         authorizationSha256 = local.verified_runtime_security_authorizations[compatibility.authorization_id].attestation_sha256
@@ -736,6 +743,38 @@ locals {
           )),
       )) > 0
     ])
+  }
+  model_controller_snapshot_security_missing = {
+    for bundle_id, bundle in local.serving_snapshot_bundles : bundle_id => [
+        for requirement in [
+          {
+            container_class   = "containers"
+            container_name    = try(local.model_controller_runtime_container_names[bundle.model_ref], "")
+            image             = bundle.runtime_image
+            capability_profile = "serving-snapshot-runtime"
+          },
+          {
+            container_class   = "initContainers"
+            container_name    = "snapshot-tools"
+            image             = bundle.tools_image
+            capability_profile = "serving-snapshot-tools"
+          },
+          {
+            container_class   = "initContainers"
+            container_name    = "snapshot-local-address"
+            image             = bundle.runtime_image
+            capability_profile = "serving-snapshot-address"
+          },
+        ] : "${requirement.container_class}:${requirement.container_name}:${requirement.capability_profile}"
+        if length([
+          for compatibility in values(var.model_runtime_security_compatibilities) : compatibility
+          if compatibility.model_id == bundle.model_ref &&
+          compatibility.container_class == requirement.container_class &&
+          compatibility.container_name == requirement.container_name &&
+          compatibility.image == requirement.image &&
+          compatibility.capability_profile == requirement.capability_profile
+        ]) != 1
+      ]
   }
   model_controller_qualification_checks = {
     for model_id in local.selected_model_ids : model_id => {
@@ -1177,7 +1216,7 @@ locals {
       snapshotDigests = []
       gpuSnapshotBundles = {
         for id, bundle in local.serving_snapshot_bundles : id => bundle
-        if bundle.model_ref == model_id
+        if bundle.model_ref == model_id && length(local.model_controller_snapshot_security_missing[id]) == 0
       }
       fastStartRuntimeContracts = contains(local.managed_cpu_model_ids, model_id) ? [] : local.model_controller_fast_start_runtime_contracts[model_id]
       # Fast-start levels (L1..L4) are qualified only by retained benchmark

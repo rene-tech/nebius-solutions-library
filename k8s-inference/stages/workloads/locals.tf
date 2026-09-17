@@ -525,6 +525,44 @@ locals {
     ]) => compatibility
     if compatibility.capability_profile == "none"
   }
+  model_runtime_security_pod_profiles_by_model = {
+    for model_id in local.selected_model_ids : model_id => jsondecode(one(distinct([
+      for compatibility in values(var.model_runtime_security_compatibilities) : jsonencode({
+        supplementalGroups = compatibility.pod_supplemental_groups
+        fsGroup            = try(compatibility.pod_fs_group, null)
+      })
+      if compatibility.model_id == model_id && compatibility.capability_profile == "none"
+    ])))
+    if length([
+      for compatibility in values(var.model_runtime_security_compatibilities) : compatibility
+      if compatibility.model_id == model_id && compatibility.capability_profile == "none"
+    ]) > 0
+  }
+  model_tmp_only_volume_names = {
+    for document in local.image_overridden_model_documents : document.key => toset([
+      for name in distinct(flatten([
+        for container in concat(
+          try(document.manifest.spec.template.spec.initContainers, []),
+          try(document.manifest.spec.template.spec.containers, []),
+          try(document.manifest.spec.template.spec.ephemeralContainers, []),
+        ) : [
+          for mount in try(container.volumeMounts, []) : try(mount.name, "")
+          if try(mount.mountPath, "") == "/tmp"
+        ]
+      ])) : name
+      if name != "" && length(flatten([
+        for container in concat(
+          try(document.manifest.spec.template.spec.initContainers, []),
+          try(document.manifest.spec.template.spec.containers, []),
+          try(document.manifest.spec.template.spec.ephemeralContainers, []),
+        ) : [
+          for mount in try(container.volumeMounts, []) : mount
+          if try(mount.name, "") == name && try(mount.mountPath, "") != "/tmp"
+        ]
+      ])) == 0
+    ])
+    if document.manifest.kind == "Deployment"
+  }
   image_overridden_model_documents = [
     for document in local.raw_model_documents : merge(document, {
       manifest = jsondecode(
@@ -607,12 +645,21 @@ locals {
               spec = merge(
                 document.manifest.spec.template.spec,
                 {
+                  hostNetwork           = false
+                  hostPID               = false
+                  hostIPC               = false
+                  shareProcessNamespace = false
                   securityContext = merge(
-                    try(document.manifest.spec.template.spec.securityContext, {}),
                     {
                       runAsNonRoot             = true
                       seccompProfile           = { type = "RuntimeDefault" }
                       supplementalGroupsPolicy = "Strict"
+                    },
+                    try(length(local.model_runtime_security_pod_profiles_by_model[document.model_id].supplementalGroups) > 0, false) ? {
+                      supplementalGroups = local.model_runtime_security_pod_profiles_by_model[document.model_id].supplementalGroups
+                    } : {},
+                    try(local.model_runtime_security_pod_profiles_by_model[document.model_id].fsGroup, null) == null ? {} : {
+                      fsGroup = local.model_runtime_security_pod_profiles_by_model[document.model_id].fsGroup
                     },
                   )
                   containers = [
@@ -625,8 +672,9 @@ locals {
                         ) && try(container.securityContext.capabilities.add, []) == [] && alltrue([
                           for mount in try(container.volumeMounts, []) : !can(mount.subPathExpr)
                         ]) ? jsonencode({
-                          securityContext = merge(try(container.securityContext, {}), {
+                          securityContext = {
                             allowPrivilegeEscalation = false
+                            appArmorProfile          = { type = "RuntimeDefault" }
                             capabilities             = { add = [], drop = ["ALL"] }
                             privileged               = false
                             readOnlyRootFilesystem   = true
@@ -634,7 +682,7 @@ locals {
                             runAsGroup               = local.model_runtime_security_none_compatibilities_by_key[join("|", [document.model_id, "containers", container.name, container.image])].run_as_group
                             runAsNonRoot             = true
                             runAsUser                = local.model_runtime_security_none_compatibilities_by_key[join("|", [document.model_id, "containers", container.name, container.image])].run_as_user
-                          })
+                          }
                           env = concat(
                             [
                               for environment in try(container.env, []) : environment
@@ -662,7 +710,10 @@ locals {
                     )
                   ]
                   volumes = concat(
-                    try(document.manifest.spec.template.spec.volumes, []),
+                    [
+                      for volume in try(document.manifest.spec.template.spec.volumes, []) : volume
+                      if !contains(try(local.model_tmp_only_volume_names[document.key], toset([])), try(volume.name, ""))
+                    ],
                     [
                       for index, container in try(document.manifest.spec.template.spec.containers, []) : {
                         name = "fs2-runtime-tmp-${substr(sha256("${document.key}|containers|${index}"), 0, 16)}"
@@ -700,8 +751,9 @@ locals {
                         ) && try(container.securityContext.capabilities.add, []) == [] && alltrue([
                           for mount in try(container.volumeMounts, []) : !can(mount.subPathExpr)
                         ]) ? jsonencode({
-                          securityContext = merge(try(container.securityContext, {}), {
+                          securityContext = {
                             allowPrivilegeEscalation = false
+                            appArmorProfile          = { type = "RuntimeDefault" }
                             capabilities             = { add = [], drop = ["ALL"] }
                             privileged               = false
                             readOnlyRootFilesystem   = true
@@ -709,7 +761,7 @@ locals {
                             runAsGroup               = local.model_runtime_security_none_compatibilities_by_key[join("|", [document.model_id, "initContainers", container.name, container.image])].run_as_group
                             runAsNonRoot             = true
                             runAsUser                = local.model_runtime_security_none_compatibilities_by_key[join("|", [document.model_id, "initContainers", container.name, container.image])].run_as_user
-                          })
+                          }
                           env = concat(
                             [
                               for environment in try(container.env, []) : environment
@@ -748,8 +800,9 @@ locals {
                         ) && try(container.securityContext.capabilities.add, []) == [] && alltrue([
                           for mount in try(container.volumeMounts, []) : !can(mount.subPathExpr)
                         ]) ? jsonencode({
-                          securityContext = merge(try(container.securityContext, {}), {
+                          securityContext = {
                             allowPrivilegeEscalation = false
+                            appArmorProfile          = { type = "RuntimeDefault" }
                             capabilities             = { add = [], drop = ["ALL"] }
                             privileged               = false
                             readOnlyRootFilesystem   = true
@@ -757,7 +810,7 @@ locals {
                             runAsGroup               = local.model_runtime_security_none_compatibilities_by_key[join("|", [document.model_id, "ephemeralContainers", container.name, container.image])].run_as_group
                             runAsNonRoot             = true
                             runAsUser                = local.model_runtime_security_none_compatibilities_by_key[join("|", [document.model_id, "ephemeralContainers", container.name, container.image])].run_as_user
-                          })
+                          }
                           env = concat(
                             [
                               for environment in try(container.env, []) : environment
@@ -970,9 +1023,35 @@ locals {
     for document_key, document in local.model_manifests : document_key => (
       document.manifest.kind != "Deployment" || (
         length(local.model_final_container_records[document_key]) > 0 &&
-        try(document.manifest.spec.template.spec.securityContext.runAsNonRoot, false) == true &&
-        try(document.manifest.spec.template.spec.securityContext.seccompProfile.type, "") == "RuntimeDefault" &&
-        try(document.manifest.spec.template.spec.securityContext.supplementalGroupsPolicy, "") == "Strict" &&
+        try(document.manifest.spec.template.spec.hostNetwork, true) == false &&
+        try(document.manifest.spec.template.spec.hostPID, true) == false &&
+        try(document.manifest.spec.template.spec.hostIPC, true) == false &&
+        try(document.manifest.spec.template.spec.shareProcessNamespace, true) == false &&
+        !can(document.manifest.spec.template.spec.hostUsers) &&
+        try(jsonencode(document.manifest.spec.template.spec.securityContext) == jsonencode(merge(
+          {
+            runAsNonRoot             = true
+            seccompProfile           = { type = "RuntimeDefault" }
+            supplementalGroupsPolicy = "Strict"
+          },
+          try(length(local.model_runtime_security_pod_profiles_by_model[document.model_id].supplementalGroups) > 0, false) ? {
+            supplementalGroups = local.model_runtime_security_pod_profiles_by_model[document.model_id].supplementalGroups
+          } : {},
+          try(local.model_runtime_security_pod_profiles_by_model[document.model_id].fsGroup, null) == null ? {} : {
+            fsGroup = local.model_runtime_security_pod_profiles_by_model[document.model_id].fsGroup
+          },
+        )), false) &&
+        alltrue([
+          for volume in try(document.manifest.spec.template.spec.volumes, []) :
+          length(setintersection(toset(keys(volume)), toset(["configMap", "csi", "downwardAPI", "emptyDir", "ephemeral", "persistentVolumeClaim", "projected", "secret"]))) == 1 &&
+          length(setsubtract(toset(keys(volume)), toset(["name", "configMap", "csi", "downwardAPI", "emptyDir", "ephemeral", "persistentVolumeClaim", "projected", "secret"]))) == 0 &&
+          (!can(volume.emptyDir) || can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", volume.emptyDir.sizeLimit)))
+        ]) &&
+        toset([for volume in try(document.manifest.spec.template.spec.volumes, []) : volume.name]) == toset(flatten([
+          for record in local.model_final_container_records[document_key] : [
+            for mount in try(record.container.volumeMounts, []) : mount.name
+          ]
+        ])) &&
         alltrue([
           for record in local.model_final_container_records[document_key] :
           contains(keys(local.model_runtime_security_none_compatibilities_by_key), record.compatibility_key) &&
@@ -984,15 +1063,17 @@ locals {
           try(length([
             for mount in record.container.volumeMounts : mount if can(mount.subPathExpr)
           ]), 0) == 0 &&
-          try(record.container.securityContext.allowPrivilegeEscalation, true) == false &&
-          try(record.container.securityContext.privileged, true) == false &&
-          try(record.container.securityContext.readOnlyRootFilesystem, false) == true &&
-          try(record.container.securityContext.seccompProfile.type, "") == "RuntimeDefault" &&
-          try(record.container.securityContext.runAsNonRoot, false) == true &&
-          try(record.container.securityContext.runAsUser, 0) == try(local.model_runtime_security_none_compatibilities_by_key[record.compatibility_key].run_as_user, -1) &&
-          try(record.container.securityContext.runAsGroup, 0) == try(local.model_runtime_security_none_compatibilities_by_key[record.compatibility_key].run_as_group, -1) &&
-          try(toset(record.container.securityContext.capabilities.drop), toset([])) == toset(["ALL"]) &&
-          try(length(record.container.securityContext.capabilities.add), -1) == 0 &&
+          try(jsonencode(record.container.securityContext) == jsonencode({
+            allowPrivilegeEscalation = false
+            appArmorProfile          = { type = "RuntimeDefault" }
+            capabilities             = { add = [], drop = ["ALL"] }
+            privileged               = false
+            readOnlyRootFilesystem   = true
+            runAsGroup               = local.model_runtime_security_none_compatibilities_by_key[record.compatibility_key].run_as_group
+            runAsNonRoot             = true
+            runAsUser                = local.model_runtime_security_none_compatibilities_by_key[record.compatibility_key].run_as_user
+            seccompProfile           = { type = "RuntimeDefault" }
+          }), false) &&
           try(length([
             for mount in record.container.volumeMounts : mount
             if try(mount.name, "") == record.tmp_volume_name &&
@@ -1005,27 +1086,26 @@ locals {
           ]), null) == try(local.model_runtime_security_none_compatibilities_by_key[record.compatibility_key].tmp_size_limit, null) &&
           try(jsonencode({
             for mount in record.container.volumeMounts : mount.mountPath => {
-              kind = can(one([
-                for volume in record.volumes : volume.emptyDir
-                if try(volume.name, "") == try(mount.name, "")
-              ])) ? "emptyDir" : can(one([
-                for volume in record.volumes : volume.persistentVolumeClaim
-                if try(volume.name, "") == try(mount.name, "")
-              ])) ? "persistentVolumeClaim" : "unsupported"
-              reference = can(one([
-                for volume in record.volumes : volume.emptyDir.sizeLimit
-                if try(volume.name, "") == try(mount.name, "")
-              ])) ? one([
-                for volume in record.volumes : volume.emptyDir.sizeLimit
-                if try(volume.name, "") == try(mount.name, "")
-              ]) : try(one([
-                for volume in record.volumes : volume.persistentVolumeClaim.claimName
-                if try(volume.name, "") == try(mount.name, "") && try(volume.persistentVolumeClaim.readOnly, false) == false
-              ]), "")
+              kind = one(setintersection(
+                toset(keys(one([
+                  for volume in record.volumes : volume
+                  if try(volume.name, "") == try(mount.name, "")
+                ]))),
+                toset(["configMap", "csi", "downwardAPI", "emptyDir", "ephemeral", "persistentVolumeClaim", "projected", "secret"]),
+              ))
+              source_sha256 = sha256(jsonencode({
+                for key, value in one([
+                  for volume in record.volumes : volume
+                  if try(volume.name, "") == try(mount.name, "")
+                ]) : key => value if key != "name"
+              }))
               sub_path = try(mount.subPath, null)
+              read_only = try(mount.readOnly, false) || try(one([
+                for volume in record.volumes : volume.persistentVolumeClaim.readOnly
+                if try(volume.name, "") == try(mount.name, "")
+              ]), false)
             }
-            if try(mount.readOnly, false) == false && !can(mount.subPathExpr)
-          })) == jsonencode(try(local.model_runtime_security_none_compatibilities_by_key[record.compatibility_key].writable_mounts, {})), false) &&
+          })) == jsonencode(try(local.model_runtime_security_none_compatibilities_by_key[record.compatibility_key].mounts, {})), false) &&
           try(alltrue([
             for name, value in local.model_runtime_security_none_compatibilities_by_key[record.compatibility_key].writable_paths :
             length([

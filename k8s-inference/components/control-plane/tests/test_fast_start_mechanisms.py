@@ -152,7 +152,7 @@ def test_terraform_accepted_mechanism_envelope_loads_through_the_controller(tmp_
         "XDG_CACHE_HOME": "/tmp/fs2-cache/xdg",
     }
     compatibility = {
-        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v2",
+        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v4",
         "model_id": "qwen3-8b",
         "container_class": "containers",
         "container_name": "vllm",
@@ -161,11 +161,29 @@ def test_terraform_accepted_mechanism_envelope_loads_through_the_controller(tmp_
         "run_as_group": 1000,
         "tmp_size_limit": "8Gi",
         "writable_paths": writable_paths,
-        "writable_mounts": {
-            "/tmp": {"kind": "emptyDir", "reference": "8Gi", "sub_path": None}
+        "mounts": {
+            "/tmp": {
+                "kind": "emptyDir",
+                "source_sha256": hashlib.sha256(
+                    json.dumps(
+                        {"emptyDir": {"sizeLimit": "8Gi"}},
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest(),
+                "sub_path": None,
+                "read_only": False,
+            }
         },
+        "pod_supplemental_groups": [],
+        "pod_fs_group": None,
         "capability_profile": "none",
         "allowed_capabilities": [],
+        "allow_privilege_escalation": False,
+        "privileged": False,
+        "read_only_root_filesystem": True,
+        "seccomp_profile": "RuntimeDefault",
+        "apparmor_profile": "RuntimeDefault",
         "review_sha256": "55" * 32,
     }
     compatibility_sha256 = hashlib.sha256(

@@ -23,6 +23,26 @@ locals {
     for model_id in local.modelexpress_model_ids : model_id
     if try(local.catalog_models[model_id].runtime.kind, null) != "vllm"
   ])
+  modelexpress_missing_runtime_security_tuples = sort(flatten([
+    for model_id, config in var.model_express.models : [
+      for pool_id in try(local.model_controller_qualified_pool_ids[model_id], []) : "${model_id}:${pool_id}"
+      if length([
+        for compatibility in values(var.model_runtime_security_compatibilities) : compatibility
+        if compatibility.model_id == model_id &&
+        compatibility.container_class == "containers" &&
+        compatibility.container_name == try(local.model_controller_runtime_container_names[model_id], "") &&
+        compatibility.image == try(var.model_image_overrides[model_id], "") &&
+        compatibility.capability_profile == (
+          lookup(config.pool_transports, pool_id, config.transport).mode == "nixl-rdma" ?
+          "modelexpress-nixl-rdma" : "none"
+        ) &&
+        compatibility.allowed_capabilities == (
+          lookup(config.pool_transports, pool_id, config.transport).mode == "nixl-rdma" ?
+          ["IPC_LOCK"] : []
+        )
+      ]) != 1
+    ]
+  ]))
   modelexpress_pull_secret_name = "fs2-modelexpress-nvcrio"
   modelexpress_resource_counts = {
     contract   = var.model_express.enabled ? 1 : 0
@@ -135,6 +155,11 @@ resource "terraform_data" "modelexpress_contract" {
     precondition {
       condition     = length(local.modelexpress_unsupported_runtime_model_ids) == 0
       error_message = "ModelExpress v0.5.1 is enabled only for explicitly mapped vLLM catalog runtimes; unsupported models: ${join(", ", local.modelexpress_unsupported_runtime_model_ids)}."
+    }
+
+    precondition {
+      condition     = length(local.modelexpress_missing_runtime_security_tuples) == 0
+      error_message = "Every ModelExpress model/pool transport needs exactly one signed final runtime capability tuple; missing or duplicate tuples: ${join(", ", local.modelexpress_missing_runtime_security_tuples)}."
     }
   }
 }

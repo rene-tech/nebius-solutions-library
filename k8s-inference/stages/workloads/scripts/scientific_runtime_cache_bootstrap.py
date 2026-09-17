@@ -33,6 +33,8 @@ DIRECTORY_NAME = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
 AUTHORIZATION_ID = re.compile(r"^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$")
 MIGRATION_PHASE = "journaled-dual-access-legacy-group"
 WRITER_LOCK_NAME = ".fs2-cache-writer-admission.lock"
+WRITER_LOCK_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-writer-lock/v1"
+QUIESCENCE_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v2"
 
 
 class CacheOwnershipError(ValueError):
@@ -84,6 +86,29 @@ def _require_active_quiescence(quiescence: Mapping[str, Any]) -> None:
         or expires_at <= now
     ):
         raise CacheOwnershipError("runtime cache writer quiescence is not freshly active")
+
+
+def _writer_lock_bytes(quiescence: Mapping[str, Any]) -> bytes:
+    """Return the only bytes an independently observed writer lock may contain."""
+
+    return _canonical(
+        {
+            "schema": WRITER_LOCK_SCHEMA,
+            "lease_name": WRITER_LOCK_NAME,
+            "lease_uid": quiescence["lease_uid"],
+            "activation_id": quiescence["activation_id"],
+        }
+    ) + b"\n"
+
+
+def _read_exact_descriptor(descriptor: int, *, maximum: int) -> bytes:
+    """Read one bounded regular file through the descriptor that is flocked."""
+
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    value = os.read(descriptor, maximum + 1)
+    if len(value) > maximum or os.read(descriptor, 1):
+        raise CacheOwnershipError("runtime cache migration lease content is unbounded")
+    return value
 
 
 def _open_relative(target_fd: int, relative_path: str, *, directory: bool) -> int:
@@ -535,10 +560,18 @@ def prepare(contract: object, *, expected_root: Path = CACHE_ROOT) -> tuple[str,
         set(quiescence) != {
             "lease_name",
             "lease_uid",
+            "lock_device",
+            "lock_inode",
+            "lock_content_sha256",
             "zero_writers",
             "writer_admission_fenced",
             "active_writer_count",
             "activation_id",
+            "admission_policy_name",
+            "admission_policy_uid",
+            "admission_policy_resource_version",
+            "admission_policy_sha256",
+            "admission_binding_name",
             "observed_at",
             "expires_at",
             "evidence_sha256",
@@ -546,15 +579,32 @@ def prepare(contract: object, *, expected_root: Path = CACHE_ROOT) -> tuple[str,
             "quiescence_sha256",
         }
         or not isinstance(quiescence["lease_name"], str)
-        or DIRECTORY_NAME.fullmatch(quiescence["lease_name"]) is None
+        or quiescence["lease_name"] != WRITER_LOCK_NAME
         or not isinstance(quiescence["lease_uid"], str)
         or re.fullmatch(r"[a-f0-9]{64}", quiescence["lease_uid"]) is None
+        or not isinstance(quiescence["lock_device"], int)
+        or isinstance(quiescence["lock_device"], bool)
+        or quiescence["lock_device"] < 0
+        or not isinstance(quiescence["lock_inode"], int)
+        or isinstance(quiescence["lock_inode"], bool)
+        or quiescence["lock_inode"] < 1
+        or not isinstance(quiescence["lock_content_sha256"], str)
+        or re.fullmatch(r"[a-f0-9]{64}", quiescence["lock_content_sha256"]) is None
         or quiescence["zero_writers"] is not True
         or quiescence["writer_admission_fenced"] is not True
         or quiescence["active_writer_count"] != 0
         or isinstance(quiescence["active_writer_count"], bool)
         or not isinstance(quiescence["activation_id"], str)
         or re.fullmatch(r"[a-f0-9]{64}", quiescence["activation_id"]) is None
+        or quiescence["admission_policy_name"] != "fs2-scientific-runtime-cache-writer-fence"
+        or not isinstance(quiescence["admission_policy_uid"], str)
+        or re.fullmatch(r"[a-f0-9-]{36}", quiescence["admission_policy_uid"]) is None
+        or not isinstance(quiescence["admission_policy_resource_version"], str)
+        or re.fullmatch(r"[1-9][0-9]*", quiescence["admission_policy_resource_version"]) is None
+        or not isinstance(quiescence["admission_policy_sha256"], str)
+        or re.fullmatch(r"[a-f0-9]{64}", quiescence["admission_policy_sha256"]) is None
+        or quiescence["admission_binding_name"]
+        != "fs2-scientific-runtime-cache-writer-fence"
         or not isinstance(quiescence["evidence_sha256"], str)
         or re.fullmatch(r"[a-f0-9]{64}", quiescence["evidence_sha256"]) is None
         or not isinstance(quiescence["authorization_id"], str)
@@ -565,13 +615,23 @@ def prepare(contract: object, *, expected_root: Path = CACHE_ROOT) -> tuple[str,
         != hashlib.sha256(
             _canonical(
                 {
-                    "schema": "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v1",
+                    "schema": QUIESCENCE_SCHEMA,
                     "lease_name": quiescence["lease_name"],
                     "lease_uid": quiescence["lease_uid"],
+                    "lock_device": quiescence["lock_device"],
+                    "lock_inode": quiescence["lock_inode"],
+                    "lock_content_sha256": quiescence["lock_content_sha256"],
                     "zero_writers": quiescence["zero_writers"],
                     "writer_admission_fenced": quiescence["writer_admission_fenced"],
                     "active_writer_count": quiescence["active_writer_count"],
                     "activation_id": quiescence["activation_id"],
+                    "admission_policy_name": quiescence["admission_policy_name"],
+                    "admission_policy_uid": quiescence["admission_policy_uid"],
+                    "admission_policy_resource_version": quiescence[
+                        "admission_policy_resource_version"
+                    ],
+                    "admission_policy_sha256": quiescence["admission_policy_sha256"],
+                    "admission_binding_name": quiescence["admission_binding_name"],
                     "observed_at": quiescence["observed_at"],
                     "expires_at": quiescence["expires_at"],
                     "evidence_sha256": quiescence["evidence_sha256"],
@@ -639,16 +699,22 @@ def prepare(contract: object, *, expected_root: Path = CACHE_ROOT) -> tuple[str,
     root_fd = os.open(root, os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW)
     lease_fd = os.open(
         WRITER_LOCK_NAME,
-        os.O_RDONLY | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW,
-        0o444,
+        os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
         dir_fd=root_fd,
     )
     lease_status = os.fstat(lease_fd)
+    expected_lock = _writer_lock_bytes(quiescence)
     if (
         not stat.S_ISREG(lease_status.st_mode)
         or lease_status.st_nlink != 1
         or lease_status.st_uid != os.geteuid()
+        or lease_status.st_gid != os.getegid()
         or stat.S_IMODE(lease_status.st_mode) != 0o444
+        or lease_status.st_dev != quiescence["lock_device"]
+        or lease_status.st_ino != quiescence["lock_inode"]
+        or hashlib.sha256(expected_lock).hexdigest()
+        != quiescence["lock_content_sha256"]
+        or _read_exact_descriptor(lease_fd, maximum=4096) != expected_lock
     ):
         os.close(lease_fd)
         os.close(root_fd)

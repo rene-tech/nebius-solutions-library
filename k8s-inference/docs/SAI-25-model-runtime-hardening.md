@@ -15,7 +15,12 @@ The follow-up candidate, commit
 evidence. Independent review found an RDMA regression, same-document
 authorization, non-atomic cache journaling/migration, incomplete tenant and
 block-device boundaries, and unsigned NIM Operator descendants. This document
-describes its additive successor; it does not convert either rejected commit
+also preserves rejected successor `e706968afdb9387081231151978168b52404e717`
+(tree `cb93f68b36ef43011c8b9322711eaf84158390ed`). Its final review found
+incomplete NIM descendant binding, a post-gate residency holder, an asserted
+rather than enforced cache fence, an incomplete Restricted validator, disabled
+CUDA/CRIU paths, and an inexact ModelExpress qualification. This document
+describes the next additive successor; it does not convert any rejected commit
 into integration or deployment approval.
 
 ## Security contract
@@ -23,30 +28,36 @@ into integration or deployment approval.
 The final controller-rendered model Pod now applies a restricted security
 envelope after cache and fast-start adapters have finished mutating the Pod:
 
-- Pod execution is non-root and uses `RuntimeDefault` seccomp.
+- Ordinary Pod execution is non-root and uses `RuntimeDefault` seccomp and
+  AppArmor, strict supplemental-group merging, disabled host namespaces, no
+  sysctls, and only Restricted volume source types.
 - Every application, init, sidecar, and declared ephemeral container disables
   privilege escalation, drops all Linux capabilities, uses a read-only image
   filesystem, and resolves an explicit reviewed non-zero `runAsUser`.
-- The sole capability exception is `IPC_LOCK`, and only when the selected
-  ModelExpress transport is exactly `nixl-rdma`, the exact runtime container
-  has a separately reviewed `modelexpress-nixl-rdma` compatibility record, and
-  its final capability set is exactly `drop: [ALL]`, `add: [IPC_LOCK]`.
+- `IPC_LOCK` is admitted only for the exact ModelExpress `nixl-rdma` runtime or
+  exact locked host-memory holder named by a signed compatibility record. All
+  other ModelExpress transport/model/pool tuples remain cap-free; Terraform
+  enumerates every enabled model and qualified pool rather than accepting a
+  container-count proxy.
 - Every final container image is digest-pinned and is checked against the same
   Terraform-qualified private registry as the selected runtime. This validation
   occurs after snapshot, cache, and transport adapters have finished rendering.
 - Every final container receives a bounded `emptyDir` at `/tmp`. `HOME`, XDG,
   framework, compiler, and JIT cache variables are either injected below that
   mount or must already resolve below an explicit writable mount. Every
-  writable mount must resolve to its exact reviewed bounded `emptyDir` or PVC
-  plus `subPath`; writable `volumeDevices` are rejected. Immutable model and
-  reference-data mounts remain read-only.
+  mount—read-only as well as writable—must resolve to its exact reviewed volume
+  source digest, read-only bit, and safe literal `subPath`; `subPathExpr`,
+  `volumeDevices`, unmounted volumes, forbidden source types, and unbounded
+  `emptyDir` volumes are rejected. Immutable model and reference-data mounts
+  remain read-only.
 
 Terraform applies the same envelope to every selected Deployment before
 placement, cache-claim, and autoscaling rendering, whether the model is static,
 controller-eligible, or controller-ineligible. It does so only when an exact
 `runtime_security_compatibilities` record binds the final model ID, container
-class/name, immutable image, non-zero UID/GID, bounded `/tmp` size, all required
-writable environment paths, external review digest, and canonical binding
+class/name, immutable image, non-zero UID/GID, Pod groups, bounded `/tmp` size,
+all required writable environment paths, the complete mount inventory, exact
+security profile, external review digest, and canonical binding
 digest. The final-render precondition checks every application, init, and
 ephemeral container. Missing records do not fall back to the image's default
 USER or to a generic writable-path guess.
@@ -60,14 +71,22 @@ or prior direct-source rendering is not an exception.
 
 The final effective-Pod check is repeated immediately before the controller
 publishes a workload and after the scientific startup-policy adapter returns.
-The existing CUDA/CRIU snapshot bridge deliberately fails this gate because it
-adds root containers, powerful capabilities, and unconfined profiles. It
-cannot bypass the restricted envelope or be silently downgraded; reactivation
-requires a separately signed, restricted-compatible snapshot design and GPU
-qualification. Terraform-owned static manifests similarly refuse any
-pre-existing added capability or `subPathExpr` instead of erasing it. The
-dynamic ModelExpress path remains supported only for its exact signed
-`nixl-rdma` runtime record and exact `IPC_LOCK` capability.
+The controller applies that same gate to each generated host-memory residency
+DaemonSet after it is appended, including the writable receipt PVC and its
+content-addressed agent ConfigMap. A locked holder has one signed `IPC_LOCK`
+exception and otherwise retains the ordinary envelope.
+
+Previously qualified serving and scientific CUDA/CRIU paths are not silently
+disabled. Their exact runtime, tools, address helper, immutable images,
+bounded scratch, mount inventory, root identities, capability sets, and
+Unconfined profiles require externally signed, digest-bound exception records.
+Ordinary model rendering remains available when a snapshot bundle lacks those
+records; only that unapproved bundle is withheld. Scientific read-only
+reference `hostPath` is likewise an explicit signed exception over the final
+security projection, never a claimed Restricted volume. Terraform-owned static
+manifests refuse any pre-existing added capability or `subPathExpr` instead of
+erasing it. The dynamic ModelExpress path remains supported only for its exact
+signed `nixl-rdma` runtime record and exact `IPC_LOCK` capability.
 
 Compatibility, image-promotion, scientific-image, cache-boundary, and cache
 quiescence records cannot authorize themselves. Terraform invokes a checked-in
@@ -98,25 +117,32 @@ The static Cosmos3-Nano manifest retains its explicit scratch and runtime-cache
 mounts, so localization and media-generation paths remain writable.
 
 NIMCache and disabled-at-zero NIMService rendering require a signed
-`nim-operator-security-subject/v2` for the exact model, CR kind, private
+`nim-operator-security-subject/v3` for the exact model, CR kind, private
 digest-pinned descendant image, operator digest, admission-policy digest, Pod
-security context, every final container security context, every writable mount,
-the NIMCache `modelPuller` or disabled NIMService repository/tag fields, and the
-prohibition on block devices. Each signed container also carries an
+service account/token and host-namespace state, exact CR and descendant
+admission actors, exact controller owner reference including UID, every final
+volume source digest, every read-only and writable mount, every container
+class/image/security context, the NIMCache `modelPuller` or disabled NIMService
+repository/tag fields, and the prohibition on block devices. Each signed container also carries an
 explicit non-zero UID/GID; companion images may differ from the runtime image
 but must have their own immutable private image and exact security/mount entry.
 The catalog exposes both the exact descendant validator and an AdmissionReview
 handler for the actual operator-created Pod, enumerating init, application, and
-ephemeral containers. This static candidate does not install an admission
-server or policy. No NIM CR may be applied by an integration lane until the
-signed policy digest is installed and the handler is connected fail-closed.
+ephemeral containers. Admission verifies the external signature before trusting
+the signed actor and then compares the request actor, owner, complete volume
+and mount closure, and effective Pod. This static candidate does not install an
+admission server or policy. No NIM CR may be applied by an integration lane
+until the signed policy digest is installed and this handler is connected
+fail-closed for both CRs and descendants.
 NIMService remains at zero and route-disabled until that descendant admission
 succeeds; a tag-to-digest annotation alone is not activation authority.
 
 The `fs2-models`, academic-runtime, and reference-data namespaces declare Pod
 Security Admission `restricted` audit and warning labels. Enforcement is not
-enabled by this source candidate; rollout owners can observe violations before
-any admission behavior changes.
+enabled by this source candidate. Ordinary model Pods must produce zero
+Restricted audit/warning violations. The narrowly signed `IPC_LOCK`,
+CUDA/CRIU, and read-only `hostPath` Pods are deliberate, separately enumerated
+exceptions and must not be reported as zero-violation Restricted Pods.
 
 ## Shared-cache ownership
 
@@ -140,9 +166,13 @@ namespace. Ownership contract v3 declares a
 `journaled-dual-access-legacy-group` phase and requires signed exact
 zero-writer evidence plus a nonblocking exclusive filesystem lease. The signed
 quiescence subject now also binds a fresh, at-most-15-minute observation,
-expiry, zero active writers, an asserted admission fence, and the exact
+expiry, zero active writers, an enforced admission fence, and the exact
 activation ID that is signed into each tenant/model boundary and annotated on
-subsequent Pods. The lock inode has one stable name across migrations. Every
+subsequent Pods. It binds the exact generated policy digest, observed policy
+UID/resourceVersion, binding name, fixed lock name, lock device/inode, and
+canonical lock-content digest. The additive lock initializer creates that
+root-owned mode-`0444`, single-link inode with `O_EXCL`, fsyncs it, and never
+truncates, replaces, or deletes an existing inode. Every
 cache-writing stage is required to use the generated stage runner, mounts that
 inode read-only, and holds a shared lock for the complete child-process lifetime;
 the bootstrap holds the nonblocking exclusive lock. Existing writers therefore
@@ -173,8 +203,19 @@ available to both the old and new identities without a delete, copy, or cache
 reset. Claim sizes, storage classes, observability, and cache reuse are
 unchanged.
 
-Changing a runtime UID can expose image-internal ownership assumptions. Each of
-these four images therefore requires staged GPU requalification before this
+The cluster-scoped `ValidatingAdmissionPolicy` and Deny/Audit binding are the
+writer fence: after activation, a Pod may mount the claim only as the one exact
+tenant/model scientific stage (two projections: its cache directory and the
+read-only lock) or as the fixed-image, fixed-program, tokenless migration Job
+owned by the dedicated Terraform Job identity. It rejects other
+containers, foreign groups, block devices, `subPathExpr`, and extra cache
+projections, so legacy/non-cooperating writers cannot start between observation
+and mutation. Integration must serialize lock initialization, fence activation,
+independent zero-writer/policy/inode observation, external signature, and the
+migration apply; a single self-attested apply is not valid evidence.
+
+Changing a runtime UID can expose image-internal ownership assumptions. Every
+affected image therefore requires staged GPU requalification before this
 candidate can be integrated or deployed.
 
 ## Image provenance
@@ -211,8 +252,9 @@ Source tests were updated to cover:
 
 - the post-adapter controller envelope across application, init, sidecar, and
   ephemeral containers, including exact compatibility bindings, explicit UID,
-  bounded writable paths, rejected block devices, and transport-scoped
-  `IPC_LOCK`;
+  bounded writable paths, complete read-only/writable mount sources, rejected
+  read-only `subPathExpr` and block devices, post-render residency holders,
+  snapshot exception profiles, and transport-scoped `IPC_LOCK`;
 - read-only/non-root native, scientific, and Cosmos runtimes;
 - preservation of the reviewed Cosmos source plus exact source-to-mirror
   provenance binding and all-container private-registry qualification;
@@ -223,7 +265,8 @@ Source tests were updated to cover:
   versus exclusive-migrator locking, and byte-preserving nested dual-access
   migration;
 - external Ed25519 verification, same-document self-authorization rejection,
-  and signed NIM CR plus actual-descendant validation; and
+  and signed NIM CR plus actual-descendant actor, owner, volume-source,
+  read-only-mount, and security validation; and
 - preservation of the qualified scientific execution-map digest
   `0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709`
   plus independently derived final-render cache owner projections.
@@ -239,11 +282,13 @@ restricted-PSS static audit from an authorized integration lane. Before a
 shared rollout, reconcile with the currently deployed commit and record the
 previous image digests and release revision.
 
-Stage the change with the exact private Cosmos image and the four scientific
+Stage the change with the exact private Cosmos image and the scientific
 runtime images on task-owned GPUs. Verify startup, readiness, two semantic
 requests, media output, scientific result publication, compiler-cache reuse,
-queue admission, and observability. The required security result is zero
-`restricted` audit/warning violations for model Pods. Treat any runtime UID,
+queue admission, and observability. The required ordinary-runtime security
+result is zero `restricted` audit/warning violations. Separately enumerate and
+approve the signed `IPC_LOCK`, snapshot, and hostPath exceptions and prove that
+no other violation is present. Treat any runtime UID,
 read-only-root, or capability compatibility failure as a failed cohort; do not
 weaken the security envelope to obtain a passing result.
 

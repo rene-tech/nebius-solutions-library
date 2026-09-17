@@ -63,6 +63,7 @@ from .fast_start_mechanisms import (
     configure_gpu_resident,
     configure_host_memory_residency,
     configure_regional_cache,
+    residency_agent_script,
     residency_holder_manifests,
     scheduled_pod_memory_bytes,
 )
@@ -1793,10 +1794,20 @@ class ModelRenderer(Protocol):
     def render(self, spec: ModelDeploymentSpec, context: RenderContext) -> RenderPlan: ...
 
 
-class WritableMountCompatibility(KubernetesModel):
-    kind: Literal["emptyDir", "persistentVolumeClaim"]
-    reference: str = Field(min_length=1, max_length=253)
+class RuntimeMountCompatibility(KubernetesModel):
+    kind: Literal[
+        "configMap",
+        "csi",
+        "downwardAPI",
+        "emptyDir",
+        "ephemeral",
+        "persistentVolumeClaim",
+        "projected",
+        "secret",
+    ]
+    source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     sub_path: str | None = Field(default=None, max_length=512)
+    read_only: bool
 
 
 class RuntimeSecurityCompatibility(KubernetesModel):
@@ -1804,13 +1815,36 @@ class RuntimeSecurityCompatibility(KubernetesModel):
     container_class: Literal["initContainers", "containers", "ephemeralContainers"]
     container_name: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
     image: str = Field(min_length=73, max_length=768, pattern=IMAGE_DIGEST_PATTERN)
-    run_as_user: int = Field(ge=1, le=2_147_483_647)
-    run_as_group: int = Field(ge=1, le=2_147_483_647)
+    run_as_user: int = Field(ge=0, le=2_147_483_647)
+    run_as_group: int = Field(ge=0, le=2_147_483_647)
     tmp_size_limit: str = Field(pattern=r"^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$")
     writable_paths: dict[str, str]
-    writable_mounts: dict[str, WritableMountCompatibility]
-    capability_profile: Literal["none", "modelexpress-nixl-rdma"] = "none"
-    allowed_capabilities: list[Literal["IPC_LOCK"]] = Field(default_factory=list, max_length=1)
+    mounts: dict[str, RuntimeMountCompatibility]
+    pod_supplemental_groups: list[int] = Field(default_factory=list, max_length=256)
+    pod_fs_group: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    capability_profile: Literal[
+        "none",
+        "modelexpress-nixl-rdma",
+        "host-memory-locked-residency",
+        "serving-snapshot-runtime",
+        "serving-snapshot-tools",
+        "serving-snapshot-address",
+    ] = "none"
+    allowed_capabilities: list[
+        Literal[
+            "CHECKPOINT_RESTORE",
+            "IPC_LOCK",
+            "NET_ADMIN",
+            "SYS_ADMIN",
+            "SYS_PTRACE",
+            "SYS_TIME",
+        ]
+    ] = Field(default_factory=list, max_length=5)
+    allow_privilege_escalation: bool = False
+    privileged: bool = False
+    read_only_root_filesystem: bool = True
+    seccomp_profile: Literal["RuntimeDefault", "Unconfined"] = "RuntimeDefault"
+    apparmor_profile: Literal["RuntimeDefault", "Unconfined"] = "RuntimeDefault"
     review_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     authorization_id: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
     authorization_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -1826,42 +1860,108 @@ class RuntimeSecurityCompatibility(KubernetesModel):
         if set(self.writable_paths) != set(_WRITABLE_RUNTIME_PATH_ENVIRONMENT):
             raise ValueError("runtime security compatibility writable-path keys differ")
         if any(
-            not _absolute_path_is_below(path, self.writable_mounts)
+            not _absolute_path_is_below(
+                path,
+                [mount_path for mount_path, mount in self.mounts.items() if not mount.read_only],
+            )
             for path in self.writable_paths.values()
         ):
             raise ValueError("runtime security compatibility path is outside reviewed writable mounts")
-        tmp_mount = self.writable_mounts.get("/tmp")
+        tmp_mount = self.mounts.get("/tmp")
         if (
             tmp_mount is None
             or tmp_mount.kind != "emptyDir"
-            or tmp_mount.reference != self.tmp_size_limit
+            or tmp_mount.source_sha256
+            != hashlib.sha256(
+                canonical_json({"emptyDir": {"sizeLimit": self.tmp_size_limit}})
+            ).hexdigest()
             or tmp_mount.sub_path is not None
+            or tmp_mount.read_only
         ):
             raise ValueError("runtime security compatibility lacks its exact bounded /tmp mount")
         if any(
             not path.startswith("/")
             or not _absolute_path_is_below(path, [path])
-            or mount.kind == "emptyDir" and re.fullmatch(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)", mount.reference) is None
-            or mount.kind == "persistentVolumeClaim" and re.fullmatch(DNS_SUBDOMAIN_PATTERN, mount.reference) is None
             or mount.sub_path is not None and (
                 mount.sub_path.startswith("/")
                 or any(part in {"", ".", ".."} for part in mount.sub_path.split("/"))
             )
-            for path, mount in self.writable_mounts.items()
+            for path, mount in self.mounts.items()
         ):
-            raise ValueError("runtime security compatibility writable mount is invalid")
+            raise ValueError("runtime security compatibility mount is invalid")
         if (
-            self.capability_profile == "none" and self.allowed_capabilities
+            self.pod_supplemental_groups != sorted(set(self.pod_supplemental_groups))
+            or any(group < 1 or group > 2_147_483_647 for group in self.pod_supplemental_groups)
+            or self.pod_fs_group is not None
+            and self.pod_fs_group not in self.pod_supplemental_groups
+        ):
+            raise ValueError("runtime security compatibility Pod groups are invalid")
+        restricted_profiles = {
+            "none": [],
+            "modelexpress-nixl-rdma": ["IPC_LOCK"],
+            "host-memory-locked-residency": ["IPC_LOCK"],
+        }
+        snapshot_profiles = {
+            "serving-snapshot-runtime": [
+                "CHECKPOINT_RESTORE",
+                "NET_ADMIN",
+                "SYS_ADMIN",
+                "SYS_PTRACE",
+                "SYS_TIME",
+            ],
+            "serving-snapshot-tools": [],
+            "serving-snapshot-address": ["NET_ADMIN"],
+        }
+        if self.capability_profile in restricted_profiles and (
+            self.allowed_capabilities != restricted_profiles[self.capability_profile]
+            or self.run_as_user == 0
+            or self.run_as_group == 0
+            or self.allow_privilege_escalation
+            or self.privileged
+            or not self.read_only_root_filesystem
+            or self.seccomp_profile != "RuntimeDefault"
+            or self.apparmor_profile != "RuntimeDefault"
+        ) or self.capability_profile in snapshot_profiles and (
+            self.allowed_capabilities != snapshot_profiles[self.capability_profile]
+            or self.run_as_user != 0
+            or self.run_as_group != 0
+            or self.privileged
+            or self.capability_profile == "serving-snapshot-runtime"
+            and (
+                not self.allow_privilege_escalation
+                or self.read_only_root_filesystem
+                or self.seccomp_profile != "Unconfined"
+                or self.apparmor_profile != "Unconfined"
+            )
+            or self.capability_profile != "serving-snapshot-runtime"
+            and (
+                self.allow_privilege_escalation
+                or not self.read_only_root_filesystem
+                or self.seccomp_profile != "RuntimeDefault"
+                or self.apparmor_profile != "RuntimeDefault"
+            )
         ) or (
-            self.capability_profile == "modelexpress-nixl-rdma"
+            self.capability_profile in {
+                "modelexpress-nixl-rdma",
+                "host-memory-locked-residency",
+            }
             and (
                 self.container_class != "containers"
                 or self.allowed_capabilities != ["IPC_LOCK"]
             )
+        ) or (
+            self.capability_profile == "serving-snapshot-runtime"
+            and self.container_class != "containers"
+        ) or (
+            self.capability_profile in {
+                "serving-snapshot-tools",
+                "serving-snapshot-address",
+            }
+            and self.container_class != "initContainers"
         ):
             raise ValueError("runtime security compatibility capability profile differs")
         payload = {
-            "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v2",
+            "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v4",
             "model_id": self.model_id,
             "container_class": self.container_class,
             "container_name": self.container_name,
@@ -1870,12 +1970,19 @@ class RuntimeSecurityCompatibility(KubernetesModel):
             "run_as_group": self.run_as_group,
             "tmp_size_limit": self.tmp_size_limit,
             "writable_paths": self.writable_paths,
-            "writable_mounts": {
+            "mounts": {
                 path: mount.model_dump(mode="json", exclude_none=False)
-                for path, mount in self.writable_mounts.items()
+                for path, mount in self.mounts.items()
             },
+            "pod_supplemental_groups": self.pod_supplemental_groups,
+            "pod_fs_group": self.pod_fs_group,
             "capability_profile": self.capability_profile,
             "allowed_capabilities": self.allowed_capabilities,
+            "allow_privilege_escalation": self.allow_privilege_escalation,
+            "privileged": self.privileged,
+            "read_only_root_filesystem": self.read_only_root_filesystem,
+            "seccomp_profile": self.seccomp_profile,
+            "apparmor_profile": self.apparmor_profile,
             "review_sha256": self.review_sha256,
         }
         if hashlib.sha256(canonical_json(payload)).hexdigest() != self.compatibility_sha256:
@@ -1902,7 +2009,7 @@ class RuntimeSecurityCompatibility(KubernetesModel):
                 "authorization_id": self.authorization_id,
                 "kind": "runtime-compatibility",
                 "model_id": self.model_id,
-                "subject_schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v2",
+                "subject_schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v4",
                 "subject_sha256": self.compatibility_sha256,
                 "decision": "accepted",
                 "reviewer_role": "independent-platform-security",
@@ -1915,7 +2022,7 @@ class RuntimeSecurityCompatibility(KubernetesModel):
                 trusted_attestors=trusted_attestors,
                 expected_session_id=self.authorization_session_id,
                 expected_kind="runtime-compatibility",
-                expected_schema="fs2-serve.nebius.ai/runtime-security-compatibility/v2",
+                expected_schema="fs2-serve.nebius.ai/runtime-security-compatibility/v4",
                 expected_digest="sha256:" + self.compatibility_sha256,
                 expected_model_id=self.model_id,
             )
@@ -2090,10 +2197,39 @@ def _ensure_bounded_container_tmp(
     mounts.append({"name": volume_name, "mountPath": "/tmp", "readOnly": False})
 
 
-def _final_writable_mounts(
-    pod_spec: Mapping[str, Any], container: Mapping[str, Any]
-) -> dict[str, WritableMountCompatibility]:
-    """Resolve every writable mount to its exact final backing volume."""
+_RESTRICTED_VOLUME_SOURCES = frozenset(
+    {
+        "configMap",
+        "csi",
+        "downwardAPI",
+        "emptyDir",
+        "ephemeral",
+        "persistentVolumeClaim",
+        "projected",
+        "secret",
+    }
+)
+
+
+def _restricted_volume_source(volume: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]]:
+    sources = [key for key in _RESTRICTED_VOLUME_SOURCES if key in volume]
+    if set(volume) != {"name", *sources} or len(sources) != 1:
+        raise ValueError("model Pod volume is outside the exact Restricted source allowlist")
+    source = volume[sources[0]]
+    if not isinstance(source, Mapping):
+        raise ValueError("model Pod volume source is invalid")
+    if sources[0] == "emptyDir" and not isinstance(source.get("sizeLimit"), str):
+        raise ValueError("model Pod emptyDir must have an exact sizeLimit")
+    return sources[0], source
+
+
+def _final_mounts(
+    pod_spec: Mapping[str, Any],
+    container: Mapping[str, Any],
+    *,
+    volume_source_rewrites: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, RuntimeMountCompatibility]:
+    """Resolve every mount, including read-only projections, to exact bytes."""
 
     volumes = pod_spec.get("volumes", [])
     mounts = container.get("volumeMounts", [])
@@ -2111,51 +2247,50 @@ def _final_writable_mounts(
             raise ValueError("model Pod volume is invalid")
         if volume["name"] in volumes_by_name:
             raise ValueError("model Pod volume names are duplicated")
+        _restricted_volume_source(volume)
         volumes_by_name[volume["name"]] = volume
 
-    resolved: dict[str, WritableMountCompatibility] = {}
+    resolved: dict[str, RuntimeMountCompatibility] = {}
     for mount in mounts:
         if not isinstance(mount, Mapping) or not isinstance(
             mount.get("readOnly", False), bool
         ):
             raise ValueError("model Pod volumeMount is invalid")
-        if mount.get("readOnly", False) is True:
-            continue
+        if "subPathExpr" in mount:
+            raise ValueError("model Pod mount uses forbidden subPathExpr")
+        if set(mount) - {"name", "mountPath", "readOnly", "subPath"}:
+            raise ValueError("model Pod mount has unreviewed projection fields")
         mount_path = mount.get("mountPath")
         volume_name = mount.get("name")
         if not isinstance(mount_path, str) or not isinstance(volume_name, str):
-            raise ValueError("model Pod writable mount identity is invalid")
-        if mount_path in resolved or "subPathExpr" in mount:
-            raise ValueError("model Pod writable mount is duplicated or uses subPathExpr")
+            raise ValueError("model Pod mount identity is invalid")
+        if mount_path in resolved:
+            raise ValueError("model Pod mount path is duplicated")
         volume = volumes_by_name.get(volume_name)
         if volume is None:
-            raise ValueError("model Pod writable mount lacks its backing volume")
+            raise ValueError("model Pod mount lacks its backing volume")
         sub_path = mount.get("subPath")
-        if sub_path is not None and not isinstance(sub_path, str):
-            raise ValueError("model Pod writable mount subPath is invalid")
-        empty_dir = volume.get("emptyDir")
-        claim = volume.get("persistentVolumeClaim")
-        if isinstance(empty_dir, Mapping) and isinstance(empty_dir.get("sizeLimit"), str):
-            binding = WritableMountCompatibility(
-                kind="emptyDir",
-                reference=empty_dir["sizeLimit"],
-                sub_path=sub_path,
-            )
-        elif (
-            isinstance(claim, Mapping)
-            and isinstance(claim.get("claimName"), str)
-            and isinstance(claim.get("readOnly", False), bool)
-            and claim.get("readOnly", False) is False
+        if sub_path is not None and (
+            not isinstance(sub_path, str)
+            or sub_path.startswith("/")
+            or any(part in {"", ".", ".."} for part in sub_path.split("/"))
         ):
-            binding = WritableMountCompatibility(
-                kind="persistentVolumeClaim",
-                reference=claim["claimName"],
-                sub_path=sub_path,
+            raise ValueError("model Pod mount subPath is invalid")
+        kind, source = _restricted_volume_source(volume)
+        rewritten = (volume_source_rewrites or {}).get(volume_name)
+        if rewritten is not None:
+            rewritten_kind, rewritten_source = _restricted_volume_source(
+                {"name": volume_name, **dict(rewritten)}
             )
-        else:
-            raise ValueError(
-                "model Pod writable mount must use a bounded emptyDir or exact writable PVC"
-            )
+            kind, source = rewritten_kind, rewritten_source
+        source_sha256 = hashlib.sha256(canonical_json({kind: source})).hexdigest()
+        source_read_only = kind == "persistentVolumeClaim" and source.get("readOnly", False) is True
+        binding = RuntimeMountCompatibility(
+            kind=kind,
+            source_sha256=source_sha256,
+            sub_path=sub_path,
+            read_only=mount.get("readOnly", False) is True or source_read_only,
+        )
         resolved[mount_path] = binding
     return resolved
 
@@ -2167,6 +2302,7 @@ def _enforce_restricted_runtime_security(
     model_id: str,
     compatibilities: Sequence[RuntimeSecurityCompatibility],
     active_capability_profiles: Mapping[tuple[str, str], str] | None = None,
+    volume_source_rewrites: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> None:
     """Validate and harden every container in the final rendered model Pod.
 
@@ -2176,22 +2312,47 @@ def _enforce_restricted_runtime_security(
     a read-only image filesystem, and bounded writable scratch/cache paths.
     """
 
-    pod_security = pod_spec.setdefault("securityContext", {})
-    if not isinstance(pod_security, dict):
+    pod_security = pod_spec.get("securityContext", {})
+    if not isinstance(pod_security, Mapping):
         raise ValueError("primary Deployment Pod securityContext is invalid")
-    pod_security["runAsNonRoot"] = True
-    pod_security["seccompProfile"] = {"type": "RuntimeDefault"}
-    pod_security["supplementalGroupsPolicy"] = "Strict"
     compatibility_by_key = {
         (item.container_class, item.container_name, item.image, item.capability_profile): item
         for item in compatibilities
         if item.model_id == model_id
     }
     active_profiles = dict(active_capability_profiles or {})
+    snapshot_exception_active = any(
+        profile.startswith("serving-snapshot-") for profile in active_profiles.values()
+    )
     if len(compatibility_by_key) != len(
         [item for item in compatibilities if item.model_id == model_id]
     ):
         raise ValueError("runtime security compatibility records are duplicated")
+    pod_group_profiles = {
+        (tuple(item.pod_supplemental_groups), item.pod_fs_group)
+        for item in compatibilities
+        if item.model_id == model_id
+    }
+    if len(pod_group_profiles) != 1:
+        raise ValueError("runtime security compatibility Pod group records differ")
+    supplemental_groups, fs_group = next(iter(pod_group_profiles))
+    if any(pod_spec.get(field, False) is not False for field in ("hostNetwork", "hostPID", "hostIPC")):
+        raise ValueError("model Pod may not join host namespaces")
+    if pod_spec.get("shareProcessNamespace", False) is not False or "hostUsers" in pod_spec:
+        raise ValueError("model Pod process/user namespace settings are not admitted")
+    if pod_security.get("sysctls") or pod_security.get("windowsOptions") or pod_security.get("seLinuxOptions"):
+        raise ValueError("model Pod carries unreviewed kernel or platform security options")
+    pod_spec["hostNetwork"] = False
+    pod_spec["hostPID"] = False
+    pod_spec["hostIPC"] = False
+    pod_spec["shareProcessNamespace"] = False
+    pod_spec["securityContext"] = {
+        "runAsNonRoot": not snapshot_exception_active,
+        "seccompProfile": {"type": "RuntimeDefault"},
+        "supplementalGroupsPolicy": "Strict",
+        **({"supplementalGroups": list(supplemental_groups)} if supplemental_groups else {}),
+        **({"fsGroup": fs_group} if fs_group is not None else {}),
+    }
 
     application_containers = pod_spec.get("containers", [])
     if not isinstance(application_containers, list) or any(
@@ -2237,6 +2398,18 @@ def _enforce_restricted_runtime_security(
             security = container.setdefault("securityContext", {})
             if not isinstance(security, dict):
                 raise ValueError("model Pod container securityContext is invalid")
+            if set(security) - {
+                "allowPrivilegeEscalation",
+                "appArmorProfile",
+                "capabilities",
+                "privileged",
+                "readOnlyRootFilesystem",
+                "runAsGroup",
+                "runAsNonRoot",
+                "runAsUser",
+                "seccompProfile",
+            }:
+                raise ValueError("model Pod container has unreviewed securityContext fields")
             raw_capabilities = security.get("capabilities", {})
             if not isinstance(raw_capabilities, Mapping):
                 raise ValueError("model Pod container capabilities are invalid")
@@ -2245,15 +2418,17 @@ def _enforce_restricted_runtime_security(
                 not isinstance(capability, str) for capability in requested_capabilities
             ):
                 raise ValueError("model Pod added capabilities are invalid")
-            expected_capabilities = (
-                ["IPC_LOCK"]
-                if active_profile == "modelexpress-nixl-rdma"
-                and field == "containers"
-                and name == runtime_container_name
-                else []
-            )
+            expected_capabilities = list(compatibility.allowed_capabilities)
             if (
-                active_profile not in {"none", "modelexpress-nixl-rdma"}
+                active_profile
+                not in {
+                    "none",
+                    "modelexpress-nixl-rdma",
+                    "host-memory-locked-residency",
+                    "serving-snapshot-runtime",
+                    "serving-snapshot-tools",
+                    "serving-snapshot-address",
+                }
                 or requested_capabilities != expected_capabilities
                 or compatibility.capability_profile != active_profile
                 or compatibility.allowed_capabilities != expected_capabilities
@@ -2261,16 +2436,19 @@ def _enforce_restricted_runtime_security(
                 raise ValueError(
                     "model Pod added capabilities differ from its exact transport compatibility"
                 )
-            security["allowPrivilegeEscalation"] = False
-            security["privileged"] = False
-            security["runAsNonRoot"] = True
-            security["runAsUser"] = compatibility.run_as_user
-            security["runAsGroup"] = compatibility.run_as_group
-            security["readOnlyRootFilesystem"] = True
-            security["seccompProfile"] = {"type": "RuntimeDefault"}
-            security["capabilities"] = {
-                "drop": ["ALL"],
-                "add": expected_capabilities,
+            container["securityContext"] = {
+                "allowPrivilegeEscalation": compatibility.allow_privilege_escalation,
+                "appArmorProfile": {"type": compatibility.apparmor_profile},
+                "privileged": compatibility.privileged,
+                "runAsNonRoot": compatibility.run_as_user != 0,
+                "runAsUser": compatibility.run_as_user,
+                "runAsGroup": compatibility.run_as_group,
+                "readOnlyRootFilesystem": compatibility.read_only_root_filesystem,
+                "seccompProfile": {"type": compatibility.seccomp_profile},
+                "capabilities": {
+                    "drop": ["ALL"],
+                    "add": expected_capabilities,
+                },
             }
             _ensure_bounded_container_tmp(
                 pod_spec,
@@ -2279,12 +2457,18 @@ def _enforce_restricted_runtime_security(
                 ordinal=ordinal,
                 size_limit=compatibility.tmp_size_limit,
             )
-            writable_mounts = _final_writable_mounts(pod_spec, container)
-            if writable_mounts != compatibility.writable_mounts:
+            mounts = _final_mounts(
+                pod_spec,
+                container,
+                volume_source_rewrites=volume_source_rewrites,
+            )
+            if mounts != compatibility.mounts:
                 raise ValueError(
-                    "final model Pod writable mounts differ from the exact compatibility record"
+                    "final model Pod mounts differ from the exact compatibility record"
                 )
-            writable_roots = sorted(writable_mounts)
+            writable_roots = sorted(
+                mount_path for mount_path, mount in mounts.items() if not mount.read_only
+            )
             environment = _container_environment(container)
             by_name = {item["name"]: item for item in environment}
             for environment_name, expected_path in compatibility.writable_paths.items():
@@ -2305,6 +2489,20 @@ def _enforce_restricted_runtime_security(
                 runtime_matches += 1
     if runtime_matches != 1:
         raise ValueError("runtime container identity is ambiguous after security hardening")
+    volume_names = {
+        volume.get("name")
+        for volume in pod_spec.get("volumes", [])
+        if isinstance(volume, Mapping)
+    }
+    mounted_volume_names = {
+        mount.get("name")
+        for field in ("initContainers", "containers", "ephemeralContainers")
+        for container in pod_spec.get(field, [])
+        for mount in container.get("volumeMounts", [])
+        if isinstance(mount, Mapping)
+    }
+    if volume_names != mounted_volume_names or None in volume_names:
+        raise ValueError("model Pod volume inventory is not closed by exact container mounts")
 
 
 def _modelexpress_transfer_identity(
@@ -3226,6 +3424,14 @@ class LegacyManifestRenderer:
                     MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
                 }
             active_capability_profiles: dict[tuple[str, str], str] = {}
+            if selected_snapshot is not None:
+                active_capability_profiles.update(
+                    {
+                        ("containers", bundle.runtime_container_name): "serving-snapshot-runtime",
+                        ("initContainers", "snapshot-tools"): "serving-snapshot-tools",
+                        ("initContainers", "snapshot-local-address"): "serving-snapshot-address",
+                    }
+                )
             if (
                 context.model_express is not None
                 and context.model_express.pool_transports[segment.pool.pool_id].mode == "nixl-rdma"
@@ -3282,6 +3488,47 @@ class LegacyManifestRenderer:
                 compatibilities=bundle.runtime_security_compatibilities,
                 active_capability_profiles=active_capability_profiles,
             )
+            if selected_snapshot is not None:
+                snapshot_records = sorted(
+                    (
+                        compatibility.authorization_id,
+                        compatibility.compatibility_sha256,
+                    )
+                    for compatibility in bundle.runtime_security_compatibilities
+                    if compatibility.model_id == spec.model_ref
+                    and (
+                        (
+                            compatibility.container_class == "containers"
+                            and compatibility.container_name == bundle.runtime_container_name
+                            and compatibility.image == selected_snapshot.runtime_image
+                            and compatibility.capability_profile == "serving-snapshot-runtime"
+                        )
+                        or (
+                            compatibility.container_class == "initContainers"
+                            and compatibility.container_name == "snapshot-tools"
+                            and compatibility.image == selected_snapshot.tools_image
+                            and compatibility.capability_profile == "serving-snapshot-tools"
+                        )
+                        or (
+                            compatibility.container_class == "initContainers"
+                            and compatibility.container_name == "snapshot-local-address"
+                            and compatibility.image == selected_snapshot.runtime_image
+                            and compatibility.capability_profile == "serving-snapshot-address"
+                        )
+                    )
+                )
+                if len(snapshot_records) != 3:
+                    raise ValueError(
+                        "serving snapshot lacks its three exact signed security exception records"
+                    )
+                pod_metadata["annotations"].update(
+                    {
+                        "fs2-serve.nebius.ai/pod-security-exception": "serving-cuda-criu",
+                        "fs2-serve.nebius.ai/pod-security-exception-records": json.dumps(
+                            snapshot_records, separators=(",", ":")
+                        ),
+                    }
+                )
             if spec.placement.cpu_resources is not None:
                 actual = effective_pod_requests(pod_spec)
                 if actual.accelerators:
@@ -3447,23 +3694,72 @@ class LegacyManifestRenderer:
                 raise ValueError("a host-memory residency render needs the holder image")
             holder_name = _derived_name("fs2-hostmem-", f"{context.name}-{pool_id}")
             holder_identity = bounded_label_value(holder_name)
-            rendered.extend(
-                residency_holder_manifests(
-                    namespace=context.namespace,
-                    name=holder_name,
-                    model_ref=bounded_label_value(spec.model_ref),
-                    holder_identity=holder_identity,
-                    qualification=residency,
-                    image=context.residency_holder_image,
-                    node_selector=pool.node_selector,
-                    tolerations=pool.tolerations,
-                    labels=labels,
-                    annotations={**annotations, WORKLOAD_POOL_ANNOTATION: pool_id},
-                    # The holder must read exactly the bytes the runtime reads.
-                    pod_security_context=primary_pod_security_context,
-                    owner_references=owner_references,
-                )
+            holder_resources = residency_holder_manifests(
+                namespace=context.namespace,
+                name=holder_name,
+                model_ref=bounded_label_value(spec.model_ref),
+                holder_identity=holder_identity,
+                qualification=residency,
+                image=context.residency_holder_image,
+                node_selector=pool.node_selector,
+                tolerations=pool.tolerations,
+                labels=labels,
+                annotations={**annotations, WORKLOAD_POOL_ANNOTATION: pool_id},
+                # The holder must read exactly the bytes the runtime reads.
+                pod_security_context=primary_pod_security_context,
+                owner_references=owner_references,
             )
+            holder_profile = (
+                "host-memory-locked-residency"
+                if residency.residency_mode == "locked-payload-residency"
+                else "none"
+            )
+            holder_compatibilities = [
+                compatibility
+                for compatibility in bundle.runtime_security_compatibilities
+                if compatibility.model_id == spec.model_ref
+                and compatibility.container_class == "containers"
+                and compatibility.container_name == "residency-agent"
+                and compatibility.image == context.residency_holder_image
+                and compatibility.capability_profile == holder_profile
+            ]
+            if len(holder_compatibilities) != 1:
+                raise ValueError(
+                    "host-memory residency holder lacks its exact signed runtime security compatibility"
+                )
+            for holder_resource in holder_resources:
+                if holder_resource.get("kind") != "DaemonSet":
+                    continue
+                holder_template = holder_resource["spec"]["template"]
+                _enforce_restricted_runtime_security(
+                    holder_template["spec"],
+                    "residency-agent",
+                    model_id=spec.model_ref,
+                    compatibilities=bundle.runtime_security_compatibilities,
+                    active_capability_profiles={
+                        ("containers", "residency-agent"): holder_profile
+                    },
+                    volume_source_rewrites={
+                        "agent": {
+                            "configMap": {
+                                "name": "fs2-residency-agent-source-sha256-"
+                                + hashlib.sha256(
+                                    residency_agent_script().encode("utf-8")
+                                ).hexdigest(),
+                                "defaultMode": 292,
+                            }
+                        }
+                    },
+                )
+                if holder_profile == "host-memory-locked-residency":
+                    holder_template["metadata"].setdefault("annotations", {}).update(
+                        {
+                            "fs2-serve.nebius.ai/pod-security-exception": holder_profile,
+                            "fs2-serve.nebius.ai/pod-security-exception-authorization": holder_compatibilities[0].authorization_id,
+                            "fs2-serve.nebius.ai/pod-security-exception-subject-sha256": holder_compatibilities[0].compatibility_sha256,
+                        }
+                    )
+            rendered.extend(holder_resources)
 
         if spec.lifecycle.desired_state is DesiredState.ENABLED:
             if spec.exposure.open_ai or spec.exposure.mcp:

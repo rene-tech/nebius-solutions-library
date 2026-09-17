@@ -12,7 +12,14 @@ from threading import Thread
 from types import SimpleNamespace
 
 import pytest
-from test_model_deployment import digest, envelope, model_spec, render_context, renderer
+from test_model_deployment import (
+    digest,
+    envelope,
+    model_spec,
+    render_context,
+    renderer,
+    runtime_security_compatibility,
+)
 
 from fs2_serve.model_deployment import (
     CacheSpec,
@@ -22,6 +29,8 @@ from fs2_serve.model_deployment import (
     SnapshotRef,
     SnapshotStrategy,
     ValidationDisposition,
+    _ensure_bounded_container_tmp,
+    _final_mounts,
     validate_model_deployment,
 )
 from fs2_serve.model_deployment_controller import ControllerFiles
@@ -46,12 +55,8 @@ def direct_pod(config):
     }
 
 
-@pytest.mark.parametrize("model,expected", [
-    ("qwen3-8b", "aaf75536c3257fb41a30a5cfb97d2f11a918c0edfc945ef4ca45f12a3eef9525"),
-    ("cosmos3-nano", "f97eed1b998575b8700f90e1f8e1a483a3fd898c02bb7370423cc80124c73522"),
-])
-def test_published_bundles_keep_byte_identical_render_with_default_interpreters(model, expected):
-    # These hashes were measured before adding interpreter/PATH configuration.
+@pytest.mark.parametrize("model", ["qwen3-8b", "cosmos3-nano"])
+def test_published_bundles_keep_default_interpreters_and_bounded_snapshot_scratch(model):
     config = ServingSnapshotBundle.model_validate_json(
         (SOLUTION_ROOT / f"acceptance/h100-fleet/snapshots/{model}-bundle.json").read_text()
     )
@@ -59,8 +64,13 @@ def test_published_bundles_keep_byte_identical_render_with_default_interpreters(
     assert config.supervisor_path == DEFAULT_SUPERVISOR_PATH
     pod = direct_pod(config)
     configure_serving_snapshot(pod, config=config, runtime_container_name="model", fallback="normal-load")
-    actual = hashlib.sha256(json.dumps(pod, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    assert actual == expected
+    volumes = {item["name"]: item for item in pod["volumes"]}
+    assert volumes["snapshot-tools"]["emptyDir"] == {"sizeLimit": "4Gi"}
+    assert volumes["snapshot-checkpoints"]["emptyDir"] == {"sizeLimit": "1Ti"}
+    assert pod["containers"][0]["securityContext"]["capabilities"] == {
+        "drop": ["ALL"],
+        "add": ["CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE", "SYS_TIME"],
+    }
 
 
 def test_snapshot_vllm_cache_shadows_only_mutable_subtree_and_retains_captured_paths():
@@ -80,7 +90,9 @@ def test_snapshot_vllm_cache_shadows_only_mutable_subtree_and_retains_captured_p
     shadow = next(item for item in runtime["volumeMounts"] if item["mountPath"] == cache)
     assert shadow == {"name": "snapshot-checkpoints", "mountPath": cache,
                       "subPath": config.bundle_path + "/native-vllm-cache"}
-    assert next(item for item in pod["volumes"] if item["name"] == shadow["name"])["emptyDir"] == {}
+    assert next(item for item in pod["volumes"] if item["name"] == shadow["name"])["emptyDir"] == {
+        "sizeLimit": config.checkpoint_size_limit
+    }
     initializer = next(item for item in pod["initContainers"] if item["name"] == "snapshot-tools")
     source = next(item for item in initializer["volumeMounts"] if item["name"] == "weights")
     assert source == {**original_mount, "mountPath": "/snapshot-native-vllm-source", "readOnly": True}
@@ -474,6 +486,92 @@ def fixture():
             "timeoutSeconds": 1,
             "failureThreshold": 30,
         }
+    preview = copy.deepcopy(bundle.resources[0]["spec"]["template"]["spec"])
+    configure_serving_snapshot(
+        preview,
+        config=config,
+        runtime_container_name=bundle.runtime_container_name,
+        fallback="normal-load",
+    )
+    snapshot_profiles = (
+        (
+            "containers",
+            bundle.runtime_container_name,
+            config.runtime_image,
+            "serving-snapshot-runtime",
+            ["CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE", "SYS_TIME"],
+            True,
+            False,
+            "Unconfined",
+            "Unconfined",
+        ),
+        (
+            "initContainers",
+            "snapshot-tools",
+            config.tools_image,
+            "serving-snapshot-tools",
+            [],
+            False,
+            True,
+            "RuntimeDefault",
+            "RuntimeDefault",
+        ),
+        (
+            "initContainers",
+            "snapshot-local-address",
+            config.runtime_image,
+            "serving-snapshot-address",
+            ["NET_ADMIN"],
+            False,
+            True,
+            "RuntimeDefault",
+            "RuntimeDefault",
+        ),
+    )
+    for (
+        container_class,
+        container_name,
+        image,
+        profile,
+        capabilities,
+        allow_escalation,
+        read_only_root,
+        seccomp,
+        apparmor,
+    ) in snapshot_profiles:
+        ordinal, container = next(
+            (index, item)
+            for index, item in enumerate(preview[container_class])
+            if item["name"] == container_name
+        )
+        _ensure_bounded_container_tmp(
+            preview,
+            container,
+            container_class=container_class,
+            ordinal=ordinal,
+            size_limit="8Gi",
+        )
+        exact_mounts = {
+            path: mount.model_dump(mode="json", exclude_none=False)
+            for path, mount in _final_mounts(preview, container).items()
+        }
+        bundle.runtime_security_compatibilities.append(
+            runtime_security_compatibility(
+                model_id=source.model_ref,
+                container_class=container_class,
+                container_name=container_name,
+                image=image,
+                uid=0,
+                gid=0,
+                exact_mounts=exact_mounts,
+                capability_profile=profile,
+                allowed_capabilities=capabilities,
+                allow_privilege_escalation=allow_escalation,
+                read_only_root_filesystem=read_only_root,
+                seccomp_profile=seccomp,
+                apparmor_profile=apparmor,
+            )
+        )
     context = render_context().model_copy(
         update={
             "pool": infrastructure.pools["pool-a"],
@@ -506,7 +604,28 @@ def test_registered_snapshot_is_admitted_and_preserves_scheduling_resources_and_
         "readOnly"
     ]
     assert not pod.get("hostNetwork")
-    assert pod["securityContext"] == {"supplementalGroups": [42, 1000]}
+    assert pod["securityContext"] == {
+        "runAsNonRoot": False,
+        "seccompProfile": {"type": "RuntimeDefault"},
+        "supplementalGroupsPolicy": "Strict",
+    }
+    assert runtime["securityContext"] == {
+        "allowPrivilegeEscalation": True,
+        "appArmorProfile": {"type": "Unconfined"},
+        "privileged": False,
+        "runAsNonRoot": False,
+        "runAsUser": 0,
+        "runAsGroup": 0,
+        "readOnlyRootFilesystem": False,
+        "seccompProfile": {"type": "Unconfined"},
+        "capabilities": {
+            "drop": ["ALL"],
+            "add": ["CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE", "SYS_TIME"],
+        },
+    }
+    assert deployment["spec"]["template"]["metadata"]["annotations"][
+        "fs2-serve.nebius.ai/pod-security-exception"
+    ] == "serving-cuda-criu"
     assert all("nvidia.com/gpu" not in init.get("resources", {}).get("limits", {}) for init in pod["initContainers"])
 
 

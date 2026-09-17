@@ -125,9 +125,18 @@ def validate_bundle(value: Any, bundle_id: str) -> dict[str, Any]:
         "worker_variable",
         "compatibility",
     }
-    if not isinstance(value, Mapping) or set(value) - {"worker_log", "entrypoint"} != fields:
+    optional_fields = {"worker_log", "entrypoint", "tools_size_limit", "checkpoint_size_limit"}
+    if not isinstance(value, Mapping) or set(value) - optional_fields != fields:
         raise ValueError("scientific snapshot bundle fields differ")
     bundle = copy.deepcopy(dict(value))
+    bundle.setdefault("tools_size_limit", "4Gi")
+    bundle.setdefault("checkpoint_size_limit", "1Ti")
+    if any(
+        not isinstance(bundle[field], str)
+        or re.fullmatch(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)", bundle[field]) is None
+        for field in ("tools_size_limit", "checkpoint_size_limit")
+    ):
+        raise ValueError("scientific snapshot scratch limits are invalid")
     if "worker_log" in bundle:
         SnapshotWorkerLog.model_validate(bundle["worker_log"])
     compatibility = bundle["compatibility"]
@@ -269,7 +278,13 @@ def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, req
         "runAsUser": 0,
         "runAsGroup": 0,
         "runAsNonRoot": False,
-        "capabilities": {"add": ["SYS_ADMIN", "SYS_PTRACE", "CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_TIME"]},
+        "capabilities": {
+            "drop": ["ALL"],
+            "add": ["CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE", "SYS_TIME"],
+        },
+        "allowPrivilegeEscalation": True,
+        "privileged": False,
+        "readOnlyRootFilesystem": False,
         "seccompProfile": {"type": "Unconfined"},
         "appArmorProfile": {"type": "Unconfined"},
     }
@@ -327,9 +342,9 @@ def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, req
     )
     spec["volumes"].extend(
         [
-            {"name": "snapshot-tools", "emptyDir": {}},
+            {"name": "snapshot-tools", "emptyDir": {"sizeLimit": config["tools_size_limit"]}},
             {"name": "snapshot-source", "configMap": {"name": config["source_configmap"], "defaultMode": 292}},
-            {"name": "snapshot-checkpoints", "emptyDir": {}},
+            {"name": "snapshot-checkpoints", "emptyDir": {"sizeLimit": config["checkpoint_size_limit"]}},
             {"name": "snapshot-bundle", "persistentVolumeClaim": {"claimName": config["pvc"], "readOnly": True}},
             {"name": "snapshot-cli", "configMap": {"name": config["cli_configmap"], "defaultMode": 365}},
         ]
@@ -354,7 +369,17 @@ def apply_startup_policy(pod: dict[str, Any], policy: StageStartupPolicy, *, req
                 directory,
                 "10001",
             ],
-            "securityContext": {"runAsUser": 0, "runAsGroup": 0, "runAsNonRoot": False},
+            "securityContext": {
+                "allowPrivilegeEscalation": False,
+                "appArmorProfile": {"type": "RuntimeDefault"},
+                "capabilities": {"drop": ["ALL"]},
+                "privileged": False,
+                "readOnlyRootFilesystem": True,
+                "runAsUser": 0,
+                "runAsGroup": 0,
+                "runAsNonRoot": False,
+                "seccompProfile": {"type": "RuntimeDefault"},
+            },
             "volumeMounts": [
                 {"name": "snapshot-tools", "mountPath": "/tools"},
                 {"name": "snapshot-checkpoints", "mountPath": "/checkpoints"},
