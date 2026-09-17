@@ -41,13 +41,24 @@ RUNTIME_ATTESTATION_PATH = Path(
 ATTESTATION_KEY_PATH = Path(
     "/opt/fs2-sai07/attestations/execution-capsule-attestation-authority.pub"
 )
-BOOTSTRAP_OPENSSL_PATH = Path("/opt/fs2-sai07/bootstrap/openssl")
+BOOTSTRAP_ED25519_VERIFIER_PATH = Path(
+    "/opt/fs2-sai07/bootstrap/sai07-bootstrap-ed25519-verify"
+)
+BOOTSTRAP_ED25519_BUILD_CONTRACT_PATH = Path(
+    "/opt/fs2-sai07/contracts/bootstrap-ed25519-verifier-build-v1.json"
+)
 
 # Activation requires an independently reviewed source commit with real pins.
 BOOTSTRAP_AUTHORITY_KEY_ID: str | None = None
 BOOTSTRAP_AUTHORITY_KEY_SHA256: str | None = None
 BOOTSTRAP_AUTHORITY_PRINCIPAL_ID: str | None = None
-BOOTSTRAP_OPENSSL_SHA256: str | None = None
+BOOTSTRAP_ED25519_VERIFIER_SHA256: str | None = None
+BOOTSTRAP_ED25519_SOURCE_SHA256 = (
+    "d6d246f5674aa7543703c655fc45053e0a8d7b315a8fba85c9dad28cb2d595da"
+)
+BOOTSTRAP_ED25519_BUILD_CONTRACT_SHA256 = (
+    "b3bb78fa2d4c8e981949baa82f01bfb8be99fb6e964e149cd8e8a03549d10f22"
+)
 
 CAPSULE_SCHEMA = "fs2-serve.nebius.ai/sai07-execution-capsule-contract/v4"
 ATTESTATION_SCHEMA = (
@@ -98,6 +109,10 @@ FDS = {
     "settlement_plan_a": 201,
     "settlement_plan_b": 202,
 }
+BOOTSTRAP_VERIFIER_FD = 203
+BOOTSTRAP_PAYLOAD_FD = 204
+BOOTSTRAP_PUBLIC_KEY_FD = 205
+BOOTSTRAP_SIGNATURE_FD = 206
 
 
 class AuthorizedApplyV4Error(ValueError):
@@ -433,12 +448,14 @@ def seal_path(
     return seal_bytes(payload, target_fd, label, maximum)
 
 
-def verify_static_elf(descriptor: int, label: str) -> None:
-    """Reject a bootstrap executable that can load any unpinned runtime code."""
+def verify_intrinsic_bootstrap_elf(descriptor: int, label: str) -> None:
+    """Require one fixed, non-dynamic native executable before first trust."""
 
+    metadata = os.fstat(descriptor)
     header = os.pread(descriptor, 64, 0)
     if (
-        len(header) != 64
+        not stat.S_ISREG(metadata.st_mode)
+        or len(header) != 64
         or header[:4] != b"\x7fELF"
         or header[4] != 2  # ELFCLASS64
         or header[5] != 1  # ELFDATA2LSB
@@ -446,18 +463,22 @@ def verify_static_elf(descriptor: int, label: str) -> None:
     ):
         raise AuthorizedApplyV4Error(f"{label} is not a supported 64-bit ELF")
     unpacked = struct.unpack("<16sHHIQQQIHHHHHH", header)
+    file_type = unpacked[1]
     machine = unpacked[2]
     program_offset = unpacked[5]
     program_entry_size = unpacked[9]
     program_count = unpacked[10]
     if (
-        machine not in {62, 183}  # EM_X86_64, EM_AARCH64
+        file_type != 2  # ET_EXEC: reject PIE/interpreter-selected images
+        or machine != 62  # the reviewed build contract is linux/amd64 only
         or program_entry_size != 56
         or program_count <= 0
         or program_count > 256
+        or program_offset < 64
+        or program_offset + program_entry_size * program_count > metadata.st_size
     ):
         raise AuthorizedApplyV4Error(f"{label} ELF architecture/table is unsupported")
-    dynamic_segments: list[tuple[int, int]] = []
+    executable_load = False
     for index in range(program_count):
         entry = os.pread(
             descriptor,
@@ -469,26 +490,28 @@ def verify_static_elf(descriptor: int, label: str) -> None:
         program_type, _flags, offset, _vaddr, _paddr, file_size, _mem_size, _align = (
             struct.unpack("<IIQQQQQQ", entry)
         )
+        if (
+            _mem_size < file_size
+            or file_size > metadata.st_size
+            or offset + file_size > metadata.st_size
+        ):
+            raise AuthorizedApplyV4Error(f"{label} ELF segment escapes the file")
         if program_type == 3:  # PT_INTERP
             raise AuthorizedApplyV4Error(f"{label} has an unpinned ELF interpreter")
         if program_type == 2:  # PT_DYNAMIC
-            dynamic_segments.append((offset, file_size))
-    for offset, file_size in dynamic_segments:
-        if file_size % 16 or file_size > 1024 * 1024:
-            raise AuthorizedApplyV4Error(f"{label} ELF dynamic table is malformed")
-        dynamic = os.pread(descriptor, file_size, offset)
-        if len(dynamic) != file_size:
-            raise AuthorizedApplyV4Error(f"{label} ELF dynamic table is truncated")
-        for entry_offset in range(0, len(dynamic), 16):
-            tag, _value = struct.unpack(
-                "<qQ", dynamic[entry_offset : entry_offset + 16]
+            raise AuthorizedApplyV4Error(
+                f"{label} has a dynamic loader/module table"
             )
-            if tag == 1:  # DT_NEEDED
+        if program_type == 1:  # PT_LOAD
+            executable_load = executable_load or bool(_flags & 1)
+            if _flags & 1 and _flags & 2:  # PF_X and PF_W
                 raise AuthorizedApplyV4Error(
-                    f"{label} has an unpinned shared-library dependency"
+                    f"{label} has a writable executable segment"
                 )
-            if tag == 0:  # DT_NULL
-                break
+        if program_type == 0x6474E551 and _flags & 1:  # PT_GNU_STACK/PF_X
+            raise AuthorizedApplyV4Error(f"{label} requests an executable stack")
+    if not executable_load:
+        raise AuthorizedApplyV4Error(f"{label} has no executable load segment")
 
 
 def read_sealed_json_descriptor(
@@ -672,6 +695,151 @@ def seal_plan_fd(descriptor: int = FDS["saved_plan"], label: str = "saved plan")
     return digest.hexdigest()
 
 
+def verify_bootstrap_ed25519_contract() -> None:
+    payload, contract = load_canonical(
+        BOOTSTRAP_ED25519_BUILD_CONTRACT_PATH,
+        "bootstrap Ed25519 verifier build contract",
+    )
+    if sha256(payload) != BOOTSTRAP_ED25519_BUILD_CONTRACT_SHA256:
+        raise AuthorizedApplyV4Error(
+            "bootstrap Ed25519 build contract differs from compiled trust root"
+        )
+    exact(
+        contract,
+        {
+            "activation",
+            "binary",
+            "build",
+            "independent_reproduction",
+            "protocol",
+            "schema",
+            "source",
+            "status",
+        },
+        "bootstrap Ed25519 verifier build contract",
+    )
+    source = exact(contract["source"], {"path", "sha256"}, "bootstrap source")
+    binary = exact(
+        contract["binary"],
+        {
+            "elf_class",
+            "elf_data",
+            "elf_machine",
+            "elf_type",
+            "forbidden_program_headers",
+            "path",
+            "sha256",
+        },
+        "bootstrap binary",
+    )
+    build = exact(
+        contract["build"],
+        {
+            "arguments",
+            "cgo_enabled",
+            "goarch",
+            "goos",
+            "go_version",
+            "source_date_epoch",
+            "standard_library_tree_sha256",
+            "toolchain_archive_sha256",
+        },
+        "bootstrap build",
+    )
+    reproduction = exact(
+        contract["independent_reproduction"],
+        {"binary_sha256s", "builder_ids", "required_builders"},
+        "bootstrap independent reproduction",
+    )
+    protocol = exact(
+        contract["protocol"],
+        {
+            "arguments",
+            "environment",
+            "maximum_payload_bytes",
+            "payload_fd",
+            "public_key_encoding",
+            "public_key_fd",
+            "signature_encoding",
+            "signature_fd",
+            "stdout",
+            "timeout_seconds",
+        },
+        "bootstrap verifier protocol",
+    )
+    build_digests = reproduction["binary_sha256s"]
+    builder_ids = reproduction["builder_ids"]
+    if (
+        contract["schema"]
+        != "fs2-serve.nebius.ai/sai07-bootstrap-ed25519-verifier-build/v1"
+        or contract["activation"] != "active"
+        or contract["status"] != "active-two-build-reproducible-reviewed-closure"
+        or source
+        != {
+            "path": "scripts/sai07_bootstrap_ed25519_verify.go",
+            "sha256": BOOTSTRAP_ED25519_SOURCE_SHA256,
+        }
+        or binary
+        != {
+            "elf_class": "ELF64",
+            "elf_data": "little-endian",
+            "elf_machine": 62,
+            "elf_type": 2,
+            "forbidden_program_headers": ["PT_DYNAMIC", "PT_INTERP"],
+            "path": str(BOOTSTRAP_ED25519_VERIFIER_PATH),
+            "sha256": BOOTSTRAP_ED25519_VERIFIER_SHA256,
+        }
+        or build["arguments"]
+        != [
+            "build",
+            "-buildmode=exe",
+            "-trimpath",
+            "-buildvcs=false",
+            "-ldflags=-buildid= -s -w",
+            "-o",
+            "sai07-bootstrap-ed25519-verify",
+            "./scripts/sai07_bootstrap_ed25519_verify.go",
+        ]
+        or build["cgo_enabled"] != "0"
+        or build["goarch"] != "amd64"
+        or build["goos"] != "linux"
+        or build["source_date_epoch"] != "0"
+        or not isinstance(build["go_version"], str)
+        or not re.fullmatch(r"go1\.[0-9]+(?:\.[0-9]+)?", build["go_version"])
+        or any(
+            not isinstance(build[field], str)
+            or not SHA256_RE.fullmatch(build[field])
+            or build[field] == "0" * 64
+            for field in ("standard_library_tree_sha256", "toolchain_archive_sha256")
+        )
+        or reproduction["required_builders"] != 2
+        or not isinstance(builder_ids, list)
+        or len(builder_ids) != 2
+        or any(not isinstance(value, str) or not value for value in builder_ids)
+        or len(set(builder_ids)) != 2
+        or not isinstance(build_digests, list)
+        or len(build_digests) != 2
+        or build_digests
+        != [BOOTSTRAP_ED25519_VERIFIER_SHA256, BOOTSTRAP_ED25519_VERIFIER_SHA256]
+        or protocol
+        != {
+            "arguments": [],
+            "environment": {},
+            "maximum_payload_bytes": MAX_JSON_BYTES,
+            "payload_fd": BOOTSTRAP_PAYLOAD_FD,
+            "public_key_encoding": "raw-ed25519-32-byte",
+            "public_key_fd": BOOTSTRAP_PUBLIC_KEY_FD,
+            "signature_encoding": "raw-ed25519-64-byte",
+            "signature_fd": BOOTSTRAP_SIGNATURE_FD,
+            "stdout": "forbidden",
+            "timeout_seconds": 5,
+        }
+    ):
+        raise AuthorizedApplyV4Error(
+            "bootstrap Ed25519 verifier lacks a closed reproducible build contract"
+        )
+
+
 def verify_signature(
     unsigned: dict[str, Any], signature: dict[str, Any], public_key: bytes
 ) -> None:
@@ -681,15 +849,20 @@ def verify_signature(
             BOOTSTRAP_AUTHORITY_KEY_ID,
             BOOTSTRAP_AUTHORITY_KEY_SHA256,
             BOOTSTRAP_AUTHORITY_PRINCIPAL_ID,
-            BOOTSTRAP_OPENSSL_SHA256,
+            BOOTSTRAP_ED25519_VERIFIER_SHA256,
+            BOOTSTRAP_ED25519_SOURCE_SHA256,
+            BOOTSTRAP_ED25519_BUILD_CONTRACT_SHA256,
         )
     ):
         raise AuthorizedApplyV4Error(
             "independent capsule-attestation bootstrap is not activated"
         )
-    if sha256(public_key) != BOOTSTRAP_AUTHORITY_KEY_SHA256:
+    if (
+        len(public_key) != 32
+        or sha256(public_key) != BOOTSTRAP_AUTHORITY_KEY_SHA256
+    ):
         raise AuthorizedApplyV4Error(
-            "attestation public key differs from compiled trust root"
+            "raw attestation public key differs from compiled trust root"
         )
     exact(signature, {"algorithm", "key_id", "value"}, "attestation signature")
     if (
@@ -703,40 +876,60 @@ def verify_signature(
         raise AuthorizedApplyV4Error(
             "attestation signature is not strict base64"
         ) from error
-    payload_fd = os.memfd_create("attestation-payload", os.MFD_CLOEXEC)
-    key_fd = os.memfd_create("attestation-public-key", os.MFD_CLOEXEC)
-    signature_fd = os.memfd_create("attestation-signature", os.MFD_CLOEXEC)
+    if len(signature_bytes) != 64:
+        raise AuthorizedApplyV4Error(
+            "attestation signature is not raw Ed25519"
+        )
     try:
-        os.write(payload_fd, canonical(unsigned))
-        os.write(key_fd, public_key)
-        os.write(signature_fd, signature_bytes)
-        for descriptor in (payload_fd, key_fd, signature_fd):
+        seal_bytes(
+            canonical(unsigned),
+            BOOTSTRAP_PAYLOAD_FD,
+            "bootstrap-attestation-payload",
+            MAX_JSON_BYTES,
+        )
+        seal_bytes(
+            public_key,
+            BOOTSTRAP_PUBLIC_KEY_FD,
+            "bootstrap-attestation-public-key",
+            32,
+        )
+        seal_bytes(
+            signature_bytes,
+            BOOTSTRAP_SIGNATURE_FD,
+            "bootstrap-attestation-signature",
+            64,
+        )
+        for descriptor in (
+            BOOTSTRAP_PAYLOAD_FD,
+            BOOTSTRAP_PUBLIC_KEY_FD,
+            BOOTSTRAP_SIGNATURE_FD,
+        ):
             os.lseek(descriptor, 0, os.SEEK_SET)
         completed = subprocess.run(
-            [
-                f"/proc/self/fd/{FDS['openssl']}",
-                "pkeyutl",
-                "-verify",
-                "-pubin",
-                "-inkey",
-                f"/proc/self/fd/{key_fd}",
-                "-rawin",
-                "-in",
-                f"/proc/self/fd/{payload_fd}",
-                "-sigfile",
-                f"/proc/self/fd/{signature_fd}",
-            ],
+            [f"/proc/self/fd/{BOOTSTRAP_VERIFIER_FD}"],
             check=False,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            env={"PATH": "/nonexistent"},
-            pass_fds=(FDS["openssl"], payload_fd, key_fd, signature_fd),
+            env={},
+            pass_fds=(
+                BOOTSTRAP_VERIFIER_FD,
+                BOOTSTRAP_PAYLOAD_FD,
+                BOOTSTRAP_PUBLIC_KEY_FD,
+                BOOTSTRAP_SIGNATURE_FD,
+            ),
+            timeout=5,
         )
     finally:
-        os.close(payload_fd)
-        os.close(key_fd)
-        os.close(signature_fd)
+        for descriptor in (
+            BOOTSTRAP_PAYLOAD_FD,
+            BOOTSTRAP_PUBLIC_KEY_FD,
+            BOOTSTRAP_SIGNATURE_FD,
+        ):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
     if completed.returncode != 0:
         raise AuthorizedApplyV4Error("runtime attestation signature is invalid")
 
@@ -744,38 +937,46 @@ def verify_signature(
 def verify_attestation(
     expected_role: str,
 ) -> tuple[bytes, dict[str, Any], bytes, dict[str, Any]]:
+    verify_bootstrap_ed25519_contract()
     seal_path(
-        BOOTSTRAP_OPENSSL_PATH,
-        str(BOOTSTRAP_OPENSSL_SHA256),
-        FDS["openssl"],
-        "bootstrap OpenSSL",
+        BOOTSTRAP_ED25519_VERIFIER_PATH,
+        str(BOOTSTRAP_ED25519_VERIFIER_SHA256),
+        BOOTSTRAP_VERIFIER_FD,
+        "bootstrap Ed25519 verifier",
         MAX_RUNTIME_FILE_BYTES,
     )
-    verify_static_elf(FDS["openssl"], "bootstrap OpenSSL")
-    public_key = read_regular(ATTESTATION_KEY_PATH, "attestation public key", 65536)
-    attestation_bytes, attestation = load_canonical(
-        RUNTIME_ATTESTATION_PATH, "runtime attestation"
+    verify_intrinsic_bootstrap_elf(
+        BOOTSTRAP_VERIFIER_FD, "bootstrap Ed25519 verifier"
     )
-    exact(attestation, {"claims", "signature"}, "runtime attestation")
-    claims = exact(
-        attestation["claims"],
-        {
-            "admission_objects",
-            "api",
-            "capsule_contract_sha256",
-            "expires_at",
-            "handoff",
-            "image",
-            "issued_at",
-            "nonce",
-            "pod",
-            "role",
-            "schema",
-            "signing_principal_id",
-        },
-        "runtime attestation claims",
-    )
-    verify_signature(claims, attestation["signature"], public_key)
+    try:
+        public_key = read_regular(
+            ATTESTATION_KEY_PATH, "raw attestation public key", 32
+        )
+        attestation_bytes, attestation = load_canonical(
+            RUNTIME_ATTESTATION_PATH, "runtime attestation"
+        )
+        exact(attestation, {"claims", "signature"}, "runtime attestation")
+        claims = exact(
+            attestation["claims"],
+            {
+                "admission_objects",
+                "api",
+                "capsule_contract_sha256",
+                "expires_at",
+                "handoff",
+                "image",
+                "issued_at",
+                "nonce",
+                "pod",
+                "role",
+                "schema",
+                "signing_principal_id",
+            },
+            "runtime attestation claims",
+        )
+        verify_signature(claims, attestation["signature"], public_key)
+    finally:
+        os.close(BOOTSTRAP_VERIFIER_FD)
     if (
         claims["schema"] != ATTESTATION_SCHEMA
         or claims["role"] != expected_role
@@ -1244,19 +1445,13 @@ def runtime_files(
         item = exact(files[name], {"fd", "path", "sha256"}, f"capsule {name}")
         if item["fd"] != FDS[name]:
             raise AuthorizedApplyV4Error(f"capsule {name} descriptor differs")
-        if name == "openssl":
-            if item["sha256"] != BOOTSTRAP_OPENSSL_SHA256:
-                raise AuthorizedApplyV4Error(
-                    "runtime OpenSSL differs from bootstrap verifier"
-                )
-        else:
-            seal_path(
-                Path(item["path"]),
-                item["sha256"],
-                item["fd"],
-                f"capsule {name}",
-                maximum,
-            )
+        seal_path(
+            Path(item["path"]),
+            item["sha256"],
+            item["fd"],
+            f"capsule {name}",
+            maximum,
+        )
     contracts = exact(
         runtime["contract_files"],
         {"epoch_admission", "platform_authority", "source_lock", "trust_lock"},
@@ -1855,6 +2050,9 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
         "FS2_SAI07_KUBECTL_PATH": "/proc/1/fd/193",
         "FS2_SAI07_OPENSSL_PATH": "/proc/1/fd/192",
         "KUBECONFIG": "/proc/1/fd/198",
+        "OPENSSL_CONF": "/dev/null",
+        "OPENSSL_ENGINES": "/nonexistent",
+        "OPENSSL_MODULES": "/nonexistent",
         "PATH": "/nonexistent",
         "TF_CLI_CONFIG_FILE": "/proc/1/fd/195",
         "TF_DATA_DIR": terraform_data_root,
@@ -2110,6 +2308,9 @@ def execute_external(args: argparse.Namespace, executor_args: list[str]) -> dict
         "FS2_SAI07_OPENSSL_PATH": "/proc/1/fd/192",
         "FS2_SAI07_OWNER_API_SERVER": api["origin"],
         "FS2_SAI07_OWNER_CA_PATH": "/proc/1/fd/199",
+        "OPENSSL_CONF": "/dev/null",
+        "OPENSSL_ENGINES": "/nonexistent",
+        "OPENSSL_MODULES": "/nonexistent",
         "PATH": "/nonexistent",
         "TF_IN_AUTOMATION": "1",
     }

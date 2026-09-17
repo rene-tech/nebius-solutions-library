@@ -319,6 +319,8 @@ def repository_contract() -> tuple[
         raise ExecutionV3Error("custody dependency source-lock schema is unsupported")
     expected_dependencies = {
         "authoritative_evidence": "scripts/sai07_authoritative_evidence.py",
+        "bootstrap_ed25519_build_contract": "stages/pod-security-custody/bootstrap-ed25519-verifier-build-v1.json",
+        "bootstrap_ed25519_verifier": "scripts/sai07_bootstrap_ed25519_verify.go",
         "custody_manifest_v1": "scripts/verify_sai07_custody_manifest_bundle.py",
         "custody_manifest_v2": "scripts/verify_sai07_custody_manifest_bundle_v2.py",
         "custody_manifest_v3": "scripts/verify_sai07_custody_manifest_bundle_v3.py",

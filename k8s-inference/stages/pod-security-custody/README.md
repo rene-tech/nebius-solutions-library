@@ -148,7 +148,8 @@ from separately reviewed authoritative evidence and pin its digest in the main
 lock before the executor or apply-time verifier can run.
 
 `custody-source-lock-v3.json` inventories the outer PID-1 bootstrap, the
-deterministic bundle builder, and every source packaged in the sealed v4
+fixed-descriptor native Ed25519 verifier and its reproducible-build contract,
+the deterministic bundle builder, and every source packaged in the sealed v4
 zipapp: raw-state semantic reconstruction, v1/v2/v3 manifest
 validation, v2/v3 trust verification, retained-state preflight, and the
 metadata-only Secret transport each have a fixed path and content digest. It
@@ -175,14 +176,24 @@ The external epoch role must have only a resourceNames-scoped `get pods` edge
 for its attested Pod; its exhaustive SSAR/SSRR contract rejects namespace-wide
 Pod reads as well as any additional rule.
 
-Before the bootstrap executes OpenSSL, its independently compiled digest is
-copied into a sealed descriptor and parsed as a 64-bit ELF. `PT_INTERP` and
-every `DT_NEEDED` entry are rejected, so the first signature check cannot load
-an unauthenticated interpreter or shared library. Each role also consumes
-separate sealed canonical provenance and SPDX-envelope descriptors. The signed
-image reference must end in the signed OCI digest, the runtime `imageID` must
-resolve to that same digest, and both evidence documents must hash to their
-capsule pins and name that exact reference/digest.
+The first signature check does not execute OpenSSL or another general-purpose
+crypto CLI. It invokes only `sai07-bootstrap-ed25519-verify`: a no-argument,
+empty-environment native program that reads one canonical payload, one raw
+32-byte Ed25519 public key, and one raw 64-byte signature from sealed fixed
+descriptors and emits no output. Its reviewed build contract requires
+`CGO_ENABLED=0`, a pinned Go toolchain and standard-library tree, two distinct
+reproducible builds with the same binary digest, and an ELF64 `ET_EXEC` with
+neither `PT_INTERP` nor `PT_DYNAMIC`, no writable executable segment, and no
+executable stack. The bootstrap pins the verifier, source, and build-contract
+digests independently; all binary/toolchain/reproduction facts remain null and
+activation remains blocked in this source revision. OpenSSL is descriptor
+sealed only after the capsule signature has authenticated its runtime graph;
+later callers also force null configuration and nonexistent engine/module
+paths. Each role then consumes separate sealed canonical provenance and
+SPDX-envelope descriptors. The signed image reference must end in the signed
+OCI digest, the runtime `imageID` must resolve to that same digest, and both
+evidence documents must hash to their capsule pins and name that exact
+reference/digest.
 
 Terraform plan/apply children run in a new process group inside the dedicated
 PID-1 capsule. On every exit or timeout, PID 1 stops and terminates the complete

@@ -294,13 +294,22 @@ custody boundary. They may be absent only in the first signed preparation;
 subsequent generations bind their exact state address and live UID/RV/hash.
 The external executor has no RBAC mutation authority.
 
-The v4 execution capsule does not execute a dynamically linked bootstrap
-verifier before trust is established. The compiled OpenSSL digest is sealed,
-then its ELF program/dynamic tables must prove no `PT_INTERP` and no
-`DT_NEEDED`. Runtime image evidence is likewise content-bound: signed OCI
-digest, digest-qualified Pod image reference and runtime `imageID` must resolve
-to one digest, while sealed canonical provenance and SPDX-envelope documents
-must match their signed hashes and name that same image.
+The v4 execution capsule does not execute OpenSSL or another general-purpose
+crypto CLI before trust is established. Its only pre-trust child is the
+source-reviewed `sai07-bootstrap-ed25519-verify` protocol: no arguments, empty
+environment, no pathname opens, fixed sealed payload/key/signature descriptors,
+and no output. Activation requires two independent reproducible builds from a
+pinned `CGO_ENABLED=0` Go toolchain and standard-library tree. The exact binary
+digest is compiled into the bootstrap, and its ELF must be ELF64 `ET_EXEC`
+without `PT_INTERP`, `PT_DYNAMIC`, writable executable segments, or executable
+stack. The checked-in build contract deliberately has null binary/toolchain
+facts and is blocked. General OpenSSL is sealed and exposed only after this
+narrow verifier authenticates the capsule graph, with configuration, engine,
+and module discovery disabled for later signed-graph operations. Runtime image
+evidence is likewise content-bound: signed OCI digest, digest-qualified Pod
+image reference and runtime `imageID` must resolve to one digest, while sealed
+canonical provenance and SPDX-envelope documents must match their signed hashes
+and name that same image.
 
 Terraform parent timeout is not treated as mutation settlement. The dedicated
 PID-1 capsule fences and reaps every descendant, including escaped process

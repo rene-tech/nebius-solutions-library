@@ -567,6 +567,12 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     terraform_cli_config = _source(
         "stages/pod-security-custody/terraform-cli-v4.tfrc"
     )
+    bootstrap_verifier = _source("scripts/sai07_bootstrap_ed25519_verify.go")
+    bootstrap_build = json.loads(
+        _source(
+            "stages/pod-security-custody/bootstrap-ed25519-verifier-build-v1.json"
+        )
+    )
 
     assert lock["activation"] == "blocked"
     assert capsule["activation"] == "blocked"
@@ -606,6 +612,8 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
         "authoritative_collector",
         "authoritative_evidence",
         "authorized_apply_v4",
+        "bootstrap_ed25519_build_contract",
+        "bootstrap_ed25519_verifier",
         "bundle_builder_v4",
         "custody_epoch_admission_v4",
         "custody_manifest_v1",
@@ -783,9 +791,45 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     )[1].split("def run_owner_authority_audit", 1)[0]
     assert "claims[" not in generic_reader
     assert "external runtime attestation time is malformed" in external_attestation_verifier
-    assert "verify_static_elf" in authorized_apply
+    bootstrap_signature = authorized_apply.split("def verify_signature", 1)[1].split(
+        "def verify_attestation", 1
+    )[0]
+    assert "verify_intrinsic_bootstrap_elf" in authorized_apply
     assert "PT_INTERP" in authorized_apply
-    assert "DT_NEEDED" in authorized_apply
+    assert "PT_DYNAMIC" in authorized_apply
+    assert "pkeyutl" not in bootstrap_signature
+    assert "BOOTSTRAP_VERIFIER_FD" in bootstrap_signature
+    assert "env={}" in bootstrap_signature
+    assert '"crypto/ed25519"' in bootstrap_verifier
+    assert 'len(os.Environ()) != 0' in bootstrap_verifier
+    assert "os.Open" not in bootstrap_verifier
+    assert bootstrap_build["activation"] == "blocked"
+    assert bootstrap_build["binary"]["sha256"] is None
+    assert bootstrap_build["binary"]["forbidden_program_headers"] == [
+        "PT_DYNAMIC",
+        "PT_INTERP",
+    ]
+    assert bootstrap_build["build"]["cgo_enabled"] == "0"
+    assert bootstrap_build["independent_reproduction"]["required_builders"] == 2
+    assert bootstrap_build["protocol"]["environment"] == {}
+    assert bootstrap_build["protocol"]["payload_fd"] == 204
+    assert bootstrap_build["protocol"]["public_key_fd"] == 205
+    assert bootstrap_build["protocol"]["signature_fd"] == 206
+    assert bootstrap_build["protocol"]["timeout_seconds"] == 5
+    assert hashlib.sha256(bootstrap_verifier.encode()).hexdigest() == bootstrap_build[
+        "source"
+    ]["sha256"]
+    assert source_lock["sources"]["bootstrap_ed25519_verifier"]["sha256"] == (
+        bootstrap_build["source"]["sha256"]
+    )
+    assert source_lock["sources"]["bootstrap_ed25519_build_contract"][
+        "sha256"
+    ] == hashlib.sha256(
+        _source(
+            "stages/pod-security-custody/bootstrap-ed25519-verifier-build-v1.json"
+        ).encode()
+    ).hexdigest()
+    assert "BOOTSTRAP_ED25519_VERIFIER_SHA256: str | None = None" in authorized_apply
     assert "validate_image_evidence" in authorized_apply
     assert "validate_image_evidence" in executor
     assert 'reference.count("@") != 1' in authorized_apply
