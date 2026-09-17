@@ -294,8 +294,8 @@ run "inventory_arms_only_with_default_deny_absent" {
 
   variables {
     model_runtime_network_policy             = { phase = "inventory" }
-    model_network_transition_lock_identity   = "terraform-test-holder"
-    model_network_transition_writer_username = "terraform-test@example.test"
+    model_network_transition_lock_identity   = "testrun:123:0123456789abcdef0123456789abcdef"
+    model_network_transition_writer_username = "fs2-model-network-transition"
     model_network_transition_lock_required   = true
   }
 
@@ -319,8 +319,8 @@ run "enforce_rejects_a_legacy_v2_receipt" {
 
   variables {
     model_express                            = merge(var.model_express, { enabled = false, models = {} })
-    model_network_transition_lock_identity   = "terraform-test-holder"
-    model_network_transition_writer_username = "terraform-test@example.test"
+    model_network_transition_lock_identity   = "testrun:123:0123456789abcdef0123456789abcdef"
+    model_network_transition_writer_username = "fs2-model-network-transition"
     model_network_transition_lock_required   = true
     model_runtime_network_policy = {
       phase = "enforce"
@@ -378,7 +378,12 @@ run "enforce_rejects_a_legacy_v2_receipt" {
         transition_lock_uid = "uid-transition-lock"
         admission_policies  = {}
         admission_bindings  = {}
-        payload_sha256      = "728dd1ac4ef231f19533b4b9275833a863e04d3c5b69f61e1bf6f142069f83b4"
+        admission_webhook = {
+          uid              = "uid-boundary-webhook"
+          resource_version = "rv-boundary-webhook"
+          spec_sha256      = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+        payload_sha256 = "728dd1ac4ef231f19533b4b9275833a863e04d3c5b69f61e1bf6f142069f83b4"
       }
     }
   }

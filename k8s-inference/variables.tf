@@ -218,6 +218,11 @@ variable "deployment" {
             resource_version = string
             spec_sha256      = string
           }))
+          admission_webhook = object({
+            uid              = string
+            resource_version = string
+            spec_sha256      = string
+          })
           payload_sha256 = string
         }), null)
         deny_absent_receipt = optional(object({

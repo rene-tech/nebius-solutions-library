@@ -74,6 +74,12 @@ from .model_deployment_mutation import HttpKubernetesDesiredWriter, ModelDeploym
 from .model_deployment_preview import ModelDeploymentPreviewService, RepositoryModelDeploymentPreviewState
 from .model_inventory import load_snapshot_capabilities
 from .models import TokenCreate
+from .network_boundary_admission import (
+    KubernetesBoundaryReader,
+    NetworkBoundaryAdmission,
+    NetworkBoundaryConfig,
+    create_network_boundary_app,
+)
 from .postgres import PostgresMaintenanceStore, PostgresStore
 from .postgresql_release import render_postgresql_release_contract
 from .registry import Registry
@@ -579,7 +585,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
 
         canonical_catalog = augment_native_catalog(
             load_catalog(settings.catalog_dir, repo_root=settings.repo_root),
-            settings.catalog_dir, repo_root=settings.repo_root,
+            settings.catalog_dir,
+            repo_root=settings.repo_root,
         )
         configuration_repository = StoreConfigurationRepository(store)
         configuration_service = ConfigurationService(
@@ -655,6 +662,45 @@ async def serve(settings: Settings) -> None:
         uvicorn.Config(app, host=settings.host, port=settings.port, log_level=settings.log_level.lower())
     )
     await server.serve()
+
+
+async def serve_network_boundary_admission(settings: Settings) -> None:
+    """Serve the independent TLS admission boundary with read-only K8s access."""
+
+    if not settings.network_boundary_admission_enabled:
+        raise RuntimeError("network-boundary admission is disabled")
+    reader = KubernetesBoundaryReader(
+        base_url=settings.network_boundary_admission_api_url,
+        token_file=settings.network_boundary_admission_token_file,
+        ca_file=settings.network_boundary_admission_ca_file,
+        timeout_seconds=settings.network_boundary_admission_api_timeout_seconds,
+    )
+    admission = NetworkBoundaryAdmission(
+        config=NetworkBoundaryConfig(
+            model_namespace=settings.network_boundary_admission_model_namespace,
+            system_namespace=settings.network_boundary_admission_system_namespace,
+            authorizer_writer=settings.network_boundary_admission_authorizer_writer,
+            acquisition_writer=settings.network_boundary_admission_acquisition_writer,
+            direct_job_writer=settings.network_boundary_admission_direct_job_writer,
+            jobset_writer=settings.network_boundary_admission_jobset_writer,
+            transition_writer=settings.network_boundary_admission_transition_writer,
+        ),
+        reader=reader,
+    )
+    server = uvicorn.Server(
+        uvicorn.Config(
+            create_network_boundary_app(admission),
+            host=settings.network_boundary_admission_host,
+            port=settings.network_boundary_admission_port,
+            log_level=settings.log_level.lower(),
+            ssl_certfile=str(settings.network_boundary_admission_tls_cert_file),
+            ssl_keyfile=str(settings.network_boundary_admission_tls_key_file),
+        )
+    )
+    try:
+        await server.serve()
+    finally:
+        await reader.close()
 
 
 async def maintain(settings: Settings) -> None:
@@ -765,6 +811,7 @@ def main() -> None:
             "validate",
             "postgresql-release-contract",
             "model-controller",
+            "network-boundary-admission",
             "gpu-allocation-observer",
             "scientific-materialize",
             "scientific-materialize-many",
@@ -790,6 +837,7 @@ def main() -> None:
             "wait-schema": wait_schema,
             "bootstrap-access": bootstrap_access,
             "model-controller": run_model_controller,
+            "network-boundary-admission": serve_network_boundary_admission,
             "gpu-allocation-observer": observe_gpu_allocations,
         }[args.command]
         asyncio.run(action(settings))

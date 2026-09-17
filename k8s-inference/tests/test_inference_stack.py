@@ -248,6 +248,39 @@ def regional_dynamic(run_root: Path) -> dict:
 
 
 class InferenceStackTests(unittest.TestCase):
+    @mock.patch.object(STACK.subprocess, "run")
+    def test_network_transition_rejects_an_already_pending_helm_release(
+        self, subprocess_run: mock.Mock
+    ) -> None:
+        subprocess_run.return_value = subprocess.CompletedProcess(
+            args=["kubectl-test", "get", "secrets,configmaps"],
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "items": [
+                        {
+                            "metadata": {
+                                "labels": {
+                                    "owner": "helm",
+                                    "name": "fs2-serve-control-plane",
+                                    "version": "135",
+                                    "status": "pending-upgrade",
+                                }
+                            }
+                        }
+                    ]
+                }
+            ),
+            stderr="",
+        )
+
+        with self.assertRaisesRegex(STACK.DeploymentError, "not idle"):
+            STACK.ensure_control_plane_helm_release_idle(
+                kubectl="kubectl-test",
+                kubeconfig="/read-only/kubeconfig",
+                context="test-context",
+            )
+
     @mock.patch.object(STACK, "run")
     @mock.patch.object(STACK.subprocess, "run")
     def test_transition_lock_fails_closed_on_unauthorized_get(
@@ -255,29 +288,21 @@ class InferenceStackTests(unittest.TestCase):
         subprocess_run: mock.Mock,
         mutating_run: mock.Mock,
     ) -> None:
-        subprocess_run.side_effect = [
-            subprocess.CompletedProcess(
-                args=["kubectl-test", "auth", "whoami"],
-                returncode=0,
-                stdout=json.dumps(
-                    {"status": {"userInfo": {"username": "reviewer@example.test"}}}
-                ),
-                stderr="",
+        subprocess_run.return_value = subprocess.CompletedProcess(
+            args=["kubectl-test", "auth", "whoami"],
+            returncode=0,
+            stdout=json.dumps(
+                {"status": {"userInfo": {"username": "reviewer@example.test"}}}
             ),
-            subprocess.CompletedProcess(
-                args=["kubectl-test", "get", "lease"],
-                returncode=1,
-                stdout="",
-                stderr="Error from server (Forbidden): leases is forbidden",
-            ),
-        ]
+            stderr="",
+        )
 
-        with self.assertRaisesRegex(STACK.DeploymentError, "cannot inspect"):
+        with self.assertRaisesRegex(STACK.DeploymentError, "dedicated"):
             with STACK.model_network_transition_lock(
                 kubectl="kubectl-test",
                 kubeconfig="/read-only/kubeconfig",
                 context="test-context",
-                run_id="test-run",
+                run_id="testrun",
             ):
                 self.fail("an unauthorized Lease read must not acquire the lock")
 
@@ -290,7 +315,7 @@ class InferenceStackTests(unittest.TestCase):
         subprocess_run: mock.Mock,
         mutating_run: mock.Mock,
     ) -> None:
-        username = "security-remediation@example.test"
+        username = "fs2-model-network-transition"
         subprocess_run.side_effect = [
             subprocess.CompletedProcess(
                 args=["kubectl-test", "auth", "whoami"],
@@ -325,9 +350,9 @@ class InferenceStackTests(unittest.TestCase):
             kubectl="kubectl-test",
             kubeconfig="/read-only/kubeconfig",
             context="test-context",
-            run_id="test-run",
+            run_id="testrun",
         ) as (holder, observed_username):
-            self.assertTrue(holder.startswith("test-run:"))
+            self.assertTrue(holder.startswith("testrun:"))
             self.assertEqual(username, observed_username)
 
         acquisition_patch = json.loads(
@@ -366,6 +391,36 @@ class InferenceStackTests(unittest.TestCase):
                     "change": {"actions": ["update"]},
                 },
                 {
+                    "mode": "managed",
+                    "address": (
+                        "kubernetes_network_policy_v1."
+                        'model_runtime_base_profile["gateway-dns-tcp-8000-v1"]'
+                    ),
+                    "change": {
+                        "actions": ["update"],
+                        "before": {
+                            "metadata": [
+                                {
+                                    "annotations": {
+                                        "fs2-serve.nebius.ai/network-transition-holder": "old"
+                                    },
+                                    "name": "profile",
+                                }
+                            ]
+                        },
+                        "after": {
+                            "metadata": [
+                                {
+                                    "annotations": {
+                                        "fs2-serve.nebius.ai/network-transition-holder": "new"
+                                    },
+                                    "name": "profile",
+                                }
+                            ]
+                        },
+                    },
+                },
+                {
                     "mode": "data",
                     "address": "data.kubernetes_resources.model_runtime_network_policies",
                     "change": {"actions": ["read"]},
@@ -376,7 +431,7 @@ class InferenceStackTests(unittest.TestCase):
         STACK.validate_model_network_policy_rollback_plan(
             {"resource_changes": []}, current
         )
-        for remaining in safe["resource_changes"][:3]:
+        for remaining in safe["resource_changes"][:4]:
             STACK.validate_model_network_policy_rollback_plan(
                 {"resource_changes": [remaining]}, current
             )

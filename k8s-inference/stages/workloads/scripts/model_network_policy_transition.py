@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -27,8 +28,9 @@ COMPONENT_LABEL = "app.kubernetes.io/component"
 PART_OF_LABEL = "app.kubernetes.io/part-of"
 NAMESPACE = "fs2-models"
 SYSTEM_NAMESPACE = "fs2-system"
-INVENTORY_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-inventory/v4"
+INVENTORY_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-inventory/v5"
 DENY_ABSENT_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-deny-absent/v2"
+HOLDER_PATTERN = re.compile(r"^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$")
 WORKLOAD_RESOURCES = {
     "deployments": ("apps/v1", "Deployment", "deployments.apps"),
     "statefulsets": ("apps/v1", "StatefulSet", "statefulsets.apps"),
@@ -204,9 +206,11 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
         raise ReceiptError("transition contract Lease name is invalid")
     if contract.get("transition_lock_namespace") != SYSTEM_NAMESPACE:
         raise ReceiptError("transition contract Lease namespace is invalid")
+    if contract.get("boundary_webhook_name") != "fs2-model-network-boundary":
+        raise ReceiptError("transition contract boundary webhook name is invalid")
     transition_writer = contract.get("transition_writer_username")
-    if not isinstance(transition_writer, str) or not transition_writer:
-        raise ReceiptError("transition contract authenticated writer is missing")
+    if transition_writer != "fs2-model-network-transition":
+        raise ReceiptError("transition contract authenticated writer is not exact")
     image = _object(contract.get("control_plane_image"), "contract.control_plane_image")
     if not isinstance(image.get("repository"), str) or not image["repository"]:
         raise ReceiptError("control-plane image repository is missing")
@@ -892,9 +896,20 @@ def _transition_lock(
                 "model-network transition Lease is active; capture after it is released"
             )
         return uid
-    if not expected_holder or holder != expected_holder:
+    if (
+        not expected_holder
+        or HOLDER_PATTERN.fullmatch(expected_holder) is None
+        or holder != expected_holder
+    ):
         raise ReceiptError(
             "model-network transition Lease holder differs from this apply"
+        )
+    if (
+        annotations.get("fs2-serve.nebius.ai/network-transition-holder")
+        != expected_holder
+    ):
+        raise ReceiptError(
+            "model-network transition Lease is not bound to this apply's random holder"
         )
     duration = spec.get("leaseDurationSeconds")
     renew_time = spec.get("renewTime")
@@ -918,6 +933,164 @@ def _transition_lock(
     return uid
 
 
+def _boundary_webhook_state(
+    contract: dict[str, Any], resources: dict[str, Any]
+) -> dict[str, str]:
+    matches = []
+    for item in _items(resources, "boundary admission webhooks"):
+        metadata = _object(item.get("metadata"), "boundary webhook.metadata")
+        if metadata.get("name") == contract["boundary_webhook_name"]:
+            matches.append(item)
+    if len(matches) != 1:
+        raise ReceiptError(
+            "independent model-network boundary webhook is missing or ambiguous"
+        )
+    webhook = matches[0]
+    metadata = _object(webhook.get("metadata"), "boundary webhook.metadata")
+    uid = metadata.get("uid")
+    resource_version = metadata.get("resourceVersion")
+    if not isinstance(uid, str) or not uid:
+        raise ReceiptError("boundary webhook has no UID")
+    if not isinstance(resource_version, str) or not resource_version:
+        raise ReceiptError("boundary webhook has no resourceVersion")
+    raw = webhook.get("webhooks")
+    if not isinstance(raw, list) or not all(isinstance(item, dict) for item in raw):
+        raise ReceiptError("boundary webhook list is malformed")
+    by_name = {item.get("name"): item for item in raw}
+    expected_names = {
+        "children.network.fs2.nebius.ai",
+        "transitions.network.fs2.nebius.ai",
+    }
+    if set(by_name) != expected_names or len(raw) != len(expected_names):
+        raise ReceiptError(
+            "boundary webhook does not contain the exact two fail-closed hooks"
+        )
+    common = {
+        "admissionReviewVersions": ["v1"],
+        "sideEffects": "None",
+        "failurePolicy": "Fail",
+        "matchPolicy": "Equivalent",
+        "timeoutSeconds": 3,
+    }
+    expected_rules = {
+        "children.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE"],
+                "resources": ["pods"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["apps"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE"],
+                "resources": ["replicasets"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["batch"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE"],
+                "resources": ["jobs"],
+                "scope": "Namespaced",
+            },
+        ],
+        "transitions.network.fs2.nebius.ai": [
+            {
+                "apiGroups": ["networking.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["networkpolicies"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["configmaps"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["coordination.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["leases"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["admissionregistration.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": [
+                    "validatingadmissionpolicies",
+                    "validatingadmissionpolicybindings",
+                    "validatingwebhookconfigurations",
+                ],
+                "scope": "Cluster",
+            },
+        ],
+    }
+    allowed_keys = {
+        "name",
+        "admissionReviewVersions",
+        "sideEffects",
+        "failurePolicy",
+        "matchPolicy",
+        "timeoutSeconds",
+        "clientConfig",
+        "namespaceSelector",
+        "objectSelector",
+        "rules",
+    }
+    for name in sorted(expected_names):
+        item = by_name[name]
+        if set(item) - allowed_keys:
+            raise ReceiptError(
+                f"boundary webhook {name} has unreviewed semantic fields"
+            )
+        if any(item.get(key) != value for key, value in common.items()):
+            raise ReceiptError(f"boundary webhook {name} is not fail closed")
+        if item.get("objectSelector", {}) != {}:
+            raise ReceiptError(
+                f"boundary webhook {name} has a narrowing objectSelector"
+            )
+        namespace_selector = item.get("namespaceSelector", {})
+        expected_namespace_selector = (
+            {"matchLabels": {"kubernetes.io/metadata.name": NAMESPACE}}
+            if name == "children.network.fs2.nebius.ai"
+            else {}
+        )
+        if namespace_selector != expected_namespace_selector:
+            raise ReceiptError(
+                f"boundary webhook {name} namespaceSelector is not exact"
+            )
+        client = _object(
+            item.get("clientConfig"), f"boundary webhook {name}.clientConfig"
+        )
+        if set(client) != {"caBundle", "service"}:
+            raise ReceiptError(
+                f"boundary webhook {name} clientConfig is not service-only"
+            )
+        ca_bundle = client.get("caBundle")
+        if not isinstance(ca_bundle, str) or not ca_bundle:
+            raise ReceiptError(f"boundary webhook {name} has no injected CA bundle")
+        if client.get("service") != {
+            "name": "fs2-serve-control-plane-network-boundary",
+            "namespace": SYSTEM_NAMESPACE,
+            "path": "/validate",
+            "port": 443,
+        }:
+            raise ReceiptError(f"boundary webhook {name} service target is not exact")
+        if item.get("rules") != expected_rules[name]:
+            raise ReceiptError(f"boundary webhook {name} resource rules are not exact")
+    return {
+        "uid": uid,
+        "resource_version": resource_version,
+        "spec_sha256": _sha256({"webhooks": raw}),
+    }
+
+
 def inventory_receipt(
     contract: dict[str, Any],
     resources: dict[str, dict[str, Any]],
@@ -926,6 +1099,7 @@ def inventory_receipt(
     controller_pods: dict[str, Any],
     admission_policies: dict[str, Any],
     admission_bindings: dict[str, Any],
+    boundary_webhooks: dict[str, Any],
     transition_leases: dict[str, Any],
     *,
     captured_at: str,
@@ -961,6 +1135,7 @@ def inventory_receipt(
         ),
         "admission_policies": policy_inventory,
         "admission_bindings": binding_inventory,
+        "admission_webhook": _boundary_webhook_state(contract, boundary_webhooks),
     }
     return {**payload, "payload_sha256": _sha256(payload)}
 
@@ -974,6 +1149,7 @@ def verify_enforce(
     controller_pods: dict[str, Any],
     admission_policies: dict[str, Any],
     admission_bindings: dict[str, Any],
+    boundary_webhooks: dict[str, Any],
     transition_leases: dict[str, Any],
 ) -> dict[str, Any]:
     _contract(contract, phases={"enforce"})
@@ -991,6 +1167,7 @@ def verify_enforce(
         controller_pods,
         admission_policies,
         admission_bindings,
+        boundary_webhooks,
         transition_leases,
         captured_at=captured_at,
         expected_lock_holder=lock_identity,
@@ -1089,6 +1266,7 @@ def _collect_inventory(
     dict[str, Any],
     dict[str, Any],
     dict[str, Any],
+    dict[str, Any],
 ]:
     resources = {
         key: _kubectl_json(
@@ -1136,6 +1314,12 @@ def _collect_inventory(
         context=args.context,
         resource="validatingadmissionpolicybindings.admissionregistration.k8s.io",
     )
+    boundary_webhooks = _kubectl_json(
+        kubectl=args.kubectl,
+        kubeconfig=args.kubeconfig,
+        context=args.context,
+        resource="validatingwebhookconfigurations.admissionregistration.k8s.io",
+    )
     transition_leases = _kubectl_json(
         kubectl=args.kubectl,
         kubeconfig=args.kubeconfig,
@@ -1150,6 +1334,7 @@ def _collect_inventory(
         controller_pods,
         admission_policies,
         admission_bindings,
+        boundary_webhooks,
         transition_leases,
     )
 

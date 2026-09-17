@@ -437,6 +437,23 @@ variable "kubeconfig_path" {
   }
 }
 
+variable "model_network_boundary_kubeconfig_path" {
+  description = "Separate Platform-Security-issued kubeconfig for the exact network authorizer (prepare) or transition writer (post-prepare). It must not be the shared deployment kubeconfig and must not rely on impersonation."
+  type        = string
+  default     = "/var/run/fs2-network-boundary/credential-required"
+  nullable    = false
+  sensitive   = true
+
+  validation {
+    condition = (
+      startswith(nonsensitive(var.model_network_boundary_kubeconfig_path), "/") &&
+      !strcontains(nonsensitive(var.model_network_boundary_kubeconfig_path), "..") &&
+      nonsensitive(var.model_network_boundary_kubeconfig_path) != var.kubeconfig_path
+    )
+    error_message = "model_network_boundary_kubeconfig_path must be an absolute, traversal-free credential path distinct from kubeconfig_path."
+  }
+}
+
 variable "run_id" {
   description = "Disposable lifecycle ID shared with infrastructure and foundation state."
   type        = string
@@ -1324,6 +1341,11 @@ variable "model_runtime_network_policy" {
         resource_version = string
         spec_sha256      = string
       }))
+      admission_webhook = object({
+        uid              = string
+        resource_version = string
+        spec_sha256      = string
+      })
       payload_sha256 = string
     }), null)
     deny_absent_receipt = optional(object({
@@ -1375,6 +1397,14 @@ variable "model_network_transition_lock_identity" {
   default     = ""
   nullable    = false
   sensitive   = true
+
+  validation {
+    condition = (
+      var.model_network_transition_lock_identity == "" ||
+      can(regex("^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$", nonsensitive(var.model_network_transition_lock_identity)))
+    )
+    error_message = "A model-network transition holder must be empty or the wrapper's run:pid:128-bit-token identity."
+  }
 }
 
 variable "model_network_transition_writer_username" {
@@ -1385,13 +1415,10 @@ variable "model_network_transition_writer_username" {
 
   validation {
     condition = (
-      var.model_runtime_network_policy.phase == "prepare" ||
-      (
-        length(var.model_network_transition_writer_username) > 0 &&
-        length(var.model_network_transition_writer_username) <= 1024
-      )
+      (var.model_runtime_network_policy.phase == "prepare" && var.model_network_transition_writer_username == "") ||
+      var.model_network_transition_writer_username == "fs2-model-network-transition"
     )
-    error_message = "Every post-prepare model-network transition requires the exact non-empty authenticated Kubernetes username."
+    error_message = "Every held model-network transition requires the exact separately authenticated fs2-model-network-transition username."
   }
 }
 
@@ -1406,11 +1433,10 @@ variable "model_network_transition_lock_required" {
       !var.model_network_transition_lock_required ||
       (
         var.model_network_transition_lock_identity != "" &&
-        var.model_network_transition_writer_username != "" &&
-        var.model_runtime_network_policy.phase != "prepare"
+        var.model_network_transition_writer_username == "fs2-model-network-transition"
       )
     )
-    error_message = "A required model-network transition lock needs a non-empty holder identity, exact authenticated writer, and a post-prepare phase."
+    error_message = "A required model-network transition lock needs the wrapper's random holder identity and exact separately authenticated transition writer."
   }
 }
 

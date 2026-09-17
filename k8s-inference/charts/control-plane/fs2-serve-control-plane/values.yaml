@@ -93,6 +93,39 @@ modelController:
   tolerations: []
   affinity: {}
 
+# Independent, fail-closed admission boundary for model-network privilege.
+# It has read-only Kubernetes access and is deliberately not the model,
+# scientific, acquisition, Helm, or Terraform writer it validates.
+networkBoundaryAdmission:
+  enabled: false
+  replicaCount: 2
+  modelNamespace: fs2-models
+  systemNamespace: fs2-system
+  authorizerUsername: fs2-model-network-authorizer
+  transitionWriterUsername: fs2-model-network-transition
+  acquisitionWriterUsername: system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime
+  directJobWriterUsername: system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime
+  jobsetWriterUsername: ""
+  kubernetesApiUrl: https://kubernetes.default.svc
+  apiTimeoutSeconds: "2"
+  tokenExpirationSeconds: 600
+  service:
+    port: 443
+    targetPort: 8443
+  certificate:
+    secretName: fs2-model-network-boundary-tls
+    issuerName: fs2-model-network-boundary-selfsigned
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # Staged scientific-batch API and reconciler. Both gates must be explicitly
 # enabled after immutable profile, execution-map, and Kueue contract ConfigMaps
 # are installed. Default releases receive no workload mutation credential.
@@ -213,6 +246,10 @@ serviceAccounts:
     name: ""
     annotations: {}
   controller:
+    create: true
+    name: ""
+    annotations: {}
+  network-boundary:
     create: true
     name: ""
     annotations: {}

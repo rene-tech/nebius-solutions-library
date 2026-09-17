@@ -107,6 +107,11 @@ locals {
   model_runtime_transition_lease_name                   = "fs2-model-network-transition"
   model_runtime_transition_lease_namespace              = "fs2-system"
   model_runtime_transition_writer_annotation            = "fs2-serve.nebius.ai/network-transition-writer"
+  model_runtime_transition_holder_annotation            = "fs2-serve.nebius.ai/network-transition-holder"
+  model_runtime_authorizer_writer                       = "fs2-model-network-authorizer"
+  model_runtime_transition_writer                       = "fs2-model-network-transition"
+  model_runtime_acquisition_writer                      = "system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime"
+  model_runtime_boundary_webhook_name                   = "fs2-model-network-boundary"
   model_runtime_controller_writer = (
     "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller"
   )
@@ -138,9 +143,9 @@ locals {
     "system:serviceaccount:kube-system:statefulset-controller",
   ]
   model_runtime_active_transition_writer_expression = trimspace(<<-CEL
-    request.userInfo.username == ${jsonencode(var.model_network_transition_writer_username)} &&
+    request.userInfo.username == ${jsonencode(local.model_runtime_transition_writer)} &&
     has(params.spec.holderIdentity) &&
-    params.spec.holderIdentity != '' &&
+    params.spec.holderIdentity.matches('^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$') &&
     has(params.metadata.annotations) &&
     params.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username
   CEL
@@ -204,7 +209,9 @@ locals {
            request.userInfo.username in ${jsonencode(local.model_runtime_cronjob_writers)} :
           (object.metadata.labels['${local.model_runtime_network_class_label}'] == 'internal-job' ?
             request.userInfo.username == ${jsonencode(local.model_runtime_scientific_writer)} :
-            (${local.model_runtime_active_transition_writer_expression}))))
+           (object.metadata.labels['${local.model_runtime_network_class_label}'] == 'public-acquisition' ?
+            request.userInfo.username == ${jsonencode(local.model_runtime_acquisition_writer)} :
+            (${local.model_runtime_active_transition_writer_expression})))))
       CEL
       expression        = <<-CEL
         has(object.metadata.labels) &&
@@ -432,6 +439,10 @@ locals {
   }
   model_runtime_helm_freeze_admission_policy_spec = {
     failurePolicy = "Fail"
+    paramKind = {
+      apiVersion = "coordination.k8s.io/v1"
+      kind       = "Lease"
+    }
     matchConstraints = {
       matchPolicy = "Equivalent"
       resourceRules = [{
@@ -444,20 +455,22 @@ locals {
     }
     validations = [{
       expression = trimspace(<<-CEL
-        request.operation == 'CREATE' ?
+        !has(params.spec.holderIdentity) ||
+        params.spec.holderIdentity == '' ||
+        (request.operation == 'CREATE' ?
           (!has(object.metadata.labels) ||
-           !('owner' in object.metadata.labels) ||
-           !('name' in object.metadata.labels) ||
-           object.metadata.labels['owner'] != 'helm' ||
-           object.metadata.labels['name'] != 'fs2-serve-control-plane') :
+            !('owner' in object.metadata.labels) ||
+            !('name' in object.metadata.labels) ||
+            object.metadata.labels['owner'] != 'helm' ||
+            object.metadata.labels['name'] != 'fs2-serve-control-plane') :
           (!has(oldObject.metadata.labels) ||
-           !('owner' in oldObject.metadata.labels) ||
-           !('name' in oldObject.metadata.labels) ||
-           oldObject.metadata.labels['owner'] != 'helm' ||
-           oldObject.metadata.labels['name'] != 'fs2-serve-control-plane')
+            !('owner' in oldObject.metadata.labels) ||
+            !('name' in oldObject.metadata.labels) ||
+            oldObject.metadata.labels['owner'] != 'helm' ||
+            oldObject.metadata.labels['name'] != 'fs2-serve-control-plane'))
       CEL
       )
-      message = "the fs2-serve-control-plane Helm release is frozen while the fs2-models network boundary is armed"
+      message = "the fs2-serve-control-plane Helm release is frozen while a model-network transition Lease is active"
       reason  = "Forbidden"
     }]
   }
@@ -477,10 +490,17 @@ locals {
       expression = trimspace(<<-CEL
         oldObject.metadata.name != ${jsonencode(local.model_runtime_transition_lease_name)} ||
         (request.operation == 'UPDATE' &&
+         request.userInfo.username == ${jsonencode(local.model_runtime_transition_writer)} &&
          has(oldObject.metadata.annotations) &&
          oldObject.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username &&
+         (oldObject.spec.holderIdentity == '' ||
+          (oldObject.spec.holderIdentity.matches('^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$') &&
+           oldObject.metadata.annotations[${jsonencode(local.model_runtime_transition_holder_annotation)}] == oldObject.spec.holderIdentity)) &&
          has(object.metadata.annotations) &&
          object.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username &&
+         (object.spec.holderIdentity == '' ||
+          (object.spec.holderIdentity.matches('^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$') &&
+           object.metadata.annotations[${jsonencode(local.model_runtime_transition_holder_annotation)}] == object.spec.holderIdentity)) &&
          ((oldObject.spec.holderIdentity == '' && object.spec.holderIdentity != '') ||
           (oldObject.spec.holderIdentity != '' && object.spec.holderIdentity == oldObject.spec.holderIdentity) ||
           (oldObject.spec.holderIdentity != '' && object.spec.holderIdentity == '')))
@@ -512,6 +532,7 @@ locals {
       resources = [
         "validatingadmissionpolicies",
         "validatingadmissionpolicybindings",
+        "validatingwebhookconfigurations",
       ]
       scope = "Cluster"
     },
@@ -546,7 +567,10 @@ locals {
            variables.targetMetadata.name in ${jsonencode(local.model_runtime_admission_policy_names)}) ||
           (request.resource.group == 'admissionregistration.k8s.io' &&
            request.resource.resource == 'validatingadmissionpolicybindings' &&
-           variables.targetMetadata.name in ${jsonencode(local.model_runtime_admission_binding_names)})
+           variables.targetMetadata.name in ${jsonencode(local.model_runtime_admission_binding_names)}) ||
+          (request.resource.group == 'admissionregistration.k8s.io' &&
+           request.resource.resource == 'validatingwebhookconfigurations' &&
+           variables.targetMetadata.name == ${jsonencode(local.model_runtime_boundary_webhook_name)})
         CEL
         )
       },
@@ -554,11 +578,14 @@ locals {
     validations = [{
       expression = trimspace(<<-CEL
         !variables.protectedObject ||
-        (request.userInfo.username == ${jsonencode(var.model_network_transition_writer_username)} &&
+        (request.userInfo.username == ${jsonencode(local.model_runtime_transition_writer)} &&
          has(params.spec.holderIdentity) &&
-         params.spec.holderIdentity != '' &&
+         params.spec.holderIdentity.matches('^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$') &&
          has(params.metadata.annotations) &&
-         params.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username)
+         params.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username &&
+         (request.operation == 'DELETE' ||
+          (has(variables.targetMetadata.annotations) &&
+           variables.targetMetadata.annotations[${jsonencode(local.model_runtime_transition_holder_annotation)}] == params.spec.holderIdentity)))
       CEL
       )
       message = "fs2-models NetworkPolicies and Terraform-owned boundary admission objects require the exact active transition writer and Lease"
@@ -617,6 +644,11 @@ locals {
       "${local.model_runtime_helm_freeze_admission_policy_name}-fs2-system" = {
         policyName        = local.model_runtime_helm_freeze_admission_policy_name
         validationActions = ["Deny"]
+        paramRef = {
+          name                    = local.model_runtime_transition_lease_name
+          namespace               = local.model_runtime_transition_lease_namespace
+          parameterNotFoundAction = "Allow"
+        }
         matchResources = {
           matchPolicy = "Equivalent"
           namespaceSelector = {
@@ -677,6 +709,7 @@ locals {
     transition_lock_uid = var.model_runtime_network_policy.inventory_receipt.transition_lock_uid
     admission_policies  = var.model_runtime_network_policy.inventory_receipt.admission_policies
     admission_bindings  = var.model_runtime_network_policy.inventory_receipt.admission_bindings
+    admission_webhook   = var.model_runtime_network_policy.inventory_receipt.admission_webhook
   }
   model_runtime_deny_absent_receipt_payload = var.model_runtime_network_policy.deny_absent_receipt == null ? null : {
     schema                     = var.model_runtime_network_policy.deny_absent_receipt.schema
@@ -706,6 +739,7 @@ locals {
 }
 
 data "kubernetes_resources" "model_runtime_network_policies" {
+  provider = kubernetes.network_boundary
   count = contains([
     "prepare",
     "inventory",
@@ -718,7 +752,8 @@ data "kubernetes_resources" "model_runtime_network_policies" {
 }
 
 data "kubernetes_resources" "model_runtime_network_enforcement_markers" {
-  count = contains(["prepare", "rollback-helm"], var.model_runtime_network_policy.phase) ? 1 : 0
+  provider = kubernetes.network_boundary
+  count    = contains(["prepare", "rollback-helm"], var.model_runtime_network_policy.phase) ? 1 : 0
 
   api_version    = "v1"
   kind           = "ConfigMap"
@@ -742,7 +777,8 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     controller_deployment_name    = local.model_runtime_controller_deployment_name
     transition_lock_name          = local.model_runtime_transition_lease_name
     transition_lock_namespace     = local.model_runtime_transition_lease_namespace
-    transition_writer_username    = var.model_network_transition_writer_username
+    transition_writer_username    = local.model_runtime_transition_writer
+    boundary_webhook_name         = local.model_runtime_boundary_webhook_name
     control_plane_image           = var.control_plane_image
     inventory_receipt_sha256      = try(var.model_runtime_network_policy.inventory_receipt.payload_sha256, null)
     deny_absent_receipt_sha256    = try(var.model_runtime_network_policy.deny_absent_receipt.payload_sha256, null)
@@ -753,12 +789,12 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
 
   lifecycle {
     precondition {
-      condition = var.model_runtime_network_policy.phase == "prepare" || (
+      condition = nonsensitive(var.model_network_boundary_kubeconfig_path) == "/var/run/fs2-network-boundary/credential-required" || (
         var.model_network_transition_lock_required &&
         var.model_network_transition_lock_identity != "" &&
-        var.model_network_transition_writer_username != ""
+        var.model_network_transition_writer_username == local.model_runtime_transition_writer
       )
-      error_message = "Every post-prepare model-network transition must run through inference-stack as the exact authenticated writer while it holds the cluster-wide transition Lease."
+      error_message = "Every model-network phase, including prepare, must run through inference-stack with separate authorizer/transition credentials while the random transition Lease holder is active."
     }
 
     precondition {
@@ -782,7 +818,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         "rollback-remove-deny",
         "rollback-helm",
         ], var.model_runtime_network_policy.phase) || try(
-        var.model_runtime_network_policy.inventory_receipt.schema == "fs2-serve.nebius.ai/model-runtime-network-inventory/v4" &&
+        var.model_runtime_network_policy.inventory_receipt.schema == "fs2-serve.nebius.ai/model-runtime-network-inventory/v5" &&
         var.model_runtime_network_policy.inventory_receipt.cluster_id == var.cluster_id &&
         var.model_runtime_network_policy.inventory_receipt.namespace == "fs2-models" &&
         can(formatdate("YYYY-MM-DD'T'hh:mm:ssZ", var.model_runtime_network_policy.inventory_receipt.captured_at)) &&
@@ -803,10 +839,13 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
           binding.resource_version != "" &&
           binding.spec_sha256 == local.model_runtime_admission_binding_spec_sha256[name]
         ]) &&
+        var.model_runtime_network_policy.inventory_receipt.admission_webhook.uid != "" &&
+        var.model_runtime_network_policy.inventory_receipt.admission_webhook.resource_version != "" &&
+        can(regex("^[a-f0-9]{64}$", var.model_runtime_network_policy.inventory_receipt.admission_webhook.spec_sha256)) &&
         var.model_runtime_network_policy.inventory_receipt.payload_sha256 == sha256(jsonencode(local.model_runtime_inventory_receipt_payload)),
         false,
       )
-      error_message = "Enforcement and deny removal require a valid v4 workload/Pod receipt for this cluster, the live digest-pinned model-controller, exact admission policy and binding UIDs/resourceVersions/full specs, namespace, and finite profile catalog. Expected payload digest: ${sha256(jsonencode(local.model_runtime_inventory_receipt_payload))}."
+      error_message = "Enforcement and deny removal require a valid v5 workload/Pod receipt for this cluster, the live digest-pinned model-controller, exact policy/binding/webhook UIDs, resourceVersions and full semantics, namespace, and finite profile catalog. Expected payload digest: ${sha256(jsonencode(local.model_runtime_inventory_receipt_payload))}."
     }
 
     precondition {
@@ -841,6 +880,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
 # of the finite Terraform-owned profiles. That closes the plan/apply race while
 # still allowing arbitrary customer App UUIDs to reuse an immutable profile.
 resource "kubernetes_manifest" "model_runtime_network_profile_admission" {
+  provider = kubernetes.network_boundary
   for_each = local.model_runtime_admission_specs
 
   manifest = {
@@ -853,7 +893,8 @@ resource "kubernetes_manifest" "model_runtime_network_profile_admission" {
         "fs2-serve.nebius.ai/policy-owner" = "terraform-profile-admission"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_policy_specs[each.value.name]
@@ -867,9 +908,12 @@ resource "kubernetes_manifest" "model_runtime_network_profile_admission" {
   lifecycle {
     prevent_destroy = true
   }
+
+  depends_on = [helm_release.control_plane]
 }
 
 resource "kubernetes_manifest" "model_runtime_network_profile_admission_binding" {
+  provider = kubernetes.network_boundary
   for_each = var.model_runtime_network_policy.phase == "prepare" ? {} : local.model_runtime_admission_specs
 
   manifest = {
@@ -882,7 +926,8 @@ resource "kubernetes_manifest" "model_runtime_network_profile_admission_binding"
         "fs2-serve.nebius.ai/policy-owner" = "terraform-profile-admission"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_binding_specs["${each.value.name}-fs2-models"]
@@ -913,6 +958,7 @@ resource "kubernetes_manifest" "model_runtime_network_profile_admission_binding"
 # existing behavior. The controller has no cluster-scoped admission-policy
 # permissions and therefore cannot weaken this fence.
 resource "kubernetes_manifest" "model_runtime_network_boundary_marker_admission" {
+  provider = kubernetes.network_boundary
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
@@ -923,7 +969,8 @@ resource "kubernetes_manifest" "model_runtime_network_boundary_marker_admission"
         "fs2-serve.nebius.ai/policy-owner" = "terraform-boundary-marker-admission"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_policy_specs[local.model_runtime_boundary_marker_admission_policy_name]
@@ -937,10 +984,13 @@ resource "kubernetes_manifest" "model_runtime_network_boundary_marker_admission"
   lifecycle {
     prevent_destroy = true
   }
+
+  depends_on = [helm_release.control_plane]
 }
 
 resource "kubernetes_manifest" "model_runtime_network_boundary_marker_admission_binding" {
-  count = var.model_runtime_network_policy.phase == "prepare" ? 0 : 1
+  provider = kubernetes.network_boundary
+  count    = var.model_runtime_network_policy.phase == "prepare" ? 0 : 1
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -952,7 +1002,8 @@ resource "kubernetes_manifest" "model_runtime_network_boundary_marker_admission_
         "fs2-serve.nebius.ai/policy-owner" = "terraform-boundary-marker-admission"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_binding_specs["${local.model_runtime_boundary_marker_admission_policy_name}-fs2-models"]
@@ -978,6 +1029,7 @@ resource "kubernetes_manifest" "model_runtime_network_boundary_marker_admission_
 # verifier runs. The binding remains through deny removal and is removed only
 # in rollback-helm, whose precondition proves default-deny is already absent.
 resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admission" {
+  provider = kubernetes.network_boundary
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
@@ -988,7 +1040,8 @@ resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admissio
         "fs2-serve.nebius.ai/policy-owner" = "terraform-controller-freeze"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_policy_specs[local.model_runtime_controller_freeze_admission_policy_name]
@@ -1002,12 +1055,15 @@ resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admissio
   lifecycle {
     prevent_destroy = true
   }
+
+  depends_on = [helm_release.control_plane]
 }
 
 # Block Helm at its release-storage boundary before it can partially mutate
 # chart resources. The exact model-controller Deployment freeze above remains
 # the second API-server barrier if another client bypasses Helm storage.
 resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission" {
+  provider = kubernetes.network_boundary
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
@@ -1018,7 +1074,8 @@ resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission" {
         "fs2-serve.nebius.ai/policy-owner" = "terraform-helm-freeze"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_policy_specs[local.model_runtime_helm_freeze_admission_policy_name]
@@ -1032,6 +1089,8 @@ resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission" {
   lifecycle {
     prevent_destroy = true
   }
+
+  depends_on = [helm_release.control_plane]
 }
 
 # The retained Lease has an API-server-enforced writer boundary. A client may
@@ -1040,6 +1099,7 @@ resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission" {
 # non-empty holder identity. This closes the cooperative-lock gap without
 # granting the model controller any admission-policy authority.
 resource "kubernetes_manifest" "model_runtime_network_lease_guard_admission" {
+  provider = kubernetes.network_boundary
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
@@ -1050,7 +1110,8 @@ resource "kubernetes_manifest" "model_runtime_network_lease_guard_admission" {
         "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_policy_specs[local.model_runtime_lease_guard_admission_policy_name]
@@ -1064,9 +1125,12 @@ resource "kubernetes_manifest" "model_runtime_network_lease_guard_admission" {
   lifecycle {
     prevent_destroy = true
   }
+
+  depends_on = [helm_release.control_plane]
 }
 
 resource "kubernetes_manifest" "model_runtime_network_lease_guard_admission_binding" {
+  provider = kubernetes.network_boundary
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicyBinding"
@@ -1077,7 +1141,8 @@ resource "kubernetes_manifest" "model_runtime_network_lease_guard_admission_bind
         "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_binding_specs["${local.model_runtime_lease_guard_admission_policy_name}-fs2-system"]
@@ -1103,6 +1168,7 @@ resource "kubernetes_manifest" "model_runtime_network_lease_guard_admission_bind
 # carries the current holder token, so an unrelated Helm/Terraform process that
 # merely shares RBAC cannot race the verified transition.
 resource "kubernetes_manifest" "model_runtime_network_transition_guard_admission" {
+  provider = kubernetes.network_boundary
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
@@ -1113,7 +1179,8 @@ resource "kubernetes_manifest" "model_runtime_network_transition_guard_admission
         "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_policy_specs[local.model_runtime_transition_guard_admission_policy_name]
@@ -1127,9 +1194,12 @@ resource "kubernetes_manifest" "model_runtime_network_transition_guard_admission
   lifecycle {
     prevent_destroy = true
   }
+
+  depends_on = [helm_release.control_plane]
 }
 
 resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admission_binding" {
+  provider = kubernetes.network_boundary
   count = contains([
     "inventory",
     "enforce",
@@ -1146,7 +1216,8 @@ resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admissio
         "fs2-serve.nebius.ai/policy-owner" = "terraform-controller-freeze"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_binding_specs["${local.model_runtime_controller_freeze_admission_policy_name}-fs2-system"]
@@ -1164,7 +1235,9 @@ resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admissio
 }
 
 resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission_binding" {
+  provider = kubernetes.network_boundary
   count = contains([
+    "prepare",
     "inventory",
     "enforce",
     "rollback-remove-deny",
@@ -1180,7 +1253,8 @@ resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission_bind
         "fs2-serve.nebius.ai/policy-owner" = "terraform-helm-freeze"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_binding_specs["${local.model_runtime_helm_freeze_admission_policy_name}-fs2-system"]
@@ -1198,7 +1272,8 @@ resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission_bind
 }
 
 resource "kubernetes_manifest" "model_runtime_network_transition_guard_admission_binding" {
-  count = var.model_runtime_network_policy.phase == "prepare" ? 0 : 1
+  provider = kubernetes.network_boundary
+  count    = var.model_runtime_network_policy.phase == "prepare" ? 0 : 1
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -1210,7 +1285,8 @@ resource "kubernetes_manifest" "model_runtime_network_transition_guard_admission
         "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
       })
       annotations = {
-        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+        (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+        (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
       }
     }
     spec = local.model_runtime_admission_binding_specs["${local.model_runtime_transition_guard_admission_policy_name}-global"]
@@ -1239,7 +1315,8 @@ resource "kubernetes_manifest" "model_runtime_network_transition_guard_admission
 }
 
 resource "kubernetes_config_map_v1" "model_runtime_network_enforcement" {
-  count = var.model_runtime_network_policy.phase == "prepare" ? 0 : 1
+  provider = kubernetes.network_boundary
+  count    = var.model_runtime_network_policy.phase == "prepare" ? 0 : 1
 
   metadata {
     name      = "fs2-runtime-network-policy-boundary-v2"
@@ -1249,7 +1326,8 @@ resource "kubernetes_config_map_v1" "model_runtime_network_enforcement" {
       "fs2-serve.nebius.ai/network-boundary-marker" = "true"
     })
     annotations = {
-      (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+      (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+      (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
     }
   }
 
@@ -1275,7 +1353,10 @@ resource "kubernetes_config_map_v1" "model_runtime_network_enforcement" {
 }
 
 resource "kubernetes_network_policy_v1" "model_runtime_base_profile" {
+  provider = kubernetes.network_boundary
   for_each = local.model_runtime_base_profiles
+
+  depends_on = [helm_release.control_plane]
 
   metadata {
     name      = "fs2-runtime-profile-${each.key}"
@@ -1286,7 +1367,8 @@ resource "kubernetes_network_policy_v1" "model_runtime_base_profile" {
       "fs2-serve.nebius.ai/policy-owner"          = "terraform-profile"
     })
     annotations = {
-      (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+      (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+      (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
     }
   }
 
@@ -1348,7 +1430,10 @@ resource "kubernetes_network_policy_v1" "model_runtime_base_profile" {
 }
 
 resource "kubernetes_network_policy_v1" "model_runtime_modelexpress_profile" {
+  provider = kubernetes.network_boundary
   for_each = local.model_runtime_modelexpress_profiles
+
+  depends_on = [helm_release.control_plane]
 
   metadata {
     name      = "fs2-runtime-profile-${each.key}"
@@ -1359,7 +1444,8 @@ resource "kubernetes_network_policy_v1" "model_runtime_modelexpress_profile" {
       "fs2-serve.nebius.ai/policy-owner"          = "terraform-profile"
     })
     annotations = {
-      (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+      (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+      (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
     }
   }
 
@@ -1493,7 +1579,10 @@ resource "kubernetes_network_policy_v1" "model_runtime_modelexpress_profile" {
 }
 
 resource "kubernetes_network_policy_v1" "model_namespace_support_profile" {
+  provider = kubernetes.network_boundary
   for_each = local.model_namespace_support_profiles
+
+  depends_on = [helm_release.control_plane]
 
   metadata {
     name      = "fs2-runtime-profile-${each.key}"
@@ -1504,7 +1593,8 @@ resource "kubernetes_network_policy_v1" "model_namespace_support_profile" {
       "fs2-serve.nebius.ai/policy-owner"          = "terraform-profile"
     })
     annotations = {
-      (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+      (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+      (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
     }
   }
 
@@ -1678,7 +1768,8 @@ resource "terraform_data" "model_runtime_network_policy_apply_fence" {
 }
 
 resource "kubernetes_network_policy_v1" "model_namespace_default_deny" {
-  count = var.model_runtime_network_policy.phase == "enforce" ? 1 : 0
+  provider = kubernetes.network_boundary
+  count    = var.model_runtime_network_policy.phase == "enforce" ? 1 : 0
 
   metadata {
     name      = "default-deny"
@@ -1688,7 +1779,8 @@ resource "kubernetes_network_policy_v1" "model_namespace_default_deny" {
       "fs2-serve.nebius.ai/policy-owner" = "terraform-default-deny"
     })
     annotations = {
-      (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+      (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
+      (local.model_runtime_transition_holder_annotation) = var.model_network_transition_lock_identity
     }
   }
 

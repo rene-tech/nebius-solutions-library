@@ -1,0 +1,506 @@
+{{- if .Values.networkBoundaryAdmission.enabled }}
+{{- $boundary := .Values.networkBoundaryAdmission }}
+{{- $serviceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "network-boundary") }}
+{{- if ne $boundary.modelNamespace "fs2-models" }}
+{{- fail "networkBoundaryAdmission.modelNamespace must be fs2-models" }}
+{{- end }}
+{{- if ne $boundary.systemNamespace .Release.Namespace }}
+{{- fail "networkBoundaryAdmission.systemNamespace must equal the Helm release namespace" }}
+{{- end }}
+{{- if or (eq $boundary.authorizerUsername "") (eq $boundary.acquisitionWriterUsername "") (eq $boundary.directJobWriterUsername "") (eq $boundary.jobsetWriterUsername "") (eq $boundary.transitionWriterUsername "") }}
+{{- fail "networkBoundaryAdmission requires exact authorizer, acquisition, direct-Job, JobSet, and transition writers" }}
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-boundary-reader
+  namespace: {{ $boundary.modelNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "replicationcontrollers"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get"]
+  - apiGroups: ["jobset.x-k8s.io"]
+    resources: ["jobsets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-boundary-reader
+  namespace: {{ $boundary.modelNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $serviceAccount }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fs2-serve.fullname" . }}-network-boundary-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-boundary-lease-reader
+  namespace: {{ $boundary.systemNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["fs2-model-network-transition"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-boundary-lease-reader
+  namespace: {{ $boundary.systemNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $serviceAccount }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fs2-serve.fullname" . }}-network-boundary-lease-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-policy-author
+  namespace: {{ $boundary.modelNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-policy-author
+  namespace: {{ $boundary.modelNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+subjects:
+  - kind: User
+    name: {{ $boundary.authorizerUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+  - kind: User
+    name: {{ $boundary.transitionWriterUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fs2-serve.fullname" . }}-network-policy-author
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-transition-lease
+  namespace: {{ $boundary.systemNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["fs2-model-network-transition"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-transition-lease
+  namespace: {{ $boundary.systemNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+subjects:
+  - kind: User
+    name: {{ $boundary.transitionWriterUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fs2-serve.fullname" . }}-network-transition-lease
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-admission-author
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
+    verbs: ["get", "list", "create"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
+    resourceNames:
+      - fs2-model-network-profile-apps
+      - fs2-model-network-profile-cronjobs
+      - fs2-model-network-profile-jobs
+      - fs2-model-network-profile-jobsets
+      - fs2-model-network-profile-pods
+      - fs2-model-network-profile-replicationcontrollers
+      - fs2-model-network-boundary-marker
+      - fs2-model-network-controller-freeze
+      - fs2-model-network-helm-freeze
+      - fs2-model-network-transition-lease-guard
+      - fs2-model-network-transition-guard
+      - fs2-model-network-profile-apps-fs2-models
+      - fs2-model-network-profile-cronjobs-fs2-models
+      - fs2-model-network-profile-jobs-fs2-models
+      - fs2-model-network-profile-jobsets-fs2-models
+      - fs2-model-network-profile-pods-fs2-models
+      - fs2-model-network-profile-replicationcontrollers-fs2-models
+      - fs2-model-network-boundary-marker-fs2-models
+      - fs2-model-network-controller-freeze-fs2-system
+      - fs2-model-network-helm-freeze-fs2-system
+      - fs2-model-network-transition-lease-guard-fs2-system
+      - fs2-model-network-transition-guard-global
+    verbs: ["get", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-admission-author
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+subjects:
+  - kind: User
+    name: {{ $boundary.authorizerUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+  - kind: User
+    name: {{ $boundary.transitionWriterUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "fs2-serve.fullname" . }}-network-admission-author
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $boundary.certificate.issuerName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fs2-model-network-boundary
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  secretName: {{ $boundary.certificate.secretName }}
+  dnsNames:
+    - {{ include "fs2-serve.fullname" . }}-network-boundary.{{ .Release.Namespace }}.svc
+    - {{ include "fs2-serve.fullname" . }}-network-boundary.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    group: cert-manager.io
+    kind: Issuer
+    name: {{ $boundary.certificate.issuerName }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-boundary
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-boundary-admission
+spec:
+  replicas: {{ $boundary.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.networkBoundarySelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.networkBoundarySelectorLabels" . | nindent 8 }}
+      annotations:
+        fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+    spec:
+      serviceAccountName: {{ $serviceAccount }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: admission
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["network-boundary-admission"]
+          ports:
+            - name: https
+              containerPort: {{ $boundary.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_ENABLED
+              value: "true"
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_PORT
+              value: {{ $boundary.service.targetPort | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_API_URL
+              value: {{ $boundary.kubernetesApiUrl | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_MODEL_NAMESPACE
+              value: {{ $boundary.modelNamespace | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_SYSTEM_NAMESPACE
+              value: {{ $boundary.systemNamespace | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_ACQUISITION_WRITER
+              value: {{ $boundary.acquisitionWriterUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_AUTHORIZER_WRITER
+              value: {{ $boundary.authorizerUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_DIRECT_JOB_WRITER
+              value: {{ $boundary.directJobWriterUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_JOBSET_WRITER
+              value: {{ $boundary.jobsetWriterUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_TRANSITION_WRITER
+              value: {{ $boundary.transitionWriterUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_API_TIMEOUT_SECONDS
+              value: {{ $boundary.apiTimeoutSeconds | quote }}
+            - name: FS2_LOG_LEVEL
+              value: {{ .Values.config.logLevel | default "INFO" | quote }}
+          volumeMounts:
+            - name: kubernetes-api
+              mountPath: /var/run/secrets/fs2-network-boundary
+              readOnly: true
+            - name: tls
+              mountPath: /var/run/secrets/fs2-network-boundary-tls
+              readOnly: true
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: https
+              scheme: HTTPS
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: https
+              scheme: HTTPS
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /livez
+              port: https
+              scheme: HTTPS
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            {{- toYaml $boundary.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: kubernetes-api
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken:
+                  expirationSeconds: {{ $boundary.tokenExpirationSeconds }}
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+        - name: tls
+          secret:
+            secretName: {{ $boundary.certificate.secretName }}
+            defaultMode: 0400
+      {{- with $boundary.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $boundary.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $boundary.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-boundary
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-boundary-admission
+spec:
+  selector:
+    {{- include "fs2-serve.networkBoundarySelectorLabels" . | nindent 4 }}
+  ports:
+    - name: https
+      port: {{ $boundary.service.port }}
+      targetPort: https
+      protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-boundary
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.networkBoundarySelectorLabels" . | nindent 6 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-network-boundary
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs2-serve.networkBoundarySelectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - port: {{ $boundary.service.targetPort }}
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 14 }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- range .Values.networkPolicy.kubernetesApiCidrs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        - port: 443
+          protocol: TCP
+    {{- end }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: fs2-model-network-boundary
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    fs2-serve.nebius.ai/policy-owner: independent-network-boundary
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/fs2-model-network-boundary
+webhooks:
+  - name: children.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig:
+      service:
+        namespace: {{ .Release.Namespace }}
+        name: {{ include "fs2-serve.fullname" . }}-network-boundary
+        path: /validate
+        port: {{ $boundary.service.port }}
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ $boundary.modelNamespace }}
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+        scope: Namespaced
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["replicasets"]
+        scope: Namespaced
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs"]
+        scope: Namespaced
+  - name: transitions.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig:
+      service:
+        namespace: {{ .Release.Namespace }}
+        name: {{ include "fs2-serve.fullname" . }}-network-boundary
+        path: /validate
+        port: {{ $boundary.service.port }}
+    rules:
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["networkpolicies"]
+        scope: Namespaced
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps"]
+        scope: Namespaced
+      - apiGroups: ["coordination.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["leases"]
+        scope: Namespaced
+      - apiGroups: ["admissionregistration.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings", "validatingwebhookconfigurations"]
+        scope: Cluster
+{{- end }}

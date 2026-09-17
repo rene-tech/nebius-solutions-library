@@ -205,6 +205,47 @@ class Settings(BaseSettings):
     model_controller_workers: int = Field(default=2, ge=1, le=16)
     model_controller_api_timeout_seconds: float = Field(default=5, ge=0.5, le=30)
     model_controller_health_port: int = Field(default=8081, ge=1024, le=65535)
+    # Independent fail-closed admission reader.  Its service account is
+    # read-only and intentionally distinct from every workload/transition
+    # writer whose requests it validates.
+    network_boundary_admission_enabled: bool = False
+    network_boundary_admission_host: str = "0.0.0.0"  # noqa: S104
+    network_boundary_admission_port: int = Field(default=8443, ge=1024, le=65535)
+    network_boundary_admission_api_url: str = Field(
+        default="https://kubernetes.default.svc", min_length=1, max_length=2048
+    )
+    network_boundary_admission_token_file: Path = Path("/var/run/secrets/fs2-network-boundary/token")
+    network_boundary_admission_ca_file: Path = Path("/var/run/secrets/fs2-network-boundary/ca.crt")
+    network_boundary_admission_tls_cert_file: Path = Path("/var/run/secrets/fs2-network-boundary-tls/tls.crt")
+    network_boundary_admission_tls_key_file: Path = Path("/var/run/secrets/fs2-network-boundary-tls/tls.key")
+    network_boundary_admission_model_namespace: str = "fs2-models"
+    network_boundary_admission_system_namespace: str = "fs2-system"
+    network_boundary_admission_authorizer_writer: str = Field(
+        default="fs2-model-network-authorizer",
+        min_length=1,
+        max_length=1024,
+    )
+    network_boundary_admission_acquisition_writer: str = Field(
+        default="system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime",
+        min_length=1,
+        max_length=1024,
+    )
+    network_boundary_admission_direct_job_writer: str = Field(
+        default="system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime",
+        min_length=1,
+        max_length=1024,
+    )
+    network_boundary_admission_jobset_writer: str = Field(
+        default="system:serviceaccount:jobset-system:fs2-jobset-controller",
+        min_length=1,
+        max_length=1024,
+    )
+    network_boundary_admission_transition_writer: str = Field(
+        default="fs2-model-network-transition",
+        min_length=1,
+        max_length=1024,
+    )
+    network_boundary_admission_api_timeout_seconds: float = Field(default=2, ge=0.1, le=10)
     scientific_batch_enabled: bool = False
     scientific_batch_writes_enabled: bool = False
     scientific_batch_namespace: str = Field(

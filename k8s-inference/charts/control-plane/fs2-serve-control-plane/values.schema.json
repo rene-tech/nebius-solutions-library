@@ -6,6 +6,7 @@
     "adminConsole",
     "adminConfiguration",
     "modelController",
+    "networkBoundaryAdmission",
     "scientificBatch",
     "artifactService",
     "bootstrapAccess",
@@ -797,6 +798,66 @@
       },
       "additionalProperties": false
     },
+    "networkBoundaryAdmission": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "replicaCount",
+        "modelNamespace",
+        "systemNamespace",
+        "authorizerUsername",
+        "transitionWriterUsername",
+        "acquisitionWriterUsername",
+        "directJobWriterUsername",
+        "jobsetWriterUsername",
+        "kubernetesApiUrl",
+        "apiTimeoutSeconds",
+        "tokenExpirationSeconds",
+        "service",
+        "certificate",
+        "resources",
+        "nodeSelector",
+        "tolerations",
+        "affinity"
+      ],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "replicaCount": {"type": "integer", "minimum": 2, "maximum": 20},
+        "modelNamespace": {"const": "fs2-models"},
+        "systemNamespace": {"const": "fs2-system"},
+        "authorizerUsername": {"const": "fs2-model-network-authorizer"},
+        "transitionWriterUsername": {"const": "fs2-model-network-transition"},
+        "acquisitionWriterUsername": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "directJobWriterUsername": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "jobsetWriterUsername": {"type": "string", "maxLength": 1024},
+        "kubernetesApiUrl": {"const": "https://kubernetes.default.svc"},
+        "apiTimeoutSeconds": {"type": "string", "pattern": "^(?:0\\.[1-9][0-9]*|[1-9](?:\\.[0-9]+)?|10(?:\\.0+)?)$"},
+        "tokenExpirationSeconds": {"type": "integer", "minimum": 600, "maximum": 3600},
+        "service": {
+          "type": "object",
+          "required": ["port", "targetPort"],
+          "properties": {
+            "port": {"const": 443},
+            "targetPort": {"type": "integer", "minimum": 1024, "maximum": 65535}
+          },
+          "additionalProperties": false
+        },
+        "certificate": {
+          "type": "object",
+          "required": ["secretName", "issuerName"],
+          "properties": {
+            "secretName": {"$ref": "#/$defs/dnsName"},
+            "issuerName": {"$ref": "#/$defs/dnsName"}
+          },
+          "additionalProperties": false
+        },
+        "resources": {"type": "object"},
+        "nodeSelector": {"type": "object", "maxProperties": 32},
+        "tolerations": {"type": "array", "maxItems": 32, "items": {"type": "object"}},
+        "affinity": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
     "scientificBatch": {
       "type": "object",
       "required": [
@@ -915,6 +976,7 @@
         "migration",
         "bootstrap",
         "controller",
+        "network-boundary",
         "gpu-observer"
       ],
       "properties": {
@@ -931,6 +993,9 @@
           "$ref": "#/$defs/serviceAccount"
         },
         "controller": {
+          "$ref": "#/$defs/serviceAccount"
+        },
+        "network-boundary": {
           "$ref": "#/$defs/serviceAccount"
         },
         "gpu-observer": {

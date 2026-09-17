@@ -345,6 +345,39 @@ def validate_model_network_policy_rollback_plan(
         or transition.get("phase") != "rollback-remove-deny"
     ):
         return
+    def without_holder(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            cleaned = {key: without_holder(item) for key, item in value.items()}
+            annotations = cleaned.get("annotations")
+            if isinstance(annotations, dict):
+                annotations.pop(
+                    "fs2-serve.nebius.ai/network-transition-holder", None
+                )
+            return cleaned
+        if isinstance(value, list):
+            return [without_holder(item) for item in value]
+        return value
+
+    holder_refresh_addresses = {
+        "kubernetes_manifest.model_runtime_network_boundary_marker_admission",
+        "kubernetes_manifest.model_runtime_network_boundary_marker_admission_binding[0]",
+        "kubernetes_manifest.model_runtime_network_controller_freeze_admission",
+        "kubernetes_manifest.model_runtime_network_controller_freeze_admission_binding[0]",
+        "kubernetes_manifest.model_runtime_network_helm_freeze_admission",
+        "kubernetes_manifest.model_runtime_network_helm_freeze_admission_binding[0]",
+        "kubernetes_manifest.model_runtime_network_lease_guard_admission",
+        "kubernetes_manifest.model_runtime_network_lease_guard_admission_binding",
+        "kubernetes_manifest.model_runtime_network_transition_guard_admission",
+        "kubernetes_manifest.model_runtime_network_transition_guard_admission_binding[0]",
+        "kubernetes_config_map_v1.model_runtime_network_enforcement[0]",
+    }
+    holder_refresh_prefixes = (
+        "kubernetes_manifest.model_runtime_network_profile_admission[",
+        "kubernetes_manifest.model_runtime_network_profile_admission_binding[",
+        "kubernetes_network_policy_v1.model_runtime_base_profile[",
+        "kubernetes_network_policy_v1.model_runtime_modelexpress_profile[",
+        "kubernetes_network_policy_v1.model_namespace_support_profile[",
+    )
     changes: dict[str, list[str]] = {}
     for resource in document.get("resource_changes", []):
         if resource.get("mode", "managed") != "managed":
@@ -359,6 +392,17 @@ def validate_model_network_policy_rollback_plan(
             raise DeploymentError(
                 "the workloads rollback plan has a malformed resource change"
             )
+        change = resource.get("change", {})
+        if (
+            actions == ["update"]
+            and (
+                address in holder_refresh_addresses
+                or address.startswith(holder_refresh_prefixes)
+            )
+            and without_holder(change.get("before"))
+            == without_holder(change.get("after"))
+        ):
+            continue
         changes[address] = actions
     allowed = {
         "kubernetes_network_policy_v1.model_namespace_default_deny[0]": ["delete"],
@@ -381,7 +425,8 @@ def validate_model_network_policy_rollback_plan(
         )
         raise DeploymentError(
             "rollback-remove-deny must be an isolated saved plan containing only "
-            "default-deny/apply-fence deletion and the transition receipt update; observed: "
+            "default-deny/apply-fence deletion, transition receipt update, and exact "
+            "holder-token annotation refreshes; observed: "
             f"{rendered}"
         )
 
@@ -2268,12 +2313,19 @@ def model_network_transition_lock(
     context: str,
     run_id: str,
 ) -> Iterator[tuple[str, str]]:
-    """Hold the API-guarded transition Lease as one authenticated writer."""
+    """Hold the API-guarded Lease using the separate transition credential."""
     namespace = "fs2-system"
     name = "fs2-model-network-transition"
     holder = f"{run_id}:{os.getpid()}:{secrets.token_hex(16)}"
+    transition_writer = "fs2-model-network-transition"
     environment = clean_environment()
-    base = [kubectl, "--kubeconfig", kubeconfig, "--context", context]
+    base = [
+        kubectl,
+        "--kubeconfig",
+        kubeconfig,
+        "--context",
+        context,
+    ]
     authenticated = subprocess.run(
         [*base, "auth", "whoami", "-o", "json"],
         env=environment,
@@ -2300,6 +2352,10 @@ def model_network_transition_lock(
         ) from exc
     if not isinstance(authenticated_username, str) or not authenticated_username:
         raise DeploymentError("the authenticated transition writer is empty")
+    if authenticated_username != transition_writer:
+        raise DeploymentError(
+            "model-network transitions require the dedicated impersonated writer"
+        )
     observed = subprocess.run(
         [*base, "-n", namespace, "get", "lease", name, "-o", "json"],
         env=environment,
@@ -2331,6 +2387,7 @@ def model_network_transition_lock(
                 },
                 "annotations": {
                     "fs2-serve.nebius.ai/network-transition-writer": authenticated_username,
+                    "fs2-serve.nebius.ai/network-transition-holder": holder,
                 },
             },
             "spec": {
@@ -2391,6 +2448,7 @@ def model_network_transition_lock(
                     "path": "/metadata/annotations",
                     "value": {
                         "fs2-serve.nebius.ai/network-transition-writer": authenticated_username,
+                        "fs2-serve.nebius.ai/network-transition-holder": holder,
                     },
                 }
                 if "annotations" not in metadata
@@ -2400,6 +2458,11 @@ def model_network_transition_lock(
                     "value": authenticated_username,
                 }
             ),
+            {
+                "op": "add",
+                "path": "/metadata/annotations/fs2-serve.nebius.ai~1network-transition-holder",
+                "value": holder,
+            },
             {"op": "replace", "path": "/spec/holderIdentity", "value": holder},
             {"op": "replace", "path": "/spec/leaseDurationSeconds", "value": 7200},
             {
@@ -2450,6 +2513,137 @@ def model_network_transition_lock(
                 json.dumps(release_patch, separators=(",", ":")),
             ],
             env=environment,
+        )
+
+
+def model_network_boundary_credential(
+    *,
+    kubectl: str,
+    shared_kubeconfig: str,
+    context: str,
+    phase: str,
+) -> tuple[str, str]:
+    """Require a distinct credential and prove its server-side username."""
+
+    if phase == "prepare":
+        environment_name = "FS2_NETWORK_AUTHORIZER_KUBECONFIG"
+        expected_username = "fs2-model-network-authorizer"
+    else:
+        environment_name = "FS2_NETWORK_TRANSITION_KUBECONFIG"
+        expected_username = "fs2-model-network-transition"
+    raw_path = os.environ.get(environment_name, "")
+    if not raw_path:
+        raise DeploymentError(
+            f"{environment_name} must name the separately issued model-network credential"
+        )
+    credential = Path(raw_path)
+    shared = Path(shared_kubeconfig)
+    if (
+        not credential.is_absolute()
+        or credential.is_symlink()
+        or not credential.is_file()
+        or credential.resolve() == shared.resolve()
+    ):
+        raise DeploymentError(
+            f"{environment_name} must be an absolute regular file distinct from the shared kubeconfig"
+        )
+    if credential.stat().st_mode & 0o077:
+        raise DeploymentError(f"{environment_name} must not be group/world accessible")
+    authenticated = subprocess.run(
+        [
+            kubectl,
+            "--kubeconfig",
+            str(credential),
+            "--context",
+            context,
+            "auth",
+            "whoami",
+            "-o",
+            "json",
+        ],
+        env=clean_environment(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if authenticated.returncode != 0:
+        raise DeploymentError(
+            f"cannot authenticate the separate {environment_name} credential: "
+            + (
+                authenticated.stderr.strip()
+                or authenticated.stdout.strip()
+                or "kubectl auth whoami failed"
+            )
+        )
+    try:
+        username = json.loads(authenticated.stdout)["status"]["userInfo"]["username"]
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise DeploymentError(
+            f"{environment_name} returned no exact authenticated username"
+        ) from exc
+    if username != expected_username:
+        raise DeploymentError(
+            f"{environment_name} authenticates as {username!r}, not {expected_username!r}"
+        )
+    return str(credential.resolve()), expected_username
+
+
+def ensure_control_plane_helm_release_idle(
+    *,
+    kubectl: str,
+    kubeconfig: str,
+    context: str,
+) -> None:
+    """Reject a transition while the latest Helm release is pending."""
+
+    result = subprocess.run(
+        [
+            kubectl,
+            "--kubeconfig",
+            kubeconfig,
+            "--context",
+            context,
+            "-n",
+            "fs2-system",
+            "get",
+            "secrets,configmaps",
+            "-l",
+            "owner=helm,name=fs2-serve-control-plane",
+            "-o",
+            "json",
+        ],
+        env=clean_environment(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise DeploymentError(
+            "cannot inspect the control-plane Helm release before arming the network boundary: "
+            + (result.stderr.strip() or result.stdout.strip() or "unknown error")
+        )
+    try:
+        document = json.loads(result.stdout)
+        releases = [
+            item
+            for item in document["items"]
+            if isinstance(item, dict)
+            and item.get("metadata", {}).get("labels", {}).get("owner") == "helm"
+            and item.get("metadata", {}).get("labels", {}).get("name")
+            == "fs2-serve-control-plane"
+        ]
+        latest = max(
+            releases,
+            key=lambda item: int(item["metadata"]["labels"]["version"]),
+        )
+        status = latest["metadata"]["labels"]["status"]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise DeploymentError(
+            "the control-plane Helm release history is missing or malformed"
+        ) from exc
+    if not isinstance(status, str) or status.startswith("pending-"):
+        raise DeploymentError(
+            f"the latest control-plane Helm release is not idle: {status!r}"
         )
 
 
@@ -2846,6 +3040,13 @@ def apply_stack(
     apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
 
     transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
+    transition_phase = transition.get("phase", "prepare")
+    boundary_kubeconfig, boundary_username = model_network_boundary_credential(
+        kubectl=args.kubectl,
+        shared_kubeconfig=dynamic["kubeconfig_path"],
+        context=dynamic["kube_context"],
+        phase=transition_phase,
+    )
 
     def apply_workloads(
         lock_identity: str = "", transition_writer_username: str = ""
@@ -2858,7 +3059,14 @@ def apply_stack(
             "TF_VAR_model_network_transition_lock_required": json.dumps(
                 bool(lock_identity)
             ),
+            "TF_VAR_model_network_boundary_kubeconfig_path": boundary_kubeconfig,
         }
+        if lock_identity:
+            ensure_control_plane_helm_release_idle(
+                kubectl=args.kubectl,
+                kubeconfig=dynamic["kubeconfig_path"],
+                context=dynamic["kube_context"],
+            )
         plan_path, workloads_plan, environment = plan_stage(
             args.terraform,
             run_root=run_root,
@@ -2868,17 +3076,65 @@ def apply_stack(
             environment_overrides=overrides,
         )
         validate_model_network_policy_rollback_plan(workloads_plan, contract)
+        if lock_identity:
+            ensure_control_plane_helm_release_idle(
+                kubectl=args.kubectl,
+                kubeconfig=dynamic["kubeconfig_path"],
+                context=dynamic["kube_context"],
+            )
         apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
+        if lock_identity:
+            ensure_control_plane_helm_release_idle(
+                kubectl=args.kubectl,
+                kubeconfig=dynamic["kubeconfig_path"],
+                context=dynamic["kube_context"],
+            )
 
-    if transition.get("phase", "prepare") == "prepare":
-        apply_workloads()
-    else:
-        with model_network_transition_lock(
+    if transition_phase == "prepare":
+        if boundary_username != "fs2-model-network-authorizer":
+            raise DeploymentError("prepare requires the separate network authorizer")
+        transition_kubeconfig, transition_username = model_network_boundary_credential(
+            kubectl=args.kubectl,
+            shared_kubeconfig=dynamic["kubeconfig_path"],
+            context=dynamic["kube_context"],
+            phase="inventory",
+        )
+        ensure_control_plane_helm_release_idle(
             kubectl=args.kubectl,
             kubeconfig=dynamic["kubeconfig_path"],
             context=dynamic["kube_context"],
+        )
+        with model_network_transition_lock(
+            kubectl=args.kubectl,
+            kubeconfig=transition_kubeconfig,
+            context=dynamic["kube_context"],
             run_id=contract["run_id"],
         ) as (lock_identity, transition_writer_username):
+            if transition_writer_username != transition_username:
+                raise DeploymentError(
+                    "the Lease writer differs from the separately verified transition credential"
+                )
+            apply_workloads(lock_identity, transition_writer_username)
+    else:
+        # This first check precedes the transition lock. Once the lock is held,
+        # the already-installed API admission fence blocks every new Helm
+        # release-storage mutation; the second check in apply_workloads catches
+        # an operation that became pending immediately before the fence armed.
+        ensure_control_plane_helm_release_idle(
+            kubectl=args.kubectl,
+            kubeconfig=dynamic["kubeconfig_path"],
+            context=dynamic["kube_context"],
+        )
+        with model_network_transition_lock(
+            kubectl=args.kubectl,
+            kubeconfig=boundary_kubeconfig,
+            context=dynamic["kube_context"],
+            run_id=contract["run_id"],
+        ) as (lock_identity, transition_writer_username):
+            if transition_writer_username != boundary_username:
+                raise DeploymentError(
+                    "the Lease writer differs from the separately verified transition credential"
+                )
             apply_workloads(lock_identity, transition_writer_username)
 
     # Record the accepted root contract after all of its staged consumers converge.
@@ -2975,6 +3231,19 @@ def plan_stack(
         )
         return
 
+    transition_phase = contract["stages"]["workloads"][
+        "model_runtime_network_policy"
+    ].get("phase", "prepare")
+    boundary_kubeconfig, _boundary_username = model_network_boundary_credential(
+        kubectl=args.kubectl,
+        shared_kubeconfig=dynamic["kubeconfig_path"],
+        context=dynamic["kube_context"],
+        phase=transition_phase,
+    )
+    workloads_overrides = {
+        "TF_VAR_model_network_boundary_kubeconfig_path": boundary_kubeconfig,
+    }
+
     if not state_ready(args.terraform, run_root, "workloads", contract):
         plan_stage(
             args.terraform,
@@ -2982,6 +3251,7 @@ def plan_stack(
             stage="workloads",
             contract=contract,
             variable_file=workloads_variables,
+            environment_overrides=workloads_overrides,
         )
         print("Planned workloads.")
         return
@@ -2992,6 +3262,7 @@ def plan_stack(
         stage="workloads",
         contract=contract,
         variable_file=workloads_variables,
+        environment_overrides=workloads_overrides,
     )
     validate_model_network_policy_rollback_plan(workloads_plan, contract)
     print("Planned all three existing states after upstream handoffs converged.")

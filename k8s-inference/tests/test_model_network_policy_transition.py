@@ -23,7 +23,8 @@ FREEZE_ADMISSION_POLICY = "fs2-model-network-controller-freeze"
 FREEZE_ADMISSION_BINDING = f"{FREEZE_ADMISSION_POLICY}-fs2-system"
 HELM_FREEZE_ADMISSION_POLICY = "fs2-model-network-helm-freeze"
 HELM_FREEZE_ADMISSION_BINDING = f"{HELM_FREEZE_ADMISSION_POLICY}-fs2-system"
-TRANSITION_WRITER = "security-remediation@example.test"
+TRANSITION_WRITER = "fs2-model-network-transition"
+LOCK_HOLDER = "testrun:123:0123456789abcdef0123456789abcdef"
 CONTROLLER = "fs2-serve-control-plane-model-controller"
 IMAGE = {
     "repository": "registry.example.test/fs2/control-plane",
@@ -73,6 +74,7 @@ def prepare_contract() -> dict[str, object]:
         "transition_lock_name": "fs2-model-network-transition",
         "transition_lock_namespace": "fs2-system",
         "transition_writer_username": TRANSITION_WRITER,
+        "boundary_webhook_name": "fs2-model-network-boundary",
         "control_plane_image": IMAGE,
         "inventory_receipt_sha256": None,
     }
@@ -319,6 +321,7 @@ def transition_leases(*, holder: str = "") -> dict[str, object]:
                     "uid": "uid-transition-lock",
                     "annotations": {
                         "fs2-serve.nebius.ai/network-transition-writer": TRANSITION_WRITER,
+                        "fs2-serve.nebius.ai/network-transition-holder": holder,
                     },
                 },
                 "spec": {
@@ -327,6 +330,106 @@ def transition_leases(*, holder: str = "") -> dict[str, object]:
                     "renewTime": "2099-09-16T18:00:00Z",
                     "leaseTransitions": 1,
                 },
+            }
+        ]
+    }
+
+
+def boundary_webhooks() -> dict[str, object]:
+    common = {
+        "admissionReviewVersions": ["v1"],
+        "sideEffects": "None",
+        "failurePolicy": "Fail",
+        "matchPolicy": "Equivalent",
+        "timeoutSeconds": 3,
+        "clientConfig": {
+            "caBundle": "dGVzdC1jYQ==",
+            "service": {
+                "name": "fs2-serve-control-plane-network-boundary",
+                "namespace": "fs2-system",
+                "path": "/validate",
+                "port": 443,
+            },
+        },
+    }
+    return {
+        "items": [
+            {
+                "metadata": {
+                    "name": "fs2-model-network-boundary",
+                    "uid": "uid-boundary-webhook",
+                    "resourceVersion": "rv-boundary-webhook",
+                },
+                "webhooks": [
+                    {
+                        **common,
+                        "name": "children.network.fs2.nebius.ai",
+                        "namespaceSelector": {
+                            "matchLabels": {"kubernetes.io/metadata.name": "fs2-models"}
+                        },
+                        "rules": [
+                            {
+                                "apiGroups": [""],
+                                "apiVersions": ["v1"],
+                                "operations": ["CREATE", "UPDATE"],
+                                "resources": ["pods"],
+                                "scope": "Namespaced",
+                            },
+                            {
+                                "apiGroups": ["apps"],
+                                "apiVersions": ["v1"],
+                                "operations": ["CREATE", "UPDATE"],
+                                "resources": ["replicasets"],
+                                "scope": "Namespaced",
+                            },
+                            {
+                                "apiGroups": ["batch"],
+                                "apiVersions": ["v1"],
+                                "operations": ["CREATE", "UPDATE"],
+                                "resources": ["jobs"],
+                                "scope": "Namespaced",
+                            },
+                        ],
+                    },
+                    {
+                        **common,
+                        "name": "transitions.network.fs2.nebius.ai",
+                        "rules": [
+                            {
+                                "apiGroups": ["networking.k8s.io"],
+                                "apiVersions": ["v1"],
+                                "operations": ["CREATE", "UPDATE", "DELETE"],
+                                "resources": ["networkpolicies"],
+                                "scope": "Namespaced",
+                            },
+                            {
+                                "apiGroups": [""],
+                                "apiVersions": ["v1"],
+                                "operations": ["CREATE", "UPDATE", "DELETE"],
+                                "resources": ["configmaps"],
+                                "scope": "Namespaced",
+                            },
+                            {
+                                "apiGroups": ["coordination.k8s.io"],
+                                "apiVersions": ["v1"],
+                                "operations": ["CREATE", "UPDATE", "DELETE"],
+                                "resources": ["leases"],
+                                "scope": "Namespaced",
+                            },
+                            {
+                                "apiGroups": ["admissionregistration.k8s.io"],
+                                "apiVersions": ["v1"],
+                                "operations": ["CREATE", "UPDATE", "DELETE"],
+                                "resources": [
+                                    "validatingadmissionpolicies",
+                                    "validatingadmissionpolicybindings",
+                                    "validatingwebhookconfigurations",
+                                ],
+                                "scope": "Cluster",
+                            },
+                        ],
+                    },
+                ],
             }
         ]
     }
@@ -345,6 +448,7 @@ def capture(
         controller_pods(),
         admission_policies(),
         admission_bindings(),
+        boundary_webhooks(),
         transition_leases(),
         captured_at="2026-09-16T18:00:00Z",
     )
@@ -358,7 +462,7 @@ def test_inventory_receipt_binds_workload_pod_controller_and_admission() -> None
     assert receipt["pods"]["qwen3-8b-pod"]["workload_class"] == "runtime"
     assert receipt["live_controller"]["deployment_uid"] == "uid-controller"
     assert receipt["transition_lock_uid"] == "uid-transition-lock"
-    assert receipt["schema"].endswith("/v4")
+    assert receipt["schema"].endswith("/v5")
     assert (
         receipt["admission_policies"][ADMISSION_POLICY]["resource_version"]
         == f"rv-{ADMISSION_POLICY}"
@@ -562,7 +666,7 @@ def test_inventory_can_refresh_in_enforced_phase_and_apply_verifier_detects_chan
     contract = prepare_contract()
     contract["phase"] = "enforce"
     receipt = capture(contract=contract)
-    monkeypatch.setenv("FS2_NETWORK_TRANSITION_LOCK_IDENTITY", "test-holder")
+    monkeypatch.setenv("FS2_NETWORK_TRANSITION_LOCK_IDENTITY", LOCK_HOLDER)
     result = transition.verify_enforce(
         contract,
         receipt,
@@ -572,7 +676,8 @@ def test_inventory_can_refresh_in_enforced_phase_and_apply_verifier_detects_chan
         controller_pods(),
         admission_policies(),
         admission_bindings(),
-        transition_leases(holder="test-holder"),
+        boundary_webhooks(),
+        transition_leases(holder=LOCK_HOLDER),
     )
     assert result["status"] == "verified"
 
@@ -588,7 +693,8 @@ def test_inventory_can_refresh_in_enforced_phase_and_apply_verifier_detects_chan
             controller_pods(),
             admission_policies(),
             admission_bindings(),
-            transition_leases(holder="test-holder"),
+            boundary_webhooks(),
+            transition_leases(holder=LOCK_HOLDER),
         )
 
 
@@ -618,6 +724,7 @@ def test_receipt_rejects_admission_spec_or_transition_lock_drift() -> None:
             controller_pods(),
             policies,
             admission_bindings(),
+            boundary_webhooks(),
             transition_leases(),
             captured_at="2026-09-16T18:00:00Z",
         )
@@ -635,6 +742,7 @@ def test_receipt_rejects_admission_spec_or_transition_lock_drift() -> None:
             controller_pods(),
             admission_policies(),
             bindings,
+            boundary_webhooks(),
             transition_leases(),
             captured_at="2026-09-16T18:00:00Z",
         )
@@ -648,7 +756,8 @@ def test_receipt_rejects_admission_spec_or_transition_lock_drift() -> None:
             controller_pods(),
             admission_policies(),
             admission_bindings(),
-            transition_leases(holder="another-transition"),
+            boundary_webhooks(),
+            transition_leases(holder=LOCK_HOLDER),
             captured_at="2026-09-16T18:00:00Z",
         )
 
@@ -665,7 +774,26 @@ def test_receipt_rejects_admission_spec_or_transition_lock_drift() -> None:
             controller_pods(),
             admission_policies(),
             admission_bindings(),
+            boundary_webhooks(),
             leases,
+            captured_at="2026-09-16T18:00:00Z",
+        )
+
+    webhooks = boundary_webhooks()
+    webhooks["items"][0]["webhooks"][0]["matchConditions"] = [
+        {"name": "bypass", "expression": "false"}
+    ]
+    with pytest.raises(transition.ReceiptError, match="unreviewed semantic fields"):
+        transition.inventory_receipt(
+            prepare_contract(),
+            workload_resources(deployment()),
+            {"items": [pod()]},
+            controller_deployments(),
+            controller_pods(),
+            admission_policies(),
+            admission_bindings(),
+            webhooks,
+            transition_leases(),
             captured_at="2026-09-16T18:00:00Z",
         )
 
@@ -724,6 +852,7 @@ def test_receipt_hashes_every_policy_and_binding_semantic_field() -> None:
                 controller_pods(),
                 policies,
                 admission_bindings(),
+                boundary_webhooks(),
                 transition_leases(),
                 captured_at="2026-09-16T18:00:00Z",
             )
@@ -740,6 +869,7 @@ def test_receipt_hashes_every_policy_and_binding_semantic_field() -> None:
                 controller_pods(),
                 admission_policies(),
                 bindings,
+                boundary_webhooks(),
                 transition_leases(),
                 captured_at="2026-09-16T18:00:00Z",
             )
@@ -751,7 +881,7 @@ def test_apply_verifier_binds_admission_resource_versions_and_all_semantics(
     contract = prepare_contract()
     contract["phase"] = "enforce"
     receipt = capture(contract=contract)
-    monkeypatch.setenv("FS2_NETWORK_TRANSITION_LOCK_IDENTITY", "test-holder")
+    monkeypatch.setenv("FS2_NETWORK_TRANSITION_LOCK_IDENTITY", LOCK_HOLDER)
 
     policies = admission_policies()
     policies["items"][0]["metadata"]["resourceVersion"] = "rv-replaced"
@@ -765,7 +895,8 @@ def test_apply_verifier_binds_admission_resource_versions_and_all_semantics(
             controller_pods(),
             policies,
             admission_bindings(),
-            transition_leases(holder="test-holder"),
+            boundary_webhooks(),
+            transition_leases(holder=LOCK_HOLDER),
         )
 
     policies = admission_policies()
@@ -782,7 +913,8 @@ def test_apply_verifier_binds_admission_resource_versions_and_all_semantics(
             controller_pods(),
             policies,
             admission_bindings(),
-            transition_leases(holder="test-holder"),
+            boundary_webhooks(),
+            transition_leases(holder=LOCK_HOLDER),
         )
 
 
@@ -800,6 +932,14 @@ def test_source_authorizes_profile_creation_by_exact_writer_and_active_lease() -
     assert "model_runtime_network_lease_guard_admission_binding" in source
     assert "request.resource.resource == 'networkpolicies'" in source
     assert "request.namespace == 'fs2-models'" in source
+    assert (
+        "boundary_webhook_name         = local.model_runtime_boundary_webhook_name"
+        in source
+    )
+    assert (
+        'model_runtime_transition_writer                       = "fs2-model-network-transition"'
+        in source
+    )
     assert source.count("request.operation != 'CREATE' ||") >= 6
     assert (
         "resource_version"
