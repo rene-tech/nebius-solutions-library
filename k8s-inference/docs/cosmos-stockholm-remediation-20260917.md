@@ -1,7 +1,7 @@
 # Cosmos and Stockholm remediation — 17 September 2026
 
-Release status: **Helm 146 deployed; upload-demand proof and final bounded
-cohorts running; not customer-qualified**.
+Release status: **Helm 146 deployed; upload-demand proof and bounded application
+regressions passed; disposable test work cleaned up; not fully customer-qualified**.
 The implementation is integrated on `agent/fs2-cosmos-stockholm-remediation-r20260917`, based on
 `bad3f9cba9cac2762ddbe0b62f8c6ab3a780a6d7`. This baseline preserves the newer
 speech, tenant storage, and workshop APIs. The old dirty `main` checkout was not
@@ -190,8 +190,8 @@ correlation with the timestamped public samples, not a simultaneous SQL probe.
 
 Protected receipt `held-upload-r146-retrospective-correlation.json` has SHA-256
 `7226e7be5bdbb626da4b804fd67010e06f1d66b3aeb31993c2f557576886a630`.
-Final-image compatibility and two bounded model cohorts continue independently;
-the upload regression alone does not qualify inference or the entire platform.
+The upload regression alone does not qualify inference or the entire platform;
+separate final-image results are recorded below.
 
 The first video matrix also retains an operator/harness sequencing error: a
 two-sample preflight assertion failed against an older KSM sample, but the next
@@ -205,6 +205,65 @@ but the failed synchronous guard is not relabeled as clean execution. Receipt
 `cosmos-cohort6-r146-pre-admission-zero-correlation.json`, SHA-256
 `7a059d357a0e97a851b3d0953e3002b2e48d11cf57b2580fb65a7933e711f31a`,
 retains this distinction; the next cohort explicitly gates its dependent launch.
+
+Stockholm's final **release-146** pair passed: 26 OpenFold2/Boltz2 serving
+operations, two ESMFold2 batches, actual outstanding overlap five in each cohort,
+six verified artifact downloads, and zero transport failures/retries. The exact
+28 inference IDs and 30 lifecycle subjects reconciled with none missing; all
+32 operations of this new disposable canary were terminal and reservations zero.
+Only its token `8a277c70-60f9-4b9c-ae12-221f80f8b3b9` was revoked at
+16:18:51.327413 UTC; subsequent public access returned 401 and other key metadata
+was unchanged. Evidence is in protected `stockholm-demand-followup-20260917/`,
+under `cohorts/partial-receipt.json` and `finalization/`.
+
+The first batch's normal CPU autoscaling and subsequent 3.82 GB image pull
+(2m23s) explain a retained startup delay; no manual recovery was used. Five
+shared-serving operations lack exact request/GPU attribution. Scientific
+exclusive occupancy is application-observed and estimated at 129 GPU-seconds
+(55 active, 74 startup), not total serving consumption or a bill. Observer
+restart counts two/three were present on two correlated serving nodes, but their
+timing was not assessed; this is not continuous observer or whole-fleet health
+qualification. Hosted LibreChat and the remaining Apps are still outside this
+bounded SDK/HTTP result.
+
+Cosmos completed **20/20 successful generations on release 146**, all on attempt
+one: four compatibility cases (typed T2I, legacy HTTP T2V, typed T2V, typed I2V)
+plus two eight-case V2V/transfer matrices covering HTTP/MCP and HTTPS/upload
+inputs. All outputs passed artifact size/SHA verification and complete PNG/MP4
+decoding; in-flight and terminal replay returned the original operation. The
+first matrix began with MCP, the second with HTTP. Both actual cold conditions
+are evidenced, with the first matrix's failed synchronous orchestration guard
+and retrospective proof explicitly preserved above. Compatibility T2I activation
+was 37.921762 seconds (40.104806 total); the second matrix's first HTTP V2V was
+37.809772 seconds cold (41.677109 total). The MCP-first matrix measured
+38.225737 seconds cold (42.546559 total). These were **cached existing
+preemptible H100 nodes**, not image-pull or new-node provisioning measurements.
+The unchanged r7 CUDA/CRIU restore marker and current successful return codes
+were retained with the runtime logs.
+
+On shutdown, the pinned snapshot entrypoint's `finally` block reprints retained
+CRIU TUN/iptables `Error` lines. Current restore/CUDA/unlock return codes were
+zero, followed by successful serving. The raw diagnostics and their provenance
+are retained, not called a fresh restore failure or erased to claim zero
+warnings. One late log attachment to an already deleted secondary Pod failed
+with `NotFound`; that missing capture is also explicit. Multi-replica runtime
+identity gaps remain unavailable, and independent Pod lists are not used to
+invent per-operation GPU joins. Media transport/integrity success does not
+establish prompt/action fidelity or usable LeRobot training augmentation.
+
+The Cosmos canary had 40 successful native operations (20 final-release and
+20 intermediate), nine successful uploads, two retained historical native
+failures and zero nonterminal operations before its own key was revoked at
+16:21:23.926422 UTC. An ordinary public `GET /v1/models` with that revoked key
+returned HTTP 401 at 16:24:08.010196, without admitting inference.
+No real customer key was changed. Natural scale-down was
+confirmed at 16:22:58.932 UTC: desired replicas zero, no model Pods, GPU demand
+zero and startup hold zero, with a fresh 16:22:50.604 KSM zero sample. Both final
+Pod log streams ended naturally. The unused burst Pod had spent 163.623 seconds
+pulling the 9.19 GB runtime image, completed snapshot initialization, restored,
+then scaled down without serving a generation. This observed startup overhead
+is retained; it is not attributed to an arbitrary individual request or hidden
+by deleting/scaling the Pod manually.
 
 ## What changed
 
@@ -323,38 +382,37 @@ from source `1f745bf18`. **Re-read the actual deployment before changing it**;
 this historical receipt cannot prove that no later release occurred.
 
 Access, image publication, migration 32, coordinated CP/admin rollout, Cosmos
-template promotion and real metrics scraping are complete. Do not repeat those
-steps merely because they appear in the historical cards. Remaining work:
+template promotion, real metrics scraping, the release-146 bounded cohorts and
+disposable-canary cleanup are complete. Do not repeat them merely because they
+appear in historical cards. The [Cosmos evidence](../acceptance/cosmos3-customer-20260917/README.md)
+and [Stockholm evidence](../acceptance/stockholm-customer-20260917/README.md)
+retain negative/interrupted attempts and scope the passes to the actual modes,
+models and SDK/HTTP clients tested. Remaining work:
 
-1. Finish and record the final-image public compatibility and bounded cohorts
-   using the [Cosmos runner](../acceptance/cosmos3-customer-20260917/README.md)
-   and [Stockholm runner](../acceptance/stockholm-customer-20260917/README.md).
-   Retain every negative/interrupted intermediate attempt. Scope these results
-   to the actual modes/models/clients tested, not the entire catalog.
-2. Bind the published LeRobot CPU image and complete its scientific profile,
+1. Bind the published LeRobot CPU image and complete its scientific profile,
    execution identity and execution map through the existing promotion path.
    Then test real public parent-to-child delegation, both dataset augmentations,
    published artifacts, reader reopening, cancellation/priority and usage. The
    isolated reader round-trips do not establish this public workflow or physical
    action/video alignment; do not mark the candidate qualified from its build.
-3. Complete actual hosted-LibreChat plus installed-skill testing with a same-policy
+2. Complete actual hosted-LibreChat plus installed-skill testing with a same-policy
    caller. The current client uses a global server-managed MCP key and exposes no
    per-user canary binding. Do not replace that shared key or silently change all
    users' client configuration. The raw MCP SDK is not a substitute for this test.
-4. Supply representative fixtures and public/client evidence for the remaining
+3. Supply representative fixtures and public/client evidence for the remaining
    advertised Apps. The bounded Stockholm driver covers OpenFold2, Boltz2 and
    ESMFold2, not all non-Cosmos Apps. See
    [CUSTOMER_RELEASE_POLICY.md](../CUSTOMER_RELEASE_POLICY.md).
-5. Preserve truthful usage limitations: missing historical event data cannot be
+4. Preserve truthful usage limitations: missing historical event data cannot be
    reconstructed, and multiple Ready serving replicas do not give an exact
    request-to-GPU join. Keep unavailable measurements separate from zero, budgets
    and billable occupancy. Existing lifecycle/certificate alerts also remain open.
-6. Reconcile the older Terraform state and retained live storage/speech overlays
+5. Reconcile the older Terraform state and retained live storage/speech overlays
    before a broad apply. The protected tfvars and release delta pin the new image,
    but no Terraform apply or zero-drift claim was made.
-7. Revoke only explicitly created canaries after admitted work settles; preserve
-   customer keys, jobs, artifacts and diagnostic evidence. Update the task cards
-   and this record with precise results rather than declaring the parent done.
+6. For subsequent work, issue fresh scoped canaries rather than reusing these
+   revoked keys. Preserve customer keys, jobs, artifacts and diagnostic evidence;
+   do not declare either parent done from the bounded application regression.
 
 ## Local resources and evidence
 
@@ -376,5 +434,5 @@ Detailed component evidence and known negative attempts:
 
 Final local integration test totals and exact limitations are recorded in the
 [verification summary](cosmos-stockholm-local-verification-20260917.md).
-Task cards remain running/review,
-not done, while deployment and customer-shaped evidence are missing.
+Task cards remain running/review, not done, while public LeRobot routing,
+actual-client/full-catalog evidence and the documented operational gaps remain.
