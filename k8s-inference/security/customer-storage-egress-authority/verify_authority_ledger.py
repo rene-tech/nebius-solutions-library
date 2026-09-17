@@ -115,6 +115,7 @@ GENERATION_FIELDS = PROTECTED_LANE_V5_GENERATION_FIELDS | {
     "reconciler_activation_endpoint",
     "reconciler_activation_public_key_config_map_name",
     "reconciler_activation_ca_config_map_name",
+    "reconciler_receipt_authority_registry_sha256",
     "reconciler_activation_minimum_epoch",
 }
 PROVISIONING_V2_FIELDS = {
@@ -2670,6 +2671,9 @@ def verify(manifest_json: str) -> dict[str, str]:
             )
             or not isinstance(entry.get("reconciler_activation_minimum_epoch"), int)
             or entry["reconciler_activation_minimum_epoch"] < 1
+            or not SHA256_RE.fullmatch(
+                str(entry.get("reconciler_receipt_authority_registry_sha256", ""))
+            )
         ):
             raise ValueError("authority generation protected-lane custody differs")
         if (

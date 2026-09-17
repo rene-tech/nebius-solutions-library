@@ -48,6 +48,19 @@ def _annotations_without_cutover(object_: dict[str, Any]) -> dict[str, Any]:
     return annotations
 
 
+def _signed_receipt_body(value: object) -> dict[str, Any]:
+    """Return only a body already authenticated by load_verified_state()."""
+
+    if (
+        isinstance(value, dict)
+        and value.get("schema")
+        == "fs2-serve.nebius.ai/storage-reconciler-signed-receipt/v1"
+        and isinstance(value.get("body"), dict)
+    ):
+        return value["body"]
+    return {}
+
+
 def _deployment_transition(
     request: dict[str, Any], state: dict[str, Any], transition: dict[str, Any]
 ) -> bool:
@@ -104,6 +117,9 @@ def _deployment_transition(
             and current_replicas == 0
         )
     if phase == "ACTIVATE_SUCCESSOR":
+        provider_drain = _signed_receipt_body(
+            transition.get("provider_drain_receipt")
+        )
         return bool(
             generation == transition["successor_generation"]
             and previous_replicas == 0
@@ -111,11 +127,7 @@ def _deployment_transition(
             and transition.get("predecessor_quiescence") is not None
             and digest(transition["predecessor_quiescence"])
             == transition.get("predecessor_quiescence_sha256")
-            and isinstance(transition.get("provider_drain_receipt"), dict)
-            and transition["provider_drain_receipt"].get(
-                "nonterminal_provider_operations"
-            )
-            == 0
+            and provider_drain.get("nonterminal_provider_operations") == 0
             and digest(transition["provider_drain_receipt"])
             == transition.get("provider_drain_receipt_sha256")
         )
@@ -128,6 +140,15 @@ def _deployment_transition(
         )
     if phase == "ROLLBACK_ACTIVATE":
         rollback = transition.get("rollback")
+        zero_inflight = _signed_receipt_body(
+            (rollback or {}).get("zero_inflight_actions_receipt")
+        )
+        schema_compatibility = _signed_receipt_body(
+            (rollback or {}).get("schema_compatibility_receipt")
+        )
+        provider_continuity = _signed_receipt_body(
+            (rollback or {}).get("provider_continuity_receipt")
+        )
         return bool(
             generation == transition["predecessor_generation"]
             and previous_replicas == 0
@@ -155,6 +176,12 @@ def _deployment_transition(
                     ),
                 )
             )
+            and zero_inflight.get("detail", {}).get(
+                "nonterminal_provider_operations"
+            )
+            == 0
+            and schema_compatibility.get("detail", {}).get("compatible") is True
+            and provider_continuity.get("detail", {}).get("continuous") is True
         )
     return False
 

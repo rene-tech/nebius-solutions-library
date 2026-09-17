@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     user_storage_activation_public_key_file: Path = Path(
         "/var/run/fs2-storage-activation/public-key.pem"
     )
+    user_storage_activation_receipt_authority_registry_file: Path = Path(
+        "/var/run/fs2-storage-activation/receipt-authorities.json"
+    )
+    user_storage_activation_receipt_authority_registry_sha256: str = ""
     user_storage_activation_ca_file: Path = Path(
         "/var/run/fs2-storage-activation/ca.crt"
     )

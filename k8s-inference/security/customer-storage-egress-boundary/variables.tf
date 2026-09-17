@@ -408,6 +408,7 @@ variable "provider_authority" {
     reconciler_activation_endpoint                    = string
     reconciler_activation_public_key_config_map_name  = string
     reconciler_activation_ca_config_map_name          = string
+    reconciler_receipt_authority_registry_sha256      = string
     reconciler_activation_minimum_epoch               = number
     kubernetes_rbac_inventory_sha256                  = string
     kubernetes_rbac_effective_authority_sha256        = string
@@ -462,7 +463,7 @@ variable "provider_authority" {
 
   validation {
     condition = (
-      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v12" &&
+      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v13" &&
       var.provider_authority.cluster_id != "" &&
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.generation)) &&
       can(regex("^p[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.provisioning_generation)) &&
@@ -603,6 +604,7 @@ variable "provider_authority" {
       can(regex("^https://[^/]+/v1/storage-reconciler/activation$", var.provider_authority.reconciler_activation_endpoint)) &&
       can(regex("^fs2-storage-activation-trust-r[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.reconciler_activation_public_key_config_map_name)) &&
       can(regex("^fs2-storage-activation-ca-r[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.reconciler_activation_ca_config_map_name)) &&
+      can(regex("^[a-f0-9]{64}$", var.provider_authority.reconciler_receipt_authority_registry_sha256)) &&
       var.provider_authority.reconciler_activation_minimum_epoch >= 1 &&
       var.provider_authority.node_health_mutation.identity_role == "node_health" &&
       var.provider_authority.node_health_mutation.mutable_label_keys == sort(distinct(var.provider_authority.node_health_mutation.mutable_label_keys)) &&

@@ -23,6 +23,24 @@ UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
+RECEIPT_CONTRACTS = {
+    "provider-drain": (
+        "fs2-serve.nebius.ai/storage-reconciler-provider-drain-attestation/v1",
+        "fs2-serve.nebius.ai/storage-reconciler-provider-drain-raw-observation/v1",
+    ),
+    "rollback-zero-inflight": (
+        "fs2-serve.nebius.ai/storage-reconciler-zero-inflight-observation/v1",
+        "fs2-serve.nebius.ai/storage-reconciler-zero-inflight-raw-observation/v1",
+    ),
+    "rollback-schema-compatibility": (
+        "fs2-serve.nebius.ai/storage-reconciler-schema-compatibility/v1",
+        "fs2-serve.nebius.ai/storage-reconciler-schema-compatibility-raw-observation/v1",
+    ),
+    "rollback-provider-continuity": (
+        "fs2-serve.nebius.ai/storage-reconciler-provider-continuity/v1",
+        "fs2-serve.nebius.ai/storage-reconciler-provider-continuity-raw-observation/v1",
+    ),
+}
 
 
 class ReconcilerQuiesced(RuntimeError):
@@ -68,10 +86,133 @@ def _read_regular(path: Path, maximum: int = 64 * 1024) -> bytes:
         os.close(descriptor)
 
 
-def _bound_receipt(value: object, schema: str, cluster_id: str) -> bool:
-    if not isinstance(value, dict) or set(value) != {
+def _receipt_authorities(path: Path, expected_sha256: str) -> dict[str, Any]:
+    payload = _read_regular(path)
+    registry = json.loads(payload)
+    if (
+        not isinstance(registry, dict)
+        or set(registry) != {"schema", "registry_id", "authorities"}
+        or registry.get("schema")
+        != "fs2-serve.nebius.ai/storage-reconciler-receipt-authority-registry/v1"
+        or hashlib.sha256(_canonical(registry)).hexdigest() != expected_sha256
+        or registry.get("registry_id")
+        != hashlib.sha256(
+            _canonical(
+                {key: item for key, item in registry.items() if key != "registry_id"}
+            )
+        ).hexdigest()
+        or not isinstance(registry.get("authorities"), dict)
+        or set(registry["authorities"]) != set(RECEIPT_CONTRACTS)
+    ):
+        raise ValueError("receipt authority registry is absent or differs")
+    authority_ids: set[str] = set()
+    key_digests: set[str] = set()
+    for purpose, authority in registry["authorities"].items():
+        receipt_schema, raw_schema = RECEIPT_CONTRACTS[purpose]
+        if (
+            not isinstance(authority, dict)
+            or set(authority)
+            != {
+                "authority_id",
+                "purpose",
+                "public_key_pem",
+                "public_key_sha256",
+                "receipt_schema",
+                "raw_observation_schema",
+                "observation_adapter_sha256",
+            }
+            or authority.get("purpose") != purpose
+            or authority.get("receipt_schema") != receipt_schema
+            or authority.get("raw_observation_schema") != raw_schema
+            or not re.fullmatch(
+                r"fs2-storage-receipt-[a-z0-9-]+:[a-f0-9]{12}",
+                str(authority.get("authority_id", "")),
+            )
+            or not str(authority.get("public_key_pem", "")).startswith(
+                "-----BEGIN PUBLIC KEY-----"
+            )
+            or authority.get("public_key_sha256")
+            != hashlib.sha256(str(authority.get("public_key_pem", "")).encode()).hexdigest()
+            or not SHA256_RE.fullmatch(
+                str(authority.get("observation_adapter_sha256", ""))
+            )
+        ):
+            raise ValueError("receipt authority is not purpose-bound")
+        key = serialization.load_pem_public_key(str(authority["public_key_pem"]).encode())
+        if not isinstance(key, Ed25519PublicKey):
+            raise ValueError("receipt authority key is not Ed25519")
+        authority_ids.add(str(authority.get("authority_id", "")))
+        key_digests.add(str(authority.get("public_key_sha256", "")))
+    if len(authority_ids) != len(RECEIPT_CONTRACTS) or len(key_digests) != len(
+        RECEIPT_CONTRACTS
+    ):
+        raise ValueError("receipt purposes do not have independent authorities")
+    return registry["authorities"]
+
+
+def _signed_receipt_body(
+    value: object,
+    *,
+    purpose: str,
+    authorities: dict[str, Any],
+) -> dict[str, Any] | None:
+    authority = authorities.get(purpose)
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {"schema", "purpose", "authority_id", "body", "payload_sha256", "signature"}
+        or value.get("schema")
+        != "fs2-serve.nebius.ai/storage-reconciler-signed-receipt/v1"
+        or not isinstance(authority, dict)
+        or value.get("purpose") != purpose
+        or value.get("authority_id") != authority.get("authority_id")
+        or not isinstance(value.get("body"), dict)
+        or value.get("payload_sha256")
+        != hashlib.sha256(_canonical(value["body"])).hexdigest()
+    ):
+        return None
+    try:
+        key = serialization.load_pem_public_key(authority["public_key_pem"].encode())
+        if not isinstance(key, Ed25519PublicKey):
+            return None
+        key.verify(
+            base64.b64decode(str(value["signature"]), validate=True),
+            _canonical({key: item for key, item in value.items() if key != "signature"}),
+        )
+    except (InvalidSignature, TypeError, ValueError):
+        return None
+    body = value["body"]
+    raw = body.get("raw_observation")
+    if (
+        body.get("schema") != authority.get("receipt_schema")
+        or body.get("purpose") != purpose
+        or body.get("authority_id") != authority.get("authority_id")
+        or body.get("observation_adapter_sha256")
+        != authority.get("observation_adapter_sha256")
+        or not isinstance(raw, dict)
+        or raw.get("schema") != authority.get("raw_observation_schema")
+        or body.get("raw_observation_sha256")
+        != hashlib.sha256(_canonical(raw)).hexdigest()
+    ):
+        return None
+    return body
+
+
+def _bound_receipt(
+    value: object,
+    schema: str,
+    cluster_id: str,
+    *,
+    purpose: str,
+    authorities: dict[str, Any],
+    require_current: bool,
+) -> dict[str, Any] | None:
+    body = _signed_receipt_body(value, purpose=purpose, authorities=authorities)
+    if not isinstance(body, dict) or set(body) != {
         "schema",
         "receipt_id",
+        "purpose",
+        "authority_id",
         "issuer",
         "observed_at",
         "valid_until",
@@ -79,21 +220,24 @@ def _bound_receipt(value: object, schema: str, cluster_id: str) -> bool:
         "subject_generations",
         "object_identities",
         "observation_source",
+        "observation_adapter_sha256",
+        "raw_observation",
+        "raw_observation_sha256",
         "outcome",
         "detail",
     }:
-        return False
-    issuer = value.get("issuer")
+        return None
+    issuer = body.get("issuer")
     try:
         observed_at = datetime.fromisoformat(
-            str(value.get("observed_at")).replace("Z", "+00:00")
+            str(body.get("observed_at")).replace("Z", "+00:00")
         )
         valid_until = datetime.fromisoformat(
-            str(value.get("valid_until")).replace("Z", "+00:00")
+            str(body.get("valid_until")).replace("Z", "+00:00")
         )
     except ValueError:
-        return False
-    detail = value.get("detail")
+        return None
+    detail = body.get("detail")
     semantic_result = {
         "fs2-serve.nebius.ai/storage-reconciler-zero-inflight-observation/v1": (
             isinstance(detail, dict)
@@ -107,21 +251,21 @@ def _bound_receipt(value: object, schema: str, cluster_id: str) -> bool:
         ),
     }.get(schema, False)
     now = datetime.now(UTC)
-    object_identities = value.get("object_identities")
-    return bool(
-        value.get("schema") == schema
-        and value.get("receipt_id")
+    object_identities = body.get("object_identities")
+    valid = bool(
+        body.get("schema") == schema
+        and body.get("receipt_id")
         == hashlib.sha256(
-            _canonical({key: item for key, item in value.items() if key != "receipt_id"})
+            _canonical({key: item for key, item in body.items() if key != "receipt_id"})
         ).hexdigest()
-        and value.get("cluster_id") == cluster_id
-        and value.get("outcome") == "PASS"
+        and body.get("cluster_id") == cluster_id
+        and body.get("outcome") == "PASS"
         and isinstance(issuer, dict)
         and set(issuer) == {"username", "uid", "groups"}
         and issuer.get("username")
         and issuer.get("uid")
         and issuer.get("groups") == sorted(set(issuer.get("groups") or []))
-        and isinstance(value.get("object_identities"), list)
+        and isinstance(body.get("object_identities"), list)
         and object_identities
         and all(
             isinstance(item, dict)
@@ -133,18 +277,34 @@ def _bound_receipt(value: object, schema: str, cluster_id: str) -> bool:
         )
         and len({(item["kind"], item["id"]) for item in object_identities})
         == len(object_identities)
-        and isinstance(value.get("subject_generations"), list)
-        and value["subject_generations"]
-        and value["subject_generations"]
-        == sorted(set(value["subject_generations"]))
-        and isinstance(value.get("observation_source"), str)
-        and value["observation_source"]
+        and object_identities
+        == sorted(object_identities, key=lambda item: (item["kind"], item["id"]))
+        and isinstance(body.get("subject_generations"), list)
+        and body["subject_generations"]
+        and body["subject_generations"]
+        == sorted(set(body["subject_generations"]))
+        and isinstance(body.get("observation_source"), str)
+        and body["observation_source"]
+        and body.get("raw_observation")
+        == {
+            "schema": RECEIPT_CONTRACTS[purpose][1],
+            "cluster_id": cluster_id,
+            "observed_at": body.get("observed_at"),
+            "subject_generations": body.get("subject_generations"),
+            "object_identities": body.get("object_identities"),
+            "facts": detail,
+        }
         and observed_at.tzinfo is not None
         and valid_until.tzinfo is not None
-        and observed_at.astimezone(UTC) <= now < valid_until.astimezone(UTC)
+        and valid_until > observed_at
+        and (
+            not require_current
+            or observed_at.astimezone(UTC) <= now < valid_until.astimezone(UTC)
+        )
         and (valid_until - observed_at).total_seconds() <= 900
         and semantic_result
     )
+    return body if valid else None
 
 
 class StorageReconcilerActivationFence:
@@ -158,6 +318,8 @@ class StorageReconcilerActivationFence:
         image_digest: str,
         cutover_receipt_sha256: str,
         public_key_file: Path,
+        receipt_authority_registry_file: Path,
+        receipt_authority_registry_sha256: str,
         ca_file: Path,
         minimum_epoch: int,
     ) -> None:
@@ -168,6 +330,8 @@ class StorageReconcilerActivationFence:
         self.image_digest = image_digest
         self.registry_anchor_sha256 = cutover_receipt_sha256
         self.public_key_file = public_key_file
+        self.receipt_authority_registry_file = receipt_authority_registry_file
+        self.receipt_authority_registry_sha256 = receipt_authority_registry_sha256
         self.ca_file = ca_file
         self.minimum_epoch = minimum_epoch
         self.observed_epoch = 0
@@ -201,6 +365,10 @@ class StorageReconcilerActivationFence:
         return value
 
     def _verify(self, envelope: dict[str, Any]) -> dict[str, Any]:
+        receipt_authorities = _receipt_authorities(
+            self.receipt_authority_registry_file,
+            self.receipt_authority_registry_sha256,
+        )
         if set(envelope) != {"body", "payload_sha256", "signature"} or not isinstance(
             envelope.get("body"), dict
         ):
@@ -210,6 +378,8 @@ class StorageReconcilerActivationFence:
             "schema",
             "cluster_id",
             "activation_epoch",
+            "epoch_kind",
+            "transition_phase",
             "predecessor_epoch",
             "target_generation",
             "target_image_digest",
@@ -224,6 +394,7 @@ class StorageReconcilerActivationFence:
             "state_head_sha256",
             "source_bundle_sha256",
             "enforcer_image_digest",
+            "receipt_authority_registry_sha256",
             "provider_drain_intent",
             "provider_drain_intent_sha256",
             "provider_drain_receipt",
@@ -239,6 +410,35 @@ class StorageReconcilerActivationFence:
             or body.get("authority_manifest_sha256")
             != self.authority_manifest_sha256
             or body.get("phase") not in {"ACTIVE", "DRAINING", "QUIESCED"}
+            or body.get("epoch_kind") not in {"TRANSITION", "AUTH_REFRESH"}
+            or body.get("transition_phase")
+            not in {
+                "PREPARED",
+                "DRAIN_PREDECESSOR",
+                "PREDECESSOR_DRAINED",
+                "QUIESCE_PREDECESSOR",
+                "PREDECESSOR_QUIESCED",
+                "ACTIVATE_SUCCESSOR",
+                "COMPLETED",
+                "ROLLBACK_QUIESCE",
+                "ROLLBACK_SUCCESSOR_QUIESCED",
+                "ROLLBACK_ACTIVATE",
+                "ROLLED_BACK",
+            }
+            or body.get("phase")
+            != {
+                "PREPARED": "ACTIVE",
+                "DRAIN_PREDECESSOR": "DRAINING",
+                "PREDECESSOR_DRAINED": "QUIESCED",
+                "QUIESCE_PREDECESSOR": "QUIESCED",
+                "PREDECESSOR_QUIESCED": "QUIESCED",
+                "ACTIVATE_SUCCESSOR": "ACTIVE",
+                "COMPLETED": "ACTIVE",
+                "ROLLBACK_QUIESCE": "QUIESCED",
+                "ROLLBACK_SUCCESSOR_QUIESCED": "QUIESCED",
+                "ROLLBACK_ACTIVATE": "ACTIVE",
+                "ROLLED_BACK": "ACTIVE",
+            }.get(body.get("transition_phase"))
             or not isinstance(body.get("activation_epoch"), int)
             or body["activation_epoch"] < self.minimum_epoch
             or not isinstance(body.get("predecessor_epoch"), int)
@@ -267,10 +467,39 @@ class StorageReconcilerActivationFence:
             or len(body["source_bundle_sha256"]) != 64
             or not isinstance(body.get("enforcer_image_digest"), str)
             or "@sha256:" not in body["enforcer_image_digest"]
+            or body.get("receipt_authority_registry_sha256")
+            != self.receipt_authority_registry_sha256
         ):
             raise ValueError("activation contract identity differs")
         drain_intent = body.get("provider_drain_intent")
-        drain_receipt = body.get("provider_drain_receipt")
+        drain_receipt_envelope = body.get("provider_drain_receipt")
+        drain_receipt = (
+            _signed_receipt_body(
+                drain_receipt_envelope,
+                purpose="provider-drain",
+                authorities=receipt_authorities,
+            )
+            if drain_receipt_envelope is not None
+            else None
+        )
+        if drain_receipt_envelope is not None and drain_receipt is None:
+            raise ValueError("provider-drain receipt signature or authority differs")
+        if body.get("transition_phase") in {
+            "PREDECESSOR_DRAINED",
+            "QUIESCE_PREDECESSOR",
+            "PREDECESSOR_QUIESCED",
+            "ACTIVATE_SUCCESSOR",
+            "COMPLETED",
+            "ROLLBACK_QUIESCE",
+            "ROLLBACK_SUCCESSOR_QUIESCED",
+            "ROLLBACK_ACTIVATE",
+            "ROLLED_BACK",
+        } and drain_receipt is None:
+            raise ValueError("drained activation lacks independent provider evidence")
+        if body.get("transition_phase") == "PREPARED" and (
+            drain_intent is not None or drain_receipt is not None
+        ):
+            raise ValueError("prepared activation carries premature drain evidence")
         try:
             drain_requested_at = (
                 datetime.fromisoformat(
@@ -352,6 +581,8 @@ class StorageReconcilerActivationFence:
             != {
                 "schema",
                 "receipt_id",
+                "purpose",
+                "authority_id",
                 "issuer",
                 "observed_at",
                 "valid_until",
@@ -366,6 +597,9 @@ class StorageReconcilerActivationFence:
                 "provider_operation_ledger_head_sha256",
                 "provider_operation_ids",
                 "nonterminal_provider_operations",
+                "observation_adapter_sha256",
+                "raw_observation",
+                "raw_observation_sha256",
             }
             or drain_receipt.get("schema")
             != "fs2-serve.nebius.ai/storage-reconciler-provider-drain-attestation/v1"
@@ -376,7 +610,7 @@ class StorageReconcilerActivationFence:
                 )
             ).hexdigest()
             or body.get("provider_drain_receipt_sha256")
-            != hashlib.sha256(_canonical(drain_receipt)).hexdigest()
+            != hashlib.sha256(_canonical(drain_receipt_envelope)).hexdigest()
             or drain_intent is None
             or drain_receipt.get("drain_id") != drain_intent.get("drain_id")
             or drain_receipt.get("cluster_id") != self.cluster_id
@@ -513,6 +747,25 @@ class StorageReconcilerActivationFence:
             )
             or len(drain_receipt["provider_operation_ledger_head_sha256"]) != 64
             or drain_receipt.get("nonterminal_provider_operations") != 0
+            or drain_receipt.get("raw_observation")
+            != {
+                "schema": RECEIPT_CONTRACTS["provider-drain"][1],
+                "cluster_id": self.cluster_id,
+                "drain_id": drain_receipt.get("drain_id"),
+                "reconciler_generation": drain_receipt.get(
+                    "reconciler_generation"
+                ),
+                "activation_epoch": drain_receipt.get("activation_epoch"),
+                "activation_state_head_sha256": drain_receipt.get(
+                    "activation_state_head_sha256"
+                ),
+                "transition_id": drain_receipt.get("transition_id"),
+                "observed_at": drain_receipt.get("observed_at"),
+                "database_receipt": drain_receipt.get("database_receipt"),
+                "provider_operation_ids": drain_receipt.get(
+                    "provider_operation_ids"
+                ),
+            }
         ):
             raise ValueError("activation provider-drain receipt is not exact and zero-terminal")
         if drain_receipt is not None:
@@ -529,9 +782,21 @@ class StorageReconcilerActivationFence:
             if (
                 receipt_observed_at.tzinfo is None
                 or receipt_valid_until.tzinfo is None
-                or receipt_observed_at.astimezone(UTC) > now
-                or receipt_valid_until.astimezone(UTC) <= now
+                or receipt_valid_until <= receipt_observed_at
                 or (receipt_valid_until - receipt_observed_at).total_seconds() > 900
+                or (
+                    body.get("transition_phase")
+                    in {
+                        "PREDECESSOR_DRAINED",
+                        "QUIESCE_PREDECESSOR",
+                        "PREDECESSOR_QUIESCED",
+                        "ACTIVATE_SUCCESSOR",
+                    }
+                    and (
+                        receipt_observed_at.astimezone(UTC) > now
+                        or receipt_valid_until.astimezone(UTC) <= now
+                    )
+                )
             ):
                 raise ValueError("provider-drain receipt is stale, future-dated, or unbounded")
         if drain_intent is None and any(
@@ -543,9 +808,15 @@ class StorageReconcilerActivationFence:
             )
         ):
             raise ValueError("activation carries drain evidence without an intent")
-        key = serialization.load_pem_public_key(_read_regular(self.public_key_file))
+        checkpoint_public_key_pem = _read_regular(self.public_key_file)
+        key = serialization.load_pem_public_key(checkpoint_public_key_pem)
         if not isinstance(key, Ed25519PublicKey):
             raise ValueError("activation authority key is not Ed25519")
+        if hashlib.sha256(checkpoint_public_key_pem).hexdigest() in {
+            authority["public_key_sha256"]
+            for authority in receipt_authorities.values()
+        }:
+            raise ValueError("activation signer cannot issue independent observations")
         try:
             key.verify(
                 base64.b64decode(str(envelope["signature"]), validate=True),
@@ -566,11 +837,48 @@ class StorageReconcilerActivationFence:
         if (
             valid_from.tzinfo is None
             or valid_until.tzinfo is None
+            or valid_until <= valid_from
+            or (valid_until - valid_from).total_seconds() > 900
             or valid_from.astimezone(UTC) > now
             or valid_until.astimezone(UTC) <= now
         ):
             raise ValueError("activation authority response is not currently valid")
         rollback = body.get("rollback")
+        rollback_receipts_current = body.get("transition_phase") in {
+            "ROLLBACK_QUIESCE",
+            "ROLLBACK_SUCCESSOR_QUIESCED",
+            "ROLLBACK_ACTIVATE",
+        }
+        verified_rollback_receipts = (
+            {
+                "zero_inflight_actions_receipt": _bound_receipt(
+                    rollback.get("zero_inflight_actions_receipt"),
+                    "fs2-serve.nebius.ai/storage-reconciler-zero-inflight-observation/v1",
+                    self.cluster_id,
+                    purpose="rollback-zero-inflight",
+                    authorities=receipt_authorities,
+                    require_current=rollback_receipts_current,
+                ),
+                "schema_compatibility_receipt": _bound_receipt(
+                    rollback.get("schema_compatibility_receipt"),
+                    "fs2-serve.nebius.ai/storage-reconciler-schema-compatibility/v1",
+                    self.cluster_id,
+                    purpose="rollback-schema-compatibility",
+                    authorities=receipt_authorities,
+                    require_current=rollback_receipts_current,
+                ),
+                "provider_continuity_receipt": _bound_receipt(
+                    rollback.get("provider_continuity_receipt"),
+                    "fs2-serve.nebius.ai/storage-reconciler-provider-continuity/v1",
+                    self.cluster_id,
+                    purpose="rollback-provider-continuity",
+                    authorities=receipt_authorities,
+                    require_current=rollback_receipts_current,
+                ),
+            }
+            if isinstance(rollback, dict)
+            else {}
+        )
         if rollback is not None and (
             not isinstance(rollback, dict)
             or set(rollback)
@@ -586,22 +894,19 @@ class StorageReconcilerActivationFence:
                 "provider_continuity_receipt",
                 "provider_continuity_receipt_sha256",
             }
-            or rollback.get("from_epoch") != body["predecessor_epoch"]
+            or (
+                body.get("epoch_kind") == "TRANSITION"
+                and body.get("transition_phase") == "ROLLBACK_QUIESCE"
+                and rollback.get("from_epoch") != body["predecessor_epoch"]
+            )
             or not isinstance(rollback.get("successor_quiesced"), bool)
-            or not _bound_receipt(
-                rollback.get("zero_inflight_actions_receipt"),
-                "fs2-serve.nebius.ai/storage-reconciler-zero-inflight-observation/v1",
-                self.cluster_id,
-            )
-            or not _bound_receipt(
-                rollback.get("schema_compatibility_receipt"),
-                "fs2-serve.nebius.ai/storage-reconciler-schema-compatibility/v1",
-                self.cluster_id,
-            )
-            or not _bound_receipt(
-                rollback.get("provider_continuity_receipt"),
-                "fs2-serve.nebius.ai/storage-reconciler-provider-continuity/v1",
-                self.cluster_id,
+            or any(
+                verified_rollback_receipts.get(field) is None
+                for field in (
+                    "zero_inflight_actions_receipt",
+                    "schema_compatibility_receipt",
+                    "provider_continuity_receipt",
+                )
             )
             or any(
                 rollback.get(hash_field)
@@ -697,7 +1002,15 @@ class StorageReconcilerActivationFence:
         if body["phase"] != "QUIESCED":
             return None
         intent = body.get("provider_drain_intent")
-        receipt = body.get("provider_drain_receipt")
+        receipt_authorities = _receipt_authorities(
+            self.receipt_authority_registry_file,
+            self.receipt_authority_registry_sha256,
+        )
+        receipt = _signed_receipt_body(
+            body.get("provider_drain_receipt"),
+            purpose="provider-drain",
+            authorities=receipt_authorities,
+        )
         if (
             isinstance(intent, dict)
             and intent.get("reconciler_generation") == self.generation
@@ -707,7 +1020,11 @@ class StorageReconcilerActivationFence:
             return dict(receipt)
         rollback = body.get("rollback")
         rollback_receipt = (
-            rollback.get("zero_inflight_actions_receipt")
+            _signed_receipt_body(
+                rollback.get("zero_inflight_actions_receipt"),
+                purpose="rollback-zero-inflight",
+                authorities=receipt_authorities,
+            )
             if isinstance(rollback, dict)
             else None
         )

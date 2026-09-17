@@ -15,7 +15,7 @@ generation-named release and retain every predecessor Deployment. No source
 action deletes a retained release or customer object; live Pod scale-down is
 separately prohibited while the no-delete constraint remains active.
 
-The chart consumes the v12 Kubernetes handoff and the provider authority
+The chart consumes the v13 Kubernetes handoff and the provider authority
 handoff. The pod is pinned to the dedicated Nebius node group/security group,
 and its init container proves the effective union of every NetworkPolicy that
 selects its complete label set, including the controller-assigned actual
@@ -41,3 +41,10 @@ actions remain durably counted for the successor rather than deadlocking the
 drained predecessor. The external cutover fence can then scale the retained
 predecessor to zero under separate authorization; it never deletes the
 Deployment or customer data.
+
+The activation trust volume contains both the cutover public key and a
+canonical, digest-pinned registry of distinct purpose-bound receipt authorities.
+The process verifies detached signatures and embedded raw-observation digests
+before accepting provider-drain or rollback evidence. Short-lived
+`AUTH_REFRESH` epochs renew only the executor credential; they do not change
+the current transition or active generation.

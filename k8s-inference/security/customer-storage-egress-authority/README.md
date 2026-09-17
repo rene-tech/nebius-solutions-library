@@ -230,6 +230,13 @@ Every short-lived envelope carries that exact anchor, the current signed-state
 head and a transition ID. Running processes additionally require each higher
 epoch to name the prior envelope body hash, so ordinary activation and rollback
 do not require replacing a retained Deployment or its immutable trust mount.
+An append-only `AUTH_REFRESH` epoch may replace only the bounded executor
+identity and validity window: the transition object, active generation,
+retained Deployment map, controller identities, authority manifest and receipt
+authority registry digest must remain byte-identical. It therefore renews a
+steady `PREPARED`, `COMPLETED`, or `ROLLED_BACK` control plane without inventing
+a cutover. Admission authenticates only the latest epoch, so retained RBAC for
+an expired predecessor principal cannot authorize a request.
 
 Node repair creates a distinct signed lane/NodeGroup generation while the old
 generation remains present. Every reconciler Helm generation is initially
@@ -262,11 +269,18 @@ prior credential through a stable cached token.
 Rollback is another monotonically higher signed epoch, never an old-state
 rollback. It first quiesces the successor to zero and requires fresh externally
 observed receipt bodies—not caller-supplied hashes—for zero in-flight actions,
-schema compatibility and provider continuity. Each receipt binds issuer,
-cluster, both generation identities, exact object UID/resourceVersion/spec
-digests, observation source, bounded validity and semantic PASS detail. The
-outer append-only state signature binds those bodies and successor quiescence
-before the retained predecessor may return to one.
+schema compatibility and provider continuity. Provider-drain and each rollback
+purpose have a distinct Ed25519 key in a separately mounted, content-pinned
+receipt-authority registry. The cutover signer is forbidden from reusing any of
+those keys. Each detached signature covers the purpose, allowlisted authority,
+canonical body digest and the exact embedded raw observation; the body binds
+the observation-adapter digest, issuer, cluster, generation identities, object
+UID/resourceVersion/spec digests, bounded window and semantic PASS facts. The
+outer append-only state can carry but cannot forge this evidence. Evidence must
+be current while it authorizes a mutation; after `COMPLETED` or `ROLLED_BACK`
+it remains immutable historical proof and does not prevent an `AUTH_REFRESH`.
+The successor-quiescence receipt and verified independent evidence must both
+hold before the retained predecessor may return to one.
 Objects, NodeGroups, credentials and customer data are retained throughout.
 This task defines the source protocol only; no scale, drain, apply, rotation or
 other live action is authorized here.

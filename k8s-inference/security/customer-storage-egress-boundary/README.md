@@ -266,3 +266,20 @@ predecessor, but the source does not call that repair or authorize cutover.
 Cutover still requires a separately reviewed quiesce/drain/retirement protocol.
 Under the active no-delete rule no eviction, teardown or retirement may run, so
 this remains source-only and fail-closed.
+
+## v13 renewable authority and independent evidence
+
+The v13 handoff adds the canonical receipt-authority registry digest to the
+provider ledger, release-values contract and immutable activation trust mount.
+Provider-drain, rollback zero-inflight, schema-compatibility and provider-
+continuity receipts use four distinct purpose-bound Ed25519 keys, all distinct
+from the cutover signer. Each signature covers canonical raw observations and
+the exact observation-adapter digest. The ordinary workloads root can consume
+the registry but cannot substitute an authority or weaken its purpose.
+
+Short-lived cutover credentials are renewed by an append-only `AUTH_REFRESH`
+epoch. The external verifier requires byte-identical transition state,
+Deployment custody, controller identities, active generation and registry
+digest; only the unique bounded owner credential and epoch validity advance.
+This keeps stable admission and reconciliation available without fabricating a
+cutover or reviving a retained principal.

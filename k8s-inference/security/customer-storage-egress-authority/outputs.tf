@@ -1,7 +1,7 @@
 output "current_handoff" {
   description = "Non-secret provider-enforced egress handoff for the additive compatibility-v3 reconciler."
   value = {
-    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v12"
+    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v13"
     generation                                        = local.authority.current_generation
     cluster_id                                        = local.generations[local.authority.current_generation].cluster_id
     provisioning_generation                           = local.generations[local.authority.current_generation].provisioning_generation
@@ -52,6 +52,7 @@ output "current_handoff" {
     reconciler_activation_endpoint                    = local.generations[local.authority.current_generation].reconciler_activation_endpoint
     reconciler_activation_public_key_config_map_name  = local.generations[local.authority.current_generation].reconciler_activation_public_key_config_map_name
     reconciler_activation_ca_config_map_name          = local.generations[local.authority.current_generation].reconciler_activation_ca_config_map_name
+    reconciler_receipt_authority_registry_sha256      = local.generations[local.authority.current_generation].reconciler_receipt_authority_registry_sha256
     reconciler_activation_minimum_epoch               = local.generations[local.authority.current_generation].reconciler_activation_minimum_epoch
     kubernetes_rbac_inventory_sha256                  = data.external.authority.result.kubernetes_rbac_inventory_sha256
     kubernetes_rbac_effective_authority_sha256        = data.external.authority.result.kubernetes_rbac_effective_authority_sha256

@@ -21,6 +21,8 @@ variable "fence_generations" {
     cutover_source_bundle_sha256 = string
     cutover_receipt_sha256       = string
     activation_public_key_pem    = string
+    receipt_authority_registry_json = string
+    receipt_authority_registry_sha256 = string
     activation_trust_config_map_name = string
     activation_ca_config_map_name    = string
     security_owner_receipt_sha256 = string
@@ -46,6 +48,7 @@ variable "fence_generations" {
         cutover_source_bundle_sha256 = fence.cutover_source_bundle_sha256
         cutover_receipt_sha256    = fence.cutover_receipt_sha256
         activation_public_key_pem = fence.activation_public_key_pem
+        receipt_authority_registry_sha256 = fence.receipt_authority_registry_sha256
         activation_trust_config_map_name = fence.activation_trust_config_map_name
         activation_ca_config_map_name = fence.activation_ca_config_map_name
         security_owner_receipt_sha256 = fence.security_owner_receipt_sha256
@@ -65,6 +68,10 @@ variable "fence_generations" {
       can(regex("^[a-f0-9]{64}$", fence.cutover_source_bundle_sha256)) &&
       can(regex("^[a-f0-9]{64}$", fence.cutover_receipt_sha256)) &&
       startswith(fence.activation_public_key_pem, "-----BEGIN PUBLIC KEY-----") &&
+      can(jsondecode(fence.receipt_authority_registry_json)) &&
+      jsonencode(jsondecode(fence.receipt_authority_registry_json)) == fence.receipt_authority_registry_json &&
+      sha256(fence.receipt_authority_registry_json) == fence.receipt_authority_registry_sha256 &&
+      can(regex("^[a-f0-9]{64}$", fence.receipt_authority_registry_sha256)) &&
       can(regex("^fs2-storage-activation-trust-r[0-9]{14}-[a-f0-9]{12}$", fence.activation_trust_config_map_name)) &&
       can(regex("^fs2-storage-activation-ca-r[0-9]{14}-[a-f0-9]{12}$", fence.activation_ca_config_map_name)) &&
       can(regex("^[a-f0-9]{64}$", fence.security_owner_receipt_sha256))

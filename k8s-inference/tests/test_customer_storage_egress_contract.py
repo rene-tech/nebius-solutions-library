@@ -128,7 +128,7 @@ def test_workloads_root_only_reads_the_external_versioned_boundary() -> None:
         'data.kubernetes_config_map_v1.customer_storage_egress_trust[0].data["public-key.pem"]'
         in source
     )
-    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v12" in source
+    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v13" in source
     assert '"uv"' in source and '"--frozen"' in source
     assert "egress_contract_public_key_pem" not in source
 

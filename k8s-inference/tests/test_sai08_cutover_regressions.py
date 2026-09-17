@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import base64
 import hashlib
 import json
 import sys
@@ -10,6 +11,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 ROOT = Path(__file__).parents[1]
 AUTHORITY = ROOT / "security/customer-storage-egress-authority"
@@ -60,52 +63,172 @@ def test_admission_dry_run_never_persists_or_consumes(monkeypatch, module, recor
     assert len(recorded) == 1
 
 
-def _receipt(schema: str, detail: dict[str, object]) -> dict[str, object]:
+def _receipt(
+    schema: str,
+    purpose: str,
+    detail: dict[str, object],
+) -> tuple[dict[str, object], dict[str, object]]:
     now = datetime.now(UTC)
-    value: dict[str, object] = {
+    private_key = Ed25519PrivateKey.generate()
+    public_key_pem = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    adapter_sha256 = "d" * 64
+    authority_id = f"fs2-storage-receipt-{purpose}:aaaaaaaaaaaa"
+    authority = {
+        "authority_id": authority_id,
+        "purpose": purpose,
+        "public_key_pem": public_key_pem,
+        "public_key_sha256": hashlib.sha256(public_key_pem.encode()).hexdigest(),
+        "receipt_schema": schema,
+        "raw_observation_schema": storage_reconciler_activation.RECEIPT_CONTRACTS[
+            purpose
+        ][1],
+        "observation_adapter_sha256": adapter_sha256,
+    }
+    object_identities = [
+        {"kind": "Deployment", "id": "uid-1", "resource_version": "42", "sha256": "c" * 64}
+    ]
+    subject_generations = [
+        "r20260917000000-aaaaaaaaaaaa",
+        "r20260917000100-bbbbbbbbbbbb",
+    ]
+    observed_at = now.isoformat().replace("+00:00", "Z")
+    raw_observation = {
+        "schema": authority["raw_observation_schema"],
+        "cluster_id": "cluster-1",
+        "observed_at": observed_at,
+        "subject_generations": subject_generations,
+        "object_identities": object_identities,
+        "facts": detail,
+    }
+    body: dict[str, object] = {
         "schema": schema,
+        "purpose": purpose,
+        "authority_id": authority_id,
         "issuer": {"username": "independent", "uid": "observer-uid", "groups": []},
-        "observed_at": now.isoformat().replace("+00:00", "Z"),
+        "observed_at": observed_at,
         "valid_until": (now + timedelta(minutes=5)).isoformat().replace("+00:00", "Z"),
         "cluster_id": "cluster-1",
-        "subject_generations": ["r20260917000000-aaaaaaaaaaaa", "r20260917000100-bbbbbbbbbbbb"],
-        "object_identities": [
-            {"kind": "Deployment", "id": "uid-1", "resource_version": "42", "sha256": "c" * 64}
-        ],
+        "subject_generations": subject_generations,
+        "object_identities": object_identities,
         "observation_source": "independent-read-only-observer",
+        "observation_adapter_sha256": adapter_sha256,
+        "raw_observation": raw_observation,
+        "raw_observation_sha256": hashlib.sha256(
+            json.dumps(raw_observation, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
         "outcome": "PASS",
         "detail": detail,
     }
-    value["receipt_id"] = hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    body["receipt_id"] = hashlib.sha256(
+        json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    return value
+    envelope: dict[str, object] = {
+        "schema": "fs2-serve.nebius.ai/storage-reconciler-signed-receipt/v1",
+        "purpose": purpose,
+        "authority_id": authority_id,
+        "body": body,
+        "payload_sha256": hashlib.sha256(
+            json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+    }
+    envelope["signature"] = base64.b64encode(
+        private_key.sign(
+            json.dumps(envelope, sort_keys=True, separators=(",", ":")).encode()
+        )
+    ).decode()
+    return envelope, {purpose: authority}
 
 
 @pytest.mark.parametrize(
-    "schema,detail",
+    "schema,purpose,detail",
     [
         (
             "fs2-serve.nebius.ai/storage-reconciler-zero-inflight-observation/v1",
+            "rollback-zero-inflight",
             {"nonterminal_provider_operations": 0},
         ),
         (
             "fs2-serve.nebius.ai/storage-reconciler-schema-compatibility/v1",
+            "rollback-schema-compatibility",
             {"compatible": True},
         ),
         (
             "fs2-serve.nebius.ai/storage-reconciler-provider-continuity/v1",
+            "rollback-provider-continuity",
             {"continuous": True},
         ),
     ],
 )
-def test_rollback_requires_fresh_content_receipts_not_hash_placeholders(schema, detail):
-    receipt = _receipt(schema, detail)
-    assert storage_reconciler_activation._bound_receipt(receipt, schema, "cluster-1")
+def test_rollback_requires_independent_signed_raw_receipts(
+    schema, purpose, detail
+):
+    receipt, authorities = _receipt(schema, purpose, detail)
+    assert storage_reconciler_activation._bound_receipt(
+        receipt,
+        schema,
+        "cluster-1",
+        purpose=purpose,
+        authorities=authorities,
+        require_current=True,
+    )
     forged = copy.deepcopy(receipt)
-    forged["detail"] = {}
-    assert not storage_reconciler_activation._bound_receipt(forged, schema, "cluster-1")
-    assert not storage_reconciler_activation._bound_receipt("a" * 64, schema, "cluster-1")
+    forged["body"]["detail"] = {}
+    assert not storage_reconciler_activation._bound_receipt(
+        forged,
+        schema,
+        "cluster-1",
+        purpose=purpose,
+        authorities=authorities,
+        require_current=True,
+    )
+    assert not storage_reconciler_activation._bound_receipt(
+        "a" * 64,
+        schema,
+        "cluster-1",
+        purpose=purpose,
+        authorities=authorities,
+        require_current=True,
+    )
+
+
+def test_outer_signer_cannot_substitute_an_unlisted_receipt_authority():
+    schema = "fs2-serve.nebius.ai/storage-reconciler-schema-compatibility/v1"
+    purpose = "rollback-schema-compatibility"
+    trusted_receipt, trusted_authorities = _receipt(
+        schema, purpose, {"compatible": True}
+    )
+    untrusted_receipt, _ = _receipt(schema, purpose, {"compatible": True})
+    assert storage_reconciler_activation._bound_receipt(
+        trusted_receipt,
+        schema,
+        "cluster-1",
+        purpose=purpose,
+        authorities=trusted_authorities,
+        require_current=True,
+    )
+    assert not storage_reconciler_activation._bound_receipt(
+        untrusted_receipt,
+        schema,
+        "cluster-1",
+        purpose=purpose,
+        authorities=trusted_authorities,
+        require_current=True,
+    )
+
+
+def test_auth_refresh_is_append_only_and_semantically_inert_in_source_contract():
+    source = (
+        ROOT
+        / "security/customer-storage-egress-authority/storage_reconciler_cutover_runtime.py"
+    ).read_text()
+    assert 'body.get("epoch_kind") not in {"TRANSITION", "AUTH_REFRESH"}' in source
+    assert 'value != previous' in source
+    assert 'AUTH_REFRESH changed storage cutover semantics' in source
+    assert 'body.get("deployments") != retained_deployments' in source
+    assert 'latest["valid_from"] != latest["security_owner_identity"]["valid_from"]' in source
 
 
 def test_migration_drain_chart_and_admission_delete_contracts_are_source_bound():
@@ -139,6 +262,11 @@ def test_migration_drain_chart_and_admission_delete_contracts_are_source_bound()
     assert 'body["phase"] in {"DRAINING", "QUIESCED"}' in activation
     assert "completed_shutdown_receipt" in activation
     assert 'rollback.get("zero_inflight_actions_receipt")' in activation
+    assert "receipt-authorities.json" in chart
+    assert "RECEIPT_CONTRACTS" in cutover
+    assert "_independently_signed_receipt" in cutover
+    assert '"receipt_authority_registry_sha256"' in cutover
+    assert "_receipt_authorities" in activation
     assert fence.count('operations  = ["CREATE", "DELETE"]') >= 2
     assert "request.operation == 'DELETE' ?" in boundary
     assert "oldObject != null" in boundary

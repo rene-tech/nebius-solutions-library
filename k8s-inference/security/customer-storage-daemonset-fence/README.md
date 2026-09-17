@@ -25,6 +25,14 @@ Deployment UID/spec, and the appropriate quiescence/readiness phase. Pod CREATE
 is admitted only for the active rollout generation and authenticated native
 controller chain.
 
+The immutable activation trust also carries the canonical receipt-authority
+registry used by the runtime. Its digest is bound into the provider handoff,
+every cutover-state generation and every activation envelope. Four distinct,
+purpose-scoped Ed25519 authorities sign provider-drain, zero-inflight,
+schema-compatibility and provider-continuity observations; the cutover signer
+cannot be any of those keys. A steady-state `AUTH_REFRESH` appends a new unique
+executor identity without changing the active generation or transition bytes.
+
 The separately hashed `storage_reconciler_cutover_executor.py` is the only
 workload-shift mechanism and runs continuously inside the external cutover
 service. It uses resourceVersion/UID/spec CAS to scale, never

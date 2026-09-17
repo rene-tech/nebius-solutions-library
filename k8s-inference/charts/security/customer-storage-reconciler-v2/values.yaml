@@ -42,6 +42,7 @@ activation:
   clusterId: ""
   publicKeyConfigMapName: ""
   caConfigMapName: ""
+  receiptAuthorityRegistrySha256: ""
   minimumEpoch: 1
   cutoverReceiptSha256: ""
 

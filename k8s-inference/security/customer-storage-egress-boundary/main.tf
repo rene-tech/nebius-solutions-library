@@ -439,6 +439,8 @@ locals {
     { name = "FS2_USER_STORAGE_ACTIVATION_IMAGE_DIGEST", value = local.current_release.image_digest },
     { name = "FS2_USER_STORAGE_ACTIVATION_CUTOVER_RECEIPT_SHA256", value = var.provider_authority.reconciler_cutover_receipt_sha256 },
     { name = "FS2_USER_STORAGE_ACTIVATION_PUBLIC_KEY_FILE", value = "/var/run/fs2-storage-activation/public-key.pem" },
+    { name = "FS2_USER_STORAGE_ACTIVATION_RECEIPT_AUTHORITY_REGISTRY_FILE", value = "/var/run/fs2-storage-activation/receipt-authorities.json" },
+    { name = "FS2_USER_STORAGE_ACTIVATION_RECEIPT_AUTHORITY_REGISTRY_SHA256", value = var.provider_authority.reconciler_receipt_authority_registry_sha256 },
     { name = "FS2_USER_STORAGE_ACTIVATION_CA_FILE", value = "/var/run/fs2-storage-activation/ca.crt" },
     { name = "FS2_USER_STORAGE_ACTIVATION_MINIMUM_EPOCH", value = tostring(var.provider_authority.reconciler_activation_minimum_epoch) },
     { name = "FS2_USER_STORAGE_RESOURCE_CREDENTIALS_FILE", value = "/var/run/secrets/fs2-serve/customer-storage/resource/credentials.json" },
@@ -462,6 +464,7 @@ locals {
     { name = "customer-storage-resource", mountPath = "/var/run/secrets/fs2-serve/customer-storage/resource", readOnly = true },
     { name = "customer-storage-iam", mountPath = "/var/run/secrets/fs2-serve/customer-storage/iam", readOnly = true },
     { name = "storage-activation-trust", mountPath = "/var/run/fs2-storage-activation/public-key.pem", subPath = "public-key.pem", readOnly = true },
+    { name = "storage-activation-trust", mountPath = "/var/run/fs2-storage-activation/receipt-authorities.json", subPath = "receipt-authorities.json", readOnly = true },
     { name = "storage-activation-ca", mountPath = "/var/run/fs2-storage-activation/ca.crt", subPath = "ca.crt", readOnly = true },
   ])
   expected_init_env_cel = jsonencode([
@@ -776,6 +779,7 @@ locals {
         clusterId                  = var.provider_authority.cluster_id
         publicKeyConfigMapName     = var.provider_authority.reconciler_activation_public_key_config_map_name
         caConfigMapName            = var.provider_authority.reconciler_activation_ca_config_map_name
+        receiptAuthorityRegistrySha256 = var.provider_authority.reconciler_receipt_authority_registry_sha256
         minimumEpoch               = var.provider_authority.reconciler_activation_minimum_epoch
         cutoverReceiptSha256       = var.provider_authority.reconciler_cutover_receipt_sha256
       }
@@ -2203,6 +2207,24 @@ resource "kubernetes_role_binding_v1" "reconciler_inventory_v3" {
   depends_on = [kubernetes_role_v1.reconciler_inventory_v3]
 }
 
+data "kubernetes_config_map_v1" "reconciler_activation_trust" {
+  metadata {
+    name      = var.provider_authority.reconciler_activation_public_key_config_map_name
+    namespace = local.namespace
+  }
+  lifecycle {
+    postcondition {
+      condition = (
+        self.immutable == true &&
+        try(self.data["public-key.pem"], "") != "" &&
+        try(self.data["receipt-authorities.json"], "") != "" &&
+        sha256(self.data["receipt-authorities.json"]) == var.provider_authority.reconciler_receipt_authority_registry_sha256
+      )
+      error_message = "The external activation trust must be immutable and contain the exact independently anchored receipt-authority registry."
+    }
+  }
+}
+
 resource "helm_release" "storage_reconciler_v3" {
   provider = helm.storage_release
   for_each = local.successor_releases
@@ -2238,6 +2260,7 @@ resource "helm_release" "storage_reconciler_v3" {
             custodyReview = var.provider_authority.sai10_independent_review_receipt_sha256
             image         = each.value.image_digest
             releaseValues = var.provider_authority.release_values_sha256
+            receiptAuthorities = var.provider_authority.reconciler_receipt_authority_registry_sha256
           })), 0, 12),
         )
       )
@@ -2251,6 +2274,7 @@ resource "helm_release" "storage_reconciler_v3" {
     kubernetes_config_map_v1.contract_v3,
     kubernetes_network_policy_v1.contract_v3,
     kubernetes_role_binding_v1.reconciler_inventory_v3,
+    data.kubernetes_config_map_v1.reconciler_activation_trust,
   ]
 }
 

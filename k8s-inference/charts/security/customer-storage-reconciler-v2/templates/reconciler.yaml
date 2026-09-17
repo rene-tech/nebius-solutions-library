@@ -10,7 +10,7 @@
 {{- if ne .Release.Name $expectedRelease }}{{ fail "each additive rollout requires its exact generation-named Helm release" }}{{ end -}}
 {{- $name := printf "fs2-storage-v3-%s-%s" $suffix $rolloutSuffix -}}
 {{- if ne .Release.Namespace "fs2-system" }}{{ fail "customer-storage compatibility-v3 reconciler is restricted to fs2-system" }}{{ end -}}
-{{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v12" }}{{ fail "provider authority handoff is required" }}{{ end -}}
+{{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v13" }}{{ fail "provider authority handoff is required" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.protectedNodeSchedulingLabelsSha256) }}{{ fail "complete protected-node scheduling-label custody is required" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.releaseValuesSha256) }}{{ fail "externally signed release-values digest is required" }}{{ end -}}
 {{- if or (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.priorHeadReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.iamInventoryReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.rbacInventoryReceiptSha256)) }}{{ fail "separately anchored prior head and exact provider IAM/RBAC receipts are required" }}{{ end -}}
@@ -178,6 +178,8 @@ spec:
             - {name: FS2_USER_STORAGE_ACTIVATION_IMAGE_DIGEST, value: {{ .Values.image.digest | quote }}}
             - {name: FS2_USER_STORAGE_ACTIVATION_CUTOVER_RECEIPT_SHA256, value: {{ .Values.activation.cutoverReceiptSha256 | quote }}}
             - {name: FS2_USER_STORAGE_ACTIVATION_PUBLIC_KEY_FILE, value: /var/run/fs2-storage-activation/public-key.pem}
+            - {name: FS2_USER_STORAGE_ACTIVATION_RECEIPT_AUTHORITY_REGISTRY_FILE, value: /var/run/fs2-storage-activation/receipt-authorities.json}
+            - {name: FS2_USER_STORAGE_ACTIVATION_RECEIPT_AUTHORITY_REGISTRY_SHA256, value: {{ .Values.activation.receiptAuthorityRegistrySha256 | quote }}}
             - {name: FS2_USER_STORAGE_ACTIVATION_CA_FILE, value: /var/run/fs2-storage-activation/ca.crt}
             - {name: FS2_USER_STORAGE_ACTIVATION_MINIMUM_EPOCH, value: {{ .Values.activation.minimumEpoch | quote }}}
             - {name: FS2_USER_STORAGE_RESOURCE_CREDENTIALS_FILE, value: /var/run/secrets/fs2-serve/customer-storage/resource/credentials.json}
@@ -188,6 +190,7 @@ spec:
             - {name: customer-storage-resource, mountPath: /var/run/secrets/fs2-serve/customer-storage/resource, readOnly: true}
             - {name: customer-storage-iam, mountPath: /var/run/secrets/fs2-serve/customer-storage/iam, readOnly: true}
             - {name: storage-activation-trust, mountPath: /var/run/fs2-storage-activation/public-key.pem, subPath: public-key.pem, readOnly: true}
+            - {name: storage-activation-trust, mountPath: /var/run/fs2-storage-activation/receipt-authorities.json, subPath: receipt-authorities.json, readOnly: true}
             - {name: storage-activation-ca, mountPath: /var/run/fs2-storage-activation/ca.crt, subPath: ca.crt, readOnly: true}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
@@ -243,7 +246,9 @@ spec:
           configMap:
             name: {{ .Values.activation.publicKeyConfigMapName | quote }}
             defaultMode: 0400
-            items: [{key: public-key.pem, path: public-key.pem}]
+            items:
+              - {key: public-key.pem, path: public-key.pem}
+              - {key: receipt-authorities.json, path: receipt-authorities.json}
         - name: storage-activation-ca
           configMap:
             name: {{ .Values.activation.caConfigMapName | quote }}

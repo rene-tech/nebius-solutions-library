@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 from datetime import UTC, datetime
@@ -19,6 +20,9 @@ from storage_reconciler_cutover_policy import canonical, digest
 
 REGISTRY_PATH = Path(
     "/var/lib/fs2-security-checkpoints-ro/storage-reconciler-cutover-runtime.json"
+)
+RECEIPT_AUTHORITY_REGISTRY_PATH = Path(
+    "/var/lib/fs2-security-checkpoints-ro/storage-reconciler-receipt-authorities.json"
 )
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 UID_RE = re.compile(
@@ -52,6 +56,24 @@ PHASE_SUCCESSORS = {
     "ROLLBACK_SUCCESSOR_QUIESCED": {"ROLLBACK_ACTIVATE"},
     "ROLLBACK_ACTIVATE": {"ROLLED_BACK"},
     "ROLLED_BACK": {"PREPARED"},
+}
+RECEIPT_CONTRACTS = {
+    "provider-drain": (
+        "fs2-serve.nebius.ai/storage-reconciler-provider-drain-attestation/v1",
+        "fs2-serve.nebius.ai/storage-reconciler-provider-drain-raw-observation/v1",
+    ),
+    "rollback-zero-inflight": (
+        "fs2-serve.nebius.ai/storage-reconciler-zero-inflight-observation/v1",
+        "fs2-serve.nebius.ai/storage-reconciler-zero-inflight-raw-observation/v1",
+    ),
+    "rollback-schema-compatibility": (
+        "fs2-serve.nebius.ai/storage-reconciler-schema-compatibility/v1",
+        "fs2-serve.nebius.ai/storage-reconciler-schema-compatibility-raw-observation/v1",
+    ),
+    "rollback-provider-continuity": (
+        "fs2-serve.nebius.ai/storage-reconciler-provider-continuity/v1",
+        "fs2-serve.nebius.ai/storage-reconciler-provider-continuity-raw-observation/v1",
+    ),
 }
 
 
@@ -116,17 +138,130 @@ def _epoch_identity(value: object, *, activation_epoch: int) -> bool:
     return _bounded_window(value["valid_from"], value["valid_until"]) is not None
 
 
+def _receipt_authority_registry(path: Path) -> tuple[dict[str, Any], str]:
+    registry = _object(_safe_read(path), "storage reconciler receipt authority registry")
+    if (
+        set(registry) != {"schema", "registry_id", "authorities"}
+        or registry.get("schema")
+        != "fs2-serve.nebius.ai/storage-reconciler-receipt-authority-registry/v1"
+        or not isinstance(registry.get("authorities"), dict)
+        or set(registry["authorities"]) != set(RECEIPT_CONTRACTS)
+        or registry.get("registry_id")
+        != digest({key: item for key, item in registry.items() if key != "registry_id"})
+    ):
+        raise ValueError("storage receipt authority registry fields differ")
+    authority_ids: set[str] = set()
+    public_key_digests: set[str] = set()
+    for purpose, authority in registry["authorities"].items():
+        receipt_schema, raw_schema = RECEIPT_CONTRACTS[purpose]
+        if (
+            not isinstance(authority, dict)
+            or set(authority)
+            != {
+                "authority_id",
+                "purpose",
+                "public_key_pem",
+                "public_key_sha256",
+                "receipt_schema",
+                "raw_observation_schema",
+                "observation_adapter_sha256",
+            }
+            or authority.get("purpose") != purpose
+            or authority.get("receipt_schema") != receipt_schema
+            or authority.get("raw_observation_schema") != raw_schema
+            or not re.fullmatch(
+                r"fs2-storage-receipt-[a-z0-9-]+:[a-f0-9]{12}",
+                str(authority.get("authority_id", "")),
+            )
+            or not str(authority.get("public_key_pem", "")).startswith(
+                "-----BEGIN PUBLIC KEY-----"
+            )
+            or authority.get("public_key_sha256")
+            != hashlib.sha256(str(authority.get("public_key_pem", "")).encode()).hexdigest()
+            or not SHA256_RE.fullmatch(
+                str(authority.get("observation_adapter_sha256", ""))
+            )
+        ):
+            raise ValueError("storage receipt authority is not purpose-bound")
+        key = serialization.load_pem_public_key(authority["public_key_pem"].encode())
+        if not isinstance(key, Ed25519PublicKey):
+            raise ValueError("storage receipt authority key is not Ed25519")
+        authority_ids.add(authority["authority_id"])
+        public_key_digests.add(authority["public_key_sha256"])
+    if len(authority_ids) != len(RECEIPT_CONTRACTS) or len(public_key_digests) != len(
+        RECEIPT_CONTRACTS
+    ):
+        raise ValueError("storage receipt purposes do not have independent authorities")
+    return registry, digest(registry)
+
+
+def _independently_signed_receipt(
+    value: object,
+    *,
+    purpose: str,
+    authorities: dict[str, Any],
+) -> dict[str, Any] | None:
+    authority = authorities.get(purpose)
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {"schema", "purpose", "authority_id", "body", "payload_sha256", "signature"}
+        or value.get("schema")
+        != "fs2-serve.nebius.ai/storage-reconciler-signed-receipt/v1"
+        or not isinstance(authority, dict)
+        or value.get("purpose") != purpose
+        or value.get("authority_id") != authority.get("authority_id")
+        or not isinstance(value.get("body"), dict)
+        or value.get("payload_sha256") != digest(value["body"])
+    ):
+        return None
+    signed_payload = {key: item for key, item in value.items() if key != "signature"}
+    try:
+        key = serialization.load_pem_public_key(authority["public_key_pem"].encode())
+        if not isinstance(key, Ed25519PublicKey):
+            return None
+        key.verify(
+            base64.b64decode(str(value["signature"]), validate=True),
+            canonical(signed_payload),
+        )
+    except (InvalidSignature, TypeError, ValueError):
+        return None
+    body = value["body"]
+    raw_observation = body.get("raw_observation")
+    if (
+        body.get("schema") != authority.get("receipt_schema")
+        or body.get("purpose") != purpose
+        or body.get("authority_id") != authority.get("authority_id")
+        or body.get("observation_adapter_sha256")
+        != authority.get("observation_adapter_sha256")
+        or not isinstance(raw_observation, dict)
+        or raw_observation.get("schema") != authority.get("raw_observation_schema")
+        or body.get("raw_observation_sha256") != digest(raw_observation)
+    ):
+        return None
+    return body
+
+
 def _content_receipt(
     value: object,
     *,
+    purpose: str,
     schema: str,
     cluster_id: str,
     subject_generations: set[str],
     forbidden_issuer: dict[str, Any],
-) -> bool:
-    if not isinstance(value, dict) or set(value) != {
+    authorities: dict[str, Any],
+) -> dict[str, Any] | None:
+    body = _independently_signed_receipt(
+        value,
+        purpose=purpose,
+        authorities=authorities,
+    )
+    if not isinstance(body, dict) or set(body) != {
         "schema",
         "receipt_id",
+        "purpose",
+        "authority_id",
         "issuer",
         "observed_at",
         "valid_until",
@@ -134,22 +269,26 @@ def _content_receipt(
         "subject_generations",
         "object_identities",
         "observation_source",
+        "observation_adapter_sha256",
+        "raw_observation",
+        "raw_observation_sha256",
         "outcome",
         "detail",
     }:
-        return False
-    body = {key: item for key, item in value.items() if key != "receipt_id"}
-    issuer = value.get("issuer")
+        return None
+    receipt_id_body = {key: item for key, item in body.items() if key != "receipt_id"}
+    issuer = body.get("issuer")
+    raw_observation = body.get("raw_observation")
     if (
-        value.get("schema") != schema
-        or value.get("receipt_id") != digest(body)
+        body.get("schema") != schema
+        or body.get("receipt_id") != digest(receipt_id_body)
         or not _identity(issuer)
         or issuer == {key: forbidden_issuer.get(key) for key in ("username", "uid", "groups")}
-        or value.get("cluster_id") != cluster_id
-        or set(value.get("subject_generations") or []) != subject_generations
-        or value.get("subject_generations") != sorted(subject_generations)
-        or not isinstance(value.get("object_identities"), list)
-        or not value["object_identities"]
+        or body.get("cluster_id") != cluster_id
+        or set(body.get("subject_generations") or []) != subject_generations
+        or body.get("subject_generations") != sorted(subject_generations)
+        or not isinstance(body.get("object_identities"), list)
+        or not body["object_identities"]
         or any(
             not isinstance(item, dict)
             or set(item) != {"kind", "id", "resource_version", "sha256"}
@@ -157,13 +296,28 @@ def _content_receipt(
             or not item["id"]
             or not item["resource_version"]
             or not SHA256_RE.fullmatch(str(item["sha256"]))
-            for item in value["object_identities"]
+            for item in body["object_identities"]
         )
-        or value.get("outcome") != "PASS"
-        or not isinstance(value.get("detail"), dict)
+        or body["object_identities"]
+        != sorted(body["object_identities"], key=lambda item: (item["kind"], item["id"]))
+        or len({(item["kind"], item["id"]) for item in body["object_identities"]})
+        != len(body["object_identities"])
+        or body.get("outcome") != "PASS"
+        or not isinstance(body.get("detail"), dict)
+        or raw_observation
+        != {
+            "schema": RECEIPT_CONTRACTS[purpose][1],
+            "cluster_id": cluster_id,
+            "observed_at": body.get("observed_at"),
+            "subject_generations": sorted(subject_generations),
+            "object_identities": body.get("object_identities"),
+            "facts": body.get("detail"),
+        }
     ):
-        return False
-    return _bounded_window(value["observed_at"], value["valid_until"]) is not None
+        return None
+    if _bounded_window(body["observed_at"], body["valid_until"]) is None:
+        return None
+    return body
 
 
 def _provider_drain_intent(value: object, transition: dict[str, Any]) -> bool:
@@ -296,22 +450,30 @@ def _provider_drain_receipt(
     *,
     cluster_id: str,
     forbidden_issuer: dict[str, Any],
-) -> bool:
+    authorities: dict[str, Any],
+) -> dict[str, Any] | None:
+    body = _independently_signed_receipt(
+        value,
+        purpose="provider-drain",
+        authorities=authorities,
+    )
     window = (
         _bounded_window(
-            value.get("observed_at") if isinstance(value, dict) else None,
-            value.get("valid_until") if isinstance(value, dict) else None,
+            body.get("observed_at") if isinstance(body, dict) else None,
+            body.get("valid_until") if isinstance(body, dict) else None,
         )
-        if isinstance(value, dict)
+        if isinstance(body, dict)
         else None
     )
-    operation_ids = value.get("provider_operation_ids") if isinstance(value, dict) else None
-    return bool(
-        isinstance(value, dict)
-        and set(value)
+    operation_ids = body.get("provider_operation_ids") if isinstance(body, dict) else None
+    valid = bool(
+        isinstance(body, dict)
+        and set(body)
         == {
             "schema",
             "receipt_id",
+            "purpose",
+            "authority_id",
             "issuer",
             "observed_at",
             "valid_until",
@@ -326,48 +488,67 @@ def _provider_drain_receipt(
             "provider_operation_ledger_head_sha256",
             "provider_operation_ids",
             "nonterminal_provider_operations",
+            "observation_adapter_sha256",
+            "raw_observation",
+            "raw_observation_sha256",
         }
-        and value.get("schema")
+        and body.get("schema")
         == "fs2-serve.nebius.ai/storage-reconciler-provider-drain-attestation/v1"
-        and value.get("receipt_id")
-        == digest({key: item for key, item in value.items() if key != "receipt_id"})
-        and _identity(value.get("issuer"))
-        and value.get("issuer")
+        and body.get("receipt_id")
+        == digest({key: item for key, item in body.items() if key != "receipt_id"})
+        and _identity(body.get("issuer"))
+        and body.get("issuer")
         != {key: forbidden_issuer.get(key) for key in ("username", "uid", "groups")}
-        and value.get("cluster_id") == cluster_id
-        and value.get("drain_id") == intent.get("drain_id")
-        and value.get("reconciler_generation") == intent.get("reconciler_generation")
-        and isinstance(value.get("activation_epoch"), int)
-        and value["activation_epoch"] > 0
+        and body.get("cluster_id") == cluster_id
+        and body.get("drain_id") == intent.get("drain_id")
+        and body.get("reconciler_generation") == intent.get("reconciler_generation")
+        and isinstance(body.get("activation_epoch"), int)
+        and body["activation_epoch"] > 0
         and SHA256_RE.fullmatch(
-            str(value.get("activation_state_head_sha256", ""))
+            str(body.get("activation_state_head_sha256", ""))
         )
-        and SHA256_RE.fullmatch(str(value.get("transition_id", "")))
-        and _database_drain_receipt(value.get("database_receipt"), intent)
-        and value.get("database_receipt_sha256")
-        == digest(value["database_receipt"])
-        and value["database_receipt"].get("activation_epoch")
-        == value.get("activation_epoch")
-        and value["database_receipt"].get("activation_state_head_sha256")
-        == value.get("activation_state_head_sha256")
-        and value["database_receipt"].get("transition_id")
-        == value.get("transition_id")
-        and value.get("provider_operation_ledger_head_sha256")
-        == digest(value["database_receipt"]["operations"])
+        and SHA256_RE.fullmatch(str(body.get("transition_id", "")))
+        and _database_drain_receipt(body.get("database_receipt"), intent)
+        and body.get("database_receipt_sha256")
+        == digest(body["database_receipt"])
+        and body["database_receipt"].get("activation_epoch")
+        == body.get("activation_epoch")
+        and body["database_receipt"].get("activation_state_head_sha256")
+        == body.get("activation_state_head_sha256")
+        and body["database_receipt"].get("transition_id")
+        == body.get("transition_id")
+        and body.get("provider_operation_ledger_head_sha256")
+        == digest(body["database_receipt"]["operations"])
         and SHA256_RE.fullmatch(
-            str(value.get("provider_operation_ledger_head_sha256", ""))
+            str(body.get("provider_operation_ledger_head_sha256", ""))
         )
-        and isinstance(value.get("provider_operation_ids"), list)
+        and isinstance(body.get("provider_operation_ids"), list)
         and operation_ids == sorted(set(operation_ids))
         and all(UID_RE.fullmatch(str(item)) for item in operation_ids)
         and operation_ids
         == sorted(
             str(item["operation_id"])
-            for item in value["database_receipt"]["operations"]
+            for item in body["database_receipt"]["operations"]
         )
-        and value.get("nonterminal_provider_operations") == 0
+        and body.get("nonterminal_provider_operations") == 0
+        and body.get("raw_observation")
+        == {
+            "schema": RECEIPT_CONTRACTS["provider-drain"][1],
+            "cluster_id": cluster_id,
+            "drain_id": body.get("drain_id"),
+            "reconciler_generation": body.get("reconciler_generation"),
+            "activation_epoch": body.get("activation_epoch"),
+            "activation_state_head_sha256": body.get(
+                "activation_state_head_sha256"
+            ),
+            "transition_id": body.get("transition_id"),
+            "observed_at": body.get("observed_at"),
+            "database_receipt": body.get("database_receipt"),
+            "provider_operation_ids": body.get("provider_operation_ids"),
+        }
         and window is not None
     )
+    return body if valid else None
 
 
 def _verify_envelope(envelope: object, key: Ed25519PublicKey) -> dict[str, Any]:
@@ -456,6 +637,8 @@ def _transition(
     activation_epoch: int,
     cluster_id: str,
     security_owner_identity: dict[str, Any],
+    receipt_authorities: dict[str, Any],
+    advance_phase: bool,
 ) -> dict[str, Any]:
     fields = {
         "schema",
@@ -491,8 +674,11 @@ def _transition(
     phase = value["phase"]
     prior_id = value.get("predecessor_transition_sha256")
     if previous is None:
-        if phase != "PREPARED" or prior_id is not None:
+        if not advance_phase or phase != "PREPARED" or prior_id is not None:
             raise ValueError("first storage cutover transition is not PREPARED")
+    elif not advance_phase:
+        if value != previous:
+            raise ValueError("AUTH_REFRESH changed storage cutover semantics")
     else:
         if (
             phase not in PHASE_SUCCESSORS[previous["phase"]]
@@ -526,26 +712,28 @@ def _transition(
     drain_receipt = value.get("provider_drain_receipt")
     drained_phases = PHASES - {"PREPARED", "DRAIN_PREDECESSOR"}
     if phase in drained_phases:
+        drain_receipt_body = _provider_drain_receipt(
+            drain_receipt,
+            drain_intent,
+            cluster_id=cluster_id,
+            forbidden_issuer=security_owner_identity,
+            authorities=receipt_authorities,
+        )
         if (
-            not _provider_drain_receipt(
-                drain_receipt,
-                drain_intent,
-                cluster_id=cluster_id,
-                forbidden_issuer=security_owner_identity,
-            )
+            drain_receipt_body is None
             or value.get("provider_drain_receipt_sha256") != digest(drain_receipt)
         ):
             raise ValueError("storage cutover lacks an exact zero-terminal provider receipt")
-        if phase == "PREDECESSOR_DRAINED":
+        if phase == "PREDECESSOR_DRAINED" and advance_phase:
             if (
                 previous is None
-                or drain_receipt.get("transition_id") != previous["transition_id"]
-                or drain_receipt.get("activation_state_head_sha256")
+                or drain_receipt_body.get("transition_id") != previous["transition_id"]
+                or drain_receipt_body.get("activation_state_head_sha256")
                 != previous_state_head
-                or drain_receipt.get("activation_epoch") != activation_epoch - 1
+                or drain_receipt_body.get("activation_epoch") != activation_epoch - 1
             ):
                 raise ValueError("provider drain receipt is not bound to the draining epoch")
-        elif previous is not None and drain_receipt != previous.get(
+        elif advance_phase and previous is not None and drain_receipt != previous.get(
             "provider_drain_receipt"
         ):
             raise ValueError("storage cutover changed provider-drain evidence")
@@ -566,14 +754,16 @@ def _transition(
             or value.get("predecessor_quiescence_sha256") != digest(quiescence)
         ):
             raise ValueError("storage predecessor quiescence receipt differs")
-        if phase == "PREDECESSOR_QUIESCED":
+        if phase == "PREDECESSOR_QUIESCED" and advance_phase:
             if (
                 previous is None
                 or quiescence.get("transition_id") != previous["transition_id"]
                 or quiescence.get("state_head_sha256") != previous_state_head
             ):
                 raise ValueError("storage predecessor quiescence is not bound to the executed epoch")
-        elif previous is not None and quiescence != previous.get("predecessor_quiescence"):
+        elif advance_phase and previous is not None and quiescence != previous.get(
+            "predecessor_quiescence"
+        ):
             raise ValueError("storage predecessor quiescence changed after admission")
     elif quiescence is not None or value.get("predecessor_quiescence_sha256") is not None:
         raise ValueError("storage cutover carries premature predecessor quiescence")
@@ -590,14 +780,16 @@ def _transition(
             or value.get("successor_readiness_sha256") != digest(readiness)
         ):
             raise ValueError("storage successor readiness receipt differs")
-        if phase == "COMPLETED":
+        if phase == "COMPLETED" and advance_phase:
             if (
                 previous is None
                 or readiness.get("transition_id") != previous["transition_id"]
                 or readiness.get("state_head_sha256") != previous_state_head
             ):
                 raise ValueError("storage successor readiness is not bound to the activation epoch")
-        elif previous is not None and readiness != previous.get("successor_readiness"):
+        elif advance_phase and previous is not None and readiness != previous.get(
+            "successor_readiness"
+        ):
             raise ValueError("storage successor readiness changed after completion")
     elif readiness is not None or value.get("successor_readiness_sha256") is not None:
         raise ValueError("storage cutover carries premature successor readiness")
@@ -622,6 +814,12 @@ def _transition(
             or rollback["from_epoch"] < 1
         ):
             raise ValueError("storage rollback criteria are incomplete")
+        if (
+            phase == "ROLLBACK_QUIESCE"
+            and advance_phase
+            and rollback.get("from_epoch") != activation_epoch - 1
+        ):
+            raise ValueError("storage rollback is not bound to its originating epoch")
         subject_generations = {
             value["predecessor_generation"],
             value["successor_generation"],
@@ -629,42 +827,57 @@ def _transition(
         receipt_contracts = (
             (
                 "zero_inflight_actions_receipt",
+                "rollback-zero-inflight",
                 "fs2-serve.nebius.ai/storage-reconciler-zero-inflight-observation/v1",
                 "zero_inflight_actions_receipt_sha256",
             ),
             (
                 "schema_compatibility_receipt",
+                "rollback-schema-compatibility",
                 "fs2-serve.nebius.ai/storage-reconciler-schema-compatibility/v1",
                 "schema_compatibility_receipt_sha256",
             ),
             (
                 "provider_continuity_receipt",
+                "rollback-provider-continuity",
                 "fs2-serve.nebius.ai/storage-reconciler-provider-continuity/v1",
                 "provider_continuity_receipt_sha256",
             ),
         )
-        if any(
-            not _content_receipt(
+        verified_rollback_receipts = {
+            receipt_field: _content_receipt(
                 rollback.get(receipt_field),
+                purpose=purpose,
                 schema=schema,
                 cluster_id=cluster_id,
                 subject_generations=subject_generations,
                 forbidden_issuer=security_owner_identity,
+                authorities=receipt_authorities,
             )
+            for receipt_field, purpose, schema, _ in receipt_contracts
+        }
+        if any(
+            verified_rollback_receipts[receipt_field] is None
             or rollback.get(hash_field) != digest(rollback[receipt_field])
-            for receipt_field, schema, hash_field in receipt_contracts
+            for receipt_field, _, _, hash_field in receipt_contracts
         ):
             raise ValueError("storage rollback receipt content is absent or unauthoritative")
         if (
-            rollback["zero_inflight_actions_receipt"].get("detail", {}).get(
+            verified_rollback_receipts["zero_inflight_actions_receipt"].get(
+                "detail", {}
+            ).get(
                 "nonterminal_provider_operations"
             )
             != 0
-            or rollback["schema_compatibility_receipt"].get("detail", {}).get(
+            or verified_rollback_receipts["schema_compatibility_receipt"].get(
+                "detail", {}
+            ).get(
                 "compatible"
             )
             is not True
-            or rollback["provider_continuity_receipt"].get("detail", {}).get(
+            or verified_rollback_receipts["provider_continuity_receipt"].get(
+                "detail", {}
+            ).get(
                 "continuous"
             )
             is not True
@@ -686,7 +899,7 @@ def _transition(
                 != digest(successor_quiescence)
             ):
                 raise ValueError("rollback successor quiescence receipt differs")
-            if phase == "ROLLBACK_SUCCESSOR_QUIESCED":
+            if phase == "ROLLBACK_SUCCESSOR_QUIESCED" and advance_phase:
                 if (
                     previous is None
                     or successor_quiescence.get("transition_id")
@@ -695,7 +908,7 @@ def _transition(
                     != previous_state_head
                 ):
                     raise ValueError("rollback quiescence is not bound to the executed epoch")
-            elif previous is not None and (
+            elif advance_phase and previous is not None and (
                 previous.get("rollback") or {}
             ).get("successor_quiescence") != successor_quiescence:
                 raise ValueError("rollback quiescence changed after admission")
@@ -746,7 +959,14 @@ def _deployment(generation: str, deployment: object) -> dict[str, Any]:
     return deployment
 
 
-def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
+def load_verified_state(
+    path: Path = REGISTRY_PATH,
+    receipt_authority_path: Path = RECEIPT_AUTHORITY_REGISTRY_PATH,
+) -> dict[str, Any]:
+    receipt_authority_registry, receipt_authority_registry_sha256 = (
+        _receipt_authority_registry(receipt_authority_path)
+    )
+    receipt_authorities = receipt_authority_registry["authorities"]
     registry = _object(_safe_read(path), "storage reconciler cutover registry")
     if (
         set(registry)
@@ -759,6 +979,7 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
             "activation_envelope",
             "source_bundle_sha256",
             "enforcer_image_digest",
+            "receipt_authority_registry_sha256",
         }
         or registry.get("schema")
         != "fs2-serve.nebius.ai/storage-reconciler-cutover-registry/v1"
@@ -770,6 +991,8 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
             r"[^@]+@sha256:[a-f0-9]{64}",
             str(registry.get("enforcer_image_digest", "")),
         )
+        or registry.get("receipt_authority_registry_sha256")
+        != receipt_authority_registry_sha256
     ):
         raise ValueError("storage cutover registry fields differ")
     public_key = serialization.load_pem_public_key(
@@ -777,6 +1000,14 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
     )
     if not isinstance(public_key, Ed25519PublicKey):
         raise ValueError("storage cutover key is not Ed25519")
+    checkpoint_key_sha256 = hashlib.sha256(
+        str(registry["checkpoint_public_key_pem"]).encode()
+    ).hexdigest()
+    if checkpoint_key_sha256 in {
+        authority["public_key_sha256"]
+        for authority in receipt_authorities.values()
+    }:
+        raise ValueError("cutover signer cannot also issue independent observations")
     predecessor = registry["anchor_sha256"]
     previous_epoch = 0
     latest: dict[str, Any] | None = None
@@ -790,8 +1021,10 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
             "schema",
             "cluster_id",
             "activation_epoch",
+            "epoch_kind",
             "predecessor_head_sha256",
             "authority_manifest_sha256",
+            "receipt_authority_registry_sha256",
             "active_generation",
             "deployments",
             "security_owner_identity",
@@ -807,6 +1040,14 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
             != "fs2-serve.nebius.ai/storage-reconciler-cutover-state/v1"
             or body.get("predecessor_head_sha256") != predecessor
             or body.get("activation_epoch") != previous_epoch + 1
+            or body.get("epoch_kind") not in {"TRANSITION", "AUTH_REFRESH"}
+            or (previous_epoch == 0 and body.get("epoch_kind") != "TRANSITION")
+            or (
+                body.get("epoch_kind") == "AUTH_REFRESH"
+                and body.get("deployments") != retained_deployments
+            )
+            or body.get("receipt_authority_registry_sha256")
+            != receipt_authority_registry_sha256
             or not isinstance(body.get("deployments"), dict)
             or not body["deployments"]
             or not set(retained_deployments).issubset(body["deployments"])
@@ -830,6 +1071,10 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
         if (
             not SHA256_RE.fullmatch(str(body.get("authority_manifest_sha256", "")))
             or not _epoch_identity(owner_identity, activation_epoch=body["activation_epoch"])
+            or _bounded_window(body.get("valid_from"), body.get("valid_until"))
+            is None
+            or body.get("valid_from") != (owner_identity or {}).get("valid_from")
+            or body.get("valid_until") != (owner_identity or {}).get("valid_until")
             or owner_key in used_security_owner_credentials
             or not all(
                 _identity(body.get(field))
@@ -846,6 +1091,7 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
             for field in (
                 "cluster_id",
                 "authority_manifest_sha256",
+                "receipt_authority_registry_sha256",
                 "deployment_controller_identity",
                 "replicaset_controller_identity",
             )
@@ -861,6 +1107,8 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
             activation_epoch=body["activation_epoch"],
             cluster_id=str(body.get("cluster_id", "")),
             security_owner_identity=body.get("security_owner_identity") or {},
+            receipt_authorities=receipt_authorities,
+            advance_phase=body["epoch_kind"] == "TRANSITION",
         )
         phase = transition["phase"]
         expected_active = (
@@ -895,6 +1143,9 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
         or valid_until.tzinfo is None
         or valid_from.astimezone(UTC) > now
         or valid_until.astimezone(UTC) <= now
+        or _bounded_window(latest["valid_from"], latest["valid_until"]) is None
+        or latest["valid_from"] != latest["security_owner_identity"]["valid_from"]
+        or latest["valid_until"] != latest["security_owner_identity"]["valid_until"]
     ):
         raise ValueError("storage cutover state is stale or future-dated")
     if not _currently_valid(
@@ -918,22 +1169,48 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
         )
     ):
         raise ValueError("current provider-drain intent is stale")
-    latest_drain_receipt = latest_transition.get("provider_drain_receipt")
-    if latest_drain_receipt is not None and not _currently_valid(
+    latest_drain_envelope = latest_transition.get("provider_drain_receipt")
+    latest_drain_receipt = (
+        _independently_signed_receipt(
+            latest_drain_envelope,
+            purpose="provider-drain",
+            authorities=receipt_authorities,
+        )
+        if latest_drain_envelope is not None
+        else None
+    )
+    if latest_transition["phase"] in {
+        "PREDECESSOR_DRAINED",
+        "QUIESCE_PREDECESSOR",
+        "PREDECESSOR_QUIESCED",
+        "ACTIVATE_SUCCESSOR",
+    } and not _currently_valid(
         _bounded_window(
-            latest_drain_receipt.get("observed_at"),
-            latest_drain_receipt.get("valid_until"),
+            latest_drain_receipt.get("observed_at")
+            if isinstance(latest_drain_receipt, dict)
+            else None,
+            latest_drain_receipt.get("valid_until")
+            if isinstance(latest_drain_receipt, dict)
+            else None,
         )
     ):
         raise ValueError("current provider-drain attestation is stale")
     latest_rollback = latest_transition.get("rollback")
-    if isinstance(latest_rollback, dict):
-        for receipt_field in (
-            "zero_inflight_actions_receipt",
-            "schema_compatibility_receipt",
-            "provider_continuity_receipt",
+    if isinstance(latest_rollback, dict) and latest_transition["phase"] in {
+        "ROLLBACK_QUIESCE",
+        "ROLLBACK_SUCCESSOR_QUIESCED",
+        "ROLLBACK_ACTIVATE",
+    }:
+        for receipt_field, purpose in (
+            ("zero_inflight_actions_receipt", "rollback-zero-inflight"),
+            ("schema_compatibility_receipt", "rollback-schema-compatibility"),
+            ("provider_continuity_receipt", "rollback-provider-continuity"),
         ):
-            receipt = latest_rollback.get(receipt_field)
+            receipt = _independently_signed_receipt(
+                latest_rollback.get(receipt_field),
+                purpose=purpose,
+                authorities=receipt_authorities,
+            )
             if not isinstance(receipt, dict) or not _currently_valid(
                 _bounded_window(receipt.get("observed_at"), receipt.get("valid_until"))
             ):
@@ -943,6 +1220,8 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
         "schema",
         "cluster_id",
         "activation_epoch",
+        "epoch_kind",
+        "transition_phase",
         "predecessor_epoch",
         "target_generation",
         "target_image_digest",
@@ -957,6 +1236,7 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
         "state_head_sha256",
         "source_bundle_sha256",
         "enforcer_image_digest",
+        "receipt_authority_registry_sha256",
         "provider_drain_intent",
         "provider_drain_intent_sha256",
         "provider_drain_receipt",
@@ -970,7 +1250,16 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
     )
     transition = latest["transition"]
     core_drain_intent = transition.get("provider_drain_intent")
-    core_drain_receipt = transition.get("provider_drain_receipt")
+    core_drain_receipt_envelope = transition.get("provider_drain_receipt")
+    core_drain_receipt = (
+        _independently_signed_receipt(
+            core_drain_receipt_envelope,
+            purpose="provider-drain",
+            authorities=receipt_authorities,
+        )
+        if core_drain_receipt_envelope is not None
+        else None
+    )
     activation_drain_intent = (
         {
             **core_drain_intent,
@@ -1005,10 +1294,14 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
         or activation.get("schema")
         != "fs2-serve.nebius.ai/storage-reconciler-activation/v1"
         or activation.get("activation_epoch") != latest["activation_epoch"]
+        or activation.get("epoch_kind") != latest["epoch_kind"]
+        or activation.get("transition_phase") != latest["transition"]["phase"]
         or activation.get("predecessor_epoch") != latest["activation_epoch"] - 1
         or activation.get("cluster_id") != latest["cluster_id"]
         or activation.get("target_generation") != latest["active_generation"]
         or activation.get("target_image_digest") != active_image
+        or activation.get("valid_from") != latest["valid_from"]
+        or activation.get("valid_until") != latest["valid_until"]
         or activation.get("phase") != expected_activation_phase
         or activation.get("authority_manifest_sha256")
         != latest["authority_manifest_sha256"]
@@ -1020,16 +1313,20 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
         != registry["source_bundle_sha256"]
         or activation.get("enforcer_image_digest")
         != registry["enforcer_image_digest"]
+        or activation.get("receipt_authority_registry_sha256")
+        != receipt_authority_registry_sha256
         or activation.get("rollback") != latest["transition"].get("rollback")
         or activation.get("provider_drain_intent") != activation_drain_intent
         or activation.get("provider_drain_intent_sha256")
         != (digest(activation_drain_intent) if activation_drain_intent is not None else None)
         or activation.get("provider_drain_receipt")
-        != transition.get("provider_drain_receipt")
+        != core_drain_receipt_envelope
         or activation.get("provider_drain_receipt_sha256")
         != transition.get("provider_drain_receipt_sha256")
         or (
             activation.get("rollback") is not None
+            and latest.get("epoch_kind") == "TRANSITION"
+            and transition.get("phase") == "ROLLBACK_QUIESCE"
             and activation["rollback"].get("from_epoch")
             != activation.get("predecessor_epoch")
         )
@@ -1059,4 +1356,5 @@ def load_verified_state(path: Path = REGISTRY_PATH) -> dict[str, Any]:
         "activation_envelope": registry["activation_envelope"],
         "source_bundle_sha256": registry["source_bundle_sha256"],
         "enforcer_image_digest": registry["enforcer_image_digest"],
+        "receipt_authority_registry_sha256": receipt_authority_registry_sha256,
     }

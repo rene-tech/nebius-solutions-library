@@ -16,10 +16,14 @@ resource "kubernetes_config_map_v1" "activation_trust" {
       "security.fs2.nebius.ai/executor-uid"           = each.value.cutover_executor_uid
       "security.fs2.nebius.ai/executor-credential-id" = each.value.cutover_executor_credential_id
       "security.fs2.nebius.ai/executor-valid-until"   = each.value.cutover_executor_valid_until
+      "security.fs2.nebius.ai/receipt-authority-registry-sha256" = each.value.receipt_authority_registry_sha256
     }
   }
   immutable = true
-  data      = { "public-key.pem" = each.value.activation_public_key_pem }
+  data = {
+    "public-key.pem"          = each.value.activation_public_key_pem
+    "receipt-authorities.json" = each.value.receipt_authority_registry_json
+  }
   lifecycle {
     prevent_destroy = true
     ignore_changes  = all

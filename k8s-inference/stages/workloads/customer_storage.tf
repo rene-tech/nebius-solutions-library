@@ -141,6 +141,7 @@ variable "customer_storage" {
         accepted_sai10_commit                   = optional(string, "")
         accepted_sai10_tree                     = optional(string, "")
         sai10_independent_review_receipt_sha256 = optional(string, "")
+        reconciler_receipt_authority_registry_sha256 = optional(string, "")
       }), {})
       predecessor_compatibility = optional(object({
         schema                 = optional(string, "")
@@ -184,7 +185,7 @@ variable "customer_storage" {
         timecmp(var.customer_storage.auth_key_expires_at, plantimestamp()) > 0 &&
         timecmp(var.customer_storage.auth_key_expires_at, timeadd(plantimestamp(), "2160h")) <= 0 &&
         var.customer_storage.egress_contract_json != "" &&
-        var.customer_storage.egress_boundary.schema == "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v12" &&
+        var.customer_storage.egress_boundary.schema == "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v13" &&
         can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.generation)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.contract_sha256)) &&
         endswith(var.customer_storage.egress_boundary.generation, substr(var.customer_storage.egress_boundary.contract_sha256, 0, 12)) &&
@@ -203,7 +204,7 @@ variable "customer_storage" {
         var.customer_storage.egress_boundary.security_owner_subject_sha256 != var.customer_storage.egress_boundary.workloads_subject_sha256 &&
         var.customer_storage.egress_boundary.protected_observer_inventory_sha256 == var.customer_storage.egress_boundary.provider_authority.protected_observer_inventory_sha256 &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.protected_observer_live_sha256)) &&
-        var.customer_storage.egress_boundary.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v12" &&
+        var.customer_storage.egress_boundary.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v13" &&
         var.customer_storage.egress_boundary.provider_authority.cluster_id != "" &&
         var.customer_storage.egress_boundary.provider_authority.contract_sha256 == var.customer_storage.egress_boundary.contract_sha256 &&
         can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.provider_authority.generation)) &&
@@ -277,6 +278,7 @@ variable "customer_storage" {
         var.customer_storage.egress_boundary.provider_authority.accepted_sai10_commit == "057386a3e0c616d79735adb43a97c19c48046608" &&
         var.customer_storage.egress_boundary.provider_authority.accepted_sai10_tree == "a244a4264b1ad5ad782848eed04d9986524921b4" &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.sai10_independent_review_receipt_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.reconciler_receipt_authority_registry_sha256)) &&
         can(regex("^vpcsecuritygroup-[a-z0-9]+$", var.customer_storage.egress_boundary.provider_authority.security_group_id)) &&
         can(regex("^mk8snodegroup-[a-z0-9]+$", var.customer_storage.egress_boundary.provider_authority.node_group_id)) &&
         var.customer_storage.egress_boundary.provider_authority.node_selector_key == "workload.fs2.nebius/customer-storage-egress-${substr(var.customer_storage.egress_boundary.provider_authority.lane_id, -12, 12)}" &&
