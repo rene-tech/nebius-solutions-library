@@ -57,7 +57,7 @@ export function RequestDebugLog({
         {!appId
           ? " All Apps and requests with no App attribution; App search filters do not apply."
           : " Run-state and user filters above do not filter this request log."}{" "}
-        Bodies load only when you inspect an exchange.
+        The captured request body loads only when you inspect an exchange; the response body is never stored.
       </p>
       <p className="window-caption">
         Request start {formatTimestamp(params.get("from"))} –{" "}

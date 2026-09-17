@@ -6,7 +6,8 @@ governed and fail closed: the request body (the debugging target) is stored reda
 within the cap, while the response body is **never stored** — it is withheld entirely,
 because any part of an untrusted response (a string, a numeric value, an object key, or
 a streaming/binary payload) can carry an opaque secret. A request body that exceeds the
-cap is withheld rather than stored as a prefix; captures are deleted by the platform's
+cap **or is wire-incomplete** is withheld entirely (whole-or-withhold) rather than stored as a
+partial prefix; captures are deleted by the platform's
 central retention purge; and reading a captured exchange requires an ADMIN operator and
 is audited. Enable it deliberately for a bounded window rather than leaving it on as a
 standing state.

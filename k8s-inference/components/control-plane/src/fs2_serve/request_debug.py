@@ -934,39 +934,38 @@ async def offload_capture(builder: Callable[[], _T]) -> _T | None:
 
 
 class _CaptureReservation:
-    """A held capture-admission slot, released deterministically.
+    """A capacity slot ISSUED by ``DebugPersistQueue.reserve``, carrying an unforgeable token.
 
-    Won via ``DebugPersistQueue.reserve`` BEFORE any capture buffer is allocated, and used as a
-    context manager so the slot is ALWAYS returned on exit — normal, exception, or cancellation —
-    UNLESS it was committed to the worker via ``submit`` (then the worker returns it once it has
-    persisted the capture). Entering the ``with`` immediately after ``reserve`` therefore makes the
-    in-flight bound leak-proof against init/allocation/build/submit failures and cancellation.
+    Won BEFORE any capture buffer is allocated and used as a context manager, so the slot is ALWAYS
+    returned on exit — normal, exception, or cancellation — UNLESS it was committed to the worker via
+    ``submit`` (then the worker returns it once it has persisted the capture). Ownership is enforced
+    on the QUEUE side by the token, not by convention: only ``reserve`` mints a token and records it
+    as live, so a directly-constructed handle (or a replayed/duplicate one) carries a token the queue
+    does not recognize, and its commit/release are no-ops — capacity can never be corrupted by
+    unreserved work, a fabricated handle, or a double commit/release.
     """
 
-    def __init__(self, queue: DebugPersistQueue) -> None:
+    def __init__(self, queue: DebugPersistQueue, token: object) -> None:
         self._queue = queue
-        self._active = True  # True while this handle still owns a slot to release
+        self._token = token
 
     def submit(self, builder: Callable[[], DebugExchange | None]) -> bool:
-        """Hand the reserved capture to the background worker. This handle IS the ownership token:
-        enqueueing is only reachable here, on a live reservation, so unreserved work can never enter
-        the queue and the worker can only ever release a slot this handle held. On success, ownership
-        of the slot transfers to the worker (this handle no longer releases it); on a (defensive)
-        enqueue drop the slot stays with this handle and is released on context exit. Non-blocking."""
-        if not self._active:
-            return False
-        if self._queue._enqueue(builder):
-            self._active = False
-            return True
-        return False
+        """Commit the reserved capture to the background worker UNDER THIS reservation's token.
+        Enqueue is reachable only here, and only the queue-recorded live token is accepted, so
+        unreserved work can never enter the queue and the worker only ever releases the slot bound
+        to THIS token. On success ownership transfers to the worker (this handle no longer releases
+        it); on a (defensive) enqueue drop the slot stays with this handle and is released on context
+        exit. Idempotent and non-blocking: a second submit, or one on a stale token, returns False."""
+        return self._queue._commit(self._token, builder)
 
     def __enter__(self) -> _CaptureReservation:
         return self
 
     def __exit__(self, *exc: object) -> None:
-        if self._active:
-            self._active = False
-            self._queue._release()
+        # Release the slot bound to this token unless it was committed. Idempotent on the queue side
+        # (an already-released/committed/unrecognized token is a no-op), so this can never free
+        # another reservation's slot even on a double exit.
+        self._queue._release(self._token)
 
 
 class DebugPersistQueue:
@@ -998,58 +997,79 @@ class DebugPersistQueue:
         persist_timeout_seconds: float = 2.0,
     ) -> None:
         self._store = store
-        self._queue: asyncio.Queue[Callable[[], DebugExchange | None]] = asyncio.Queue(maxsize=max(1, maxsize))
+        self._queue: asyncio.Queue[tuple[Callable[[], DebugExchange | None], object]] = asyncio.Queue(
+            maxsize=max(1, maxsize)
+        )
         self._worker: asyncio.Task[None] | None = None
         self._persist_timeout_seconds = persist_timeout_seconds
         # Admission bound on concurrent in-flight captures: the number that may hold cap-sized
         # buffers at once, across the building phase (a request still accumulating bytes) AND the
         # queued/persisting phase. Defaults to the queue depth, so a reserved capture always fits
-        # the queue (a submit drop is only a defensive backstop). Reservations are released by the
-        # worker (submitted captures) or by ``release`` (bypassed/failed ones), never lost.
+        # the queue (a submit drop is only a defensive backstop).
         self._max_inflight = max(1, max_inflight if max_inflight is not None else max(1, maxsize))
-        self._inflight = 0
+        # Server-side ownership registry: each ``reserve`` mints an UNFORGEABLE token (a fresh
+        # object identity) and records it as _reserved; committing moves it to _committed (worker
+        # owns release); the handle frees a still-_reserved token on exit and the worker frees a
+        # _committed one after persisting. A token the queue does not recognize (a fabricated or
+        # directly-constructed handle, a replay, or a double commit/release) is ignored, so capacity
+        # is identity-bound and released EXACTLY ONCE — never by convention or by a handle flag.
+        self._reserved: set[object] = set()
+        self._committed: set[object] = set()
         self.dropped = 0
+
+    def _inflight(self) -> int:
+        """Captures currently holding a slot: reserved-and-building plus committed-and-not-yet-freed."""
+        return len(self._reserved) + len(self._committed)
 
     def reserve(self) -> _CaptureReservation | None:
         """Non-blocking admission for ONE capture, taken BEFORE any buffer is allocated/copied.
 
-        Returns a reservation HANDLE (use it as a context manager so the slot is released on every
-        exit path — normal, exception, or cancellation — or hand it to the worker via
-        ``handle.submit``) when in-flight captures are below the bound; returns None (counting a
-        drop) at the bound, so the caller bypasses capture and allocates nothing. asyncio is
-        single-threaded, so this check-and-increment needs no lock."""
-        if self._inflight >= self._max_inflight:
+        Mints an UNFORGEABLE token, records it server-side as _reserved, and returns a handle bound
+        to it (use it as a context manager so the slot is released on every exit path — normal,
+        exception, or cancellation — or hand it to the worker via ``handle.submit``). Returns None
+        (counting a drop) at the bound, so the caller bypasses capture and allocates nothing. asyncio
+        is single-threaded, so this check-mint-record runs without a lock."""
+        if self._inflight() >= self._max_inflight:
             self.dropped += 1
             return None
-        # Construct the handle FIRST, then increment: a handle-construction failure (e.g. MemoryError)
-        # must not leave a counted-but-unheld slot. Nothing between the increment and the return can
-        # raise (integer add + return, no await), so once counted the slot is always owned by a handle.
-        reservation = _CaptureReservation(self)
-        self._inflight += 1
+        # Construct the handle around a fresh token FIRST, then record the token as live: a handle-
+        # construction failure (e.g. MemoryError) must not leave a recorded-but-unheld slot. Nothing
+        # between the record and the return can raise (set.add + return, no await).
+        token = object()
+        reservation = _CaptureReservation(self, token)
+        self._reserved.add(token)
         return reservation
 
-    def _release(self) -> None:
-        """Return one admission slot. Called by a reservation handle on context exit (un-committed)
-        or by the worker after it persists a committed capture — exactly once per reservation, so
-        the bound can neither leak downward nor be exceeded."""
-        if self._inflight > 0:
-            self._inflight -= 1
-
-    def _enqueue(self, builder: Callable[[], DebugExchange | None]) -> bool:
-        """INTERNAL enqueue, reachable ONLY through a live reservation handle
-        (``_CaptureReservation.submit``) — there is no public unreserved submit, so unreserved work
-        can never enter the queue and the worker only ever releases a slot a handle actually held.
-        The handle transfers the slot to the worker on success; the worker frees it after it
-        persists. On QueueFull (a defensive backstop — with max_inflight <= maxsize a reserved
-        capture always fits) it returns False and the handle keeps the slot (released on context
-        exit). Non-blocking: never blocks or awaits."""
+    def _commit(self, token: object, builder: Callable[[], DebugExchange | None]) -> bool:
+        """Commit a reserved capture to the worker under its ISSUED token — the only enqueue path.
+        Rejects (returns False, no state change) a token the queue does not currently hold as
+        _reserved: a fabricated/directly-constructed handle, a replay, or a double commit. On success
+        the token moves _reserved -> _committed (the worker frees it after persisting); on QueueFull
+        (a defensive backstop) it stays _reserved and the handle frees it on context exit.
+        Non-blocking: never blocks or awaits."""
+        if token not in self._reserved:
+            return False
         self._ensure_worker()
         try:
-            self._queue.put_nowait(builder)
-            return True
+            self._queue.put_nowait((builder, token))
         except asyncio.QueueFull:
             self.dropped += 1
             return False
+        self._reserved.discard(token)
+        self._committed.add(token)
+        return True
+
+    def _release(self, token: object) -> None:
+        """Return a still-_reserved slot to the pool, IDENTIFIED BY ITS TOKEN. Called by a handle on
+        context exit. Idempotent and identity-bound: a token that is not currently _reserved
+        (already released, already committed — the worker owns that one — or never issued) is a
+        no-op, so a fabricated handle or a double exit can never free another owner's slot."""
+        self._reserved.discard(token)
+
+    def _complete(self, token: object) -> None:
+        """Free a _committed slot after the worker has persisted (or failed) its capture — exactly
+        once, identity-bound to the token the worker dequeued."""
+        self._committed.discard(token)
 
     def _ensure_worker(self) -> None:
         if self._worker is None or self._worker.done():
@@ -1057,7 +1077,7 @@ class DebugPersistQueue:
 
     async def _run(self) -> None:
         while True:
-            builder = await self._queue.get()
+            builder, token = await self._queue.get()
             try:
                 built = await offload_capture(builder)
                 if built is not None:
@@ -1065,9 +1085,9 @@ class DebugPersistQueue:
             except Exception as error:
                 LOGGER.warning("request debug capture failed error_type=%s", type(error).__name__)
             finally:
-                # Free the reservation the handle transferred for this submitted capture (its
-                # buffers are now released), then mark the queue item done for drain()/aclose().
-                self._release()
+                # Free the slot bound to THIS capture's token (its buffers are now released), then
+                # mark the queue item done for drain()/aclose().
+                self._complete(token)
                 self._queue.task_done()
 
     async def drain(self) -> None:

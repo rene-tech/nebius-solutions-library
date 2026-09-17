@@ -18,10 +18,11 @@ export interface DebugBody {
   complete: boolean;
   redacted: boolean;
   /**
-   * True when the body was WITHHELD entirely (a redaction marker, never a stored prefix):
-   * a response body is always withheld, and a request body is withheld when it exceeds the
-   * capture size cap. `observed_bytes` still reports the full wire length, so a body can be
-   * wire-complete yet withheld. Optional so exchanges captured before this field existed parse.
+   * True when the body was WITHHELD entirely (a redaction marker, never a stored/partial prefix):
+   * a response body is always withheld, and a request body is withheld when it exceeds the capture
+   * size cap OR is wire-incomplete (whole-or-withhold). `observed_bytes` still reports the full wire
+   * length, so a body can be wire-complete yet withheld. Optional so exchanges captured before this
+   * field existed parse.
    */
   truncated?: boolean;
 }

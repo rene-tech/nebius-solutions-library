@@ -176,7 +176,7 @@ export function RequestDebugExchange({
       data={query.data}
       error={query.error}
       pending={query.isPending}
-      loadingLabel="Loading captured request and response…"
+      loadingLabel="Loading captured exchange…"
     >
       {({ data }) => (
         <div className="request-debug-detail page-stack">

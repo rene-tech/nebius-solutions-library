@@ -223,7 +223,7 @@ describe("actual request debug viewer", () => {
     );
     renderPanel(<RequestDebugLog appId="app-one" operationId="historic-run" />);
     expect(
-      await screen.findByText(/No request\/response capture recorded/),
+      await screen.findByText(/No request-debug capture recorded/),
     ).toHaveTextContent("this does not mean there were no requests");
     expect(screen.queryByText("HTTP 200")).not.toBeInTheDocument();
     expect(screen.queryByText("0 requests")).not.toBeInTheDocument();

@@ -334,8 +334,9 @@ config:
   # plane refuses to start. It is never a standing state.
   requestDebugEnabled: false
   # Hard ceiling on each stored captured REQUEST body (bytes): the request body is stored
-  # credential-redacted within the cap, and a body over the cap is WITHHELD entirely (never a
-  # bounded prefix). Response bodies are always withheld. Far below maxResponseBytes by design.
+  # credential-redacted only when it is BOTH within the cap AND wire-complete; a body over the cap
+  # OR wire-incomplete is WITHHELD entirely (whole-or-withhold, never a bounded/partial prefix).
+  # Response bodies are always withheld. Far below maxResponseBytes by design.
   requestDebugMaxBodyBytes: "65536"
   # Retention/purge of captured exchanges is owned by the central platform
   # maintenance purge, not by this facility, so no retention value is set here.
