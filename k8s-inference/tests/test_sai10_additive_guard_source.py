@@ -35,9 +35,9 @@ def configured_plan(registry: dict, root: str) -> dict:
     }
 
 
-def test_registry_normatively_covers_all_60_integrated_addresses() -> None:
+def test_registry_normatively_covers_all_68_current_and_sai06_addresses() -> None:
     registry = GUARD.load_registry()
-    assert len(registry["terraform_resource_addresses"]) == 60
+    assert len(registry["terraform_resource_addresses"]) == 68
     for item in registry["terraform_resource_addresses"]:
         assert GUARD.is_protected_address(
             item["address"], registry=registry, terraform_root=item["root"]
@@ -338,8 +338,5 @@ def test_readiness_and_inventory_fail_closed_on_exact_live_bindings() -> None:
         "kubernetes_secrets": [],
         "nebius_iam": [],
     }
-    assert registry["pending_credential_ids"] == [
-        "postgresql-backup-s3",
-        "postgresql-backup-s3-secret",
-    ]
+    assert registry["pending_credential_ids"] == []
     assert contracts["pending_contract_ids"] == registry["pending_credential_ids"]

@@ -46,7 +46,9 @@ READ_ONLY_OPERATIONS = frozenset(
         "ciphertext-migration",
         "authentication-continuity",
         "release-identity",
+        "operator-proxy-context",
         "backend-custody",
+        "state-migration-readiness",
     }
 )
 

@@ -50,7 +50,9 @@ READ_ONLY_OPERATIONS = frozenset(
         "ciphertext-migration",
         "authentication-continuity",
         "release-identity",
+        "operator-proxy-context",
         "backend-custody",
+        "state-migration-readiness",
     }
 )
 CLIENT_FIELDS: dict[str, frozenset[str]] = {
@@ -76,7 +78,9 @@ CLIENT_FIELDS: dict[str, frozenset[str]] = {
         {"credential_class", "predecessor_id", "successor_id"}
     ),
     "release-identity": frozenset(),
+    "operator-proxy-context": frozenset(),
     "backend-custody": frozenset({"terraform_root_name"}),
+    "state-migration-readiness": frozenset({"terraform_root_name"}),
 }
 FORBIDDEN_CLIENT_FIELDS = frozenset(
     {
@@ -130,6 +134,15 @@ def root_private_file(path: Path, *, label: str) -> os.stat_result:
     metadata = path.stat()
     if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) & 0o077:
         raise AuthorityServiceError(f"{label} must be root-owned and mode 0600")
+    for parent in path.parents:
+        parent_metadata = parent.stat()
+        if (
+            parent.is_symlink()
+            or not parent.is_dir()
+            or parent_metadata.st_uid != 0
+            or stat.S_IMODE(parent_metadata.st_mode) & 0o022
+        ):
+            raise AuthorityServiceError(f"{label} parent chain is mutable")
     return metadata
 
 
@@ -179,6 +192,7 @@ def _validate_policy(policy: Any) -> None:
         "project_id",
         "evidence_identity",
         "release_identity",
+        "operator_identity",
         "cluster_id",
         "kubeconfig",
         "handoff_kubeconfig",
@@ -191,6 +205,10 @@ def _validate_policy(policy: Any) -> None:
         "provider_executables",
         "class_adapters",
         "backend_custody_adapter",
+        "release_identity_adapter",
+        "authorization_closure_adapter",
+        "controller_inventory_adapters",
+        "state_migration_adapter",
     }
     if (
         not isinstance(policy, dict)
@@ -213,6 +231,7 @@ def _validate_policy(policy: Any) -> None:
         or set(automation)
         != {
             "config_path",
+            "config_sha256",
             "profile",
             "service_account_id",
             "credential_kind",
@@ -225,6 +244,7 @@ def _validate_policy(policy: Any) -> None:
             isinstance(automation.get(field), str) and automation[field]
             for field in (
                 "config_path",
+                "config_sha256",
                 "profile",
                 "service_account_id",
                 "credential_kind",
@@ -239,6 +259,9 @@ def _validate_policy(policy: Any) -> None:
     config_path = Path(automation["config_path"])
     if not config_path.is_absolute():
         raise AuthorityServiceError("read-only evidence config path must be absolute")
+    root_private_file(config_path, label="read-only evidence identity configuration")
+    if file_sha256(config_path) != automation["config_sha256"]:
+        raise AuthorityServiceError("read-only evidence identity configuration differs")
     try:
         automation_expiry = datetime.fromisoformat(
             automation["expires_at"].replace("Z", "+00:00")
@@ -253,14 +276,15 @@ def _validate_policy(policy: Any) -> None:
     release = policy.get("release_identity")
     release_fields = {
         "config_path",
+        "config_sha256",
         "profile",
         "project_id",
         "service_account_id",
         "credential_kind",
-        "credential_id",
-        "issued_at",
-        "expires_at",
         "audience",
+        "provider_issuer",
+        "token_exchange_source",
+        "maximum_lifetime_seconds",
         "allowed_roles",
         "allowed_commands",
         "interactive_login_allowed",
@@ -274,13 +298,14 @@ def _validate_policy(policy: Any) -> None:
         or release.get("interactive_login_allowed") is not False
         or release.get("human_principal_allowed") is not False
         or release.get("credential_kind")
-        not in {"access_keys", "auth_public_keys"}
+        != "workload_identity_session"
         or not all(
             isinstance(release.get(field), str) and release[field]
             for field in release_fields
             - {
                 "allowed_roles",
                 "allowed_commands",
+                "maximum_lifetime_seconds",
                 "interactive_login_allowed",
                 "human_principal_allowed",
             }
@@ -290,29 +315,42 @@ def _validate_policy(policy: Any) -> None:
         or not set(release["allowed_roles"]) <= {"editor", "admin"}
         or not isinstance(release.get("allowed_commands"), list)
         or set(release["allowed_commands"]) != {"preflight", "plan", "apply"}
+        or release.get("maximum_lifetime_seconds") != 3600
     ):
         raise AuthorityServiceError("automation-only release identity is incomplete")
     release_path = Path(release["config_path"])
     if not release_path.is_absolute():
         raise AuthorityServiceError("release identity config path must be absolute")
-    try:
-        release_issued = datetime.fromisoformat(
-            release["issued_at"].replace("Z", "+00:00")
-        ).astimezone(UTC)
-        release_expiry = datetime.fromisoformat(
-            release["expires_at"].replace("Z", "+00:00")
-        ).astimezone(UTC)
-    except ValueError as error:
-        raise AuthorityServiceError("release identity lifetime is invalid") from error
-    now = datetime.now(UTC)
+    root_private_file(release_path, label="release workload identity configuration")
+    if file_sha256(release_path) != release["config_sha256"]:
+        raise AuthorityServiceError("release workload identity configuration differs")
+    operator = policy.get("operator_identity")
+    operator_fields = {
+        "project_id",
+        "service_account_id",
+        "credential_kind",
+        "credential_id",
+        "kubeconfig",
+        "kubeconfig_sha256",
+        "context_name",
+        "maximum_lifetime_seconds",
+    }
     if (
-        release_issued > now
-        or release_expiry <= now
-        or release_expiry - release_issued > timedelta(hours=1)
-    ):
-        raise AuthorityServiceError(
-            "release identity must have a provider-enforced lifetime of at most one hour"
+        not isinstance(operator, dict)
+        or set(operator) != operator_fields
+        or operator.get("project_id") != policy["project_id"]
+        or operator.get("credential_kind") != "auth_public_keys"
+        or operator.get("maximum_lifetime_seconds") != 86400
+        or not all(
+            isinstance(operator.get(field), str) and operator[field]
+            for field in operator_fields - {"maximum_lifetime_seconds"}
         )
+    ):
+        raise AuthorityServiceError("operator viewer identity is incomplete")
+    operator_kubeconfig = Path(operator["kubeconfig"])
+    root_private_file(operator_kubeconfig, label="operator viewer kubeconfig")
+    if file_sha256(operator_kubeconfig) != operator["kubeconfig_sha256"]:
+        raise AuthorityServiceError("operator viewer kubeconfig differs")
     cidrs = policy.get("approved_control_plane_cidrs")
     if not isinstance(cidrs, list) or not cidrs or len(cidrs) != len(set(cidrs)):
         raise AuthorityServiceError("authority approved CIDR set is incomplete")
@@ -339,6 +377,10 @@ def _validate_policy(policy: Any) -> None:
             raise AuthorityServiceError(
                 f"authority policy {field} must be root-owned and immutable to clients"
             )
+    if policy["handoff_kubeconfig"] != operator["kubeconfig"]:
+        raise AuthorityServiceError(
+            "operator viewer kubeconfig differs from the handoff inventory identity"
+        )
     roots = policy.get("terraform_roots")
     required_roots = {
         "configuration",
@@ -358,6 +400,8 @@ def _validate_policy(policy: Any) -> None:
                 "configuration_dir",
                 "backend_type",
                 "backend_config_path",
+                "backend_expectation",
+                "legacy_state_source",
                 "terraform_data_dir",
                 "workspace",
                 "saved_plan_paths",
@@ -381,6 +425,68 @@ def _validate_policy(policy: Any) -> None:
             or len(root["saved_plan_paths"]) != len(set(root["saved_plan_paths"]))
             or not isinstance(root.get("lineage_id"), str)
             or not root["lineage_id"]
+            or not isinstance(root.get("backend_expectation"), dict)
+            or set(root["backend_expectation"])
+            != {
+                "project_id",
+                "bucket_id",
+                "bucket_parent_id",
+                "bucket_project_id",
+                "bucket_owner_service_account_id",
+                "object_key",
+                "endpoint",
+                "kms_key_id",
+                "kms_key_parent_id",
+                "kms_key_project_id",
+                "logging_destination_bucket_id",
+                "logging_destination_parent_id",
+                "logging_destination_project_id",
+                "access_log_prefix",
+                "object_lock_mode",
+                "object_lock_retention_days",
+            }
+            or root["backend_expectation"].get("project_id") != policy["project_id"]
+            or root["backend_expectation"].get("bucket_project_id")
+            != policy["project_id"]
+            or root["backend_expectation"].get("kms_key_project_id")
+            != policy["project_id"]
+            or root["backend_expectation"].get("logging_destination_project_id")
+            != policy["project_id"]
+            or not all(
+                isinstance(value, str) and value
+                for key, value in root["backend_expectation"].items()
+                if key != "object_lock_retention_days"
+            )
+            or not isinstance(
+                root["backend_expectation"].get("object_lock_retention_days"), int
+            )
+            or root["backend_expectation"]["object_lock_retention_days"] < 1
+            or not isinstance(root.get("legacy_state_source"), dict)
+            or set(root["legacy_state_source"])
+            != {
+                "path",
+                "sha256",
+                "canonical_state_sha256",
+                "lineage",
+                "serial",
+                "retained_reason",
+                "retention_expires_at",
+            }
+            or not isinstance(root["legacy_state_source"].get("path"), str)
+            or not Path(root["legacy_state_source"]["path"]).is_absolute()
+            or not all(
+                isinstance(root["legacy_state_source"].get(field), str)
+                and root["legacy_state_source"][field]
+                for field in (
+                    "sha256",
+                    "canonical_state_sha256",
+                    "lineage",
+                    "retained_reason",
+                    "retention_expires_at",
+                )
+            )
+            or not isinstance(root["legacy_state_source"].get("serial"), int)
+            or root["legacy_state_source"]["serial"] < 1
         ):
             raise AuthorityServiceError(f"authority Terraform root is malformed: {name}")
         backend_config = Path(root["backend_config_path"])
@@ -429,6 +535,7 @@ def _validate_policy(policy: Any) -> None:
                 )
     executables = policy.get("provider_executables")
     if not isinstance(executables, dict) or set(executables) != {
+        "crane",
         "kubectl",
         "nebius",
         "terraform",
@@ -445,8 +552,11 @@ def _validate_policy(policy: Any) -> None:
         ):
             raise AuthorityServiceError(f"authority provider executable is malformed: {name}")
     contracts = json.loads(Path(policy["consumer_contracts_path"]).read_text(encoding="utf-8"))
-    pending = set(contracts.get("pending_contract_ids", []))
-    contract_ids = set(contracts.get("contracts", {})) - pending
+    if contracts.get("pending_contract_ids") != []:
+        raise AuthorityServiceError(
+            "every one of the 21 credential classes must be admitted by an exact adapter"
+        )
+    contract_ids = set(contracts.get("contracts", {}))
     class_adapters = policy.get("class_adapters")
     if not isinstance(class_adapters, dict) or set(class_adapters) != contract_ids:
         raise AuthorityServiceError(
@@ -466,6 +576,8 @@ def _validate_policy(policy: Any) -> None:
             or not class_adapter["operations"]
             or len(class_adapter["operations"])
             != len(set(class_adapter["operations"]))
+            or set(class_adapter["operations"])
+            != set(contracts["contracts"][credential_class].get("required_operations", []))
             or not set(class_adapter["operations"]) <= allowed_adapter_operations
         ):
             raise AuthorityServiceError(
@@ -477,6 +589,26 @@ def _validate_policy(policy: Any) -> None:
         )
     _validate_adapter(
         policy.get("backend_custody_adapter"), label="Terraform backend custody"
+    )
+    _validate_adapter(
+        policy.get("release_identity_adapter"), label="release workload identity"
+    )
+    _validate_adapter(
+        policy.get("authorization_closure_adapter"),
+        label="provider authorization closure",
+    )
+    controller_adapters = policy.get("controller_inventory_adapters")
+    if not isinstance(controller_adapters, dict) or set(controller_adapters) != {
+        "helm_release_records"
+    }:
+        raise AuthorityServiceError("controller-owned Secret adapters are incomplete")
+    _validate_adapter(
+        controller_adapters["helm_release_records"],
+        label="Helm release storage inventory",
+    )
+    _validate_adapter(
+        policy.get("state_migration_adapter"),
+        label="Terraform legacy-to-remote state copy custody",
     )
     scopes = policy.get("artifact_inventory_scopes")
     if not isinstance(scopes, list) or not scopes:
@@ -686,23 +818,26 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
     }
     if "credential_class" in parameters and parameters["credential_class"] not in classes:
         raise AuthorityServiceError("credential class is not registered")
-    if operation == "ciphertext-migration" and parameters["credential_class"] not in {
-        "payload-keyring",
-        "customer-storage-cipher-keyring",
-        "customer-storage-name-keyring",
-        "ledger-keyring",
-        "pat-pepper-keyring",
-        "route-attestors",
+    if operation in {
+        "consumer-readiness",
+        "rotation-readiness",
+        "ciphertext-migration",
+        "authentication-continuity",
     }:
-        raise AuthorityServiceError("credential class has no ciphertext migration contract")
-    if operation == "authentication-continuity" and parameters["credential_class"] not in {
-        "admin-token",
-        "pat-bootstrap",
-        "pat-scientific",
-        "pat-website",
-    }:
-        raise AuthorityServiceError("credential class has no authentication continuity contract")
-    if operation == "backend-custody" and parameters["terraform_root_name"] not in config[
+        contracts = json.loads(
+            Path(config["policy"]["consumer_contracts_path"]).read_text(
+                encoding="utf-8"
+            )
+        )
+        contract = contracts.get("contracts", {}).get(parameters["credential_class"])
+        if (
+            not isinstance(contract, dict)
+            or operation not in contract.get("required_operations", [])
+        ):
+            raise AuthorityServiceError(
+                "credential class has no contract for this authority operation"
+            )
+    if operation in {"backend-custody", "state-migration-readiness"} and parameters["terraform_root_name"] not in config[
         "policy"
     ]["terraform_roots"]:
         raise AuthorityServiceError("Terraform backend custody root is not registered")

@@ -67,6 +67,29 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def root_private_file(path: Path, *, label: str, expected_sha256: str | None = None) -> str:
+    """Bind a provider input to one root-owned regular file and secure parent chain."""
+
+    if not path.is_absolute() or path.is_symlink() or not path.is_file():
+        raise ProviderError(f"{label} is absent or unsafe")
+    metadata = path.stat()
+    if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise ProviderError(f"{label} is not root-owned mode 0600")
+    for parent in path.parents:
+        parent_metadata = parent.stat()
+        if (
+            parent.is_symlink()
+            or not parent.is_dir()
+            or parent_metadata.st_uid != 0
+            or stat.S_IMODE(parent_metadata.st_mode) & 0o022
+        ):
+            raise ProviderError(f"{label} parent chain is mutable")
+    digest = file_sha256(path)
+    if expected_sha256 is not None and digest != expected_sha256:
+        raise ProviderError(f"{label} digest differs from root policy")
+    return digest
+
+
 def executable(policy: dict[str, Any], name: str) -> str:
     configured = policy["provider_executables"][name]
     path = Path(configured["path"])
@@ -223,12 +246,63 @@ def safe_labels(value: Any) -> dict[str, str]:
         "credential_class",
         "credential_generation",
         "audience",
+        "owner",
+        "name",
+        "status",
+        "version",
     }
     return {
         key: item
         for key, item in value.items()
         if key in allowed and isinstance(item, str) and item
     }
+
+
+def state_provider_binding(terraform_type: Any, attributes: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract only non-secret provider identity fields from Terraform state."""
+
+    metadata_value = attributes.get("metadata")
+    metadata = (
+        metadata_value[0]
+        if isinstance(metadata_value, list)
+        and len(metadata_value) == 1
+        and isinstance(metadata_value[0], dict)
+        else metadata_value
+        if isinstance(metadata_value, dict)
+        else {}
+    )
+    if terraform_type == "kubernetes_secret_v1":
+        annotations = metadata.get("annotations", {})
+        if not isinstance(annotations, dict):
+            annotations = {}
+        return {
+            "namespace": metadata.get("namespace"),
+            "name": metadata.get("name"),
+            "uid": metadata.get("uid"),
+            "resource_version": metadata.get("resource_version"),
+            "immutable": attributes.get("immutable") is True,
+            "credential_class": annotations.get("fs2.nebius.ai/credential-class"),
+            "credential_generation": annotations.get(
+                "fs2.nebius.ai/credential-generation"
+            ),
+            "content_sha256": annotations.get("fs2.nebius.ai/content-sha256"),
+        }
+    if terraform_type == "helm_release":
+        release_metadata = attributes.get("metadata")
+        release = (
+            release_metadata[0]
+            if isinstance(release_metadata, list)
+            and len(release_metadata) == 1
+            and isinstance(release_metadata[0], dict)
+            else {}
+        )
+        return {
+            "namespace": attributes.get("namespace"),
+            "name": attributes.get("name"),
+            "revision": release.get("revision"),
+            "status": release.get("status"),
+        }
+    return None
 
 
 def state_addresses(state: dict[str, Any]) -> list[dict[str, Any]]:
@@ -248,8 +322,7 @@ def state_addresses(state: dict[str, Any]) -> list[dict[str, Any]]:
                 raise ProviderError("Terraform state resource lacks attributes")
             provider_id = attributes.get("id")
             parent_id = attributes.get("parent_id")
-            result.append(
-                {
+            item = {
                     "address": f"{base}{suffix}",
                     "type": resource.get("type"),
                     "identity_sha256": canonical_sha256(attributes),
@@ -261,7 +334,10 @@ def state_addresses(state: dict[str, Any]) -> list[dict[str, Any]]:
                     ),
                     "labels": safe_labels(attributes.get("labels")),
                 }
-            )
+            binding = state_provider_binding(resource.get("type"), attributes)
+            if binding is not None:
+                item["provider_binding"] = binding
+            result.append(item)
     return sorted(result, key=lambda item: item["address"])
 
 
@@ -418,6 +494,7 @@ def kubernetes_secrets(policy: dict[str, Any], *, kubeconfig: str | None = None)
                             "kubernetes.io/service-account.uid",
                         }
                     },
+                    "labels": safe_labels(metadata.get("labels", {})),
                     "owners": sorted(
                         [
                             {
@@ -449,6 +526,119 @@ def kubernetes_secrets(policy: dict[str, Any], *, kubeconfig: str | None = None)
             }
         )
     return sorted(result, key=lambda value: (value["metadata"]["namespace"], value["metadata"]["name"]))
+
+
+def kubernetes_service_accounts(policy: dict[str, Any]) -> list[dict[str, str]]:
+    """Return exact ServiceAccount identities without token or Secret data."""
+
+    document = command_json(
+        [
+            executable(policy, "kubectl"),
+            "--kubeconfig",
+            policy["kubeconfig"],
+            "get",
+            "serviceaccounts",
+            "--all-namespaces",
+            "-o",
+            "json",
+        ],
+        label="global Kubernetes ServiceAccount inventory",
+    )
+    if not isinstance(document, dict) or not isinstance(document.get("items"), list):
+        raise ProviderError("Kubernetes returned an incomplete ServiceAccount inventory")
+    result: list[dict[str, str]] = []
+    for item in document["items"]:
+        metadata = item.get("metadata") if isinstance(item, dict) else None
+        if not isinstance(metadata, dict) or not all(
+            isinstance(metadata.get(field), str) and metadata[field]
+            for field in ("namespace", "name", "uid", "resourceVersion")
+        ):
+            raise ProviderError("Kubernetes ServiceAccount lacks exact provider identity")
+        result.append(
+            {
+                "namespace": metadata["namespace"],
+                "name": metadata["name"],
+                "uid": metadata["uid"],
+                "resourceVersion": metadata["resourceVersion"],
+            }
+        )
+    return sorted(result, key=lambda value: (value["namespace"], value["name"]))
+
+
+def helm_release_secret_inventory(
+    policy: dict[str, Any], secrets: list[dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """Classify Helm storage only through an independently pinned provider adapter."""
+
+    adapter = policy["controller_inventory_adapters"]["helm_release_records"]
+    command = verified_adapter_command(adapter, label="Helm release record inventory")
+    response = command_json_input(
+        command,
+        label="Helm release record inventory",
+        payload={
+            "schema": "fs2-serve.nebius.ai/helm-release-inventory-request/v1",
+            "cluster_id": policy["cluster_id"],
+            "namespaces": policy["namespaces"],
+        },
+        timeout=adapter["timeout_seconds"],
+    )
+    fields = {
+        "schema",
+        "cluster_id",
+        "records",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+    }
+    records = response.get("records") if isinstance(response, dict) else None
+    if (
+        not isinstance(response, dict)
+        or set(response) != fields
+        or response.get("schema")
+        != "fs2-serve.nebius.ai/helm-release-inventory/v1"
+        or response.get("cluster_id") != policy["cluster_id"]
+        or response.get("complete") is not True
+        or response.get("data_fields_returned") != 0
+        or not isinstance(records, list)
+    ):
+        raise ProviderError("Helm release inventory is incomplete")
+    live = {
+        (item["metadata"]["namespace"], item["metadata"]["name"]): item
+        for item in secrets
+    }
+    verified: dict[str, dict[str, Any]] = {}
+    record_fields = {
+        "namespace",
+        "name",
+        "uid",
+        "resource_version",
+        "content_sha256",
+        "release_name",
+        "revision",
+        "status",
+    }
+    for record in records:
+        if not isinstance(record, dict) or set(record) != record_fields:
+            raise ProviderError("Helm release record binding is malformed")
+        item = live.get((record.get("namespace"), record.get("name")))
+        metadata = item.get("metadata") if isinstance(item, dict) else None
+        labels = metadata.get("labels", {}) if isinstance(metadata, dict) else {}
+        identity = f"{record.get('namespace')}/{record.get('name')}"
+        if (
+            not isinstance(metadata, dict)
+            or item.get("type") != "helm.sh/release.v1"
+            or metadata.get("uid") != record.get("uid")
+            or metadata.get("resourceVersion") != record.get("resource_version")
+            or item.get("authorityContentSha256") != record.get("content_sha256")
+            or labels.get("owner") != "helm"
+            or labels.get("name") != record.get("release_name")
+            or labels.get("version") != str(record.get("revision"))
+            or labels.get("status") != record.get("status")
+            or identity in verified
+        ):
+            raise ProviderError("Helm release record differs from live Secret identity")
+        verified[identity] = record
+    return verified
 
 
 def list_items(document: Any, *, label: str) -> list[dict[str, Any]]:
@@ -532,6 +722,11 @@ def normalize_nebius_items(document: Any, *, kind: str) -> list[dict[str, Any]]:
 
 def nebius_inventory(policy: dict[str, Any]) -> dict[str, Any]:
     automation = policy["evidence_identity"]
+    root_private_file(
+        Path(automation["config_path"]),
+        label="read-only evidence identity configuration",
+        expected_sha256=automation["config_sha256"],
+    )
     common = [
         "--profile",
         automation["profile"],
@@ -556,6 +751,71 @@ def nebius_inventory(policy: dict[str, Any]) -> dict[str, Any]:
             command_json(command, label=f"Nebius {kind} inventory"), kind=kind
         )
         for kind, command in commands.items()
+    }
+
+
+def authorization_closure_proof(
+    policy: dict[str, Any],
+    *,
+    service_account_id: str,
+    expected_group_id: str,
+    expected_permits: list[dict[str, str]],
+    label: str,
+) -> dict[str, Any]:
+    """Require a provider-derived closure across inherited and cross-resource grants."""
+
+    adapter = policy["authorization_closure_adapter"]
+    command = verified_adapter_command(adapter, label=f"{label} authorization closure")
+    request = {
+        "schema": "fs2-serve.nebius.ai/authorization-closure-request/v1",
+        "project_id": policy["project_id"],
+        "service_account_id": service_account_id,
+    }
+    response = command_json_input(
+        command,
+        label=f"{label} authorization closure",
+        payload=request,
+        timeout=adapter["timeout_seconds"],
+    )
+    required = {
+        "schema",
+        "project_id",
+        "service_account_id",
+        "scope",
+        "memberships",
+        "permits",
+        "direct_permits",
+        "impersonation_permits",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+    }
+    memberships = response.get("memberships") if isinstance(response, dict) else None
+    permits = response.get("permits") if isinstance(response, dict) else None
+    if (
+        not isinstance(response, dict)
+        or set(response) != required
+        or response.get("schema")
+        != "fs2-serve.nebius.ai/authorization-closure/v1"
+        or response.get("project_id") != policy["project_id"]
+        or response.get("service_account_id") != service_account_id
+        or response.get("scope") != "organization-and-descendants"
+        or response.get("complete") is not True
+        or response.get("data_fields_returned") != 0
+        or memberships != [expected_group_id]
+        or not isinstance(permits, list)
+        or sorted(permits, key=canonical_sha256)
+        != sorted(expected_permits, key=canonical_sha256)
+        or response.get("direct_permits") != []
+        or response.get("impersonation_permits") != []
+    ):
+        raise ProviderError(
+            f"{label} has unproved, inherited, cross-resource, direct, or impersonation access"
+        )
+    return {
+        "scope": response["scope"],
+        "observed_at": response["observed_at"],
+        "closure_sha256": canonical_sha256(response),
     }
 
 
@@ -621,6 +881,20 @@ def evidence_identity_proof(
         permits[0].get("resource_id"), permits[0].get("role")
     ) != (policy["project_id"], "viewer"):
         raise ProviderError("read-only evidence identity is not viewer-only")
+    closure = authorization_closure_proof(
+        policy,
+        service_account_id=configured["service_account_id"],
+        expected_group_id=groups[0]["id"],
+        expected_permits=[
+            {
+                "permit_id": permits[0]["id"],
+                "group_id": groups[0]["id"],
+                "resource_id": policy["project_id"],
+                "role": "viewer",
+            }
+        ],
+        label="read-only evidence identity",
+    )
     return {
         "service_account_id": configured["service_account_id"],
         "credential_kind": configured["credential_kind"],
@@ -630,6 +904,7 @@ def evidence_identity_proof(
         "membership_id": memberships[0]["id"],
         "permit_id": permits[0]["id"],
         "role": "viewer",
+        "authorization_closure": closure,
         "provider_identity_sha256": canonical_sha256(
             [accounts[0], credentials[0], groups[0], memberships[0], permits[0]]
         ),
@@ -639,13 +914,85 @@ def evidence_identity_proof(
 def release_identity_proof(
     policy: dict[str, Any], inventory: dict[str, Any]
 ) -> dict[str, Any]:
-    """Prove the separate, expiring, non-human release automation lineage."""
+    """Prove one provider-enforced workload session and its complete grant closure."""
 
     configured = policy["release_identity"]
-    issued = provider_time(configured["issued_at"], label="release identity issue time")
-    expires = provider_time(configured["expires_at"], label="release identity expiry")
+    config_sha256 = root_private_file(
+        Path(configured["config_path"]),
+        label="release workload identity configuration",
+        expected_sha256=configured["config_sha256"],
+    )
+    adapter = policy["release_identity_adapter"]
+    command = verified_adapter_command(adapter, label="release workload identity")
+    session = command_json_input(
+        command,
+        label="release workload identity",
+        payload={
+            "schema": "fs2-serve.nebius.ai/release-session-observation-request/v1",
+            "project_id": policy["project_id"],
+            "service_account_id": configured["service_account_id"],
+            "audience": configured["audience"],
+            "provider_issuer": configured["provider_issuer"],
+            "token_exchange_source": configured["token_exchange_source"],
+            "config_path": configured["config_path"],
+            "config_sha256": config_sha256,
+        },
+        timeout=adapter["timeout_seconds"],
+    )
+    required = {
+        "schema",
+        "provider",
+        "provider_session_id",
+        "project_id",
+        "service_account_id",
+        "credential_kind",
+        "audience",
+        "provider_issuer",
+        "token_exchange_source",
+        "issued_at",
+        "expires_at",
+        "actor_type",
+        "human_principal",
+        "interactive_login",
+        "impersonation_allowed",
+        "config_sha256",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+    }
+    if (
+        not isinstance(session, dict)
+        or set(session) != required
+        or session.get("schema")
+        != "fs2-serve.nebius.ai/release-session-observation/v1"
+        or session.get("provider") != "nebius-iam"
+        or session.get("project_id") != policy["project_id"]
+        or session.get("service_account_id") != configured["service_account_id"]
+        or session.get("credential_kind") != "workload_identity_session"
+        or session.get("audience") != configured["audience"]
+        or session.get("provider_issuer") != configured["provider_issuer"]
+        or session.get("token_exchange_source")
+        != configured["token_exchange_source"]
+        or session.get("actor_type") != "service_account"
+        or session.get("human_principal") is not False
+        or session.get("interactive_login") is not False
+        or session.get("impersonation_allowed") is not False
+        or session.get("config_sha256") != config_sha256
+        or session.get("complete") is not True
+        or session.get("data_fields_returned") != 0
+        or not isinstance(session.get("provider_session_id"), str)
+        or not session["provider_session_id"]
+    ):
+        raise ProviderError("release identity is not a provider-enforced workload session")
+    issued = provider_time(session["issued_at"], label="release identity issue time")
+    expires = provider_time(session["expires_at"], label="release identity expiry")
     now = datetime.now(UTC)
-    if issued > now or expires <= now or expires - issued > timedelta(hours=1):
+    if (
+        issued > now
+        or expires <= now
+        or expires - issued
+        > timedelta(seconds=configured["maximum_lifetime_seconds"])
+    ):
         raise ProviderError("release automation identity lifetime is invalid")
     accounts = [
         item
@@ -661,19 +1008,6 @@ def release_identity_proof(
         != configured["audience"]
     ):
         raise ProviderError("release automation service account lineage differs")
-    credentials = [
-        item
-        for item in inventory[configured["credential_kind"]]
-        if item["id"] == configured["credential_id"]
-    ]
-    if (
-        len(credentials) != 1
-        or credentials[0].get("parent_id") != policy["project_id"]
-        or credentials[0].get("service_account_id")
-        != configured["service_account_id"]
-        or credentials[0].get("expires_at") != configured["expires_at"]
-    ):
-        raise ProviderError("release automation credential lineage or expiry differs")
     memberships = [
         item
         for item in inventory["group_memberships"]
@@ -706,28 +1040,123 @@ def release_identity_proof(
         if item.get("resource_id") == policy["project_id"]
         and isinstance(item.get("role"), str)
     )
-    if observed_roles != sorted(configured["allowed_roles"]):
+    if (
+        observed_roles != sorted(configured["allowed_roles"])
+        or len(permits) != len(observed_roles)
+        or any(item.get("resource_id") != policy["project_id"] for item in permits)
+    ):
         raise ProviderError("release automation role set differs from policy")
+    expected_permits = [
+        {
+            "permit_id": item["id"],
+            "group_id": groups[0]["id"],
+            "resource_id": policy["project_id"],
+            "role": item["role"],
+        }
+        for item in sorted(permits, key=lambda value: value["id"])
+    ]
+    closure = authorization_closure_proof(
+        policy,
+        service_account_id=configured["service_account_id"],
+        expected_group_id=groups[0]["id"],
+        expected_permits=expected_permits,
+        label="release workload identity",
+    )
     return {
         "project_id": policy["project_id"],
         "service_account_id": configured["service_account_id"],
-        "credential_kind": configured["credential_kind"],
-        "credential_id": configured["credential_id"],
-        "issued_at": configured["issued_at"],
-        "expires_at": configured["expires_at"],
-        "audience": configured["audience"],
+        "credential_kind": "workload_identity_session",
+        "provider_session_id": session["provider_session_id"],
+        "issued_at": session["issued_at"],
+        "expires_at": session["expires_at"],
+        "audience": session["audience"],
+        "provider_issuer": session["provider_issuer"],
+        "token_exchange_source": session["token_exchange_source"],
         "profile": configured["profile"],
         "config_path": configured["config_path"],
+        "config_sha256": config_sha256,
         "allowed_roles": observed_roles,
         "allowed_commands": configured["allowed_commands"],
         "interactive_login_allowed": False,
         "human_principal_allowed": False,
+        "impersonation_allowed": False,
         "group_id": groups[0]["id"],
         "membership_id": memberships[0]["id"],
         "permit_ids": sorted(item["id"] for item in permits),
+        "authorization_closure": closure,
+        "provider_executables": policy["provider_executables"],
         "provider_identity_sha256": canonical_sha256(
-            [accounts[0], credentials[0], groups[0], memberships[0], permits]
+            [accounts[0], session, groups[0], memberships[0], permits, closure]
         ),
+    }
+
+
+def release_lineage_inventory(
+    policy: dict[str, Any], inventory: dict[str, Any]
+) -> dict[str, Any]:
+    """Classify the dormant release service account without requiring an active session."""
+
+    configured = policy["release_identity"]
+    accounts = [
+        item
+        for item in inventory["service_accounts"]
+        if item["id"] == configured["service_account_id"]
+    ]
+    memberships = [
+        item
+        for item in inventory["group_memberships"]
+        if item.get("member_id") == configured["service_account_id"]
+    ]
+    groups = [
+        item
+        for item in inventory["groups"]
+        if memberships and item["id"] == memberships[0].get("group_id")
+    ]
+    permits = [
+        item
+        for item in inventory["access_permits"]
+        if groups and item.get("group_id") == groups[0]["id"]
+    ]
+    roles = sorted(
+        item.get("role") for item in permits if isinstance(item.get("role"), str)
+    )
+    if (
+        len(accounts) != 1
+        or accounts[0].get("parent_id") != policy["project_id"]
+        or accounts[0].get("labels", {}).get("purpose")
+        != "credential-release-automation"
+        or len(memberships) != 1
+        or len(groups) != 1
+        or groups[0].get("parent_id") != policy["project_id"]
+        or groups[0].get("labels", {}).get("purpose")
+        != "credential-release-automation"
+        or roles != sorted(configured["allowed_roles"])
+        or len(permits) != len(roles)
+        or any(item.get("resource_id") != policy["project_id"] for item in permits)
+    ):
+        raise ProviderError("dormant release automation lineage is not exact")
+    expected_permits = [
+        {
+            "permit_id": item["id"],
+            "group_id": groups[0]["id"],
+            "resource_id": policy["project_id"],
+            "role": item["role"],
+        }
+        for item in sorted(permits, key=lambda value: value["id"])
+    ]
+    closure = authorization_closure_proof(
+        policy,
+        service_account_id=configured["service_account_id"],
+        expected_group_id=groups[0]["id"],
+        expected_permits=expected_permits,
+        label="dormant release automation identity",
+    )
+    return {
+        "service_account_id": configured["service_account_id"],
+        "group_id": groups[0]["id"],
+        "membership_id": memberships[0]["id"],
+        "permit_ids": sorted(item["id"] for item in permits),
+        "authorization_closure": closure,
     }
 
 
@@ -776,10 +1205,13 @@ def reconcile_global_provider_inventory(
     *,
     states: list[dict[str, Any]],
     secrets: list[dict[str, Any]],
+    service_accounts: list[dict[str, str]],
+    helm_release_records: dict[str, dict[str, Any]],
     provider_inventory: dict[str, Any],
     registry: dict[str, Any],
     evidence_identity: dict[str, Any],
     release_identity: dict[str, Any],
+    operator_identity: dict[str, Any],
     approved_namespaces: list[str],
 ) -> dict[str, Any]:
     """Reject any cluster Secret or project IAM object without exact custody."""
@@ -827,6 +1259,14 @@ def reconcile_global_provider_inventory(
             raise ProviderError(
                 f"provider inventory classification is incomplete: {family}"
             )
+        for item in entries:
+            expiry = provider_time(
+                item["expires_at"], label=f"{family} exemption expiry"
+            )
+            if expiry <= datetime.now(UTC) or expiry > datetime.now(UTC) + timedelta(days=30):
+                raise ProviderError(
+                    f"provider inventory exemption is expired or overlong: {item['id']}"
+                )
     rules = registry.get("provider_inventory_rules")
     if not isinstance(rules, dict) or set(rules) != {
         "kubernetes_secrets",
@@ -865,6 +1305,7 @@ def reconcile_global_provider_inventory(
     ):
         raise ProviderError("provider inventory rules are incomplete")
     state_secret_ids: set[str] = set()
+    state_secret_bindings: dict[str, dict[str, Any]] = {}
     state_nebius_ids: set[str] = set()
     for state in states:
         root = state["root"]
@@ -876,6 +1317,12 @@ def reconcile_global_provider_inventory(
                 continue
             if resource.get("type") == "kubernetes_secret_v1":
                 state_secret_ids.add(provider_id)
+                binding = resource.get("provider_binding")
+                if not isinstance(binding, dict) or provider_id in state_secret_bindings:
+                    raise ProviderError(
+                        f"Terraform Secret lacks one exact state binding: {resource['address']}"
+                    )
+                state_secret_bindings[provider_id] = binding
             elif provider_kind(str(resource.get("type", ""))) is not None:
                 state_nebius_ids.add(provider_id)
     live_secret_ids = {
@@ -901,10 +1348,14 @@ def reconcile_global_provider_inventory(
         evidence_identity["membership_id"],
         evidence_identity["permit_id"],
         release_identity["service_account_id"],
-        release_identity["credential_id"],
         release_identity["group_id"],
         release_identity["membership_id"],
         *release_identity["permit_ids"],
+        operator_identity["service_account_id"],
+        operator_identity["key_id"],
+        operator_identity["group_id"],
+        operator_identity["membership_id"],
+        operator_identity["permit_id"],
     }
     classified_secret_ids = {
         item["id"] for item in exemptions["kubernetes_secrets"]
@@ -914,9 +1365,41 @@ def reconcile_global_provider_inventory(
         raise ProviderError("provider classification names an absent live object")
     rule_classifications: dict[str, str] = {}
     approved_namespace_set = set(approved_namespaces)
+    service_account_index = {
+        (item["namespace"], item["name"]): item for item in service_accounts
+    }
     for item in secrets:
         identity = f"{item['metadata']['namespace']}/{item['metadata']['name']}"
-        if identity in state_secret_ids or identity in classified_secret_ids:
+        if identity in state_secret_ids:
+            binding = state_secret_bindings[identity]
+            annotations = item["metadata"].get("annotations", {})
+            if (
+                binding.get("namespace") != item["metadata"]["namespace"]
+                or binding.get("name") != item["metadata"]["name"]
+                or binding.get("content_sha256")
+                != item.get("authorityContentSha256")
+                or binding.get("content_sha256")
+                != annotations.get("fs2.nebius.ai/content-sha256")
+                or binding.get("credential_class")
+                != annotations.get("fs2.nebius.ai/credential-class")
+                or str(binding.get("credential_generation"))
+                != annotations.get("fs2.nebius.ai/credential-generation")
+                or binding.get("immutable") != item.get("immutable")
+                or (
+                    binding.get("uid") not in (None, "")
+                    and binding.get("uid") != item["metadata"]["uid"]
+                )
+                or (
+                    binding.get("resource_version") not in (None, "")
+                    and str(binding.get("resource_version"))
+                    != item["metadata"]["resourceVersion"]
+                )
+            ):
+                raise ProviderError(
+                    f"Terraform Secret state differs from live UID/RV/content binding: {identity}"
+                )
+            continue
+        if identity in classified_secret_ids:
             continue
         matches = [
             rule
@@ -926,16 +1409,30 @@ def reconcile_global_provider_inventory(
             and re.fullmatch(rule["name_regex"], item["metadata"]["name"])
             is not None
         ]
+        if len(matches) == 1 and matches[0]["id"] == "helm-release-records":
+            if identity not in helm_release_records:
+                matches = []
         if len(matches) == 1 and matches[0]["id"] == "bound-service-account-token":
             annotations = item["metadata"].get("annotations", {})
             owners = item["metadata"].get("owners", [])
             service_account = annotations.get("kubernetes.io/service-account.name")
-            if not isinstance(service_account, str) or not service_account:
-                matches = []
-            elif owners and not any(
-                owner.get("kind") == "ServiceAccount"
-                and owner.get("name") == service_account
+            service_account_uid = annotations.get("kubernetes.io/service-account.uid")
+            live_account = service_account_index.get(
+                (item["metadata"]["namespace"], service_account)
+            ) if isinstance(service_account, str) else None
+            exact_owners = [
+                owner
                 for owner in owners
+                if owner.get("apiVersion") == "v1"
+                and owner.get("kind") == "ServiceAccount"
+                and owner.get("name") == service_account
+                and owner.get("uid") == service_account_uid
+            ]
+            if (
+                not isinstance(live_account, dict)
+                or live_account.get("uid") != service_account_uid
+                or len(owners) != 1
+                or len(exact_owners) != 1
             ):
                 matches = []
         if len(matches) == 1:
@@ -962,7 +1459,14 @@ def reconcile_global_provider_inventory(
         "unmanaged_kubernetes_secret_count": 0,
         "unmanaged_nebius_iam_count": 0,
         "classified_inventory_sha256": canonical_sha256(
-            {"exemptions": exemptions, "rules": rules, "matches": rule_classifications}
+            {
+                "exemptions": exemptions,
+                "rules": rules,
+                "matches": rule_classifications,
+                "helm_release_records": helm_release_records,
+                "service_accounts": service_accounts,
+                "state_secret_bindings": state_secret_bindings,
+            }
         ),
         "inventory_sha256": canonical_sha256(
             [sorted(live_secret_ids), sorted(live_nebius_ids)]
@@ -1417,6 +1921,20 @@ def exact_handoff_lineage(
         permits[0].get("resource_id"), permits[0].get("role")
     ) != (policy["project_id"], "viewer"):
         raise ProviderError("handoff group does not have exactly project viewer")
+    closure = authorization_closure_proof(
+        policy,
+        service_account_id=service_account_id,
+        expected_group_id=group["id"],
+        expected_permits=[
+            {
+                "permit_id": permits[0]["id"],
+                "group_id": group["id"],
+                "resource_id": policy["project_id"],
+                "role": "viewer",
+            }
+        ],
+        label="operator viewer identity",
+    )
     expiry = key.get("expires_at")
     try:
         expires_at = datetime.fromisoformat(str(expiry).replace("Z", "+00:00"))
@@ -1431,12 +1949,15 @@ def exact_handoff_lineage(
         "generation": generation,
         "service_account_id": service_account_id,
         "group_id": group["id"],
+        "membership_id": memberships[0]["id"],
+        "permit_id": permits[0]["id"],
         "role": "viewer",
         "key_id": key_id,
         "expires_at": expiry,
         "public_key_sha256": key.get("public_key_sha256"),
+        "authorization_closure": closure,
         "provider_bindings_sha256": canonical_sha256(
-            [key, account, group, memberships[0], permits[0]]
+            [key, account, group, memberships[0], permits[0], closure]
         ),
     }
 
@@ -1654,13 +2175,9 @@ def backend_custody_result(
 
     root = policy["terraform_roots"][root_name]
     config_path = Path(root["backend_config_path"])
-    if (
-        config_path.is_symlink()
-        or not config_path.is_file()
-        or config_path.stat().st_uid != 0
-        or stat.S_IMODE(config_path.stat().st_mode) != 0o600
-    ):
-        raise ProviderError("Terraform backend configuration is not root-owned mode 0600")
+    config_sha256 = root_private_file(
+        config_path, label=f"{root_name} Terraform backend configuration"
+    )
     adapter = policy["backend_custody_adapter"]
     command = verified_adapter_command(adapter, label="Terraform backend custody")
     request = {
@@ -1668,8 +2185,9 @@ def backend_custody_result(
         "terraform_root_name": root_name,
         "backend_type": root["backend_type"],
         "backend_config_path": str(config_path),
-        "backend_config_sha256": file_sha256(config_path),
+        "backend_config_sha256": config_sha256,
         "project_id": policy["project_id"],
+        "expected_custody": root["backend_expectation"],
     }
     response = command_json_input(
         command,
@@ -1689,6 +2207,16 @@ def backend_custody_result(
         "access_logging",
         "versioning_enabled",
         "object_lock_enabled",
+        "object_lock_mode",
+        "object_lock_retention_days",
+        "bucket_parent_id",
+        "bucket_project_id",
+        "bucket_owner_service_account_id",
+        "kms_key_parent_id",
+        "kms_key_project_id",
+        "logging_destination_parent_id",
+        "logging_destination_project_id",
+        "access_log_prefix",
         "observed_at",
         "complete",
         "data_fields_returned",
@@ -1702,7 +2230,7 @@ def backend_custody_result(
         != "fs2-serve.nebius.ai/backend-custody-observation/v1"
         or response.get("terraform_root_name") != root_name
         or response.get("backend_type") != root["backend_type"]
-        or response.get("backend_config_sha256") != file_sha256(config_path)
+        or response.get("backend_config_sha256") != config_sha256
         or response.get("complete") is not True
         or response.get("data_fields_returned") != 0
         or not isinstance(encryption, dict)
@@ -1714,6 +2242,7 @@ def backend_custody_result(
         or not isinstance(logging.get("destination_bucket_id"), str)
         or not logging["destination_bucket_id"]
         or response.get("versioning_enabled") is not True
+        or response.get("object_lock_enabled") is not True
         or not isinstance(response.get("endpoint"), str)
         or not response["endpoint"].startswith("https://")
         or not isinstance(response.get("bucket_id"), str)
@@ -1722,7 +2251,132 @@ def backend_custody_result(
         or not response["object_key"]
     ):
         raise ProviderError("Terraform backend custody is incomplete")
+    expected = root["backend_expectation"]
+    observed_binding = {
+        "project_id": policy["project_id"],
+        "bucket_id": response["bucket_id"],
+        "bucket_parent_id": response["bucket_parent_id"],
+        "bucket_project_id": response["bucket_project_id"],
+        "bucket_owner_service_account_id": response[
+            "bucket_owner_service_account_id"
+        ],
+        "object_key": response["object_key"],
+        "endpoint": response["endpoint"],
+        "kms_key_id": encryption["kms_key_id"],
+        "kms_key_parent_id": response["kms_key_parent_id"],
+        "kms_key_project_id": response["kms_key_project_id"],
+        "logging_destination_bucket_id": logging["destination_bucket_id"],
+        "logging_destination_parent_id": response[
+            "logging_destination_parent_id"
+        ],
+        "logging_destination_project_id": response[
+            "logging_destination_project_id"
+        ],
+        "access_log_prefix": response["access_log_prefix"],
+        "object_lock_mode": response["object_lock_mode"],
+        "object_lock_retention_days": response["object_lock_retention_days"],
+    }
+    if observed_binding != expected:
+        raise ProviderError(
+            "Terraform backend custody differs from the exact source-approved binding"
+        )
     return response
+
+
+def state_migration_readiness_result(
+    policy: dict[str, Any], root_name: str
+) -> dict[str, Any]:
+    """Attest an additive legacy-state copy without moving, deleting or overwriting it."""
+
+    root = policy["terraform_roots"][root_name]
+    legacy = root["legacy_state_source"]
+    legacy_path = Path(legacy["path"])
+    digest = root_private_file(
+        legacy_path,
+        label=f"{root_name} quarantined legacy state",
+        expected_sha256=legacy["sha256"],
+    )
+    legacy_state = stable_json(legacy_path, label=f"{root_name} quarantined legacy state")
+    if (
+        legacy_state.get("lineage") != legacy["lineage"]
+        or legacy_state.get("serial") != legacy["serial"]
+        or canonical_sha256(legacy_state) != legacy["canonical_state_sha256"]
+    ):
+        raise ProviderError("quarantined legacy state differs from the approved source")
+    adapter = policy["state_migration_adapter"]
+    command = verified_adapter_command(adapter, label="Terraform state copy custody")
+    response = command_json_input(
+        command,
+        label=f"{root_name} Terraform state copy custody",
+        payload={
+            "schema": "fs2-serve.nebius.ai/state-copy-readiness-request/v1",
+            "terraform_root_name": root_name,
+            "source": {
+                "sha256": digest,
+                "canonical_state_sha256": legacy["canonical_state_sha256"],
+                "lineage": legacy["lineage"],
+                "serial": legacy["serial"],
+            },
+            "destination": root["backend_expectation"],
+            "copy_semantics": "create-new-object-version-no-source-mutation",
+        },
+        timeout=adapter["timeout_seconds"],
+    )
+    fields = {
+        "schema",
+        "terraform_root_name",
+        "source_sha256",
+        "source_canonical_state_sha256",
+        "source_lineage",
+        "source_serial",
+        "destination_binding_sha256",
+        "destination_object_present",
+        "destination_object_version_id",
+        "destination_canonical_state_sha256",
+        "source_retained",
+        "overwrite_performed",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+    }
+    expected_destination_sha256 = canonical_sha256(root["backend_expectation"])
+    if (
+        not isinstance(response, dict)
+        or set(response) != fields
+        or response.get("schema")
+        != "fs2-serve.nebius.ai/state-copy-readiness/v1"
+        or response.get("terraform_root_name") != root_name
+        or response.get("source_sha256") != digest
+        or response.get("source_canonical_state_sha256")
+        != legacy["canonical_state_sha256"]
+        or response.get("source_lineage") != legacy["lineage"]
+        or response.get("source_serial") != legacy["serial"]
+        or response.get("destination_binding_sha256")
+        != expected_destination_sha256
+        or response.get("source_retained") is not True
+        or response.get("overwrite_performed") is not False
+        or response.get("complete") is not True
+        or response.get("data_fields_returned") != 0
+    ):
+        raise ProviderError("legacy-to-remote state copy evidence is incomplete")
+    if response["destination_object_present"] is True:
+        if (
+            not isinstance(response.get("destination_object_version_id"), str)
+            or not response["destination_object_version_id"]
+            or response.get("destination_canonical_state_sha256")
+            != legacy["canonical_state_sha256"]
+        ):
+            raise ProviderError("remote state copy is not byte-semantically verified")
+        status = "copy-verified-source-retained"
+    elif (
+        response["destination_object_present"] is False
+        and response.get("destination_object_version_id") is None
+        and response.get("destination_canonical_state_sha256") is None
+    ):
+        status = "destination-empty-copy-pending"
+    else:
+        raise ProviderError("remote state destination has an ambiguous object state")
+    return {**response, "status": status}
 
 
 def operation_result(request: dict[str, Any]) -> dict[str, Any]:
@@ -1733,6 +2387,10 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
         return backend_custody_result(
             policy, str(parameters["terraform_root_name"])
         )
+    if operation == "state-migration-readiness":
+        return state_migration_readiness_result(
+            policy, str(parameters["terraform_root_name"])
+        )
     if operation == "release-identity":
         provider_inventory = nebius_inventory(policy)
         return {
@@ -1740,22 +2398,65 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
             "evidence_identity": evidence_identity_proof(policy, provider_inventory),
             "observed_at": observed_at(),
         }
+    if operation == "operator-proxy-context":
+        provider_inventory = nebius_inventory(policy)
+        configured = policy["operator_identity"]
+        lineage = exact_handoff_lineage(
+            policy,
+            provider_inventory,
+            key_id=configured["credential_id"],
+        )
+        if (
+            lineage["service_account_id"] != configured["service_account_id"]
+            or lineage["project_id"] != policy["project_id"]
+            or provider_time(lineage["expires_at"], label="operator viewer expiry")
+            - datetime.now(UTC)
+            > timedelta(seconds=configured["maximum_lifetime_seconds"])
+        ):
+            raise ProviderError("operator proxy identity differs from fixed viewer policy")
+        kubeconfig = Path(configured["kubeconfig"])
+        kubeconfig_sha256 = root_private_file(
+            kubeconfig,
+            label="operator viewer kubeconfig",
+            expected_sha256=configured["kubeconfig_sha256"],
+        )
+        return {
+            "operator_identity": lineage,
+            "kubeconfig": str(kubeconfig),
+            "kubeconfig_sha256": kubeconfig_sha256,
+            "context_name": configured["context_name"],
+            "provider_executables": policy["provider_executables"],
+            "denials": authorization_denials(policy),
+            "inventory": viewer_inventory_proof(policy),
+            "allowed_cidrs": cluster_cidrs(policy),
+            "observed_at": observed_at(),
+        }
     states = terraform_inventory(policy)
     if operation == "artifact-inventory":
         return artifact_inventory(policy)
     secrets = kubernetes_secrets(policy)
+    service_accounts = kubernetes_service_accounts(policy)
+    helm_release_records = helm_release_secret_inventory(policy, secrets)
     provider_inventory = nebius_inventory(policy)
     evidence_identity = evidence_identity_proof(policy, provider_inventory)
-    release_identity = release_identity_proof(policy, provider_inventory)
+    release_identity = release_lineage_inventory(policy, provider_inventory)
+    operator_identity = exact_handoff_lineage(
+        policy,
+        provider_inventory,
+        key_id=policy["operator_identity"]["credential_id"],
+    )
     registry = load_registry(policy)
     registry_sha256 = canonical_sha256(registry)
     provider_reconciliation = reconcile_global_provider_inventory(
         states=states,
         secrets=secrets,
+        service_accounts=service_accounts,
+        helm_release_records=helm_release_records,
         provider_inventory=provider_inventory,
         registry=registry,
         evidence_identity=evidence_identity,
         release_identity=release_identity,
+        operator_identity=operator_identity,
         approved_namespaces=policy["namespaces"],
     )
     if operation == "custody-snapshot":
@@ -1782,6 +2483,10 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
             policy, str(parameters["phase"]), secrets, registry
         )
     if operation == "viewer-handoff-inventory":
+        if parameters["key_id"] != policy["operator_identity"]["credential_id"]:
+            raise ProviderError(
+                "handoff key is not the source-approved operator viewer credential"
+            )
         lineage = exact_handoff_lineage(
             policy, provider_inventory, key_id=str(parameters["key_id"])
         )

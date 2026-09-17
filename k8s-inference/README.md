@@ -135,11 +135,14 @@ the operator instead of changing limits or broad project roles.
 Prerequisites are Terraform 1.11 or newer (but older than 2.0), `kubectl`,
 `helm` 3.9 or newer for the digest-pinned OCI charts, `jq`,
 [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane),
-Git, and authenticated Nebius CLI access to the target project. The optional
+Git, and the root-installed credential authority described in
+[`docs/OPERATOR_ACCESS_HYGIENE_V4.md`](docs/OPERATOR_ACCESS_HYGIENE_V4.md).
+The optional
 local Kueue and JobSet server tests additionally need
 [`kind`](https://kind.sigs.k8s.io/). Authentication is
-runtime context, not desired state, so select it with `NEBIUS_PROFILE` or
-`--nebius-profile` rather than putting credentials in Terraform variables.
+runtime context, not desired state. The wrapper rejects ambient Nebius profile
+selection and accepts release or operator identity only from provider-attested,
+root-owned policy; credential values never belong in Terraform variables.
 
 ```bash
 cd k8s-inference

@@ -81,7 +81,7 @@ def test_normal_plan_has_no_legacy_local_state_dependency() -> None:
     assert "state.exists()" not in gate
 
 
-def test_all_current_infrastructure_iam_addresses_are_registered() -> None:
+def test_all_current_and_static_source_go_infrastructure_iam_addresses_are_registered() -> None:
     registry = json.loads(
         (ROOT / "security/durable-credential-registry.json").read_text()
     )
@@ -98,8 +98,14 @@ def test_all_current_infrastructure_iam_addresses_are_registered() -> None:
                 continue
             _, terraform_type, name, *_ = line.replace('"', "").split()
             expected.add(f"{terraform_type}.{name}")
+    sai06 = {
+        "nebius_iam_v2_access_key.postgresql_backup",
+        "nebius_iam_v2_access_key.postgresql_backup_inventory",
+        "nebius_iam_v2_access_key.postgresql_backup_restore",
+        "nebius_iam_v2_access_key.postgresql_restore_receipt",
+    }
     assert len(expected) == 25
-    assert declared == expected
+    assert declared == expected | sai06
     rules = registry["provider_inventory_rules"]["kubernetes_secrets"]
     assert {rule["id"] for rule in rules} == {
         "helm-release-records",
@@ -119,7 +125,13 @@ def test_release_identity_is_separate_from_evidence_viewer_and_ambient_profiles(
     assert "def release_identity_proof" in provider
     assert '"credential-evidence-reader"' in provider
     assert '"credential-release-automation"' in provider
-    assert "timedelta(hours=1)" in service
+    assert '"workload_identity_session"' in provider
+    assert "authorization_closure_proof" in provider
+    assert 'response.get("impersonation_permits") != []' in provider
+    assert '"access_keys", "auth_public_keys"' not in service[
+        service.index("release_fields") : service.index("cidrs =", service.index("release_fields"))
+    ]
+    assert 'release.get("maximum_lifetime_seconds") != 3600' in service
 
 
 def test_every_active_credential_class_requires_a_pinned_adapter() -> None:
@@ -127,10 +139,73 @@ def test_every_active_credential_class_requires_a_pinned_adapter() -> None:
         (ROOT / "security/credential-consumer-contracts.json").read_text()
     )
     active = set(contracts["contracts"]) - set(contracts["pending_contract_ids"])
-    assert len(active) == 19
+    assert contracts["pending_contract_ids"] == []
+    assert len(active) == 21
     service = (ROOT / "scripts/credential_authority_service.py").read_text()
     provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
     assert "set(class_adapters) != contract_ids" in service
     assert "def class_adapter_result" in provider
     assert "exact_requested_secret_bindings" in provider
     assert "requires an accepted class-specific production adapter" not in provider
+
+
+def test_proxy_uses_existing_provider_bound_viewer_and_never_get_credentials() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    proxy = wrapper[
+        wrapper.index("def internal_proxy_command(") : wrapper.index(
+            "\ndef parse_args", wrapper.index("def internal_proxy_command(")
+        )
+    ]
+    assert "ACTIVE_OPERATOR_IDENTITY" in proxy
+    assert "ensure_kubeconfig(" not in proxy
+    assert "get-credentials" not in proxy
+    assert 'authority_observation("operator-proxy-context")' in wrapper
+    assert "--terraform" not in wrapper[wrapper.index("def parse_args") :]
+    assert "--kubectl" not in wrapper[wrapper.index("def parse_args") :]
+    assert "--nebius" not in wrapper[wrapper.index("def parse_args") :]
+    verifier = (ROOT / "scripts/operator_handoff_readonly.py").read_text()
+    contract = json.loads(
+        (ROOT / "security/credential-authority-deployment-contract.json").read_text()
+    )
+    assert contract["fixed_components"]["operator_handoff_verifier"] == (
+        "scripts/operator_handoff_readonly.py"
+    )
+    for forbidden in (" create ", " delete ", " revoke ", " issue "):
+        assert forbidden not in verifier.lower()
+
+
+def test_inventory_and_backend_require_provider_exact_bindings() -> None:
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    schema = json.loads(
+        (ROOT / "security/credential-authority-config.schema.json").read_text()
+    )
+    assert "helm_release_secret_inventory" in provider
+    assert "kubernetes_service_accounts" in provider
+    assert 'len(owners) != 1' in provider
+    assert 'live_account.get("uid") != service_account_uid' in provider
+    assert "state_secret_bindings" in provider
+    assert "exemption is expired or overlong" in provider
+    root = schema["$defs"]["terraform_root"]
+    assert "backend_expectation" in root["required"]
+    assert "legacy_state_source" in root["required"]
+    backend = schema["$defs"]["backend_expectation"]["required"]
+    for field in (
+        "bucket_parent_id",
+        "bucket_owner_service_account_id",
+        "kms_key_parent_id",
+        "access_log_prefix",
+        "object_lock_mode",
+    ):
+        assert field in backend
+
+
+def test_state_migration_is_additive_copy_only_and_source_retaining() -> None:
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    contract = json.loads(
+        (ROOT / "security/credential-authority-deployment-contract.json").read_text()
+    )
+    assert "state_migration_readiness_result" in provider
+    assert '"copy_semantics": "create-new-object-version-no-source-mutation"' in provider
+    assert 'response.get("source_retained") is not True' in provider
+    assert 'response.get("overwrite_performed") is not False' in provider
+    assert contract["state_migration"]["execution_authorized"] is False

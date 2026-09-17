@@ -1,5 +1,8 @@
 # Operator credential custody and release admission v3
 
+> Superseded for source design by `OPERATOR_ACCESS_HYGIENE_V4.md`. This file is
+> retained as history and is not integration or deployment evidence.
+
 This document defines the source contract for remote Terraform state,
 credential evidence, and operator/release identities. It is intentionally
 fail-closed: the repository does not contain production credential values or

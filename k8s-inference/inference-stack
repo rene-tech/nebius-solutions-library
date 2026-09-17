@@ -61,6 +61,13 @@ STAGE_COMPLETION_OUTPUTS = {
     "workloads": "deployment_contract",
 }
 ACTIVE_RELEASE_IDENTITY: dict[str, Any] | None = None
+ACTIVE_OPERATOR_IDENTITY: dict[str, Any] | None = None
+FIXED_EXECUTABLES = {
+    "terraform": "/snap/bin/terraform",
+    "kubectl": "/snap/bin/kubectl",
+    "nebius": "/usr/local/bin/nebius",
+    "crane": "/usr/local/bin/crane",
+}
 
 
 class DeploymentError(RuntimeError):
@@ -180,6 +187,74 @@ def clean_environment() -> dict[str, str]:
     }
 
 
+def authority_observation(operation: str) -> dict[str, Any]:
+    if CREDENTIAL_PROVIDER_ADAPTER.is_symlink() or not CREDENTIAL_PROVIDER_ADAPTER.is_file():
+        raise DeploymentError("credential provider adapter is absent or unsafe")
+    response = run(
+        [sys.executable, str(CREDENTIAL_PROVIDER_ADAPTER)],
+        env=clean_environment(),
+        capture=True,
+        input_text=json.dumps({"operation": operation}, separators=(",", ":")),
+    )
+    try:
+        document = json.loads(response.stdout)
+    except json.JSONDecodeError as error:
+        raise DeploymentError("credential authority evidence is malformed") from error
+    if not isinstance(document, dict):
+        raise DeploymentError("credential authority evidence is not an object")
+    return document
+
+
+def attested_file(
+    path_value: Any,
+    digest_value: Any,
+    *,
+    label: str,
+    private: bool,
+) -> str:
+    if not isinstance(path_value, str) or not Path(path_value).is_absolute():
+        raise DeploymentError(f"{label} path is not absolute")
+    path = Path(path_value)
+    if path.is_symlink() or not path.is_file():
+        raise DeploymentError(f"{label} is absent or unsafe")
+    metadata = path.stat()
+    disallowed = 0o077 if private else 0o022
+    if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) & disallowed:
+        raise DeploymentError(f"{label} ownership or mode is unsafe")
+    for parent in path.parents:
+        parent_metadata = parent.stat()
+        if (
+            parent.is_symlink()
+            or not parent.is_dir()
+            or parent_metadata.st_uid != 0
+            or stat.S_IMODE(parent_metadata.st_mode) & 0o022
+        ):
+            raise DeploymentError(f"{label} parent chain is mutable")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if not isinstance(digest_value, str) or digest != digest_value:
+        raise DeploymentError(f"{label} digest differs from authority evidence")
+    return str(path)
+
+
+def attested_executables(document: Mapping[str, Any]) -> dict[str, str]:
+    configured = document.get("provider_executables")
+    if not isinstance(configured, dict) or set(configured) != set(FIXED_EXECUTABLES):
+        raise DeploymentError("authority executable inventory is incomplete")
+    result: dict[str, str] = {}
+    for name, expected_path in FIXED_EXECUTABLES.items():
+        binding = configured.get(name)
+        if (
+            not isinstance(binding, dict)
+            or set(binding) != {"path", "sha256"}
+            or binding.get("path") != expected_path
+        ):
+            raise DeploymentError(f"authority {name} executable is not source-pinned")
+        result[name] = attested_file(
+            binding["path"], binding["sha256"], label=f"{name} executable", private=False
+        )
+    return result
+
+
 def release_identity(command: str) -> dict[str, Any]:
     """Obtain the provider-derived, externally anchored release identity.
 
@@ -192,21 +267,8 @@ def release_identity(command: str) -> dict[str, Any]:
         raise DeploymentError(
             f"{command} is not authorized for the release automation identity"
         )
-    if (
-        CREDENTIAL_PROVIDER_ADAPTER.is_symlink()
-        or not CREDENTIAL_PROVIDER_ADAPTER.is_file()
-    ):
-        raise DeploymentError("credential provider adapter is absent or unsafe")
-    response = run(
-        [sys.executable, str(CREDENTIAL_PROVIDER_ADAPTER)],
-        env=clean_environment(),
-        capture=True,
-        input_text=json.dumps(
-            {"operation": "release-identity"}, separators=(",", ":")
-        ),
-    )
+    document = authority_observation("release-identity")
     try:
-        document = json.loads(response.stdout)
         identity = document["release_identity"]
         issued = datetime.fromisoformat(
             identity["issued_at"].replace("Z", "+00:00")
@@ -214,26 +276,67 @@ def release_identity(command: str) -> dict[str, Any]:
         expires = datetime.fromisoformat(
             identity["expires_at"].replace("Z", "+00:00")
         ).astimezone(UTC)
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+    except (KeyError, TypeError, ValueError) as error:
         raise DeploymentError("release identity evidence is malformed") from error
     now = datetime.now(UTC)
     if (
         identity.get("audience") != "terraform-release"
+        or identity.get("credential_kind") != "workload_identity_session"
         or identity.get("interactive_login_allowed") is not False
         or identity.get("human_principal_allowed") is not False
+        or identity.get("impersonation_allowed") is not False
         or command not in identity.get("allowed_commands", [])
         or issued > now
         or expires <= now
         or expires - issued > timedelta(hours=1)
-        or not isinstance(identity.get("config_path"), str)
-        or not Path(identity["config_path"]).is_absolute()
         or not isinstance(identity.get("profile"), str)
         or not identity["profile"]
+        or not isinstance(identity.get("authorization_closure"), dict)
+        or identity["authorization_closure"].get("scope")
+        != "organization-and-descendants"
     ):
         raise DeploymentError(
             "release identity is not an active automation-only credential for this command"
         )
+    identity["config_path"] = attested_file(
+        identity.get("config_path"),
+        identity.get("config_sha256"),
+        label="release workload identity configuration",
+        private=True,
+    )
+    identity["executables"] = attested_executables(identity)
     return identity
+
+
+def operator_proxy_identity() -> dict[str, Any]:
+    """Obtain an existing provider-expiring viewer context without minting credentials."""
+
+    document = authority_observation("operator-proxy-context")
+    identity = document.get("operator_identity")
+    denials = document.get("denials")
+    if (
+        not isinstance(identity, dict)
+        or identity.get("role") != "viewer"
+        or not isinstance(identity.get("authorization_closure"), dict)
+        or identity["authorization_closure"].get("scope")
+        != "organization-and-descendants"
+        or not isinstance(denials, dict)
+        or not denials
+        or not all(value is True for value in denials.values())
+        or document.get("inventory", {}).get("allowed") is not True
+    ):
+        raise DeploymentError("operator proxy identity is not an exact read-only viewer")
+    expires = datetime.fromisoformat(str(identity.get("expires_at")).replace("Z", "+00:00"))
+    if expires.tzinfo is None or expires.astimezone(UTC) <= datetime.now(UTC):
+        raise DeploymentError("operator proxy viewer credential has expired")
+    document["kubeconfig"] = attested_file(
+        document.get("kubeconfig"),
+        document.get("kubeconfig_sha256"),
+        label="operator viewer kubeconfig",
+        private=True,
+    )
+    document["executables"] = attested_executables(document)
+    return document
 
 
 def nebius_identity_arguments(args: argparse.Namespace) -> list[str]:
@@ -3789,6 +3892,8 @@ def internal_proxy_command(
     contract: Mapping[str, Any],
 ) -> list[str]:
     """Build the non-secret command that serves an internal-only edge."""
+    if ACTIVE_OPERATOR_IDENTITY is None:
+        raise DeploymentError("proxy requires the provider-attested operator viewer context")
     if not state_ready(args.terraform, run_root, "workloads", contract):
         raise DeploymentError(
             "workloads are not applied; run inference-stack apply before starting the proxy"
@@ -3814,15 +3919,15 @@ def internal_proxy_command(
         "public_edge_contract",
         infrastructure_environment,
     )
-    kubeconfig, _ = ensure_kubeconfig(
-        nebius=args.nebius,
-        nebius_config=args.nebius_config,
-        nebius_profile=args.nebius_profile,
-        kubectl=args.kubectl,
-        run_root=run_root,
-        cluster_id=cluster_id,
-        cluster_name=cluster_name,
-    )
+    provider_identity = ACTIVE_OPERATOR_IDENTITY["operator_identity"]
+    if (
+        provider_identity.get("cluster_id") != cluster_id
+        or ACTIVE_OPERATOR_IDENTITY.get("context_name") != cluster_name
+    ):
+        raise DeploymentError(
+            "operator viewer identity is bound to another cluster or context"
+        )
+    kubeconfig = Path(ACTIVE_OPERATOR_IDENTITY["kubeconfig"])
 
     if not isinstance(public_edge, dict) or public_edge.get("mode") != "internal-only":
         raise DeploymentError(
@@ -3917,14 +4022,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="private state/evidence directory; defaults to an XDG state path bound to the tfvars path",
     )
-    parser.add_argument("--terraform", default="terraform")
-    parser.add_argument("--kubectl", default="kubectl")
-    parser.add_argument("--nebius", default="nebius")
-    parser.add_argument(
-        "--crane",
-        default="crane",
-        help="OCI registry client used for digest-preserving regional mirrors",
-    )
+    parser.set_defaults(**FIXED_EXECUTABLES)
     parser.add_argument(
         "--credential-file",
         type=Path,
@@ -3945,7 +4043,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    global ACTIVE_RELEASE_IDENTITY
+    global ACTIVE_OPERATOR_IDENTITY, ACTIVE_RELEASE_IDENTITY
     os.umask(0o077)
     args = parse_args(argv)
     if "NEBIUS_PROFILE" in os.environ or "NEBIUS_CONFIG" in os.environ:
@@ -3958,8 +4056,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.command in {"preflight", "plan", "apply"}:
         ACTIVE_RELEASE_IDENTITY = release_identity(args.command)
+        args.terraform = ACTIVE_RELEASE_IDENTITY["executables"]["terraform"]
+        args.kubectl = ACTIVE_RELEASE_IDENTITY["executables"]["kubectl"]
+        args.nebius = ACTIVE_RELEASE_IDENTITY["executables"]["nebius"]
+        args.crane = ACTIVE_RELEASE_IDENTITY["executables"]["crane"]
         args.nebius_profile = ACTIVE_RELEASE_IDENTITY["profile"]
         args.nebius_config = ACTIVE_RELEASE_IDENTITY["config_path"]
+    elif args.command == "proxy":
+        ACTIVE_OPERATOR_IDENTITY = operator_proxy_identity()
+        args.terraform = ACTIVE_OPERATOR_IDENTITY["executables"]["terraform"]
+        args.kubectl = ACTIVE_OPERATOR_IDENTITY["executables"]["kubectl"]
+        args.nebius = ACTIVE_OPERATOR_IDENTITY["executables"]["nebius"]
+        args.crane = ACTIVE_OPERATOR_IDENTITY["executables"]["crane"]
+        args.nebius_profile = None
+        args.nebius_config = None
     else:
         args.nebius_profile = None
         args.nebius_config = None
