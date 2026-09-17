@@ -46,9 +46,10 @@ inspection returns compact metadata rather than base64.
 
 Ordinary payload/result TTL defaults to 24 hours and operation metadata to seven
 days. Scientific artifacts/results default to 90 days. Use returned expiry
-fields; settings are configurable. Request-debug capture is operator-only and
-currently has no automatic deletion job. Never assume a chat history is the
-durable store for an output.
+fields; settings are configurable. Request-debug capture is operator-only, opt-in and
+default-off; when enabled it stores the redacted request body only (the response/upstream body
+is withheld), and captured records have a 90-day retention TTL enforced by the platform's
+central maintenance purge. Never assume a chat history is the durable store for an output.
 
 ## Tool families
 

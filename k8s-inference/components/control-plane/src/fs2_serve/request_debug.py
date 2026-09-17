@@ -933,6 +933,40 @@ async def offload_capture(builder: Callable[[], _T]) -> _T | None:
         return await asyncio.to_thread(builder)
 
 
+class _CaptureReservation:
+    """A held capture-admission slot, released deterministically.
+
+    Won via ``DebugPersistQueue.reserve`` BEFORE any capture buffer is allocated, and used as a
+    context manager so the slot is ALWAYS returned on exit — normal, exception, or cancellation —
+    UNLESS it was committed to the worker via ``submit`` (then the worker returns it once it has
+    persisted the capture). Entering the ``with`` immediately after ``reserve`` therefore makes the
+    in-flight bound leak-proof against init/allocation/build/submit failures and cancellation.
+    """
+
+    def __init__(self, queue: DebugPersistQueue) -> None:
+        self._queue = queue
+        self._active = True  # True while this handle still owns a slot to release
+
+    def submit(self, builder: Callable[[], DebugExchange | None]) -> bool:
+        """Hand the reserved capture to the background worker. On success, ownership of the slot
+        transfers to the worker (this handle no longer releases it); on a (defensive) enqueue drop
+        the slot stays with this handle and is released on context exit. Non-blocking."""
+        if not self._active:
+            return False
+        if self._queue.submit(builder):
+            self._active = False
+            return True
+        return False
+
+    def __enter__(self) -> _CaptureReservation:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._active:
+            self._active = False
+            self._queue._release()
+
+
 class DebugPersistQueue:
     """Bounded, non-blocking background persistence for debug captures.
 
@@ -947,9 +981,10 @@ class DebugPersistQueue:
     Enqueue-time bounding (queue depth) is not enough on its own: a capture holds a cap-sized
     buffer during the WHOLE in-flight request, before the enqueue/drop decision, so arbitrarily
     many concurrent requests could pin unbounded memory ahead of the queue. A caller therefore
-    wins a NON-BLOCKING reservation (``try_reserve``) BEFORE it allocates or copies any buffer,
-    and bypasses capture entirely when none is free — so total in-flight capture memory is bounded
-    by the reservation count across both the building and the queued/persisting phases.
+    wins a NON-BLOCKING reservation (``reserve``, used as a context manager) BEFORE it allocates or
+    copies any buffer, and bypasses capture entirely when none is free — so total in-flight capture
+    memory is bounded by the reservation count across both the building and the queued/persisting
+    phases, and the slot is released on every exit path (see ``_CaptureReservation``).
     """
 
     def __init__(
@@ -973,32 +1008,33 @@ class DebugPersistQueue:
         self._inflight = 0
         self.dropped = 0
 
-    def try_reserve(self) -> bool:
+    def reserve(self) -> _CaptureReservation | None:
         """Non-blocking admission for ONE capture, taken BEFORE any buffer is allocated/copied.
 
-        Returns True and holds a slot when in-flight captures are below the bound; returns False
-        (counting a drop) at the bound, so the caller bypasses capture and allocates nothing.
-        asyncio is single-threaded, so this check-and-increment needs no lock. The slot is freed
-        by ``release`` (a bypassed/failed capture) or by the worker after it persists a submitted
-        capture — so the bound can neither leak downward nor be exceeded."""
+        Returns a reservation HANDLE (use it as a context manager so the slot is released on every
+        exit path — normal, exception, or cancellation — or hand it to the worker via
+        ``handle.submit``) when in-flight captures are below the bound; returns None (counting a
+        drop) at the bound, so the caller bypasses capture and allocates nothing. asyncio is
+        single-threaded, so this check-and-increment needs no lock."""
         if self._inflight >= self._max_inflight:
             self.dropped += 1
-            return False
+            return None
         self._inflight += 1
-        return True
+        return _CaptureReservation(self)
 
-    def release(self) -> None:
-        """Return a reservation for a capture that was NOT handed to the worker (bypassed,
-        dropped at enqueue, or failed before submit). Submitted captures are released by the
-        worker after persistence; call this exactly once for every un-submitted ``try_reserve``."""
+    def _release(self) -> None:
+        """Return one admission slot. Called by a reservation handle on context exit (un-committed)
+        or by the worker after it persists a committed capture — exactly once per reservation, so
+        the bound can neither leak downward nor be exceeded."""
         if self._inflight > 0:
             self._inflight -= 1
 
     def submit(self, builder: Callable[[], DebugExchange | None]) -> bool:
-        """Enqueue a RESERVED capture for background persistence (the caller must already hold a
-        ``try_reserve`` slot). On success the worker releases that slot after it persists; on
-        QueueFull (a defensive backstop — with max_inflight <= maxsize a reserved capture always
-        fits) it returns False so the caller releases. Non-blocking: never blocks or awaits."""
+        """Enqueue a capture builder for background persistence. Reached via a reservation handle
+        (``_CaptureReservation.submit``), which transfers the slot to the worker on success; the
+        worker frees that slot after it persists. On QueueFull (a defensive backstop — with
+        max_inflight <= maxsize a reserved capture always fits) it returns False and the handle
+        keeps the slot (released on context exit). Non-blocking: never blocks or awaits."""
         self._ensure_worker()
         try:
             self._queue.put_nowait(builder)
@@ -1021,9 +1057,9 @@ class DebugPersistQueue:
             except Exception as error:
                 LOGGER.warning("request debug capture failed error_type=%s", type(error).__name__)
             finally:
-                # Free the reservation held for this submitted capture (its buffers are now
-                # released), then mark the queue item done for drain()/aclose().
-                self.release()
+                # Free the reservation the handle transferred for this submitted capture (its
+                # buffers are now released), then mark the queue item done for drain()/aclose().
+                self._release()
                 self._queue.task_done()
 
     async def drain(self) -> None:
@@ -1188,204 +1224,202 @@ class DebugCaptureMiddleware:
         # capture buffer. A path-admissible request buffers a bounded head from here on, so if no
         # reservation is free we bypass capture entirely — never allocating a buffer — rather than
         # let arbitrarily many concurrent requests each pin a cap-sized buffer ahead of the
-        # enqueue/drop decision. The slot is released below when the capture is not submitted; the
-        # worker releases it when it is (after persistence).
-        if not self.persist_queue.try_reserve():
+        # enqueue/drop decision.
+        reservation = self.persist_queue.reserve()
+        if reservation is None:
             await self.app(scope, receive, send)
             return
-        request_headers = list(scope.get("headers", []))
-        # Tenant scope is enforced AFTER the app runs, from the auth-resolved principal on
-        # scope state — not by re-verifying the bearer token here. Re-verifying would repeat
-        # the Argon2 password hash the auth stack already performs (a per-request CPU
-        # degradation), so instead a path-admissible request buffers a bounded head and, in
-        # the finally below, is stored only when its resolved tenant is in scope; an
-        # out-of-scope or unauthenticated request buffers the bounded head and discards it.
-        state = scope.setdefault("state", {})
-        request_id = ensure_request_id(scope)
-        store_limit = self._store_limit()
-        request_parts, response_parts = bytearray(), bytearray()
-        request_observed = response_observed = 0
-        request_complete = response_complete = disconnected = False
-        status: int | None = None
-        finished_at: datetime | None = None
-        error_type: str | None = None
-        response_headers: list[tuple[bytes, bytes]] = []
-        response_operation: UUID | None = None
-        query = scope.get("query_string", b"")
-        # Tracks whether the reserved slot was handed to the worker; if not, it is released below.
-        submitted = False
+        # Enter the reservation context IMMEDIATELY so the slot is released on EVERY exit path
+        # (normal, exception, cancellation, or a build/submit failure) — no leak window between
+        # winning the slot and protecting it; the worker takes ownership only once submit commits.
+        with reservation:
+            request_headers = list(scope.get("headers", []))
+            # Tenant scope is enforced AFTER the app runs, from the auth-resolved principal on
+            # scope state — not by re-verifying the bearer token here. Re-verifying would repeat
+            # the Argon2 password hash the auth stack already performs (a per-request CPU
+            # degradation), so instead a path-admissible request buffers a bounded head and, in
+            # the finally below, is stored only when its resolved tenant is in scope; an
+            # out-of-scope or unauthenticated request buffers the bounded head and discards it.
+            state = scope.setdefault("state", {})
+            request_id = ensure_request_id(scope)
+            store_limit = self._store_limit()
+            request_parts, response_parts = bytearray(), bytearray()
+            request_observed = response_observed = 0
+            request_complete = response_complete = disconnected = False
+            status: int | None = None
+            finished_at: datetime | None = None
+            error_type: str | None = None
+            response_headers: list[tuple[bytes, bytes]] = []
+            response_operation: UUID | None = None
+            query = scope.get("query_string", b"")
 
-        def _accumulate(buffer: bytearray, chunk: bytes) -> None:
-            # Keep only a bounded prefix; the observed counters below track the
-            # true length so a large body never accumulates in memory.
-            if store_limit is None:
-                buffer.extend(chunk)
-            elif len(buffer) < store_limit:
-                buffer.extend(chunk[: store_limit - len(buffer)])
+            def _accumulate(buffer: bytearray, chunk: bytes) -> None:
+                # Keep only a bounded prefix; the observed counters below track the
+                # true length so a large body never accumulates in memory.
+                if store_limit is None:
+                    buffer.extend(chunk)
+                elif len(buffer) < store_limit:
+                    buffer.extend(chunk[: store_limit - len(buffer)])
 
-        async def observed_receive() -> Message:
-            nonlocal request_complete, disconnected, request_observed
-            message = await receive()
-            if message["type"] == "http.request":
-                body = message.get("body", b"")
-                request_observed += len(body)
-                _accumulate(request_parts, body)
-                request_complete = not message.get("more_body", False)
-            elif message["type"] == "http.disconnect":
-                disconnected = True
-            return message
+            async def observed_receive() -> Message:
+                nonlocal request_complete, disconnected, request_observed
+                message = await receive()
+                if message["type"] == "http.request":
+                    body = message.get("body", b"")
+                    request_observed += len(body)
+                    _accumulate(request_parts, body)
+                    request_complete = not message.get("more_body", False)
+                elif message["type"] == "http.disconnect":
+                    disconnected = True
+                return message
 
-        async def observed_send(message: Message) -> None:
-            nonlocal status, response_headers, response_operation, response_complete, finished_at, response_observed
-            if message["type"] == "http.response.start":
-                status = message["status"]
-                response_headers = list(message.get("headers", []))
-                response_operation = next(
-                    (
-                        _uuid(value.decode("ascii", errors="ignore"))
-                        for key, value in response_headers
-                        if key.lower() == b"x-fs2-operation-id"
-                    ),
-                    None,
-                )
-            elif message["type"] == "http.response.body":
-                body = message.get("body", b"")
-                response_observed += len(body)
-                _accumulate(response_parts, body)
-            await send(message)
-            if message["type"] == "http.response.body" and not message.get("more_body", False):
-                response_complete, finished_at = True, datetime.now(UTC)
+            async def observed_send(message: Message) -> None:
+                nonlocal status, response_headers, response_operation, response_complete, finished_at, response_observed
+                if message["type"] == "http.response.start":
+                    status = message["status"]
+                    response_headers = list(message.get("headers", []))
+                    response_operation = next(
+                        (
+                            _uuid(value.decode("ascii", errors="ignore"))
+                            for key, value in response_headers
+                            if key.lower() == b"x-fs2-operation-id"
+                        ),
+                        None,
+                    )
+                elif message["type"] == "http.response.body":
+                    body = message.get("body", b"")
+                    response_observed += len(body)
+                    _accumulate(response_parts, body)
+                await send(message)
+                if message["type"] == "http.response.body" and not message.get("more_body", False):
+                    response_complete, finished_at = True, datetime.now(UTC)
 
-        try:
-            await self.app(scope, observed_receive, observed_send)
-        except BaseException as error:
-            error_type = type(error).__name__
-            disconnected = disconnected or isinstance(error, OSError | asyncio.CancelledError)
-            raise
-        finally:
-            # Never drain an unread rejected body or delay it waiting for a
-            # client upload. The actual observed bytes and incomplete flag are
-            # more truthful than fabricating an empty/complete request.
             try:
-                # Shared-principal reuse: the capture path NEVER re-verifies the bearer
-                # token. It reuses the principal the normal auth stack already resolved onto
-                # scope state (api.py sets request.state.principal after tokens.verify), so a
-                # captured request pays the Argon2 password hash exactly once (the auth path),
-                # not twice. A request with no resolved principal (unauthenticated/denied) has
-                # no tenant and is not captured (fail closed) — no cross-tenant capture.
-                candidate = state.get("principal")
-                principal = candidate if isinstance(candidate, Principal) else None
-                # Model/tool attribution is server-authoritative ONLY: the trusted
-                # dispatch path sets state["model_id"]/["mcp_tool"] after authorization
-                # (api.py after admission; the MCP middleware after the token-policy/scope
-                # checks). The URL path model and the request body are never used for
-                # attribution, so a request denied before authorization is never recorded
-                # under the model/tool it merely requested. (path_model still feeds the
-                # cheap pre-buffer gate below, not the stored attribution.)
-                model_id = _label(state.get("model_id"))
-                tool = _label(state.get("mcp_tool"))
-                # Non-sensitive structured signal set by the trusted dispatch path (the same
-                # server-authoritative source request telemetry uses), so an MCP tool error
-                # inside an HTTP 200 stays distinguishable from success while the response
-                # body is withheld. Never derived from the response bytes.
-                mcp_is_error = state.get("mcp_is_error") if isinstance(state.get("mcp_is_error"), bool) else None
-                # Fixed server-origin failure classification (enum + coarse bucket), set by the
-                # MCP dispatch path; never derived from the response bytes. Fail closed: a value
-                # is stored ONLY if it is a member of the fixed enum/bucket set, else dropped to
-                # None — so no unrestricted or attacker-influenced string can ever be persisted.
-                raw_category = state.get("mcp_failure_category")
-                mcp_failure_category = raw_category if raw_category in _MCP_FAILURE_CATEGORIES else None
-                raw_code = state.get("mcp_error_code")
-                mcp_error_code = raw_code if raw_code in _MCP_ERROR_CODE_BUCKETS else None
-                capture_tenant = principal.tenant_id if principal else None
-                # Scoped, time-bounded gate: only record exchanges the policy
-                # admits. An unscoped/expired/disabled policy records nothing.
-                if self.policy.should_capture(tenant_id=capture_tenant, model_id=model_id, now=datetime.now(UTC)):
-                    resolved_principal = principal
-
-                    def build_exchange() -> DebugExchange:
-                        # CPU-bound (credential scan + redaction/hashing); runs in a
-                        # worker thread via offload_capture so it never blocks the loop.
-                        # Fail closed: a request larger than the store cap has an
-                        # uninspected tail that could hold or echo a credential, so both
-                        # bodies are withheld and no body credential learning is needed.
-                        request_truncated = store_limit is not None and request_observed > store_limit
-                        request_head = bytes(request_parts)
-                        known = credential_values(
-                            [*request_headers, *response_headers], query, b"" if request_truncated else request_head
-                        )
-                        # A credential in an unterminated/bounded request scalar is only
-                        # known as a prefix; redact it (and its echoed suffix) in both bodies.
-                        prefixes = () if request_truncated else body_credential_prefixes(request_head)
-                        request_type = next(
-                            (_text(value) for key, value in request_headers if key.lower() == b"content-type"), None
-                        )
-                        response_type = next(
-                            (_text(value) for key, value in response_headers if key.lower() == b"content-type"), None
-                        )
-                        # Fail closed: if the request had an uninspected tail beyond the
-                        # buffer, a credential we never saw could be echoed in the
-                        # response, so the response body is withheld rather than stored.
-                        response_body = (
-                            suppressed_body(response_type, response_observed, response_complete)
-                            if request_truncated
-                            else bounded_body_capture(
-                                bytes(response_parts),
-                                response_type,
-                                response_complete,
-                                known,
-                                max_bytes=self.max_body_bytes,
-                                observed_bytes=response_observed,
-                                credential_prefixes=prefixes,
-                                is_response=True,
-                            )
-                        )
-                        return DebugExchange(
-                            id=uuid4(),
-                            source="public",
-                            request_id=request_id,
-                            operation_id=_uuid(state.get("operation_id")) or response_operation,
-                            started_at=started_at,
-                            completed_at=finished_at or datetime.now(UTC),
-                            tenant_id=capture_tenant,
-                            principal_id=resolved_principal.principal_id if resolved_principal else None,
-                            token_id=resolved_principal.token_id if resolved_principal else None,
-                            model_id=model_id,
-                            mcp_tool=tool,
-                            endpoint=path,
-                            method=str(scope.get("method", "")),
-                            http_status=status,
-                            error_type=error_type,
-                            mcp_is_error=mcp_is_error,
-                            mcp_failure_category=mcp_failure_category,
-                            mcp_error_code=mcp_error_code,
-                            disconnected=disconnected,
-                            query_string=redact_query(query, known),
-                            request_headers=redact_headers(request_headers, known),
-                            response_headers=redact_response_headers(response_headers),
-                            request_body=bounded_body_capture(
-                                bytes(request_parts),
-                                request_type,
-                                request_complete,
-                                known,
-                                max_bytes=self.max_body_bytes,
-                                observed_bytes=request_observed,
-                                credential_prefixes=prefixes,
-                            ),
-                            response_body=response_body,
-                        )
-
-                    # Enqueue for OFF-PATH persistence and return immediately — never await
-                    # sanitize/persist here, so the client response is never delayed. A full
-                    # bounded queue drops the capture (overload shed); the worker releases the
-                    # reservation when it accepts one.
-                    submitted = self.persist_queue.submit(build_exchange)
-            except Exception as error:
-                LOGGER.warning(
-                    "request debug capture failed request_id=%s error_type=%s", request_id, type(error).__name__
-                )
+                await self.app(scope, observed_receive, observed_send)
+            except BaseException as error:
+                error_type = type(error).__name__
+                disconnected = disconnected or isinstance(error, OSError | asyncio.CancelledError)
+                raise
             finally:
-                # Release the reservation for every capture NOT handed to the worker (out of
-                # scope, an enqueue drop, or a build error) so the admission bound cannot leak.
-                if not submitted:
-                    self.persist_queue.release()
+                # Never drain an unread rejected body or delay it waiting for a
+                # client upload. The actual observed bytes and incomplete flag are
+                # more truthful than fabricating an empty/complete request.
+                try:
+                    # Shared-principal reuse: the capture path NEVER re-verifies the bearer
+                    # token. It reuses the principal the normal auth stack already resolved onto
+                    # scope state (api.py sets request.state.principal after tokens.verify), so a
+                    # captured request pays the Argon2 password hash exactly once (the auth path),
+                    # not twice. A request with no resolved principal (unauthenticated/denied) has
+                    # no tenant and is not captured (fail closed) — no cross-tenant capture.
+                    candidate = state.get("principal")
+                    principal = candidate if isinstance(candidate, Principal) else None
+                    # Model/tool attribution is server-authoritative ONLY: the trusted
+                    # dispatch path sets state["model_id"]/["mcp_tool"] after authorization
+                    # (api.py after admission; the MCP middleware after the token-policy/scope
+                    # checks). The URL path model and the request body are never used for
+                    # attribution, so a request denied before authorization is never recorded
+                    # under the model/tool it merely requested. (path_model still feeds the
+                    # cheap pre-buffer gate below, not the stored attribution.)
+                    model_id = _label(state.get("model_id"))
+                    tool = _label(state.get("mcp_tool"))
+                    # Non-sensitive structured signal set by the trusted dispatch path (the same
+                    # server-authoritative source request telemetry uses), so an MCP tool error
+                    # inside an HTTP 200 stays distinguishable from success while the response
+                    # body is withheld. Never derived from the response bytes.
+                    mcp_is_error = state.get("mcp_is_error") if isinstance(state.get("mcp_is_error"), bool) else None
+                    # Fixed server-origin failure classification (enum + coarse bucket), set by the
+                    # MCP dispatch path; never derived from the response bytes. Fail closed: a value
+                    # is stored ONLY if it is a member of the fixed enum/bucket set, else dropped to
+                    # None — so no unrestricted or attacker-influenced string can ever be persisted.
+                    raw_category = state.get("mcp_failure_category")
+                    mcp_failure_category = raw_category if raw_category in _MCP_FAILURE_CATEGORIES else None
+                    raw_code = state.get("mcp_error_code")
+                    mcp_error_code = raw_code if raw_code in _MCP_ERROR_CODE_BUCKETS else None
+                    capture_tenant = principal.tenant_id if principal else None
+                    # Scoped, time-bounded gate: only record exchanges the policy
+                    # admits. An unscoped/expired/disabled policy records nothing.
+                    if self.policy.should_capture(tenant_id=capture_tenant, model_id=model_id, now=datetime.now(UTC)):
+                        resolved_principal = principal
+
+                        def build_exchange() -> DebugExchange:
+                            # CPU-bound (credential scan + redaction/hashing); runs in a
+                            # worker thread via offload_capture so it never blocks the loop.
+                            # Fail closed: a request larger than the store cap has an
+                            # uninspected tail that could hold or echo a credential, so both
+                            # bodies are withheld and no body credential learning is needed.
+                            request_truncated = store_limit is not None and request_observed > store_limit
+                            request_head = bytes(request_parts)
+                            known = credential_values(
+                                [*request_headers, *response_headers], query, b"" if request_truncated else request_head
+                            )
+                            # A credential in an unterminated/bounded request scalar is only
+                            # known as a prefix; redact it (and its echoed suffix) in both bodies.
+                            prefixes = () if request_truncated else body_credential_prefixes(request_head)
+                            request_type = next(
+                                (_text(value) for key, value in request_headers if key.lower() == b"content-type"), None
+                            )
+                            response_type = next(
+                                (_text(value) for key, value in response_headers if key.lower() == b"content-type"),
+                                None,
+                            )
+                            # Fail closed: if the request had an uninspected tail beyond the
+                            # buffer, a credential we never saw could be echoed in the
+                            # response, so the response body is withheld rather than stored.
+                            response_body = (
+                                suppressed_body(response_type, response_observed, response_complete)
+                                if request_truncated
+                                else bounded_body_capture(
+                                    bytes(response_parts),
+                                    response_type,
+                                    response_complete,
+                                    known,
+                                    max_bytes=self.max_body_bytes,
+                                    observed_bytes=response_observed,
+                                    credential_prefixes=prefixes,
+                                    is_response=True,
+                                )
+                            )
+                            return DebugExchange(
+                                id=uuid4(),
+                                source="public",
+                                request_id=request_id,
+                                operation_id=_uuid(state.get("operation_id")) or response_operation,
+                                started_at=started_at,
+                                completed_at=finished_at or datetime.now(UTC),
+                                tenant_id=capture_tenant,
+                                principal_id=resolved_principal.principal_id if resolved_principal else None,
+                                token_id=resolved_principal.token_id if resolved_principal else None,
+                                model_id=model_id,
+                                mcp_tool=tool,
+                                endpoint=path,
+                                method=str(scope.get("method", "")),
+                                http_status=status,
+                                error_type=error_type,
+                                mcp_is_error=mcp_is_error,
+                                mcp_failure_category=mcp_failure_category,
+                                mcp_error_code=mcp_error_code,
+                                disconnected=disconnected,
+                                query_string=redact_query(query, known),
+                                request_headers=redact_headers(request_headers, known),
+                                response_headers=redact_response_headers(response_headers),
+                                request_body=bounded_body_capture(
+                                    bytes(request_parts),
+                                    request_type,
+                                    request_complete,
+                                    known,
+                                    max_bytes=self.max_body_bytes,
+                                    observed_bytes=request_observed,
+                                    credential_prefixes=prefixes,
+                                ),
+                                response_body=response_body,
+                            )
+
+                        # Enqueue for OFF-PATH persistence and return immediately — never await
+                        # sanitize/persist here, so the client response is never delayed. A full
+                        # bounded queue drops the capture (overload shed); the worker releases the
+                        # reservation when it accepts one.
+                        reservation.submit(build_exchange)
+                except Exception as error:
+                    LOGGER.warning(
+                        "request debug capture failed request_id=%s error_type=%s", request_id, type(error).__name__
+                    )

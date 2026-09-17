@@ -420,10 +420,11 @@ Alertmanager enablement, retained storage, and retention are tfvars settings;
 authenticated Grafana remains the only public observability application and
 Tempo launches through a datasource-selected Grafana Explore link.
 
-Optional preproduction customer request/response capture and the authorized
-Apps/Runs debug viewer are described in
-[Request debug logging](docs/request-debug-logging.md), including capture limits,
-encrypted storage and the absence of automatic retention/deletion.
+Optional, default-off preproduction customer request capture (request body redacted; response
+body withheld) and the authorized Apps/Runs debug viewer are described in
+[Request debug logging](docs/request-debug-logging.md), including capture limits, encrypted
+storage and the 90-day record-retention TTL enforced by the platform's central maintenance
+purge (this facility deletes nothing itself).
 
 ### Scientific result artifact store
 

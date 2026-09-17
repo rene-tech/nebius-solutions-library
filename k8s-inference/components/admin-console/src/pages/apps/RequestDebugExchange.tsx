@@ -102,13 +102,14 @@ export function DebugBodyView({
       {body.truncated ? (
         <p className="inline-notice">
           The body was withheld and not stored — a response body is never stored, and a
-          request body is withheld when it exceeds the stored-size cap — even though{" "}
+          request body is withheld when it exceeds the stored-size cap or is wire-incomplete
+          (whole-or-withhold, never a partial prefix) — even though{" "}
           {body.observed_bytes.toLocaleString()} bytes were observed.
         </p>
       ) : null}
-      {!body.complete ? (
+      {!body.complete && !body.truncated ? (
         <p className="inline-notice">
-          Only observed bytes are shown; this is not a complete body.
+          The body did not complete on the wire; only the observed byte count is recorded.
         </p>
       ) : null}
       {body.redacted ? (

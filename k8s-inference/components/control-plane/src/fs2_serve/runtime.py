@@ -331,44 +331,47 @@ class RuntimeClient:
         # Pre-allocation admission: win a NON-BLOCKING reservation BEFORE constructing the capture,
         # which copies the request body and retains response chunks. If no slot is free, bypass
         # capture and allocate nothing, so concurrent upstream captures cannot pin unbounded memory
-        # ahead of the enqueue/drop decision. The worker releases the slot after it persists; the
-        # defensive enqueue-drop below releases it here.
-        if self._persist_queue is None or not self._persist_queue.try_reserve():
+        # ahead of the enqueue/drop decision.
+        reservation = self._persist_queue.reserve() if self._persist_queue is not None else None
+        if reservation is None:
             async with stream as response:
                 yield response
             return
-        capture = _UpstreamCapture(
-            operation,
-            endpoint,
-            request_body,
-            headers,
-            self.max_response_bytes,
-            upstream_attempt,
-            self.debug_max_body_bytes,
-        )
-        try:
-            async with stream as response:
-                capture.response(response)
-                response.extensions[_DEBUG_CAPTURE_EXTENSION] = capture
-                # Capture never DRAINS an otherwise-unread upstream body: the normal reader
-                # observes a successful body as the customer reads it, and an unread error body
-                # is left untouched (the response body is withheld from storage regardless), so
-                # a slow/large error never adds customer latency. Only observed bytes are kept.
-                try:
-                    yield response
-                except BaseException as error:
-                    capture.failed(error)
-                    raise
-        except BaseException as error:
-            capture.failed(error)
-            raise
-        finally:
-            # Persist OFF the customer critical path: enqueue on the bounded queue and return
-            # immediately — never await sanitize/persist here. The worker releases the reservation
-            # after it persists; on the defensive enqueue-drop (overload shed), release it here so
-            # the admission bound cannot leak downward.
-            if self._persist_queue is not None and not self._persist_queue.submit(capture.exchange):
-                self._persist_queue.release()
+        # Enter the reservation context IMMEDIATELY (before constructing the capture) so the slot is
+        # released on EVERY exit path — construction error, cancellation, or a submit failure — with
+        # no leak window; the worker takes ownership of the slot only once submit commits.
+        with reservation:
+            capture = _UpstreamCapture(
+                operation,
+                endpoint,
+                request_body,
+                headers,
+                self.max_response_bytes,
+                upstream_attempt,
+                self.debug_max_body_bytes,
+            )
+            try:
+                async with stream as response:
+                    capture.response(response)
+                    response.extensions[_DEBUG_CAPTURE_EXTENSION] = capture
+                    # Capture never DRAINS an otherwise-unread upstream body: the normal reader
+                    # observes a successful body as the customer reads it, and an unread error body
+                    # is left untouched (the response body is withheld from storage regardless), so
+                    # a slow/large error never adds customer latency. Only observed bytes are kept.
+                    try:
+                        yield response
+                    except BaseException as error:
+                        capture.failed(error)
+                        raise
+            except BaseException as error:
+                capture.failed(error)
+                raise
+            finally:
+                # Persist OFF the customer critical path: enqueue on the bounded queue and return
+                # immediately — never await sanitize/persist here. On success the worker releases the
+                # reservation after it persists; a defensive enqueue-drop leaves the slot with the
+                # reservation, which releases it on context exit. submit()/release() never await.
+                reservation.submit(capture.exchange)
 
     async def close(self) -> None:
         # Drain + stop the bounded capture-persist queue on shutdown (best-effort), so a queued

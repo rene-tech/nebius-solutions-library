@@ -1440,24 +1440,32 @@ async def test_persist_queue_is_bounded_nonblocking_and_drops_on_overload():
 
 async def test_persist_queue_reserves_before_buffering_and_bounds_inflight():
     """SAI-01: total in-flight capture memory is bounded by a NON-BLOCKING reservation taken
-    BEFORE any buffer is allocated — not just by enqueued-item count. try_reserve() admits up to
-    the bound then sheds the next reservation (counted, non-blocking); a bypassed/failed
-    reservation is freed by release(), and a submitted capture's slot is freed by the worker after
-    it persists (so the bound recovers without an explicit release)."""
+    BEFORE any buffer is allocated — not just by enqueued-item count. reserve() hands out a
+    context-managed slot up to the bound then sheds (returns None, counted); EXITING the context
+    releases the slot unless submit committed it to the worker, and the worker frees a committed
+    slot after it persists — so the bound is leak-proof against exceptions/cancellation/submit
+    failure and recovers on its own."""
     from fs2_serve.request_debug import DebugPersistQueue
 
     store = InMemoryDebugStore()
     queue = DebugPersistQueue(store, maxsize=8, max_inflight=2)
     # Admit up to the in-flight bound, then shed the next reservation (bypass; count the drop).
-    assert queue.try_reserve() and queue.try_reserve()
-    assert not queue.try_reserve() and queue.dropped == 1
-    # A reserved capture that is NOT submitted (bypassed/failed) frees its slot via release().
-    queue.release()
-    assert queue.try_reserve()  # slot reclaimed immediately
-    # A reserved capture that IS submitted has its slot freed by the worker after persistence.
-    queue.submit(lambda: row(id=uuid4()))
+    r1, r2 = queue.reserve(), queue.reserve()
+    assert r1 is not None and r2 is not None
+    assert queue.reserve() is None and queue.dropped == 1
+    # Exiting a reservation context WITHOUT submitting releases the slot (e.g. an exception path).
+    with r1:
+        pass
+    r3 = queue.reserve()
+    assert r3 is not None  # slot reclaimed on context exit
+    # A committed reservation's slot is freed by the worker after it persists (drain waits for it).
+    with r3:
+        assert r3.submit(lambda: row(id=uuid4())) is True
     await queue.drain()
     assert len(store.exchanges) == 1
-    queue.release()  # free the one still-held (never-submitted) reservation
-    assert queue.try_reserve() and queue.try_reserve()  # both slots free again
+    # r2 still holds its slot; exiting its context releases it, so both slots are free again.
+    with r2:
+        pass
+    a, b = queue.reserve(), queue.reserve()
+    assert a is not None and b is not None
     await queue.aclose()

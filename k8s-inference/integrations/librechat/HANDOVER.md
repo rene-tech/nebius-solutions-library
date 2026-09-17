@@ -217,11 +217,15 @@ failure, collect UTC time, endpoint/server name, App/model ID, public user/key
 ID (never the secret), LibreChat conversation/request correlation, idempotency
 key, operation ID, submitted schema version, terminal state and returned error.
 
-Operators can inspect complete captured requests/responses and upstream attempts
-through Admin → Apps → Runs/request logs on the retained platform. The capture
-is access-controlled, redacts credentials and may mark unread/disconnected
-request bodies partial. It has no automatic retention/deletion job today; do
-not promise a duration. Earlier requests from before capture cannot be rebuilt.
+Operators can inspect the captured request metadata and the redacted request body (the
+response/upstream body is never stored — it is withheld) plus a fixed failure signal for
+upstream attempts, through Admin → Apps → Runs/request logs when capture is enabled (it is
+opt-in and default-off, tenant-scoped and time-bounded). The capture is access-controlled and
+redacts credentials; a request body that is over the cap or wire-incomplete is withheld
+entirely (whole-or-withhold), never stored as a partial prefix. Captured records have a 90-day
+retention TTL and are deleted by the platform's central maintenance purge (not by this
+facility); within 90 days they are preserved. Earlier requests from before capture cannot be
+rebuilt.
 
 ## Primary references
 

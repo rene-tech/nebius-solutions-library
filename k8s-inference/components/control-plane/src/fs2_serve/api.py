@@ -866,16 +866,15 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         return _error(404, "scientific_batch_not_found", "scientific batch was not found")
 
     @app.exception_handler(ScientificProfileError)
-    async def scientific_profile_error(request: Request, error: ScientificProfileError) -> JSONResponse:
-        # Log fixed, non-sensitive fields only: method, path, and the exception's own FIXED
-        # category message (every ScientificProfileError is raised with a fixed developer string).
-        # NEVER exc_info: a traceback and the `raise ... from` chain can carry customer/schema
-        # detail from the underlying cause — same fail-closed logging discipline as the MCP path.
+    async def scientific_profile_error(request: Request, __: ScientificProfileError) -> JSONResponse:
+        # Fail-closed logging: fixed, non-sensitive fields ONLY (method + path). The error object
+        # itself is never logged — no exc_info (a traceback and the `raise ... from` chain can carry
+        # customer/schema detail) and not even str(error), matching the MCP dispatch-failure path.
+        # The fixed message + the 503 code below carry the actionable classification.
         SCIENTIFIC_LOGGER.warning(
-            "scientific profile unavailable method=%s path=%s reason=%s",
+            "scientific profile unavailable method=%s path=%s",
             request.method,
             request.url.path,
-            error,
         )
         return _error(503, "scientific_profile_unavailable", "scientific workload profile is unavailable")
 
