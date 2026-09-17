@@ -14,6 +14,12 @@ module "reference_data" {
   object_bucket_name            = try(var.reference_data.storage_contract.object_storage.name, "disabled-reference-data.invalid")
   credential_generation         = var.reference_data.credential_generation
   credential_generation_history = var.reference_data.credential_generation_history
+  credential_migration_gate_managed_by_parent = true
+  credential_migration_gate_receipt_path       = var.credential_migration_gate_receipt_path
+  credential_migration_gate_source_commit      = var.credential_migration_gate_source_commit
+  credential_migration_gate_receipt_sha256     = var.credential_migration_gate_receipt_sha256
+  credential_migration_gate_history            = var.credential_migration_gate_history
+  credential_migration_phase                   = var.credential_migration_phase
   object_storage_access = coalesce(var.reference_data.object_storage_access, {
     active_generation = 1
     generations = {
@@ -50,6 +56,8 @@ module "reference_data" {
   service_monitor_enabled = var.reference_data.status.service_monitor_enabled
   pipeline                = var.reference_data.pipeline
   preprocess              = var.reference_data.preprocess
+
+  depends_on = [terraform_data.credential_migration_gate]
 }
 
 resource "terraform_data" "reference_data_contract" {

@@ -611,10 +611,16 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             gate = (root / "credential_migration_gate.tf").read_text(encoding="utf-8")
             self.assertIn('data "external" "credential_migration_gate"', gate)
             self.assertIn("secret_migration_guard.py", gate)
-            self.assertIn(
-                "for_each = setunion(var.credential_migration_gate_history, toset([var.credential_migration_gate_receipt_sha256]))",
-                gate,
-            )
+            if root == ROOT / "reference-data/terraform":
+                self.assertIn(
+                    "for_each = var.credential_migration_gate_managed_by_parent ? toset([]) : setunion(var.credential_migration_gate_history, toset([var.credential_migration_gate_receipt_sha256]))",
+                    gate,
+                )
+            else:
+                self.assertIn(
+                    "for_each = setunion(var.credential_migration_gate_history, toset([var.credential_migration_gate_receipt_sha256]))",
+                    gate,
+                )
             self.assertIn("prevent_destroy = true", gate)
             self.assertIn("apply-saved-plan-gate", gate)
 

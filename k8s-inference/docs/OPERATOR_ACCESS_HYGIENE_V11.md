@@ -110,6 +110,27 @@ gate history. Retaining every historical generation remains mandatory, while
 each apply must add one new receipt generation whose creation provisioner runs
 the native check. Reusing an old generation cannot suppress local-exec.
 
+### Embedded reference-data ownership
+
+The customer reference-data plane is part of the workloads Terraform state,
+not a second state root. When `module.reference_data` is enabled, workloads is
+the sole native gate owner: the module receives the exact receipt path, source
+commit, receipt hash, complete gate history and migration phase from workloads,
+and the entire module depends on the workloads gate token. The child retains
+its stable, protected dependency token for its credential resources, but its
+duplicate external/native gate and apply generation are disabled. It therefore
+cannot demand a `reference-data` ancestor while Terraform is applying the
+workloads saved plan, and it cannot advance before the actual workloads gate.
+
+The reusable reference-data Terraform directory keeps a self-gated standalone
+mode only for an invocation whose exact resolved directory is registered as
+the separate `reference-data` root. Nested use never infers standalone
+authority from `path.module`; its effective root is `path.root`. Parent-owned
+mode requires `path.root != path.module`, while standalone mode requires exact
+equality, so a standalone caller cannot disable the native gate by setting the
+parent-mode input. The normal three-stage stack does not plan or apply a
+separate reference-data state.
+
 Preflight validation retains the original canonical path solely to match the
 write-once receipt. Runtime validation compares the sealed snapshot's path
 binding, byte size and SHA-256 with that receipt rather than incorrectly
