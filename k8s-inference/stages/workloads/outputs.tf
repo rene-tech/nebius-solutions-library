@@ -472,7 +472,30 @@ output "managed_resource_count" {
       + (var.reference_data.status.enabled ? 3 : 0)
       + (var.reference_data.status.enabled && var.reference_data.status.service_monitor_enabled ? 1 : 0)
     ) : 0)
+    # SAI-20 v3 owns one signed-authority gate, three fail-closed admission
+    # policy/binding pairs, and one exact Role/RoleBinding pair per signed
+    # principal/resource/name grant.
+    + 7
+    + (2 * length(local.sai20_authority_v3_release_grants))
   )
+}
+
+output "sai20_database_authority" {
+  description = "Non-secret exact identity of the signed SAI-20 activation authority consumed by this workloads plan."
+  value = {
+    schema                        = "fs2-serve.nebius.ai/sai20-database-authority/v3"
+    handoff_sha256                = terraform_data.sai20_database_authority_v3.output.handoff_sha256
+    payload_sha256                = terraform_data.sai20_database_authority_v3.output.payload_sha256
+    source_commit                 = terraform_data.sai20_database_authority_v3.output.source_commit
+    source_tree                   = terraform_data.sai20_database_authority_v3.output.source_tree
+    independent_review_receipt    = terraform_data.sai20_database_authority_v3.output.review_receipt_sha256
+    cluster_context_sha256        = terraform_data.sai20_database_authority_v3.output.cluster_context_sha256
+    api_server_sha256             = terraform_data.sai20_database_authority_v3.output.api_server_sha256
+    policy_set_custody            = kubernetes_manifest.sai20_database_policy_set_custody_v3.manifest.metadata.name
+    workload_custody              = kubernetes_manifest.sai20_database_workload_custody_v3.manifest.metadata.name
+    authority_object_custody      = kubernetes_manifest.sai20_database_authority_object_custody_v3.manifest.metadata.name
+    authorized_writer_role_count  = length(local.sai20_authority_v3_release_grants)
+  }
 }
 
 output "sensitive_state_notice" {

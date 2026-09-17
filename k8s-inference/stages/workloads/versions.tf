@@ -4,6 +4,12 @@ terraform {
   backend "local" {}
 
   required_providers {
+    # SAI-20 verifies the independently signed, Git-bound database-network
+    # authority handoff before Terraform can construct any protected object.
+    external = {
+      source  = "hashicorp/external"
+      version = "~> 2.3"
+    }
     helm = {
       source  = "hashicorp/helm"
       version = "= 3.2.0"

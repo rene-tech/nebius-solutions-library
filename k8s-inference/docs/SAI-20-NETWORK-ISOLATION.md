@@ -116,3 +116,77 @@ been accepted. Under the coordinator boundary no test, render, validation,
 plan, deployment, live inspection or negative connection probe was executed.
 Integration and live status remain **NO-GO** until a distinct reviewer accepts
 the exact successor and supplies the custody handoff.
+
+## Independent-review correction after `850c1aeb`
+
+Independent review also rejected commit
+`850c1aeb134196b36250b5e8bd20cf7c1aa1c0aa` / tree
+`3dc9f5ad9644540081a6c026328d84b1344240b0`. It remains negative evidence:
+the v2 handoff was format-only, the admission policy protected future requests
+without proving pre-existing objects, its object custody covered only the
+canonical NetworkPolicy name, the writer RoleBinding granted an entire group
+broad workload mutation, and the retained SAI-08 v2 database client was not an
+ingress peer. Source, integration and live status for that commit are NO-GO.
+
+The additive v3 successor makes activation depend on a detached Ed25519-signed
+authority packet. `sai20_database_authority.py` validates the security-owner
+public-key fingerprint, signature, a maximum one-hour validity window and a
+maximum thirty-minute inventory age. The signed source must equal the clean
+checkout HEAD and tree, bind every SAI-20 source blob, and bind the exact
+SAI-08 `6eb13e34` tree and its protected-lane Terraform and reconciler blobs.
+The rejected SAI-03, first SAI-20 and v2 SAI-20 commits are explicitly
+inadmissible.
+
+The packet is authoritative only when all of these closures are present:
+
+- a complete, non-paginated `fs2-data` NetworkPolicy list with UID,
+  resourceVersion, spec/selector digests and an explicit database-selector
+  disposition for every item;
+- complete, non-paginated Pod, ReplicationController, Deployment, StatefulSet,
+  DaemonSet, ReplicaSet, Job and CronJob lists in both `fs2-system` and
+  `fs2-observability`, with every pre-existing database peer approved;
+- an explicit present-or-retired disposition for `storage-reconciler`,
+  `storage-reconciler-v2` and `storage-reconciler-v3`;
+- complete namespace Role/RoleBinding and cluster Role/RoleBinding lists,
+  exact User or ServiceAccount principals, an empty membership result for the
+  legacy broad group, a digest of effective permissions, and zero unaccounted
+  impersonation-capable principals.
+
+The verifier fails if a pre-activation inventory contains any policy selecting
+the control database. In steady state it permits exactly one such policy: the
+canonical name with the exact signed spec digest. A fail-closed admission
+policy then owns the complete `fs2-data` NetworkPolicy set, denies deletes,
+requires the exact signed custodian and rejects unlisted policy names. This is
+necessary because Kubernetes combines ingress allows from all selecting
+NetworkPolicies.
+
+The verifier recomputes each policy selector against every inventoried
+`fs2-control-db` Pod rather than trusting a claimed overlap boolean. Every
+noncanonical policy must also carry an explicit selector contradiction for
+`cnpg.io/cluster=fs2-control-db`; admission enforces that invariant on future
+creates and updates, so adding unrelated labels to a database Pod cannot make
+a stale policy overlap later.
+
+The v3 workload policy has no object selector. It applies to every direct Pod
+and supported controller in both namespaces, including top-level controllers
+whose own labels appear innocuous. A mutation must match an exact signed
+principal, resource, operation and object name, or be an owned child created
+by an exact controller identity. The old group grant is additionally gated on
+the signed proof that the group has no members. New task-owned Roles bind only
+exact Users or ServiceAccounts, exact existing object names and
+`get`/`update`/`patch`; they grant no Pod, create, delete, bind, escalate or
+impersonate permission.
+
+The ingress policy now has distinct generation-bound peers for the retained
+SAI-08 v2 and v3 reconcilers. Legacy, v2 and v3 remain subject to the signed
+inventory, so a generation can disappear only through a later conclusive
+retirement receipt; this source change does not delete or strand a database
+client.
+
+This is still a source-only candidate. The authority packet, public key and
+inventory are deliberately not fabricated or committed here. The coordinator
+boundary prohibited tests, parsing/formatting tools, plans, builds, cluster or
+credential inspection, deployment and live connection probes. The newly
+authored regression module was not executed. A separate security owner and
+integration worker must collect and sign the authoritative inventories, and a
+distinct reviewer must accept the exact successor before any plan or rollout.

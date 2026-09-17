@@ -144,6 +144,15 @@ resource "terraform_data" "sai20_database_network_custody" {
       )
       error_message = "SAI-20 database isolation is blocked until independent review accepts exact Pod, controller-template, RBAC, impersonation and policy-custody coverage."
     }
+    precondition {
+      condition = try(
+        terraform_data.sai20_database_authority_v3.output.verified == "true" &&
+        terraform_data.sai20_database_authority_v3.output.source_commit == var.sai20_database_network_custody.admission_source_commit &&
+        terraform_data.sai20_database_authority_v3.output.source_tree == var.sai20_database_network_custody.admission_source_tree,
+        false,
+      )
+      error_message = "The format-only v2 custody input must match the independently signed and Git-verified v3 authority packet."
+    }
   }
 }
 
@@ -159,6 +168,10 @@ resource "kubernetes_role_v1" "sai20_database_client_workload_writer" {
     labels = merge(local.common_labels, {
       "security.fs2.nebius.ai/database-network-custody" = "sai20-v2"
     })
+    annotations = {
+      "security.fs2.nebius.ai/authority-handoff-sha256" = terraform_data.sai20_database_authority_v3.output.handoff_sha256
+      "security.fs2.nebius.ai/superseded-by"            = kubernetes_manifest.sai20_database_authority_object_custody_binding_v3.manifest.metadata.name
+    }
   }
 
   rule {
@@ -189,6 +202,11 @@ resource "kubernetes_role_binding_v1" "sai20_database_client_workload_writer" {
     labels = merge(local.common_labels, {
       "security.fs2.nebius.ai/database-network-custody" = "sai20-v2"
     })
+    annotations = {
+      "security.fs2.nebius.ai/authority-handoff-sha256" = terraform_data.sai20_database_authority_v3.output.handoff_sha256
+      "security.fs2.nebius.ai/legacy-group-status"      = "signed-empty-in-v3-authority"
+      "security.fs2.nebius.ai/superseded-by"            = kubernetes_manifest.sai20_database_authority_object_custody_binding_v3.manifest.metadata.name
+    }
   }
 
   subject {
@@ -223,6 +241,8 @@ resource "kubernetes_manifest" "sai20_database_client_workload_custody" {
         "security.fs2.nebius.ai/independent-review-receipt"  = var.sai20_database_network_custody.independent_review_receipt_sha256
         "security.fs2.nebius.ai/rbac-census-receipt"         = var.sai20_database_network_custody.rbac_census_receipt_sha256
         "security.fs2.nebius.ai/impersonation-guard-receipt" = var.sai20_database_network_custody.impersonation_guard_receipt_sha256
+        "security.fs2.nebius.ai/authority-handoff-sha256"    = terraform_data.sai20_database_authority_v3.output.handoff_sha256
+        "security.fs2.nebius.ai/superseded-by"               = kubernetes_manifest.sai20_database_workload_custody_binding_v3.manifest.metadata.name
       }
     }
     spec = {
@@ -330,6 +350,10 @@ resource "kubernetes_manifest" "sai20_database_client_workload_custody_binding" 
       labels = merge(local.common_labels, {
         "security.fs2.nebius.ai/database-network-custody" = "sai20-v2"
       })
+      annotations = {
+        "security.fs2.nebius.ai/authority-handoff-sha256" = terraform_data.sai20_database_authority_v3.output.handoff_sha256
+        "security.fs2.nebius.ai/superseded-by"            = kubernetes_manifest.sai20_database_workload_custody_binding_v3.manifest.metadata.name
+      }
     }
     spec = {
       policyName        = kubernetes_manifest.sai20_database_client_workload_custody.manifest.metadata.name
@@ -362,6 +386,8 @@ resource "kubernetes_manifest" "sai20_database_object_custody" {
       })
       annotations = {
         "security.fs2.nebius.ai/independent-review-receipt" = var.sai20_database_network_custody.independent_review_receipt_sha256
+        "security.fs2.nebius.ai/authority-handoff-sha256"   = terraform_data.sai20_database_authority_v3.output.handoff_sha256
+        "security.fs2.nebius.ai/superseded-by"              = kubernetes_manifest.sai20_database_authority_object_custody_binding_v3.manifest.metadata.name
       }
     }
     spec = {
@@ -439,6 +465,10 @@ resource "kubernetes_manifest" "sai20_database_object_custody_binding" {
       labels = merge(local.common_labels, {
         "security.fs2.nebius.ai/database-network-custody" = "sai20-v2"
       })
+      annotations = {
+        "security.fs2.nebius.ai/authority-handoff-sha256" = terraform_data.sai20_database_authority_v3.output.handoff_sha256
+        "security.fs2.nebius.ai/superseded-by"            = kubernetes_manifest.sai20_database_authority_object_custody_binding_v3.manifest.metadata.name
+      }
     }
     spec = {
       policyName        = kubernetes_manifest.sai20_database_object_custody.manifest.metadata.name

@@ -34,6 +34,12 @@ locals {
   # out of the legacy component list above so that the two generation labels
   # cannot be bypassed by matching only the component name.
   sai20_storage_reconciler_v3_component = "storage-reconciler-v3"
+
+  # SAI-08 exact successor 6eb13e345c8b17420d1217a70d83e4974497b2b0
+  # deliberately retains the immediately preceding protected lane. Keep that
+  # live rollback generation reachable until an independently signed inventory
+  # records its conclusive retirement.
+  sai20_storage_reconciler_v2_component = "storage-reconciler-v2"
 }
 
 resource "kubernetes_network_policy_v1" "control_database_ingress" {
@@ -45,6 +51,10 @@ resource "kubernetes_network_policy_v1" "control_database_ingress" {
       "security.fs2.nebius.ai/database-network-custody" = "sai20-v2"
       "security.fs2.nebius.ai/custody-binding"          = kubernetes_manifest.sai20_database_object_custody_binding.manifest.metadata.name
       "security.fs2.nebius.ai/review-receipt-sha256"    = terraform_data.sai20_database_network_custody.output.independent_review_receipt_sha256
+      "security.fs2.nebius.ai/authority-handoff-sha256" = terraform_data.sai20_database_authority_v3.output.handoff_sha256
+      "security.fs2.nebius.ai/policy-set-custody"       = kubernetes_manifest.sai20_database_policy_set_custody_v3.manifest.metadata.name
+      "security.fs2.nebius.ai/policy-set-binding"       = kubernetes_manifest.sai20_database_policy_set_custody_binding_v3.manifest.metadata.name
+      "security.fs2.nebius.ai/workload-custody"         = kubernetes_manifest.sai20_database_workload_custody_binding_v3.manifest.metadata.name
     }
   }
 
@@ -76,6 +86,34 @@ resource "kubernetes_network_policy_v1" "control_database_ingress" {
             key      = "app.kubernetes.io/component"
             operator = "In"
             values   = local.sai20_database_client_components
+          }
+        }
+      }
+      ports {
+        port     = "5432"
+        protocol = "TCP"
+      }
+    }
+
+    # The SAI-08 v2 release is retained as a rollback-safe database client.
+    # Its content-derived egress-generation label is mandatory; omitting this
+    # peer would strand a preserved client while its egress still permits 5432.
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = "fs2-system"
+          }
+        }
+        pod_selector {
+          match_labels = {
+            "app.kubernetes.io/instance"  = "fs2-serve-control-plane"
+            "app.kubernetes.io/name"      = "fs2-serve-control-plane"
+            "app.kubernetes.io/component" = local.sai20_storage_reconciler_v2_component
+          }
+          match_expressions {
+            key      = "fs2.nebius.ai/storage-egress-generation"
+            operator = "Exists"
           }
         }
       }
