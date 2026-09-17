@@ -179,6 +179,17 @@ class ScaleHandoffReceipt(StrictModel):
     model_uid: str = Field(alias="modelUID", min_length=1, max_length=253)
     model_generation: int = Field(alias="modelGeneration", ge=1)
     scaler: ScaleHandoffScaler
+    predecessor_evidence_digest: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceDigest",
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
+    predecessor_evidence_uid: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceUID",
+        min_length=1,
+        max_length=253,
+    )
 
     def annotation_value(self) -> str:
         return self.model_dump_json(by_alias=True)
@@ -196,6 +207,17 @@ class ScaleInitializationReceipt(StrictModel):
     model_spec_digest: str = Field(alias="modelSpecDigest", pattern=r"^sha256:[0-9a-f]{64}$")
     desired_replicas: int = Field(alias="desiredReplicas", ge=0, le=2_147_483_647)
     target_mode: Literal["fixed", "autoscaled"] = Field(alias="targetMode")
+    predecessor_evidence_digest: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceDigest",
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
+    predecessor_evidence_uid: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceUID",
+        min_length=1,
+        max_length=253,
+    )
 
     def annotation_value(self) -> str:
         return self.model_dump_json(by_alias=True)
@@ -323,6 +345,12 @@ class ScaleGateReleaseAuthorization(StrictModel):
         alias="predecessorEvidenceDigest",
         pattern=r"^sha256:[0-9a-f]{64}$",
     )
+    predecessor_evidence_uid: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceUID",
+        min_length=1,
+        max_length=253,
+    )
     # Decode the brief rejected v3 lineage so it can be migrated in place.
     # New records never embed this potentially large object; they retain its
     # canonical bytes in a separately keyed, content-addressed gate entry.
@@ -352,6 +380,17 @@ class ScaleGateTombstone(StrictModel):
     version: Literal[1]
     deployment_uid: str = Field(alias="deploymentUID", min_length=1, max_length=253)
     model_uid: str = Field(alias="modelUID", min_length=1, max_length=253)
+    predecessor_evidence_digest: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceDigest",
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
+    predecessor_evidence_uid: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceUID",
+        min_length=1,
+        max_length=253,
+    )
 
     def annotation_value(self) -> str:
         return self.model_dump_json(by_alias=True)
@@ -381,6 +420,15 @@ class ScaleGateAllowance(StrictModel):
 
     def value(self) -> str:
         return self.model_dump_json(by_alias=True)
+
+
+@dataclass(frozen=True)
+class ScaleGatePredecessorEvidenceSnapshot:
+    """One validated immutable evidence object and its API-server identity."""
+
+    authorization: ScaleGateReleaseAuthorizationV2
+    uid: str
+    resource_version: str
 
 
 class ControllerError(RuntimeError):
@@ -1085,6 +1133,20 @@ def _scale_gate_predecessor_evidence_config_map_name(
     )
 
 
+def _is_scale_gate_predecessor_evidence_identity(
+    api_version: str,
+    kind: str,
+    name: str,
+) -> bool:
+    """Identify evidence objects independently of mutable labels or owners."""
+
+    return (
+        api_version == "v1"
+        and kind == "ConfigMap"
+        and name.startswith(SCALE_GATE_PREDECESSOR_EVIDENCE_CONFIG_MAP_PREFIX)
+    )
+
+
 def _scale_gate_predecessor_evidence_config_map(
     target: ScaleGateTargetIdentity,
     authorization: ScaleGateReleaseAuthorizationV2,
@@ -1172,17 +1234,47 @@ def _scale_gate_predecessor_evidence_from_config_map(
 ) -> ScaleGateReleaseAuthorizationV2:
     """Strictly validate an immutable shard and return its canonical evidence."""
 
+    return _scale_gate_predecessor_evidence_snapshot_from_config_map(
+        body,
+        target=target,
+        digest=digest,
+    ).authorization
+
+
+def _scale_gate_predecessor_evidence_snapshot_from_config_map(
+    body: Mapping[str, Any],
+    *,
+    target: ScaleGateTargetIdentity,
+    digest: str,
+    expected_uid: str | None = None,
+) -> ScaleGatePredecessorEvidenceSnapshot:
+    """Validate evidence bytes and its immutable API-server object identity."""
+
     expected_name = _scale_gate_predecessor_evidence_config_map_name(target, digest)
     metadata = _metadata(body)
     data = body.get("data")
+    uid = metadata.get("uid")
+    resource_version = metadata.get("resourceVersion")
     if (
         body.get("apiVersion") != "v1"
         or body.get("kind") != "ConfigMap"
         or metadata.get("namespace") != target.namespace
         or metadata.get("name") != expected_name
-        or not isinstance(metadata.get("uid"), str)
-        or not isinstance(metadata.get("resourceVersion"), str)
+        or not isinstance(uid, str)
+        or not uid
+        or len(uid) > 253
+        or not isinstance(resource_version, str)
+        or not resource_version
+        or len(resource_version) > 128
+        or expected_uid is not None
+        and uid != expected_uid
         or metadata.get("deletionTimestamp") is not None
+        or metadata.get("deletionGracePeriodSeconds") is not None
+        or metadata.get("ownerReferences") is not None
+        or metadata.get("finalizers") is not None
+        or metadata.get("labels") is not None
+        or metadata.get("annotations") is not None
+        or metadata.get("generateName") not in (None, "")
         or body.get("immutable") is not True
         or body.get("binaryData") not in (None, {})
         or not isinstance(data, Mapping)
@@ -1206,7 +1298,11 @@ def _scale_gate_predecessor_evidence_from_config_map(
         or _scale_gate_predecessor_evidence_digest(evidence) != digest
     ):
         raise KubernetesConflictError("protocol-v2 predecessor evidence shard changed")
-    return evidence
+    return ScaleGatePredecessorEvidenceSnapshot(
+        authorization=evidence,
+        uid=uid,
+        resource_version=resource_version,
+    )
 
 
 def _scale_gate_predecessor_evidence_entry(
@@ -1262,21 +1358,110 @@ def _scale_gate_predecessor_evidence(
 
 def _normalized_scale_gate_predecessor_reference(
     authorization: ScaleGateReleaseAuthorization,
-    evidence: ScaleGateReleaseAuthorizationV2 | None,
+    evidence: ScaleGatePredecessorEvidenceSnapshot | None,
 ) -> ScaleGateReleaseAuthorization:
     """Replace a legacy inline predecessor with its bounded digest reference."""
 
     if evidence is None:
         return authorization
-    digest = _scale_gate_predecessor_evidence_digest(evidence)
+    digest = _scale_gate_predecessor_evidence_digest(evidence.authorization)
     if authorization.predecessor_evidence_digest not in (None, digest):
         raise KubernetesConflictError("protocol-v2 predecessor evidence reference changed")
+    if authorization.predecessor_evidence_uid not in (None, evidence.uid):
+        raise KubernetesConflictError("protocol-v2 predecessor evidence UID changed")
     return authorization.model_copy(
         update={
             "predecessor_evidence_digest": digest,
+            "predecessor_evidence_uid": evidence.uid,
             "predecessor_authorization": None,
         }
     )
+
+
+def _scale_gate_evidence_reference(
+    record: ScaleGateReleaseAuthorization | ScaleAuthorizationReceipt | ScaleGateTombstone,
+    *,
+    allow_missing_uid: bool = False,
+) -> tuple[str, str | None] | None:
+    """Return a complete content/object identity pair or fail closed."""
+
+    digest = record.predecessor_evidence_digest
+    uid = record.predecessor_evidence_uid
+    if digest is None and uid is None:
+        return None
+    if digest is None or uid is None and not allow_missing_uid:
+        raise KubernetesConflictError("protocol-v2 predecessor evidence reference is incomplete")
+    return digest, uid
+
+
+def _scale_gate_successor_with_evidence(
+    record: ScaleGateReleaseAuthorization | ScaleAuthorizationReceipt | ScaleGateTombstone,
+    evidence: ScaleGatePredecessorEvidenceSnapshot | None,
+) -> ScaleGateReleaseAuthorization | ScaleAuthorizationReceipt | ScaleGateTombstone:
+    """Carry an immutable predecessor pointer through every successor kind."""
+
+    if evidence is None:
+        if _scale_gate_evidence_reference(record) is not None:
+            raise KubernetesConflictError("successor evidence reference cannot be resolved")
+        return record
+    digest = _scale_gate_predecessor_evidence_digest(evidence.authorization)
+    reference = _scale_gate_evidence_reference(
+        record,
+        allow_missing_uid=isinstance(record, ScaleGateReleaseAuthorization),
+    )
+    if reference is not None and (
+        reference[0] != digest
+        or reference[1] not in (None, evidence.uid)
+    ):
+        raise KubernetesConflictError("successor evidence reference changed")
+    if (
+        record.deployment_uid != evidence.authorization.deployment_uid
+        or record.model_uid != evidence.authorization.model_uid
+        or isinstance(record, (ScaleHandoffReceipt, ScaleInitializationReceipt))
+        and record.model_generation < evidence.authorization.model_generation
+        or isinstance(record, ScaleHandoffReceipt)
+        and (
+            record.scaler.api_version != evidence.authorization.scaler_api_version
+            or record.scaler.kind != evidence.authorization.scaler_kind
+            or record.scaler.namespace != evidence.authorization.scaler_namespace
+            or record.scaler.name != evidence.authorization.scaler_name
+        )
+    ):
+        raise KubernetesConflictError("successor evidence lineage changed")
+    updated = record.model_copy(
+        update={
+            "predecessor_evidence_digest": digest,
+            "predecessor_evidence_uid": evidence.uid,
+            **(
+                {"predecessor_authorization": None}
+                if isinstance(record, ScaleGateReleaseAuthorization)
+                else {}
+            ),
+        }
+    )
+    if isinstance(updated, ScaleGateReleaseAuthorization):
+        _scale_gate_predecessor_lineage(updated, evidence.authorization)
+    return updated
+
+
+def _scale_gate_receipt_matches(
+    retained: ScaleGateAuthorization | ScaleGateTombstone | None,
+    receipt: ScaleAuthorizationReceipt,
+) -> bool:
+    """Compare receipt semantics while permitting a gate-only lineage pointer."""
+
+    if type(retained) is not type(receipt):
+        return False
+    assert isinstance(retained, (ScaleHandoffReceipt, ScaleInitializationReceipt))
+    receipt_reference = _scale_gate_evidence_reference(receipt)
+    retained_reference = _scale_gate_evidence_reference(retained)
+    if receipt_reference is not None and receipt_reference != retained_reference:
+        return False
+    empty_reference = {
+        "predecessor_evidence_digest": None,
+        "predecessor_evidence_uid": None,
+    }
+    return retained.model_copy(update=empty_reference) == receipt.model_copy(update=empty_reference)
 
 
 def _encoded_scale_gate_value(target: ScaleGateTargetIdentity, authorization: ScaleGateAuthorization) -> str:
@@ -1969,9 +2154,23 @@ class HttpKubernetesModelClient:
                     if actual in (None, ""):
                         normalized[field] = expected
                 metadata = _metadata(normalized)
+                name = metadata.get("name")
+                if (
+                    isinstance(name, str)
+                    and _is_scale_gate_predecessor_evidence_identity(
+                        endpoint.api_version,
+                        endpoint.kind,
+                        name,
+                    )
+                ):
+                    # Evidence is security-owned append-only state, never a
+                    # rendered workload resource. Ignore even a deliberately
+                    # injected discovery label/owner so no repair plan can
+                    # route it into the generic deletion path.
+                    continue
                 identity = (
                     f"{normalized['apiVersion']}/{normalized['kind']}/"
-                    f"{metadata.get('namespace')}/{metadata.get('name')}"
+                    f"{metadata.get('namespace')}/{name}"
                 )
                 bodies[identity] = normalized
         # Exact GETs detect a foreign collision even when it deliberately lacks
@@ -2040,6 +2239,12 @@ class HttpKubernetesModelClient:
         fence: LeaseFence,
     ) -> ResourceSnapshot:
         self._allow_write()
+        if _is_scale_gate_predecessor_evidence_identity(
+            resource.api_version,
+            resource.kind,
+            resource.name,
+        ):
+            raise ControllerError("immutable scale-gate evidence is outside generic reconciliation")
         if resource.field_manager != FIELD_MANAGER or resource.force_conflicts:
             raise ControllerError("renderer requested an unsafe field-manager policy")
         if resource.api_version == "keda.sh/v1alpha1" and resource.kind == "ScaledObject":
@@ -2720,7 +2925,12 @@ class HttpKubernetesModelClient:
         # Establish or atomically rebind the persistent admission gate before
         # changing the receipt. The Deployment remains paused throughout, so
         # every old->new checkpoint is no-Pod and a crash resumes safely.
-        await self._ensure_scale_gate(resource, receipt=expected, model_fence=model_fence, fence=fence)
+        expected = await self._ensure_scale_gate(
+            resource,
+            receipt=expected,
+            model_fence=model_fence,
+            fence=fence,
+        )
         await self._assert_no_targeting_autoscalers(resource)
         if retained != expected:
             await self.assert_fence(fence)
@@ -2947,22 +3157,24 @@ class HttpKubernetesModelClient:
             desiredReplicas=replicas,
             targetMode="fixed",
         )
-        if retained.target_mode != "autoscaled" and retained != replacement:
+        if retained.target_mode != "autoscaled" and not _scale_gate_receipt_matches(retained, replacement):
             raise KubernetesConflictError("fixed initialization reversal receipt is stale or foreign")
         target = _scale_gate_target(resource)
         target_key = _scale_gate_target_key(target)
         old_gate_value = self._scale_gate_value(resource, retained)
-        replacement_gate_value = self._scale_gate_value(resource, replacement)
         await self._assert_no_targeting_autoscalers(resource)
         config_map = await self._scale_gate_config_map(resource.namespace)
         data = _mapping(config_map.get("data"))
-        gate_authorization, _ = await self._verified_scale_gate_authorization(
+        gate_authorization, predecessor_evidence = await self._verified_scale_gate_authorization(
             config_map,
             target,
             migrate_legacy=True,
             retain_v2=True,
             fence=fence,
         )
+        replacement = _scale_gate_successor_with_evidence(replacement, predecessor_evidence)
+        assert isinstance(replacement, ScaleInitializationReceipt)
+        replacement_gate_value = self._scale_gate_value(resource, replacement)
         interrupted_release = (
             isinstance(gate_authorization, SCALE_GATE_RELEASE_AUTHORIZATION_TYPES)
             and gate_authorization.deployment_uid == current.observed.uid
@@ -2986,9 +3198,13 @@ class HttpKubernetesModelClient:
             )
         confirmed_gate = await self._scale_gate_config_map(resource.namespace)
         confirmed_data = _mapping(confirmed_gate.get("data"))
+        confirmed_authorization, _ = await self._verified_scale_gate_authorization(
+            confirmed_gate,
+            target,
+        )
         if confirmed_data.get(target_key) != replacement_gate_value or any(
             key in confirmed_data for key in _scale_gate_companion_keys(target)
-        ):
+        ) or confirmed_authorization != replacement:
             raise KubernetesConflictError("fixed initialization reversal gate was not durably closed")
         await self._assert_scale_gate_admission(resource)
         await self._assert_no_targeting_autoscalers(resource)
@@ -3178,7 +3394,7 @@ class HttpKubernetesModelClient:
         # Close every autoscaler allowance before the scaler can be deleted.
         # A crash before the annotation write leaves a conservative closed
         # gate; a retry can finish the same exact receipt transition.
-        await self._ensure_scale_gate(
+        expected = await self._ensure_scale_gate(
             resource,
             receipt=expected,
             model_fence=model_fence,
@@ -3335,7 +3551,7 @@ class HttpKubernetesModelClient:
             or model_fence.key.namespace != resource.namespace
         ):
             raise KubernetesConflictError("scale gate deletion tombstone is not authorized")
-        tombstone = ScaleGateTombstone(
+        tombstone: ScaleGateTombstone = ScaleGateTombstone(
             version=1,
             deploymentUID=current.observed.uid,
             modelUID=owner_uid,
@@ -3346,23 +3562,36 @@ class HttpKubernetesModelClient:
         target_key = _scale_gate_target_key(target)
         retained = data.get(target_key)
         retained_tombstone = _scale_gate_tombstone(retained, target)
-        retained_authorization, _ = await self._verified_scale_gate_authorization(
+        retained_authorization, predecessor_evidence = await self._verified_scale_gate_authorization(
             config_map,
             target,
             migrate_legacy=True,
             retain_v2=True,
             fence=fence,
         )
+        if predecessor_evidence is not None and (
+            predecessor_evidence.authorization.deployment_uid != current.observed.uid
+            or predecessor_evidence.authorization.model_uid != owner_uid
+        ):
+            if not isinstance(retained_authorization, ScaleGateTombstone):
+                raise KubernetesConflictError("scale gate deletion predecessor is foreign")
+            predecessor_evidence = None
+        tombstone = _scale_gate_successor_with_evidence(tombstone, predecessor_evidence)
+        assert isinstance(tombstone, ScaleGateTombstone)
         tombstone_value = _encoded_scale_gate_tombstone_value(target, tombstone)
         if paused_without_receipt:
             allowed_retained = retained is None or retained_tombstone is not None
         else:
             assert receipt is not None
-            allowed_retained = retained in {self._scale_gate_value(resource, receipt), tombstone_value} or (
-                isinstance(retained_authorization, SCALE_GATE_RELEASE_AUTHORIZATION_TYPES)
-                and retained_authorization.deployment_uid == current.observed.uid
-                and retained_authorization.model_uid == owner_uid
-                and retained_authorization.model_generation <= model_fence.generation
+            allowed_retained = (
+                retained in {self._scale_gate_value(resource, receipt), tombstone_value}
+                or _scale_gate_receipt_matches(retained_authorization, receipt)
+                or (
+                    isinstance(retained_authorization, SCALE_GATE_RELEASE_AUTHORIZATION_TYPES)
+                    and retained_authorization.deployment_uid == current.observed.uid
+                    and retained_authorization.model_uid == owner_uid
+                    and retained_authorization.model_generation <= model_fence.generation
+                )
             )
         if not allowed_retained:
             raise KubernetesConflictError("scale gate changed before deletion tombstoning")
@@ -3382,9 +3611,13 @@ class HttpKubernetesModelClient:
             )
         confirmed = await self._scale_gate_config_map(resource.namespace)
         confirmed_data = _mapping(confirmed.get("data"))
+        confirmed_tombstone, _ = await self._verified_scale_gate_authorization(
+            confirmed,
+            target,
+        )
         if confirmed_data.get(target_key) != tombstone_value or any(
             key in confirmed_data for key in _scale_gate_companion_keys(target)
-        ):
+        ) or confirmed_tombstone != tombstone:
             raise KubernetesConflictError("scale gate deletion tombstone was not durably closed")
         await self._assert_scale_gate_admission(resource)
 
@@ -3410,9 +3643,9 @@ class HttpKubernetesModelClient:
         config_map = await self._scale_gate_config_map(resource.namespace)
         data = _mapping(config_map.get("data"))
         target = _scale_gate_target(resource)
-        tombstone = _scale_gate_tombstone(data.get(_scale_gate_target_key(target)), target)
+        tombstone, _ = await self._verified_scale_gate_authorization(config_map, target)
         if (
-            tombstone is None
+            not isinstance(tombstone, ScaleGateTombstone)
             or tombstone.model_uid != owner_uid
             or any(key in data for key in _scale_gate_companion_keys(target))
         ):
@@ -3476,7 +3709,7 @@ class HttpKubernetesModelClient:
         evidence: ScaleGateReleaseAuthorizationV2,
         *,
         fence: LeaseFence,
-    ) -> ScaleGateReleaseAuthorizationV2:
+    ) -> ScaleGatePredecessorEvidenceSnapshot:
         """Create one immutable content-addressed shard or verify its exact twin."""
 
         self._allow_write()
@@ -3500,22 +3733,23 @@ class HttpKubernetesModelClient:
                 retained = await self._scale_gate_predecessor_evidence_shard(target, digest)
                 if retained is None:
                     raise
-        parsed = _scale_gate_predecessor_evidence_from_config_map(
+        parsed = _scale_gate_predecessor_evidence_snapshot_from_config_map(
             retained,
             target=target,
             digest=digest,
         )
-        if parsed != evidence:
+        if parsed.authorization != evidence:
             raise KubernetesConflictError("protocol-v2 predecessor evidence shard content changed")
         confirmed = await self._scale_gate_predecessor_evidence_shard(target, digest)
         if confirmed is None:
             raise KubernetesConflictError("protocol-v2 predecessor evidence shard disappeared")
-        confirmed_evidence = _scale_gate_predecessor_evidence_from_config_map(
+        confirmed_evidence = _scale_gate_predecessor_evidence_snapshot_from_config_map(
             confirmed,
             target=target,
             digest=digest,
+            expected_uid=parsed.uid,
         )
-        if confirmed_evidence != evidence:
+        if confirmed_evidence.authorization != evidence:
             raise KubernetesConflictError("protocol-v2 predecessor evidence shard was not durable")
         return confirmed_evidence
 
@@ -3527,7 +3761,10 @@ class HttpKubernetesModelClient:
         migrate_legacy: bool = False,
         retain_v2: bool = False,
         fence: LeaseFence | None = None,
-    ) -> tuple[ScaleGateAuthorization | None, ScaleGateReleaseAuthorizationV2 | None]:
+    ) -> tuple[
+        ScaleGateAuthorization | ScaleGateTombstone | None,
+        ScaleGatePredecessorEvidenceSnapshot | None,
+    ]:
         """Resolve one gate authorization and all referenced evidence.
 
         The authorization is parsed from exactly ``config_map``. Every v3
@@ -3539,65 +3776,82 @@ class HttpKubernetesModelClient:
         data = _mapping(config_map.get("data"))
         value = data.get(_scale_gate_target_key(target))
         authorization = _scale_gate_authorization(value, target)
+        if authorization is None:
+            authorization = _scale_gate_tombstone(value, target)
         if isinstance(authorization, ScaleGateReleaseAuthorizationV2):
+            evidence: ScaleGatePredecessorEvidenceSnapshot | None = None
             if retain_v2:
                 if fence is None:
                     raise ControllerError("protocol-v2 predecessor retention requires a Lease fence")
-                await self._ensure_scale_gate_predecessor_evidence_shard(
+                evidence = await self._ensure_scale_gate_predecessor_evidence_shard(
                     target,
                     authorization,
                     fence=fence,
                 )
-            return authorization, authorization
-        if not isinstance(authorization, ScaleGateReleaseAuthorization):
+            return authorization, evidence
+        if not isinstance(
+            authorization,
+            (ScaleGateReleaseAuthorization, ScaleHandoffReceipt, ScaleInitializationReceipt, ScaleGateTombstone),
+        ):
             return authorization, None
 
-        evidence: ScaleGateReleaseAuthorizationV2 | None = None
+        evidence = None
         digest = authorization.predecessor_evidence_digest
         if digest is not None:
             shard = await self._scale_gate_predecessor_evidence_shard(target, digest)
-            if shard is None and migrate_legacy:
+            if shard is None and migrate_legacy and isinstance(authorization, ScaleGateReleaseAuthorization):
                 # Adopt the rejected d58 aggregate entry without removing it.
-                evidence = _scale_gate_predecessor_evidence(data, authorization)
-                if evidence is not None:
-                    normalized = _normalized_scale_gate_predecessor_reference(authorization, evidence)
-                    _scale_gate_predecessor_lineage(normalized, evidence)
+                legacy_evidence = _scale_gate_predecessor_evidence(data, authorization)
+                if legacy_evidence is not None:
                     if fence is None:
                         raise ControllerError("legacy predecessor migration requires a Lease fence")
-                    await self._ensure_scale_gate_predecessor_evidence_shard(
+                    evidence = await self._ensure_scale_gate_predecessor_evidence_shard(
                         target,
-                        evidence,
+                        legacy_evidence,
                         fence=fence,
                     )
+                    normalized = _normalized_scale_gate_predecessor_reference(authorization, evidence)
+                    _scale_gate_predecessor_lineage(normalized, evidence.authorization)
                     shard = await self._scale_gate_predecessor_evidence_shard(target, digest)
             if shard is None:
                 raise KubernetesConflictError("protocol-v2 predecessor evidence shard is absent")
-            evidence = _scale_gate_predecessor_evidence_from_config_map(
+            reference = _scale_gate_evidence_reference(
+                authorization,
+                allow_missing_uid=(
+                    migrate_legacy and isinstance(authorization, ScaleGateReleaseAuthorization)
+                ),
+            )
+            assert reference is not None
+            evidence = _scale_gate_predecessor_evidence_snapshot_from_config_map(
                 shard,
                 target=target,
                 digest=digest,
+                expected_uid=reference[1],
             )
             if (
-                authorization.predecessor_authorization is not None
-                and authorization.predecessor_authorization != evidence
+                isinstance(authorization, ScaleGateReleaseAuthorization)
+                and authorization.predecessor_authorization is not None
+                and authorization.predecessor_authorization != evidence.authorization
             ):
                 raise KubernetesConflictError("embedded protocol-v2 predecessor evidence changed")
-            authorization = _normalized_scale_gate_predecessor_reference(authorization, evidence)
-            _scale_gate_predecessor_lineage(authorization, evidence)
-        elif authorization.predecessor_authorization is not None:
+            authorization = _scale_gate_successor_with_evidence(authorization, evidence)
+        elif (
+            isinstance(authorization, ScaleGateReleaseAuthorization)
+            and authorization.predecessor_authorization is not None
+        ):
             if not migrate_legacy:
                 raise KubernetesConflictError("embedded protocol-v2 predecessor evidence is not durable")
-            evidence = authorization.predecessor_authorization
-            normalized = _normalized_scale_gate_predecessor_reference(authorization, evidence)
-            _scale_gate_predecessor_lineage(normalized, evidence)
             if fence is None:
                 raise ControllerError("legacy predecessor migration requires a Lease fence")
-            await self._ensure_scale_gate_predecessor_evidence_shard(
+            evidence = await self._ensure_scale_gate_predecessor_evidence_shard(
                 target,
-                evidence,
+                authorization.predecessor_authorization,
                 fence=fence,
             )
-            authorization = normalized
+            authorization = _normalized_scale_gate_predecessor_reference(authorization, evidence)
+            _scale_gate_predecessor_lineage(authorization, evidence.authorization)
+        elif authorization.predecessor_evidence_uid is not None:
+            raise KubernetesConflictError("protocol-v2 predecessor evidence reference is incomplete")
         return authorization, evidence
 
     async def _assert_scale_gate_admission(self, resource: RenderedResource) -> None:
@@ -3654,7 +3908,7 @@ class HttpKubernetesModelClient:
         receipt: ScaleAuthorizationReceipt,
         model_fence: ModelWriteFence,
         fence: LeaseFence,
-    ) -> None:
+    ) -> ScaleAuthorizationReceipt:
         """Durably lock this target before proving autoscaler absence."""
 
         await self.assert_fence(fence)
@@ -3663,18 +3917,27 @@ class HttpKubernetesModelClient:
             raise KubernetesConflictError("ModelDeployment disappeared before scale gate acquisition")
         self._validate_model_write_fence(model, model_fence)
         target = _scale_gate_target(resource)
-        expected = self._scale_gate_value(resource, receipt)
         config_map = await self._scale_gate_config_map(resource.namespace)
         data = _mapping(config_map.get("data"))
         target_key = _scale_gate_target_key(target)
         retained = data.get(target_key)
-        retained_authorization, _ = await self._verified_scale_gate_authorization(
+        retained_authorization, predecessor_evidence = await self._verified_scale_gate_authorization(
             config_map,
             target,
             migrate_legacy=True,
             retain_v2=True,
             fence=fence,
         )
+        if predecessor_evidence is not None and (
+            predecessor_evidence.authorization.deployment_uid != receipt.deployment_uid
+            or predecessor_evidence.authorization.model_uid != receipt.model_uid
+        ):
+            if not isinstance(retained_authorization, ScaleGateTombstone):
+                raise KubernetesConflictError("fixed-scale admission gate predecessor is foreign")
+            predecessor_evidence = None
+        gate_receipt = _scale_gate_successor_with_evidence(receipt, predecessor_evidence)
+        assert isinstance(gate_receipt, (ScaleHandoffReceipt, ScaleInitializationReceipt))
+        expected = self._scale_gate_value(resource, gate_receipt)
         retained_exact_closure = (
             isinstance(retained_authorization, ScaleGateReleaseAuthorization)
             and retained_authorization.phase == "closed"
@@ -3726,13 +3989,16 @@ class HttpKubernetesModelClient:
         confirmed = await self._scale_gate_config_map(resource.namespace)
         confirmed_data = _mapping(confirmed.get("data"))
         confirmed_authorization, _ = await self._verified_scale_gate_authorization(confirmed, target)
-        if confirmed_data.get(target_key) != expected:
+        if confirmed_data.get(target_key) != expected or (
+            not retained_exact_closure and confirmed_authorization != gate_receipt
+        ):
             raise KubernetesConflictError("fixed-scale admission gate did not persist exact transition evidence")
         if retained_exact_closure and confirmed_authorization != retained_authorization:
             raise KubernetesConflictError("fixed-scale admission gate closure evidence changed")
         if closed_receipt and any(key in confirmed_data for key in _scale_gate_companion_keys(target)):
             raise KubernetesConflictError("fixed-scale admission gate retained an autoscaler allowance")
         await self._assert_scale_gate_admission(resource)
+        return gate_receipt
 
     async def _assert_scale_gate(
         self,
@@ -3756,8 +4022,17 @@ class HttpKubernetesModelClient:
                 and closure.scaler_namespace == receipt.scaler.namespace
                 and closure.scaler_name == receipt.scaler.name
             )
+            and (
+                _scale_gate_evidence_reference(receipt) is None
+                or _scale_gate_evidence_reference(receipt)
+                == _scale_gate_evidence_reference(closure)
+            )
         )
-        if retained != self._scale_gate_value(resource, receipt) and not valid_closure:
+        if (
+            retained != self._scale_gate_value(resource, receipt)
+            and not _scale_gate_receipt_matches(closure, receipt)
+            and not valid_closure
+        ):
             raise KubernetesConflictError("fixed-scale admission gate is absent, stale, or foreign")
         if (
             isinstance(receipt, ScaleHandoffReceipt)
@@ -3800,6 +4075,8 @@ class HttpKubernetesModelClient:
             or closure.scaler_kind != receipt.scaler.kind
             or closure.scaler_namespace != receipt.scaler.namespace
             or closure.scaler_name != receipt.scaler.name
+            or _scale_gate_evidence_reference(receipt) is not None
+            and _scale_gate_evidence_reference(receipt) != _scale_gate_evidence_reference(closure)
             or any(key in data for key in _scale_gate_companion_keys(target))
         ):
             raise KubernetesConflictError("older scale handoff receipt lacks the exact current fixed closure")
@@ -4220,7 +4497,15 @@ class HttpKubernetesModelClient:
         )
         source_retained_authorization = retained_authorization
         if (
-            retained_authorization is None
+            not isinstance(
+                retained_authorization,
+                (
+                    ScaleGateReleaseAuthorization,
+                    ScaleGateReleaseAuthorizationV2,
+                    ScaleHandoffReceipt,
+                    ScaleInitializationReceipt,
+                ),
+            )
             or retained_authorization.deployment_uid != current.observed.uid
             or retained_authorization.model_uid != owner_uid
             or retained_authorization.model_generation > model_fence.generation
@@ -4589,8 +4874,8 @@ class HttpKubernetesModelClient:
                     appliedScaler=scaler_checkpoint,
                     phase="applied",
                 )
-        if predecessor_evidence is not None:
-            _scale_gate_predecessor_lineage(authorization, predecessor_evidence)
+        authorization = _scale_gate_successor_with_evidence(authorization, predecessor_evidence)
+        assert isinstance(authorization, ScaleGateReleaseAuthorization)
         expected_gate_value = _encoded_scale_gate_value(target, authorization)
         await self.assert_fence(fence)
         model = await self.get_model(model_fence.key)
@@ -4860,8 +5145,8 @@ class HttpKubernetesModelClient:
                     **preserved_mutation,
                     phase="closed",
                 )
-            if predecessor_evidence is not None:
-                _scale_gate_predecessor_lineage(closure, predecessor_evidence)
+            closure = _scale_gate_successor_with_evidence(closure, predecessor_evidence)
+            assert isinstance(closure, ScaleGateReleaseAuthorization)
             closure_value = _encoded_scale_gate_value(target, closure)
             # No targeter remains. Close the exact older autoscaled generation
             # before any fixed-mode write can proceed. A crash before this
@@ -4894,7 +5179,7 @@ class HttpKubernetesModelClient:
                 )
         elif (
             isinstance(receipt, ScaleHandoffReceipt)
-            and retained_authorization == receipt
+            and _scale_gate_receipt_matches(retained_authorization, receipt)
             and receipt.model_generation < model_fence.generation
         ):
             # A crash may leave the original handoff receipt as the primary
@@ -4918,6 +5203,8 @@ class HttpKubernetesModelClient:
                 desiredScalerDigest=canonical_digest(receipt.scaler.model_dump(mode="json", by_alias=True)),
                 phase="closed",
             )
+            closure = _scale_gate_successor_with_evidence(closure, predecessor_evidence)
+            assert isinstance(closure, ScaleGateReleaseAuthorization)
             closure_value = _encoded_scale_gate_value(target, closure)
             await self.assert_fence(fence)
             latest_model = await self.get_model(model_fence.key)
@@ -5131,6 +5418,8 @@ class HttpKubernetesModelClient:
     ) -> bool:
         self._allow_write()
         api_version, kind, namespace, name = self._parse_identity(identity)
+        if _is_scale_gate_predecessor_evidence_identity(api_version, kind, name):
+            raise KubernetesConflictError("immutable scale-gate evidence can never enter a delete path")
         endpoint = self._endpoint(api_version, kind)
         current = await self._get_resource(api_version, kind, namespace, name)
         if current is None:

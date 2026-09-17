@@ -98,6 +98,7 @@ from fs2_serve.model_deployment_controller import (
     _scale_gate_predecessor_evidence_digest,
     _scale_gate_predecessor_evidence_entry,
     _scale_gate_predecessor_evidence_from_config_map,
+    _scale_gate_predecessor_evidence_snapshot_from_config_map,
     _scale_gate_predecessor_evidence_update,
     _scale_gate_predecessor_lineage,
     _scale_gate_scaler_checkpoint,
@@ -7173,6 +7174,7 @@ def test_maximum_protocol_v2_predecessor_is_retained_once_by_bounded_canonical_d
         priorScaler=checkpoint,
         appliedScaler=checkpoint,
         predecessorEvidenceDigest=digest,
+        predecessorEvidenceUID="evidence-uid",
         phase="applied",
     )
     target = ScaleGateTargetIdentity(
@@ -7230,6 +7232,140 @@ def test_maximum_protocol_v2_predecessor_is_retained_once_by_bounded_canonical_d
     assert sum(len(item["data"]["authorization.json"].encode()) for item in shards) > (
         KUBERNETES_CONFIG_MAP_MAX_BYTES
     )
+
+
+def test_predecessor_evidence_shard_requires_ungarbage_collectable_stable_uid_identity() -> None:
+    target = ScaleGateTargetIdentity(
+        apiVersion="apps/v1",
+        kind="Deployment",
+        namespace="fs2-models",
+        name="qwen-live",
+    )
+    evidence = ScaleGateReleaseAuthorizationV2(
+        version=2,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        modelResourceVersion="20",
+        modelGeneration=2,
+        modelSpecDigest=f"sha256:{'a' * 64}",
+        scalerAPIVersion="keda.sh/v1alpha1",
+        scalerKind="ScaledObject",
+        scalerNamespace="fs2-models",
+        scalerName="qwen-live-autoscaler",
+        desiredScalerDigest=f"sha256:{'b' * 64}",
+        phase="closed",
+    )
+    digest = _scale_gate_predecessor_evidence_digest(evidence)
+    shard = _scale_gate_predecessor_evidence_config_map(target, evidence)
+    shard["metadata"].update({"uid": "immutable-evidence-uid", "resourceVersion": "7"})
+    snapshot = _scale_gate_predecessor_evidence_snapshot_from_config_map(
+        shard,
+        target=target,
+        digest=digest,
+        expected_uid="immutable-evidence-uid",
+    )
+    assert snapshot.authorization == evidence
+    assert snapshot.uid == "immutable-evidence-uid"
+    assert snapshot.resource_version == "7"
+
+    for metadata_update in (
+        {"uid": ""},
+        {"resourceVersion": ""},
+        {"ownerReferences": [{"uid": "attacker", "controller": True}]},
+        {"finalizers": ["attacker.example/finalizer"]},
+        {"labels": {"inference.fs2.nebius.ai/model-deployment": "qwen-live"}},
+    ):
+        malformed = copy.deepcopy(shard)
+        malformed["metadata"].update(metadata_update)
+        with pytest.raises(KubernetesConflictError, match="malformed or foreign"):
+            _scale_gate_predecessor_evidence_snapshot_from_config_map(
+                malformed,
+                target=target,
+                digest=digest,
+                expected_uid="immutable-evidence-uid",
+            )
+
+    recreated = copy.deepcopy(shard)
+    recreated["metadata"].update({"uid": "recreated-same-bytes", "resourceVersion": "1"})
+    with pytest.raises(KubernetesConflictError, match="malformed or foreign"):
+        _scale_gate_predecessor_evidence_snapshot_from_config_map(
+            recreated,
+            target=target,
+            digest=digest,
+            expected_uid=snapshot.uid,
+        )
+
+
+@pytest.mark.asyncio
+async def test_tombstone_retains_evidence_uid_and_rejects_loss_recreation_and_delete_injection(
+    tmp_path: Path,
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, _, _ = _fixed_scale_http_fixture()
+    target = _scale_gate_target(desired)
+    evidence = ScaleGateReleaseAuthorizationV2(
+        version=2,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        modelResourceVersion="20",
+        modelGeneration=2,
+        modelSpecDigest=f"sha256:{'a' * 64}",
+        scalerAPIVersion="keda.sh/v1alpha1",
+        scalerKind="ScaledObject",
+        scalerNamespace="fs2-models",
+        scalerName="qwen-live-autoscaler",
+        desiredScalerDigest=f"sha256:{'b' * 64}",
+        phase="closed",
+    )
+    digest = _scale_gate_predecessor_evidence_digest(evidence)
+    evidence_name = _store_test_scale_gate_evidence_shard(target, evidence)
+    evidence_uid = _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name]["metadata"]["uid"]
+    tombstone = ScaleGateTombstone(
+        version=1,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        predecessorEvidenceDigest=digest,
+        predecessorEvidenceUID=evidence_uid,
+    )
+    _TEST_SCALE_GATES[_scale_gate_target_key(target)] = _test_tombstone_value(desired, tombstone)
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if (response := _scale_gate_response(request)) is not None:
+            return response
+        return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    gate = await client._scale_gate_config_map("fs2-models")
+    retained, retained_evidence = await client._verified_scale_gate_authorization(gate, target)
+    assert retained == tombstone
+    assert retained_evidence is not None and retained_evidence.uid == evidence_uid
+
+    exact_shard = _TEST_SCALE_GATE_EVIDENCE_SHARDS.pop(evidence_name)
+    with pytest.raises(KubernetesConflictError, match="evidence shard is absent"):
+        await client._verified_scale_gate_authorization(gate, target)
+    recreated = copy.deepcopy(exact_shard)
+    recreated["metadata"].update({"uid": "recreated-evidence-uid", "resourceVersion": "1"})
+    _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name] = recreated
+    with pytest.raises(KubernetesConflictError, match="malformed or foreign"):
+        await client._verified_scale_gate_authorization(gate, target)
+
+    delete_identity = f"v1/ConfigMap/fs2-models/{evidence_name}"
+    request_count = len(requests)
+    with pytest.raises(KubernetesConflictError, match="can never enter a delete path"):
+        await client.delete_resource(delete_identity, owner_uid="attacker", fence=fence())
+    assert len(requests) == request_count
+    assert not any(request.method == "DELETE" for request in requests)
+    await http.aclose()
 
 
 @pytest.mark.asyncio
@@ -7332,6 +7468,9 @@ async def test_fixed_generation_closes_crashed_older_autoscaler_allowance_withou
     assert closed.model_spec_digest == model_fence.spec_digest
     assert closed.predecessor_authorization is None
     assert closed.predecessor_evidence_digest == evidence_digest
+    assert closed.predecessor_evidence_uid == _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name][
+        "metadata"
+    ]["uid"]
     assert closed.prior_scaler is None
     base_render = renderer().render(
         model_spec(),
@@ -7368,6 +7507,12 @@ async def test_fixed_generation_closes_crashed_older_autoscaler_allowance_withou
             receipt=handoff_receipt,
             model_fence=model_fence,
         )
+    _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name] = exact_shard
+    recreated_shard = copy.deepcopy(exact_shard)
+    recreated_shard["metadata"].update({"uid": "recreated-evidence", "resourceVersion": "1"})
+    _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name] = recreated_shard
+    with pytest.raises(KubernetesConflictError, match="malformed or foreign"):
+        await client._assert_scale_gate(desired, handoff_receipt)
     _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name] = exact_shard
     assert not any(
         request.method in {"PATCH", "POST", "DELETE"}
@@ -7568,8 +7713,15 @@ async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_reco
         phase="prepared",
     )
     target = _scale_gate_target(target_resource)
-    _TEST_SCALE_GATES[_test_gate_key(target_resource)] = _test_gate_value(target_resource, authorization)
     evidence_name = _store_test_scale_gate_evidence_shard(target, predecessor)
+    authorization = authorization.model_copy(
+        update={
+            "predecessor_evidence_uid": _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name][
+                "metadata"
+            ]["uid"]
+        }
+    )
+    _TEST_SCALE_GATES[_test_gate_key(target_resource)] = _test_gate_value(target_resource, authorization)
     deployment = copy.deepcopy(target_resource.manifest)
     deployment["spec"]["replicas"] = 0
     deployment["metadata"].update(
@@ -8101,6 +8253,9 @@ async def test_c574_update_adoption_preserves_prior_and_survives_second_reconcil
         target,
         refreshed.predecessor_evidence_digest,
     )
+    assert refreshed.predecessor_evidence_uid == _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name][
+        "metadata"
+    ]["uid"]
     assert _scale_gate_predecessor_evidence_from_config_map(
         _TEST_SCALE_GATE_EVIDENCE_SHARDS[evidence_name],
         target=target,
