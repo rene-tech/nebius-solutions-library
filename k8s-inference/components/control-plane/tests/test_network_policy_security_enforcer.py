@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import copy
 import datetime as dt
+import hashlib
 import importlib.util
 import json
 import struct
@@ -43,8 +44,17 @@ def _load_approval_module() -> ModuleType:
 
 APPROVAL = _load_approval_module()
 CLUSTER = {"api_server_sha256": "a" * 64, "kube_system_uid": "kube-system-uid-000000000000"}
+IDENTITY_EPOCH = "identity-epoch-001"
+PRIOR_IDENTITY_EPOCH = "identity-epoch-000"
+SUCCESSOR_IDENTITY_EPOCH = "identity-epoch-002"
+
+
+def _principal(role: str, epoch: str) -> str:
+    return f"fs2-np-{role}-{hashlib.sha256(epoch.encode()).hexdigest()[:16]}"
+
+
 SECURITY_USER_INFO = {
-    "username": "fs2-network-policy-security-owner",
+    "username": _principal("security-owner", IDENTITY_EPOCH),
     "uid": "security-owner-uid",
     "groups": ["system:authenticated"],
     "extra": {},
@@ -138,7 +148,10 @@ def _fixture() -> tuple[
     contract = {
         "schema": "fs2-serve.nebius.ai/network-policy-boundary-topology/v1",
         "mode": "public",
-        "security_owner_username": "fs2-network-policy-security-owner",
+        "security_owner_username": _principal("security-owner", IDENTITY_EPOCH),
+        "security_bootstrap_username": _principal("security-bootstrap", IDENTITY_EPOCH),
+        "successor_security_owner_username": _principal("security-owner", SUCCESSOR_IDENTITY_EPOCH),
+        "successor_security_bootstrap_username": _principal("security-bootstrap", SUCCESSOR_IDENTITY_EPOCH),
         "gateway_namespace": "envoy-gateway-system",
         "controller_namespace": "envoy-gateway-system",
         "policy_names": {
@@ -159,16 +172,33 @@ def _fixture() -> tuple[
             "socket_path": "/run/fs2/identity-epoch-001/security.sock",
             "socket_directory_contract": "precreated-setgid-02710",
             "identity_boundary": {
-                "schema": "fs2-serve.nebius.ai/network-policy-identity-boundary/v2",
-                "identity_epoch": "identity-epoch-001",
+                "schema": "fs2-serve.nebius.ai/network-policy-identity-boundary/v3",
+                "identity_epoch": IDENTITY_EPOCH,
+                "prior_identity_epoch": PRIOR_IDENTITY_EPOCH,
+                "successor_identity_epoch": SUCCESSOR_IDENTITY_EPOCH,
+                "epoch_principals": {
+                    "release": _principal("release", IDENTITY_EPOCH),
+                    "security_owner": _principal("security-owner", IDENTITY_EPOCH),
+                    "security_bootstrap": _principal("security-bootstrap", IDENTITY_EPOCH),
+                    "prior_owner": _principal("security-owner", PRIOR_IDENTITY_EPOCH),
+                    "prior_bootstrap": _principal("security-bootstrap", PRIOR_IDENTITY_EPOCH),
+                    "successor_owner": _principal("security-owner", SUCCESSOR_IDENTITY_EPOCH),
+                    "successor_bootstrap": _principal("security-bootstrap", SUCCESSOR_IDENTITY_EPOCH),
+                },
                 "release_user_info_sha256": "b" * 64,
                 "security_user_info_sha256": ENFORCER.sha256_json(SECURITY_USER_INFO),
                 "bootstrap_user_info_sha256": "c" * 64,
+                "prior_security_user_info_sha256": "f" * 64,
+                "prior_bootstrap_user_info_sha256": "0" * 64,
                 "credential_set_sha256": "a" * 64,
                 "release_kubeconfig_sha256": "b" * 64,
                 "security_kubeconfig_sha256": "c" * 64,
                 "bootstrap_kubeconfig_sha256": "e" * 64,
+                "prior_security_kubeconfig_sha256": "3" * 64,
+                "prior_bootstrap_kubeconfig_sha256": "4" * 64,
                 "security_subject_inventory_sha256": "d" * 64,
+                "provider_subject_snapshot_sha256": "1" * 64,
+                "kubernetes_subject_inventory_sha256": "2" * 64,
                 "plan_preflight_verified": True,
                 "plan_preflight_sha256": "e" * 64,
                 "release_expires_at": (now + dt.timedelta(hours=3)).isoformat().replace("+00:00", "Z"),
@@ -177,10 +207,14 @@ def _fixture() -> tuple[
                 "rollback_valid_until": (now + dt.timedelta(hours=2)).isoformat().replace("+00:00", "Z"),
                 "minimum_rollback_seconds": 3600,
                 "rotation_contract": {
-                    "mechanism": "versioned-foundation-epoch",
-                    "bootstrap_update_identity": "fs2-network-policy-security-bootstrap",
+                    "mechanism": "preauthorized-successor-epoch",
+                    "bootstrap_update_identity": _principal("security-bootstrap", IDENTITY_EPOCH),
+                    "successor_security_owner_identity": _principal("security-owner", SUCCESSOR_IDENTITY_EPOCH),
+                    "successor_bootstrap_identity": _principal("security-bootstrap", SUCCESSOR_IDENTITY_EPOCH),
+                    "prior_security_owner_identity": _principal("security-owner", PRIOR_IDENTITY_EPOCH),
+                    "prior_bootstrap_identity": _principal("security-bootstrap", PRIOR_IDENTITY_EPOCH),
                     "new_paths_required": True,
-                    "prior_epoch_stops_authorizing": True,
+                    "prior_epoch_authorization_denied": True,
                 },
                 "bootstrap_must_be_expired": True,
                 "permitted_shared_groups": ["system:authenticated", "system:serviceaccounts"],

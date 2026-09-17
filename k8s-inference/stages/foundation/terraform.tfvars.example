@@ -12,19 +12,29 @@ project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 # bootstrap kubeconfig plus release/runtime credentials no longer than eight
 # hours. Their common validity must extend beyond bootstrap expiry by
 # `minimum_rollback_seconds` (7200 by default).
-# Supply all three exact `kubectl auth whoami -o json` userInfo tuples (release,
-# security owner, bootstrap), including UID, sorted groups/extras and the
-# credential's cryptographically verified expiry, in the private tfvars file.
-# Supply the complete externally signed `security_subject_inventory`; an
-# operator-entered `denied_human_subjects` list is rejected. The inventory pins
-# this API-server hash and kube-system UID, names every human user/group, and is
-# valid through the rollback window. Bootstrap performs explicit
-# SubjectAccessReviews for protected mutation, namespace/finalize, token,
-# impersonation and delegation.
+# Supply the three current and two prior exact userInfo tuples, including UID,
+# sorted groups/extras and cryptographically verified expiry. Principals are
+# derived from distinct prior/current/successor epochs; callers cannot choose a
+# stable username. The prior credentials remain unexpired during the proof so
+# SubjectAccessReviews demonstrate that the prior epoch has actually lost
+# authorization, rather than relying on expiry.
+# Supply the recovery-signed v2 subject inventory plus the separately signed,
+# mode-0600 provider/IAM snapshot named by
+# `security_subject_provider_snapshot_path`. Pin the independent provider key,
+# expected tenant hash and exact enumeration-query hash. The provider receipt
+# includes a complete bounded pagination chain; the recovery-signed inventory
+# must match its users/groups and provenance byte-for-byte and remain valid
+# through rollback. Bootstrap also paginates every live Namespace and every
+# namespace-local ServiceAccount twice, then checks exact token, CSR,
+# impersonation, namespace/finalize and RBAC-delegation denial.
 # The bootstrap credential creates the permanent boundary but is expired before
 # workloads may plan; the runtime owner has only exact-name get/patch/update.
-# Every rotation uses a new `identity_epoch` and new immutable credential/key
-# files under that epoch directory. External security automation precreates the
+# Every rotation advances prior/current/successor epochs. The prior applied
+# RoleBindings already preauthorize only the current <=15-minute bootstrap; the
+# new desired bindings retain only the current runtime owner and the next
+# successor bootstrap, so the prior owner/bootstrap lose authorization without
+# deleting an object. All credential, snapshot and key files are immutable
+# within the current epoch directory. External security automation precreates the
 # socket parent as enforcer-UID:peer-GID mode 02710; no process needs CAP_CHOWN.
 
 # Pass the exact infra-disposable `target_contract` output. It is required and

@@ -784,11 +784,13 @@ manual Helm uninstall and workload credentials therefore cannot remove the last
 selected allow or the policy protecting it. Every permanent object has
 Terraform `prevent_destroy` and an ownership label. Kubernetes deliberately
 does not invoke API-based admission for its own policy and binding resources,
-so this design does not claim self-protection. Foundation creates the admission
-objects with a dedicated non-human bootstrap credential whose cryptographic
-expiry is at most 15 minutes. Release and runtime-enforcer credentials are at
-most eight hours and their common validity must extend beyond bootstrap expiry
-by the configured rollback floor (two hours by default). The bootstrap
+so this design does not claim self-protection. The security-owned installation
+provisions and imports the permanent objects once; an epoch bootstrap cannot
+create or delete admission or boundary objects and may only update the exact
+pre-existing names. Its cryptographic expiry is at most 15 minutes. Release and
+runtime-enforcer credentials are at most eight hours and their common validity
+must extend beyond bootstrap expiry by the configured rollback floor (two hours
+by default). The bootstrap
 credential is distinct from the release and runtime-enforcer credentials and is
 never passed to workloads; workload plan
 and the transition coordinator refuse to proceed until its recorded expiry has
@@ -798,13 +800,22 @@ to the same API server and exact `kube-system` UID, compares canonical full
 `whoami` username/UID/groups/extras with the configured expiring identities,
 and permits only the common authenticated/service-account baseline groups. It
 is a plan-time external data check, not a creation-only provisioner; every plan
-reruns it and binds its query hash into protected topology. A complete
-security-owned subject inventory is signed by the pinned recovery authority and
-bound to the API-server hash, `kube-system` UID and rollback window. Every
-enumerated human user and group is checked through nonpersistent
-SubjectAccessReviews for protected mutation, namespace/finalize, token,
-impersonation and RBAC delegation denial. Release-operator subject lists are not
-accepted.
+reruns it and binds its query hash into protected topology. Human coverage has
+two independent signatures. The authoritative identity provider/IAM export is
+signed by its dedicated directory authority and includes the exact tenant and
+enumeration-query hashes, a bounded contiguous page receipt, terminal cursor,
+counts and validity window. The separately recovery-signed cluster inventory
+must reproduce that provider snapshot's users, groups and provenance exactly
+while also binding the API-server hash, `kube-system` UID and rollback window.
+The two signing keys must differ. Release-operator subject lists and an
+unreconciled completeness assertion are not accepted. The preflight also reads
+all Namespaces and all namespace-local ServiceAccounts through bounded server
+pagination twice and rejects concurrent drift. Every provider-enumerated human
+and prior-epoch non-human tuple is checked through nonpersistent
+SubjectAccessReviews for protected mutation, every namespace and
+`namespaces/finalize`, every ServiceAccount token subresource, certificate
+request creation/approval/signing, core user/group/ServiceAccount impersonation,
+authentication UID/extra impersonation and RBAC delegation denial.
 It proves the release identity cannot patch, update, delete,
 or collection-delete either admission resource, any permanent guard/deny,
 transition/parameter ConfigMap, or Lease; it also cannot mint the retained
@@ -813,9 +824,11 @@ UID or user-extra, or bind/escalate or rewrite the boundary RBAC delegation.
 The security identity can patch/update only the exact governed objects and
 cannot delete them, collection-delete their resource types, bind, escalate, or
 delegate its authority.
-Before foundation apply, provision distinct mode-0600 runtime-owner and
-short-lived bootstrap kubeconfigs for their exact configured non-human
-identities. The apply fails closed unless exact named runtime permissions,
+Before foundation apply, provision distinct mode-0600 runtime-owner,
+short-lived bootstrap, and still-valid prior owner/bootstrap kubeconfigs for
+their exact epoch-derived non-human identities. The apply fails closed unless
+the three current files are under the current epoch, both prior files are under
+the prior epoch, and exact named runtime permissions,
 unnamed/collection negatives, token/impersonation/delegation negatives, and
 bootstrap-only creation are proven. Namespace UPDATE/DELETE and
 `namespaces/finalize` are denied to release and runtime identities. Neither
@@ -870,20 +883,39 @@ live objects, records the exact new objects, and only then reports completion.
 A crash leaves resumable durable intent; the coordinator validates completion
 while it still holds the Lease.
 
-Identity rotation is versioned and additive. Before the current rollback window
-closes, security automation creates a new epoch directory plus new immutable
-kubeconfig/key paths, issues a new <=15-minute bootstrap credential and
-release/security credentials with a fresh rollback floor, and starts the new
-enforcer on the new socket. The plan hashes the exact three credential files;
-admission permits topology data or credential-hash changes only when the
-bootstrap identity advances the protected epoch. Same-epoch retries must retain
+Identity rotation is versioned and additive. Every applied boundary records
+distinct prior, current and successor epochs. Release, runtime-owner and
+bootstrap usernames are deterministic hashes of the current epoch, so a
+still-valid credential from an older epoch cannot inherit a stable RoleBinding
+subject. Stable `fs2-network-policy-security-owner` and `-auditor` strings name
+RBAC objects only; they are never user subjects. Each protected mutation
+RoleBinding contains only the current runtime owner plus the next successor
+runtime owner and bootstrap, while the read/SAR auditor binds only the successor
+bootstrap. Admission does not authorize the dormant successor owner until its
+epoch becomes current. That preauthorization lets the next short-lived
+bootstrap advance admission and object state and lets the exact next runtime
+owner pass the pre-apply named-authority proof; a dependency-ordered apply then
+updates gateway, controller, cluster and finally state bindings, retiring the
+current bootstrap without deleting any authorization object. The every-plan
+preflight submits the full prior owner/bootstrap username, UID, groups and extras
+while those credentials remain valid and requires denial for every governed
+capability.
+
+Before the rollback window closes, security automation creates the next epoch
+directory plus immutable kubeconfig, provider snapshot and key paths, issues a
+new <=15-minute bootstrap credential and release/security credentials with a
+fresh rollback floor, and starts the new enforcer on the new socket. The plan
+hashes the exact three credential files and both subject proofs. The live
+admission policy permits an epoch advance only to the bootstrap principal that
+the prior contract named as its successor; the new policy names only the new
+current principals and a new successor. Same-epoch retries must retain
 byte-identical topology data and the prior credential hash. The coordinator and
-enforcer each rehash their own kubeconfig before accepting the protected
-contract, so in-place credential replacement fails closed. Foundation applies the signed epoch with the
-bootstrap identity. Protected topology then makes the prior enforcer fail closed
-because its recorded socket path and epoch no longer match. Workloads wait for
-bootstrap expiry before proceeding. Rotation never overwrites a credential file
-or socket and never removes an old boundary object.
+enforcer rederive all epoch principals, rehash their own kubeconfig and require
+the provider, cluster-subject and plan-preflight hashes before accepting the
+contract. Protected topology makes the prior enforcer fail closed because its
+recorded socket path and epoch no longer match. Workloads wait for bootstrap
+expiry before proceeding. Rotation never overwrites a credential file or socket
+and never removes an old boundary object.
 Foundation planning is therefore an explicit bootstrap/rotation phase, not part
 of the later workload plan. The workload phase consumes the sealed remote-state
 contract only after bootstrap expiry and while the full rollback floor remains.

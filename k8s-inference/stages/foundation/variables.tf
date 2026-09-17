@@ -77,15 +77,17 @@ variable "kube_system_uid" {
 variable "network_policy_boundary" {
   description = "Foundation-owned namespaces for the permanent Envoy allow/deny boundary. Workloads may consume but never own or disable this boundary."
   type = object({
-    mode                               = optional(string, "public")
-    gateway_namespace                  = optional(string, "envoy-gateway-system")
-    controller_namespace               = optional(string, "envoy-gateway-system")
-    security_owner_kubeconfig_path     = optional(string)
-    security_owner_username            = optional(string, "fs2-network-policy-security-owner")
-    security_bootstrap_kubeconfig_path = optional(string)
-    security_bootstrap_username        = optional(string, "fs2-network-policy-security-bootstrap")
-    identity_epoch                     = optional(string)
-    minimum_rollback_seconds           = optional(number, 7200)
+    mode                                     = optional(string, "public")
+    gateway_namespace                        = optional(string, "envoy-gateway-system")
+    controller_namespace                     = optional(string, "envoy-gateway-system")
+    security_owner_kubeconfig_path           = optional(string)
+    security_bootstrap_kubeconfig_path       = optional(string)
+    prior_security_owner_kubeconfig_path     = optional(string)
+    prior_security_bootstrap_kubeconfig_path = optional(string)
+    identity_epoch                           = optional(string)
+    prior_identity_epoch                     = optional(string)
+    successor_identity_epoch                 = optional(string)
+    minimum_rollback_seconds                 = optional(number, 7200)
     release_identity = optional(object({
       username   = string
       uid        = string
@@ -107,18 +109,39 @@ variable "network_policy_boundary" {
       extra      = map(list(string))
       expires_at = string
     }))
-    denied_human_subjects = optional(list(object({
-      username = string
-      groups   = list(string)
-    })), [])
+    prior_security_owner_identity = optional(object({
+      username   = string
+      uid        = string
+      groups     = list(string)
+      extra      = map(list(string))
+      expires_at = string
+    }))
+    prior_security_bootstrap_identity = optional(object({
+      username   = string
+      uid        = string
+      groups     = list(string)
+      extra      = map(list(string))
+      expires_at = string
+    }))
     security_subject_inventory = optional(object({
       signed = object({
         schema       = string
         inventory_id = string
-        complete     = bool
         cluster = object({
           api_server_sha256 = string
           kube_system_uid   = string
+        })
+        provider_snapshot = object({
+          sha256        = string
+          snapshot_id   = string
+          provider      = string
+          tenant_sha256 = string
+          query_sha256  = string
+          page_count    = number
+          record_count  = number
+          captured_at   = string
+          expires_at    = string
+          signer_key_id = string
         })
         human_users = list(object({
           username = string
@@ -131,6 +154,10 @@ variable "network_policy_boundary" {
       })
       signature = string
     }))
+    security_subject_provider_snapshot_path  = optional(string)
+    security_subject_provider_public_key     = optional(string)
+    security_subject_provider_tenant_sha256  = optional(string)
+    security_subject_provider_query_sha256   = optional(string)
     security_handoff_socket_path             = optional(string, "/run/fs2/network-policy-security.sock")
     security_handoff_server_public_key       = optional(string)
     security_handoff_client_public_key       = optional(string)
@@ -147,19 +174,28 @@ variable "network_policy_boundary" {
   }
 
   validation {
-    condition = can(regex(
-      "^[A-Za-z0-9:@._/-]{3,253}$",
-      var.network_policy_boundary.security_bootstrap_username,
-    ))
-    error_message = "The security bootstrap username must be a bounded Kubernetes username without CEL quoting characters."
-  }
-
-  validation {
-    condition = can(regex(
-      "^[A-Za-z0-9:@._/-]{3,253}$",
-      var.network_policy_boundary.security_owner_username,
-    ))
-    error_message = "The external security-owner username must be a bounded Kubernetes username without CEL quoting characters."
+    condition = var.network_policy_boundary.mode != "public" || try(
+      alltrue([
+        for path in [
+          var.network_policy_boundary.prior_security_owner_kubeconfig_path,
+          var.network_policy_boundary.prior_security_bootstrap_kubeconfig_path,
+          ] : (
+          path != null &&
+          startswith(path, "/") &&
+          !strcontains(path, "..") &&
+          basename(dirname(path)) == var.network_policy_boundary.prior_identity_epoch
+        )
+      ]) &&
+      length(distinct([
+        abspath(var.kubeconfig_path),
+        abspath(var.network_policy_boundary.security_owner_kubeconfig_path),
+        abspath(var.network_policy_boundary.security_bootstrap_kubeconfig_path),
+        abspath(var.network_policy_boundary.prior_security_owner_kubeconfig_path),
+        abspath(var.network_policy_boundary.prior_security_bootstrap_kubeconfig_path),
+      ])) == 5,
+      false,
+    )
+    error_message = "Prior owner/bootstrap kubeconfigs must be distinct immutable mode-0600 files under the prior epoch directory."
   }
 
   validation {
@@ -186,17 +222,33 @@ variable "network_policy_boundary" {
           var.network_policy_boundary.release_identity,
           var.network_policy_boundary.security_owner_identity,
           var.network_policy_boundary.security_bootstrap_identity,
+          var.network_policy_boundary.prior_security_owner_identity,
+          var.network_policy_boundary.prior_security_bootstrap_identity,
           ] : (
           identity != null &&
           length(identity.uid) >= 8 &&
           length(identity.groups) == length(distinct(identity.groups)) &&
           alltrue([for values in values(identity.extra) : length(values) == length(distinct(values))]) &&
           can(timecmp(identity.expires_at, identity.expires_at)) &&
-          can(regex("^(system:serviceaccount:[a-z0-9-]+:[a-z0-9-]+|fs2-[a-z0-9-]+-(release|security-owner|security-bootstrap))$", identity.username))
+          can(regex("^fs2-np-(release|security-owner|security-bootstrap)-[0-9a-f]{16}$", identity.username))
         )
       ]) &&
-      var.network_policy_boundary.security_owner_identity.username == var.network_policy_boundary.security_owner_username &&
-      var.network_policy_boundary.security_bootstrap_identity.username == var.network_policy_boundary.security_bootstrap_username &&
+      var.network_policy_boundary.release_identity.username == "fs2-np-release-${substr(sha256(var.network_policy_boundary.identity_epoch), 0, 16)}" &&
+      var.network_policy_boundary.security_owner_identity.username == "fs2-np-security-owner-${substr(sha256(var.network_policy_boundary.identity_epoch), 0, 16)}" &&
+      var.network_policy_boundary.security_bootstrap_identity.username == "fs2-np-security-bootstrap-${substr(sha256(var.network_policy_boundary.identity_epoch), 0, 16)}" &&
+      var.network_policy_boundary.prior_security_owner_identity != null &&
+      var.network_policy_boundary.prior_security_owner_identity.username == "fs2-np-security-owner-${substr(sha256(var.network_policy_boundary.prior_identity_epoch), 0, 16)}" &&
+      var.network_policy_boundary.prior_security_bootstrap_identity != null &&
+      var.network_policy_boundary.prior_security_bootstrap_identity.username == "fs2-np-security-bootstrap-${substr(sha256(var.network_policy_boundary.prior_identity_epoch), 0, 16)}" &&
+      length(var.network_policy_boundary.prior_security_owner_identity.uid) >= 8 &&
+      length(var.network_policy_boundary.prior_security_bootstrap_identity.uid) >= 8 &&
+      length(distinct([
+        var.network_policy_boundary.release_identity.uid,
+        var.network_policy_boundary.security_owner_identity.uid,
+        var.network_policy_boundary.security_bootstrap_identity.uid,
+        var.network_policy_boundary.prior_security_owner_identity.uid,
+        var.network_policy_boundary.prior_security_bootstrap_identity.uid,
+      ])) == 5 &&
       length(distinct([
         var.network_policy_boundary.release_identity.username,
         var.network_policy_boundary.security_owner_identity.username,
@@ -207,23 +259,45 @@ variable "network_policy_boundary" {
         var.network_policy_boundary.security_owner_identity.uid,
         var.network_policy_boundary.security_bootstrap_identity.uid,
       ])) == 3 &&
-      length(var.network_policy_boundary.denied_human_subjects) == 0 &&
       var.network_policy_boundary.identity_epoch != null &&
       can(regex("^[a-z0-9][a-z0-9-]{7,63}$", var.network_policy_boundary.identity_epoch)) &&
+      var.network_policy_boundary.prior_identity_epoch != null &&
+      can(regex("^[a-z0-9][a-z0-9-]{7,63}$", var.network_policy_boundary.prior_identity_epoch)) &&
+      var.network_policy_boundary.successor_identity_epoch != null &&
+      can(regex("^[a-z0-9][a-z0-9-]{7,63}$", var.network_policy_boundary.successor_identity_epoch)) &&
+      length(distinct([
+        var.network_policy_boundary.prior_identity_epoch,
+        var.network_policy_boundary.identity_epoch,
+        var.network_policy_boundary.successor_identity_epoch,
+      ])) == 3 &&
       var.network_policy_boundary.minimum_rollback_seconds >= 3600 &&
       floor(var.network_policy_boundary.minimum_rollback_seconds) == var.network_policy_boundary.minimum_rollback_seconds &&
       var.network_policy_boundary.security_subject_inventory != null &&
-      var.network_policy_boundary.security_subject_inventory.signed.schema == "fs2-serve.nebius.ai/security-subject-inventory/v1" &&
-      var.network_policy_boundary.security_subject_inventory.signed.complete &&
+      var.network_policy_boundary.security_subject_inventory.signed.schema == "fs2-serve.nebius.ai/security-subject-inventory/v2" &&
       var.network_policy_boundary.security_subject_inventory.signed.cluster.kube_system_uid == var.kube_system_uid &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.cluster.api_server_sha256)) &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.sha256)) &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.tenant_sha256)) &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.query_sha256)) &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.provider_snapshot.signer_key_id)) &&
       can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.signer_key_id)) &&
       can(regex("^[A-Za-z0-9_-]{86}$", var.network_policy_boundary.security_subject_inventory.signature)) &&
       length(var.network_policy_boundary.security_subject_inventory.signed.human_users) > 0 &&
-      length(var.network_policy_boundary.security_subject_inventory.signed.human_groups) > 0,
+      length(var.network_policy_boundary.security_subject_inventory.signed.human_groups) > 0 &&
+      var.network_policy_boundary.security_subject_provider_snapshot_path != null &&
+      startswith(var.network_policy_boundary.security_subject_provider_snapshot_path, "/") &&
+      !strcontains(var.network_policy_boundary.security_subject_provider_snapshot_path, "..") &&
+      var.network_policy_boundary.security_subject_provider_public_key != null &&
+      can(regex("^[A-Za-z0-9_-]{43}$", var.network_policy_boundary.security_subject_provider_public_key)) &&
+      var.network_policy_boundary.security_subject_provider_tenant_sha256 != null &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_provider_tenant_sha256)) &&
+      var.network_policy_boundary.security_subject_provider_query_sha256 != null &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_provider_query_sha256)) &&
+      sha256(var.network_policy_boundary.security_subject_provider_public_key) !=
+      sha256(var.network_policy_boundary.security_handoff_recovery_public_key),
       false,
     )
-    error_message = "Public boundary identities must be exact, unique and non-human, use a versioned epoch with at least one hour of rollback, and consume a complete signed security-owned subject inventory; caller-supplied denied_human_subjects are forbidden."
+    error_message = "Public boundary identities must be exact epoch-derived non-human principals with distinct prior/current/successor epochs, and the recovery-signed inventory must bind an independently signed provider/IAM snapshot."
   }
 
   validation {
@@ -258,6 +332,7 @@ variable "network_policy_boundary" {
           var.network_policy_boundary.security_owner_kubeconfig_path,
           var.network_policy_boundary.security_bootstrap_kubeconfig_path,
           var.network_policy_boundary.security_handoff_client_private_key_path,
+          var.network_policy_boundary.security_subject_provider_snapshot_path,
         ] : path != null && basename(dirname(path)) == var.network_policy_boundary.identity_epoch
       ]),
       false,
@@ -272,6 +347,7 @@ variable "network_policy_boundary" {
           var.network_policy_boundary.security_handoff_server_public_key,
           var.network_policy_boundary.security_handoff_client_public_key,
           var.network_policy_boundary.security_handoff_recovery_public_key,
+          var.network_policy_boundary.security_subject_provider_public_key,
         ] : value == null || can(regex("^[A-Za-z0-9_-]{43}$", value))
       ])
     )

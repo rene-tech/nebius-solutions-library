@@ -600,6 +600,22 @@ class Transition:
             "kube_system_uid": kube_system_uid,
         }
         identity_boundary = handoff_contract.get("identity_boundary", {})
+        epoch = str(identity_boundary.get("identity_epoch", ""))
+        prior_epoch = str(identity_boundary.get("prior_identity_epoch", ""))
+        successor_epoch = str(identity_boundary.get("successor_identity_epoch", ""))
+
+        def epoch_principal(role: str, value: str) -> str:
+            return f"fs2-np-{role}-{hashlib.sha256(value.encode()).hexdigest()[:16]}"
+
+        expected_principals = {
+            "release": epoch_principal("release", epoch),
+            "security_owner": epoch_principal("security-owner", epoch),
+            "security_bootstrap": epoch_principal("security-bootstrap", epoch),
+            "prior_owner": epoch_principal("security-owner", prior_epoch),
+            "prior_bootstrap": epoch_principal("security-bootstrap", prior_epoch),
+            "successor_owner": epoch_principal("security-owner", successor_epoch),
+            "successor_bootstrap": epoch_principal("security-bootstrap", successor_epoch),
+        }
         try:
             release_whoami = normalized_user_info(
                 cast(dict[str, Any], json.loads(self.bootstrap_kubectl.run("auth", "whoami", "-o", "json").stdout))
@@ -625,8 +641,18 @@ class Transition:
             or handoff_contract.get("delete_allowed") is not False
             or handoff_contract.get("recovery_modes") != ["Audit", "Warn", "Deny"]
             or identity_boundary.get("schema")
-            != "fs2-serve.nebius.ai/network-policy-identity-boundary/v2"
-            or not re.fullmatch(r"[a-z0-9][a-z0-9-]{7,63}", str(identity_boundary.get("identity_epoch", "")))
+            != "fs2-serve.nebius.ai/network-policy-identity-boundary/v3"
+            or any(
+                not re.fullmatch(r"[a-z0-9][a-z0-9-]{7,63}", value)
+                for value in (prior_epoch, epoch, successor_epoch)
+            )
+            or len({prior_epoch, epoch, successor_epoch}) != 3
+            or identity_boundary.get("epoch_principals") != expected_principals
+            or contract.get("security_owner_username") != expected_principals["security_owner"]
+            or contract.get("security_bootstrap_username") != expected_principals["security_bootstrap"]
+            or contract.get("successor_security_bootstrap_username") != expected_principals["successor_bootstrap"]
+            or contract.get("successor_security_owner_username") != expected_principals["successor_owner"]
+            or release_whoami.get("username") != expected_principals["release"]
             or Path(str(handoff_contract.get("socket_path", ""))).parent.name
             != identity_boundary.get("identity_epoch")
             or identity_boundary.get("release_user_info_sha256") != sha256_json(release_whoami)
@@ -634,7 +660,19 @@ class Transition:
             or identity_boundary.get("release_kubeconfig_sha256")
             != hashlib.sha256(self.kubeconfig.read_bytes()).hexdigest()
             or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity_boundary.get("prior_security_kubeconfig_sha256", ""))
+            )
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity_boundary.get("prior_bootstrap_kubeconfig_sha256", ""))
+            )
+            or not re.fullmatch(
                 r"[0-9a-f]{64}", str(identity_boundary.get("security_subject_inventory_sha256", ""))
+            )
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity_boundary.get("provider_subject_snapshot_sha256", ""))
+            )
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity_boundary.get("kubernetes_subject_inventory_sha256", ""))
             )
             or identity_boundary.get("plan_preflight_verified") is not True
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("plan_preflight_sha256", "")))
@@ -649,10 +687,14 @@ class Transition:
             or int(identity_boundary.get("minimum_rollback_seconds", 0)) < 3600
             or identity_boundary.get("rotation_contract")
             != {
-                "mechanism": "versioned-foundation-epoch",
-                "bootstrap_update_identity": "fs2-network-policy-security-bootstrap",
+                "mechanism": "preauthorized-successor-epoch",
+                "bootstrap_update_identity": expected_principals["security_bootstrap"],
+                "successor_security_owner_identity": expected_principals["successor_owner"],
+                "successor_bootstrap_identity": expected_principals["successor_bootstrap"],
+                "prior_security_owner_identity": expected_principals["prior_owner"],
+                "prior_bootstrap_identity": expected_principals["prior_bootstrap"],
                 "new_paths_required": True,
-                "prior_epoch_stops_authorizing": True,
+                "prior_epoch_authorization_denied": True,
             }
         ):
             raise TransitionError("signed handoff does not match protected same-cluster topology")
@@ -673,6 +715,9 @@ class Transition:
             "recovery_modes": ["Audit", "Warn", "Deny"],
             "delete_allowed": False,
             "security_user_info_sha256": identity_boundary.get("security_user_info_sha256"),
+            "identity_epoch": epoch,
+            "provider_subject_snapshot_sha256": identity_boundary.get("provider_subject_snapshot_sha256"),
+            "kubernetes_subject_inventory_sha256": identity_boundary.get("kubernetes_subject_inventory_sha256"),
         }:
             raise TransitionError("security automation attestation is not the exact narrow contract")
         self.security_handoff = handoff
@@ -776,17 +821,17 @@ class Transition:
                 namespace,
             )
         impersonation_targets = (
-            ("users.authentication.k8s.io", security_owner),
-            ("users.authentication.k8s.io", "fs2-network-policy-security-probe"),
-            ("users.authentication.k8s.io", None),
-            ("groups.authentication.k8s.io", None),
-            ("groups.authentication.k8s.io", "system:authenticated"),
-            ("groups.authentication.k8s.io", "system:serviceaccounts"),
-            ("groups.authentication.k8s.io", f"system:serviceaccounts:{self.release_namespace}"),
-            ("groups.authentication.k8s.io", "fs2-network-policy-security-probe"),
-            ("serviceaccounts.authentication.k8s.io", None),
+            ("users", security_owner),
+            ("users", "fs2-network-policy-security-probe"),
+            ("users", None),
+            ("groups", None),
+            ("groups", "system:authenticated"),
+            ("groups", "system:serviceaccounts"),
+            ("groups", f"system:serviceaccounts:{self.release_namespace}"),
+            ("groups", "fs2-network-policy-security-probe"),
+            ("serviceaccounts", None),
             (
-                "serviceaccounts.authentication.k8s.io",
+                "serviceaccounts",
                 f"{self.release_namespace}:fs2-network-policy-security-probe",
             ),
             ("uids.authentication.k8s.io", None),
@@ -795,9 +840,9 @@ class Transition:
             ("userextras.authentication.k8s.io", None),
             ("userextras.authentication.k8s.io", "scopes"),
             ("userextras.authentication.k8s.io", "fs2.nebius.ai/security-probe"),
-            ("groups.authentication.k8s.io", "system:masters"),
+            ("groups", "system:masters"),
             (
-                "serviceaccounts.authentication.k8s.io",
+                "serviceaccounts",
                 f"system:serviceaccount:{self.release_namespace}:fs2-network-policy-transition",
             ),
         )
@@ -810,9 +855,37 @@ class Transition:
                 resource,
                 *exact_name,
             )
+        self._require_can_i(
+            self.bootstrap_kubectl,
+            "no",
+            "create",
+            "certificatesigningrequests.certificates.k8s.io",
+        )
+        self._require_can_i(
+            self.bootstrap_kubectl,
+            "no",
+            "update",
+            "certificatesigningrequests.certificates.k8s.io",
+            "--subresource=approval",
+        )
+        for signer in (
+            "kubernetes.io/kube-apiserver-client",
+            "kubernetes.io/kube-apiserver-client-kubelet",
+            "kubernetes.io/legacy-unknown",
+        ):
+            for verb in ("approve", "sign"):
+                self._require_can_i(
+                    self.bootstrap_kubectl,
+                    "no",
+                    verb,
+                    "signers.certificates.k8s.io",
+                    f"--resource-name={signer}",
+                )
         rbac_targets = (
-            ("clusterroles.rbac.authorization.k8s.io", security_owner, ""),
-            ("clusterrolebindings.rbac.authorization.k8s.io", security_owner, ""),
+            ("clusterroles.rbac.authorization.k8s.io", "fs2-network-policy-security-owner", ""),
+            ("clusterrolebindings.rbac.authorization.k8s.io", "fs2-network-policy-security-owner", ""),
+            ("clusterroles.rbac.authorization.k8s.io", "fs2-network-policy-security-auditor", ""),
+            ("clusterrolebindings.rbac.authorization.k8s.io", "fs2-network-policy-security-auditor", ""),
             ("roles.rbac.authorization.k8s.io", RECEIPT_NAME, self.release_namespace),
             ("rolebindings.rbac.authorization.k8s.io", RECEIPT_NAME, self.release_namespace),
             (

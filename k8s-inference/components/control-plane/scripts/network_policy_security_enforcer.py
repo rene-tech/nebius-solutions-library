@@ -475,6 +475,22 @@ class SecurityEnforcer:
             raise EnforcerError("protected topology evidence changed")
         handoff = contract.get("security_handoff", {})
         identity = handoff.get("identity_boundary", {})
+        epoch = str(identity.get("identity_epoch", ""))
+        prior_epoch = str(identity.get("prior_identity_epoch", ""))
+        successor_epoch = str(identity.get("successor_identity_epoch", ""))
+
+        def principal(role: str, value: str) -> str:
+            return f"fs2-np-{role}-{hashlib.sha256(value.encode()).hexdigest()[:16]}"
+
+        expected_principals = {
+            "release": principal("release", epoch),
+            "security_owner": principal("security-owner", epoch),
+            "security_bootstrap": principal("security-bootstrap", epoch),
+            "prior_owner": principal("security-owner", prior_epoch),
+            "prior_bootstrap": principal("security-bootstrap", prior_epoch),
+            "successor_owner": principal("security-owner", successor_epoch),
+            "successor_bootstrap": principal("security-bootstrap", successor_epoch),
+        }
         now = dt.datetime.now(dt.UTC)
         if (
             handoff.get("client_public_key_sha256") != self.client_key_id
@@ -488,13 +504,26 @@ class SecurityEnforcer:
             or handoff.get("cluster") != self.expected_cluster
             or handoff.get("allowed_actions") != ["transition-mutation", "set-admission-recovery"]
             or handoff.get("delete_allowed") is not False
-            or identity.get("schema") != "fs2-serve.nebius.ai/network-policy-identity-boundary/v2"
-            or not re.fullmatch(r"[a-z0-9][a-z0-9-]{7,63}", str(identity.get("identity_epoch", "")))
-            or self.expected_socket_path.parent.name != identity.get("identity_epoch")
+            or identity.get("schema") != "fs2-serve.nebius.ai/network-policy-identity-boundary/v3"
+            or any(
+                not re.fullmatch(r"[a-z0-9][a-z0-9-]{7,63}", value)
+                for value in (prior_epoch, epoch, successor_epoch)
+            )
+            or len({prior_epoch, epoch, successor_epoch}) != 3
+            or identity.get("epoch_principals") != expected_principals
+            or contract.get("security_owner_username") != expected_principals["security_owner"]
+            or contract.get("security_bootstrap_username") != expected_principals["security_bootstrap"]
+            or contract.get("successor_security_bootstrap_username") != expected_principals["successor_bootstrap"]
+            or contract.get("successor_security_owner_username") != expected_principals["successor_owner"]
+            or self.expected_socket_path.parent.name != epoch
             or identity.get("security_user_info_sha256") != sha256_json(self.api.user_info())
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("credential_set_sha256", "")))
             or identity.get("security_kubeconfig_sha256") != self.security_kubeconfig_sha256
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("prior_security_kubeconfig_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("prior_bootstrap_kubeconfig_sha256", "")))
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("security_subject_inventory_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("provider_subject_snapshot_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("kubernetes_subject_inventory_sha256", "")))
             or identity.get("plan_preflight_verified") is not True
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("plan_preflight_sha256", "")))
             or identity.get("bootstrap_must_be_expired") is not True
@@ -504,10 +533,14 @@ class SecurityEnforcer:
             or int(identity.get("minimum_rollback_seconds", 0)) < 3600
             or identity.get("rotation_contract")
             != {
-                "mechanism": "versioned-foundation-epoch",
-                "bootstrap_update_identity": "fs2-network-policy-security-bootstrap",
+                "mechanism": "preauthorized-successor-epoch",
+                "bootstrap_update_identity": expected_principals["security_bootstrap"],
+                "successor_security_owner_identity": expected_principals["successor_owner"],
+                "successor_bootstrap_identity": expected_principals["successor_bootstrap"],
+                "prior_security_owner_identity": expected_principals["prior_owner"],
+                "prior_bootstrap_identity": expected_principals["prior_bootstrap"],
                 "new_paths_required": True,
-                "prior_epoch_stops_authorizing": True,
+                "prior_epoch_authorization_denied": True,
             }
         ):
             raise EnforcerError("live topology does not authorize this enforcer")
@@ -1284,6 +1317,15 @@ class SecurityEnforcer:
                 "security_user_info_sha256": contract.get("security_handoff", {})
                 .get("identity_boundary", {})
                 .get("security_user_info_sha256"),
+                "identity_epoch": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("identity_epoch"),
+                "provider_subject_snapshot_sha256": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("provider_subject_snapshot_sha256"),
+                "kubernetes_subject_inventory_sha256": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("kubernetes_subject_inventory_sha256"),
             }
         elif action == "transition-mutation":
             result = self._transition_mutation(body)

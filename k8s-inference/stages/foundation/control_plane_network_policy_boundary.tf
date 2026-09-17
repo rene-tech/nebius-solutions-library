@@ -5,8 +5,16 @@
 locals {
   control_plane_network_policy_release_name         = "fs2-serve-control-plane"
   control_plane_network_policy_service_account      = "fs2-network-policy-transition"
-  control_plane_network_policy_security_owner       = var.network_policy_boundary.security_owner_username
-  control_plane_network_policy_security_bootstrap   = var.network_policy_boundary.security_bootstrap_username
+  control_plane_network_policy_identity_suffix      = substr(sha256(coalesce(var.network_policy_boundary.identity_epoch, "unconfigured")), 0, 16)
+  control_plane_network_policy_prior_suffix         = substr(sha256(coalesce(var.network_policy_boundary.prior_identity_epoch, "unconfigured-prior")), 0, 16)
+  control_plane_network_policy_successor_suffix     = substr(sha256(coalesce(var.network_policy_boundary.successor_identity_epoch, "unconfigured-successor")), 0, 16)
+  control_plane_network_policy_release_principal    = "fs2-np-release-${local.control_plane_network_policy_identity_suffix}"
+  control_plane_network_policy_security_owner       = "fs2-np-security-owner-${local.control_plane_network_policy_identity_suffix}"
+  control_plane_network_policy_security_bootstrap   = "fs2-np-security-bootstrap-${local.control_plane_network_policy_identity_suffix}"
+  control_plane_network_policy_prior_security_owner = "fs2-np-security-owner-${local.control_plane_network_policy_prior_suffix}"
+  control_plane_network_policy_prior_bootstrap      = "fs2-np-security-bootstrap-${local.control_plane_network_policy_prior_suffix}"
+  control_plane_network_policy_successor_owner      = "fs2-np-security-owner-${local.control_plane_network_policy_successor_suffix}"
+  control_plane_network_policy_successor_bootstrap  = "fs2-np-security-bootstrap-${local.control_plane_network_policy_successor_suffix}"
   control_plane_network_policy_state_name           = "fs2-network-policy-transition"
   control_plane_network_policy_topology_name        = "fs2-network-policy-boundary-topology"
   control_plane_network_policy_parameter_name       = "fs2-network-policy-boundary-parameters"
@@ -19,6 +27,14 @@ locals {
   control_plane_network_policy_security_bootstrap_kubeconfig_path = coalesce(
     var.network_policy_boundary.security_bootstrap_kubeconfig_path,
     "${local.normalized_run_root}/network-policy-security-bootstrap-kubeconfig",
+  )
+  control_plane_network_policy_prior_security_owner_kubeconfig_path = coalesce(
+    var.network_policy_boundary.prior_security_owner_kubeconfig_path,
+    "${local.normalized_run_root}/network-policy-prior-security-owner-kubeconfig",
+  )
+  control_plane_network_policy_prior_security_bootstrap_kubeconfig_path = coalesce(
+    var.network_policy_boundary.prior_security_bootstrap_kubeconfig_path,
+    "${local.normalized_run_root}/network-policy-prior-security-bootstrap-kubeconfig",
   )
   control_plane_network_policy_client_private_key_path = coalesce(
     var.network_policy_boundary.security_handoff_client_private_key_path,
@@ -72,8 +88,19 @@ locals {
     peer_gid_contract          = "effective-dedicated"
     socket_directory_contract  = "precreated-setgid-02710"
     identity_boundary = {
-      schema         = "fs2-serve.nebius.ai/network-policy-identity-boundary/v2"
-      identity_epoch = var.network_policy_boundary.identity_epoch
+      schema                   = "fs2-serve.nebius.ai/network-policy-identity-boundary/v3"
+      identity_epoch           = var.network_policy_boundary.identity_epoch
+      prior_identity_epoch     = var.network_policy_boundary.prior_identity_epoch
+      successor_identity_epoch = var.network_policy_boundary.successor_identity_epoch
+      epoch_principals = {
+        release             = local.control_plane_network_policy_release_principal
+        security_owner      = local.control_plane_network_policy_security_owner
+        security_bootstrap  = local.control_plane_network_policy_security_bootstrap
+        prior_owner         = local.control_plane_network_policy_prior_security_owner
+        prior_bootstrap     = local.control_plane_network_policy_prior_bootstrap
+        successor_owner     = local.control_plane_network_policy_successor_owner
+        successor_bootstrap = local.control_plane_network_policy_successor_bootstrap
+      }
       release_user_info_sha256 = var.network_policy_boundary.release_identity == null ? null : sha256(jsonencode({
         username = var.network_policy_boundary.release_identity.username
         uid      = var.network_policy_boundary.release_identity.uid
@@ -92,31 +119,57 @@ locals {
         groups   = sort(var.network_policy_boundary.security_bootstrap_identity.groups)
         extra    = { for key, values in var.network_policy_boundary.security_bootstrap_identity.extra : key => sort(values) }
       }))
+      prior_security_user_info_sha256 = var.network_policy_boundary.prior_security_owner_identity == null ? null : sha256(jsonencode({
+        username = var.network_policy_boundary.prior_security_owner_identity.username
+        uid      = var.network_policy_boundary.prior_security_owner_identity.uid
+        groups   = sort(var.network_policy_boundary.prior_security_owner_identity.groups)
+        extra    = { for key, values in var.network_policy_boundary.prior_security_owner_identity.extra : key => sort(values) }
+      }))
+      prior_bootstrap_user_info_sha256 = var.network_policy_boundary.prior_security_bootstrap_identity == null ? null : sha256(jsonencode({
+        username = var.network_policy_boundary.prior_security_bootstrap_identity.username
+        uid      = var.network_policy_boundary.prior_security_bootstrap_identity.uid
+        groups   = sort(var.network_policy_boundary.prior_security_bootstrap_identity.groups)
+        extra    = { for key, values in var.network_policy_boundary.prior_security_bootstrap_identity.extra : key => sort(values) }
+      }))
       credential_set_sha256 = try(
         data.external.control_plane_network_policy_security_preflight_v2.result.credential_set_sha256,
         null,
       )
-      release_kubeconfig_sha256   = try(data.external.control_plane_network_policy_security_preflight_v2.result.release_kubeconfig_sha256, null)
-      security_kubeconfig_sha256  = try(data.external.control_plane_network_policy_security_preflight_v2.result.security_kubeconfig_sha256, null)
-      bootstrap_kubeconfig_sha256 = try(data.external.control_plane_network_policy_security_preflight_v2.result.bootstrap_kubeconfig_sha256, null)
-      release_expires_at          = var.network_policy_boundary.release_identity == null ? null : var.network_policy_boundary.release_identity.expires_at
-      security_expires_at         = var.network_policy_boundary.security_owner_identity == null ? null : var.network_policy_boundary.security_owner_identity.expires_at
-      bootstrap_expires_at        = var.network_policy_boundary.security_bootstrap_identity == null ? null : var.network_policy_boundary.security_bootstrap_identity.expires_at
-      rollback_valid_until        = local.control_plane_network_policy_rollback_valid_until
-      minimum_rollback_seconds    = var.network_policy_boundary.minimum_rollback_seconds
-      bootstrap_must_be_expired   = true
-      permitted_shared_groups     = ["system:authenticated", "system:serviceaccounts"]
+      release_kubeconfig_sha256         = try(data.external.control_plane_network_policy_security_preflight_v2.result.release_kubeconfig_sha256, null)
+      security_kubeconfig_sha256        = try(data.external.control_plane_network_policy_security_preflight_v2.result.security_kubeconfig_sha256, null)
+      bootstrap_kubeconfig_sha256       = try(data.external.control_plane_network_policy_security_preflight_v2.result.bootstrap_kubeconfig_sha256, null)
+      prior_security_kubeconfig_sha256  = try(data.external.control_plane_network_policy_security_preflight_v2.result.prior_security_kubeconfig_sha256, null)
+      prior_bootstrap_kubeconfig_sha256 = try(data.external.control_plane_network_policy_security_preflight_v2.result.prior_bootstrap_kubeconfig_sha256, null)
+      release_expires_at                = var.network_policy_boundary.release_identity == null ? null : var.network_policy_boundary.release_identity.expires_at
+      security_expires_at               = var.network_policy_boundary.security_owner_identity == null ? null : var.network_policy_boundary.security_owner_identity.expires_at
+      bootstrap_expires_at              = var.network_policy_boundary.security_bootstrap_identity == null ? null : var.network_policy_boundary.security_bootstrap_identity.expires_at
+      rollback_valid_until              = local.control_plane_network_policy_rollback_valid_until
+      minimum_rollback_seconds          = var.network_policy_boundary.minimum_rollback_seconds
+      bootstrap_must_be_expired         = true
+      permitted_shared_groups           = ["system:authenticated", "system:serviceaccounts"]
       security_subject_inventory_sha256 = try(
         data.external.control_plane_network_policy_security_preflight_v2.result.subject_inventory_sha256,
+        null,
+      )
+      provider_subject_snapshot_sha256 = try(
+        data.external.control_plane_network_policy_security_preflight_v2.result.provider_snapshot_sha256,
+        null,
+      )
+      kubernetes_subject_inventory_sha256 = try(
+        data.external.control_plane_network_policy_security_preflight_v2.result.kubernetes_subject_inventory_sha256,
         null,
       )
       plan_preflight_verified = data.external.control_plane_network_policy_security_preflight_v2.result.verified == "true"
       plan_preflight_sha256   = data.external.control_plane_network_policy_security_preflight_v2.result.contract_sha256
       rotation_contract = {
-        mechanism                     = "versioned-foundation-epoch"
-        bootstrap_update_identity     = local.control_plane_network_policy_security_bootstrap
-        new_paths_required            = true
-        prior_epoch_stops_authorizing = true
+        mechanism                         = "preauthorized-successor-epoch"
+        bootstrap_update_identity         = local.control_plane_network_policy_security_bootstrap
+        successor_security_owner_identity = local.control_plane_network_policy_successor_owner
+        successor_bootstrap_identity      = local.control_plane_network_policy_successor_bootstrap
+        prior_security_owner_identity     = local.control_plane_network_policy_prior_security_owner
+        prior_bootstrap_identity          = local.control_plane_network_policy_prior_bootstrap
+        new_paths_required                = true
+        prior_epoch_authorization_denied  = true
       }
     }
     cluster = {
@@ -135,26 +188,40 @@ data "external" "control_plane_network_policy_security_preflight_v2" {
     "${path.module}/scripts/verify-network-policy-security-preflight.py",
   ]
   query = {
-    mode                        = var.network_policy_boundary.mode
-    context                     = var.kube_context
-    kube_system_uid             = var.kube_system_uid
-    release_kubeconfig          = abspath(var.kubeconfig_path)
-    security_kubeconfig         = abspath(local.control_plane_network_policy_security_owner_kubeconfig_path)
-    bootstrap_kubeconfig        = abspath(local.control_plane_network_policy_security_bootstrap_kubeconfig_path)
-    release_identity            = jsonencode(var.network_policy_boundary.release_identity)
-    security_identity           = jsonencode(var.network_policy_boundary.security_owner_identity)
-    bootstrap_identity          = jsonencode(var.network_policy_boundary.security_bootstrap_identity)
-    subject_inventory           = jsonencode(var.network_policy_boundary.security_subject_inventory)
-    recovery_public_key         = coalesce(var.network_policy_boundary.security_handoff_recovery_public_key, "")
-    minimum_rollback_seconds    = tostring(var.network_policy_boundary.minimum_rollback_seconds)
-    gateway_namespace           = local.control_plane_network_policy_gateway_namespace
-    controller_namespace        = local.control_plane_network_policy_controller_namespace
-    security_owner_username     = local.control_plane_network_policy_security_owner
-    security_bootstrap_username = local.control_plane_network_policy_security_bootstrap
-    peer_uid                    = tostring(coalesce(var.network_policy_boundary.security_handoff_peer_uid, -1))
-    peer_gid                    = tostring(coalesce(var.network_policy_boundary.security_handoff_peer_gid, -1))
-    socket_path                 = var.network_policy_boundary.security_handoff_socket_path
-    identity_epoch              = coalesce(var.network_policy_boundary.identity_epoch, "unconfigured")
+    mode                                  = var.network_policy_boundary.mode
+    context                               = var.kube_context
+    kube_system_uid                       = var.kube_system_uid
+    release_kubeconfig                    = abspath(var.kubeconfig_path)
+    security_kubeconfig                   = abspath(local.control_plane_network_policy_security_owner_kubeconfig_path)
+    bootstrap_kubeconfig                  = abspath(local.control_plane_network_policy_security_bootstrap_kubeconfig_path)
+    prior_security_kubeconfig             = abspath(local.control_plane_network_policy_prior_security_owner_kubeconfig_path)
+    prior_bootstrap_kubeconfig            = abspath(local.control_plane_network_policy_prior_security_bootstrap_kubeconfig_path)
+    release_identity                      = jsonencode(var.network_policy_boundary.release_identity)
+    security_identity                     = jsonencode(var.network_policy_boundary.security_owner_identity)
+    bootstrap_identity                    = jsonencode(var.network_policy_boundary.security_bootstrap_identity)
+    prior_security_identity               = jsonencode(var.network_policy_boundary.prior_security_owner_identity)
+    prior_bootstrap_identity              = jsonencode(var.network_policy_boundary.prior_security_bootstrap_identity)
+    subject_inventory                     = jsonencode(var.network_policy_boundary.security_subject_inventory)
+    provider_snapshot_path                = coalesce(var.network_policy_boundary.security_subject_provider_snapshot_path, "")
+    provider_public_key                   = coalesce(var.network_policy_boundary.security_subject_provider_public_key, "")
+    provider_tenant_sha256                = coalesce(var.network_policy_boundary.security_subject_provider_tenant_sha256, "")
+    provider_query_sha256                 = coalesce(var.network_policy_boundary.security_subject_provider_query_sha256, "")
+    recovery_public_key                   = coalesce(var.network_policy_boundary.security_handoff_recovery_public_key, "")
+    minimum_rollback_seconds              = tostring(var.network_policy_boundary.minimum_rollback_seconds)
+    gateway_namespace                     = local.control_plane_network_policy_gateway_namespace
+    controller_namespace                  = local.control_plane_network_policy_controller_namespace
+    security_owner_username               = local.control_plane_network_policy_security_owner
+    security_bootstrap_username           = local.control_plane_network_policy_security_bootstrap
+    prior_security_owner_username         = local.control_plane_network_policy_prior_security_owner
+    prior_security_bootstrap_username     = local.control_plane_network_policy_prior_bootstrap
+    successor_security_owner_username     = local.control_plane_network_policy_successor_owner
+    successor_security_bootstrap_username = local.control_plane_network_policy_successor_bootstrap
+    peer_uid                              = tostring(coalesce(var.network_policy_boundary.security_handoff_peer_uid, -1))
+    peer_gid                              = tostring(coalesce(var.network_policy_boundary.security_handoff_peer_gid, -1))
+    socket_path                           = var.network_policy_boundary.security_handoff_socket_path
+    identity_epoch                        = coalesce(var.network_policy_boundary.identity_epoch, "unconfigured")
+    prior_identity_epoch                  = coalesce(var.network_policy_boundary.prior_identity_epoch, "unconfigured-prior")
+    successor_identity_epoch              = coalesce(var.network_policy_boundary.successor_identity_epoch, "unconfigured-successor")
   }
 
   lifecycle {
@@ -163,10 +230,14 @@ data "external" "control_plane_network_policy_security_preflight_v2" {
         self.result.verified == "true" &&
         can(regex("^[0-9a-f]{64}$", self.result.contract_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.subject_inventory_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.provider_snapshot_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.kubernetes_subject_inventory_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.credential_set_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.release_kubeconfig_sha256)) &&
         can(regex("^[0-9a-f]{64}$", self.result.security_kubeconfig_sha256)) &&
-        can(regex("^[0-9a-f]{64}$", self.result.bootstrap_kubeconfig_sha256))
+        can(regex("^[0-9a-f]{64}$", self.result.bootstrap_kubeconfig_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.prior_security_kubeconfig_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.prior_bootstrap_kubeconfig_sha256))
       )
       error_message = "The plan-time external security-boundary proof did not complete exactly."
     }
@@ -178,9 +249,13 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
     ordinary_kubeconfig           = abspath(var.kubeconfig_path)
     security_owner_kubeconfig     = abspath(local.control_plane_network_policy_security_owner_kubeconfig_path)
     security_bootstrap_kubeconfig = abspath(local.control_plane_network_policy_security_bootstrap_kubeconfig_path)
+    prior_security_kubeconfig     = abspath(local.control_plane_network_policy_prior_security_owner_kubeconfig_path)
+    prior_bootstrap_kubeconfig    = abspath(local.control_plane_network_policy_prior_security_bootstrap_kubeconfig_path)
     release_identity              = jsonencode(var.network_policy_boundary.release_identity)
     security_identity             = jsonencode(var.network_policy_boundary.security_owner_identity)
     bootstrap_identity            = jsonencode(var.network_policy_boundary.security_bootstrap_identity)
+    prior_security_identity       = jsonencode(var.network_policy_boundary.prior_security_owner_identity)
+    prior_bootstrap_identity      = jsonencode(var.network_policy_boundary.prior_security_bootstrap_identity)
     inventory_subjects            = jsonencode(local.control_plane_network_policy_inventory_subjects)
     plan_preflight_sha256         = data.external.control_plane_network_policy_security_preflight_v2.result.contract_sha256
     client_private_key            = abspath(local.control_plane_network_policy_client_private_key_path)
@@ -188,6 +263,8 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
     peer_gid                      = coalesce(var.network_policy_boundary.security_handoff_peer_gid, -1)
     socket_path                   = var.network_policy_boundary.security_handoff_socket_path
     identity_epoch                = coalesce(var.network_policy_boundary.identity_epoch, "unconfigured")
+    prior_identity_epoch          = coalesce(var.network_policy_boundary.prior_identity_epoch, "unconfigured-prior")
+    successor_identity_epoch      = coalesce(var.network_policy_boundary.successor_identity_epoch, "unconfigured-successor")
     minimum_rollback_seconds      = var.network_policy_boundary.minimum_rollback_seconds
     boundary_mode                 = var.network_policy_boundary.mode
     kube_context                  = var.kube_context
@@ -351,7 +428,7 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
       test "$(bootstrap_can create subjectaccessreviews.authorization.k8s.io)" = "yes"
       for resource in validatingadmissionpolicies.admissionregistration.k8s.io validatingadmissionpolicybindings.admissionregistration.k8s.io; do
         test "$(security_can create "$resource")" = "no"
-        test "$(bootstrap_can create "$resource")" = "yes"
+        test "$(bootstrap_can create "$resource")" = "no"
       done
       while IFS='|' read -r namespace resource name; do
         test "$(ordinary_named_can get "$resource" "$name" --namespace "$namespace")" = "yes"
@@ -381,7 +458,10 @@ fs2-system|configmaps|fs2-network-policy-boundary-topology
 fs2-system|configmaps|fs2-network-policy-boundary-parameters
 fs2-system|leases.coordination.k8s.io|fs2-network-policy-transition
 EOF
-      for resource in users.authentication.k8s.io groups.authentication.k8s.io serviceaccounts.authentication.k8s.io uids.authentication.k8s.io userextras.authentication.k8s.io; do
+      # The every-plan Python preflight supplies the authoritative paginated
+      # namespace/ServiceAccount/CSR proof. These apply-time checks repeat its
+      # API-group-sensitive global negatives without replacing that receipt.
+      for resource in users groups serviceaccounts uids.authentication.k8s.io userextras.authentication.k8s.io; do
         test "$(ordinary_can impersonate "$resource")" = "no"
         test "$(security_can impersonate "$resource")" = "no"
         test "$(bootstrap_can impersonate "$resource")" = "no"
@@ -391,16 +471,18 @@ EOF
         test "$(security_named_can impersonate "$resource" "$name")" = "no"
         test "$(bootstrap_named_can impersonate "$resource" "$name")" = "no"
       done <<EOF
-users.authentication.k8s.io|$FS2_SECURITY_OWNER_USERNAME
-users.authentication.k8s.io|$FS2_SECURITY_BOOTSTRAP_USERNAME
-users.authentication.k8s.io|fs2-network-policy-security-probe
-groups.authentication.k8s.io|system:masters
-groups.authentication.k8s.io|system:authenticated
-groups.authentication.k8s.io|system:serviceaccounts
-groups.authentication.k8s.io|system:serviceaccounts:fs2-system
-groups.authentication.k8s.io|fs2-network-policy-security-probe
-serviceaccounts.authentication.k8s.io|system:serviceaccount:fs2-system:fs2-network-policy-transition
-serviceaccounts.authentication.k8s.io|fs2-system:fs2-network-policy-security-probe
+users|$FS2_SECURITY_OWNER_USERNAME
+users|$FS2_SECURITY_BOOTSTRAP_USERNAME
+users|$FS2_SUCCESSOR_SECURITY_OWNER_USERNAME
+users|$FS2_SUCCESSOR_SECURITY_BOOTSTRAP_USERNAME
+users|fs2-network-policy-security-probe
+groups|system:masters
+groups|system:authenticated
+groups|system:serviceaccounts
+groups|system:serviceaccounts:fs2-system
+groups|fs2-network-policy-security-probe
+serviceaccounts|system:serviceaccount:fs2-system:fs2-network-policy-transition
+serviceaccounts|fs2-system:fs2-network-policy-security-probe
 uids.authentication.k8s.io|$FS2_PEER_UID
 uids.authentication.k8s.io|00000000-0000-4000-8000-000000000000
 userextras.authentication.k8s.io|scopes
@@ -473,16 +555,16 @@ EOF
         while IFS='|' read -r api_group resource; do
           subject_denied "$human_user" "$human_groups" impersonate "$api_group" "$resource" "" "" ""
         done <<EOF
-authentication.k8s.io|users
-authentication.k8s.io|groups
-authentication.k8s.io|serviceaccounts
+        |users
+        |groups
+        |serviceaccounts
 authentication.k8s.io|uids
 authentication.k8s.io|userextras
 EOF
         for verb in bind escalate; do
           subject_denied "$human_user" "$human_groups" "$verb" rbac.authorization.k8s.io clusterroles "" "" ""
           subject_denied "$human_user" "$human_groups" "$verb" rbac.authorization.k8s.io roles fs2-system "" ""
-          subject_denied "$human_user" "$human_groups" "$verb" rbac.authorization.k8s.io clusterroles "" "$FS2_SECURITY_OWNER_USERNAME" ""
+          subject_denied "$human_user" "$human_groups" "$verb" rbac.authorization.k8s.io clusterroles "" fs2-network-policy-security-owner ""
           subject_denied "$human_user" "$human_groups" "$verb" rbac.authorization.k8s.io roles fs2-system fs2-network-policy-transition ""
         done
       done
@@ -501,8 +583,8 @@ EOF
         test "$(bootstrap_named_can bind "$resource" "$name" "$${namespace_args[@]}")" = "no"
         test "$(bootstrap_named_can escalate "$resource" "$name" "$${namespace_args[@]}")" = "no"
       done <<EOF
-|clusterroles.rbac.authorization.k8s.io|$FS2_SECURITY_OWNER_USERNAME
-|clusterrolebindings.rbac.authorization.k8s.io|$FS2_SECURITY_OWNER_USERNAME
+|clusterroles.rbac.authorization.k8s.io|fs2-network-policy-security-owner
+|clusterrolebindings.rbac.authorization.k8s.io|fs2-network-policy-security-owner
 fs2-system|roles.rbac.authorization.k8s.io|fs2-network-policy-transition
 fs2-system|rolebindings.rbac.authorization.k8s.io|fs2-network-policy-transition
 $FS2_GATEWAY_NAMESPACE|roles.rbac.authorization.k8s.io|fs2-network-policy-transition-gateway
@@ -512,26 +594,28 @@ $FS2_CONTROLLER_NAMESPACE|rolebindings.rbac.authorization.k8s.io|fs2-network-pol
 EOF
     EOT
     environment = {
-      FS2_ORDINARY_KUBECONFIG           = self.input.ordinary_kubeconfig
-      FS2_SECURITY_KUBECONFIG           = self.input.security_owner_kubeconfig
-      FS2_SECURITY_BOOTSTRAP_KUBECONFIG = self.input.security_bootstrap_kubeconfig
-      FS2_RELEASE_IDENTITY              = self.input.release_identity
-      FS2_SECURITY_IDENTITY             = self.input.security_identity
-      FS2_BOOTSTRAP_IDENTITY            = self.input.bootstrap_identity
-      FS2_SECURITY_INVENTORY_SUBJECTS   = self.input.inventory_subjects
-      FS2_CLIENT_PRIVATE_KEY            = self.input.client_private_key
-      FS2_PEER_UID                      = tostring(self.input.peer_uid)
-      FS2_PEER_GID                      = tostring(self.input.peer_gid)
-      FS2_SOCKET_PATH                   = self.input.socket_path
-      FS2_IDENTITY_EPOCH                = self.input.identity_epoch
-      FS2_MINIMUM_ROLLBACK_SECONDS      = tostring(self.input.minimum_rollback_seconds)
-      FS2_BOUNDARY_MODE                 = self.input.boundary_mode
-      FS2_KUBE_CONTEXT                  = self.input.kube_context
-      FS2_KUBE_SYSTEM_UID               = self.input.kube_system_uid
-      FS2_SECURITY_OWNER_USERNAME       = local.control_plane_network_policy_security_owner
-      FS2_SECURITY_BOOTSTRAP_USERNAME   = local.control_plane_network_policy_security_bootstrap
-      FS2_GATEWAY_NAMESPACE             = local.control_plane_network_policy_gateway_namespace
-      FS2_CONTROLLER_NAMESPACE          = local.control_plane_network_policy_controller_namespace
+      FS2_ORDINARY_KUBECONFIG                   = self.input.ordinary_kubeconfig
+      FS2_SECURITY_KUBECONFIG                   = self.input.security_owner_kubeconfig
+      FS2_SECURITY_BOOTSTRAP_KUBECONFIG         = self.input.security_bootstrap_kubeconfig
+      FS2_RELEASE_IDENTITY                      = self.input.release_identity
+      FS2_SECURITY_IDENTITY                     = self.input.security_identity
+      FS2_BOOTSTRAP_IDENTITY                    = self.input.bootstrap_identity
+      FS2_SECURITY_INVENTORY_SUBJECTS           = self.input.inventory_subjects
+      FS2_CLIENT_PRIVATE_KEY                    = self.input.client_private_key
+      FS2_PEER_UID                              = tostring(self.input.peer_uid)
+      FS2_PEER_GID                              = tostring(self.input.peer_gid)
+      FS2_SOCKET_PATH                           = self.input.socket_path
+      FS2_IDENTITY_EPOCH                        = self.input.identity_epoch
+      FS2_MINIMUM_ROLLBACK_SECONDS              = tostring(self.input.minimum_rollback_seconds)
+      FS2_BOUNDARY_MODE                         = self.input.boundary_mode
+      FS2_KUBE_CONTEXT                          = self.input.kube_context
+      FS2_KUBE_SYSTEM_UID                       = self.input.kube_system_uid
+      FS2_SECURITY_OWNER_USERNAME               = local.control_plane_network_policy_security_owner
+      FS2_SECURITY_BOOTSTRAP_USERNAME           = local.control_plane_network_policy_security_bootstrap
+      FS2_SUCCESSOR_SECURITY_OWNER_USERNAME     = local.control_plane_network_policy_successor_owner
+      FS2_SUCCESSOR_SECURITY_BOOTSTRAP_USERNAME = local.control_plane_network_policy_successor_bootstrap
+      FS2_GATEWAY_NAMESPACE                     = local.control_plane_network_policy_gateway_namespace
+      FS2_CONTROLLER_NAMESPACE                  = local.control_plane_network_policy_controller_namespace
     }
   }
 
@@ -569,18 +653,22 @@ resource "kubernetes_config_map_v1" "control_plane_network_policy_topology" {
     labels    = local.control_plane_network_policy_boundary_labels
     annotations = {
       "fs2.nebius.ai/network-policy-identity-epoch"        = coalesce(var.network_policy_boundary.identity_epoch, "unconfigured")
+      "fs2.nebius.ai/network-policy-successor-epoch"       = coalesce(var.network_policy_boundary.successor_identity_epoch, "unconfigured-successor")
       "fs2.nebius.ai/network-policy-credential-set-sha256" = data.external.control_plane_network_policy_security_preflight_v2.result.credential_set_sha256
     }
   }
   data = {
     "topology.json" = jsonencode({
-      schema                  = "fs2-serve.nebius.ai/network-policy-boundary-topology/v1"
-      mode                    = var.network_policy_boundary.mode
-      security_owner_username = local.control_plane_network_policy_security_owner
-      security_handoff        = local.control_plane_network_policy_security_handoff
-      gateway_namespace       = local.control_plane_network_policy_gateway_namespace
-      controller_namespace    = local.control_plane_network_policy_controller_namespace
-      policy_names            = local.control_plane_network_policy_names
+      schema                                = "fs2-serve.nebius.ai/network-policy-boundary-topology/v1"
+      mode                                  = var.network_policy_boundary.mode
+      security_owner_username               = local.control_plane_network_policy_security_owner
+      security_bootstrap_username           = local.control_plane_network_policy_security_bootstrap
+      successor_security_owner_username     = local.control_plane_network_policy_successor_owner
+      successor_security_bootstrap_username = local.control_plane_network_policy_successor_bootstrap
+      security_handoff                      = local.control_plane_network_policy_security_handoff
+      gateway_namespace                     = local.control_plane_network_policy_gateway_namespace
+      controller_namespace                  = local.control_plane_network_policy_controller_namespace
+      policy_names                          = local.control_plane_network_policy_names
     })
   }
 
@@ -596,13 +684,21 @@ resource "kubernetes_config_map_v1" "control_plane_network_policy_topology" {
           var.network_policy_boundary.security_handoff_peer_uid != null &&
           var.network_policy_boundary.security_handoff_peer_gid != null &&
           var.network_policy_boundary.identity_epoch != null &&
+          var.network_policy_boundary.prior_identity_epoch != null &&
+          var.network_policy_boundary.successor_identity_epoch != null &&
           var.network_policy_boundary.security_subject_inventory != null &&
+          var.network_policy_boundary.security_subject_provider_snapshot_path != null &&
+          var.network_policy_boundary.security_subject_provider_public_key != null &&
           var.network_policy_boundary.security_owner_kubeconfig_path != null &&
           var.network_policy_boundary.security_bootstrap_kubeconfig_path != null &&
+          var.network_policy_boundary.prior_security_owner_kubeconfig_path != null &&
+          var.network_policy_boundary.prior_security_bootstrap_kubeconfig_path != null &&
           var.network_policy_boundary.security_handoff_client_private_key_path != null &&
           var.network_policy_boundary.release_identity != null &&
           var.network_policy_boundary.security_owner_identity != null &&
-          var.network_policy_boundary.security_bootstrap_identity != null
+          var.network_policy_boundary.security_bootstrap_identity != null &&
+          var.network_policy_boundary.prior_security_owner_identity != null &&
+          var.network_policy_boundary.prior_security_bootstrap_identity != null
         )
       )
       error_message = "Public NetworkPolicy boundaries require pinned keys, a signed complete subject inventory, a versioned identity epoch, dedicated runtime/bootstrap kubeconfigs, exact expiring whoami tuples, and the exact effective Unix peer UID/GID."
@@ -826,7 +922,7 @@ resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_own
   provider = kubernetes.network_policy_security_owner
 
   metadata {
-    name   = local.control_plane_network_policy_security_owner
+    name   = "fs2-network-policy-security-owner"
     labels = local.control_plane_network_policy_boundary_labels
   }
   rule {
@@ -856,7 +952,7 @@ resource "kubernetes_cluster_role_binding_v1" "control_plane_network_policy_secu
   provider = kubernetes.network_policy_security_owner
 
   metadata {
-    name   = local.control_plane_network_policy_security_owner
+    name   = "fs2-network-policy-security-owner"
     labels = local.control_plane_network_policy_boundary_labels
   }
   role_ref {
@@ -869,8 +965,72 @@ resource "kubernetes_cluster_role_binding_v1" "control_plane_network_policy_secu
     name      = local.control_plane_network_policy_security_owner
     api_group = "rbac.authorization.k8s.io"
   }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_owner
+    api_group = "rbac.authorization.k8s.io"
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
 
   lifecycle { prevent_destroy = true }
+
+  # Epoch retirement is deliberately last for cluster-scoped authority. The
+  # current bootstrap remains authorized by the prior epoch until admission and
+  # both namespace bindings have moved to this epoch and its successor.
+  depends_on = [
+    kubernetes_manifest.control_plane_network_policy_boundary_admission_binding,
+    kubernetes_role_binding_v1.control_plane_network_policy_transition_controller,
+  ]
+}
+
+resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_auditor" {
+  provider = kubernetes.network_policy_security_owner
+
+  metadata {
+    name   = "fs2-network-policy-security-auditor"
+    labels = local.control_plane_network_policy_boundary_labels
+  }
+  rule {
+    api_groups = [""]
+    resources  = ["namespaces", "serviceaccounts"]
+    verbs      = ["get", "list"]
+  }
+  rule {
+    api_groups = ["authorization.k8s.io"]
+    resources  = ["subjectaccessreviews"]
+    verbs      = ["create"]
+  }
+
+  lifecycle { prevent_destroy = true }
+
+  depends_on = [terraform_data.control_plane_network_policy_security_owner_preflight]
+}
+
+resource "kubernetes_cluster_role_binding_v1" "control_plane_network_policy_security_auditor" {
+  provider = kubernetes.network_policy_security_owner
+
+  metadata {
+    name   = "fs2-network-policy-security-auditor"
+    labels = local.control_plane_network_policy_boundary_labels
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = kubernetes_cluster_role_v1.control_plane_network_policy_security_auditor.metadata[0].name
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
+
+  lifecycle { prevent_destroy = true }
+
+  depends_on = [kubernetes_manifest.control_plane_network_policy_boundary_admission_binding]
 }
 
 resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_state" {
@@ -891,8 +1051,25 @@ resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_s
     name      = local.control_plane_network_policy_security_owner
     api_group = "rbac.authorization.k8s.io"
   }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_owner
+    api_group = "rbac.authorization.k8s.io"
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
 
   lifecycle { prevent_destroy = true }
+
+  # Removing the current bootstrap from fs2-system is the final epoch-fencing
+  # write. A retry uses the newly bound current owner or successor bootstrap.
+  depends_on = [
+    kubernetes_cluster_role_binding_v1.control_plane_network_policy_security_owner,
+    kubernetes_config_map_v1.control_plane_network_policy_topology,
+  ]
 }
 
 resource "kubernetes_role_v1" "control_plane_network_policy_transition_gateway" {
@@ -944,8 +1121,24 @@ resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_g
     name      = local.control_plane_network_policy_security_owner
     api_group = "rbac.authorization.k8s.io"
   }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_owner
+    api_group = "rbac.authorization.k8s.io"
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
 
   lifecycle { prevent_destroy = true }
+
+  depends_on = [
+    kubernetes_manifest.control_plane_network_policy_boundary_admission_binding,
+    kubernetes_network_policy_v1.control_plane_public_envoy_boundary,
+    kubernetes_network_policy_v1.control_plane_envoy_default_deny,
+  ]
 }
 
 resource "kubernetes_role_v1" "control_plane_network_policy_transition_controller" {
@@ -993,8 +1186,23 @@ resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_c
     name      = local.control_plane_network_policy_security_owner
     api_group = "rbac.authorization.k8s.io"
   }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_owner
+    api_group = "rbac.authorization.k8s.io"
+  }
+  subject {
+    kind      = "User"
+    name      = local.control_plane_network_policy_successor_bootstrap
+    api_group = "rbac.authorization.k8s.io"
+  }
 
   lifecycle { prevent_destroy = true }
+
+  depends_on = [
+    kubernetes_role_binding_v1.control_plane_network_policy_transition_gateway,
+    kubernetes_network_policy_v1.control_plane_envoy_controller_boundary,
+  ]
 }
 
 resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission" {
@@ -1068,7 +1276,10 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission"
                   object.data == oldObject.data
                 ) ||
                 (
-                  request.userInfo.username == '${local.control_plane_network_policy_security_bootstrap}' &&
+                  request.userInfo.username in [
+                    '${local.control_plane_network_policy_security_bootstrap}',
+                    '${local.control_plane_network_policy_successor_bootstrap}'
+                  ] &&
                   object.metadata.annotations['fs2.nebius.ai/network-policy-identity-epoch'] !=
                     oldObject.metadata.annotations['fs2.nebius.ai/network-policy-identity-epoch']
                 )
@@ -1090,14 +1301,15 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission"
               object.metadata.labels['fs2.nebius.ai/network-policy-boundary'] == 'permanent' &&
               request.userInfo.username in [
                 '${local.control_plane_network_policy_security_owner}',
-                '${local.control_plane_network_policy_security_bootstrap}'
+                '${local.control_plane_network_policy_security_bootstrap}',
+                '${local.control_plane_network_policy_successor_bootstrap}'
               ] &&
               (!('fs2.nebius.ai/network-policy-role' in oldObject.metadata.labels) ||
                ('fs2.nebius.ai/network-policy-role' in object.metadata.labels &&
                 object.metadata.labels['fs2.nebius.ai/network-policy-role'] == oldObject.metadata.labels['fs2.nebius.ai/network-policy-role']))
             )
           CEL
-          message    = "permanent boundary updates require the runtime security owner or current short-lived bootstrap epoch and immutable ownership labels"
+          message    = "permanent boundary updates require the current runtime owner or an exact preauthorized bootstrap epoch and immutable ownership labels"
           reason     = "Forbidden"
         },
       ]
@@ -1141,13 +1353,9 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission_
 
   depends_on = [
     kubernetes_manifest.control_plane_network_policy_boundary_admission,
-    kubernetes_role_binding_v1.control_plane_network_policy_transition_state,
-    kubernetes_role_binding_v1.control_plane_network_policy_transition_gateway,
-    kubernetes_role_binding_v1.control_plane_network_policy_transition_controller,
     kubernetes_config_map_v1.control_plane_network_policy_transition_receipt,
     kubernetes_manifest.control_plane_network_policy_transition_lease,
     kubernetes_config_map_v1.control_plane_network_policy_topology,
     kubernetes_config_map_v1.control_plane_network_policy_boundary_parameters,
-    kubernetes_cluster_role_binding_v1.control_plane_network_policy_security_owner,
   ]
 }
