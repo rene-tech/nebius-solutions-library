@@ -517,6 +517,29 @@ async def _operation_response(runtime: AppRuntime, operation: OperationView) -> 
 
 
 def create_app(runtime: AppRuntime) -> FastAPI:
+    def public_model_or_not_found(
+        model_id: str,
+        identity: Principal,
+        *,
+        surface: str,
+    ) -> OperationalModel:
+        """Resolve public-route policy without disclosing a model's existence."""
+
+        model = runtime.registry.get(model_id, require_enabled=False)
+        try:
+            runtime.registry.authorize_principal(
+                model,
+                identity,
+                requested_model_id=model_id,
+                surface=surface,
+            )
+        except PermissionError:
+            # Reuse the exact unknown-model handler body. Readiness is checked
+            # only after policy permits the caller, so a private disabled App
+            # cannot be distinguished from an unknown model either.
+            raise KeyError("unknown model") from None
+        return model
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if runtime.route_revalidator is not None:
@@ -1099,6 +1122,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             raise HTTPException(status_code=400, detail="streaming is not enabled in phase 1; use an async operation")
         model_id = _validate_model_id(payload["model"])
         request.state.model_id = model_id
+        public_model_or_not_found(model_id, identity, surface="openai")
         model = runtime.registry.get(model_id)
         resolved_operation = runtime.registry.operation_for_protocol(model, protocol)
         return await invoke(
@@ -1157,6 +1181,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
         wait_seconds: Annotated[str | None, Header(alias="x-fs2-wait-seconds")] = None,
     ) -> Response:
+        public_model_or_not_found(_validate_model_id(model_id), identity, surface="mcp")
         return await invoke(
             request=request,
             identity=identity,

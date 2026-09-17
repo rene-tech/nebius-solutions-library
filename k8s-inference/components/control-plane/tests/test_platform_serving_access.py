@@ -123,7 +123,7 @@ def test_shared_http_and_native_dispatch_keep_customer_ownership_and_key_denials
         )
         denied_headers = {"authorization": f"Bearer {denied}", "idempotency-key": "restricted-customer-key"}
         assert client.get("/v1/models", headers=denied_headers).json()["data"] == []
-        assert client.post(path, headers=denied_headers, json=payload).status_code == 403
+        assert client.post(path, headers=denied_headers, json=payload).status_code == 404
 
         missing_scope = issue(
             client, principal="read-only", tenant="customer-a", scopes=["catalog.read"], models=[model_id]
@@ -168,6 +168,47 @@ def test_shared_http_and_native_dispatch_keep_customer_ownership_and_key_denials
     for tenant in customers:
         usage = asyncio.run(repository.usage(tenant, "same-user-name", context))
         assert usage.requests == usage.succeeded == 1
+
+
+def test_public_http_model_policy_denials_are_identical_to_unknown_models(registry, cipher, hasher):
+    revision = _revision(registry, visibility=Visibility.PRIVATE)
+    snapshot = project_dynamic_publications(
+        [revision],
+        {(revision.namespace, revision.name): status_view(revision)},
+    )
+    assert registry.set_dynamic_publications(snapshot, valid_until=datetime.now(UTC) + timedelta(minutes=5))
+    runtime = build_runtime(registry, cipher, hasher)
+    expected = {"error": {"type": "not_found", "message": "model or operation was not found"}}
+    requests = (
+        ("/v1/chat/completions", {"messages": [{"role": "user", "content": "fixture"}]}),
+        ("/v1/completions", {"prompt": "fixture"}),
+        ("/v1/embeddings", {"input": "fixture"}),
+        ("/v1/images/generations", {"prompt": "fixture"}),
+        ("/v1/models/{model_id}:invoke", {"operation": "chat", "payload": {"input": "fixture"}}),
+    )
+    with TestClient(create_app(runtime)) as client:
+        token = issue(
+            client,
+            principal="model-oracle-denied",
+            tenant="tenant-a",
+            scopes=["inference.invoke"],
+            models=["qwen3-8b"],
+        )
+        headers = {"authorization": f"Bearer {token}", "idempotency-key": "model-oracle-denied-key"}
+        for path_template, request_payload in requests:
+            responses = []
+            for model_id in ("qwen3-8b", "unknown-private-app"):
+                path = path_template.format(model_id=model_id)
+                payload = dict(request_payload)
+                if "{model_id}" not in path_template:
+                    payload["model"] = model_id
+                responses.append(client.post(path, headers=headers, json=payload))
+
+            denied, unknown = responses
+            assert denied.status_code == unknown.status_code == 404
+            assert denied.content == unknown.content
+            assert denied.json() == unknown.json() == expected
+            assert denied.headers["cache-control"] == unknown.headers["cache-control"] == "no-store"
 
 
 @pytest.mark.parametrize("visibility", [Visibility.PRIVATE, Visibility.TENANT])
