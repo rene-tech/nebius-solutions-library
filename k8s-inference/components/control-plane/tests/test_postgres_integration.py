@@ -858,6 +858,47 @@ async def test_admin_access_migration_sessions_rotation_rate_and_reported_units_
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+async def test_concurrent_expired_pat_replay_creates_one_audit_event(postgres_store: PostgresStore) -> None:
+    tokens = TokenService(
+        postgres_store,
+        PepperRing(active_key_id="pepper-v1", keys={"pepper-v1": b"p" * 32}),
+    )
+    issued = await tokens.issue(
+        TokenCreate(
+            principal_id="expired-replay-user",
+            tenant_id="tenant-expired-replay",
+            scopes={Scope.CATALOG_READ},
+            models={"qwen3-8b"},
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+        created_by="postgres-operator",
+    )
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE fs2_tokens SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",
+            issued.id,
+        )
+
+    results = await asyncio.gather(
+        *(tokens.verify(issued.token) for _ in range(20)),
+        return_exceptions=True,
+    )
+
+    assert all(isinstance(result, AuthenticationError) for result in results)
+    stored = await postgres_store.token_for_verification(issued.id)
+    assert stored is not None and stored[2]
+    async with postgres_store.pool.acquire() as connection:
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_audit_events WHERE token_id=$1 AND action='token.expire'",
+                issued.id,
+            )
+            == 1
+        )
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
 async def test_migration_and_schema_wait_entrypoints_need_only_database_credentials(
     postgres_store: PostgresStore,
 ) -> None:

@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 from argon2.exceptions import VerifyMismatchError
 
-from fs2_serve.auth import AuthenticationError, PepperRing, TokenService
+from fs2_serve.auth import ArgonCapacityError, AuthenticationError, PepperRing, TokenService
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.models import Scope, TokenCreate
 
@@ -86,6 +86,18 @@ class BlockingRehashHasher(DeterministicHasher):
         self.hash_started.set()
         if not self.release_hash.wait(timeout=2):
             raise AssertionError("test did not release the Argon rehash worker")
+        return prehash
+
+
+class ThreadRecordingHasher(DeterministicHasher):
+    def __init__(self) -> None:
+        super().__init__()
+        self.hash_calls = 0
+        self.hash_thread_ids: set[int] = set()
+
+    def hash(self, prehash: str) -> str:
+        self.hash_calls += 1
+        self.hash_thread_ids.add(threading.get_ident())
         return prehash
 
 
@@ -222,6 +234,36 @@ async def test_argon_verification_runs_off_loop_with_bounded_parallelism(cipher,
 
 
 @pytest.mark.asyncio
+async def test_argon_overload_fails_fast_without_delaying_cached_or_uncached_other_keys(cipher, hasher) -> None:
+    store = MemoryStore(cipher, hasher)
+    tokens = service(store, verification_concurrency=1, argon_queue_capacity=1)
+    cached_id, cached = await add_token(store, tokens, secret="c" * 32)
+    first_id, first = await add_token(store, tokens, secret="a" * 32)
+    second_id, second = await add_token(store, tokens, secret="b" * 32)
+    _, uncached = await add_token(store, tokens, secret="u" * 32)
+    fast = DeterministicHasher()
+    tokens._hasher = fast  # type: ignore[assignment]
+    assert (await tokens.verify(cached)).token_id == cached_id
+
+    blocking = BlockingHasher(expected_active=1)
+    tokens._hasher = blocking  # type: ignore[assignment]
+    active = asyncio.create_task(tokens.verify(first))
+    assert await asyncio.wait_for(asyncio.to_thread(blocking.saturated.wait, 1), timeout=1.5)
+    queued = asyncio.create_task(tokens.verify(second))
+    await asyncio.sleep(0)
+    assert tokens._argon_admitted == 2
+
+    assert (await asyncio.wait_for(tokens.verify(cached), timeout=0.1)).token_id == cached_id
+    with pytest.raises(ArgonCapacityError, match="capacity"):
+        await asyncio.wait_for(tokens.verify(uncached), timeout=0.1)
+
+    blocking.release.set()
+    assert (await active).token_id == first_id
+    assert (await queued).token_id == second_id
+    assert tokens._argon_admitted == 0
+
+
+@pytest.mark.asyncio
 async def test_cancelled_request_keeps_argon_slot_until_worker_finishes(cipher, hasher) -> None:
     store = MemoryStore(cipher, hasher)
     tokens = service(store, verification_concurrency=1)
@@ -291,6 +333,67 @@ async def test_old_pepper_rehash_is_off_loop_bounded_coalesced_and_cancellation_
     assert stored[0].pepper_key_id == "pepper-v2"
     assert stored[1] == tokens._prehash(token, "pepper-v2")
     assert threading.get_ident() not in fake.hash_thread_ids
+
+
+@pytest.mark.asyncio
+async def test_issue_and_rotate_hash_off_loop_without_blocking_heartbeat(cipher, hasher) -> None:
+    store = MemoryStore(cipher, hasher)
+    tokens = service(store, verification_concurrency=1)
+    request = TokenCreate(
+        principal_id="heartbeat-user",
+        tenant_id="tenant-a",
+        scopes={Scope.CATALOG_READ},
+        models={"qwen3-8b"},
+    )
+
+    issue_hasher = BlockingRehashHasher()
+    tokens._hasher = issue_hasher  # type: ignore[assignment]
+    issuing = asyncio.create_task(tokens.issue(request, created_by="test"))
+    assert await asyncio.wait_for(asyncio.to_thread(issue_hasher.hash_started.wait, 1), timeout=1.5)
+    heartbeat = asyncio.Event()
+    asyncio.get_running_loop().call_soon(heartbeat.set)
+    await asyncio.wait_for(heartbeat.wait(), timeout=0.1)
+    issue_hasher.release_hash.set()
+    issued = await issuing
+
+    rotate_hasher = BlockingRehashHasher()
+    tokens._hasher = rotate_hasher  # type: ignore[assignment]
+    rotating = asyncio.create_task(tokens.rotate(issued.id, actor="test"))
+    assert await asyncio.wait_for(asyncio.to_thread(rotate_hasher.hash_started.wait, 1), timeout=1.5)
+    heartbeat.clear()
+    asyncio.get_running_loop().call_soon(heartbeat.set)
+    await asyncio.wait_for(heartbeat.wait(), timeout=0.1)
+    rotate_hasher.release_hash.set()
+    rotated = await rotating
+
+    assert rotated.rotation_parent_id == issued.id
+    assert threading.get_ident() not in issue_hasher.hash_thread_ids
+    assert threading.get_ident() not in rotate_hasher.hash_thread_ids
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_hash_and_verify_share_off_loop_argon_admission(cipher, hasher) -> None:
+    store = MemoryStore(cipher, hasher)
+    tokens = service(store, verification_concurrency=1)
+    fake = ThreadRecordingHasher()
+    tokens._hasher = fake  # type: ignore[assignment]
+    token_id = uuid4()
+    token = f"fs2_pat_{token_id.hex}_{'z' * 32}"
+    request = TokenCreate(
+        principal_id="bootstrap-user",
+        tenant_id="tenant-a",
+        scopes={Scope.CATALOG_READ},
+        models={"qwen3-8b"},
+    )
+
+    first = await tokens.ensure_provisioned(token, request, created_by="test")
+    second = await tokens.ensure_provisioned(token, request, created_by="test")
+
+    assert first == second
+    assert fake.hash_calls == 1
+    assert fake.calls == 1
+    assert threading.get_ident() not in fake.hash_thread_ids
+    assert threading.get_ident() not in fake.thread_ids
 
 
 @pytest.mark.asyncio
@@ -377,26 +480,38 @@ async def test_failure_throttle_never_locks_out_stored_fingerprint(cipher, hashe
 
 
 @pytest.mark.asyncio
-async def test_legacy_token_binds_fingerprint_without_failure_lockout(cipher, hasher) -> None:
+async def test_legacy_wrong_secrets_stop_at_budget_then_recovery_probe_binds_fingerprint(cipher, hasher) -> None:
     store = MemoryStore(cipher, hasher)
-    tokens = service(store, failure_limit=1)
+    clock = FakeClock()
+    tokens = service(
+        store,
+        failure_limit=2,
+        legacy_probe_interval_seconds=5,
+        monotonic_clock=clock,
+    )
     token_id, token = await add_token(store, tokens, secret="l" * 32, with_fingerprint=False)
-    wrong = f"fs2_pat_{token_id.hex}_{'x' * 32}"
     fake = DeterministicHasher()
     tokens._hasher = fake  # type: ignore[assignment]
 
+    for character in "xy":
+        with pytest.raises(AuthenticationError, match="invalid bearer token"):
+            await tokens.verify(f"fs2_pat_{token_id.hex}_{character * 32}")
     with pytest.raises(AuthenticationError, match="invalid bearer token"):
-        await tokens.verify(wrong)
+        await tokens.verify(f"fs2_pat_{token_id.hex}_{'w' * 32}")
+    with pytest.raises(AuthenticationError, match="invalid bearer token"):
+        await tokens.verify(token)
+    assert fake.calls == 2
+
+    clock.advance(5)
     assert (await tokens.verify(token)).token_id == token_id
 
     stored = await store.token_for_verification(token_id)
     assert stored is not None
     assert stored[0].fingerprint == hashlib.sha256(token.encode()).hexdigest()
-    assert fake.calls == 2
+    assert fake.calls == 3
 
     with pytest.raises(AuthenticationError, match="invalid bearer token"):
-        await tokens.verify(wrong)
+        await tokens.verify(f"fs2_pat_{token_id.hex}_{'x' * 32}")
     with pytest.raises(AuthenticationError, match="invalid bearer token"):
-        await tokens.verify(wrong)
-    assert tokens._verification_is_throttled(token_id)
-    assert fake.calls == 2
+        await tokens.verify(f"fs2_pat_{token_id.hex}_{'y' * 32}")
+    assert fake.calls == 3

@@ -8,12 +8,12 @@ import hashlib
 import hmac
 import secrets
 import time
-from collections import OrderedDict, deque
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 from uuid import UUID, uuid4
 
 from argon2 import PasswordHasher
@@ -27,20 +27,27 @@ TOKEN_MARKER = "fs2_pat"  # noqa: S105 - public token format marker, not a crede
 MAX_PAT_LENGTH = 256
 TOKEN_VERIFICATION_CACHE_CONTEXT = b"fs2-serve.pat-verification-cache/v1\0"
 TOKEN_VERIFICATION_CONCURRENCY = 4
+TOKEN_ARGON_QUEUE_CAPACITY = 4
 TOKEN_VERIFICATION_CACHE_TTL_SECONDS = 5.0
 TOKEN_VERIFICATION_CACHE_MAX_ENTRIES = 4096
 TOKEN_FAILURE_LIMIT = 5
 TOKEN_FAILURE_WINDOW_SECONDS = 30.0
 TOKEN_FAILURE_BUCKET_MAX_ENTRIES = 4096
+TOKEN_LEGACY_PROBE_INTERVAL_SECONDS = 5.0
 SESSION_MARKER = "fs2_admin"
 MAX_OPERATOR_SESSION_LENGTH = 256
 OPERATOR_SESSION_DIGEST_CONTEXT = b"fs2-serve.admin-session/v1\0"
 
 VerificationCacheKey = tuple[UUID, str, str, str]
 RehashKey = tuple[UUID, str, str]
+ArgonResult = TypeVar("ArgonResult")
 
 
 class AuthenticationError(PermissionError):
+    pass
+
+
+class ArgonCapacityError(RuntimeError):
     pass
 
 
@@ -48,6 +55,13 @@ class AuthenticationError(PermissionError):
 class IssuedOperatorSession:
     session: OperatorSession
     cookie_value: str
+
+
+@dataclass
+class _TokenFailureState:
+    failures: OrderedDict[str, float] = field(default_factory=OrderedDict)
+    in_flight: dict[str, bool] = field(default_factory=dict)
+    next_probe_at: float = 0.0
 
 
 def require_operation_access(principal: Principal, operation: OperationView) -> None:
@@ -111,15 +125,19 @@ class TokenService:
         *,
         principal_policy: Callable[[Principal], Awaitable[Principal]] | None = None,
         verification_concurrency: int = TOKEN_VERIFICATION_CONCURRENCY,
+        argon_queue_capacity: int = TOKEN_ARGON_QUEUE_CAPACITY,
         verification_cache_ttl_seconds: float = TOKEN_VERIFICATION_CACHE_TTL_SECONDS,
         verification_cache_max_entries: int = TOKEN_VERIFICATION_CACHE_MAX_ENTRIES,
         failure_limit: int = TOKEN_FAILURE_LIMIT,
         failure_window_seconds: float = TOKEN_FAILURE_WINDOW_SECONDS,
         failure_bucket_max_entries: int = TOKEN_FAILURE_BUCKET_MAX_ENTRIES,
+        legacy_probe_interval_seconds: float = TOKEN_LEGACY_PROBE_INTERVAL_SECONDS,
         monotonic_clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if not 1 <= verification_concurrency <= 64:
             raise ValueError("PAT verification concurrency is outside the bound")
+        if not 0 <= argon_queue_capacity <= 256:
+            raise ValueError("PAT Argon queue capacity is outside the bound")
         if not 0 < verification_cache_ttl_seconds <= 60:
             raise ValueError("PAT verification cache TTL is outside the bound")
         if not 1 <= verification_cache_max_entries <= 100_000:
@@ -130,18 +148,23 @@ class TokenService:
             raise ValueError("PAT verification failure window is outside the bound")
         if not 1 <= failure_bucket_max_entries <= 100_000:
             raise ValueError("PAT verification failure bucket count is outside the bound")
+        if not 0.1 <= legacy_probe_interval_seconds <= 3600:
+            raise ValueError("legacy PAT recovery probe interval is outside the bound")
         self.store = store
         self._peppers = peppers
         self.principal_policy = principal_policy
         self._hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2, hash_len=32, salt_len=16)
         self._verification_slots = asyncio.BoundedSemaphore(verification_concurrency)
+        self._argon_admission_limit = verification_concurrency + argon_queue_capacity
+        self._argon_admitted = 0
         self._verification_cache_ttl_seconds = verification_cache_ttl_seconds
         self._verification_cache_max_entries = verification_cache_max_entries
         self._verification_cache: OrderedDict[VerificationCacheKey, float] = OrderedDict()
         self._failure_limit = failure_limit
         self._failure_window_seconds = failure_window_seconds
         self._failure_bucket_max_entries = failure_bucket_max_entries
-        self._failed_verifications: OrderedDict[UUID, deque[float]] = OrderedDict()
+        self._legacy_probe_interval_seconds = legacy_probe_interval_seconds
+        self._failed_verifications: OrderedDict[UUID, _TokenFailureState] = OrderedDict()
         self._rehash_tasks: dict[RehashKey, asyncio.Task[None]] = {}
         self._monotonic_clock = monotonic_clock
 
@@ -193,34 +216,126 @@ class TokenService:
             if key[0] == token_id:
                 self._verification_cache.pop(key, None)
 
-    def _recent_failures(self, token_id: UUID) -> deque[float] | None:
-        failures = self._failed_verifications.get(token_id)
-        if failures is None:
+    def _recent_failure_state(self, token_id: UUID) -> _TokenFailureState | None:
+        state = self._failed_verifications.get(token_id)
+        if state is None:
             return None
         cutoff = self._monotonic_clock() - self._failure_window_seconds
-        while failures and failures[0] <= cutoff:
-            failures.popleft()
-        if not failures:
+        for candidate, occurred_at in tuple(state.failures.items()):
+            if occurred_at <= cutoff:
+                state.failures.pop(candidate, None)
+        if len(state.failures) < self._failure_limit:
+            state.next_probe_at = 0.0
+        if not state.failures and not state.in_flight:
             self._failed_verifications.pop(token_id, None)
             return None
         self._failed_verifications.move_to_end(token_id)
-        return failures
+        return state
+
+    def _failure_state(self, token_id: UUID) -> _TokenFailureState:
+        state = self._recent_failure_state(token_id)
+        if state is not None:
+            return state
+        while len(self._failed_verifications) >= self._failure_bucket_max_entries:
+            evictable = next(
+                (
+                    candidate_id
+                    for candidate_id, candidate_state in self._failed_verifications.items()
+                    if not candidate_state.in_flight
+                ),
+                None,
+            )
+            if evictable is None:
+                raise ArgonCapacityError("authentication capacity is unavailable")
+            self._failed_verifications.pop(evictable, None)
+        state = _TokenFailureState()
+        self._failed_verifications[token_id] = state
+        return state
 
     def _verification_is_throttled(self, token_id: UUID) -> bool:
-        failures = self._recent_failures(token_id)
-        return failures is not None and len(failures) >= self._failure_limit
+        state = self._recent_failure_state(token_id)
+        return state is not None and len(state.failures) >= self._failure_limit
 
-    def _record_failed_verification(self, token_id: UUID) -> None:
-        failures = self._recent_failures(token_id)
-        if failures is None:
-            failures = deque()
-            self._failed_verifications[token_id] = failures
-        failures.append(self._monotonic_clock())
-        while len(failures) > self._failure_limit:
-            failures.popleft()
+    def _record_failed_verification(self, token_id: UUID, candidate: str) -> None:
+        state = self._failure_state(token_id)
+        now = self._monotonic_clock()
+        state.failures[candidate] = now
+        state.failures.move_to_end(candidate)
+        while len(state.failures) > self._failure_limit:
+            state.failures.popitem(last=False)
+        if len(state.failures) >= self._failure_limit:
+            state.next_probe_at = max(state.next_probe_at, now + self._legacy_probe_interval_seconds)
         self._failed_verifications.move_to_end(token_id)
-        while len(self._failed_verifications) > self._failure_bucket_max_entries:
-            self._failed_verifications.popitem(last=False)
+
+    def _reserve_legacy_attempt(self, token_id: UUID, candidate: str) -> bool:
+        state = self._failure_state(token_id)
+        if candidate in state.failures or candidate in state.in_flight:
+            raise AuthenticationError("invalid bearer token")
+        if any(state.in_flight.values()):
+            raise AuthenticationError("invalid bearer token")
+        ordinary_in_flight = sum(not recovery_probe for recovery_probe in state.in_flight.values())
+        if len(state.failures) < self._failure_limit:
+            if len(state.failures) + ordinary_in_flight < self._failure_limit:
+                state.in_flight[candidate] = False
+                return False
+            raise AuthenticationError("invalid bearer token")
+        if ordinary_in_flight:
+            raise AuthenticationError("invalid bearer token")
+        if self._monotonic_clock() < state.next_probe_at:
+            raise AuthenticationError("invalid bearer token")
+        state.in_flight[candidate] = True
+        return True
+
+    def _legacy_attempt_is_reserved(self, token_id: UUID, candidate: str, recovery_probe: bool) -> bool:
+        state = self._failed_verifications.get(token_id)
+        return state is not None and state.in_flight.get(candidate) is recovery_probe
+
+    def _release_legacy_attempt(self, token_id: UUID, candidate: str) -> None:
+        state = self._failed_verifications.get(token_id)
+        if state is None:
+            return
+        state.in_flight.pop(candidate, None)
+        if not state.failures and not state.in_flight:
+            self._failed_verifications.pop(token_id, None)
+
+    def _finish_legacy_attempt(
+        self,
+        token_id: UUID,
+        candidate: str,
+        *,
+        recovery_probe: bool,
+        valid: bool,
+    ) -> None:
+        if valid:
+            self._failed_verifications.pop(token_id, None)
+            return
+        state = self._failure_state(token_id)
+        state.in_flight.pop(candidate, None)
+        self._record_failed_verification(token_id, candidate)
+        if recovery_probe:
+            state.next_probe_at = self._monotonic_clock() + self._legacy_probe_interval_seconds
+
+    def _reserve_argon_admission(self) -> None:
+        if self._argon_admitted >= self._argon_admission_limit:
+            raise ArgonCapacityError("authentication capacity is unavailable")
+        self._argon_admitted += 1
+
+    def _release_argon_admission(self) -> None:
+        if self._argon_admitted <= 0:
+            raise RuntimeError("Argon admission ownership underflow")
+        self._argon_admitted -= 1
+
+    async def _acquire_argon_slot(self) -> None:
+        self._reserve_argon_admission()
+        try:
+            await self._verification_slots.acquire()
+        except BaseException:
+            self._release_argon_admission()
+            raise
+
+    def _release_argon_slot(self) -> None:
+        self._verification_slots.release()
+        self._release_argon_admission()
 
     async def _verify_digest(
         self,
@@ -229,20 +344,50 @@ class TokenService:
         cache_key: VerificationCacheKey,
         digest: str,
         prehash: str,
+        candidate: str,
+        legacy_recovery_probe: bool | None,
     ) -> None:
         try:
             valid = await asyncio.to_thread(self._hasher.verify, digest, prehash)
         except (InvalidHashError, VerifyMismatchError) as exc:
-            self._record_failed_verification(token_id)
+            if legacy_recovery_probe is None:
+                self._record_failed_verification(token_id, candidate)
+            else:
+                self._finish_legacy_attempt(
+                    token_id,
+                    candidate,
+                    recovery_probe=legacy_recovery_probe,
+                    valid=False,
+                )
             raise AuthenticationError("invalid bearer token") from exc
+        except BaseException:
+            if legacy_recovery_probe is not None:
+                self._release_legacy_attempt(token_id, candidate)
+            raise
         if not valid:
-            self._record_failed_verification(token_id)
+            if legacy_recovery_probe is None:
+                self._record_failed_verification(token_id, candidate)
+            else:
+                self._finish_legacy_attempt(
+                    token_id,
+                    candidate,
+                    recovery_probe=legacy_recovery_probe,
+                    valid=False,
+                )
             raise AuthenticationError("invalid bearer token")
-        self._failed_verifications.pop(token_id, None)
+        if legacy_recovery_probe is None:
+            self._failed_verifications.pop(token_id, None)
+        else:
+            self._finish_legacy_attempt(
+                token_id,
+                candidate,
+                recovery_probe=legacy_recovery_probe,
+                valid=True,
+            )
         self._cache_verification(cache_key)
 
     def _argon_worker_finished(self, task: asyncio.Task[Any]) -> None:
-        self._verification_slots.release()
+        self._release_argon_slot()
         if not task.cancelled():
             task.exception()
 
@@ -253,34 +398,63 @@ class TokenService:
         cache_key: VerificationCacheKey,
         digest: str,
         prehash: str,
+        legacy: bool,
     ) -> None:
         if self._verification_is_cached(cache_key):
             self._failed_verifications.pop(token_id, None)
             return
-        await self._verification_slots.acquire()
+        candidate = cache_key[3]
+        legacy_recovery_probe = self._reserve_legacy_attempt(token_id, candidate) if legacy else None
+        try:
+            await self._acquire_argon_slot()
+        except BaseException:
+            if legacy:
+                self._release_legacy_attempt(token_id, candidate)
+            raise
         if self._verification_is_cached(cache_key):
             self._failed_verifications.pop(token_id, None)
-            self._verification_slots.release()
+            self._release_argon_slot()
             return
-        task = asyncio.create_task(
-            self._verify_digest(
-                token_id=token_id,
-                cache_key=cache_key,
-                digest=digest,
-                prehash=prehash,
+        if legacy and not self._legacy_attempt_is_reserved(token_id, candidate, bool(legacy_recovery_probe)):
+            self._release_argon_slot()
+            raise AuthenticationError("invalid bearer token")
+        try:
+            task = asyncio.create_task(
+                self._verify_digest(
+                    token_id=token_id,
+                    cache_key=cache_key,
+                    digest=digest,
+                    prehash=prehash,
+                    candidate=candidate,
+                    legacy_recovery_probe=legacy_recovery_probe,
+                )
             )
-        )
+        except BaseException:
+            self._release_argon_slot()
+            if legacy:
+                self._release_legacy_attempt(token_id, candidate)
+            raise
         # A disconnected request cannot release a slot while its worker thread
         # still consumes Argon2 memory and CPU. The callback releases only when
         # the actual worker finishes; shield keeps caller cancellation local.
         task.add_done_callback(self._argon_worker_finished)
         await asyncio.shield(task)
 
-    async def _hash_prehash_bounded(self, prehash: str) -> str:
-        await self._verification_slots.acquire()
-        task = asyncio.create_task(asyncio.to_thread(self._hasher.hash, prehash))
+    async def _run_argon_bounded(self, operation: Callable[[], ArgonResult]) -> ArgonResult:
+        await self._acquire_argon_slot()
+        try:
+            task = asyncio.create_task(asyncio.to_thread(operation))
+        except BaseException:
+            self._release_argon_slot()
+            raise
         task.add_done_callback(self._argon_worker_finished)
         return await asyncio.shield(task)
+
+    async def _hash_prehash_bounded(self, prehash: str) -> str:
+        return await self._run_argon_bounded(lambda: self._hasher.hash(prehash))
+
+    async def _verify_prehash_bounded(self, digest: str, prehash: str) -> bool:
+        return await self._run_argon_bounded(lambda: self._hasher.verify(digest, prehash))
 
     async def _rehash_verified_token(
         self,
@@ -361,7 +535,7 @@ class TokenService:
         token = f"{TOKEN_MARKER}_{token_id.hex}_{secret}"
         prefix = f"{TOKEN_MARKER}_{token_id.hex[:12]}"
         pepper_key_id = self._peppers.active_key_id
-        digest = self._hasher.hash(self._prehash(token, pepper_key_id))
+        digest = await self._hash_prehash_bounded(self._prehash(token, pepper_key_id))
         fingerprint = hashlib.sha256(token.encode()).hexdigest()
         view = await self.store.issue_token(
             token_id=token_id,
@@ -391,7 +565,7 @@ class TokenService:
         stored = await self.store.token_for_verification(token_id)
         if stored is None:
             pepper_key_id = self._peppers.active_key_id
-            digest = self._hasher.hash(self._prehash(token, pepper_key_id))
+            digest = await self._hash_prehash_bounded(self._prehash(token, pepper_key_id))
             try:
                 return await self.store.issue_token(
                     token_id=token_id,
@@ -415,7 +589,7 @@ class TokenService:
         if view.fingerprint is not None and not secrets.compare_digest(fingerprint, view.fingerprint):
             raise AuthenticationError("bootstrap token identity conflicts with stored token")
         try:
-            valid = self._hasher.verify(digest, self._prehash(token, view.pepper_key_id))
+            valid = await self._verify_prehash_bounded(digest, self._prehash(token, view.pepper_key_id))
         except (InvalidHashError, VerifyMismatchError) as exc:
             raise AuthenticationError("bootstrap token identity conflicts with stored token") from exc
         if not valid or view.revoked_at is not None or (view.expires_at is not None and view.expires_at <= now):
@@ -453,7 +627,7 @@ class TokenService:
             )
         if view.pepper_key_id != self._peppers.active_key_id:
             active_id = self._peppers.active_key_id
-            replacement = self._hasher.hash(self._prehash(token, active_id))
+            replacement = await self._hash_prehash_bounded(self._prehash(token, active_id))
             await self.store.rehash_token(view.id, pepper_key_id=active_id, digest=replacement)
             view = view.model_copy(update={"pepper_key_id": active_id})
         return view
@@ -476,19 +650,20 @@ class TokenService:
         if not secrets.compare_digest(expected_prefix, view.prefix):
             raise AuthenticationError("invalid bearer token")
         fingerprint = hashlib.sha256(token.encode()).hexdigest()
+        prehash = self._prehash(token, view.pepper_key_id)
+        cache_key = self._verification_cache_key(view.id, token, view.pepper_key_id, digest)
         # PATs carry 256 bits of generated secret. The durable fingerprint is
         # only a cheap rejection gate; a match still requires Argon below.
         if view.fingerprint is not None and not secrets.compare_digest(fingerprint, view.fingerprint):
             if not self._verification_is_throttled(view.id):
-                self._record_failed_verification(view.id)
+                self._record_failed_verification(view.id, cache_key[3])
             raise AuthenticationError("invalid bearer token")
-        prehash = self._prehash(token, view.pepper_key_id)
-        cache_key = self._verification_cache_key(view.id, token, view.pepper_key_id, digest)
         await self._verify_digest_bounded(
             token_id=view.id,
             cache_key=cache_key,
             digest=digest,
             prehash=prehash,
+            legacy=view.fingerprint is None,
         )
         if view.fingerprint is None and not await self.store.bind_token_fingerprint(
             view.id,
@@ -537,7 +712,7 @@ class TokenService:
         token = f"{TOKEN_MARKER}_{successor_id.hex}_{secret}"
         prefix = f"{TOKEN_MARKER}_{successor_id.hex[:12]}"
         pepper_key_id = self._peppers.active_key_id
-        digest = self._hasher.hash(self._prehash(token, pepper_key_id))
+        digest = await self._hash_prehash_bounded(self._prehash(token, pepper_key_id))
         fingerprint = hashlib.sha256(token.encode()).hexdigest()
         view = await self.store.rotate_token(
             token_id,
