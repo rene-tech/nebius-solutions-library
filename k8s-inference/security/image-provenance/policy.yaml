@@ -206,15 +206,10 @@ spec:
       expression: >-
         'deploy-credential-spc' in params.data
         ? params.data['deploy-credential-spc'] : ''
-    - name: workloadCsiDrivers
+    - name: workloadPvcNames
       expression: >-
-        ('workload-csi-drivers' in params.data
-         ? params.data['workload-csi-drivers'] : '')
-        .split("\n").filter(d, d != '')
-    - name: workloadPvcPrefixes
-      expression: >-
-        ('workload-pvc-prefixes' in params.data
-         ? params.data['workload-pvc-prefixes'] : '')
+        ('workload-pvc-names' in params.data
+         ? params.data['workload-pvc-names'] : '')
         .split("\n").filter(p, p != '')
     - name: usesProjectedSecretSource
       expression: >-
@@ -407,22 +402,23 @@ spec:
              has(v.projected) || has(v.configMap) || has(v.emptyDir) ||
              has(v.downwardAPI) ||
              (has(v.persistentVolumeClaim) &&
-              variables.workloadPvcPrefixes.exists(p,
-                p.endsWith('*')
-                ? v.persistentVolumeClaim.claimName.startsWith(
-                    p.substring(0, p.size() - 1))
-                : v.persistentVolumeClaim.claimName == p)) ||
-             (has(v.csi) && variables.workloadCsiDrivers.exists(
-                d, d == v.csi.driver) &&
-              v.csi.driver != variables.deployCredentialCsiDriver &&
-              has(v.csi.readOnly) && v.csi.readOnly == true))))
+              variables.workloadPvcNames.exists(p,
+                v.persistentVolumeClaim.claimName == p)) ||
+             (has(v.csi) && variables.deployCredentialCsiDriver != '' &&
+              v.csi.driver == variables.deployCredentialCsiDriver &&
+              has(v.csi.readOnly) && v.csi.readOnly == true &&
+              has(v.csi.volumeAttributes) &&
+              'secretProviderClass' in v.csi.volumeAttributes &&
+              v.csi.volumeAttributes['secretProviderClass'] ==
+                variables.deployCredentialSpc))))
       message: >-
         workloads written by an automation identity must run as an
         owner-enumerated ServiceAccount, set allowPrivilegeEscalation false
         on every container, and may mount only projected(no Secret
         sources)/configMap/emptyDir/downwardAPI volumes, PVCs whose claim
-        names carry an owner-enumerated prefix, and read-only owner-listed
-        CSI drivers — never hostPath, privileged
+        names are EXACTLY owner-enumerated (workload-pvc-names), and the ONE
+        owner-named credential CSI driver read-only with its pinned
+        SecretProviderClass — no generic CSI, no other storage — never hostPath, privileged
         containers, host network/PID/IPC namespaces, added capabilities,
         direct nodeName scheduling, Secret volumes/env, or token projections
         outside the bounded automation audience; workload-create rights
@@ -583,6 +579,11 @@ spec:
         operations: ["CREATE", "UPDATE"]
         resources: ["services"]
         scope: Namespaced
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["persistentvolumeclaims"]
+        scope: Namespaced
   variables:
     - name: securityPrincipals
       expression: >-
@@ -602,6 +603,26 @@ spec:
       expression: >-
         ('namespaces' in params.data
          ? params.data['namespaces'] : '')
+        .split("\n").filter(n, n != '')
+    - name: guardConfigMapNames
+      expression: >-
+        ('workload-configmap-names' in params.data
+         ? params.data['workload-configmap-names'] : '')
+        .split("\n").filter(n, n != '')
+    - name: guardServiceNames
+      expression: >-
+        ('workload-service-names' in params.data
+         ? params.data['workload-service-names'] : '')
+        .split("\n").filter(n, n != '')
+    - name: guardPvcNames
+      expression: >-
+        ('workload-pvc-names' in params.data
+         ? params.data['workload-pvc-names'] : '')
+        .split("\n").filter(n, n != '')
+    - name: guardStorageClasses
+      expression: >-
+        ('workload-storage-classes' in params.data
+         ? params.data['workload-storage-classes'] : '')
         .split("\n").filter(n, n != '')
     - name: subject
       expression: >-
@@ -653,6 +674,42 @@ spec:
       message: >-
         an automation identity may not CHANGE a Service selector: selector
         swaps silently redirect existing traffic to different pods (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.subject.kind != 'ConfigMap' ||
+        !variables.guardWriterIsAutomation ||
+        variables.isProtected ||
+        variables.guardConfigMapNames.exists(
+          n, n == variables.subject.metadata.name)
+      message: >-
+        ConfigMaps written by an automation identity must carry an exact
+        owner-enumerated name (workload-configmap-names) — no arbitrary
+        config injection (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.subject.kind != 'Service' ||
+        !variables.guardWriterIsAutomation ||
+        variables.guardServiceNames.exists(
+          n, n == variables.subject.metadata.name)
+      message: >-
+        Services written by an automation identity must carry an exact
+        owner-enumerated name (workload-service-names) (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.subject.kind != 'PersistentVolumeClaim' ||
+        !variables.guardWriterIsAutomation || (
+          variables.guardPvcNames.exists(
+            n, n == variables.subject.metadata.name) &&
+          has(variables.subject.spec.storageClassName) &&
+          variables.guardStorageClasses.exists(
+            c, c == variables.subject.spec.storageClassName) &&
+          !has(variables.subject.spec.volumeName))
+      message: >-
+        PersistentVolumeClaims written by an automation identity must carry
+        an exact owner-enumerated name (workload-pvc-names) and storage
+        class (workload-storage-classes) and may not bind a pre-existing PV
+        by volumeName — an arbitrary or hand-bound claim grafts foreign
+        storage into deployed pods (SAI-09)
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

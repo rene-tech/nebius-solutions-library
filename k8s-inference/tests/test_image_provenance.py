@@ -178,8 +178,10 @@ class PolicyManifestTest(unittest.TestCase):
                 "workload-service-accounts",
                 "deploy-credential-csi-driver",
                 "deploy-credential-spc",
-                "workload-csi-drivers",
-                "workload-pvc-prefixes",
+                "workload-pvc-names",
+                "workload-storage-classes",
+                "workload-configmap-names",
+                "workload-service-names",
             )
             if f"params.data['{key}']" in variable_expressions
         }
@@ -198,12 +200,13 @@ class PolicyManifestTest(unittest.TestCase):
         spec = self.guard_policy["spec"]
         self.assertEqual(spec["failurePolicy"], "Fail")
         rules = spec["matchConstraints"]["resourceRules"]
-        self.assertEqual(len(rules), 2)
+        self.assertEqual(len(rules), 3)
         self.assertEqual(rules[0]["resources"], ["configmaps"])
         self.assertEqual(
             sorted(rules[0]["operations"]), ["CREATE", "DELETE", "UPDATE"]
         )
         self.assertEqual(rules[1]["resources"], ["services"])
+        self.assertEqual(rules[2]["resources"], ["persistentvolumeclaims"])
         variables = {
             variable["name"]: variable["expression"]
             for variable in spec["variables"]
@@ -220,23 +223,23 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertNotIn("validatingadmissionpolicies", manifest_text)
         self.assertNotIn("mutatingwebhookconfigurations", manifest_text)
         validations = spec["validations"]
-        self.assertEqual(len(validations), 4)
+        self.assertEqual(len(validations), 7)
         self.assertIn("securityPrincipals.exists", validations[0]["expression"])
-        # Automation-written Services are fenced to ClusterIP-only: no
-        # NodePort/LoadBalancer/ExternalName, no externalIPs redirects.
-        self.assertIn("guardWriterIsAutomation", validations[1]["expression"])
         self.assertIn("'LoadBalancer'", validations[1]["expression"])
         self.assertIn("externalIPs", validations[1]["expression"])
-        # Automation CM/Service writes are namespace-bounded, and Service
-        # selector CHANGES (silent traffic redirects) are denied.
         self.assertIn("guardNamespaces.exists", validations[2]["expression"])
-        self.assertIn(
-            "oldObject.spec.selector", validations[3]["expression"]
-        )
+        self.assertIn("oldObject.spec.selector", validations[3]["expression"])
+        # Exact-name fences for automation-written CM / Service / PVC.
+        all_expr = " ".join(v["expression"] for v in validations)
+        self.assertIn("guardConfigMapNames.exists", all_expr)
+        self.assertIn("guardServiceNames.exists", all_expr)
+        self.assertIn("guardPvcNames.exists", all_expr)
+        self.assertIn("guardStorageClasses.exists", all_expr)
+        self.assertIn("spec.volumeName", all_expr)
         rules = spec["matchConstraints"]["resourceRules"]
         self.assertEqual(
             sorted(r for rule in rules for r in rule["resources"]),
-            ["configmaps", "services"],
+            ["configmaps", "persistentvolumeclaims", "services"],
         )
         binding = self.guard_binding["spec"]
         self.assertIn("Deny", binding["validationActions"])
@@ -308,16 +311,18 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertIn("!has(s.secret)", expressions[4])
         self.assertIn("!variables.usesProjectedSecretSource", expressions[6])
         self.assertIn("variables.allContainersRefusePrivEsc", expressions[6])
-        self.assertIn("workloadCsiDrivers.exists", expressions[6])
-        self.assertIn("workloadPvcPrefixes.exists", expressions[6])
-        self.assertIn("claimName.startsWith", expressions[6])
+        self.assertIn("workloadPvcNames.exists", expressions[6])
         self.assertIn("claimName == p", expressions[6])
         self.assertIn("v.csi.readOnly == true", expressions[6])
-        # App workloads can never mount the deploy-credential CSI driver.
+        # The ONLY CSI on automation-written workloads is the pinned
+        # credential driver (readOnly + pinned SecretProviderClass); no
+        # generic CSI, no prefix PVC matching.
         self.assertIn(
-            "v.csi.driver != variables.deployCredentialCsiDriver",
+            "v.csi.driver == variables.deployCredentialCsiDriver",
             expressions[6],
         )
+        self.assertIn("deployCredentialSpc", expressions[6])
+        self.assertNotIn("startsWith", expressions[6])
         for validation in self.policy["spec"]["validations"]:
             self.assertIn("SAI-09", validation["message"])
             self.assertEqual(validation["reason"], "Forbidden")
@@ -334,8 +339,10 @@ def render_allowlist_fixture(*args, **kwargs):
     )
     kwargs.setdefault("deploy_credential_csi_driver", "secrets-store.csi.k8s.io")
     kwargs.setdefault("deploy_credential_spc", "fs2-release-helm-dsn")
-    kwargs.setdefault("workload_csi_drivers", ["secrets-store.csi.k8s.io"])
-    kwargs.setdefault("workload_pvc_prefixes", ["fs2-models-*"])
+    kwargs.setdefault("workload_pvc_names", ["fs2-models-cache"])
+    kwargs.setdefault("workload_storage_classes", ["fs2-standard"])
+    kwargs.setdefault("workload_configmap_names", ["fs2-serve-config"])
+    kwargs.setdefault("workload_service_names", ["fs2-serve"])
     return TOOL.render_allowlist(*args, **kwargs)
 
 
@@ -916,6 +923,7 @@ def provider_cli_fixture(
     role_permissions: dict | None = None,
     object_lock_mode: str = "COMPLIANCE",
     object_retain_days: int = 90,
+    latest_version: str = "v1-fixture",
 ):
     """Answer the pinned provider CLI's live queries: whoami, ancestry
     derivation, paginated IAM listings (stable across the double pass),
@@ -989,6 +997,10 @@ def provider_cli_fixture(
                     "versioning": "enabled",
                     **lock,
                 }
+            )
+        if command[1:4] == ["storage", "object", "list-versions"]:
+            return json.dumps(
+                {"versions": [{"version_id": latest_version, "is_latest": True}]}
             )
         if command[1:4] == ["storage", "object", "get"]:
             return json.dumps(
@@ -1138,10 +1150,12 @@ def default_scope_fixture(
         "debug_principals": [
             "system:serviceaccount:fs2-security:fs2-debugger"
         ],
-        "workload_pvc_prefixes": ["fs2-models-*"],
+        "workload_pvc_names": ["fs2-models-cache"],
+        "workload_storage_classes": ["fs2-standard"],
+        "workload_configmap_names": ["fs2-serve-config"],
+        "workload_service_names": ["fs2-serve"],
         "deploy_credential_csi_driver": "secrets-store.csi.k8s.io",
         "deploy_credential_spc": "fs2-release-helm-dsn",
-        "workload_csi_drivers": ["secrets-store.csi.k8s.io"],
         "security_principals": [SECURITY_PRINCIPAL],
         "verification_key_sha256": key_sha256,
         "attestation_key_sha256": hashlib.sha256(
@@ -1588,6 +1602,10 @@ class VerifiedAllowlistTest(unittest.TestCase):
                             "data": {
                                 "security-principals": SECURITY_PRINCIPAL,
                                 "namespaces": "fs2-models\nfs2-system",
+                                "workload-configmap-names": "fs2-serve-config",
+                                "workload-service-names": "fs2-serve",
+                                "workload-pvc-names": "fs2-models-cache",
+                                "workload-storage-classes": "fs2-standard",
                                 "automation-service-accounts": (
                                     "fs2-security:fs2-admission-guard\nfs2-security:fs2-debugger\nfs2-system:fs2-release-automation"
                                 ),
@@ -3365,107 +3383,132 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 )
             )
 
-    def test_debug_identity_keeps_kubectl_debug_capable(self) -> None:
-        # The DOCUMENTED customer debug flow is FUNCTIONAL end to end for the
-        # owner-designated debug identity: injection (ephemeralcontainers),
-        # interactive attach (-it), and log reading — grant-shape-bound; an
-        # outsider holding injection or attach violates, and exec stays
-        # forbidden even for the debug identity.
+    def test_debug_session_is_target_scoped_not_namespace_wide(self) -> None:
+        # The debug verbs (ephemeralcontainers/attach/log) are functional but
+        # ONLY through a resourceName-scoped SESSION Role: a namespace-wide
+        # debug grant is an exfiltration pivot and violates even for the
+        # debug identity; a session Role naming the exact target pod passes;
+        # exec/portforward stay forbidden for everyone.
         debug_subject = {
             "kind": "ServiceAccount",
             "namespace": "fs2-security",
             "name": "fs2-debugger",
         }
-        debug_role = {
-            "metadata": {"name": "fs2-debug-capable"},
-            "rules": [
-                {
-                    "apiGroups": [""],
-                    "resources": ["pods", "pods/log"],
-                    "verbs": ["get", "list"],
-                },
-                {
-                    "apiGroups": [""],
-                    "resources": ["pods/ephemeralcontainers"],
-                    "verbs": ["get", "update", "patch"],
-                },
-                {
-                    "apiGroups": [""],
-                    "resources": ["pods/attach"],
-                    "verbs": ["get", "create"],
-                },
-            ],
-        }
-        debug_binding = {
-            "metadata": {"name": "fs2-debug-capable"},
-            "roleRef": {"kind": "ClusterRole", "name": "fs2-debug-capable"},
-            "subjects": [dict(debug_subject)],
-        }
+
+        def role(name, rules):
+            return {"metadata": {"name": name}, "rules": rules}
+
+        def binding(name, subj):
+            return {
+                "metadata": {"name": name},
+                "roleRef": {"kind": "ClusterRole", "name": name},
+                "subjects": [subj],
+            }
+
+        # Namespace-wide (no resourceNames) attach/log/ephemeral: REFUSED.
+        for res in ("pods/attach", "pods/log", "pods/ephemeralcontainers"):
+            wide = role("wide-debug", [
+                {"apiGroups": [""], "resources": [res],
+                 "verbs": ["get", "create"] if res != "pods/log" else ["get"]}
+            ])
+            with self.assertRaisesRegex(TOOL.ProvenanceError, "session-scoped"):
+                self.render(
+                    live_runner=self.live_runner(
+                        cluster_roles=[wide],
+                        cluster_role_bindings=[binding("wide-debug", debug_subject)],
+                    )
+                )
+        # Standing pods get/list is fine (not a forbidden path).
+        standing = role("fs2-debug-standing", [
+            {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]}
+        ])
+        # SESSION Role: resourceName-scoped to the exact target pod — PASSES.
+        session = role("fs2-debug-session-abcdef01", [
+            {"apiGroups": [""], "resources": ["pods/ephemeralcontainers"],
+             "resourceNames": ["target-pod"], "verbs": ["get", "update", "patch"]},
+            {"apiGroups": [""], "resources": ["pods/attach"],
+             "resourceNames": ["target-pod"], "verbs": ["get", "create"]},
+            {"apiGroups": [""], "resources": ["pods/log"],
+             "resourceNames": ["target-pod"], "verbs": ["get"]},
+        ])
         self.render(
             live_runner=self.live_runner(
-                cluster_roles=[debug_role],
-                cluster_role_bindings=[debug_binding],
+                cluster_roles=[standing, session],
+                cluster_role_bindings=[
+                    binding("fs2-debug-standing", debug_subject),
+                    binding("fs2-debug-session-abcdef01", debug_subject),
+                ],
             )
         )
-        outsider_binding = {
-            "metadata": {"name": "outsider-debug"},
-            "roleRef": {"kind": "ClusterRole", "name": "fs2-debug-capable"},
-            "subjects": [{"kind": "User", "name": "mallory"}],
-        }
-        with self.assertRaisesRegex(
-            TOOL.ProvenanceError, "ephemeral-container|pod attach"
-        ):
-            self.render(
-                live_runner=self.live_runner(
-                    cluster_roles=[debug_role],
-                    cluster_role_bindings=[outsider_binding],
-                )
-            )
-        exec_role = {
-            "metadata": {"name": "debug-exec"},
-            "rules": [
-                {
-                    "apiGroups": [""],
-                    "resources": ["pods/exec"],
-                    "verbs": ["create"],
-                }
-            ],
-        }
-        exec_binding = {
-            "metadata": {"name": "debug-exec"},
-            "roleRef": {"kind": "ClusterRole", "name": "debug-exec"},
-            "subjects": [dict(debug_subject)],
-        }
+        # exec/portforward stay forbidden even for the debug identity, even
+        # resourceName-scoped.
+        exec_role = role("debug-exec", [
+            {"apiGroups": [""], "resources": ["pods/exec"],
+             "resourceNames": ["target-pod"], "verbs": ["create"]}
+        ])
         with self.assertRaisesRegex(TOOL.ProvenanceError, "exec/portforward"):
             self.render(
                 live_runner=self.live_runner(
                     cluster_roles=[exec_role],
-                    cluster_role_bindings=[exec_binding],
+                    cluster_role_bindings=[binding("debug-exec", debug_subject)],
                 )
             )
-        # Grant shape: attach with update/patch verbs beyond the documented
-        # need is refused even for the debug identity.
-        broad_attach_role = {
-            "metadata": {"name": "broad-attach"},
-            "rules": [
-                {
-                    "apiGroups": [""],
-                    "resources": ["pods/attach"],
-                    "verbs": ["get", "create", "update", "patch"],
-                }
-            ],
+
+    def test_render_debug_session_emits_target_scoped_role(self) -> None:
+        # The session renderer verifies an owner-signed debug-session and
+        # emits a Role whose debug verbs are resourceName-bound to exactly
+        # the target pod (nothing namespace-wide), plus a RoleBinding to the
+        # debug SA.
+        import hashlib as h
+        from datetime import UTC, datetime, timedelta
+
+        now = datetime.now(UTC)
+        document = {
+            "schema": TOOL.DEBUG_SESSION_SCHEMA,
+            "cluster": "fixture-cluster",
+            "namespace": "fs2-system",
+            "pod": "fs2-serve-abc123",
+            "container": "control-plane",
+            "tenant": "tenant-alpha",
+            "nonce": "abcdef0123456789",
+            "reason": "incident:INC-42 debug",
+            "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
-        broad_attach_binding = {
-            "metadata": {"name": "broad-attach"},
-            "roleRef": {"kind": "ClusterRole", "name": "broad-attach"},
-            "subjects": [dict(debug_subject)],
-        }
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "pod attach"):
-            self.render(
-                live_runner=self.live_runner(
-                    cluster_roles=[broad_attach_role],
-                    cluster_role_bindings=[broad_attach_binding],
-                )
+        payload = json.dumps(document).encode("utf-8")
+        session = self.run_root / "debug-session.json"
+        session.write_bytes(payload)
+        session.chmod(0o644)
+        sig = self.run_root / "debug-session.json.sig"
+        sig.write_text("fixture-owner-signature\n")
+        sig.chmod(0o644)
+        SIGNED_AUTHORITY_HASHES.add(h.sha256(payload).hexdigest())
+
+        loaded, _ = TOOL.load_debug_session(
+            session, self._tmp.name, self.scope, authority_checking_verifier
+        )
+        manifests = TOOL.render_debug_session(loaded, self.scope)
+        role, binding = manifests
+        self.assertEqual(role["kind"], "Role")
+        self.assertEqual(role["metadata"]["namespace"], "fs2-system")
+        for rule in role["rules"]:
+            self.assertEqual(rule["resourceNames"], ["fs2-serve-abc123"])
+        self.assertEqual(binding["kind"], "RoleBinding")
+        self.assertEqual(
+            binding["subjects"][0]["name"], "fs2-debugger"
+        )
+        # A session targeting a namespace outside the scope refuses.
+        foreign = dict(document, namespace="kube-system")
+        fpayload = json.dumps(foreign).encode("utf-8")
+        fpath = self.run_root / "foreign-session.json"
+        fpath.write_bytes(fpayload)
+        fpath.chmod(0o644)
+        (self.run_root / "foreign-session.json.sig").write_text("s\n")
+        (self.run_root / "foreign-session.json.sig").chmod(0o644)
+        SIGNED_AUTHORITY_HASHES.add(h.sha256(fpayload).hexdigest())
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "outside the owner scope"):
+            TOOL.load_debug_session(
+                fpath, self._tmp.name, self.scope, authority_checking_verifier
             )
 
     def test_genesis_append_crash_rolls_forward(self) -> None:
@@ -4142,6 +4185,10 @@ class _FakeAdmissionCluster:
                         "data": {
                             "security-principals": SECURITY_PRINCIPAL,
                             "namespaces": "fs2-models\nfs2-system",
+                            "workload-configmap-names": "fs2-serve-config",
+                            "workload-service-names": "fs2-serve",
+                            "workload-pvc-names": "fs2-models-cache",
+                            "workload-storage-classes": "fs2-standard",
                             "automation-service-accounts": (
                                 "fs2-security:fs2-admission-guard\nfs2-security:fs2-debugger\nfs2-system:fs2-release-automation"
                             ),

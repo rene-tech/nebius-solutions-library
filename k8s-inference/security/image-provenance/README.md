@@ -621,13 +621,14 @@ policies; only new admissions are.
   FAIL-CLOSED and PERMISSION-BASED — role names prove nothing: a role
   counts as read-only only when the owner lists it AND every permission
   the provider reports for it is read-shaped, unknown roles are
-  admin-class, and the ROLE DEFINITIONS are fetched in BOTH enumeration
-  passes (a definition mutating between passes refuses) and bound INTO the
-  attested snapshot digest alongside the bindings, so a role's permission
-  set cannot change post-attestation undetected; the canonical digest of
-  the recomputed live enumeration must EQUAL the attestor-witnessed
-  evidence.iam_snapshot_sha256, so the provider state is authoritative and
-  recomputable, self-asserted by no one. WORM is proven
+  admin-class, and bindings AND role definitions are captured as ONE
+  combined snapshot, read twice (any drift between the two combined reads
+  refuses) and RE-READ once more after every other check (a mutation racing
+  the verification window refuses instead of riding out); the combined
+  snapshot is digested and must EQUAL the attestor-witnessed
+  evidence.iam_snapshot_sha256, so the provider state — bindings and mutable
+  role bodies together — is authoritative and recomputable, self-asserted
+  by no one. WORM is proven
   by exact normalized fields (bucket name equality, ancestry membership,
   versioning enabled, lock status exactly enabled, mode exactly COMPLIANCE
   — governance refused — retention >= the minimum) and then by the OBJECT:
@@ -640,12 +641,18 @@ policies; only new admissions are.
   embedded anchored-heads snapshot. Anchors are
   ANTI-REPLAY monotonic and DOUBLE-KEPT with the LEDGER FIRST: every
   genuine advance becomes durable in the hash-chained advance ledger —
-  itself a REQUIRED anchored chain, so deleting the local replay memory
-  falls behind the off-host anchor and fails closed — before the fast
-  checkpoint file is replaced; a crash between the two leaves the file
-  behind, which readers repair FORWARD from the ledger (memory preserved,
-  never reset), while a file AHEAD of the ledger is tampering and fails
-  closed; older, zero, or forked anchors never verify again; checkpoint-less
+  itself a REQUIRED anchored chain — before the fast checkpoint file is
+  replaced; a crash between leaves the file behind, repaired FORWARD from
+  the ledger, while a file AHEAD is tampering. The AUTHORITATIVE latest
+  floor lives in the WORM store itself: the attested anchor object must be
+  the store's LATEST version (list-versions), so even with ALL local replay
+  memory lost an older-but-valid attestation binding a superseded version
+  fails closed. Anchored-heads verification is SIDE-EFFECT-FREE until it
+  fully succeeds — all chains validate first, and only then does legacy
+  adoption / the monotonic advance write anything, so a mixed anchor (ahead
+  on one chain, behind on another) can never overwrite or erase evidence on
+  the way to a refusal. Older, zero, or forked anchors never verify again;
+  checkpoint-less
   legacy ledgers adopt ONLY on EXACT anchored content (equal length — an
   unanchored suffix refuses; zero-count anchors adopt nothing); and the
   very first append's crash window rolls FORWARD (one genesis-chained
@@ -706,23 +713,29 @@ policies; only new admissions are.
   identity itself (anyone else creating a pod there could mount the release
   ServiceAccount), and impersonation matching covers named userextras
   subresources. The DOCUMENTED customer kubectl-debug workflow is
-  FUNCTIONAL end to end for the owner-designated, token-hardened DEBUG
-  identity (scope `debug_principals`; iam-boundary.yaml defines
-  fs2-debugger with per-namespace Roles in BOTH platform namespaces):
-  injection via pods/ephemeralcontainers (admission pins every image),
-  interactive `-it` via pods/attach, and output reading via pods/log — each
-  grant-shape-bound. exec and port-forward stay forbidden for EVERY
-  identity (exec spawns arbitrary processes in existing containers; attach
-  only reaches containers whose images admission pinned). TRUTHFUL LIMIT:
-  RBAC attach is pod-scoped, not container-scoped — within its bound
-  namespaces the debug identity can attach to any container, which is why
-  it is a separate, individually auditable identity. PVC writes in the
-  scope namespaces are a grant-shaped deploy-only path (never delete), and
-  automation-written workloads mount PVCs only by exact owner-enumerated
-  claim names or explicit `prefix-*` wildcard entries, with inline CSI
-  read-only and the deploy-credential driver excluded from app workloads;
-  automation ConfigMap/Service writes are namespace-bounded and Service
-  selector CHANGES are denied in admission. Automation-written workloads may mount PVCs only
+  FUNCTIONAL end to end but with EXACT governed target binding: the debug
+  verbs (pods/ephemeralcontainers, pods/attach, pods/log) are NEVER a
+  standing namespace-wide grant (that would let the debug identity attach
+  to or read logs of any pod — an exfiltration pivot). The OWNER signs a
+  debug-session document (exact cluster/namespace/pod/container/tenant +
+  nonce + bounded TTL); `provenance.py render-debug-session` emits an
+  ephemeral Role + RoleBinding whose debug verbs are resourceName-scoped to
+  THAT pod, which the security identity applies for the session and removes
+  after. The live IAM audit permits those debug verbs ONLY when the granted
+  rule carries resourceNames (session grant-shape) — a namespace-wide debug
+  grant violates even for the debug identity. The debug identity's standing
+  grant is only pods get/list (to locate a target). exec and port-forward
+  stay forbidden for EVERY identity. PVC writes in the
+  scope namespaces are a grant-shaped deploy-only path (never delete);
+  automation-written workloads mount PVCs only by EXACT owner-enumerated
+  claim names (no prefixes) and the ONLY inline CSI they may mount is the
+  owner-named credential driver, read-only with its pinned
+  SecretProviderClass — no generic CSI. The guard additionally fences
+  automation-written ConfigMaps, Services, and PVCs to exact
+  owner-enumerated names (and PVCs to owner-enumerated storage classes with
+  no volumeName), namespace-bounds them, holds Services ClusterIP-only, and
+  denies Service selector changes — so even the authorized deploy identity
+  cannot write an arbitrary ConfigMap, Service, or claim. Automation-written workloads may mount PVCs only
   under owner-enumerated claim-name prefixes and inline CSI only read-only;
   automation-written Services are fenced ClusterIP-only (no NodePort/
   LoadBalancer/ExternalName/externalIPs) by the guard policy, whose params

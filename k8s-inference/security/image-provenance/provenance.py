@@ -86,8 +86,10 @@ def render_allowlist(
     workload_service_accounts: Sequence[str] = (),
     deploy_credential_csi_driver: str = "",
     deploy_credential_spc: str = "",
-    workload_csi_drivers: Sequence[str] = (),
-    workload_pvc_prefixes: Sequence[str] = (),
+    workload_pvc_names: Sequence[str] = (),
+    workload_storage_classes: Sequence[str] = (),
+    workload_configmap_names: Sequence[str] = (),
+    workload_service_names: Sequence[str] = (),
 ) -> dict:
     """Render the admission allow-list ConfigMap consumed by policy.yaml.
 
@@ -159,13 +161,6 @@ def render_allowlist(
             "the deploy credential SecretProviderClass name is required; an "
             "unpinned provider class could serve foreign credential material"
         )
-    for driver in workload_csi_drivers:
-        if not re.match(
-            r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$", str(driver)
-        ):
-            raise ProvenanceError(
-                f"invalid workload CSI driver name: {driver!r}"
-            )
     return {
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -193,11 +188,17 @@ def render_allowlist(
             ),
             "deploy-credential-csi-driver": str(deploy_credential_csi_driver),
             "deploy-credential-spc": str(deploy_credential_spc),
-            "workload-csi-drivers": "\n".join(
-                sorted(set(map(str, workload_csi_drivers)))
+            "workload-pvc-names": "\n".join(
+                sorted(set(map(str, workload_pvc_names)))
             ),
-            "workload-pvc-prefixes": "\n".join(
-                sorted(set(map(str, workload_pvc_prefixes)))
+            "workload-storage-classes": "\n".join(
+                sorted(set(map(str, workload_storage_classes)))
+            ),
+            "workload-configmap-names": "\n".join(
+                sorted(set(map(str, workload_configmap_names)))
+            ),
+            "workload-service-names": "\n".join(
+                sorted(set(map(str, workload_service_names)))
             ),
         },
     }
@@ -207,6 +208,10 @@ def render_guard_params(
     security_principals: Sequence[str],
     automation_service_accounts: Sequence[str] = (),
     namespaces: Sequence[str] = (),
+    workload_configmap_names: Sequence[str] = (),
+    workload_service_names: Sequence[str] = (),
+    workload_pvc_names: Sequence[str] = (),
+    workload_storage_classes: Sequence[str] = (),
 ) -> dict:
     """Render the security-owned guard parameter ConfigMap.
 
@@ -238,6 +243,18 @@ def render_guard_params(
                 sorted(set(map(str, automation_service_accounts)))
             ),
             "namespaces": "\n".join(sorted(set(map(str, namespaces)))),
+            "workload-configmap-names": "\n".join(
+                sorted(set(map(str, workload_configmap_names)))
+            ),
+            "workload-service-names": "\n".join(
+                sorted(set(map(str, workload_service_names)))
+            ),
+            "workload-pvc-names": "\n".join(
+                sorted(set(map(str, workload_pvc_names)))
+            ),
+            "workload-storage-classes": "\n".join(
+                sorted(set(map(str, workload_storage_classes)))
+            ),
         },
     }
 
@@ -2032,7 +2049,9 @@ def load_bound_receipt(
 INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v7"
 COLLECTOR_METHOD = "fs2-live-enumeration/v1"
 INVENTORY_CHECKPOINT_SCHEMA = "fs2-serve.nebius.ai/inventory-checkpoint/v1"
-SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v14"
+SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v15"
+DEBUG_SESSION_SCHEMA = "fs2-serve.nebius.ai/debug-session/v1"
+DEBUG_SESSION_MAX_VALIDITY_HOURS = 4
 ROLLOUT_AUTHORIZATION_SCHEMA = "fs2-serve.nebius.ai/rollout-authorization/v3"
 PROVIDER_ATTESTATION_SCHEMA = "fs2-serve.nebius.ai/provider-attestation/v5"
 # A provider PERMISSION is read-only when it matches this shape; a role is
@@ -2096,7 +2115,6 @@ SCOPE_FIELDS = (
     "workload_service_accounts",
     "deploy_credential_csi_driver",
     "deploy_credential_spc",
-    "workload_csi_drivers",
     "security_principals",
     "verification_key_sha256",
     "attestation_key_sha256",
@@ -2108,7 +2126,10 @@ SCOPE_FIELDS = (
     "tooling",
     "run_root",
     "debug_principals",
-    "workload_pvc_prefixes",
+    "workload_pvc_names",
+    "workload_storage_classes",
+    "workload_configmap_names",
+    "workload_service_names",
     "provider_endpoint",
     "provider_principal",
     "provider_cluster_id",
@@ -2265,21 +2286,77 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool | dict"], ...] 
     },
     # pods/attach is part of the DOCUMENTED debug flow (`kubectl debug -it`
     # attaches to the freshly injected, admission-pinned ephemeral
-    # container). It is permitted ONLY to the debug identity, grant-shaped.
-    # TRUTHFUL LIMIT (reviewer-accepted): RBAC attach is POD-scoped, not
-    # container-scoped — the debug identity can attach to any container of
-    # pods in its bound namespaces, which is why the identity is a separate,
-    # token-hardened, individually auditable automation principal.
+    # container). Permitted ONLY to the debug identity AND only through
+    # SESSION-SCOPED grants: the granted rule must carry resourceNames
+    # naming the exact owner-authorized target pod — a namespace-wide attach
+    # grant is an exfiltration pivot and violates even for the debug
+    # identity.
     {
         "apiGroups": {""},
         "resources": {"pods/attach"},
         "verbs": {"get", "create", "update", "patch"},
-        "why": "pod attach outside the debug identity",
+        "why": "pod attach outside a session-scoped debug grant",
         "namespaced_to_scope": True,
         "permitted_role": "debug",
         "permitted_grant": {
             "verbs": {"get", "list", "watch", "create"},
             "resources": {"pods/attach"},
+            "resource_names_required": True,
+        },
+    },
+    # pods/log is the debug output channel — same session scoping: only the
+    # debug identity, only resourceName-bound to the session target. A
+    # namespace-wide log grant reads every workload's output.
+    {
+        "apiGroups": {""},
+        "resources": {"pods/log"},
+        "verbs": {"get", "list", "watch"},
+        "why": "pod log access outside a session-scoped debug grant",
+        "namespaced_to_scope": True,
+        "permitted_role": "debug",
+        "permitted_grant": {
+            "verbs": {"get", "list", "watch"},
+            "resources": {"pods/log"},
+            "resource_names_required": True,
+        },
+    },
+    # ConfigMap writes in the protected namespaces: app configuration is the
+    # deploy identity's function (exact owner-enumerated names, enforced in
+    # admission), the two parameter ConfigMaps are the security identity's
+    # (resourceName-scoped); anyone else is a violation.
+    {
+        "apiGroups": {""},
+        "resources": {"configmaps"},
+        "verbs": {"create", "update", "patch", "delete", "deletecollection"},
+        "why": "ConfigMap write in a protected namespace",
+        "namespaced_to_scope": True,
+        "permitted_roles": {
+            "deploy": {
+                "verbs": {"get", "list", "watch", "create", "update", "patch"},
+                "resources": {"configmaps"},
+            },
+            "security": {
+                "verbs": {"get", "list", "watch", "create", "update", "patch"},
+                "resources": {"configmaps"},
+                "resource_names_for": {"update", "patch"},
+                "resource_names": {ALLOWLIST_NAME, GUARD_PARAMS_NAME},
+            },
+        },
+    },
+    # Service writes in the protected namespaces: deploy-only (exact
+    # owner-enumerated names + ClusterIP-only + selector-change denial are
+    # enforced in admission), never delete.
+    {
+        "apiGroups": {""},
+        "resources": {"services"},
+        "verbs": {"create", "update", "patch", "delete", "deletecollection"},
+        "why": "Service write in a protected namespace",
+        "namespaced_to_scope": True,
+        "permitted_roles": {
+            "deploy": {
+                "verbs": {"get", "list", "watch", "create", "update", "patch"},
+                "resources": {"services"},
+            },
         },
     },
     # Ephemeral-container injection is the DOCUMENTED customer debug path
@@ -2291,12 +2368,13 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool | dict"], ...] 
         "apiGroups": {""},
         "resources": {"pods/ephemeralcontainers"},
         "verbs": {"create", "update", "patch"},
-        "why": "ephemeral-container injection outside the debug identity",
+        "why": "ephemeral-container injection outside a session-scoped debug grant",
         "namespaced_to_scope": True,
         "permitted_role": "debug",
         "permitted_grant": {
             "verbs": {"get", "list", "watch", "create", "update", "patch"},
             "resources": {"pods/ephemeralcontainers"},
+            "resource_names_required": True,
         },
     },
     # Proxy paths reach kubelets and pod endpoints BEHIND admission and
@@ -2596,17 +2674,6 @@ def _validated_scope(value, context: str) -> dict:
             "reference — an unpinned provider class could serve foreign "
             "credential material"
         )
-    workload_csi = value.get("workload_csi_drivers")
-    if not isinstance(workload_csi, list) or not all(
-        isinstance(item, str)
-        and re.match(r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$", item)
-        for item in workload_csi
-    ) or len(set(workload_csi)) != len(workload_csi):
-        raise ProvenanceError(
-            f"{context} needs workload_csi_drivers: the (possibly empty) "
-            "owner-enumerated CSI drivers automation-written workloads may "
-            "mount; arbitrary CSI drivers are refused in admission"
-        )
     if not isinstance(value.get("run_root"), str) or not re.match(
         r"^/[A-Za-z0-9/._-]{1,511}$", str(value.get("run_root"))
     ):
@@ -2668,18 +2735,29 @@ def _validated_scope(value, context: str) -> dict:
             "and deploy principals: the debugging identity is a separate, "
             "individually auditable automation identity"
         )
-    pvc_prefixes = value.get("workload_pvc_prefixes")
-    if not isinstance(pvc_prefixes, list) or not all(
-        isinstance(item, str)
-        and re.match(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(-\*)?$", item)
-        for item in pvc_prefixes
-    ) or len(set(pvc_prefixes)) != len(pvc_prefixes):
+    def _validated_name_list(field: str, what: str) -> None:
+        values = value.get(field)
+        if not isinstance(values, list) or not all(
+            isinstance(item, str)
+            and re.match(r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$", item)
+            for item in values
+        ) or len(set(values)) != len(values):
+            raise ProvenanceError(
+                f"{context} needs {field}: the (possibly empty) "
+                f"owner-enumerated EXACT {what} names automation identities "
+                "may write/mount — no wildcards, no prefixes; an empty list "
+                "means none"
+            )
+
+    _validated_name_list("workload_pvc_names", "PersistentVolumeClaim")
+    _validated_name_list("workload_storage_classes", "StorageClass")
+    _validated_name_list("workload_configmap_names", "ConfigMap")
+    _validated_name_list("workload_service_names", "Service")
+    protected_configmaps = {ALLOWLIST_NAME, GUARD_PARAMS_NAME}
+    if protected_configmaps & set(value.get("workload_configmap_names") or []):
         raise ProvenanceError(
-            f"{context} needs workload_pvc_prefixes: the (possibly empty) "
-            "owner-enumerated PersistentVolumeClaim names automation-written "
-            "workloads may mount — EXACT names, or an EXPLICIT '<prefix>-*' "
-            "wildcard entry; an empty list means no PVC mounts, and an "
-            "arbitrary claim can never be grafted onto a deployed pod"
+            f"{context} workload_configmap_names may not include the "
+            "protected parameter ConfigMaps; those are security-owned"
         )
     readonly_roles = value.get("provider_readonly_roles")
     if not isinstance(readonly_roles, list) or not all(
@@ -3433,6 +3511,10 @@ def _assert_policy_matches_scope(
             if principal.startswith("system:serviceaccount:")
         ),
         owner_scope["namespaces"],
+        owner_scope["workload_configmap_names"],
+        owner_scope["workload_service_names"],
+        owner_scope["workload_pvc_names"],
+        owner_scope["workload_storage_classes"],
     )
     if (live_guard_params.get("data") or {}) != expected_params["data"]:
         raise ProvenanceError(
@@ -3744,6 +3826,169 @@ def _record_consumed_batch(
             "consumed_at": datetime.now(UTC).isoformat(),
         },
     )
+
+
+DEBUG_LABEL_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$")
+DEBUG_NONCE_PATTERN = re.compile(r"^[0-9a-f]{16,64}$")
+DEBUG_TENANT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def load_debug_session(
+    session_path: Path,
+    public_key_path: str,
+    owner_scope: dict,
+    verifier=None,
+) -> tuple[dict, str]:
+    """Verify an OWNER-SIGNED debug-session document — EXACT target binding.
+
+    A functional kubectl-debug flow needs pods/ephemeralcontainers + attach
+    + log, but namespace-wide those are an exfiltration pivot. This document
+    is the owner's authorization for ONE session: exact cluster, namespace
+    (inside the owner scope), pod, container, tenant, a nonce, and a bounded
+    TTL. `render-debug-session` turns it into a resourceName-scoped Role for
+    exactly that pod — nothing broader. Signed over exact bytes against the
+    release key, single-session by nonce, time-bounded.
+    """
+    signature_path = session_path.parent / (session_path.name + ".sig")
+    if not session_path.is_file() or session_path.is_symlink():
+        raise ProvenanceError(f"missing debug session: {session_path}")
+    if not signature_path.is_file() or signature_path.is_symlink():
+        raise ProvenanceError(
+            f"debug session at {session_path} is UNSIGNED; fails closed"
+        )
+    payload = _read_evidence_bytes(session_path, private=False)
+    signature = _read_evidence_bytes(signature_path, private=False)
+    _verify_blob_bytes(
+        public_key_path, payload, signature, verifier,
+        f"debug session {session_path}",
+    )
+    try:
+        document = json.loads(payload)
+    except json.JSONDecodeError as error:
+        raise ProvenanceError(
+            f"debug session is malformed: {session_path}"
+        ) from error
+    if not isinstance(document, dict) or document.get("schema") != (
+        DEBUG_SESSION_SCHEMA
+    ):
+        raise ProvenanceError(
+            f"{session_path} is not a {DEBUG_SESSION_SCHEMA} document"
+        )
+    if str(document.get("namespace", "")) not in set(owner_scope["namespaces"]):
+        raise ProvenanceError(
+            f"{session_path} targets namespace "
+            f"{document.get('namespace')!r} outside the owner scope"
+        )
+    for field, pattern in (
+        ("pod", DEBUG_LABEL_PATTERN),
+        ("container", DEBUG_LABEL_PATTERN),
+        ("nonce", DEBUG_NONCE_PATTERN),
+        ("tenant", DEBUG_TENANT_PATTERN),
+    ):
+        if not pattern.match(str(document.get(field, ""))):
+            raise ProvenanceError(
+                f"{session_path} has an invalid {field}"
+            )
+    if not DRAIN_REASON_PATTERN.match(str(document.get("reason", ""))):
+        raise ProvenanceError(
+            f"{session_path} needs a tracking-identifier reason"
+        )
+    issued_at = _parse_rfc3339(
+        str(document.get("issued_at", "")), f"{session_path} issued_at"
+    )
+    expires_at = _parse_rfc3339(
+        str(document.get("expires_at", "")), f"{session_path} expires_at"
+    )
+    validity = (expires_at - issued_at).total_seconds()
+    if not 0 < validity <= DEBUG_SESSION_MAX_VALIDITY_HOURS * 3600:
+        raise ProvenanceError(
+            f"{session_path} validity must be positive and at most "
+            f"{DEBUG_SESSION_MAX_VALIDITY_HOURS}h"
+        )
+    now = datetime.now(UTC)
+    if (issued_at - now).total_seconds() > _CLOCK_SKEW_SECONDS:
+        raise ProvenanceError(f"{session_path} is not yet valid")
+    if now > expires_at:
+        raise ProvenanceError(f"{session_path} has expired")
+    return document, hashlib.sha256(payload).hexdigest()
+
+
+def render_debug_session(document: dict, owner_scope: dict) -> list[dict]:
+    """Emit the resourceName-scoped Role + RoleBinding for ONE debug session.
+
+    The Role names the EXACT target pod in resourceNames for the debug
+    verbs (pods/ephemeralcontainers get/update/patch, pods/attach
+    get/create, pods/log get); nothing namespace-wide. The security
+    identity applies it for the session TTL and removes it after — this
+    renderer is source-only and mutates nothing. Tenant/nonce/expiry are
+    recorded as annotations for audit.
+    """
+    debug_sa = None
+    for principal in owner_scope["debug_principals"]:
+        if principal.startswith("system:serviceaccount:"):
+            _, _, namespace, name = principal.split(":", 3)
+            debug_sa = (namespace, name)
+            break
+    if debug_sa is None:
+        raise ProvenanceError(
+            "the owner scope enumerates no debug ServiceAccount principal"
+        )
+    nonce = str(document["nonce"])
+    pod = str(document["pod"])
+    namespace = str(document["namespace"])
+    annotations = {
+        "security.fs2.nebius.ai/debug-tenant": str(document["tenant"]),
+        "security.fs2.nebius.ai/debug-container": str(document["container"]),
+        "security.fs2.nebius.ai/debug-expires-at": str(document["expires_at"]),
+        "security.fs2.nebius.ai/debug-nonce": nonce,
+    }
+    labels = {"security.fs2.nebius.ai/finding": "sai-09"}
+    name = f"fs2-debug-session-{nonce}"
+    role = {
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "kind": "Role",
+        "metadata": {
+            "name": name, "namespace": namespace,
+            "labels": labels, "annotations": annotations,
+        },
+        "rules": [
+            {
+                "apiGroups": [""],
+                "resources": ["pods/ephemeralcontainers"],
+                "resourceNames": [pod],
+                "verbs": ["get", "update", "patch"],
+            },
+            {
+                "apiGroups": [""],
+                "resources": ["pods/attach"],
+                "resourceNames": [pod],
+                "verbs": ["get", "create"],
+            },
+            {
+                "apiGroups": [""],
+                "resources": ["pods/log"],
+                "resourceNames": [pod],
+                "verbs": ["get"],
+            },
+        ],
+    }
+    binding = {
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "kind": "RoleBinding",
+        "metadata": {
+            "name": name, "namespace": namespace,
+            "labels": labels, "annotations": annotations,
+        },
+        "roleRef": {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "Role", "name": name,
+        },
+        "subjects": [
+            {"kind": "ServiceAccount", "namespace": debug_sa[0],
+             "name": debug_sa[1]},
+        ],
+    }
+    return [role, binding]
 
 
 def load_recovery_authorization(
@@ -4230,69 +4475,62 @@ def _assert_provider_boundary(
         ) or [])
     )
     readonly_roles = set(map(str, owner_scope["provider_readonly_roles"]))
-    try:
-        passes = []
-        for _ in range(2):
-            snapshot = {
-                parent_id: _provider_access_bindings(
-                    owner_scope, runner, parent_id
+    def provider_snapshot() -> dict:
+        """ONE combined read: bindings AND role definitions together.
+
+        Bindings and definitions fetched in separate phases leave a TOCTOU
+        where a role body mutates after its bindings were read; a snapshot
+        is stable only if the whole structure is read as one unit and the
+        unit itself is what gets compared and digested.
+        """
+        bindings = {
+            parent_id: _provider_access_bindings(
+                owner_scope, runner, parent_id
+            )
+            for parent_id in ancestry
+        }
+        definitions: dict[str, list[str]] = {}
+        for parent_bindings in bindings.values():
+            for _, role in parent_bindings:
+                if role in definitions:
+                    continue
+                definition = json.loads(
+                    _provider_cli(
+                        owner_scope, runner, "iam", "role", "get", "--id", role
+                    )
                 )
-                for parent_id in ancestry
-            }
-            passes.append(snapshot)
+                permissions = _provider_field(
+                    definition, ("permissions", "permission_ids")
+                )
+                if not isinstance(permissions, list) or not all(
+                    isinstance(item, str) for item in permissions
+                ):
+                    raise ProvenanceError(
+                        f"the provider role {role!r} has no readable "
+                        "permission definition; an unverifiable role is "
+                        "never classified — fails closed"
+                    )
+                definitions[role] = sorted(map(str, permissions))
+        return {"bindings": bindings, "roles": definitions}
+
+    try:
+        # TWO full COMBINED snapshots must be identical (any drift in
+        # bindings OR role definitions between them refuses)…
+        passes = [provider_snapshot(), provider_snapshot()]
         if passes[0] != passes[1]:
             raise ProvenanceError(
-                "the provider IAM surface changed between enumeration "
-                "passes; an unstable answer is never a boundary proof — "
-                "fails closed"
+                "the provider IAM surface (bindings or role definitions) "
+                "changed between combined snapshot passes; an unstable "
+                "answer is never a boundary proof — fails closed"
             )
-        # ROLE DEFINITIONS are mutable provider state: fetch every distinct
-        # role's permission set IN BOTH PASSES (a definition mutated between
-        # passes refuses) and bind them into the attested snapshot, so a
-        # role's permissions cannot change post-attestation undetected.
-        role_passes: list[dict[str, list[str]]] = []
-        for bindings_pass in passes:
-            role_definitions: dict[str, list[str]] = {}
-            for bindings in bindings_pass.values():
-                for _, role in bindings:
-                    if role in role_definitions:
-                        continue
-                    definition = json.loads(
-                        _provider_cli(
-                            owner_scope, runner, "iam", "role", "get",
-                            "--id", role,
-                        )
-                    )
-                    permissions = _provider_field(
-                        definition, ("permissions", "permission_ids")
-                    )
-                    if not isinstance(permissions, list) or not all(
-                        isinstance(item, str) for item in permissions
-                    ):
-                        raise ProvenanceError(
-                            f"the provider role {role!r} has no readable "
-                            "permission definition; an unverifiable role is "
-                            "never classified — fails closed"
-                        )
-                    role_definitions[role] = sorted(map(str, permissions))
-            role_passes.append(role_definitions)
-        if role_passes[0] != role_passes[1]:
-            raise ProvenanceError(
-                "a provider ROLE DEFINITION changed between enumeration "
-                "passes; unstable role permissions are never a boundary "
-                "proof — fails closed"
-            )
-        role_definitions = role_passes[0]
-        # ATTESTOR-WITNESSED == LIVE, bindings AND role definitions: the
-        # canonical digest of the recomputed enumeration must equal the
-        # snapshot digest the SIGNED attestation binds — recomputable by
-        # anyone, self-asserted by no one, covering mutable role bodies.
+        snapshot = passes[0]
+        role_definitions = snapshot["roles"]
         snapshot_digest = hashlib.sha256(
             json.dumps(
                 {
                     "bindings": {
                         parent_id: [list(pair) for pair in bindings]
-                        for parent_id, bindings in passes[0].items()
+                        for parent_id, bindings in snapshot["bindings"].items()
                     },
                     "roles": role_definitions,
                 },
@@ -4312,8 +4550,8 @@ def _assert_provider_boundary(
             )
 
         def role_is_readonly(role: str) -> bool:
-            # Owner-listed AND every pass-fetched permission read-shaped;
-            # the admin-name pattern can never be declared read-only.
+            # Owner-listed AND every snapshot permission read-shaped; the
+            # admin-name pattern can never be declared read-only.
             if role not in readonly_roles or PROVIDER_ADMIN_ROLE_PATTERN.search(
                 role
             ):
@@ -4327,7 +4565,7 @@ def _assert_provider_boundary(
         rogue = sorted(
             {
                 f"{subject} holds {role} on {parent_id}"
-                for parent_id, bindings in passes[0].items()
+                for parent_id, bindings in snapshot["bindings"].items()
                 for subject, role in bindings
                 if not role_is_readonly(role)
                 and subject not in allowed_admins
@@ -4359,6 +4597,21 @@ def _assert_provider_boundary(
         )
     _assert_worm_lock(bucket, owner_scope, ancestry)
     _assert_worm_anchor_object(owner_scope, attestation, runner)
+    # FINAL RE-READ: after every check, one more combined snapshot must
+    # still equal the verified one — a mutation racing the verification
+    # window (bindings or role definitions) refuses instead of riding out.
+    try:
+        final_snapshot = provider_snapshot()
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
+        raise ProvenanceError(
+            "the final provider re-read failed; the boundary cannot be "
+            "confirmed stable across the verification window — fails closed"
+        ) from error
+    if final_snapshot != snapshot:
+        raise ProvenanceError(
+            "the provider IAM surface changed DURING verification (final "
+            "re-read differs from the verified snapshot); fails closed"
+        )
 
 
 def _assert_worm_lock(
@@ -4439,6 +4692,60 @@ def _assert_worm_anchor_object(
     """
     anchor_object = attestation.get("anchor_object") or {}
     try:
+        # AUTHORITATIVE LATEST FLOOR: even with ALL local replay memory lost,
+        # an older-but-valid attestation must not replay. The WORM store
+        # itself holds the authority — the attested version must be the
+        # LATEST version of the anchor key, so a superseded attestation
+        # fails closed independently of local state.
+        versions = json.loads(
+            _provider_cli(
+                owner_scope,
+                runner,
+                "storage",
+                "object",
+                "list-versions",
+                "--bucket",
+                str(owner_scope["worm_bucket"]),
+                "--key",
+                str(anchor_object.get("key", "")),
+            )
+        )
+        version_items = (
+            versions.get("versions")
+            if isinstance(versions, dict)
+            else versions
+        )
+        if not isinstance(version_items, list) or not version_items:
+            raise ProvenanceError(
+                "the WORM anchor key has no readable version listing; the "
+                "authoritative latest anchor cannot be determined — fails "
+                "closed"
+            )
+        latest = next(
+            (
+                item
+                for item in version_items
+                if isinstance(item, dict)
+                and str(
+                    _provider_field(item, ("is_latest", "latest")) or ""
+                ).lower()
+                == "true"
+            ),
+            version_items[0] if isinstance(version_items[0], dict) else None,
+        )
+        latest_version = str(
+            _provider_field(latest or {}, ("version_id", "id")) or ""
+        )
+        if not latest_version or latest_version != str(
+            anchor_object.get("version_id", "")
+        ):
+            raise ProvenanceError(
+                f"the attestation binds anchor version "
+                f"{anchor_object.get('version_id')!r} but the WORM store's "
+                f"LATEST version is {latest_version!r}; a superseded "
+                "attestation never replays — obtain the current attestation, "
+                "fails closed"
+            )
         # The EXACT OBJECT VERSION must itself be locked: bucket DEFAULTS
         # prove nothing about this version. Its metadata must show
         # COMPLIANCE retention extending beyond now — that is the delete/
@@ -4757,7 +5064,10 @@ def _advance_anchor_checkpoint(run_root: Path, anchored: dict) -> None:
 
 
 def _adopt_anchored_legacy(run_root: Path, anchored: dict) -> None:
-    """Adopt checkpoint-less legacy ledgers ONLY under anchored authority.
+    """SUPERSEDED by _check_anchored_legacy (side-effect-free validate-then-
+    adopt inside _assert_anchored_heads); retained under the no-delete
+    constraint. Adopt checkpoint-less legacy ledgers ONLY under anchored
+    authority.
 
     A pre-checkpoint ledger's hash chain proves internal consistency, not
     provenance — an attacker can fabricate a whole consistent history. The
@@ -4828,36 +5138,129 @@ def _adopt_anchored_legacy(run_root: Path, anchored: dict) -> None:
         _read_chained_records(ledger, adopt_legacy=True)
 
 
+def _anchor_ledger_map(run_root: Path) -> tuple[tuple[str, Path], ...]:
+    return (
+        ("consumed", _consume_ledger_path(run_root)),
+        ("publication-journal", _publication_journal_path(run_root)),
+        ("reconcile-journal", run_root / "release-reconcile-journal.jsonl"),
+        ("anchor-advances", _anchor_advance_ledger_path(run_root)),
+    )
+
+
+def _check_anchored_legacy(
+    run_root: Path, anchored: dict
+) -> tuple[list[str], list[Path]]:
+    """VALIDATE checkpoint-less legacy ledgers against the anchor — no writes.
+
+    Returns (problems, adoptable_ledgers). Adoption itself happens only
+    after EVERY chain has validated, so a mixed presented anchor (ahead on
+    one chain, behind on another) can never adopt or checkpoint anything
+    before the overall failure — verification is side-effect-free until it
+    fully succeeds.
+    """
+    problems: list[str] = []
+    adoptable: list[Path] = []
+    chains = anchored.get("chains") or {}
+    for name, ledger in _anchor_ledger_map(run_root):
+        if not ledger.exists() or _ledger_checkpoint_path(ledger).exists():
+            continue
+        scan = _ledger_scan(ledger)
+        if not scan["count"] and not scan["torn_tail"]:
+            continue
+        if scan["count"] == 1 and not scan["torn_tail"] and len(
+            scan["segments"]
+        ) == 1:
+            continue
+        if scan["torn_tail"] or len(scan["segments"]) > 1:
+            problems.append(
+                f"{name}: legacy ledger has a torn tail or continuations "
+                "and can never be adopted"
+            )
+            continue
+        raw_state = chains.get(name)
+        state: dict = raw_state if isinstance(raw_state, dict) else {}
+        anchored_count = int(state.get("count", 0))
+        if anchored_count < 1:
+            problems.append(
+                f"{name}: legacy ledger predates its checkpoint and the "
+                "anchor records count 0 for it; unanchored legacy content "
+                "is never adopted"
+            )
+            continue
+        if anchored_count > scan["count"]:
+            problems.append(
+                f"{name}: legacy ledger is BEHIND its anchored count; "
+                "truncated legacy content is never adopted"
+            )
+            continue
+        if anchored_count < scan["count"]:
+            problems.append(
+                f"{name}: legacy ledger carries {scan['count']} records but "
+                f"the anchor covers only {anchored_count}; an unanchored "
+                "suffix is never adopted"
+            )
+            continue
+        if hashlib.sha256(
+            scan["lines"][anchored_count - 1]
+        ).hexdigest() != str(state.get("head", "")):
+            problems.append(
+                f"{name}: legacy ledger does not match the anchored head at "
+                "the anchored position; fabricated legacy content is never "
+                "adopted"
+            )
+            continue
+        adoptable.append(ledger)
+    return problems, adoptable
+
+
 def _assert_anchored_heads(run_root: Path, anchored: dict) -> None:
     """Local chains must EXTEND the signed off-host anchor — never rewrite it.
 
-    Three refusals per chain: the local chain is missing or shorter than the
-    anchor (truncation/deletion); the counts are equal but the heads differ
-    (in-place rewrite); or the local chain is LONGER but its element at the
-    anchored position no longer hashes to the anchored head (history rewrite
-    hidden behind growth — a bare count comparison would accept it, so the
-    anchored head is verified as a strict PREFIX of the local chain). The
-    snapshot must also cover every required chain: an omitted chain anchors
-    nothing and never verifies. Checkpoint-less LEGACY ledgers are adopted
-    here and only here — after the anchor confirms their EXACT content
-    (equal length, never a prefix of a longer file) — and a zero-count
-    anchor adopts nothing. Anchors are ANTI-REPLAY monotonic: a run-root
-    checkpoint records the highest anchored counts ever verified, a
-    presented snapshot must not fall behind it (an older or zero anchor can
-    never replay once a newer one was seen — so a longer local chain can
-    never ride past on a vacuous count-0 attestation), and the checkpoint
-    advances after each successful verification.
+    Per chain: missing/shorter local state (truncation), equal-count head
+    divergence (rewrite), and longer-local-without-prefix-continuity all
+    refuse; the snapshot must cover every required chain. ALL validation is
+    SIDE-EFFECT-FREE first — legacy adoption and the monotonic advance
+    happen only after every chain verifies, so a mixed anchor (ahead on one
+    chain, behind on another) can never checkpoint, adopt, or overwrite
+    anything on the way to a refusal. Anchors are anti-replay monotonic
+    (ledger-first double-kept memory), and the authoritative LATEST floor
+    lives in the WORM store itself (list-versions binding in the provider
+    check).
     """
     _assert_anchor_monotonic(run_root, anchored)
-    _adopt_anchored_legacy(run_root, anchored)
-    current = _anchor_snapshot(run_root)
     problems: list[str] = []
     chains = anchored.get("chains") or {}
     for name in REQUIRED_ANCHOR_CHAINS:
         if name not in chains:
             problems.append(f"{name}: chain OMITTED from the anchor snapshot")
+    legacy_problems, adoptable = _check_anchored_legacy(run_root, anchored)
+    problems.extend(legacy_problems)
+    local: dict[str, dict] = {}
+    heads_directory = _acceptance_heads_directory(run_root)
+    heads: list = []
+    if heads_directory.is_dir():
+        heads = sorted(
+            entry
+            for entry in heads_directory.iterdir()
+            if entry.name.endswith(".json") and not entry.name.startswith(".")
+        )
+    terminal = ""
+    if heads:
+        terminal = hashlib.sha256(
+            _read_evidence_bytes(heads[-1], allow_hardlinks=True)
+        ).hexdigest()
+    local["acceptance-heads"] = {"count": len(heads), "head": terminal}
+    for name, ledger in _anchor_ledger_map(run_root):
+        if not ledger.exists():
+            local[name] = {"count": 0, "head": GENESIS_HASH}
+            continue
+        scan = _ledger_scan(ledger)
+        local[name] = {
+            "count": scan["count"],
+            "head": scan["head"] if scan["count"] else GENESIS_HASH,
+        }
     for name, anchored_state in chains.items():
-        live_state = (current.get("chains") or {}).get(name)
+        live_state = local.get(name)
         if live_state is None:
             problems.append(f"{name}: chain MISSING locally")
             continue
@@ -4869,7 +5272,7 @@ def _assert_anchored_heads(run_root: Path, anchored: dict) -> None:
                 f"anchored {anchored_count} (truncation/deletion)"
             )
         elif local_count == anchored_count:
-            if live_state["head"] != anchored_state["head"]:
+            if live_state["head"] != anchored_state["head"] and local_count:
                 problems.append(f"{name}: head diverged from the anchor")
         elif anchored_count > 0:
             try:
@@ -4888,9 +5291,9 @@ def _assert_anchored_heads(run_root: Path, anchored: dict) -> None:
         raise ProvenanceError(
             "anchored-heads verification failed: " + "; ".join(problems)
         )
+    for ledger in adoptable:
+        _read_chained_records(ledger, adopt_legacy=True)
     _advance_anchor_checkpoint(run_root, anchored)
-
-
 def load_rollout_authorization(
     authorization_path: Path,
     public_key_path: str,
@@ -6270,9 +6673,11 @@ def _assert_iam_boundary(owner_scope: dict, live_runner, attestation: dict | Non
             return False
         if not granted_resources <= set(permitted_grant["resources"]):
             return False
+        granted_names = {str(n) for n in rule.get("resourceNames") or []}
+        if permitted_grant.get("resource_names_required") and not granted_names:
+            return False
         names_for = set(permitted_grant.get("resource_names_for") or ())
         if granted_verbs & names_for:
-            granted_names = {str(n) for n in rule.get("resourceNames") or []}
             if not granted_names or not granted_names <= set(
                 permitted_grant.get("resource_names") or ()
             ):
@@ -6303,6 +6708,13 @@ def _assert_iam_boundary(owner_scope: dict, live_runner, attestation: dict | Non
                     # This exact rule, in this exact bounded shape, is that
                     # identity's own FUNCTION — never an exemption from any
                     # other forbidden verb or from a broader grant.
+                    continue
+                multi = forbidden.get("permitted_roles")
+                if isinstance(multi, dict) and any(
+                    subject in role_subjects.get(str(role), set())
+                    and grant_within(rule, shape)
+                    for role, shape in multi.items()
+                ):
                     continue
                 binding_name = str(
                     binding.get("metadata", {}).get("name", "?")
@@ -7241,8 +7653,10 @@ def verified_allowlist(
             owner_scope["workload_service_accounts"],
             owner_scope["deploy_credential_csi_driver"],
             owner_scope["deploy_credential_spc"],
-            owner_scope["workload_csi_drivers"],
-            owner_scope["workload_pvc_prefixes"],
+            owner_scope["workload_pvc_names"],
+            owner_scope["workload_storage_classes"],
+            owner_scope["workload_configmap_names"],
+            owner_scope["workload_service_names"],
         )
         annotations = manifest["metadata"].setdefault("annotations", {})
         annotations["security.fs2.nebius.ai/verified-with-key-sha256"] = (
@@ -8289,6 +8703,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="absolute provider CLI path to digest",
     )
 
+    debug_session = subcommands.add_parser(
+        "render-debug-session",
+        help=(
+            "verify an OWNER-SIGNED debug-session document and emit the "
+            "resourceName-scoped Role + RoleBinding for exactly its target "
+            "pod (the security identity applies it for the session TTL); "
+            "source-only, mutates nothing"
+        ),
+    )
+    debug_session.add_argument("--public-key", required=True)
+    debug_session.add_argument("--scope", required=True, type=Path)
+    debug_session.add_argument("--session", required=True, type=Path)
+
     export_heads = subcommands.add_parser(
         "export-anchored-heads",
         help=(
@@ -8379,6 +8806,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         if principal.startswith("system:serviceaccount:")
                     ),
                     owner_scope["namespaces"],
+                    owner_scope["workload_configmap_names"],
+                    owner_scope["workload_service_names"],
+                    owner_scope["workload_pvc_names"],
+                    owner_scope["workload_storage_classes"],
                 ),
                 indent=2,
                 sort_keys=True,
@@ -8437,6 +8868,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "commit), review, and sign with the release key.",
             file=sys.stderr,
         )
+    elif args.command == "render-debug-session":
+        with _PinnedPublicKey(args.public_key) as pinned:
+            owner_scope = load_owner_scope(args.scope, pinned.path)
+            document, _ = load_debug_session(
+                args.session, pinned.path, owner_scope
+            )
+        for manifest in render_debug_session(document, owner_scope):
+            print(json.dumps(manifest, indent=2, sort_keys=True))
     elif args.command == "export-anchored-heads":
         print(json.dumps(_anchor_snapshot(args.run_root), indent=2, sort_keys=True))
     elif args.command == "verify-anchored-heads":

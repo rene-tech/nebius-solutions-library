@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/release-scope/v14",
+  "schema": "fs2-serve.nebius.ai/release-scope/v15",
   "scope": {
     "cluster": "<kube-system-namespace-uid>",
     "namespaces": [
@@ -24,9 +24,6 @@
     ],
     "deploy_credential_csi_driver": "secrets-store.csi.k8s.io",
     "deploy_credential_spc": "fs2-release-helm-dsn",
-    "workload_csi_drivers": [
-      "secrets-store.csi.k8s.io"
-    ],
     "security_principals": [
       "system:serviceaccount:fs2-security:fs2-admission-guard"
     ],
@@ -74,9 +71,20 @@
     "debug_principals": [
       "system:serviceaccount:fs2-security:fs2-debugger"
     ],
-    "workload_pvc_prefixes": [
-      "fs2-models-*",
-      "fs2-cache-*"
+    "workload_pvc_names": [
+      "fs2-models-cache",
+      "fs2-serve-scratch"
+    ],
+    "workload_storage_classes": [
+      "fs2-standard"
+    ],
+    "workload_configmap_names": [
+      "fs2-serve-config",
+      "fs2-models-config"
+    ],
+    "workload_service_names": [
+      "fs2-serve",
+      "fs2-serve-internal"
     ]
   }
 }
