@@ -91,6 +91,28 @@ DANGEROUS_REVIEWS = {
     "bind-roles": {"group": "rbac.authorization.k8s.io", "resource": "roles", "verb": "bind"},
     "bind-clusterroles": {"group": "rbac.authorization.k8s.io", "resource": "clusterroles", "verb": "bind"},
 }
+CREDENTIAL_PIVOT_ACTIONS = {
+    "pods/exec": ("create", "get"),
+    "pods/attach": ("create", "get"),
+    "pods/portforward": ("create", "get"),
+    "pods/proxy": ("create", "get"),
+    "pods/ephemeralcontainers": ("patch", "update"),
+    "nodes/proxy": ("create", "delete", "get", "patch", "update"),
+}
+CREDENTIAL_PIVOT_RESOURCES = set(CREDENTIAL_PIVOT_ACTIONS)
+
+
+def credential_pivot_rule(rule: dict[str, Any]) -> bool:
+    groups = set(rule.get("apiGroups", []))
+    resources = set(rule.get("resources", []))
+    verbs = set(rule.get("verbs", []))
+    if not ({"", "*"} & groups):
+        return False
+    return any(
+        (pivot_resource in resources or "*" in resources)
+        and (bool(set(actions) & verbs) or "*" in verbs)
+        for pivot_resource, actions in CREDENTIAL_PIVOT_ACTIONS.items()
+    )
 
 
 def rbac_endpoints(namespaces: list[str]) -> dict[tuple[str, str], str]:
@@ -132,6 +154,7 @@ def dangerous_reviews(
     reviews = dict(DANGEROUS_REVIEWS)
     secret_resource_names: set[tuple[str, str, str]] = set()
     service_account_resource_names: set[tuple[str, str, str]] = set()
+    pivot_resource_names: set[tuple[str, str, str, str]] = set()
     for namespace, resource in sorted(rbac_endpoints(namespaces)):
         if resource not in {"roles", "clusterroles"}:
             continue
@@ -164,6 +187,25 @@ def dangerous_reviews(
                                     (target_namespace, verb, name)
                                     for target_namespace in target_namespaces
                                 )
+                if {"", "*"} & groups:
+                    for pivot_resource, pivot_actions in CREDENTIAL_PIVOT_ACTIONS.items():
+                        if pivot_resource not in resources and "*" not in resources:
+                            continue
+                        pivot_verbs = set(pivot_actions) & verbs
+                        if "*" in verbs:
+                            pivot_verbs = set(pivot_actions)
+                        pivot_namespaces = (
+                            [""]
+                            if pivot_resource == "nodes/proxy"
+                            else target_namespaces
+                        )
+                        for verb in sorted(pivot_verbs):
+                            for name in rule.get("resourceNames", []):
+                                if isinstance(name, str) and name:
+                                    pivot_resource_names.update(
+                                        (target_namespace, pivot_resource, verb, name)
+                                        for target_namespace in pivot_namespaces
+                                    )
     for namespace in namespaces:
         for verb in ("get", "list", "watch"):
             reviews[f"read-secrets/{namespace}/{verb}/_all"] = {
@@ -212,6 +254,36 @@ def dangerous_reviews(
             "namespace": namespace,
             "name": name,
         }
+    for pivot_resource, pivot_actions in sorted(CREDENTIAL_PIVOT_ACTIONS.items()):
+        resource, subresource = pivot_resource.split("/", 1)
+        target_namespaces = [""] if resource == "nodes" else namespaces
+        for namespace in target_namespaces:
+            for verb in pivot_actions:
+                review = {
+                    "group": "",
+                    "resource": resource,
+                    "subresource": subresource,
+                    "verb": verb,
+                }
+                if namespace:
+                    review["namespace"] = namespace
+                reviews[
+                    f"credential-pivot/{namespace or '_cluster'}/{pivot_resource}/{verb}/_all"
+                ] = review
+    for namespace, pivot_resource, verb, name in sorted(pivot_resource_names):
+        resource, subresource = pivot_resource.split("/", 1)
+        review = {
+            "group": "",
+            "resource": resource,
+            "subresource": subresource,
+            "verb": verb,
+            "name": name,
+        }
+        if namespace:
+            review["namespace"] = namespace
+        reviews[
+            f"credential-pivot/{namespace or '_cluster'}/{pivot_resource}/{verb}/{digest(name)[:16]}"
+        ] = review
     for account in service_accounts:
         reviews[f"create-serviceaccount-token/{account['namespace']}/{account['name']}"] = {
             "group": "",
@@ -960,6 +1032,7 @@ def dangerous_rbac_subjects(raw_objects: dict[tuple[str, str], list[dict[str, An
                     and {"serviceaccounts", "*"} & set(rule.get("resources", []))
                     and {"", "*"} & set(rule.get("apiGroups", []))
                 )
+                or credential_pivot_rule(rule)
                 for rule in rules
             )
             if not dangerous:
@@ -984,6 +1057,7 @@ def sensitive_mutation_subjects(raw_objects: dict[tuple[str, str], list[dict[str
         "pods", "replicationcontrollers", "deployments", "statefulsets",
         "daemonsets", "replicasets", "jobs", "cronjobs", "networkpolicies",
         "secrets", "serviceaccounts", "serviceaccounts/token",
+        *CREDENTIAL_PIVOT_RESOURCES,
         "roles", "rolebindings", "clusterroles", "clusterrolebindings",
         "validatingadmissionpolicies", "validatingadmissionpolicybindings",
     }

@@ -37,6 +37,7 @@ REJECTED_COMMITS = {
     "efb29e684e0c91b06553d76b43c487a8531016f2",
     "a51b1d80738a66774eaef945c6870ba79549a816",
     "948e1836b4058779aff2c0c91c62aa898968da5d",
+    "17469ed79eb56ae63327f0ddecb81d21b2170722",
 }
 ROLLOUT_LINEAGE_LABEL = "security.fs2.nebius.ai/sai20-rollout-lineage"
 PEER_NAMESPACES = ("fs2-data", "cnpg-system")
@@ -309,6 +310,7 @@ def binding_authority_records(
         "clusterroles", "clusterrolebindings", "validatingadmissionpolicies",
         "validatingadmissionpolicybindings", "secrets", "serviceaccounts",
         "serviceaccounts/token",
+        *v4.CREDENTIAL_PIVOT_RESOURCES,
         "certificatesigningrequests", "certificatesigningrequests/approval", "signers",
     }
 
@@ -337,6 +339,8 @@ def binding_authority_records(
         if verbs & {"create", "update", "patch"} and (
             "serviceaccounts" in resources or "*" in resources
         ) and ("" in groups or "*" in groups):
+            return True
+        if v4.credential_pivot_rule(rule):
             return True
         return bool(
             "impersonate" in verbs

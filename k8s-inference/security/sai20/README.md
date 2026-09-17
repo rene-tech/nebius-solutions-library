@@ -158,3 +158,19 @@ live digest to equal the signed planned digest. This supports a reviewed
 second rollout pass and ordinary reapply while retaining exact old/new
 custody. It does not enroll a root or authorize activation; the empty
 registries remain the integration gate.
+
+## Post-`17469ed79` connect-subresource closure
+
+Exact `17469ed79eb56ae63327f0ddecb81d21b2170722` remains preliminary SOURCE
+NO-GO evidence. Stored-credential closure now includes the Kubernetes
+connect/subresource pivots `pods/exec`, `pods/attach`, `pods/portforward`,
+`pods/proxy`, `pods/ephemeralcontainers` and `nodes/proxy` with their
+applicable connect or mutation verbs.
+
+The verifier emits namespace-generic reviews plus exact `resourceNames`
+reviews derived from every raw Role and ClusterRole. The cluster-scoped node
+proxy path has no fabricated namespace. Both namespaced and cluster binding
+derivation classify the grants as dangerous and sensitive, dangerous subjects
+must be exact custodians, and final apply refreshes the entire expanded review
+set for every authenticated principal. This changes no workload or debugging
+feature and does not read Pod, node or credential contents.

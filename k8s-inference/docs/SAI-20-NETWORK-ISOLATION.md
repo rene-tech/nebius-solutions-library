@@ -510,3 +510,35 @@ parser, formatter, Terraform, Helm, build, package manager, scanner, cluster,
 provider, database, registry, credential, deployment, probe, cleanup or
 deletion action ran. This is a source-only candidate for fresh independent
 review and makes no SOURCE GO, integration, deployment or live claim.
+
+## Preliminary independent-review correction after `17469ed79`
+
+Preliminary static review found exact commit
+`17469ed79eb56ae63327f0ddecb81d21b2170722` / tree
+`7ebc5bba71c4dba7fda94a6e6bee46d35b3b7b90` still omitted
+credential-equivalent Kubernetes connect subresources. Preserve that commit as
+SOURCE NO-GO evidence. A subject with `pods/exec`, `pods/attach`,
+`pods/portforward`, `pods/proxy`, `pods/ephemeralcontainers` or applicable
+`nodes/proxy` authority could otherwise enter or tunnel to a credential-bearing
+admitted workload without appearing in the Secret/ServiceAccount closure.
+
+The additive successor treats each applicable connect verb as dangerous
+authority. For every namespace it emits generic SARs for Pod connect and
+ephemeral-container operations; `nodes/proxy` remains cluster-scoped. It also
+derives every `resourceNames` target from the raw Role and ClusterRole rules
+and emits exact name-bearing SARs, including ClusterRole targets across the
+complete signed namespace set. Wildcard resource or verb grants expand to the
+same source-defined action closure.
+
+RoleBinding and ClusterRoleBinding reconstruction now selects these
+subresources as both dangerous and sensitive. Every dangerous binding subject
+must be an exact enrolled custodian, while the existing unknown-nonce final
+apply repeats every generic and name-exact decision for every authenticated
+principal and rejects any non-custodian allow. No Pod, node, credential or
+Secret payload is read by this source change.
+
+The authored regression is intentionally unexecuted. No test, parser,
+formatter, Terraform, Helm, build, package manager, scanner, cluster,
+provider, database, registry, credential, deployment, probe, cleanup or
+deletion action ran. This remains a source-only candidate for fresh exact
+review and makes no SOURCE GO, integration, deployment or live claim.

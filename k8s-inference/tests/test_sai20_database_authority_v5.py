@@ -1,8 +1,10 @@
 """Unexecuted regressions for the additive SAI-20 v5 successor gate.
 
 The coordinator explicitly forbids executing tests or parsers in this task.
-These assertions include the four final blocker groups reported against
-948e1836b4058779aff2c0c91c62aa898968da5d. They are authored evidence only;
+These assertions include the credential-equivalent Pod-subresource blocker
+reported against 17469ed79eb56ae63327f0ddecb81d21b2170722, in addition to the
+four final blocker groups reported against 948e1836b4058779aff2c0c91c62aa898968da5d.
+They are authored evidence only;
 this task's coordinator boundary forbids executing them.
 """
 
@@ -43,6 +45,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("efb29e684e0c91b06553d76b43c487a8531016f2", self.v5_py)
         self.assertIn("a51b1d80738a66774eaef945c6870ba79549a816", self.v5_py)
         self.assertIn("948e1836b4058779aff2c0c91c62aa898968da5d", self.v5_py)
+        self.assertIn("17469ed79eb56ae63327f0ddecb81d21b2170722", self.v5_py)
         self.assertIn("source is a preserved rejected candidate", self.v5_py)
         self.assertIn("sai20_database_authority_v5_plan.output.successor_verified", self.v4_tf)
         self.assertIn("sai20_database_authority_v5_identity.output.bootstrap_reobserved", self.v4_tf)
@@ -124,6 +127,28 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn('"secrets" in resources', self.v5_py)
         self.assertIn('"serviceaccounts" in resources', self.v5_py)
         self.assertIn("metadata-only Secret inventory changed at apply", self.v4_py)
+
+    def test_credential_equivalent_pod_and_node_subresources_are_custodian_only(self) -> None:
+        for resource in (
+            "pods/exec",
+            "pods/attach",
+            "pods/portforward",
+            "pods/proxy",
+            "pods/ephemeralcontainers",
+            "nodes/proxy",
+        ):
+            self.assertIn(resource, self.v4_py)
+        self.assertIn("CREDENTIAL_PIVOT_ACTIONS", self.v4_py)
+        self.assertIn("credential_pivot_rule", self.v4_py)
+        self.assertIn("pivot_resource_names", self.v4_py)
+        self.assertIn("credential-pivot/", self.v4_py)
+        self.assertIn('"subresource": subresource', self.v4_py)
+        self.assertIn('"name": name', self.v4_py)
+        self.assertIn("*v4.CREDENTIAL_PIVOT_RESOURCES", self.v5_py)
+        self.assertIn("v4.credential_pivot_rule(rule)", self.v5_py)
+        self.assertIn("dangerous RoleBinding/ClusterRoleBinding authority is not constrained to an exact custodian", self.v5_py)
+        self.assertIn('for principal_id, identity in sorted(context["principal_identities"].items())', self.v4_py)
+        self.assertIn("non-custodian gained dangerous authority at apply", self.v4_py)
 
     def test_kubectl_is_executed_only_from_a_sealed_static_elf_snapshot(self) -> None:
         self.assertIn('os.memfd_create("sai20-kubectl"', self.v4_py)
