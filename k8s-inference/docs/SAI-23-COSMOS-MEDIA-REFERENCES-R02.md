@@ -37,6 +37,11 @@ before dispatch. The embedded adapter accepts only bounded base64 `data:` URLs;
 it has no caller-selected HTTPS or filesystem-path alternative. Text-only image
 and video requests remain available without artifact inputs.
 
+Mode-specific content types are explicit: image-to-video requires an image,
+video-to-video and transfer-video primary inputs require MP4, and transfer
+controls may be an image or MP4. A derived edge/blur control without its own
+reference requires the optional transfer source video.
+
 ## Layered fail-closed enforcement
 
 1. Admission rejects all non-artifact values in `input_reference`,

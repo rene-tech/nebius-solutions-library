@@ -1099,8 +1099,36 @@ def _cosmos_media_mode_schema(mode: str) -> Schema:
             max_bytes=COSMOS_PRIMARY_MAX_BYTES,
         )
     if mode == "transfer-video":
+        schema["properties"]["input_reference"] = _cosmos_media_reference(
+            "Optional caller-owned source video for derived transfer controls.",
+            media_types=COSMOS_VIDEO_MEDIA_TYPES,
+            max_bytes=COSMOS_PRIMARY_MAX_BYTES,
+        )
+        schema["properties"]["vision_path"] = _cosmos_media_reference(
+            "Deprecated compatibility alias for the optional source video.",
+            media_types=COSMOS_VIDEO_MEDIA_TYPES,
+            max_bytes=COSMOS_PRIMARY_MAX_BYTES,
+        )
         schema.setdefault("allOf", []).append(
             {"not": {"required": ["input_reference", "vision_path"]}}
+        )
+        schema.setdefault("allOf", []).append(
+            {
+                "if": {
+                    "properties": {
+                        "controls": {
+                            "contains": {"not": {"required": ["reference"]}}
+                        }
+                    },
+                    "required": ["controls"],
+                },
+                "then": {
+                    "oneOf": [
+                        {"required": ["input_reference"]},
+                        {"required": ["vision_path"]},
+                    ]
+                },
+            }
         )
     if "sound_duration" in schema["properties"]:
         schema.setdefault("allOf", []).append(

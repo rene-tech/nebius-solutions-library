@@ -259,6 +259,30 @@ def test_actual_cosmos_contract_covers_five_modes_with_artifact_only_media(regis
     for payload in payloads:
         validator.validate(payload)
 
+    validator.validate(
+        {
+            "mode": "transfer-video",
+            "prompt": "Derive edge control from the source video",
+            "input_reference": video,
+            "controls": [{"control_type": "edge"}],
+        }
+    )
+    assert not validator.is_valid(
+        {
+            "mode": "transfer-video",
+            "prompt": "Missing source for a derived edge control",
+            "controls": [{"control_type": "edge"}],
+        }
+    )
+    assert not validator.is_valid(
+        {
+            "mode": "transfer-video",
+            "prompt": "Transfer primary inputs are videos",
+            "input_reference": image,
+            "controls": [{"control_type": "edge"}],
+        }
+    )
+
     private_target = "https://10.5.0.1/"
     for payload in (
         {"mode": "image-to-video", "prompt": "fixture", "input_reference": private_target},

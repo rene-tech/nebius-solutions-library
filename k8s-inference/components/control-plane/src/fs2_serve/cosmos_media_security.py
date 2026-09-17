@@ -105,6 +105,8 @@ def _cosmos_payload(request_body: bytes) -> dict[str, Any]:
 
 
 def _primary_media_types(mode: Any) -> frozenset[str]:
+    if mode == "transfer-video":
+        return frozenset(COSMOS_VIDEO_MEDIA_TYPES)
     if mode == "image-to-video":
         return frozenset(COSMOS_IMAGE_MEDIA_TYPES)
     if mode == "video-to-video":
