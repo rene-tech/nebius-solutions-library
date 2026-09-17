@@ -1,7 +1,7 @@
 # Cosmos and Stockholm remediation — 17 September 2026
 
-Release status: **Helm 145 bounded tests recorded; upload-demand correction
-rolling out as Helm 146; not customer-qualified**.
+Release status: **Helm 146 deployed; upload-demand proof and final bounded
+cohorts running; not customer-qualified**.
 The implementation is integrated on `agent/fs2-cosmos-stockholm-remediation-r20260917`, based on
 `bad3f9cba9cac2762ddbe0b62f8c6ab3a780a6d7`. This baseline preserves the newer
 speech, tenant storage, and workshop APIs. The old dirty `main` checkout was not
@@ -10,8 +10,8 @@ reset or overwritten. This document is not a replacement for live evidence.
 ## Latest deployed state
 
 The explicit `sandbox2` profile restored authorized access. The original global
-profile is unchanged. Helm release 145 deploys the corrected CP/controller
-`sha256:849020eabbcf07d07112bcebae4032639e8e995a9eda078410ccf4879a188ee8`
+profile is unchanged. Helm release 146 deploys the corrected CP/controller
+`sha256:25438d07ec2caae07ae30209f6267d215b6a037b453aa9f0a3a5a76cb5b6e37e`
 and admin `sha256:6428b3500d2dd6784c0ff2308335b3d2962f725434cc5e7ea8fd5098dbf21659`.
 The complete additive model contract retains 20 model identities and all 22 old
 template revisions, adding only the new Cosmos template. It does not drop the
@@ -27,16 +27,17 @@ The isolated snapshot preview and its ConfigMap/port-forward were removed;
 media and receipts remain protected. The LeRobot CPU image is published, but its
 App remains unrouted and is not claimed ready.
 
-Gateway 3/3, admin 2/2 and controller 2/2 were ready on release 145 at 15:29 UTC.
-Nine public/admin read APIs returned HTTP 200 at 15:30:38 UTC and retained 34 Apps.
-These are availability checks, not inference qualification. The release-145
-readback at 15:29:56 UTC confirmed all three metrics endpoints HTTP 200 and
+Gateway 3/3, admin 2/2 and controller 2/2 were ready on release 146 at 15:59 UTC.
+Nine public/admin read APIs returned HTTP 200 at 15:59:02 UTC and retained 34 Apps.
+These are availability checks, not inference qualification. The release-146
+readback at 15:59:50 UTC confirmed all three metrics endpoints HTTP 200 and
 actually scraped by Prometheus; all 13 rules had healthy evaluation. Existing
 two lifecycle and three certificate alerts remain open. GPU observer coverage
-was 15/15 Ready but only 12/15 updated at that instant; that is not proof of
-homogeneous observer versions or exact per-request GPU attribution. The receipt is
-`final-deployment-verification-r145.json` under the protected rollout directory,
-SHA-256 `8062cf90707b03e3d98ae19f88044002eea986f2cde0d995313945243de31c95`.
+was 15/15 updated, Ready and Available at that instant; that is not proof of
+continuous coverage or exact per-request GPU attribution. The receipt is
+`final-deployment-verification-r146.json` under the protected rollout directory,
+SHA-256 `387b7f19356f7149fa930f5fbfacc0be16db04adac5a65bb3354dc99598f86e6`.
+The preceding release-145 receipt remains retained separately.
 
 Helm 141's global watcher waited on unchanged GPU observers on unavailable nodes
 after the application rollout had finished. Only the task-owned local Helm wait
