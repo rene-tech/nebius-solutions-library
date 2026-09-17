@@ -29,7 +29,7 @@ spec:
             type: PathPrefix
             value: /v1
         - path:
-            type: Exact
+            type: PathPrefix
             value: /mcp
         - path:
             type: PathPrefix
@@ -52,6 +52,21 @@ spec:
               - x-fs2-token-id
               - x-fs2-model-scope
               - x-fs2-accounting-id
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Content-Security-Policy
+                value: "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+              - name: Permissions-Policy
+                value: "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), usb=()"
+              - name: Referrer-Policy
+                value: same-origin
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+              - name: X-Content-Type-Options
+                value: nosniff
+              - name: X-Frame-Options
+                value: DENY
       timeouts:
         # The API permits a bounded 30-second synchronous wait before returning
         # an asynchronous operation. Keep the edge/backend timeout above that

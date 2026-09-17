@@ -32,6 +32,25 @@ TEST_ACME_EMAIL = "edge-owner@unit.test"
 TEST_HTTP_NODE_PORT = 31425
 TEST_HTTPS_NODE_PORT = 32633
 TEST_CATALOG_ROLLOUT_DIGEST = "sha256:" + "3" * 64
+EXPECTED_PUBLIC_SECURITY_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "Permissions-Policy": (
+        "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), "
+        "geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), "
+        "picture-in-picture=(), publickey-credentials-get=(), usb=()"
+    ),
+    "Referrer-Policy": "same-origin",
+    "Strict-Transport-Security": "max-age=31536000",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+}
+EXPECTED_ADMIN_SECURITY_HEADERS = {
+    **EXPECTED_PUBLIC_SECURITY_HEADERS,
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; "
+        "font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+    ),
+}
 HELM = shutil.which("helm")
 assert HELM is not None, "helm is required for chart tests"
 POSTGRESQL_CONTRACT = json.loads((CONTROL_ROOT / "contracts" / "postgresql-release-contract.json").read_text())
@@ -421,13 +440,17 @@ def test_admin_console_renders_digest_bound_workload_route_and_network_boundary(
     ]
     for rule in route["spec"]["rules"]:
         assert rule["timeouts"] == {"request": "30s", "backendRequest": "30s"}
-        assert set(rule["filters"][0]["requestHeaderModifier"]["remove"]) == {
+        request_filter = next(item for item in rule["filters"] if item["type"] == "RequestHeaderModifier")
+        assert set(request_filter["requestHeaderModifier"]["remove"]) == {
             "x-fs2-tenant",
             "x-fs2-principal",
             "x-fs2-token-id",
             "x-fs2-model-scope",
             "x-fs2-accounting-id",
         }
+        response_filter = next(item for item in rule["filters"] if item["type"] == "ResponseHeaderModifier")
+        response_headers = response_filter["responseHeaderModifier"]["set"]
+        assert {item["name"]: item["value"] for item in response_headers} == EXPECTED_ADMIN_SECURITY_HEADERS
 
     edge_policy = next(document for document in documents if document["kind"] == "BackendTrafficPolicy")
     assert [target["name"] for target in edge_policy["spec"]["targetRefs"]] == [
@@ -2174,14 +2197,17 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
     }
     assert paths == {
         "/v1": "PathPrefix",
-        "/mcp": "Exact",
+        "/mcp": "PathPrefix",
         "/admin/api/v1": "PathPrefix",
         "/.well-known/oauth-protected-resource": "Exact",
         "/.well-known/oauth-protected-resource/mcp": "Exact",
         "/readyz": "Exact",
     }
     assert "/" not in paths
-    removed = route["spec"]["rules"][0]["filters"][0]["requestHeaderModifier"]["remove"]
+    filters = route["spec"]["rules"][0]["filters"]
+    removed = next(item for item in filters if item["type"] == "RequestHeaderModifier")["requestHeaderModifier"][
+        "remove"
+    ]
     assert set(removed) == {
         "x-fs2-tenant",
         "x-fs2-principal",
@@ -2189,6 +2215,10 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
         "x-fs2-model-scope",
         "x-fs2-accounting-id",
     }
+    response_headers = next(item for item in filters if item["type"] == "ResponseHeaderModifier")[
+        "responseHeaderModifier"
+    ]["set"]
+    assert {item["name"]: item["value"] for item in response_headers} == EXPECTED_PUBLIC_SECURITY_HEADERS
     assert route["spec"]["parentRefs"][0]["sectionName"] == "public-https"
     assert route["spec"]["rules"][0]["timeouts"] == {
         "request": "40s",

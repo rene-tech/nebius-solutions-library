@@ -666,6 +666,35 @@ def test_ip_public_authority_is_enforced_on_v1_mcp_and_both_metadata_paths(regis
             assert response.json()["resource"] == "https://203.0.113.17/mcp"
 
 
+def test_noncanonical_mcp_paths_return_bounded_401_json_without_reflecting_bearers(
+    registry, cipher, hasher
+) -> None:
+    runtime = build_runtime(registry, cipher, hasher)
+    app = create_app(runtime)
+    mount_mcp(app, runtime)
+    marker = "synthetic-noncanonical-bearer-must-not-leak"
+
+    with TestClient(app, follow_redirects=False) as client:
+        for path in ("/mcp/", "/mcp/session"):
+            response = client.post(
+                path,
+                headers={"authorization": f"Bearer {marker}"},
+                json={"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+            )
+
+            assert response.status_code == 401
+            assert response.headers["content-type"] == "application/json"
+            assert response.headers["cache-control"] == "no-store"
+            assert response.headers["www-authenticate"] == (
+                'Bearer realm="mcp", error="invalid_request"'
+            )
+            assert response.json() == {
+                "error": "invalid_request",
+                "error_description": "MCP is available only at the canonical /mcp endpoint.",
+            }
+            assert marker not in response.text
+
+
 def test_terminal_metrics_project_cancel_and_revoke_exactly_once(registry, cipher, hasher) -> None:
     runtime = build_runtime(registry, cipher, hasher)
     with TestClient(create_app(runtime)) as client:

@@ -47,6 +47,8 @@ const fixturePlugin: Plugin = {
   },
 };
 
+export const ADMIN_BUILD_SOURCEMAPS = false;
+
 export default defineConfig(({ mode }) => ({
   base: "/admin/",
   plugins: [
@@ -55,7 +57,7 @@ export default defineConfig(({ mode }) => ({
   ],
   build: {
     outDir: "dist",
-    sourcemap: true,
+    sourcemap: ADMIN_BUILD_SOURCEMAPS,
   },
   server: {
     proxy: {

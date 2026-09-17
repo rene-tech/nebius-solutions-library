@@ -41,6 +41,21 @@ spec:
               - x-fs2-token-id
               - x-fs2-model-scope
               - x-fs2-accounting-id
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Content-Security-Policy
+                value: "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+              - name: Permissions-Policy
+                value: "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), usb=()"
+              - name: Referrer-Policy
+                value: same-origin
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+              - name: X-Content-Type-Options
+                value: nosniff
+              - name: X-Frame-Options
+                value: DENY
       timeouts:
         request: {{ .Values.adminConsole.httpRoute.requestTimeout | quote }}
         backendRequest: {{ .Values.adminConsole.httpRoute.backendRequestTimeout | quote }}
@@ -60,6 +75,21 @@ spec:
               - x-fs2-token-id
               - x-fs2-model-scope
               - x-fs2-accounting-id
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Content-Security-Policy
+                value: "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+              - name: Permissions-Policy
+                value: "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), usb=()"
+              - name: Referrer-Policy
+                value: same-origin
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+              - name: X-Content-Type-Options
+                value: nosniff
+              - name: X-Frame-Options
+                value: DENY
       timeouts:
         request: {{ .Values.adminConsole.httpRoute.requestTimeout | quote }}
         backendRequest: {{ .Values.adminConsole.httpRoute.backendRequestTimeout | quote }}

@@ -1506,6 +1506,31 @@ def mount_mcp(app: FastAPI, runtime: AppRuntime) -> MCPServer:
         methods=["GET"],
         include_in_schema=False,
     )
+
+    async def reject_noncanonical_mcp_path(subpath: str) -> JSONResponse:
+        """Keep every slash-normalized or nested MCP request on this auth boundary."""
+
+        return JSONResponse(
+            {
+                "error": "invalid_request",
+                "error_description": "MCP is available only at the canonical /mcp endpoint.",
+            },
+            status_code=401,
+            headers={
+                "Cache-Control": "no-store",
+                "WWW-Authenticate": 'Bearer realm="mcp", error="invalid_request"',
+            },
+        )
+
+    # This parent route is registered before the root-mounted SDK child. It
+    # deliberately rejects every non-canonical subpath without inspecting or
+    # reflecting a supplied bearer token.
+    app.add_api_route(
+        "/mcp/{subpath:path}",
+        reject_noncanonical_mcp_path,
+        methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        include_in_schema=False,
+    )
     # Mount deliberately at the root so the child's exact `/mcp` route stays
     # `/mcp`. Mounting the SDK app at `/mcp` would create `/mcp/mcp` with its
     # default route, while configuring the child route as `/` would expose only

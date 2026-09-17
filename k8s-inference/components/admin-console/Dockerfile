@@ -13,6 +13,7 @@ COPY k8s-inference/components/admin-console/src ./src
 RUN npm run build \
     && test -f dist/index.html \
     && test -n "$(find dist/assets -maxdepth 1 -type f -name 'index-*.js' -print -quit)" \
+    && test -z "$(find dist -type f -name '*.map' -print -quit)" \
     && ! grep -R -E 'project-u02|mk8scluster-|mk8snodegroup-|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|Bearer [A-Za-z0-9._-]{16,}' dist
 
 FROM nginxinc/nginx-unprivileged:1.31.3-alpine3.24@sha256:f972e5322b9797dc2a6b830030094426437b1ae7032e4644496395336ac6fdac

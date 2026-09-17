@@ -57,7 +57,7 @@ configurable Envoy Gateway local rate limit (200 requests/second per Envoy by
 default); PostgreSQL token budgets and operation concurrency remain the
 authoritative cross-replica controls. The local edge limit is merged with any
 Gateway-level platform policy rather than replacing it.
-The chart's public `HTTPRoute` exposes only `/v1`, exact `/mcp`, and exact
+The chart's public `HTTPRoute` exposes only `/v1`, `PathPrefix /mcp`, and exact
 `/.well-known/oauth-protected-resource` plus its resource-specific `/mcp`
 variant; bootstrap admin, metrics, probes, and
 internal ext-auth/OpenAPI paths remain cluster-internal. Enabling the route
@@ -252,9 +252,12 @@ one-time-disclosure contracts.
 The canonical Streamable-HTTP URL is exactly `/mcp`, without a required
 trailing slash. The SDK child owns that `/mcp` route and is deliberately mounted
 at the parent root after the parent API routes, avoiding both `/mcp/mcp` and a
-redirect-only `/mcp/` topology. `mount_mcp` explicitly enters the SDK child's
-lifespan from the parent FastAPI lifespan because Starlette does not start a
-mounted child's lifespan. Startup
+redirect-only `/mcp/` topology. A parent fail-closed route returns bounded 401
+JSON for `/mcp/` and every nested subpath without inspecting or reflecting a
+bearer. The public Gateway claims the entire `/mcp` prefix so those requests can
+never fall through to a lower-trust website route. `mount_mcp` explicitly
+enters the SDK child's lifespan from the parent FastAPI lifespan because
+Starlette does not start a mounted child's lifespan. Startup
 therefore starts the admission workers and then the MCP manager; shutdown stops
 the MCP manager before draining the admission workers. Streamable HTTP is
 explicitly stateless: no process-local session ID is issued or required, so an
@@ -724,7 +727,7 @@ HTTP:80 listener admits only same-namespace `HTTPRoute`s. A catch-all
 `PathPrefix /` route redirects with status 308 to HTTPS; cert-manager's Exact
 temporary HTTP-01 challenge route has Gateway API precedence over that
 redirect. The static application route attaches by `sectionName` only to HTTPS:443, terminates the referenced TLS
-Secret, and exposes only `/v1`, exact `/mcp`, and the two exact protected-resource
+Secret, and exposes only `/v1`, `PathPrefix /mcp`, and the two exact protected-resource
 metadata paths. It never exposes admin, probe, metrics, schema, or activation
 paths on plaintext HTTP.
 An Envoy `ClientTrafficPolicy` attaches only to the HTTPS listener and fixes
