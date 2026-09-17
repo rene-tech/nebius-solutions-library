@@ -494,7 +494,7 @@ locals {
     local.loki_active_owner_projection.releases.control_plane.name == "fs2-serve-control-plane" &&
     local.loki_active_owner_projection.releases.control_plane.namespace == "fs2-system" &&
     local.loki_active_owner_projection.releases.control_plane.revision == local.loki_active_acknowledgement.revisions.control_plane_helm &&
-    local.loki_active_apply_time_live_state.schema == "fs2-serve.nebius.ai/observability-apply-time-live-state/v1" &&
+    local.loki_active_apply_time_live_state.schema == "fs2-serve.nebius.ai/observability-apply-time-live-state/v2" &&
     local.loki_active_apply_time_live_state.validated_at == terraform_data.loki_apply_time_authorization[local.loki_active_acknowledgement_stage].output.authorization_time &&
     local.loki_active_apply_time_live_state.target == local.loki_active_owner_projection.target &&
     local.loki_active_apply_time_live_state.configuration.loki == local.loki_active_owner_projection.live_configuration.loki.resource &&
@@ -502,6 +502,21 @@ locals {
     local.loki_active_apply_time_live_state.configuration.otel_gateway == local.loki_active_owner_projection.live_configuration.otel_gateway.resource &&
     local.loki_active_apply_time_live_state.configuration.grafana_datasource == local.loki_active_owner_projection.live_configuration.grafana_datasource.resource &&
     local.loki_active_apply_time_live_state.configuration.control_plane == local.loki_active_owner_projection.live_configuration.control_plane.resource &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.config_map == local.loki_active_owner_projection.live_configuration.control_plane.resource &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.deployment.api_version == local.loki_active_owner_projection.workloads.control_plane.api_version &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.deployment.kind == local.loki_active_owner_projection.workloads.control_plane.kind &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.deployment.namespace == local.loki_active_owner_projection.workloads.control_plane.namespace &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.deployment.name == local.loki_active_owner_projection.workloads.control_plane.name &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.deployment.uid == local.loki_active_owner_projection.workloads.control_plane.uid &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.deployment.generation == local.loki_active_owner_projection.workloads.control_plane.generation &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.deployment.resource_version == local.loki_active_owner_projection.workloads.control_plane.resource_version &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.container_name == "control-plane" &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.config_volume_name == "admin-observability" &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.config_key == "config.json" &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.config_mount_path == "/etc/fs2-serve/admin-observability" &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.config_file == "/etc/fs2-serve/admin-observability/config.json" &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.loki_url == "http://fs2-loki.fs2-observability.svc.cluster.local:3100" &&
+    local.loki_active_apply_time_live_state.configuration.control_plane_consumption.read_tenant_header == "fake|fs2-platform" &&
     alltrue([
       for name, fingerprint in local.loki_active_acknowledgement.deployments :
       local.loki_active_owner_projection.workloads[name].uid == fingerprint.uid &&
@@ -909,6 +924,7 @@ output "observability_operator_contract" {
       owner_projection_max_age_seconds      = 300
       saved_plan_apply_time_revalidation    = true
       live_configuration_content_reread     = ["loki", "loki-runtime", "otel-gateway", "grafana-datasource", "control-plane"]
+      control_plane_reader_consumption_bound = true
       payload_permit_full_data_map_bound    = true
       release_attestor_trust_root_accepted  = local.accepted_observability_release_attestors_sha256 != null
       enforcement_authorized                = local.loki_identity_custody_ready && local.loki_prometheus_health_exception_ready && local.loki_migration_authorized

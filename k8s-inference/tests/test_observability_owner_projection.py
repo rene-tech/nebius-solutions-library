@@ -45,6 +45,16 @@ def resource_data(seed: str) -> dict[str, str]:
     return {"config.yaml": f"fixture:{seed}"}
 
 
+def control_plane_config_data() -> dict[str, str]:
+    return {
+        "config.json": json.dumps(
+            {"allowed_hosts": [], "datasource_uids": {}, "installed": {}, "links": {}},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    }
+
+
 def data_digest(data: dict[str, str]) -> str:
     encoded = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
@@ -139,9 +149,18 @@ def projection() -> dict[str, object]:
     datasource_resource = namespaced_resource(
         "Secret", "fs2-observability", "fs2-serve-postgres-grafana-datasource", "datasource"
     )
+    control_plane_resource = namespaced_resource(
+        "ConfigMap",
+        "fs2-system",
+        "fs2-serve-control-plane-admin-observability",
+        "control-config",
+    )
+    control_plane_resource["content_sha256"] = data_digest(
+        control_plane_config_data()
+    )
     return {
         "schema": (
-            "fs2-serve.nebius.ai/observability-release-owner-projection/v2"
+            "fs2-serve.nebius.ai/observability-release-owner-projection/v3"
         ),
         "stage": "posttransition",
         "target": {
@@ -209,13 +228,8 @@ def projection() -> dict[str, object]:
                 "read_tenants": ["fake", "fs2-platform"],
             },
             "control_plane": {
-                "resource": namespaced_resource(
-                    "ConfigMap",
-                    "fs2-system",
-                    "fs2-serve-admin-configuration",
-                    "control-config",
-                ),
-                "content_sha256": data_digest(resource_data("control-config")),
+                "resource": control_plane_resource,
+                "content_sha256": control_plane_resource["content_sha256"],
                 "tenant_header_name": "X-Scope-OrgID",
                 "read_tenants": ["fake", "fs2-platform"],
             },
@@ -349,6 +363,50 @@ def current_workload(
     }
 
 
+def current_control_plane_workload(
+    reference: dict[str, object], resource: dict[str, object]
+) -> dict[str, object]:
+    value = current_workload(reference)
+    value["spec"]["template"]["spec"] = {  # type: ignore[index]
+        "volumes": [
+            {
+                "name": "admin-observability",
+                "configMap": {
+                    "name": resource["name"],
+                    "items": [{"key": "config.json", "path": "config.json"}],
+                },
+            }
+        ],
+        "containers": [
+            {
+                "name": "control-plane",
+                "env": [
+                    {
+                        "name": "FS2_ADMIN_LOKI_URL",
+                        "value": "http://fs2-loki.fs2-observability.svc.cluster.local:3100",
+                    },
+                    {
+                        "name": "FS2_ADMIN_LOKI_READ_TENANT_HEADER",
+                        "value": "fake|fs2-platform",
+                    },
+                    {
+                        "name": "FS2_ADMIN_OBSERVABILITY_CONFIG_FILE",
+                        "value": "/etc/fs2-serve/admin-observability/config.json",
+                    },
+                ],
+                "volumeMounts": [
+                    {
+                        "name": "admin-observability",
+                        "mountPath": "/etc/fs2-serve/admin-observability",
+                        "readOnly": True,
+                    }
+                ],
+            }
+        ],
+    }
+    return value
+
+
 def live_objects(value: dict[str, object]) -> dict[tuple[str, str | None, str], dict[str, object]]:
     configuration = value["live_configuration"]  # type: ignore[index]
     payload = value["payload_safety"]["inventory"]  # type: ignore[index]
@@ -372,7 +430,7 @@ def live_objects(value: dict[str, object]) -> dict[tuple[str, str | None, str], 
         ),
         "control_plane": current_resource(
             configuration["control_plane"]["resource"],  # type: ignore[index]
-            resource_data("control-config"),
+            control_plane_config_data(),
         ),
         "payload": current_resource(payload["resource"], payload_data),  # type: ignore[index]
     }
@@ -399,7 +457,10 @@ def live_objects(value: dict[str, object]) -> dict[tuple[str, str | None, str], 
             [configuration["otel_gateway"]["resource"]],  # type: ignore[index]
         ),
         "grafana": current_workload(workloads["grafana"]),  # type: ignore[index]
-        "control_plane": current_workload(workloads["control_plane"]),  # type: ignore[index]
+        "control_plane": current_control_plane_workload(
+            workloads["control_plane"],  # type: ignore[index]
+            configuration["control_plane"]["resource"],  # type: ignore[index]
+        ),
     }
     for workload_value in workload_objects.values():
         metadata = workload_value["metadata"]  # type: ignore[index]
@@ -434,7 +495,7 @@ def signed_query(
         expires_at=str(value["valid_until"]),
         kind="observability-release-owner-projection",
         subject_schema=(
-            "fs2-serve.nebius.ai/observability-release-owner-projection/v2"
+            "fs2-serve.nebius.ai/observability-release-owner-projection/v3"
         ),
         subject_digest=projection_sha256,
         model_id="observability-access",
@@ -516,6 +577,44 @@ def test_apply_time_config_only_drift_is_rejected() -> None:
     current = objects[(datasource["kind"], datasource["namespace"], datasource["name"])]  # type: ignore[index]
     current["data"] = {"datasource.yaml": "changed-after-plan"}
     with pytest.raises(CatalogError, match="current identity or content differs"):
+        VERIFIER.verify(query, read_object=fixture_reader(objects))
+
+
+def test_arbitrary_control_plane_config_reference_is_rejected() -> None:
+    value = projection()
+    resource = value["live_configuration"]["control_plane"]["resource"]  # type: ignore[index]
+    resource["name"] = "fs2-serve-admin-configuration"  # type: ignore[index]
+    query, _ = signed_query(value)
+    with pytest.raises(CatalogError, match="exact chart-owned"):
+        VERIFIER.verify(query, read_object=fixture_reader(live_objects(value)))
+
+
+def test_control_plane_reader_header_drift_is_rejected() -> None:
+    value = projection()
+    query, _ = signed_query(value)
+    objects = live_objects(value)
+    workload = value["workloads"]["control_plane"]  # type: ignore[index]
+    current = objects[(workload["kind"], workload["namespace"], workload["name"])]  # type: ignore[index]
+    environment = current["spec"]["template"]["spec"]["containers"][0]["env"]  # type: ignore[index]
+    next(
+        entry
+        for entry in environment
+        if entry["name"] == "FS2_ADMIN_LOKI_READ_TENANT_HEADER"
+    )["value"] = "fs2-platform"
+    with pytest.raises(CatalogError, match="exact Loki reader environment"):
+        VERIFIER.verify(query, read_object=fixture_reader(objects))
+
+
+def test_control_plane_reader_mount_drift_is_rejected() -> None:
+    value = projection()
+    query, _ = signed_query(value)
+    objects = live_objects(value)
+    workload = value["workloads"]["control_plane"]  # type: ignore[index]
+    current = objects[(workload["kind"], workload["namespace"], workload["name"])]  # type: ignore[index]
+    current["spec"]["template"]["spec"]["volumes"][0]["configMap"][  # type: ignore[index]
+        "name"
+    ] = "fs2-serve-admin-configuration"
+    with pytest.raises(CatalogError, match="mounted|signed ConfigMap"):
         VERIFIER.verify(query, read_object=fixture_reader(objects))
 
 

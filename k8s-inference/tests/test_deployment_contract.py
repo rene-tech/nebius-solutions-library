@@ -3323,6 +3323,7 @@ class DeploymentContractTests(unittest.TestCase):
             'current_owner_projection_matches      = local.loki_owner_projection_current',
             'owner_projection_max_age_seconds      = 300',
             'saved_plan_apply_time_revalidation    = true',
+            'control_plane_reader_consumption_bound = true',
             'payload_permit_full_data_map_bound    = true',
             'transition_order                      = ["network-policy-auth-off", "header-capable-clients-and-legacy-proof", "auth-enforced-validation", "post-auth-scoped-proof-and-enforced-dual-read"]',
         ):
@@ -3494,6 +3495,10 @@ class DeploymentContractTests(unittest.TestCase):
             "kubernetes_manifest.runtime_log_payload_safety_binding,",
             models_source,
         )
+        self.assertIn(
+            'schema                    = "fs2-serve.nebius.ai/observability-release-owner-projection/v3"',
+            workload_outputs,
+        )
 
     def test_loki_owner_projection_uses_signed_fresh_live_configuration_evidence(self) -> None:
         verifier = (
@@ -3506,11 +3511,26 @@ class DeploymentContractTests(unittest.TestCase):
         migration_variables = (
             DEPLOY_ROOT / "stages/foundation/loki_migration_variables.tf"
         ).read_text(encoding="utf-8")
+        control_plane_helpers = (
+            DEPLOY_ROOT
+            / "charts/control-plane/fs2-serve-control-plane/templates/_helpers.tpl"
+        ).read_text(encoding="utf-8")
+        control_plane_config_map = (
+            DEPLOY_ROOT
+            / "charts/control-plane/fs2-serve-control-plane/templates/admin-observability-configmap.yaml"
+        ).read_text(encoding="utf-8")
+        control_plane_deployment = (
+            DEPLOY_ROOT
+            / "charts/control-plane/fs2-serve-control-plane/templates/deployment.yaml"
+        ).read_text(encoding="utf-8")
+        control_plane_values = (
+            DEPLOY_ROOT / "stages/workloads/control_plane.tf"
+        ).read_text(encoding="utf-8")
 
         for required in (
             "verify_signed_attestation",
             "MAX_PROJECTION_LIFETIME = timedelta(minutes=5)",
-            'PROJECTION_SCHEMA = "fs2-serve.nebius.ai/observability-release-owner-projection/v2"',
+            'PROJECTION_SCHEMA = "fs2-serve.nebius.ai/observability-release-owner-projection/v3"',
             '"loki", "otel_gateway", "grafana", "control_plane"',
             '"runtime_config_sha256"',
             '"runtime_resource"',
@@ -3540,8 +3560,42 @@ class DeploymentContractTests(unittest.TestCase):
             '("ConfigMap", "fs2-observability", "fs2-loki-runtime")',
             '("ConfigMap", "fs2-observability", "fs2-otel-gateway")',
             '"fs2-serve-postgres-grafana-datasource"',
+            '"fs2-serve-control-plane-admin-observability"',
+            "_control_plane_reader_consumption",
+            'workloads["control_plane"],',
+            '"FS2_ADMIN_LOKI_READ_TENANT_HEADER"',
+            '"FS2_ADMIN_OBSERVABILITY_CONFIG_FILE"',
+            '"fs2-serve.nebius.ai/observability-apply-time-live-state/v2"',
         ):
             self.assertIn(required, verifier)
+
+        for required in (
+            "FS2_ADMIN_LOKI_URL",
+            "FS2_ADMIN_LOKI_READ_TENANT_HEADER",
+            "FS2_ADMIN_OBSERVABILITY_CONFIG_FILE",
+            "mountPath: /etc/fs2-serve/admin-observability",
+            "name: {{ include \"fs2-serve.fullname\" . }}-admin-observability",
+            "key: config.json",
+            "path: config.json",
+        ):
+            self.assertIn(required, control_plane_helpers)
+        self.assertIn(
+            "name: {{ include \"fs2-serve.fullname\" . }}-admin-observability",
+            control_plane_config_map,
+        )
+        self.assertIn('include "fs2-serve.runtimeEnv"', control_plane_deployment)
+        self.assertIn(
+            'include "fs2-serve.runtimeVolumeMounts"', control_plane_deployment
+        )
+        self.assertIn('include "fs2-serve.runtimeVolumes"', control_plane_deployment)
+        self.assertIn(
+            "lokiUrl              = local.grafana_loki_datasource_url",
+            control_plane_values,
+        )
+        self.assertIn(
+            "lokiReadTenantHeader = local.observability_operator.loki.read_tenant_header",
+            control_plane_values,
+        )
 
         for required in (
             'accepted_observability_release_attestors_sha256 = null',
@@ -3554,6 +3608,8 @@ class DeploymentContractTests(unittest.TestCase):
             'helm_release.otel_gateway.metadata.revision',
             'helm_release.monitoring.metadata.revision',
             'loki_active_owner_projection.live_configuration.grafana_datasource.resource.uid',
+            'configuration.control_plane_consumption.config_map',
+            'configuration.control_plane_consumption.read_tenant_header == "fake|fs2-platform"',
             'loki_active_owner_projection.payload_safety.admission.policy.uid',
             'loki_active_owner_projection.payload_safety.admission.binding.uid',
             'loki_active_owner_projection.observed_at == local.loki_active_acknowledgement.proof.observed_at',

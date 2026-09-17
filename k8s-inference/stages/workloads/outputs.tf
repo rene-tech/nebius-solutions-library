@@ -559,6 +559,7 @@ output "loki_migration_acknowledgement_requirements" {
       "Ed25519-signed owner projection valid for no more than five minutes",
       "reread Helm storage Secret UID/resourceVersion/payload for Loki, OTel, Grafana, and control plane",
       "reread effective Loki runtime config and Grafana datasource Secret content digests",
+      "reread exact fs2-serve-control-plane-admin-observability ConfigMap and prove the current control-plane Deployment consumes its config.json plus the exact Loki URL/read-header environment",
       "reread exact admission policy, binding, and complete payload-permit ConfigMap data map",
       "derive every image-<sha256> permit from the signed inventory images without missing or extra keys",
       "unexpired owner projection and migration valid_until",
@@ -578,7 +579,7 @@ output "loki_migration_acknowledgement_requirements" {
       external_custody_required = ["command", "args", "env", "envFrom", "volumeMounts", "volumes"]
     }
     owner_projection = {
-      schema                    = "fs2-serve.nebius.ai/observability-release-owner-projection/v2"
+      schema                    = "fs2-serve.nebius.ai/observability-release-owner-projection/v3"
       signer                    = "external release owner"
       private_key_in_terraform  = false
       trust_root_secret         = "fs2-system/fs2-observability-release-attestors"

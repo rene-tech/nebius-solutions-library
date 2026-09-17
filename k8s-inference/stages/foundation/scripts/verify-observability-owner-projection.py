@@ -31,10 +31,29 @@ from fs2_serve_catalog.attestations import (  # noqa: E402
 from fs2_serve_catalog.loader import CatalogError  # noqa: E402
 
 
-PROJECTION_SCHEMA = "fs2-serve.nebius.ai/observability-release-owner-projection/v2"
+PROJECTION_SCHEMA = "fs2-serve.nebius.ai/observability-release-owner-projection/v3"
 PROJECTION_KIND = "observability-release-owner-projection"
 PROJECTION_MODEL_ID = "observability-access"
 MAX_PROJECTION_LIFETIME = timedelta(minutes=5)
+CONTROL_PLANE_WORKLOAD = (
+    "Deployment",
+    "fs2-system",
+    "fs2-serve-control-plane",
+)
+CONTROL_PLANE_CONFIG = (
+    "ConfigMap",
+    "fs2-system",
+    "fs2-serve-control-plane-admin-observability",
+)
+CONTROL_PLANE_CONTAINER = "control-plane"
+CONTROL_PLANE_CONFIG_VOLUME = "admin-observability"
+CONTROL_PLANE_CONFIG_KEY = "config.json"
+CONTROL_PLANE_CONFIG_MOUNT = "/etc/fs2-serve/admin-observability"
+CONTROL_PLANE_CONFIG_FILE = f"{CONTROL_PLANE_CONFIG_MOUNT}/{CONTROL_PLANE_CONFIG_KEY}"
+CONTROL_PLANE_LOKI_URL = (
+    "http://fs2-loki.fs2-observability.svc.cluster.local:3100"
+)
+CONTROL_PLANE_READ_TENANTS = "fake|fs2-platform"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 KEY_ID = re.compile(r"^sha256:[0-9a-f]{64}$")
 GIT_OBJECT = re.compile(r"^[0-9a-f]{40}$")
@@ -286,6 +305,132 @@ def _assert_mounted_resource(
         _fail(f"{label} signed configuration is not mounted by the current workload")
 
 
+def _control_plane_reader_consumption(
+    workload: dict[str, Any],
+    resource: dict[str, Any],
+    current_resource: dict[str, Any],
+) -> dict[str, Any]:
+    metadata = workload.get("metadata")
+    if not isinstance(metadata, dict):
+        _fail("control-plane workload metadata is malformed")
+    deployment_identity = (
+        workload.get("kind"),
+        metadata.get("namespace"),
+        metadata.get("name"),
+    )
+    if deployment_identity != CONTROL_PLANE_WORKLOAD:
+        _fail("control-plane reader must be consumed by the exact chart Deployment")
+
+    resource_identity = (
+        resource["kind"],
+        resource["namespace"],
+        resource["name"],
+    )
+    if resource_identity != CONTROL_PLANE_CONFIG:
+        _fail(
+            "control-plane reader must bind the exact chart-owned "
+            "admin-observability ConfigMap"
+        )
+    data = current_resource.get("data")
+    if (
+        not isinstance(data, dict)
+        or set(data) != {CONTROL_PLANE_CONFIG_KEY}
+        or not isinstance(data[CONTROL_PLANE_CONFIG_KEY], str)
+    ):
+        _fail("control-plane admin-observability ConfigMap must contain only config.json")
+    config_document = _json(
+        data[CONTROL_PLANE_CONFIG_KEY],
+        "current control-plane admin-observability config.json",
+        maximum_bytes=1024 * 1024,
+    )
+    if not isinstance(config_document, dict):
+        _fail("current control-plane admin-observability config.json must be an object")
+
+    try:
+        pod_spec = workload["spec"]["template"]["spec"]
+        containers = pod_spec.get("containers", [])
+        volumes = pod_spec.get("volumes", [])
+    except (KeyError, TypeError) as exc:
+        raise CatalogError("control-plane Deployment Pod template is malformed") from exc
+    matching_containers = [
+        container
+        for container in containers
+        if isinstance(container, dict)
+        and container.get("name") == CONTROL_PLANE_CONTAINER
+    ]
+    if len(matching_containers) != 1:
+        _fail("control-plane Deployment must contain one exact control-plane container")
+    container = matching_containers[0]
+
+    expected_environment = {
+        "FS2_ADMIN_LOKI_URL": CONTROL_PLANE_LOKI_URL,
+        "FS2_ADMIN_LOKI_READ_TENANT_HEADER": CONTROL_PLANE_READ_TENANTS,
+        "FS2_ADMIN_OBSERVABILITY_CONFIG_FILE": CONTROL_PLANE_CONFIG_FILE,
+    }
+    observed_environment: dict[str, str] = {}
+    for entry in container.get("env", []):
+        if not isinstance(entry, dict) or entry.get("name") not in expected_environment:
+            continue
+        name = entry["name"]
+        if name in observed_environment or set(entry) != {"name", "value"}:
+            _fail(f"control-plane {name} must be one exact literal environment entry")
+        observed_environment[name] = entry["value"]
+    if observed_environment != expected_environment:
+        _fail("control-plane Deployment does not consume the exact Loki reader environment")
+
+    matching_volumes = [
+        volume
+        for volume in volumes
+        if isinstance(volume, dict)
+        and volume.get("name") == CONTROL_PLANE_CONFIG_VOLUME
+    ]
+    if len(matching_volumes) != 1:
+        _fail("control-plane Deployment must contain one admin-observability volume")
+    config_map = matching_volumes[0].get("configMap")
+    if not isinstance(config_map, dict) or config_map.get("name") != resource["name"]:
+        _fail("control-plane admin-observability volume must use the signed ConfigMap")
+    if config_map.get("items") != [
+        {"key": CONTROL_PLANE_CONFIG_KEY, "path": CONTROL_PLANE_CONFIG_KEY}
+    ]:
+        _fail("control-plane admin-observability volume must project only config.json")
+
+    matching_mounts = [
+        mount
+        for mount in container.get("volumeMounts", [])
+        if isinstance(mount, dict)
+        and mount.get("name") == CONTROL_PLANE_CONFIG_VOLUME
+    ]
+    if len(matching_mounts) != 1:
+        _fail("control-plane container must mount one admin-observability volume")
+    mount = matching_mounts[0]
+    if (
+        mount.get("mountPath") != CONTROL_PLANE_CONFIG_MOUNT
+        or mount.get("readOnly") is not True
+        or mount.get("subPath") is not None
+    ):
+        _fail("control-plane admin-observability mount path or mode is not exact")
+
+    return {
+        "deployment": {
+            "api_version": workload.get("apiVersion"),
+            "kind": workload.get("kind"),
+            "namespace": metadata.get("namespace"),
+            "name": metadata.get("name"),
+            "uid": metadata.get("uid"),
+            "generation": metadata.get("generation"),
+            "resource_version": metadata.get("resourceVersion"),
+        },
+        "config_map": resource,
+        "container_name": CONTROL_PLANE_CONTAINER,
+        "config_volume_name": CONTROL_PLANE_CONFIG_VOLUME,
+        "config_key": CONTROL_PLANE_CONFIG_KEY,
+        "config_mount_path": CONTROL_PLANE_CONFIG_MOUNT,
+        "config_file": CONTROL_PLANE_CONFIG_FILE,
+        "loki_url": CONTROL_PLANE_LOKI_URL,
+        "read_tenant_header": CONTROL_PLANE_READ_TENANTS,
+    }
+
+
 def _validate_payload_permits(
     inventory: dict[str, Any], current: dict[str, Any]
 ) -> dict[str, Any]:
@@ -369,7 +514,7 @@ def _validate_live_state(
         "live Grafana datasource",
         read_object,
     )
-    control_resource, _ = _current_resource(
+    control_resource, control_current = _current_resource(
         configuration["control_plane"]["resource"],
         "live control-plane reader configuration",
         read_object,
@@ -379,6 +524,14 @@ def _validate_live_state(
         workloads["loki"], loki_runtime_resource, "Loki runtime"
     )
     _assert_mounted_resource(workloads["otel_gateway"], otel_resource, "OTel")
+    _assert_mounted_resource(
+        workloads["control_plane"],
+        control_resource,
+        "control-plane admin observability",
+    )
+    control_plane_consumption = _control_plane_reader_consumption(
+        workloads["control_plane"], control_resource, control_current
+    )
     if grafana_current.get("metadata", {}).get("labels", {}).get(
         "grafana_datasource"
     ) != "1":
@@ -393,7 +546,7 @@ def _validate_live_state(
         projection["payload_safety"]["inventory"], inventory_current
     )
     live_state = {
-        "schema": "fs2-serve.nebius.ai/observability-apply-time-live-state/v1",
+        "schema": "fs2-serve.nebius.ai/observability-apply-time-live-state/v2",
         "validated_at": validation_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "target": projection["target"],
         "configuration": {
@@ -402,6 +555,7 @@ def _validate_live_state(
             "otel_gateway": otel_resource,
             "grafana_datasource": grafana_resource,
             "control_plane": control_resource,
+            "control_plane_consumption": control_plane_consumption,
         },
         "payload_safety": {
             "resource": inventory_resource,
@@ -749,6 +903,23 @@ def _validate_projection(
         "fs2-serve-postgres-grafana-datasource",
     ):
         _fail("Grafana live content must bind the exact workloads-owned datasource Secret")
+    control_plane_resource = configuration["control_plane"]["resource"]
+    if (
+        control_plane_resource["kind"],
+        control_plane_resource["namespace"],
+        control_plane_resource["name"],
+    ) != CONTROL_PLANE_CONFIG:
+        _fail(
+            "control-plane live content must bind the exact chart-owned "
+            "admin-observability ConfigMap"
+        )
+    control_plane_workload = workloads["control_plane"]
+    if (
+        control_plane_workload["kind"],
+        control_plane_workload["namespace"],
+        control_plane_workload["name"],
+    ) != CONTROL_PLANE_WORKLOAD:
+        _fail("control-plane workload must bind the exact chart Deployment")
 
     markers = _object(
         projection["cached_markers"],

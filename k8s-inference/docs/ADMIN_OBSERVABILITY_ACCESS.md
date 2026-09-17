@@ -7,14 +7,15 @@ component's bounded Prometheus target, health, and data probes pass.
 
 ## SAI-22 access boundaries
 
-Independent review rejected exact commit
-`e72ac70a403a481567ff1fbc46c8993b3742b83b` / tree
-`9a3682460eae420cf776494979abf6958e3e9e00` as SOURCE NO-GO. Its five-minute
-check used plan-time `plantimestamp()`, its effective configuration digests
-were not compared with apply-time live content, and its payload check covered
-only `inventory.json` while admission consumed separate `image-*` keys. This
-successor preserves that negative evidence and version-bumps the incompatible
-authorization envelopes; the rejected contracts must never be accepted.
+Preliminary independent review rejected exact commit
+`47fe7852b429a2cf7892058b6f96a3652f41bef0` / tree
+`c77d413bd0a0e62fdf90b4ea7788f2d401e2ae18` as SOURCE NO-GO. Its control-plane
+resource had a signed content digest but no exact chart-owned resource identity
+or proof that the current Deployment consumed it; its authored fixture even
+accepted the unrelated `fs2-serve-admin-configuration` ConfigMap. This
+successor preserves that rejection and the earlier `e72ac70a` replay,
+configuration-read, and permit-map findings. It version-bumps the incompatible
+owner projection; rejected contracts must never be accepted.
 
 The control plane treats application metrics and logs as different privilege
 classes. Global `VIEWER` principals may retain the bounded metrics and
@@ -64,10 +65,11 @@ release-owner projection whose Ed25519 signature validates against the exact
 public trust-root digest pinned in source. The signing private key is never a
 Terraform input or Kubernetes workload secret.
 
-The v2 release-owner projection must bind current Helm storage Secret identity and payload
+The v3 release-owner projection must bind current Helm storage Secret identity and payload
 digests for Loki, OTel, Grafana, and the control plane; current Pod templates
 and images; the effective Loki configuration; the OTel writer configuration;
-the Grafana datasource Secret; control-plane reader configuration; the two
+the Grafana datasource Secret; the exact chart-owned
+`fs2-system/fs2-serve-control-plane-admin-observability` ConfigMap; the two
 cached marker objects; the payload inventory; and its admission policy and
 binding. Only non-secret identities and SHA-256 digests enter the projection.
 Terraform creates an in-place authorization epoch with `timestamp()`, which is
@@ -75,16 +77,20 @@ unknown during planning, and makes the projection, trust root, acknowledgement,
 workloads, markers, policy, binding, and inventory reads depend on that epoch.
 The external verifier therefore runs during apply even for a saved plan. It
 uses the exact run-owned kubeconfig and context to reread the signed Loki main
-and runtime ConfigMaps, OTel ConfigMap, Grafana datasource Secret, control-plane
-reader ConfigMap, and payload permit. Secret/configuration bytes remain in the
+and runtime ConfigMaps, OTel ConfigMap, Grafana datasource Secret, exact
+control-plane reader ConfigMap, and payload permit. It also proves that the
+current `fs2-system/fs2-serve-control-plane` Deployment mounts that ConfigMap's
+sole `config.json` key read-only at the chart path and supplies the exact Loki
+URL, bounded `fake|fs2-platform` header, and config-file environment entries to
+the `control-plane` container. Secret/configuration bytes remain in the
 verifier process; Terraform receives only current metadata and canonical
 content digests. Its validity window is at most five minutes, it binds the exact
 source-accepted authorization-intent digest, and Terraform compares it to
 current deployment objects, current OTel/Grafana `helm_release` revisions,
 cached-marker contents, current admission objects, and the fresh apply-time
-content projection. A configuration-only
-change therefore changes the reread Loki runtime-config or datasource-content
-digest even when no Pod template changes. A replay, signer swap, cached-marker
+content projection. A configuration-only change therefore changes the reread
+Loki runtime-config, Grafana datasource, or control-plane reader digest even
+when no Pod template changes. A replay, signer swap, cached-marker
 drift, Secret replacement, expired projection, or caller-selected trust root
 fails closed. The source-pinned acknowledgement and trust-root digests remain
 `null` in this static candidate; it cannot enable auth.
@@ -142,7 +148,7 @@ the immutable permit, and the exact live policy and binding. Three distinct
 digests bind the raw `inventory.json`, the derived `image-<sha256>` key/value
 map, and the complete ConfigMap data map. Apply-time verification derives every
 permit from `inventory.json`, requires the exact key set with no additions or
-omissions, and compares all three digests to both the signed v2 projection and
+omissions, and compares all three digests to both the signed v3 projection and
 the source-pinned v4 acknowledgement. Terraform-input
 booleans and hashes are preparation data only: they cannot authorize Loki auth
 without the external signer, source-pinned public trust root, fresh live-state
@@ -185,8 +191,8 @@ deployment = {
 loki_access_phase    = "network-bound"
 loki_rollback_floor  = "network-bound"
 # loki_migration_acknowledgements = {
-#   pretransition  = { ...v4 record and signed v2 owner projection reference... }
-#   posttransition = { ...v4 record and signed v2 owner projection reference... }
+#   pretransition  = { ...v4 record and signed v3 owner projection reference... }
+#   posttransition = { ...v4 record and signed v3 owner projection reference... }
 # }
 # loki_identity_custody_receipt            = "<source-pinned SAI-03 receipt>"
 # loki_prometheus_health_exception_receipt = "<source-pinned exception receipt>"
