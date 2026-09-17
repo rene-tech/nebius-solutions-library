@@ -258,7 +258,8 @@ resource "helm_release" "control_plane" {
         local.observability_operator.loki.read_tenant_header == "fake|fs2-platform" &&
         local.observability_operator.loki.multi_tenant_queries_enabled &&
         local.observability_operator.loki.legacy_retention_hours == 168 &&
-        local.observability_operator.loki.expected_client_compatibility_receipt == local.loki_client_compatibility_receipt &&
+        local.observability_operator.loki.expected_client_configuration_claim == local.loki_client_configuration_claim &&
+        !local.observability_operator.loki.caller_reproducible_receipts_accepted &&
         length(local.observability_operator.loki.ingress_policy_name) > 0 &&
         local.observability_operator.alertmanager.service_port == 9093 &&
         (

@@ -15,7 +15,7 @@ locals {
     network-bound      = 0
     enforced-dual-read = 1
   }
-  loki_client_compatibility_payload = {
+  loki_client_configuration_payload = {
     schema                      = "fs2-serve.nebius.ai/loki-client-compatibility/v1"
     run_id                      = var.run_id
     write_tenant_id             = local.loki_write_tenant_id
@@ -24,7 +24,54 @@ locals {
     reader_release              = "fs2-serve-control-plane"
     grafana_datasource_uid      = "fs2-${var.run_id}-loki"
   }
-  expected_loki_client_compatibility_receipt = sha256(jsonencode(local.loki_client_compatibility_payload))
+  expected_loki_client_configuration_claim = sha256(jsonencode(local.loki_client_configuration_payload))
+
+  # A phase-2 configuration claim is caller-reproducible and therefore cannot
+  # authorize auth enforcement. A later independently reviewed successor must
+  # pin the digest of one exact target-bound acknowledgement containing the
+  # deployed source/tree, Helm revisions, datasource resourceVersion, scoped
+  # writer ingestion, and Grafana/control-plane dual-read proof.
+  accepted_loki_deployed_client_acknowledgement_sha256 = null
+  loki_deployed_client_acknowledgement_record = (
+    var.loki_deployed_client_acknowledgement == null ? null : {
+      schema    = var.loki_deployed_client_acknowledgement.schema
+      target    = var.loki_deployed_client_acknowledgement.target
+      source    = var.loki_deployed_client_acknowledgement.source
+      revisions = var.loki_deployed_client_acknowledgement.revisions
+      proof     = var.loki_deployed_client_acknowledgement.proof
+    }
+  )
+  loki_deployed_client_acknowledgement_record_json = (
+    local.loki_deployed_client_acknowledgement_record == null ? null :
+    jsonencode(local.loki_deployed_client_acknowledgement_record)
+  )
+  loki_deployed_client_acknowledgement_sha256 = (
+    var.loki_deployed_client_acknowledgement == null ? null :
+    sha256(jsonencode(var.loki_deployed_client_acknowledgement))
+  )
+  loki_deployed_clients_ready = (
+    local.accepted_loki_deployed_client_acknowledgement_sha256 != null &&
+    local.loki_deployed_client_acknowledgement_sha256 == local.accepted_loki_deployed_client_acknowledgement_sha256 &&
+    try(
+      var.loki_deployed_client_acknowledgement.target.run_id == var.run_id &&
+      var.loki_deployed_client_acknowledgement.target.cluster_id == var.cluster_id &&
+      var.loki_deployed_client_acknowledgement.target.kube_system_uid == var.kube_system_uid &&
+      var.loki_deployed_client_acknowledgement.binding.namespace == "fs2-observability" &&
+      var.loki_deployed_client_acknowledgement.binding.record_sha256 == sha256(local.loki_deployed_client_acknowledgement_record_json) &&
+      var.loki_deployed_client_acknowledgement.binding.config_map_name == "fs2-loki-deployed-client-ack-${substr(var.loki_deployed_client_acknowledgement.binding.record_sha256, 0, 12)}" &&
+      data.kubernetes_resource.loki_deployed_client_acknowledgement[0].object.immutable == true &&
+      data.kubernetes_resource.loki_deployed_client_acknowledgement[0].object.metadata.uid == var.loki_deployed_client_acknowledgement.binding.uid &&
+      data.kubernetes_resource.loki_deployed_client_acknowledgement[0].object.metadata.resourceVersion == var.loki_deployed_client_acknowledgement.binding.resource_version &&
+      data.kubernetes_resource.loki_deployed_client_acknowledgement[0].object.data["acknowledgement.json"] == local.loki_deployed_client_acknowledgement_record_json &&
+      var.loki_deployed_client_acknowledgement.proof.scoped_writer_ingested &&
+      var.loki_deployed_client_acknowledgement.proof.grafana_legacy_read &&
+      var.loki_deployed_client_acknowledgement.proof.grafana_scoped_read &&
+      var.loki_deployed_client_acknowledgement.proof.control_plane_legacy_read &&
+      var.loki_deployed_client_acknowledgement.proof.control_plane_scoped_read &&
+      var.loki_deployed_client_acknowledgement.proof.no_customer_payload_recorded,
+      false,
+    )
+  )
 
   # SAI-03 admission/label custody remains independently NO-GO. Do not replace
   # this null with a caller-provided value: a reviewed successor must pin the
@@ -35,6 +82,35 @@ locals {
     local.accepted_loki_identity_custody_receipt != null &&
     var.loki_identity_custody_receipt == local.accepted_loki_identity_custody_receipt
   )
+
+  # Prometheus currently scrapes Loki's metrics on the shared 3100 listener.
+  # That exception grants more than an HTTP-path-aware metrics mediator would,
+  # so it also requires a distinct independently accepted, source-pinned risk
+  # receipt. It remains fail-closed until such a receipt exists.
+  accepted_loki_prometheus_health_exception_receipt = null
+  loki_prometheus_health_exception_ready = (
+    local.accepted_loki_prometheus_health_exception_receipt != null &&
+    var.loki_prometheus_health_exception_receipt == local.accepted_loki_prometheus_health_exception_receipt
+  )
+}
+
+# This object is created only by the later independent verifier after its
+# marker-only writer and reader checks. It must be immutable. Binding its
+# API-assigned resourceVersion and exact canonical JSON into the source-pinned
+# acknowledgement prevents a caller from fabricating desired configuration or
+# replacing the acknowledged proof object before auth enforcement.
+data "kubernetes_resource" "loki_deployed_client_acknowledgement" {
+  count = (
+    local.accepted_loki_deployed_client_acknowledgement_sha256 != null &&
+    var.loki_deployed_client_acknowledgement != null
+  ) ? 1 : 0
+
+  api_version = "v1"
+  kind        = "ConfigMap"
+  metadata {
+    name      = var.loki_deployed_client_acknowledgement.binding.config_map_name
+    namespace = var.loki_deployed_client_acknowledgement.binding.namespace
+  }
 }
 
 # Loki's tenant header is meaningful only behind a network identity boundary.
@@ -97,7 +173,8 @@ resource "kubernetes_network_policy_v1" "loki_ingress" {
         pod_selector {
           match_labels = {
             "app.kubernetes.io/component" = "gateway"
-            "app.kubernetes.io/part-of"   = "fs2-serve"
+            "app.kubernetes.io/instance"  = "fs2-serve-control-plane"
+            "app.kubernetes.io/name"      = "fs2-serve-control-plane"
           }
         }
       }
@@ -151,6 +228,11 @@ resource "kubernetes_network_policy_v1" "loki_ingress" {
     precondition {
       condition     = local.loki_identity_custody_ready
       error_message = "SAI-22 is blocked: pin the independently accepted SAI-03 admission/label-custody receipt in source before applying the Loki label-selected identity boundary."
+    }
+
+    precondition {
+      condition     = local.loki_prometheus_health_exception_ready
+      error_message = "SAI-22 is blocked: replace Prometheus direct access with metrics-only mediation or pin an independently accepted Loki health-scrape exception receipt in source."
     }
 
     precondition {
@@ -295,8 +377,11 @@ output "observability_operator_contract" {
       legacy_read_retirement_boundary       = "not-before-168h-after-auth-enforcement"
       ingress_policy_name                   = kubernetes_network_policy_v1.loki_ingress.metadata[0].name
       identity_custody_ready                = local.loki_identity_custody_ready
-      enforcement_authorized                = local.loki_identity_custody_ready && var.loki_client_compatibility_receipt == local.expected_loki_client_compatibility_receipt
-      expected_client_compatibility_receipt = local.expected_loki_client_compatibility_receipt
+      prometheus_health_exception_ready     = local.loki_prometheus_health_exception_ready
+      deployed_client_acknowledgement_ready = local.loki_deployed_clients_ready
+      enforcement_authorized                = local.loki_identity_custody_ready && local.loki_prometheus_health_exception_ready && local.loki_deployed_clients_ready
+      expected_client_configuration_claim   = local.expected_loki_client_configuration_claim
+      caller_reproducible_receipts_accepted = false
       transition_order                      = ["network-policy-auth-off", "scoped-writer-and-dual-read-clients", "auth-enforced-dual-read"]
     }
     raw_backends_public = false

@@ -26,12 +26,14 @@ grafana_admin_secret_ref = {
 
 # SAI-22 serialized Loki migration. Keep the initial apply auth-off. The
 # independently reviewed rollout may advance both phase and floor only after
-# workloads emits the exact compatibility receipt and SAI-03 identity custody
-# has an independently accepted digest pinned in source.
+# an independent verifier seals exact target/source/tree/revision and
+# marker-only ingest/read evidence, and both that evidence digest and SAI-03
+# identity custody have independently accepted digests pinned in source.
 loki_access_phase   = "network-bound"
 loki_rollback_floor = "network-bound"
-# loki_client_compatibility_receipt = "<exact workloads output>"
-# loki_identity_custody_receipt     = "<exact source-pinned SAI-03 receipt>"
+# loki_deployed_client_acknowledgement  = { ...exact accepted record... }
+# loki_identity_custody_receipt         = "<exact source-pinned SAI-03 receipt>"
+# loki_prometheus_health_exception_receipt = "<exact source-pinned exception receipt>"
 
 # Generated from deployment.observability.alertmanager by inference-stack.
 # Alertmanager remains private; Grafana is its authenticated operator surface.

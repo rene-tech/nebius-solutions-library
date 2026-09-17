@@ -229,7 +229,7 @@ variable "bootstrap_grafana_credentials" {
 }
 
 variable "loki_access_phase" {
-  description = "Serialized SAI-22 transition phase. Start network-bound with auth off; use enforced-dual-read only after the workloads compatibility receipt and accepted SAI-03 custody receipt are present."
+  description = "Serialized SAI-22 transition phase. Start network-bound with auth off; use enforced-dual-read only after accepted identity custody, Prometheus exception, and authoritative deployed-client acknowledgement gates pass."
   type        = string
   default     = "network-bound"
 
@@ -251,14 +251,94 @@ variable "loki_rollback_floor" {
 }
 
 variable "loki_client_compatibility_receipt" {
-  description = "Exact non-secret workloads output proving the scoped OTel writer and bounded fake|fs2-platform readers were applied before Loki auth enforcement."
+  description = "Deprecated caller-reproducible phase-2 configuration claim. It is not deployment evidence and must remain null; use the source-pinned deployed-client acknowledgement gate."
   type        = string
   default     = null
   nullable    = true
 
   validation {
-    condition     = var.loki_client_compatibility_receipt == null || can(regex("^[0-9a-f]{64}$", var.loki_client_compatibility_receipt))
-    error_message = "loki_client_compatibility_receipt must be null or an exact lowercase SHA-256 digest."
+    condition     = var.loki_client_compatibility_receipt == null
+    error_message = "loki_client_compatibility_receipt is caller-reproducible and cannot authorize Loki auth; leave it null."
+  }
+}
+
+variable "loki_deployed_client_acknowledgement" {
+  description = "Target-bound independent acknowledgement of exact deployed writer/readers and sealed marker-only ingestion/read proof. Its digest is unusable until an accepted value is pinned in source."
+  type = object({
+    schema = string
+    binding = object({
+      namespace        = string
+      config_map_name  = string
+      uid               = string
+      resource_version = string
+      record_sha256    = string
+    })
+    target = object({
+      run_id          = string
+      cluster_id      = string
+      kube_system_uid = string
+    })
+    source = object({
+      commit                     = string
+      tree                       = string
+      control_plane_image_digest = string
+    })
+    revisions = object({
+      otel_gateway_helm                    = number
+      control_plane_helm                   = number
+      grafana_helm                         = number
+      grafana_datasource_resource_version = string
+    })
+    proof = object({
+      observed_at                  = string
+      sealed_evidence_sha256       = string
+      scoped_marker_sha256         = string
+      scoped_writer_ingested       = bool
+      grafana_legacy_read          = bool
+      grafana_scoped_read          = bool
+      control_plane_legacy_read    = bool
+      control_plane_scoped_read    = bool
+      no_customer_payload_recorded = bool
+    })
+  })
+  default  = null
+  nullable = true
+
+  validation {
+    condition = var.loki_deployed_client_acknowledgement == null || try(
+      var.loki_deployed_client_acknowledgement.schema == "fs2-serve.nebius.ai/loki-deployed-client-acknowledgement/v1" &&
+      var.loki_deployed_client_acknowledgement.binding.namespace == "fs2-observability" &&
+      can(regex("^fs2-loki-deployed-client-ack-[0-9a-f]{12}$", var.loki_deployed_client_acknowledgement.binding.config_map_name)) &&
+      can(regex("^[0-9a-fA-F-]{20,}$", var.loki_deployed_client_acknowledgement.binding.uid)) &&
+      length(trimspace(var.loki_deployed_client_acknowledgement.binding.resource_version)) >= 1 &&
+      length(var.loki_deployed_client_acknowledgement.binding.resource_version) <= 128 &&
+      can(regex("^[0-9a-f]{64}$", var.loki_deployed_client_acknowledgement.binding.record_sha256)) &&
+      can(regex("^[a-z][a-z0-9]{5,11}$", var.loki_deployed_client_acknowledgement.target.run_id)) &&
+      can(regex("^mk8scluster-[a-z0-9]+$", var.loki_deployed_client_acknowledgement.target.cluster_id)) &&
+      can(regex("^[0-9a-fA-F-]{20,}$", var.loki_deployed_client_acknowledgement.target.kube_system_uid)) &&
+      can(regex("^[0-9a-f]{40}$", var.loki_deployed_client_acknowledgement.source.commit)) &&
+      can(regex("^[0-9a-f]{40}$", var.loki_deployed_client_acknowledgement.source.tree)) &&
+      can(regex("^sha256:[0-9a-f]{64}$", var.loki_deployed_client_acknowledgement.source.control_plane_image_digest)) &&
+      floor(var.loki_deployed_client_acknowledgement.revisions.otel_gateway_helm) == var.loki_deployed_client_acknowledgement.revisions.otel_gateway_helm &&
+      var.loki_deployed_client_acknowledgement.revisions.otel_gateway_helm >= 1 &&
+      floor(var.loki_deployed_client_acknowledgement.revisions.control_plane_helm) == var.loki_deployed_client_acknowledgement.revisions.control_plane_helm &&
+      var.loki_deployed_client_acknowledgement.revisions.control_plane_helm >= 1 &&
+      floor(var.loki_deployed_client_acknowledgement.revisions.grafana_helm) == var.loki_deployed_client_acknowledgement.revisions.grafana_helm &&
+      var.loki_deployed_client_acknowledgement.revisions.grafana_helm >= 1 &&
+      length(trimspace(var.loki_deployed_client_acknowledgement.revisions.grafana_datasource_resource_version)) >= 1 &&
+      length(var.loki_deployed_client_acknowledgement.revisions.grafana_datasource_resource_version) <= 128 &&
+      can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.loki_deployed_client_acknowledgement.proof.observed_at)) &&
+      can(regex("^[0-9a-f]{64}$", var.loki_deployed_client_acknowledgement.proof.sealed_evidence_sha256)) &&
+      can(regex("^[0-9a-f]{64}$", var.loki_deployed_client_acknowledgement.proof.scoped_marker_sha256)) &&
+      var.loki_deployed_client_acknowledgement.proof.scoped_writer_ingested &&
+      var.loki_deployed_client_acknowledgement.proof.grafana_legacy_read &&
+      var.loki_deployed_client_acknowledgement.proof.grafana_scoped_read &&
+      var.loki_deployed_client_acknowledgement.proof.control_plane_legacy_read &&
+      var.loki_deployed_client_acknowledgement.proof.control_plane_scoped_read &&
+      var.loki_deployed_client_acknowledgement.proof.no_customer_payload_recorded,
+      false,
+    )
+    error_message = "loki_deployed_client_acknowledgement must bind the exact target, source/tree/image, positive deployed revisions, datasource resourceVersion, sealed marker-only evidence, and successful scoped ingest plus legacy/scoped reads through Grafana and the control plane."
   }
 }
 
@@ -271,6 +351,18 @@ variable "loki_identity_custody_receipt" {
   validation {
     condition     = var.loki_identity_custody_receipt == null || can(regex("^[0-9a-f]{64}$", var.loki_identity_custody_receipt))
     error_message = "loki_identity_custody_receipt must be null or an exact lowercase SHA-256 digest."
+  }
+}
+
+variable "loki_prometheus_health_exception_receipt" {
+  description = "Exact non-secret independent acceptance of Prometheus direct health/metrics access to Loki 3100. It is unusable until an accepted digest is pinned in source; prefer metrics-only mediation."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.loki_prometheus_health_exception_receipt == null || can(regex("^[0-9a-f]{64}$", var.loki_prometheus_health_exception_receipt))
+    error_message = "loki_prometheus_health_exception_receipt must be null or an exact lowercase SHA-256 digest."
   }
 }
 

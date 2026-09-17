@@ -31,21 +31,45 @@ The transition order is executable in Terraform and must not be collapsed:
    keeps Loki auth disabled, then update the OTel gateway to write with
    `X-Scope-OrgID: fs2-platform`;
 2. apply workloads so the control-plane and Grafana readers use
-   `fake|fs2-platform`, then capture the exact
-   `loki_client_compatibility_receipt` output;
-3. pass that receipt to foundation, set both `loki_access_phase` and
-   `loki_rollback_floor` to `"enforced-dual-read"`, and only then allow the
-   Loki release to enable auth.
+   `fake|fs2-platform`. The resulting `loki_client_configuration_claim` is
+   diagnostic only and cannot authorize auth;
+3. an independent verifier must bind the exact cluster/run, deployed source
+   commit and tree, immutable control-plane image, OTel/control-plane/Grafana
+   Helm revisions, Grafana datasource resourceVersion, and sealed marker-only
+   proof that scoped writes were ingested and both the legacy and scoped
+   cohorts were read through Grafana and the control plane. No customer
+   payload may enter that evidence. The verifier writes the canonical record
+   to an immutable `fs2-observability` ConfigMap whose name includes the first
+   12 hex characters of the record digest;
+4. a later reviewed source successor pins the acknowledgement's SHA-256. Only
+   that exact target-bound record, immutable ConfigMap, API-assigned
+   UID/`resourceVersion`, digest-derived name, and byte-identical
+   `acknowledgement.json` may be passed to foundation while both
+   `loki_access_phase` and `loki_rollback_floor` advance to
+   `"enforced-dual-read"`.
 
-The policy admits port 3100 only from Grafana, the OTel gateway, the control
-plane, and the Prometheus health scraper, plus Loki self-traffic. Scientific
-and model-runtime namespaces are not peers. Kubernetes Pod labels alone are
-not an authenticated identity, however. SAI-03 admission/label custody is
-currently NO-GO, so this source pins the accepted custody receipt to `null` and
-Terraform fails closed before applying the policy. A reviewed successor must
-pin the exact independently accepted SAI-03 receipt in source; a caller cannot
-self-assert it through tfvars. Until that dependency is resolved, this SAI-22
-candidate is not authorized for integration or live use.
+The old `loki_client_compatibility_receipt` is a SHA-256 of public constants.
+It remains only as a deprecated workloads diagnostic, is rejected as a
+foundation input, and is not part of any enforcement predicate.
+
+The policy admits port 3100 only from Grafana, the OTel gateway, the exact
+rendered control-plane identity (`fs2-system`, name and instance
+`fs2-serve-control-plane`, component `gateway`), and the Prometheus health
+scraper, plus Loki self-traffic. Scientific and model-runtime namespaces are
+not peers. Kubernetes Pod labels alone are not an authenticated identity,
+however. SAI-03 admission/label custody is currently NO-GO, so this source
+pins the accepted custody receipt to `null` and Terraform fails closed before
+applying the policy. A reviewed successor must pin the exact independently
+accepted SAI-03 receipt in source; a caller cannot self-assert it through
+tfvars.
+
+Prometheus's Loki ServiceMonitor currently reaches the shared port 3100. A
+NetworkPolicy cannot limit that peer to `/metrics`, so this is an explicit
+health-scrape exception rather than a metrics-only boundary. The independently
+accepted exception digest is also pinned to `null`; policy application stays
+blocked until a later review either accepts the exact exception or replaces it
+with metrics-only mediation. Until both dependencies are resolved, this
+SAI-22 candidate is not authorized for integration or live use.
 
 Prometheus scrapes the control plane through the dedicated `metrics` service
 port (8081), which is served by a same-Pod, fixed-loopback proxy. The
@@ -89,11 +113,13 @@ deployment = {
 }
 
 # SAI-22 starts in the auth-off preparation phase. These values cannot advance
-# until the source-pinned SAI-03 custody dependency is accepted.
+# until source-pinned SAI-03 custody and Prometheus-exception dependencies are
+# accepted and an independent target-bound deployed-client record is sealed.
 loki_access_phase    = "network-bound"
 loki_rollback_floor  = "network-bound"
-# loki_client_compatibility_receipt = "<exact workloads output after phase 2>"
-# loki_identity_custody_receipt     = "<exact source-pinned SAI-03 receipt>"
+# loki_deployed_client_acknowledgement     = { ...exact accepted record... }
+# loki_identity_custody_receipt            = "<source-pinned SAI-03 receipt>"
+# loki_prometheus_health_exception_receipt = "<source-pinned exception receipt>"
 ```
 
 `retention` is Alertmanager's data-retention duration. The generated
@@ -144,9 +170,11 @@ not a second public backend.
 The SAI-22 source candidate authors regressions for all of these contracts, but
 the coordinator's static-source boundary for its authoring task prohibited
 executing tests, Helm/Terraform commands, scanners, builds, live probes, or
-deployment. SAI-03 custody is also still unresolved. A later authorized
-integration review must first accept and pin that dependency, then execute the
-checks below from the exact candidate descendant before any rollout.
+deployment. SAI-03 custody, the Prometheus health exception or its mediated
+replacement, and authoritative deployed-client proof are also unresolved. A
+later authorized integration review must first accept and pin those
+dependencies, then execute the checks below from the exact candidate
+descendant before any rollout.
 
 Before apply, run Terraform formatting/validation, the deployment-contract and
 observability tests, and Helm lint/template for the control-plane chart. On the
@@ -174,8 +202,13 @@ ServiceMonitor scrapes the named `metrics` port; a model/scientific workload
 receives a network denial when connecting to Loki port 3100; Grafana, the OTel
 gateway, the control plane, and Prometheus retain their required Loki flows;
 and a model workload cannot retrieve tenant-labelled samples from either
-control-plane port. Run the exact-image payload-marker negative test without
-displaying or retaining payloads.
+control-plane port. Confirm that the control-plane Pod's exact rendered labels
+match the Loki ingress peer. Before auth enforcement, use only non-sensitive
+random markers to prove the scoped OTel write and legacy/scoped reads through
+both Grafana and the control plane; seal the exact target, source/tree, image,
+release revisions, datasource resourceVersion, time, and evidence digest. Run
+the exact-image payload-marker negative test without displaying or retaining
+payloads.
 
 Alertmanager-only rollback is a reviewed Terraform change that restores the
 previous application digests and/or sets

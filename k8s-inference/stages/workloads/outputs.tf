@@ -469,8 +469,8 @@ output "managed_resource_count" {
 }
 
 output "loki_client_compatibility_receipt" {
-  description = "Non-secret receipt emitted only after the scoped writer-compatible control plane and bounded dual-read Grafana datasource are applied; pass it to the reviewed foundation auth-enforcement phase."
-  value       = local.loki_client_compatibility_receipt
+  description = "DEPRECATED non-authoritative configuration claim. It proves only desired Terraform inputs, not deployed reader/writer behavior, and the foundation auth gate explicitly refuses it."
+  value       = local.loki_client_configuration_claim
 
   depends_on = [
     helm_release.control_plane,
@@ -479,8 +479,58 @@ output "loki_client_compatibility_receipt" {
 }
 
 output "loki_client_compatibility_payload" {
-  description = "Canonical non-secret SAI-22 client transition payload hashed by loki_client_compatibility_receipt."
-  value       = local.loki_client_compatibility_payload
+  description = "DEPRECATED canonical desired-configuration payload; it is retained for transition diagnostics and cannot authorize Loki auth."
+  value       = local.loki_client_configuration_payload
+
+  depends_on = [
+    helm_release.control_plane,
+    kubernetes_secret_v1.grafana_datasource,
+  ]
+}
+
+output "loki_client_configuration_claim" {
+  description = "Non-authoritative digest of the desired scoped-writer and bounded dual-read configuration. Independent deployment proof is still required."
+  value       = local.loki_client_configuration_claim
+
+  depends_on = [
+    helm_release.control_plane,
+    kubernetes_secret_v1.grafana_datasource,
+  ]
+}
+
+output "loki_deployed_client_acknowledgement_requirements" {
+  description = "Non-secret target and schema requirements for the independent post-deployment acknowledgement; this output is not evidence and cannot authorize auth."
+  value = {
+    schema = "fs2-serve.nebius.ai/loki-deployed-client-acknowledgement/v1"
+    target = {
+      run_id          = var.run_id
+      cluster_id      = var.cluster_id
+      kube_system_uid = var.kube_system_uid
+    }
+    required_binding = {
+      namespace        = "fs2-observability"
+      config_map_name  = "fs2-loki-deployed-client-ack-<record-sha256-prefix-12>"
+      immutable        = true
+      data_key         = "acknowledgement.json"
+      uid              = "<API-assigned immutable object UID>"
+      resource_version = "<API-assigned value captured after creation>"
+      record_sha256    = "<SHA-256 of the canonical acknowledgement JSON>"
+    }
+    required_revision_fields = [
+      "otel_gateway_helm",
+      "control_plane_helm",
+      "grafana_helm",
+      "grafana_datasource_resource_version",
+    ]
+    required_proof_fields = [
+      "scoped_writer_ingested",
+      "grafana_legacy_read",
+      "grafana_scoped_read",
+      "control_plane_legacy_read",
+      "control_plane_scoped_read",
+      "no_customer_payload_recorded",
+    ]
+  }
 
   depends_on = [
     helm_release.control_plane,
