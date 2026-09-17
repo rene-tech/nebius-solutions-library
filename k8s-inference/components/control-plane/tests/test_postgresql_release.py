@@ -37,9 +37,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0029_request_debug.sql",
-        "migration_count": 29,
-        "migration_set_sha256": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2",
+        "last_migration_version": "0030_scientific_quota_settlement.sql",
+        "migration_count": 30,
+        "migration_set_sha256": "03995d3e692306f95dc9bcf5a2c84ec6cdaeb360d69b90bd330bbfe7b85aea85",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -71,8 +71,31 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
         assert wait_source.count(f"fs2_scientific_admission_outbox','{privilege}'") == 2
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
+    assert wait_source.count("fs2_scientific_artifact_quota_reservations','SELECT'") == 2
+    assert wait_source.count("fs2_scientific_artifact_quota_reservations','INSERT'") == 2
+    assert wait_source.count("fs2_scientific_artifact_quota_reservations','state','UPDATE'") == 2
+    assert wait_source.count("fs2_scientific_artifact_quota_events','INSERT'") == 2
+    assert wait_source.count("fs2_scientific_gpu_settlements','INSERT'") == 2
+    assert "GRANT INSERT ON fs2_scientific_gpu_settlements" in wait_source
+    assert "GRANT SELECT,INSERT ON fs2_scientific_gpu_settlements" not in wait_source
     assert "SELECT,INSERT" not in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
+
+
+def test_scientific_quota_migration_retains_provenance_and_bounds_settlement() -> None:
+    quota_sql = (MIGRATIONS / "0030_scientific_quota_settlement.sql").read_text(encoding="utf-8")
+    normalized = " ".join(quota_sql.split())
+    assert "fs2_scientific_artifact_quota_reservations" in normalized
+    assert "fs2_scientific_artifact_quota_events" in normalized
+    assert "reserved_objects integer NOT NULL DEFAULT 1 CHECK (reserved_objects = 1)" in normalized
+    assert "event_type text NOT NULL CHECK (event_type IN ('reserved','retention_extended','released'))" in normalized
+    assert "CREATE TRIGGER fs2_scientific_artifact_quota_events_immutable" in normalized
+    assert "CREATE TRIGGER fs2_scientific_gpu_settlements_immutable" in normalized
+    assert "charged_gpu_seconds <= reserved_gpu_seconds" in normalized
+    assert "CASE WHEN expires_at>migrated_at THEN 'active' ELSE 'released' END" in normalized
+    assert "artifact_id IS NOT NULL OR expires_at>migrated_at" not in normalized
+    assert "operation_id uuid PRIMARY KEY REFERENCES" not in normalized
+    assert "token_id uuid NOT NULL REFERENCES" not in normalized
 
 
 def _updated_columns(source: str, table: str) -> set[str]:
@@ -105,6 +128,10 @@ def test_scientific_runtime_update_grants_cover_every_repository_statement() -> 
     actual = {
         "fs2_scientific_stage_attempts": _updated_columns(artifact_source, "fs2_scientific_stage_attempts"),
         "fs2_scientific_uploads": _updated_columns(artifact_source, "fs2_scientific_uploads"),
+        "fs2_scientific_artifact_quota_reservations": _updated_columns(
+            artifact_source,
+            "fs2_scientific_artifact_quota_reservations",
+        ),
         "fs2_scientific_batches": _updated_columns(batch_source, "fs2_scientific_batches"),
     }
     assert actual == {table: set(columns) for table, columns in SCIENTIFIC_RUNTIME_UPDATE_COLUMNS.items()}

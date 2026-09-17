@@ -542,6 +542,11 @@ variable "deployment" {
         # Sum of retained upload reservations one tenant may own. Admission is
         # serialized per tenant before any object-store handle is returned.
         tenant_quota_bytes = optional(number, 1099511627776)
+        # Zero-byte intents still consume one retained object slot.
+        tenant_quota_objects = optional(number, 4096)
+        # Unfinalized reservations expire here; finalized ones extend only to
+        # artifact retention. Neither transition deletes quota provenance.
+        upload_reservation_ttl_seconds = optional(number, 86400)
         # Exact object-storage addresses, /32 or /128 only, that the control
         # plane may reach on 443 to issue handles and stream a stored object
         # back for digest verification.
@@ -584,6 +589,10 @@ variable "deployment" {
       enabled        = optional(bool, false)
       writes_enabled = optional(bool, false)
       namespace      = optional(string, "fs2-models")
+      # Authoritative source inventory for principals enabled outside the two
+      # deployment-owned bootstrap tenants. Every identity receives exact CPU
+      # LocalQueues before scientific batch admission can be integrated.
+      enabled_tenant_ids = optional(set(string), [])
 
       # Optional cross-attempt cache for compiled kernels and runtime-owned
       # derived data. Model weights stay on their immutable read-only planes;
@@ -1236,11 +1245,18 @@ variable "deployment" {
         floor(var.deployment.storage.scientific_artifacts.tenant_quota_bytes) == var.deployment.storage.scientific_artifacts.tenant_quota_bytes &&
         var.deployment.storage.scientific_artifacts.tenant_quota_bytes >= var.deployment.storage.scientific_artifacts.max_artifact_bytes &&
         var.deployment.storage.scientific_artifacts.tenant_quota_bytes <= 1099511627776 &&
-        var.deployment.storage.scientific_artifacts.tenant_quota_bytes <= var.deployment.storage.scientific_artifacts.object_storage.max_size_gib * 1073741824
+        var.deployment.storage.scientific_artifacts.tenant_quota_bytes <= var.deployment.storage.scientific_artifacts.object_storage.max_size_gib * 1073741824 &&
+        floor(var.deployment.storage.scientific_artifacts.tenant_quota_objects) == var.deployment.storage.scientific_artifacts.tenant_quota_objects &&
+        var.deployment.storage.scientific_artifacts.tenant_quota_objects >= 1 &&
+        var.deployment.storage.scientific_artifacts.tenant_quota_objects <= 1000000 &&
+        floor(var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds) == var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds &&
+        var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds >= var.deployment.storage.scientific_artifacts.handle_ttl_seconds &&
+        var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds <= 604800 &&
+        var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds <= var.deployment.storage.scientific_artifacts.retention_days * 86400
       ),
       false,
     )
-    error_message = "enabled storage.scientific_artifacts requires an explicit retain or disposable lifecycle, an optional valid bucket name, 16-65536 whole GiB of capacity, a 1-3650 day application retention window, a 30-900 second signed-handle lifetime, a 1 KiB-1 TiB maximum artifact size, and a whole-byte tenant quota from one maximum artifact through the bucket capacity."
+    error_message = "enabled storage.scientific_artifacts requires bounded retention and handles, a 1 KiB-1 TiB object ceiling, tenant byte and 1-1000000 object quotas, and a handle-through-7-day upload reservation TTL no longer than retention."
   }
 
   validation {
@@ -1275,10 +1291,14 @@ variable "deployment" {
         ) && (
         !var.deployment.scientific_batch.writes_enabled ||
         var.deployment.scientific_batch.enabled
-      ) && can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.deployment.scientific_batch.namespace)),
+      ) && can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.deployment.scientific_batch.namespace)) &&
+      alltrue([
+        for tenant_id in var.deployment.scientific_batch.enabled_tenant_ids :
+        length(tenant_id) <= 63 && can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", tenant_id))
+      ]),
       false,
     )
-    error_message = "scientific_batch.enabled requires storage.scientific_artifacts.enabled, scientific_batch.writes_enabled requires scientific_batch.enabled, and the batch namespace must be a DNS label."
+    error_message = "scientific_batch requires its artifact store, a DNS-label namespace, and an exact Kubernetes-label-safe inventory of every externally enabled tenant."
   }
 
   validation {

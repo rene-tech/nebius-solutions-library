@@ -198,7 +198,10 @@ class SchedulingContractResolver:
                     raise SchedulingContractError("Kueue CPU placement class has no LocalQueue")
                 if desired_queue is not None and desired_queue != cpu_queue:
                     raise SchedulingContractError("profile stage LocalQueue differs from the Kueue CPU class")
-                local_queue_name, route_namespace, cluster_queue_name = self._route_identity(cpu_queue)
+                local_queue_name, route_namespace, cluster_queue_name = self._resolve_cpu_route(
+                    tenant_id=tenant_id,
+                    base_local_queue=cpu_queue,
+                )
             else:
                 local_queue_name, route_namespace, cluster_queue_name = self._resolve_route(
                     service_class=service_class,
@@ -240,10 +243,14 @@ class SchedulingContractResolver:
             accelerator_count = 0
             if stage.resource_class is ResourceClass.CPU:
                 assert cpu_class is not None
+                _, cpu_namespace, cpu_cluster_queue = self._route_identity(
+                    cast(str, cpu_class.get("local_queue"))
+                )
                 if (
-                    cpu_class.get("local_queue") != local_queue_name
-                    or cpu_class.get("cluster_queue") != cluster_queue_name
-                    or cpu_class.get("namespace") != route_namespace
+                    cpu_class.get("cluster_queue") != cpu_cluster_queue
+                    or cpu_class.get("namespace") != cpu_namespace
+                    or cpu_cluster_queue != cluster_queue_name
+                    or cpu_namespace != route_namespace
                 ):
                     raise SchedulingContractError("CPU stage placement differs from the Kueue CPU class")
                 cpu_flavor = cpu_class.get("resource_flavor")
@@ -434,6 +441,53 @@ class SchedulingContractResolver:
             stages=tuple(decisions),
             raw_contract_sha256=self.raw_contract_sha256,
         )
+
+    def _resolve_cpu_route(
+        self,
+        *,
+        tenant_id: str,
+        base_local_queue: str,
+    ) -> tuple[str, str, str]:
+        """Resolve a CPU class only through one exact tenant LocalQueue.
+
+        The CPU placement class remains the stable catalog identity. Deployment
+        contracts add tenant-specific LocalQueues beside that base queue, in
+        the same namespace and ClusterQueue, so preprocessing and materializing
+        work cannot bypass tenant fairness while model profiles stay portable.
+        """
+
+        _, base_namespace, base_cluster_queue = self._route_identity(base_local_queue)
+        matches: list[str] = []
+        for queue_name, raw_route in self.local_queue_routes.items():
+            if not isinstance(queue_name, str):
+                raise SchedulingContractError("Kueue LocalQueue route identity is invalid")
+            route = _object(raw_route, "Kueue LocalQueue route")
+            models = route.get("model_ids")
+            tenants = route.get("tenant_ids")
+            service_classes = route.get("service_classes")
+            if (
+                not isinstance(models, list)
+                or not all(isinstance(item, str) for item in models)
+                or not isinstance(tenants, list)
+                or not all(isinstance(item, str) for item in tenants)
+                or not isinstance(service_classes, list)
+                or not all(isinstance(item, str) for item in service_classes)
+            ):
+                raise SchedulingContractError("Kueue LocalQueue route selectors are invalid")
+            if models or tenants != [tenant_id] or service_classes:
+                continue
+            _, namespace, cluster_queue = self._route_identity(queue_name)
+            if namespace == base_namespace and cluster_queue == base_cluster_queue:
+                matches.append(queue_name)
+        if not matches:
+            raise SchedulingContractError(
+                "scientific CPU admission requires an exact per-tenant Kueue LocalQueue"
+            )
+        if len(matches) > 1:
+            raise SchedulingContractError(
+                "scientific CPU admission resolves to multiple per-tenant Kueue LocalQueues"
+            )
+        return self._route_identity(matches[0])
 
     def _resolve_route(
         self,

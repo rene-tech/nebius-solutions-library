@@ -97,6 +97,10 @@ EXPECTED_MIGRATIONS: Final = (
     ("0027_inference_users.sql", "214e66821db3747db2ea7473bdfcafee47abc1de4d9206bc834e3d5532935337"),
     ("0028_request_telemetry.sql", "219810a23343e8aed0542ca6ea7ee48bcea5ef7eebfbddf0d32acb4590ab3104"),
     ("0029_request_debug.sql", "a02fe7eb59ea664c4cb4972158a59d52b5df22aa937eb83cd9a287939a90438a"),
+    (
+        "0030_scientific_quota_settlement.sql",
+        "b47b5e12ceb507ab808a74a16eaae2672422cb9a4c70608cfc26a111a1e6a0bf",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

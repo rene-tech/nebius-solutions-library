@@ -124,7 +124,7 @@ def academic_scheduling() -> SchedulingContractResolver:
                     "namespace": af3.EXECUTION_NAMESPACE,
                     "cluster_queue": af3.DATA_CLUSTER_QUEUE,
                     "model_ids": [],
-                    "tenant_ids": [],
+                    "tenant_ids": ["academic-poc"],
                     "service_classes": [],
                 },
             },

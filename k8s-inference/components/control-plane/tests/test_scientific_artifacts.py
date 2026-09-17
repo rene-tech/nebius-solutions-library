@@ -40,7 +40,10 @@ from fs2_serve.scientific_artifacts import (
     ArtifactEventType,
     ArtifactNotFoundError,
     ArtifactPolicyError,
+    ArtifactQuotaEventType,
     ArtifactQuotaExceededError,
+    ArtifactQuotaReleaseReason,
+    ArtifactQuotaReservationState,
     ArtifactVerificationError,
     AttemptStatus,
     BeginArtifactUpload,
@@ -757,6 +760,199 @@ async def test_begin_upload_reserves_tenant_bytes_and_keeps_idempotency_availabl
         )
 
 
+async def test_zero_byte_uploads_consume_the_atomic_tenant_object_quota() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    service = build_service(
+        repository,
+        FakeObjectStore(),
+        max_artifact_bytes=1,
+        tenant_quota_bytes=1,
+        tenant_quota_objects=1,
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+
+    def empty_upload() -> BeginArtifactUpload:
+        return BeginArtifactUpload(
+            upload_id=uuid4(),
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(b""),
+            expected_size_bytes=0,
+            media_type="chemical/x-pdb",
+        )
+
+    await service.begin_upload(empty_upload())
+    with pytest.raises(ArtifactQuotaExceededError, match="quota"):
+        await service.begin_upload(empty_upload())
+
+
+async def test_abandoned_upload_reservation_expires_without_deleting_its_provenance() -> None:
+    current = [NOW]
+    clock = lambda: current[0]
+    repository = MemoryArtifactRepository(clock=clock)
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    service = ScientificArtifactService(
+        repository=repository,
+        object_store=FakeObjectStore(clock=clock),
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        max_artifact_bytes=8,
+        tenant_quota_bytes=8,
+        tenant_quota_objects=1,
+        upload_reservation_ttl=timedelta(hours=1),
+        clock=clock,
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    abandoned = BeginArtifactUpload(
+        upload_id=uuid4(),
+        attempt_id=attempt_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        direction=ArtifactDirection.OUTPUT,
+        expected_digest=digest(b"12345678"),
+        expected_size_bytes=8,
+        media_type="chemical/x-pdb",
+    )
+    await service.begin_upload(abandoned)
+
+    current[0] += timedelta(hours=2)
+    successor = BeginArtifactUpload(
+        upload_id=uuid4(),
+        attempt_id=attempt_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        direction=ArtifactDirection.OUTPUT,
+        expected_digest=digest(b"abcdefgh"),
+        expected_size_bytes=8,
+        media_type="chemical/x-pdb",
+    )
+    await service.begin_upload(successor)
+
+    reservation = await repository.quota_reservation(abandoned.upload_id, tenant_id=TENANT)
+    assert reservation.state is ArtifactQuotaReservationState.RELEASED
+    assert reservation.release_reason is ArtifactQuotaReleaseReason.EXPIRED
+    with pytest.raises(ArtifactConflictError, match="expired"):
+        await repository.get_upload(
+            FinalizeArtifactUpload(
+                upload_id=abandoned.upload_id,
+                operation_id=operation_id,
+                tenant_id=TENANT,
+            )
+        )
+    events = await repository.list_quota_events(tenant_id=TENANT)
+    assert [event.event_type for event in events] == [
+        ArtifactQuotaEventType.RESERVED,
+        ArtifactQuotaEventType.RELEASED,
+        ArtifactQuotaEventType.RESERVED,
+    ]
+    assert events[1].release_reason is ArtifactQuotaReleaseReason.EXPIRED
+
+
+async def test_closing_an_attempt_releases_only_unfinalized_reservations() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store, tenant_quota_objects=2)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    finalized = await upload(
+        service,
+        store,
+        operation_id=operation_id,
+        attempt_id=attempt_id,
+        value=b"finalized",
+    )
+    unfinished = BeginArtifactUpload(
+        upload_id=uuid4(),
+        attempt_id=attempt_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        direction=ArtifactDirection.OUTPUT,
+        expected_digest=digest(b"unfinished"),
+        expected_size_bytes=len(b"unfinished"),
+        media_type="chemical/x-pdb",
+    )
+    await service.begin_upload(unfinished)
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.FAILED,
+            completed_at=NOW + timedelta(minutes=1),
+            admission=ADMISSION,
+        )
+    )
+
+    released = await repository.quota_reservation(unfinished.upload_id, tenant_id=TENANT)
+    quota_events = await repository.list_quota_events(tenant_id=TENANT)
+    retained = await repository.quota_reservation(
+        quota_events[0].upload_id,
+        tenant_id=TENANT,
+    )
+    assert finalized.artifact_id is not None
+    assert released.state is ArtifactQuotaReservationState.RELEASED
+    assert released.release_reason is ArtifactQuotaReleaseReason.ATTEMPT_CLOSED
+    assert retained.state is ArtifactQuotaReservationState.ACTIVE
+
+
+async def test_finalized_standalone_object_releases_quota_at_retention_deadline() -> None:
+    current = [NOW]
+    clock = lambda: current[0]
+    repository = MemoryArtifactRepository(clock=clock)
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore(clock=clock)
+    service = ScientificArtifactService(
+        repository=repository,
+        object_store=store,
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        max_artifact_bytes=8,
+        tenant_quota_bytes=8,
+        tenant_quota_objects=1,
+        upload_reservation_ttl=timedelta(hours=1),
+        retention=timedelta(hours=2),
+        clock=clock,
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    finalized = await upload(
+        service,
+        store,
+        operation_id=operation_id,
+        attempt_id=attempt_id,
+        value=b"12345678",
+    )
+    candidate = BeginArtifactUpload(
+        upload_id=uuid4(),
+        attempt_id=attempt_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        direction=ArtifactDirection.OUTPUT,
+        expected_digest=digest(b"abcdefgh"),
+        expected_size_bytes=8,
+        media_type="chemical/x-pdb",
+    )
+    current[0] += timedelta(hours=1)
+    with pytest.raises(ArtifactQuotaExceededError, match="quota"):
+        await service.begin_upload(candidate)
+
+    current[0] += timedelta(hours=2)
+    await service.begin_upload(candidate)
+
+    quota_events = await repository.list_quota_events(tenant_id=TENANT)
+    finalized_reservation = await repository.quota_reservation(
+        quota_events[0].upload_id,
+        tenant_id=TENANT,
+    )
+    assert finalized.artifact_id is not None
+    assert finalized_reservation.state is ArtifactQuotaReservationState.RELEASED
+    assert finalized_reservation.release_reason is ArtifactQuotaReleaseReason.EXPIRED
+
+
 async def test_gated_artifacts_carry_a_receipt_and_project_academic_admission() -> None:
     repository = MemoryArtifactRepository()
     operation_id = uuid4()
@@ -1115,6 +1311,23 @@ def test_settings_reject_tenant_quota_below_single_artifact_ceiling() -> None:
         )
 
 
+def test_settings_bound_object_quota_and_upload_reservation_lifetime() -> None:
+    from fs2_serve.settings import Settings
+
+    with pytest.raises(ValidationError, match="artifact_tenant_quota_objects"):
+        Settings(artifact_tenant_quota_objects=0)
+    with pytest.raises(ValidationError, match="cannot expire before its handle"):
+        Settings(
+            artifact_handle_ttl_seconds=900,
+            artifact_upload_reservation_ttl_seconds=899,
+        )
+    with pytest.raises(ValidationError, match="cannot exceed artifact retention"):
+        Settings(
+            artifact_retention_seconds=3600,
+            artifact_upload_reservation_ttl_seconds=7200,
+        )
+
+
 def test_artifact_store_credentials_come_from_a_mounted_secret(tmp_path: Path) -> None:
     from fs2_serve.settings import Settings
 
@@ -1194,7 +1407,8 @@ async def test_retention_deletes_objects_then_metadata_and_records_evidence() ->
 # --------------------------------------------------------------------------
 
 TRUNCATE = """
-TRUNCATE fs2_scientific_retention_ledger,fs2_scientific_artifact_events,
+TRUNCATE fs2_scientific_artifact_quota_events,fs2_scientific_artifact_quota_reservations,
+    fs2_scientific_retention_ledger,fs2_scientific_artifact_events,
     fs2_scientific_stage_commit_attempts,fs2_scientific_stage_commits,
     fs2_scientific_run_results,fs2_scientific_uploads,fs2_scientific_artifacts,
     fs2_scientific_stage_attempts,fs2_operation_events,fs2_usage_facts,
@@ -1299,6 +1513,40 @@ async def test_postgres_serializes_concurrent_tenant_byte_reservations(runtime_p
             direction=ArtifactDirection.OUTPUT,
             expected_digest=digest(b"12345678"),
             expected_size_bytes=8,
+            media_type="chemical/x-pdb",
+        )
+
+    results = await asyncio.gather(
+        service.begin_upload(request()),
+        service.begin_upload(request()),
+        return_exceptions=True,
+    )
+    assert sum(not isinstance(item, Exception) for item in results) == 1
+    assert sum(isinstance(item, ArtifactQuotaExceededError) for item in results) == 1
+
+
+@pytest.mark.postgres
+async def test_postgres_serializes_zero_byte_object_reservations(runtime_pool) -> None:
+    operation_id = uuid4()
+    await insert_operation(runtime_pool, operation_id)
+    service = build_service(
+        PostgresArtifactRepository(runtime_pool),
+        FakeObjectStore(),
+        max_artifact_bytes=1,
+        tenant_quota_bytes=1,
+        tenant_quota_objects=1,
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+
+    def request() -> BeginArtifactUpload:
+        return BeginArtifactUpload(
+            upload_id=uuid4(),
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(b""),
+            expected_size_bytes=0,
             media_type="chemical/x-pdb",
         )
 

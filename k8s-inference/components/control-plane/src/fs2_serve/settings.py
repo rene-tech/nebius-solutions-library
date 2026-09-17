@@ -270,6 +270,8 @@ class Settings(BaseSettings):
     artifact_handle_ttl_seconds: int = Field(default=600, ge=30, le=900)
     artifact_max_bytes: int = Field(default=1 << 40, ge=1024, le=1 << 40)
     artifact_tenant_quota_bytes: int = Field(default=1 << 40, ge=1024, le=1 << 40)
+    artifact_tenant_quota_objects: int = Field(default=4096, ge=1, le=1_000_000)
+    artifact_upload_reservation_ttl_seconds: int = Field(default=86400, ge=30, le=604800)
     # The exact ceiling for artifact bytes carried through the public gateway
     # itself. A larger object remains reachable only through a presigned
     # handle, so this bound must never exceed what the edge will accept.
@@ -384,6 +386,10 @@ class Settings(BaseSettings):
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed artifact_max_bytes")
             if self.artifact_tenant_quota_bytes < self.artifact_max_bytes:
                 raise ValueError("artifact_tenant_quota_bytes cannot be smaller than artifact_max_bytes")
+            if self.artifact_upload_reservation_ttl_seconds < self.artifact_handle_ttl_seconds:
+                raise ValueError("artifact upload reservation cannot expire before its handle")
+            if self.artifact_upload_reservation_ttl_seconds > self.artifact_retention_seconds:
+                raise ValueError("artifact upload reservation cannot exceed artifact retention")
         database_roles = {
             self.reporting_database_role,
             self.runtime_database_role,

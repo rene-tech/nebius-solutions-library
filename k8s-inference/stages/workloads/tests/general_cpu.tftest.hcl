@@ -235,6 +235,9 @@ variables {
   }
   model_pool_overrides = { qwen3-8b = "nebius-b300-preemptible-1x" }
   model_scaling_mode   = "keda"
+  scientific_batch = {
+    enabled_tenant_ids = ["tenant-external"]
+  }
   model_controller = {
     enabled             = true
     writes_enabled      = true
@@ -648,10 +651,23 @@ run "academic_cpu_reuses_the_general_lane_through_its_own_local_queue" {
       module.kueue_scheduling.contract.local_queues["academic-general-cpu"].metadata.namespace == "fs2-academic-poc" &&
       module.kueue_scheduling.contract.local_queues["academic-general-cpu"].spec.clusterQueue == "general-cpu" &&
       length(module.kueue_scheduling.contract.local_queue_routes["academic-general-cpu"].model_ids) == 0 &&
-      length(module.kueue_scheduling.contract.local_queue_routes["academic-general-cpu"].tenant_ids) == 0 &&
+      join(",", module.kueue_scheduling.contract.local_queue_routes["academic-general-cpu"].tenant_ids) == "tenant-academic" &&
       length(module.kueue_scheduling.contract.local_queue_routes["academic-general-cpu"].service_classes) == 0
     )
-    error_message = "academic-cpu must have one route-less Terraform-owned LocalQueue in the academic namespace."
+    error_message = "academic-cpu must have one exact-tenant Terraform-owned LocalQueue in the academic namespace."
+  }
+
+  assert {
+    condition = (
+      toset(flatten([
+        for route in values(local.scientific_cpu_tenant_local_queues) : tolist(route.tenant_ids)
+      ])) == toset(["tenant-modelexpresstest", "tenant-academic", "tenant-external"]) &&
+      alltrue([
+        for route in values(local.scientific_cpu_tenant_local_queues) :
+        length(route.tenant_ids) == 1 && route.namespace == "fs2-models"
+      ])
+    )
+    error_message = "Every configured tenant must receive exact ordinary-namespace CPU LocalQueues."
   }
 
   assert {

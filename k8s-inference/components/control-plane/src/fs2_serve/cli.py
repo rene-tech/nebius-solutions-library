@@ -284,6 +284,8 @@ def _artifact_service(
         allowed_media_types=settings.artifact_media_types_set(),
         max_artifact_bytes=settings.artifact_max_bytes,
         tenant_quota_bytes=settings.artifact_tenant_quota_bytes,
+        tenant_quota_objects=settings.artifact_tenant_quota_objects,
+        upload_reservation_ttl=timedelta(seconds=settings.artifact_upload_reservation_ttl_seconds),
         max_inline_content_bytes=settings.artifact_inline_content_max_bytes,
         default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
         retention=timedelta(seconds=settings.artifact_retention_seconds),

@@ -114,6 +114,13 @@ SCIENTIFIC_RUNTIME_UPDATE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "gpu_uuids",
     ),
     "fs2_scientific_uploads": ("artifact_id", "finalized_at"),
+    "fs2_scientific_artifact_quota_reservations": (
+        "state",
+        "reserved_at",
+        "expires_at",
+        "released_at",
+        "release_reason",
+    ),
     "fs2_scientific_batches": (
         "status",
         "revision",
@@ -469,7 +476,10 @@ class PostgresStore:
                     f"fs2_scientific_stage_attempts,fs2_scientific_artifacts,fs2_scientific_uploads,"
                     f"fs2_scientific_stage_commits,fs2_scientific_stage_commit_attempts,"
                     f"fs2_scientific_run_results,fs2_scientific_artifact_events,"
-                    f"fs2_scientific_retention_ledger,fs2_scientific_batches,"
+                    f"fs2_scientific_retention_ledger,"
+                    f"fs2_scientific_artifact_quota_reservations,"
+                    f"fs2_scientific_artifact_quota_events,fs2_scientific_gpu_settlements,"
+                    f"fs2_scientific_batches,"
                     f"fs2_scientific_batch_events,fs2_scientific_admission_outbox,"
                     f"fs2_scientific_model_policies,"
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
@@ -487,6 +497,7 @@ class PostgresStore:
                     f"fs2_model_deployment_status_events_id_seq,"
                     f"fs2_scientific_artifact_events_id_seq,"
                     f"fs2_scientific_retention_ledger_id_seq,"
+                    f"fs2_scientific_artifact_quota_events_id_seq,"
                     f"fs2_scientific_batch_events_sequence_seq,"
                     f"fs2_lifecycle_signals_id_seq FROM {role}"
                 )
@@ -497,6 +508,7 @@ class PostgresStore:
                     f"fs2_scientific_assert_writable(),fs2_scientific_assert_live_attempt(),"
                     f"fs2_scientific_validate_attempt_transition(),"
                     f"fs2_scientific_validate_upload_transition(),"
+                    f"fs2_scientific_validate_artifact_quota_transition(),"
                     f"fs2_scientific_reject_mutation(),"
                     f"fs2_scientific_guard_retention_delete(),"
                     f"fs2_scientific_batch_state_immutable(),"
@@ -548,8 +560,11 @@ class PostgresStore:
                 f"GRANT SELECT,INSERT ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
                 f"fs2_scientific_uploads,fs2_scientific_stage_commits,"
                 f"fs2_scientific_stage_commit_attempts,fs2_scientific_run_results,"
-                f"fs2_scientific_artifact_events,fs2_scientific_retention_ledger TO {quoted_runtime}"
+                f"fs2_scientific_artifact_events,fs2_scientific_retention_ledger,"
+                f"fs2_scientific_artifact_quota_reservations,"
+                f"fs2_scientific_artifact_quota_events TO {quoted_runtime}"
             )
+            await connection.execute(f"GRANT INSERT ON fs2_scientific_gpu_settlements TO {quoted_runtime}")
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batches TO {quoted_runtime}")
             for table, columns in SCIENTIFIC_RUNTIME_UPDATE_COLUMNS.items():
                 await connection.execute(f"GRANT UPDATE ({','.join(columns)}) ON {table} TO {quoted_runtime}")
@@ -592,6 +607,7 @@ class PostgresStore:
                 f"fs2_model_deployment_status_events_id_seq,"
                 f"fs2_scientific_artifact_events_id_seq,"
                 f"fs2_scientific_retention_ledger_id_seq,"
+                f"fs2_scientific_artifact_quota_events_id_seq,"
                 f"fs2_scientific_batch_events_sequence_seq,"
                 f"fs2_lifecycle_signals_id_seq TO {quoted_runtime}"
             )
@@ -740,6 +756,26 @@ class PostgresStore:
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
                             " AND has_function_privilege(current_user,"
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_quota_reservations','SELECT')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_quota_reservations','INSERT')"
+                            " AND has_column_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_quota_reservations','state','UPDATE')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_quota_events','INSERT')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_gpu_settlements','INSERT')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_scientific_artifact_quota_reservations','SELECT')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_scientific_artifact_quota_reservations','INSERT')"
+                            " AND has_column_privilege(current_user,"
+                            "'public.fs2_scientific_artifact_quota_reservations','state','UPDATE')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_scientific_artifact_quota_events','INSERT')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_scientific_gpu_settlements','INSERT')"
                         )
                     if not runtime_privileges_ready:
                         raise RuntimeError("database schema runtime privileges are incomplete")
@@ -2444,7 +2480,6 @@ class PostgresStore:
         model_revision: str,
         reserved_gpu_seconds: float,
         max_attempts: int,
-        charge_gpu_seconds_at_admission: bool = False,
         dispatch_snapshot: str | None = None,
         dynamic_fence: DynamicAdmissionFence | None = None,
         scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None = None,
@@ -2508,8 +2543,6 @@ class PostgresStore:
                 return operation
             if (dynamic_fence is None) != (dispatch_snapshot is None):
                 raise ConflictError("dynamic admission fence and dispatch snapshot must be supplied together")
-            if charge_gpu_seconds_at_admission and admission.protocol != "scientific-batch-v1":
-                raise ConflictError("admission-time GPU charge requires a scientific batch Operation")
             if dynamic_fence is not None:
                 await self._model_deployment_lock(
                     connection,
@@ -2572,8 +2605,6 @@ class PostgresStore:
                 admission.request_body,
                 aad=self.cipher.aad(operation_id, principal.tenant_id, admission.model_id, "request"),
             )
-            charged_gpu_seconds = reserved_gpu_seconds if charge_gpu_seconds_at_admission else 0.0
-            held_gpu_seconds = 0.0 if charge_gpu_seconds_at_admission else reserved_gpu_seconds
             try:
                 row = await connection.fetchrow(
                     """
@@ -2581,9 +2612,9 @@ class PostgresStore:
                         (id,tenant_id,principal_id,token_id,model_id,model_revision,protocol,operation,
                          idempotency_key,request_hmac_key_id,request_hmac,request_key_id,request_nonce,
                          request_ciphertext,request_content_type,traceparent,deadline_at,payload_expires_at,
-                         max_attempts,estimated_gpu_seconds,reserved_gpu_seconds,dispatch_snapshot)
+                         max_attempts,reserved_gpu_seconds,dispatch_snapshot)
                     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-                           clock_timestamp()+make_interval(secs=>$18::double precision),$19,$20,$21,$22::jsonb)
+                           clock_timestamp()+make_interval(secs=>$18::double precision),$19,$20,$21::jsonb)
                     RETURNING *
                     """,
                     operation_id,
@@ -2605,8 +2636,7 @@ class PostgresStore:
                     admission.deadline_at,
                     self.payload_ttl_seconds,
                     max_attempts,
-                    charged_gpu_seconds,
-                    held_gpu_seconds,
+                    reserved_gpu_seconds,
                     dispatch_snapshot,
                 )
             except asyncpg.UniqueViolationError as exc:
@@ -2621,16 +2651,14 @@ class PostgresStore:
             await connection.execute(
                 """
                 UPDATE fs2_tokens
-                SET requests_used=requests_used+1,last_used_at=$6,
-                    gpu_seconds_used=gpu_seconds_used+$2,
-                    gpu_seconds_reserved=gpu_seconds_reserved+$3,
-                    rate_window_started_at=$4,
-                    rate_window_requests=CASE WHEN rate_limit_requests IS NULL THEN 0 ELSE $5 END
+                SET requests_used=requests_used+1,last_used_at=$5,
+                    gpu_seconds_reserved=gpu_seconds_reserved+$2,
+                    rate_window_started_at=$3,
+                    rate_window_requests=CASE WHEN rate_limit_requests IS NULL THEN 0 ELSE $4 END
                 WHERE id=$1
                 """,
                 principal.token_id,
-                charged_gpu_seconds,
-                held_gpu_seconds,
+                reserved_gpu_seconds,
                 rate_started,
                 rate_requests + 1 if token["rate_limit_requests"] is not None else 0,
                 now,
@@ -2645,11 +2673,7 @@ class PostgresStore:
                 target_type="operation",
                 target_id=str(operation_id),
                 outcome="queued",
-                detail={
-                    "model_id": admission.model_id,
-                    "protocol": admission.protocol,
-                    "admission_gpu_seconds": charged_gpu_seconds,
-                },
+                detail={"model_id": admission.model_id, "protocol": admission.protocol},
             )
             return operation
 

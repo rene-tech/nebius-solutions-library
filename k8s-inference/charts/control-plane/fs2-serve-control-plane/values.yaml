@@ -718,6 +718,11 @@ scientificArtifacts:
   # Durable bytes reserved by all retained uploads for one tenant. This is an
   # admission quota, not a storage-provider best-effort alarm.
   tenantQuotaBytes: 1099511627776
+  # Every retained intent consumes one slot even when its expected size is 0.
+  tenantQuotaObjects: 4096
+  # Abandoned intents release quota after this window; finalization extends it
+  # only through the artifact-retention deadline.
+  uploadReservationTtlSeconds: 86400
   # Ceiling for artifact bytes carried through the public gateway itself, so a
   # customer that can reach only the API can still complete an upload. Must not
   # exceed maxRequestBytes; anything larger has to use a presigned handle.

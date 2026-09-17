@@ -227,6 +227,8 @@ variable "scientific_artifacts" {
     handle_ttl_seconds    = number
     max_artifact_bytes    = number
     tenant_quota_bytes    = optional(number, 1099511627776)
+    tenant_quota_objects  = optional(number, 4096)
+    upload_reservation_ttl_seconds = optional(number, 86400)
     retention_days        = number
     egress_cidrs          = list(string)
     media_types           = list(string)
@@ -292,6 +294,8 @@ variable "scientific_artifacts" {
     handle_ttl_seconds    = 600
     max_artifact_bytes    = 1099511627776
     tenant_quota_bytes    = 1099511627776
+    tenant_quota_objects  = 4096
+    upload_reservation_ttl_seconds = 86400
     retention_days        = 90
     egress_cidrs          = []
     media_types           = []
@@ -347,12 +351,19 @@ variable "scientific_artifacts" {
         var.scientific_artifacts.tenant_quota_bytes >= var.scientific_artifacts.max_artifact_bytes &&
         var.scientific_artifacts.tenant_quota_bytes <= 1099511627776 &&
         var.scientific_artifacts.tenant_quota_bytes <= var.scientific_artifacts.storage_contract.object_storage.max_size_gib * 1073741824 &&
+        floor(var.scientific_artifacts.tenant_quota_objects) == var.scientific_artifacts.tenant_quota_objects &&
+        var.scientific_artifacts.tenant_quota_objects >= 1 &&
+        var.scientific_artifacts.tenant_quota_objects <= 1000000 &&
+        floor(var.scientific_artifacts.upload_reservation_ttl_seconds) == var.scientific_artifacts.upload_reservation_ttl_seconds &&
+        var.scientific_artifacts.upload_reservation_ttl_seconds >= var.scientific_artifacts.handle_ttl_seconds &&
+        var.scientific_artifacts.upload_reservation_ttl_seconds <= 604800 &&
+        var.scientific_artifacts.upload_reservation_ttl_seconds <= var.scientific_artifacts.retention_days * 86400 &&
         var.scientific_artifacts.retention_days >= 1 &&
         var.scientific_artifacts.retention_days <= 3650
       ),
       false,
     )
-    error_message = "enabled scientific_artifacts requires the MysteryBox access handoff, at least one approved media type, at least one exact /32 or /128 object-storage egress address, and bounded handle TTL, artifact size, tenant byte quota and retention."
+    error_message = "enabled scientific_artifacts requires the MysteryBox access handoff, approved media and egress, bounded handle and reservation TTLs, tenant byte/object quotas, and retention."
   }
 }
 
@@ -362,6 +373,7 @@ variable "scientific_batch" {
     enabled        = optional(bool, false)
     writes_enabled = optional(bool, false)
     namespace      = optional(string, "fs2-models")
+    enabled_tenant_ids = optional(set(string), [])
     runtime_cache = optional(object({
       enabled            = optional(bool, false)
       storage_class_name = optional(string, "csi-mounted-fs-path-sc")
@@ -393,9 +405,13 @@ variable "scientific_batch" {
     condition = (
       (!var.scientific_batch.writes_enabled || var.scientific_batch.enabled) &&
       (!var.scientific_batch.runtime_cache.enabled || var.scientific_batch.enabled) &&
-      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scientific_batch.namespace))
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scientific_batch.namespace)) &&
+      alltrue([
+        for tenant_id in var.scientific_batch.enabled_tenant_ids :
+        length(tenant_id) <= 63 && can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", tenant_id))
+      ])
     )
-    error_message = "scientific_batch writes and runtime cache require scientific_batch.enabled and a DNS-label namespace."
+    error_message = "scientific_batch requires enabled dependent features, a DNS-label namespace, and a Kubernetes-label-safe enabled-tenant inventory."
   }
 
   validation {

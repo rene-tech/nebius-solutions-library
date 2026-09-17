@@ -868,7 +868,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
 
     @app.exception_handler(ArtifactQuotaExceededError)
     async def artifact_quota_exceeded(_: Request, __: ArtifactQuotaExceededError) -> JSONResponse:
-        return _error(429, "artifact_quota_exceeded", "tenant artifact byte quota is exhausted")
+        return _error(429, "artifact_quota_exceeded", "tenant artifact byte or object quota is exhausted")
 
     @app.exception_handler(ArtifactVerificationError)
     async def artifact_verification(_: Request, __: ArtifactVerificationError) -> JSONResponse:

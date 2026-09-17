@@ -224,7 +224,7 @@ def _scheduling(
                     "namespace": "fs2-models",
                     "cluster_queue": "reference-data-cpu",
                     "model_ids": [],
-                    "tenant_ids": [],
+                    "tenant_ids": [tenant_id],
                     "service_classes": [],
                 },
             },

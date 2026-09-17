@@ -711,7 +711,7 @@ locals {
       cluster_queue       = local.root_reference_cluster_queue_name
       fair_sharing_weight = 1
       model_ids           = toset([])
-      tenant_ids          = toset([])
+      tenant_ids          = toset([var.academic_assets.tenant_id])
       service_classes     = toset([])
     }
   } : {}
@@ -1046,6 +1046,8 @@ locals {
       }
       retention_days = var.deployment.storage.scientific_artifacts.retention_days
       tenant_quota_bytes = var.deployment.storage.scientific_artifacts.tenant_quota_bytes
+      tenant_quota_objects = var.deployment.storage.scientific_artifacts.tenant_quota_objects
+      upload_reservation_ttl_seconds = var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds
     }
     public_edge_mode         = var.deployment.edge.mode
     public_edge_source_cidrs = sort(tolist(var.deployment.edge.source_cidrs))
@@ -1171,6 +1173,8 @@ locals {
       handle_ttl_seconds    = var.deployment.storage.scientific_artifacts.handle_ttl_seconds
       max_artifact_bytes    = var.deployment.storage.scientific_artifacts.max_artifact_bytes
       tenant_quota_bytes    = var.deployment.storage.scientific_artifacts.tenant_quota_bytes
+      tenant_quota_objects  = var.deployment.storage.scientific_artifacts.tenant_quota_objects
+      upload_reservation_ttl_seconds = var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds
       retention_days        = var.deployment.storage.scientific_artifacts.retention_days
       egress_cidrs          = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
       media_types           = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
@@ -1180,6 +1184,7 @@ locals {
       enabled                  = var.deployment.scientific_batch.enabled
       writes_enabled           = var.deployment.scientific_batch.writes_enabled
       namespace                = var.deployment.scientific_batch.namespace
+      enabled_tenant_ids       = sort(tolist(var.deployment.scientific_batch.enabled_tenant_ids))
       runtime_cache            = var.deployment.scientific_batch.runtime_cache
       execution_map            = local.scientific_execution_map
       gpu_snapshots            = local.normalized_snapshot_settings.scientific

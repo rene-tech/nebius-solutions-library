@@ -921,9 +921,10 @@ resource "terraform_data" "contract" {
           ]) &&
           length(setsubtract(queue.service_classes, local.required_service_classes)) == 0 &&
           (
-            length(queue.model_ids) == 0 ? length(queue.service_classes) == 0 : length(queue.service_classes) > 0
+            length(queue.model_ids) == 0 ? (
+              length(queue.service_classes) == 0 && length(queue.tenant_ids) <= 1
+            ) : length(queue.service_classes) > 0
           ) &&
-          (length(queue.tenant_ids) == 0 || length(queue.model_ids) > 0) &&
           alltrue([
             # Pool order and preemption policy belong to the owner that
             # renders the ClusterQueue. A lane on an externally owned queue

@@ -209,6 +209,8 @@ locals {
         handleTtlSeconds = var.scientific_artifacts.handle_ttl_seconds
         maxBytes         = var.scientific_artifacts.max_artifact_bytes
         tenantQuotaBytes = var.scientific_artifacts.tenant_quota_bytes
+        tenantQuotaObjects = var.scientific_artifacts.tenant_quota_objects
+        uploadReservationTtlSeconds = var.scientific_artifacts.upload_reservation_ttl_seconds
         retentionSeconds = var.scientific_artifacts.retention_days * 86400
         mediaTypes       = sort(var.scientific_artifacts.media_types)
         egressCidrs      = sort(var.scientific_artifacts.egress_cidrs)

@@ -289,7 +289,6 @@ class Store(Protocol):
         model_revision: str,
         reserved_gpu_seconds: float,
         max_attempts: int,
-        charge_gpu_seconds_at_admission: bool = False,
         dispatch_snapshot: str | None = None,
         dynamic_fence: DynamicAdmissionFence | None = None,
         scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None = None,

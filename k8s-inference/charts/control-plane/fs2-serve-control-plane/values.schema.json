@@ -2442,6 +2442,8 @@
         "handleTtlSeconds",
         "maxBytes",
         "tenantQuotaBytes",
+        "tenantQuotaObjects",
+        "uploadReservationTtlSeconds",
         "inlineContentMaxBytes",
         "retentionSeconds",
         "mediaTypes",
@@ -2488,6 +2490,16 @@
           "type": "integer",
           "minimum": 1024,
           "maximum": 1099511627776
+        },
+        "tenantQuotaObjects": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "uploadReservationTtlSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 604800
         },
         "inlineContentMaxBytes": {
           "type": "integer",

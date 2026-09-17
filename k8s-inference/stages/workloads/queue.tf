@@ -88,6 +88,7 @@ locals {
     keys(local.academic_cpu_local_queues),
     keys(local.academic_general_cpu_local_queues),
     keys(local.model_reference_cpu_local_queues),
+    keys(local.scientific_cpu_tenant_local_queues),
   )
   managed_lane_queue_collisions = sort(distinct(concat(
     [
@@ -161,17 +162,15 @@ locals {
     "%s-cpu",
     substr(var.academic_assets.execution.local_queue, 0, 59),
   )
-  # Deliberately route-less. A tenant+model+class tuple cannot say whether a
-  # stage is CPU or GPU, so duplicating the GPU lane's bindings here would make
-  # every AlphaFold 3 route ambiguous. This lane is selected only through the
-  # frozen CPU stage class below.
+  # CPU routing ignores model and service-class selectors and requires this
+  # exact singleton tenant selector inside the frozen CPU class boundary.
   academic_cpu_local_queues = local.academic_cpu_lane_enabled ? {
     (local.academic_cpu_local_queue_name) = {
       namespace           = var.academic_assets.namespace
       cluster_queue       = var.reference_data.queue.cluster_queue
       fair_sharing_weight = 1
       model_ids           = toset([])
-      tenant_ids          = toset([])
+      tenant_ids          = toset([var.academic_assets.tenant_id])
       service_classes     = toset([])
     }
   } : {}
@@ -187,7 +186,8 @@ locals {
       namespace           = var.scientific_batch.namespace
       cluster_queue       = var.reference_data.queue.cluster_queue
       fair_sharing_weight = 1
-      # CPU stage classes select this lane; route bindings stay unambiguous.
+      # This base queue identifies the CPU class. Per-tenant aliases below are
+      # the only routes the runtime may select.
       model_ids       = toset([])
       tenant_ids      = toset([])
       service_classes = toset([])
@@ -209,9 +209,9 @@ locals {
       namespace           = var.academic_assets.namespace
       cluster_queue       = var.general_cpu_lane.cluster_queue
       fair_sharing_weight = var.general_cpu_lane.fair_sharing_weight
-      # CPU stage classes, not route bindings, select this lane.
+      # The academic class is tenant-private as well as namespace-private.
       model_ids       = toset([])
-      tenant_ids      = toset([])
+      tenant_ids      = toset([var.academic_assets.tenant_id])
       service_classes = toset([])
     }
   } : {}
@@ -337,6 +337,56 @@ locals {
     # but freezes BindCraft's aggregate beside its academic claim.
     local.academic_general_cpu_classes,
   )
+  # Tenant inventory is configuration-derived, never discovered from the live
+  # database: it is the declared external inventory plus the always-enabled
+  # deployment target and, when present, the academic tenant. Each ordinary
+  # namespace CPU backing receives a distinct LocalQueue per tenant. Academic
+  # classes retain their explicit academic-only queues above so licensed
+  # namespaces are never projected to another principal.
+  scientific_enabled_tenant_ids = sort(distinct(concat(
+    [var.target_contract.tenant_id],
+    local.academic_execution_enabled ? [var.academic_assets.tenant_id] : [],
+    tolist(var.scientific_batch.enabled_tenant_ids),
+  )))
+  scientific_preexisting_local_queues = merge(
+    var.scheduling.local_queues,
+    local.academic_scheduling_local_queues,
+    local.academic_cpu_local_queues,
+    local.academic_general_cpu_local_queues,
+    local.model_reference_cpu_local_queues,
+    local.contributed_external_local_queues,
+  )
+  scientific_cpu_tenant_backing_groups = {
+    for binding in flatten([
+      for class_id, cpu_class in local.scientific_cpu_classes : [
+        for tenant_id in local.scientific_enabled_tenant_ids : {
+          class_id     = class_id
+          tenant_id    = tenant_id
+          namespace    = cpu_class.namespace
+          cluster_queue = cpu_class.cluster_queue
+        }
+        if cpu_class.namespace != var.academic_assets.namespace && !anytrue([
+          for queue in values(local.scientific_preexisting_local_queues) :
+          queue.namespace == cpu_class.namespace &&
+          queue.cluster_queue == cpu_class.cluster_queue &&
+          queue.tenant_ids == toset([tenant_id]) &&
+          length(queue.model_ids) == 0 &&
+          length(queue.service_classes) == 0
+        ])
+      ]
+    ]) : jsonencode([binding.namespace, binding.cluster_queue, binding.tenant_id]) => binding...
+  }
+  scientific_cpu_tenant_local_queues = {
+    for backing_key, bindings in local.scientific_cpu_tenant_backing_groups :
+    format("cpu-%s", substr(sha256(backing_key), 0, 20)) => {
+      namespace           = bindings[0].namespace
+      cluster_queue       = bindings[0].cluster_queue
+      fair_sharing_weight = 1
+      model_ids           = toset([])
+      tenant_ids          = toset([bindings[0].tenant_id])
+      service_classes     = toset([])
+    }
+  }
   # Which CPU class each model's CPU-only stage belongs to. A raw AlphaFold 3
   # data stage reads the shared reference databases on the tainted pool; an
   # aggregate stage belongs on general CPU capacity, which a separate pool
@@ -369,6 +419,7 @@ locals {
     local.academic_cpu_local_queues,
     local.academic_general_cpu_local_queues,
     local.model_reference_cpu_local_queues,
+    local.scientific_cpu_tenant_local_queues,
   )
 
   scheduling_required_namespaces = merge(
@@ -509,6 +560,7 @@ module "kueue_scheduling" {
       local.academic_cpu_local_queues,
       local.academic_general_cpu_local_queues,
       local.model_reference_cpu_local_queues,
+      local.scientific_cpu_tenant_local_queues,
     )
   })
   external_local_queues = merge(

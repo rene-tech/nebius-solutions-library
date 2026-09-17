@@ -173,7 +173,7 @@ resource "terraform_data" "deployment_contract" {
             length(model_id) <= 63 && can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", model_id))
           ]) &&
           (length(queue.model_ids) == 0 ? (
-            length(queue.tenant_ids) == 0 && length(queue.service_classes) == 0
+            length(queue.tenant_ids) <= 1 && length(queue.service_classes) == 0
           ) : length(queue.service_classes) > 0) &&
           alltrue([
             for service_class in queue.service_classes :

@@ -123,7 +123,7 @@ def estimate_scientific_gpu_seconds(
     scheduling: SchedulingSnapshot,
     execution_plan: AdapterExecutionPlan | None,
 ) -> float:
-    """Return a fail-closed worst-case GPU charge for durable admission.
+    """Return a fail-closed worst-case GPU reservation for durable admission.
 
     The estimate covers every declared retry and every concurrently expanded
     Pod.  A service-class execution bound takes precedence; deployments that
@@ -688,12 +688,11 @@ class ScientificBatchService:
                 traceparent=traceparent,
             ),
             model_revision=profile.model_revision,
-            # Charge the conservative retry-complete estimate once. Scientific
-            # lifecycle telemetry remains the authority for observed usage,
-            # but cannot retroactively make admission-budget enforcement safe.
+            # Hold the retry-complete upper bound for budget admission. The
+            # terminal state atomically settles conservative observed GPU time
+            # and returns every unused second to this token.
             reserved_gpu_seconds=estimated_gpu_seconds,
             max_attempts=1,
-            charge_gpu_seconds_at_admission=True,
             scientific_admission_factory=freeze_admission,
         )
         state = None

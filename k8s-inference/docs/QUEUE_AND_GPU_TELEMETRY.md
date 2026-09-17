@@ -291,6 +291,14 @@ may rank model and service-class selectors, but a GPU admission is valid only
 when the selected LocalQueue has exactly one `tenant_ids` entry equal to the
 requesting tenant. Wildcard-tenant and cross-tenant fallbacks are refused;
 every enabled scientific customer therefore needs a separate LocalQueue.
+
+CPU stages use the same fairness boundary. The frozen CPU class supplies the
+namespace and ClusterQueue, then admission must find exactly one tenant-only
+LocalQueue on that backing. The unrestricted class queue is not selectable;
+missing or duplicate tenant routes fail closed. Terraform renders ordinary
+CPU aliases from its deployment target, academic tenant, and explicit
+`scientific_batch.enabled_tenant_ids` inventory. That source inventory must be
+reconciled with the enabled principal authority before rollout.
 Multiple equal-rank matches are a configuration error, never a lexical
 tie-break. Terraform rejects duplicate bindings. Native
 BindCraft/PyRosetta and AlphaFold3 Jobs additionally require the academic

@@ -189,6 +189,9 @@ variables {
   }
   model_pool_overrides = { qwen3-8b = "nebius-b300-preemptible-1x" }
   model_scaling_mode   = "keda"
+  scientific_batch = {
+    enabled_tenant_ids = ["tenant-external"]
+  }
   model_controller = {
     enabled             = true
     writes_enabled      = true
@@ -491,9 +494,27 @@ run "licensed_lanes_and_cpu_class_are_rendered_by_the_stage" {
       module.kueue_scheduling.contract.local_queues["academic-scientific-cpu"].spec.clusterQueue ==
       "reference-data-cpu" &&
       length(module.kueue_scheduling.contract.local_queue_routes["academic-scientific-cpu"].model_ids) == 0 &&
+      join(",", module.kueue_scheduling.contract.local_queue_routes["academic-scientific-cpu"].tenant_ids) ==
+      "tenant-academic" &&
       length(module.kueue_scheduling.contract.local_queue_routes["academic-scientific-cpu"].service_classes) == 0
     )
-    error_message = "The CPU data-stage lane must be route-less in the claim namespace on the reference ClusterQueue, because a tenant/model/class tuple cannot say whether a stage is CPU or GPU."
+    error_message = "The CPU data-stage lane must be exact-tenant in the claim namespace on the reference ClusterQueue."
+  }
+
+  assert {
+    condition = (
+      length(local.scientific_cpu_tenant_local_queues) == 3 &&
+      toset(flatten([
+        for route in values(local.scientific_cpu_tenant_local_queues) : tolist(route.tenant_ids)
+      ])) == toset(["tenant-modelexpresstest", "tenant-academic", "tenant-external"]) &&
+      alltrue([
+        for route in values(local.scientific_cpu_tenant_local_queues) :
+        length(route.tenant_ids) == 1 &&
+        route.namespace == "fs2-models" &&
+        route.cluster_queue == "reference-data-cpu"
+      ])
+    )
+    error_message = "Every configured scientific tenant must receive one exact model-reference CPU LocalQueue."
   }
 
   assert {

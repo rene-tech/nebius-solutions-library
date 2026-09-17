@@ -437,7 +437,7 @@ def scheduling_with_academic_route(*, shadow: bool = False) -> dict[str, object]
             "namespace": queue_namespace,
             "cluster_queue": resolved_cluster_queue,
             "model_ids": [],
-            "tenant_ids": [],
+            "tenant_ids": [ACADEMIC_TENANT_ID],
             "service_classes": [],
         }
     contract["model_eligible_pool_ids"].update(
@@ -1262,11 +1262,11 @@ async def test_submit_freezes_public_profile_and_never_enters_generic_worker(cip
     assert replay["operation"]["id"] == first["operation"]["id"]
     assert replay["operation"]["reused"] is True
     admitted_operation = await store.get_operation(operation_id, tenant_id="tenant-a")
-    charged_token = await store.get_token(identity.token_id)
-    assert admitted_operation.estimated_gpu_seconds == 7200
-    assert admitted_operation.reserved_gpu_seconds == 0
-    assert charged_token.gpu_seconds_used == 7200
-    assert charged_token.gpu_seconds_reserved == 0
+    reserved_token = await store.get_token(identity.token_id)
+    assert admitted_operation.estimated_gpu_seconds == 0
+    assert admitted_operation.reserved_gpu_seconds == 7200
+    assert reserved_token.gpu_seconds_used == 0
+    assert reserved_token.gpu_seconds_reserved == 7200
     with pytest.raises(BudgetExceededError, match="GPU-seconds"):
         await service.submit(
             principal=identity,
@@ -1903,6 +1903,48 @@ def test_bindcraft_aggregate_uses_the_academic_reference_data_lane() -> None:
         for item in aggregate.tolerations
     ] == reference_data_class["tolerations"]
     assert ("workload.fs2.nebius/general-cpu", "true") not in aggregate.node_selector
+
+
+def test_cpu_stage_refuses_an_unrestricted_or_ambiguous_tenant_lane() -> None:
+    published = json.loads((CATALOG_ROOT / "contracts" / "scientific-workload-profiles.json").read_text())
+    profile = next(item for item in published["profiles"] if item["model_id"] == "bindcraft")
+    plan = scientific_plan_from_catalog_profile(profile)
+    contract = scheduling_with_academic_route()
+    contract["local_queue_routes"]["academic-scientific-cpu"]["tenant_ids"] = []
+    with pytest.raises(SchedulingContractError, match="CPU admission requires an exact per-tenant"):
+        SchedulingContractResolver(contract).freeze(
+            service_class="customer-batch",
+            model_id="bindcraft",
+            tenant_id=ACADEMIC_TENANT_ID,
+            profile=profile,
+            plan=plan,
+            workload_namespace="fs2-academic-poc",
+        )
+
+    contract = scheduling_with_academic_route()
+    contract["local_queues"]["academic-scientific-cpu-shadow"] = {
+        "metadata": {
+            "name": "academic-scientific-cpu-shadow",
+            "namespace": "fs2-academic-poc",
+        },
+        "spec": {"clusterQueue": "reference-data-cpu"},
+    }
+    contract["local_queue_routes"]["academic-scientific-cpu-shadow"] = {
+        "namespace": "fs2-academic-poc",
+        "cluster_queue": "reference-data-cpu",
+        "model_ids": [],
+        "tenant_ids": [ACADEMIC_TENANT_ID],
+        "service_classes": [],
+    }
+    with pytest.raises(SchedulingContractError, match="multiple per-tenant"):
+        SchedulingContractResolver(contract).freeze(
+            service_class="customer-batch",
+            model_id="bindcraft",
+            tenant_id=ACADEMIC_TENANT_ID,
+            profile=profile,
+            plan=plan,
+            workload_namespace="fs2-academic-poc",
+        )
 
 
 def test_scheduling_resolver_rejects_ambiguous_model_tenant_execution_namespaces() -> None:

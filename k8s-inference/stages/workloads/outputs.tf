@@ -361,11 +361,14 @@ output "scientific_artifacts_status" {
     handle_ttl_seconds  = var.scientific_artifacts.handle_ttl_seconds
     max_artifact_bytes  = var.scientific_artifacts.max_artifact_bytes
     tenant_quota_bytes  = var.scientific_artifacts.tenant_quota_bytes
+    tenant_quota_objects = var.scientific_artifacts.tenant_quota_objects
+    upload_reservation_ttl_seconds = var.scientific_artifacts.upload_reservation_ttl_seconds
     media_types         = sort(var.scientific_artifacts.media_types)
     batch = {
       enabled        = var.scientific_batch.enabled
       writes_enabled = var.scientific_batch.writes_enabled
       namespace      = var.scientific_batch.namespace
+      enabled_tenant_ids = local.scientific_enabled_tenant_ids
       runtime_cache = {
         enabled            = var.scientific_batch.runtime_cache.enabled
         claim_name         = var.scientific_batch.runtime_cache.enabled ? local.scientific_runtime_cache_claim_name : null

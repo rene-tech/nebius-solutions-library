@@ -61,6 +61,8 @@ output "effective_configuration" {
       handle_ttl_seconds      = var.deployment.storage.scientific_artifacts.handle_ttl_seconds
       max_artifact_bytes      = var.deployment.storage.scientific_artifacts.max_artifact_bytes
       tenant_quota_bytes      = var.deployment.storage.scientific_artifacts.tenant_quota_bytes
+      tenant_quota_objects    = var.deployment.storage.scientific_artifacts.tenant_quota_objects
+      upload_reservation_ttl_seconds = var.deployment.storage.scientific_artifacts.upload_reservation_ttl_seconds
       media_types             = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
       egress_cidrs            = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
       secret_delivery         = "MYSTERY_BOX"
@@ -72,6 +74,7 @@ output "effective_configuration" {
       enabled        = var.deployment.scientific_batch.enabled
       writes_enabled = var.deployment.scientific_batch.writes_enabled
       namespace      = var.deployment.scientific_batch.namespace
+      enabled_tenant_ids = sort(tolist(var.deployment.scientific_batch.enabled_tenant_ids))
       runtime_cache = {
         enabled            = var.deployment.scientific_batch.runtime_cache.enabled
         claim_name         = var.deployment.scientific_batch.runtime_cache.enabled ? "fs2-scientific-runtime-cache" : null

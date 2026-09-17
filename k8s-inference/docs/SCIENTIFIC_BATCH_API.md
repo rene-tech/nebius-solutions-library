@@ -72,11 +72,13 @@ the exact SHA-256, size, and media type, write the bytes, and finalize. The
 platform matches the bytes against the reservation before anything is stored;
 a body that disagrees is rejected and stores nothing.
 
-Reservations also consume the operator-configured per-tenant retained-byte
-quota. A request that would exceed it returns HTTP 429 with
-`artifact_quota_exceeded`; retrying the same idempotency key remains safe, but
-a new upload must wait for normal retention purge or an operator-approved quota
-change.
+Reservations also consume operator-configured per-tenant retained-byte and
+retained-object quotas. Zero-byte uploads consume one object slot. A request
+that exceeds either limit returns HTTP 429 with `artifact_quota_exceeded`.
+Retrying the same upload identity remains safe. Unfinished reservations release
+when the attempt closes or their bounded upload-reservation TTL expires;
+finalized artifacts retain capacity through their artifact-retention deadline,
+then release even when a standalone input never produces a run-result purge.
 
 ```bash
 SHA=$(sha256sum target.fasta | cut -d' ' -f1)
@@ -121,10 +123,14 @@ implementation for a client.
 
 ## 3. Submit a run
 
-Submission charges the token's GPU-seconds budget immediately using the
-worst-case GPU count, expanded Pod count, retry count, and execution deadline.
-The operator must also have provisioned a tenant-specific Kueue LocalQueue;
-discovery hides profiles whose tenant queue is absent. These checks occur
+Submission reserves the token's GPU-seconds budget using the worst-case GPU
+count, expanded Pod count, retry count, and execution deadline. At terminal
+state the platform charges conservative observed GPU occupancy and releases
+the unused reservation; no-GPU terminal work charges zero, while missing GPU
+lifecycle evidence retains only the admitted bounded maximum. The operator
+must also have provisioned tenant-specific Kueue LocalQueues for GPU and every
+CPU class the run uses; discovery hides profiles whose tenant queue is absent.
+These checks occur
 before a workload is created.
 
 ```bash

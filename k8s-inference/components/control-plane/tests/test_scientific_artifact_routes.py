@@ -38,6 +38,7 @@ class Harness:
         *,
         max_artifact_bytes: int = 1 << 40,
         tenant_quota_bytes: int = 1 << 40,
+        tenant_quota_objects: int = 4096,
     ) -> None:
         self.repository = MemoryArtifactRepository()
         self.store = FakeObjectStore()
@@ -47,6 +48,7 @@ class Harness:
             allowed_media_types=ALLOWED_MEDIA_TYPES,
             max_artifact_bytes=max_artifact_bytes,
             tenant_quota_bytes=tenant_quota_bytes,
+            tenant_quota_objects=tenant_quota_objects,
             clock=lambda: NOW,
         )
         self.operation_id = uuid4()
@@ -174,6 +176,32 @@ async def test_begin_upload_maps_tenant_quota_exhaustion_to_429() -> None:
 
     assert begin(8).status_code == 201
     rejected = begin(5)
+    assert rejected.status_code == 429
+    assert rejected.json()["detail"]["type"] == "artifact_quota_exceeded"
+
+
+async def test_zero_byte_object_quota_exhaustion_maps_to_429() -> None:
+    item = Harness(max_artifact_bytes=1, tenant_quota_bytes=1, tenant_quota_objects=1)
+    await item.repository.register_operation(item.operation_id, tenant_id=TENANT)
+    client = item.client()
+    attempt_id = open_attempt(client, item.operation_id)
+
+    def begin():
+        return client.post(
+            "/internal/scientific-artifacts/uploads",
+            json={
+                "upload_id": str(uuid4()),
+                "attempt_id": str(attempt_id),
+                "operation_id": str(item.operation_id),
+                "direction": "output",
+                "sha256": digest(b"").removeprefix("sha256:"),
+                "size_bytes": 0,
+                "media_type": "chemical/x-pdb",
+            },
+        )
+
+    assert begin().status_code == 201
+    rejected = begin()
     assert rejected.status_code == 429
     assert rejected.json()["detail"]["type"] == "artifact_quota_exceeded"
 

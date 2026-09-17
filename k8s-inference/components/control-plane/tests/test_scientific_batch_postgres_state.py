@@ -69,16 +69,25 @@ async def store() -> PostgresStore:
     )
     await connected.migrate()
     async with connected.pool.acquire() as connection:
-        await connection.execute("TRUNCATE fs2_operations,fs2_tokens RESTART IDENTITY CASCADE")
+        await connection.execute(
+            "TRUNCATE fs2_scientific_gpu_settlements,fs2_operations,fs2_tokens RESTART IDENTITY CASCADE"
+        )
     try:
         yield connected
     finally:
         async with connected.pool.acquire() as connection:
-            await connection.execute("TRUNCATE fs2_operations,fs2_tokens RESTART IDENTITY CASCADE")
+            await connection.execute(
+                "TRUNCATE fs2_scientific_gpu_settlements,fs2_operations,fs2_tokens RESTART IDENTITY CASCADE"
+            )
         await connected.close()
 
 
-async def principal_of(store: PostgresStore, *, max_concurrency: int = 1) -> Principal:
+async def principal_of(
+    store: PostgresStore,
+    *,
+    max_concurrency: int = 1,
+    gpu_seconds_budget: float | None = None,
+) -> Principal:
     token_id = uuid4()
     prefix = f"fs2_pat_{token_id.hex[:12]}"
     await store.issue_token(
@@ -92,6 +101,7 @@ async def principal_of(store: PostgresStore, *, max_concurrency: int = 1) -> Pri
             scopes={Scope.INFERENCE_INVOKE},
             models={"rfdiffusion"},
             max_concurrency=max_concurrency,
+            gpu_seconds_budget=gpu_seconds_budget,
         ),
         created_by="researcher-ada",
     )
@@ -152,6 +162,7 @@ async def admit_batch(
     principal: Principal,
     *,
     idempotency_key: str,
+    reserved_gpu_seconds: float = 0,
 ) -> tuple[UUID, PostgresScientificBatchRepository]:
     operation = await store.append_operation(
         principal=principal,
@@ -163,7 +174,7 @@ async def admit_batch(
             request_body=b'{"schema":"fs2-serve.nebius.ai/scientific-run-request/v1"}',
         ),
         model_revision="2" * 40,
-        reserved_gpu_seconds=0,
+        reserved_gpu_seconds=reserved_gpu_seconds,
         max_attempts=1,
     )
     artifact_id = uuid4()
@@ -206,6 +217,52 @@ async def admit_batch(
         scheduling=scheduling,
     )
     return operation.id, batches
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_terminal_batch_atomically_releases_an_unexecuted_gpu_reservation(
+    store: PostgresStore,
+) -> None:
+    principal = await principal_of(store, gpu_seconds_budget=120)
+    operation_id, batches = await admit_batch(
+        store,
+        principal,
+        idempotency_key="scientific-gpu-settlement-0001",
+        reserved_gpu_seconds=120,
+    )
+    reserved = await store.get_token(principal.token_id)
+    assert reserved.gpu_seconds_used == 0
+    assert reserved.gpu_seconds_reserved == 120
+
+    await batches.request_cancel(operation_id, tenant_id=TENANT, actor=principal.principal_id)
+    controller = controller_for(batches, FakeScientificBatchCluster())
+    assert await controller.reconcile_once() == operation_id
+
+    operation = await store.get_operation(operation_id, tenant_id=TENANT)
+    settled = await store.get_token(principal.token_id)
+    assert operation.status is OperationStatus.CANCELLED
+    assert operation.estimated_gpu_seconds == 0
+    assert operation.reserved_gpu_seconds == 0
+    assert settled.gpu_seconds_used == 0
+    assert settled.gpu_seconds_reserved == 0
+    async with store.pool.acquire() as connection:
+        settlement = await connection.fetchrow(
+            "SELECT * FROM fs2_scientific_gpu_settlements WHERE operation_id=$1",
+            operation_id,
+        )
+    assert settlement is not None
+    assert settlement["reserved_gpu_seconds"] == 120
+    assert settlement["charged_gpu_seconds"] == 0
+    assert settlement["released_gpu_seconds"] == 120
+    assert settlement["reason"] == "no_gpu_execution"
+
+    assert await controller.reconcile_once() is None
+    async with store.pool.acquire() as connection:
+        assert await connection.fetchval(
+            "SELECT count(*) FROM fs2_scientific_gpu_settlements WHERE operation_id=$1",
+            operation_id,
+        ) == 1
 
 
 def controller_for(

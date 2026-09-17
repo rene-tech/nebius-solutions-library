@@ -3420,6 +3420,8 @@ def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> N
     # Every artifact value must survive Helm's float64 number handling.
     assert environment["FS2_ARTIFACT_MAX_BYTES"] == "1099511627776"
     assert environment["FS2_ARTIFACT_TENANT_QUOTA_BYTES"] == "1099511627776"
+    assert environment["FS2_ARTIFACT_TENANT_QUOTA_OBJECTS"] == "4096"
+    assert environment["FS2_ARTIFACT_UPLOAD_RESERVATION_TTL_SECONDS"] == "86400"
     assert environment["FS2_ARTIFACT_RETENTION_SECONDS"] == "7776000"
     assert environment["FS2_ARTIFACT_HANDLE_TTL_SECONDS"] == "600"
     assert "e+" not in "".join(value or "" for value in environment.values())
