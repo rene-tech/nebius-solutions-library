@@ -1,24 +1,27 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fs2-serve.nebius.ai/schema/model-network-provider-gateway-policy/v2",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-provider-gateway-policy/v3",
   "title": "External provider model-network preventive gateway policy",
   "type": "object",
   "required": [
     "schema", "cluster_id", "policy_id", "policy_revision", "upstream_api_url",
     "direct_control_plane_access", "gateway_members", "provider_inventory_sha256", "kubernetes_authorization_sha256",
+    "provider_authority_census_sha256", "gateway_runtime_measurements_sha256",
     "cluster_resource_version", "control_plane_allowed_cidrs", "principals", "mutation_freeze",
     "operation_locks"
   ],
   "properties": {
-    "schema": {"const": "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v2"},
+    "schema": {"const": "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v3"},
     "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
     "policy_id": {"type": "string", "minLength": 1, "maxLength": 253},
     "policy_revision": {"type": "string", "minLength": 1, "maxLength": 253},
     "upstream_api_url": {"type": "string", "pattern": "^https://[^/?#]+(?::[0-9]{1,5})?$"},
-    "direct_control_plane_access": {"const": "provider-firewall-all-external-paths-plus-zero-in-cluster-authority"},
+    "direct_control_plane_access": {"const": "provider-firewall-exact-hosts-plus-excluded-guard-rbac-closure"},
     "gateway_members": {"type": "array", "minItems": 2, "maxItems": 8, "uniqueItems": true, "items": {"$ref": "model-network-boundary-provider-custody.schema.json#/$defs/gatewayMember"}},
     "provider_inventory_sha256": {"$ref": "model-network-boundary-provider-custody.schema.json#/$defs/sha256"},
     "kubernetes_authorization_sha256": {"$ref": "model-network-boundary-provider-custody.schema.json#/$defs/sha256"},
+    "provider_authority_census_sha256": {"$ref": "model-network-boundary-provider-custody.schema.json#/$defs/sha256"},
+    "gateway_runtime_measurements_sha256": {"$ref": "model-network-boundary-provider-custody.schema.json#/$defs/sha256"},
     "cluster_resource_version": {"type": "integer", "minimum": 0},
     "control_plane_allowed_cidrs": {
       "type": "array", "minItems": 2, "maxItems": 8, "uniqueItems": true,

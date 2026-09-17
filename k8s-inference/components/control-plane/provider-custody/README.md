@@ -2,18 +2,20 @@
 
 This directory is the concrete preventive control used by the SAI-03 network
 boundary. It is not installed in Kubernetes. Two or more provider-owned hosts
-run the digest-pinned `fs2-provider-custody-gateway` release behind the
-same-host mTLS NGINX configuration. The managed-cluster public endpoint
+run the digest-pinned `fs2-provider-custody-gateway` release, which terminates
+mutual TLS directly in the same measured process. The managed-cluster public endpoint
 allowlist contains only those hosts' exact `/32` or `/128` egress routes.
 
-The gateway terminates no client TLS itself. NGINX verifies the provider-issued
-client certificate, removes every inbound authorization, impersonation, and
-forwarding header, and passes only the escaped verified certificate to the
-loopback ASGI process. The process reconstructs one of the six signed phase
+Uvicorn is configured with `CERT_REQUIRED`, a provider-issued client CA and
+TLS 1.3 only. Its connection protocol hashes the certificate DER obtained from
+the verified TLS transport into per-connection ASGI state. The application
+does not read a certificate, authorization, forwarding or impersonation HTTP
+header as client identity. It reconstructs one of the six signed phase
 principals and supplies the corresponding exact Kubernetes username and group
-set upstream. Policy, upstream CA, upstream token, and TLS key material are
-absolute mode-0600 provider-host files. The policy bytes are pinned by
-`FS2_PROVIDER_CUSTODY_POLICY_SHA256`.
+set upstream. Policy, upstream CA, upstream token, server certificate/key and
+client CA are absolute mode-0600 provider-host files. The policy bytes are
+pinned by `FS2_PROVIDER_CUSTODY_POLICY_SHA256`. The retained NGINX template is
+an evidence-only fail-closed 503 listener and is not part of policy v3.
 
 During a transition the policy's `mutation_freeze` list is the complete
 receipt-bound Kubernetes inventory. Every resolved CREATE, UPDATE, PATCH, or
@@ -38,16 +40,49 @@ the release rather than weakening the lock.
 The signed provider attestation contains the immutable policy digest, exact
 provider gateway/firewall/IAM inventory, the current managed-cluster object,
 sorted endpoint host routes, six certificate principal bindings, freeze
-transaction, and operation-lock policy. It is not accepted on signature alone.
-`inference-stack` independently reads the exact provider project and cluster,
-enumerates every project instance, security group, and service account, then
-enumerates every declared gateway firewall rule and IAM permit. The declared
-members must equal the complete set carrying both fixed custody labels
-`security-boundary=model-network-provider-custody` and the exact cluster ID;
-each member's full-object digest/resourceVersion, service-account attachment,
-public host address, child-rule set, and permit set must equal the signed
-projection. The managed-cluster endpoint allowlist must contain exactly those
-members' `/32` or `/128` routes, closing undeclared old routes and gateways.
+transaction, operation-lock policy and provider-authority census. It is not
+accepted on signature alone. `inference-stack` independently reads the exact
+provider project and cluster, enumerates every project instance, security
+group and service account, then enumerates every declared gateway firewall
+rule and IAM permit. Gateway membership no longer depends on mutable labels:
+the declared instances must be exactly the provider instances whose live
+public addresses equal the cluster's complete `/32` or `/128` API allowlist.
+Each member's full-object digest/resourceVersion, service-account attachment,
+public host address, child-rule set and permit set must equal the signed
+projection.
+
+A distinct root-owned, digest-pinned provider authority exporter is invoked
+twice on every custody verification. Each observation carries unique provider
+request IDs and a fresh timestamp; both canonical snapshots must be equal to
+the provider-signed snapshot. The snapshot contains the complete
+project-to-organization ancestry, users, groups and service accounts at every
+scope, every principal's permits including inherited grants, every principal
+able to change the MK8s endpoint, gateway compute/network/IAM objects or signing
+material, and a provider-native completeness token. A provider-enforced,
+self-protecting zero-principal freeze covers those exact resources, its own
+freeze object, every enumerated authority permit, and the access-permit,
+identity-binding, service-account and signing-material collections at every
+inherited scope. This preserves ordinary cloud operators outside the bounded
+resources while preventing a new parent-scope grant during the transition and
+making endpoint, firewall, IAM and signing-material mutation atomic.
+
+The repository entry point is `fs2-provider-authority-exporter`. Its installed
+artifact digest/source commit/tree/provenance are part of the v5 attestation.
+It uses direct TLS 1.3 with mode-0600 client credentials, a private provider CA
+and an independently pinned live server leaf to call the exact provider-native
+effective-authority API. The nonce-bound response must contain the provider
+endpoint and server-leaf digest repeated by the signed snapshot, and the
+provider response digest repeated by the completeness token; redirects, proxy
+environment variables, non-JSON responses and oversized responses fail closed.
+`inference-stack` additionally requires the installed executable to be owned
+by root and not group/world writable.
+
+The same provider-native snapshot binds every gateway's exact instance and
+measurement resource/version, immutable release, entrypoint, systemd unit/
+environment, boot image, non-root executable/process, exact non-loopback listener address/
+port/transport and listener measurement to provider attestation. It explicitly
+requires `front_proxy_enabled=false` and TLS mode
+`in-process-mutual-tls-1.3`; nonce status alone is never runtime provenance.
 
 Every declared member is challenged independently. Before the HTTP challenge,
 the verifier performs a fresh mTLS connection and compares the actual leaf
@@ -57,15 +92,18 @@ inventory hash, Kubernetes authorization hash, policy hash, freeze transaction,
 and exact six-principal certificate map. A stale HA member, policy, leaf
 certificate, route, firewall rule, principal, or permit therefore fails closed.
 
-The Kubernetes-side census is the other half of the boundary. It enumerates
-every Role/ClusterRole and binding capable of mutating admission, RBAC,
-credentials, Services, Secrets, ServiceAccounts, NetworkPolicies, or any
-Pod-producing controller/Pod. While custody is asserted, every such binding
-must resolve only to one of the six external X.509 usernames. A ServiceAccount,
-Group, default cluster-admin/system:masters binding, or other in-cluster writer
-fails the gate even if it appears in the signed broad census. This is how the
-source closes the `kubernetes.default.svc` path that a public reverse proxy
-cannot mediate; the gateway is not claimed to be an API-server deny by itself.
+The Kubernetes-side census is the other half of the boundary. It still
+enumerates every Role/ClusterRole and binding capable of identity minting,
+Secret reads, exec, or mutation of Services, Secrets, ServiceAccounts,
+NetworkPolicies, Pods and Pod-producing controllers. Those broad bindings are
+detective evidence and ordinary controllers retain their reconciliation
+authority. Receipt-bound namespaced objects are selected by the fail-closed
+static-custody VAP using old-or-new authority labels plus exact scientific
+writer and run-scoped JobSet-controller identities. Only bindings with direct
+mutation authority over the five VAP/VAPBinding/VWC objects Kubernetes excludes
+from self-admission must resolve exclusively to the six external X.509 users.
+This closes the in-cluster bypass without deauthorizing the deployment,
+ReplicaSet, Job, JobSet or Endpoint controllers.
 
 Before every plan, Terraform also refreshes `nebius_mk8s_v1_cluster` and the
 named provider resources and requires the live resourceVersion, complete
@@ -83,20 +121,22 @@ task:
 
 1. Independently review and publish a digest-pinned control-plane package.
 2. Provision at least two provider-owned gateway hosts in separate failure
-   domains, label every gateway instance, security group, and service account
-   with the fixed custody labels, and bind ASGI only to loopback using the
-   supplied systemd template.
-3. Install the NGINX template with TLS 1.3 and provider-issued client CA.
+   domains and install the supplied systemd unit with direct TLS 1.3 and the
+   provider-issued client CA. Do not install a front proxy.
+3. Publish the provider-native authority exporter and enroll its immutable
+   provenance plus every gateway runtime/process/listener measurement.
 4. Create the two idle operation Leases before restricting API access.
 5. Write and sign the exact gateway policy and provider custody attestation,
-   including the complete provider enumeration and each gateway TLS leaf.
+   including the complete provider enumeration, two stable authority
+   observations, provider freeze, runtime measurements and each gateway TLS leaf.
 6. Restrict the cluster endpoint to the sorted gateway host routes, capture the
    resulting cluster resourceVersion, and issue phase kubeconfigs whose server
    is the gateway URL.
 7. Prove denial for a frozen object, collection DELETE, wrong-principal lock
    patch, missing-CAS patch, and direct endpoint access; prove that no
-   in-cluster RBAC subject retains a mutation path; and exercise custody renewal
-   across a bounded apply before any SAI-03 prepare phase.
+   in-cluster RBAC subject can mutate the five excluded admission guards while
+   ordinary controllers still reconcile; and exercise custody renewal across a
+   bounded apply before any SAI-03 prepare phase.
 
 There is no destructive break-glass operation. A future recovery policy is a
 new signed, versioned provider policy and in-place update; it never deletes a

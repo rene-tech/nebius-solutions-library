@@ -1,5 +1,5 @@
 [Unit]
-Description=FS2 external model-network provider custody gateway
+Description=FS2 external model-network provider custody direct-mTLS gateway
 After=network-online.target
 Wants=network-online.target
 
@@ -8,6 +8,9 @@ Type=simple
 User=fs2-provider-custody
 Group=fs2-provider-custody
 EnvironmentFile=/etc/fs2-provider-custody/gateway.env
+# gateway.env supplies mode-0600 server certificate/key, client CA, policy,
+# upstream credential/CA, public listen address and the exact member identity.
+# No front proxy or certificate-as-HTTP-header path is supported.
 ExecStart=/opt/fs2-provider-custody/bin/fs2-provider-custody-gateway
 Restart=on-failure
 RestartSec=5s

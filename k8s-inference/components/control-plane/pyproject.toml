@@ -40,6 +40,7 @@ fs2-serve-accept-all-models = "fs2_serve.live_acceptance:main"
 fs2-network-boundary = "fs2_serve.network_boundary_entrypoint:main"
 fs2-scientific-writer = "fs2_serve.scientific_writer_entrypoint:main"
 fs2-provider-custody-gateway = "fs2_serve.provider_custody_entrypoint:main"
+fs2-provider-authority-exporter = "fs2_serve.provider_authority_exporter:main"
 
 [dependency-groups]
 build = [

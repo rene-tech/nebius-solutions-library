@@ -190,26 +190,41 @@ the rule before either can integrate.
    ValidatingAdmissionPolicy, its binding, and validating webhook configuration
    from the in-cluster admission mechanisms that would otherwise protect them.
    The repository now supplies a concrete provider-host gateway implementation,
-   mTLS NGINX boundary, systemd hardening template, immutable JSON policy
-   contract, and provider-refreshed cluster endpoint gate. The public gateway is
-   not itself represented as a global API-server deny: in-cluster callers can
-   use `kubernetes.default.svc`. The gate therefore also requires an exhaustive
-   live RBAC graph in which every binding capable of mutating admission/RBAC,
-   credentials, Services, Secrets, ServiceAccounts, NetworkPolicies, Pods, or
-   Pod-producing controllers resolves only to the six external gateway users;
-   any ServiceAccount, Group, `system:masters`, or other in-cluster writer fails
-   closed. Two or more external gateway hosts are the complete `/32` or `/128`
-   public API allowlist. Their
+   direct in-process mutual TLS, a systemd hardening template, immutable JSON
+   policy contract, and provider-refreshed cluster endpoint gate. Client
+   identity is the SHA-256 of the certificate obtained from the verified TLS
+   transport; no certificate HTTP header or front proxy is trusted. The public
+   gateway is not itself represented as a global API-server deny: in-cluster
+   callers can use `kubernetes.default.svc`. The exhaustive live RBAC graph
+   therefore has two deliberately different uses. Every identity, Secret,
+   exec, workload and controller grant remains in the signed detective census,
+   while only direct mutation authority over the five VAP/VAPBinding/VWC
+   objects excluded from self-admission must resolve to the six external users.
+   Ordinary deployment, ReplicaSet, Endpoint, Job and JobSet controllers retain
+   reconciliation authority. The API-server static-custody VAP denies their
+   writes to receipt-bound namespaced objects using old-or-new authority labels
+   and exact scientific-writer/JobSet-controller identities. Two or more external
+   gateway hosts are the complete `/32` or `/128` public API allowlist. Their
    digest-pinned policy denies every mutation of the full receipt inventory
    before kube-apiserver, freezes all RBAC collection prefixes while the
    exhaustive census is sealed, rejects unresolvable/collection-wide writes, and
    exposes a nonce-bound mTLS status projection. Provider CLI reads independently
    enumerate the project, cluster, all instances, security groups, service
    accounts, and every declared gateway's complete firewall-rule and IAM-permit
-   children. The declared members must equal the complete fixed-label custody
-   set, every provider object digest/resourceVersion must match, every live
-   member address must equal its exact endpoint route, and every HA endpoint's
-   actual TLS leaf digest and challenge response must match. Immediately before
+   children. Membership is derived from instances whose live public addresses
+   equal the endpoint allowlist, not mutable labels. A separate root-owned,
+   digest-pinned provider-native exporter is read twice and must return stable
+   canonical state with unique provider request IDs: the complete project-to-
+   organization ancestry, users/groups/service accounts and inherited permits,
+   every principal able to mutate the endpoint/network/IAM/signing boundary, a
+   provider-enforced zero-principal freeze that self-protects and freezes new
+   inherited-scope IAM grants, and each gateway's exact instance, measurement
+   resource/version, release, boot, non-root process and exact non-loopback listener state.
+   The provider endpoint and TLS leaf are pinned into the observed snapshot;
+   every provider object digest/
+   resourceVersion must match, every live member address must equal its exact
+   endpoint route, and every HA endpoint's actual TLS leaf digest and challenge
+   response must match. Immediately before
    receipt capture the provider activates a renewable transaction freeze with no
    allowed principal. That external freeze—not a signed assertion alone, cooperative
    Lease, VAP, or in-cluster webhook—is the apply-time serialization boundary.
@@ -326,7 +341,8 @@ the rule before either can integrate.
    freezes reject an external Helm release write or direct model-controller
    mutation after verification; the Lease serializes every supported
    post-prepare transition. `inference-stack` repeats the complete provider/IAM,
-   HA TLS/status, stable-policy, and zero-in-cluster-authority verifier every
+   HA TLS/status, stable-policy, provider-authority, runtime-measurement, and
+   excluded-admission-guard verifier every
    five seconds while Terraform is running. It accepts only an extended expiry
    for the same transaction and stable policy, terminates before the remaining
    window falls below 90 seconds, and performs a final custody check after a
@@ -459,12 +475,24 @@ DELETE lacked read RBAC, the second snapshot omitted JobSet, and the binding
 schema could not represent namespaced receipts. The interrupted successor audit
 confirmed that projected/Secret volumes, DELETE read RBAC, JobSet second-read,
 and namespaced binding schema were closed, but retained four custody and
-scientific-closure blockers. This successor adds the provider enumeration,
-complete labeled-member equality, per-member TLS observation, global mutation-
-capable RBAC rejection, renewable same-policy apply watchdog/postcheck, exact
-scientific metadata/environment/placement envelope, and source regression cases.
-Those changes are static and unexecuted; they are presented only as a candidate
-for another independent exact review, not as a GO finding.
+scientific-closure blockers.
+
+Exact successor `4548723496cf766659dd061fa9e491eff89a3202` / tree
+`a57f5c7bc9697ef1ac9357ed2d5c23773c5aa464` received final
+**SOURCE/INTEGRATION/LIVE NO-GO**. Its broad authority-control predicate would
+have required normal Kubernetes controllers to become external gateway users,
+and its provider closure still derived membership from mutable labels while
+omitting project/folder/organization IAM mutation authority. Review also found
+that the NGINX-to-ASGI certificate header and nonce status did not bind the
+running proxy/config/process/listener. This additive successor preserves the
+broad detective census but narrows the external-user gate to the five excluded
+admission guards, adds exact-object VAP custody for receipt-bound writers,
+derives gateway members from the exact live endpoint routes, requires two
+stable provider-native scope/IAM/self-protecting-freeze/runtime observations,
+and terminates
+TLS 1.3 with client-certificate verification inside the measured gateway
+process. These source corrections have not been executed under the no-test
+constraint and are presented for independent review, not as a GO finding.
 
 Run from `k8s-inference` unless a command changes directory:
 

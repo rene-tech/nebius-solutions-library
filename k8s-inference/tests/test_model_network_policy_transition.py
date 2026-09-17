@@ -703,7 +703,7 @@ def boundary_authority() -> dict[str, object]:
             "serving_certificate_sha256": "3" * 64,
         },
         "external_custody": {
-            "schema": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v4",
+            "schema": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v5",
             "policy_id": "network-boundary-test",
             "policy_revision": "1",
             "provider_trust_root_sha256": "f" * 64,
@@ -712,6 +712,8 @@ def boundary_authority() -> dict[str, object]:
             "gateway_policy_sha256": "7" * 64,
             "provider_inventory_sha256": "9" * 64,
             "kubernetes_authorization_sha256": "a" * 64,
+            "provider_authority_census_sha256": "b" * 64,
+            "gateway_runtime_measurements_sha256": "c" * 64,
             "gateway_member_ids": ["gateway-a", "gateway-b"],
             "cluster_resource_version": 17,
             "gateway_egress_host_cidrs": [
@@ -1357,10 +1359,12 @@ def test_external_boundary_authority_is_separate_and_narrowly_scoped() -> None:
     assert "request.operation in ['CREATE', 'UPDATE']" in static_custody
     assert "caBundleOnly" not in static_custody
     assert "variables.oldMetadata" in static_custody
+    assert "scientificWriterServiceAccountName" in static_custody
+    assert "jobsetWriterUsername" in static_custody
     assert "fs2-model-network-helm-writer" in helm_writer
     assert "fs2-model-network-maintenance" in helm_writer
     assert receipt_schema["properties"]["schema"]["const"].endswith("/v4")
-    assert provider_schema["properties"]["schema"]["const"].endswith("/v4")
+    assert provider_schema["properties"]["schema"]["const"].endswith("/v5")
     assert "protected_kubernetes_resources" in provider_schema["properties"][
         "mutation_freeze"
     ]["required"]
@@ -1389,6 +1393,16 @@ def test_provider_custody_closes_in_cluster_ha_inventory_and_apply_expiry_paths(
     wrapper = (ROOT / "inference-stack").read_text()
     provider = (ROOT / "stages/workloads/provider_custody.tf").read_text()
     transition = (ROOT / "stages/workloads/network_policies.tf").read_text()
+    gateway = (
+        ROOT / "components/control-plane/src/fs2_serve/provider_custody_gateway.py"
+    ).read_text()
+    entrypoint = (
+        ROOT / "components/control-plane/src/fs2_serve/provider_custody_entrypoint.py"
+    ).read_text()
+    static_custody = (
+        ROOT
+        / "charts/network-boundary/fs2-model-network-boundary/templates/static-custody.yaml"
+    ).read_text()
     schema = json.loads(
         (
             ROOT
@@ -1401,20 +1415,51 @@ def test_provider_custody_closes_in_cluster_ha_inventory_and_apply_expiry_paths(
     assert '["compute", "instance", "list", "--parent-id", project_id]' in wrapper
     assert '["vpc", "security-group", "list", "--parent-id", project_id]' in wrapper
     assert '["iam", "service-account", "list", "--parent-id", project_id]' in wrapper
-    assert "declared gateway members do not equal the complete provider-labeled" in wrapper
+    assert "owning an exact live API-allowlist address" in wrapper
+    assert "FS2_NETWORK_BOUNDARY_PROVIDER_AUTHORITY_EXPORTER" in wrapper
+    assert "provider-control-plane-authority-observation/v1" in wrapper
+    assert "for _index in range(2)" in wrapper
+    assert "provider-control-plane-deny-all-exact-resources-and-scope-collections" in wrapper
+    assert "provider-native-immutable-until-active-until" in wrapper
+    assert "authority_api_server_certificate_sha256" in wrapper
+    assert "front_proxy_enabled" in wrapper
+    assert "measurement_resource_id" in wrapper
+    assert "all_mutation_authorities_included" in wrapper
+    assert "all_gateway_network_paths_included" in wrapper
     assert "server_certificate_sha256" in wrapper
     assert "socket.create_connection" in wrapper
     assert '"jobset.x-k8s.io": {"jobsets"}' in wrapper
     assert '"batch": {"cronjobs", "jobs"}' in wrapper
-    assert "an in-cluster principal retains frozen-object" in wrapper
+    authority_predicate = wrapper.split(
+        "def grants_authority_control_access", 1
+    )[1].split("def binding_subjects", 1)[0]
+    assert '"validatingadmissionpolicies"' in authority_predicate
+    assert '"validatingwebhookconfigurations"' in authority_predicate
+    assert '"pods"' not in authority_predicate
+    assert '"deployments"' not in authority_predicate
+    assert '"jobs"' not in authority_predicate
+    assert "direct mutation authority over an admission object" in wrapper
+    assert "scientificWriterServiceAccountName" in static_custody
+    assert "request.namespace == 'jobset-system'" in static_custody
+    assert "ssl.CERT_REQUIRED" in entrypoint
+    assert "ssl.TLSVersion.TLSv1_3" in entrypoint
+    assert 'get_extra_info("ssl_object")' in entrypoint
+    assert "x_fs2_provider_client_certificate" not in gateway
     assert "process.wait(timeout=5)" in wrapper
     assert "provider custody expiry approached during apply" in wrapper
     assert "post-apply fence" in wrapper
     assert "server_certificate_sha256" in provider
-    assert 'metadata.labels["security-boundary"]' in transition
+    assert 'metadata.labels["security-boundary"]' not in transition
     assert schema["properties"]["provider_enumeration"]["properties"][
         "service_accounts_sha256"
     ]["$ref"] == "#/$defs/sha256"
+    assert schema["properties"]["schema"]["const"].endswith("/v5")
+    assert "provider_authority_census" in schema["required"]
+    assert schema["$defs"]["providerAuthorityCensus"]["properties"][
+        "snapshot"
+    ]["properties"]["provider_mutation_freeze"]["properties"][
+        "enforcement"
+    ]["const"] == "provider-control-plane-deny-all-exact-resources-and-scope-collections"
     assert "server_certificate_sha256" in schema["$defs"]["gatewayMember"][
         "required"
     ]

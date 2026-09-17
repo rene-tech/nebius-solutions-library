@@ -66,6 +66,19 @@ spec:
       expression: "request.operation == 'DELETE' ? null : object.metadata"
     - name: oldMetadata
       expression: "request.operation == 'CREATE' ? null : oldObject.metadata"
+    - name: exactReceiptWriterObject
+      expression: >-
+        (request.resource.group == '' && request.resource.resource == 'serviceaccounts' &&
+         request.namespace == {{ .Values.systemNamespace | quote }} &&
+         request.name == {{ .Values.scientificWriterServiceAccountName | quote }}) ||
+        (request.resource.group == 'apps' && request.resource.resource == 'deployments' &&
+         request.namespace == 'jobset-system' &&
+         request.name == {{ required "jobsetWriterUsername must identify the receipt-bound JobSet controller" .Values.jobsetWriterUsername | trimPrefix "system:serviceaccount:jobset-system:" | quote }})
+    - name: releaseManagedWriterObject
+      expression: >-
+        request.resource.group == '' && request.resource.resource == 'serviceaccounts' &&
+        request.namespace == {{ .Values.systemNamespace | quote }} &&
+        request.name == {{ .Values.scientificWriterServiceAccountName | quote }}
     - name: protectedObject
       expression: >-
         (variables.newMetadata != null && has(variables.newMetadata.labels) &&
@@ -76,7 +89,8 @@ spec:
          variables.oldMetadata.labels['fs2-serve.nebius.ai/network-boundary-authority'] == 'true') ||
         (request.resource.group == 'rbac.authorization.k8s.io' &&
          ((variables.newMetadata != null && variables.newMetadata.name.startsWith('fs2-model-network-')) ||
-          (variables.oldMetadata != null && variables.oldMetadata.name.startsWith('fs2-model-network-'))))
+          (variables.oldMetadata != null && variables.oldMetadata.name.startsWith('fs2-model-network-')))) ||
+        variables.exactReceiptWriterObject
     - name: noExtras
       expression: "!has(request.userInfo.extra) || request.userInfo.extra.size() == 0"
     - name: custodian
@@ -90,6 +104,18 @@ spec:
         request.userInfo.username == {{ .Values.recoveryUsername | quote }} &&
         request.userInfo.groups.size() == {{ len .Values.recoveryGroups }} &&
         request.userInfo.groups.all(group, group in {{ .Values.recoveryGroups | toJson }}) &&
+        variables.noExtras
+    - name: phaseReleaseWriter
+      expression: >-
+        ((request.userInfo.username == {{ .Values.authorizerUsername | quote }} &&
+          request.userInfo.groups.size() == {{ len .Values.authorizerGroups }} &&
+          request.userInfo.groups.all(group, group in {{ .Values.authorizerGroups | toJson }})) ||
+         (request.userInfo.username == {{ .Values.transitionWriterUsername | quote }} &&
+          request.userInfo.groups.size() == {{ len .Values.transitionWriterGroups }} &&
+          request.userInfo.groups.all(group, group in {{ .Values.transitionWriterGroups | toJson }})) ||
+         (request.userInfo.username == {{ .Values.maintenanceWriterUsername | quote }} &&
+          request.userInfo.groups.size() == {{ len .Values.maintenanceWriterGroups }} &&
+          request.userInfo.groups.all(group, group in {{ .Values.maintenanceWriterGroups | toJson }}))) &&
         variables.noExtras
     - name: transitionLeaseWriter
       expression: >-
@@ -160,7 +186,7 @@ spec:
     - expression: "!variables.certificateController || (variables.certificateSecretOnly && variables.certificateStatusOnly)"
       message: "the certificate controller may rotate only exact TLS data or update status without changing spec or metadata"
       reason: Forbidden
-    - expression: "!variables.protectedObject || variables.custodian || variables.recovery || variables.transitionLeaseWriter || variables.maintenanceLeaseWriter || (variables.certificateController && variables.certificateSecretOnly && variables.certificateStatusOnly)"
+    - expression: "!variables.protectedObject || variables.custodian || variables.recovery || variables.transitionLeaseWriter || variables.maintenanceLeaseWriter || (variables.releaseManagedWriterObject && variables.phaseReleaseWriter) || (variables.certificateController && variables.certificateSecretOnly && variables.certificateStatusOnly)"
       message: "network-boundary custody requires the exact external identity and group set"
       reason: Forbidden
 ---

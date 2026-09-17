@@ -177,6 +177,8 @@ variable "deployment" {
         provider_gateway_members = optional(map(object({
           status_url                = string
           host_cidr                 = string
+          listener_address          = string
+          listener_port             = number
           server_certificate_sha256 = string
           iam_principal_id          = string
           instance_id               = string
@@ -851,6 +853,26 @@ variable "deployment" {
           for member_id, member in var.deployment.models.network_policy.provider_gateway_members :
           can(regex("^[a-z][a-z0-9-]{2,62}$", member_id)) &&
           can(regex("^https://[^/?#]+/v1/custody/status$", member.status_url)) &&
+          (strcontains(member.listener_address, ":") ? (
+            can(cidrhost("${member.listener_address}/128", 0)) &&
+            try(
+              !cidrcontains("::/128", member.listener_address) &&
+              !cidrcontains("::1/128", member.listener_address) &&
+              !cidrcontains("ff00::/8", member.listener_address),
+              false,
+            )
+          ) : (
+            can(cidrhost("${member.listener_address}/32", 0)) &&
+            try(
+              !cidrcontains("0.0.0.0/32", member.listener_address) &&
+              !cidrcontains("127.0.0.0/8", member.listener_address) &&
+              !cidrcontains("224.0.0.0/4", member.listener_address),
+              false,
+            )
+          )) &&
+          member.listener_port >= 1 &&
+          member.listener_port <= 65535 &&
+          floor(member.listener_port) == member.listener_port &&
           can(regex("^[a-f0-9]{64}$", member.server_certificate_sha256)) &&
           contains(var.deployment.models.network_policy.provider_gateway_egress_host_cidrs, member.host_cidr) &&
           length(member.instance_id) > 0 &&
@@ -865,7 +887,7 @@ variable "deployment" {
         var.deployment.cluster.control_plane_allowed_cidrs
       )
     )
-    error_message = "Live network-boundary custody requires two to eight exact provider-gateway members, provider instance/firewall/IAM IDs, and /32 or /128 routes equal to the complete cluster control-plane allowlist; offline source checks require none."
+    error_message = "Live network-boundary custody requires two to eight exact provider-gateway members, exact non-loopback listener addresses/ports, provider instance/firewall/IAM IDs, and /32 or /128 routes equal to the complete cluster control-plane allowlist; offline source checks require none."
   }
 
   validation {

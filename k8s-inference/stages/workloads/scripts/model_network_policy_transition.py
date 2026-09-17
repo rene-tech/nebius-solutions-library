@@ -271,7 +271,7 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
         not isinstance(provider_root, str)
         or re.fullmatch(r"[a-f0-9]{64}", provider_root) is None
         or external_custody.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v4"
+        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v5"
         or external_custody.get("provider_trust_root_sha256") != provider_root
         or re.fullmatch(
             r"[a-f0-9]{64}",
@@ -286,6 +286,16 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
         or re.fullmatch(
             r"[a-f0-9]{64}",
             str(external_custody.get("kubernetes_authorization_sha256", "")),
+        )
+        is None
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(external_custody.get("provider_authority_census_sha256", "")),
+        )
+        is None
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(external_custody.get("gateway_runtime_measurements_sha256", "")),
         )
         is None
         or not isinstance(external_custody.get("gateway_member_ids"), list)

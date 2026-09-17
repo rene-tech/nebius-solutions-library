@@ -66,6 +66,16 @@ def _is_exact_host_route(value: object) -> bool:
     return network.prefixlen == network.max_prefixlen
 
 
+def _is_exact_non_loopback_address(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return not (address.is_loopback or address.is_unspecified or address.is_multicast)
+
+
 def command_text(arguments: Sequence[str]) -> str:
     """Return a readable command containing no secret environment values."""
     return " ".join(arguments)
@@ -2786,6 +2796,20 @@ def _finite_release_match_conditions(
     ]
 
 
+def _provider_authority_census_stable_sha256(census: Mapping[str, Any]) -> str:
+    """Hash provider authority semantics while permitting time-only renewal."""
+
+    stable = copy.deepcopy(dict(census))
+    snapshot = stable.get("snapshot")
+    if isinstance(snapshot, dict):
+        provider_freeze = snapshot.get("provider_mutation_freeze")
+        if isinstance(provider_freeze, dict):
+            provider_freeze.pop("active_from", None)
+            provider_freeze.pop("active_until", None)
+        stable["snapshot_sha256"] = _json_sha256(snapshot)
+    return _json_sha256(stable)
+
+
 def _provider_custody_stable_sha256(attestation: Mapping[str, Any]) -> str:
     """Bind renewable custody assertions to one immutable transaction/policy."""
 
@@ -2797,7 +2821,582 @@ def _provider_custody_stable_sha256(attestation: Mapping[str, Any]) -> str:
     if isinstance(freeze, dict):
         freeze.pop("active_from", None)
         freeze.pop("active_until", None)
+    authority_census = stable.get("provider_authority_census")
+    if isinstance(authority_census, dict):
+        authority_census_sha256 = _provider_authority_census_stable_sha256(
+            authority_census
+        )
+        snapshot = authority_census.get("snapshot")
+        if isinstance(snapshot, dict):
+            provider_freeze = snapshot.get("provider_mutation_freeze")
+            if isinstance(provider_freeze, dict):
+                provider_freeze.pop("active_from", None)
+                provider_freeze.pop("active_until", None)
+            authority_census["snapshot_sha256"] = _json_sha256(snapshot)
+        gateway = stable.get("provider_gateway")
+        if isinstance(gateway, dict):
+            gateway["provider_authority_census_sha256"] = authority_census_sha256
     return _json_sha256(stable)
+
+
+def _verified_provider_authority_census(
+    *,
+    attestation: Mapping[str, Any],
+    cluster_id: str,
+    project_id: str,
+    provider_trust_root_sha256: str,
+    member_ids: Sequence[str],
+    gateway_members: Sequence[Mapping[str, Any]],
+    freeze_active_from: datetime,
+    freeze_active_until: datetime,
+    freeze_transaction_id: str,
+) -> str:
+    """Verify two stable provider-native IAM/control-plane observations.
+
+    Gateway labels and gateway-service-account permits are not a complete IAM
+    boundary.  A separately pinned, root-owned provider exporter must enumerate
+    the project-to-organization scope chain, every identity collection and
+    inherited permit, every principal able to mutate the protected provider
+    resources, the provider-enforced zero-principal freeze, and measured runtime
+    state for every gateway.  The exporter is invoked twice; its complete
+    canonical snapshots must be byte-semantically equal to each other and to
+    the provider-signed snapshot.
+    """
+
+    census = attestation.get("provider_authority_census")
+    if not isinstance(census, Mapping) or set(census) != {
+        "schema",
+        "exporter",
+        "snapshot",
+        "snapshot_sha256",
+    }:
+        raise DeploymentError(
+            "provider custody has no exact provider-native authority census"
+        )
+    exporter = census.get("exporter")
+    snapshot = census.get("snapshot")
+    if (
+        census.get("schema")
+        != "fs2-serve.nebius.ai/provider-control-plane-authority-census/v1"
+        or not isinstance(exporter, Mapping)
+        or set(exporter)
+        != {"sha256", "source_commit", "source_tree", "provenance_sha256"}
+        or any(
+            re.fullmatch(r"[a-f0-9]{64}", str(exporter.get(field, ""))) is None
+            for field in ("sha256", "provenance_sha256")
+        )
+        or any(
+            re.fullmatch(r"[a-f0-9]{40}", str(exporter.get(field, ""))) is None
+            for field in ("source_commit", "source_tree")
+        )
+        or not isinstance(snapshot, Mapping)
+        or census.get("snapshot_sha256") != _json_sha256(snapshot)
+    ):
+        raise DeploymentError(
+            "provider custody authority exporter provenance or snapshot digest is malformed"
+        )
+    exporter_path = Path(
+        os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_AUTHORITY_EXPORTER", "")
+    )
+    if (
+        not exporter_path.is_absolute()
+        or exporter_path.is_symlink()
+        or not exporter_path.is_file()
+        or exporter_path.stat().st_uid != 0
+        or exporter_path.stat().st_mode & 0o022
+        or _sha256_file(exporter_path) != exporter.get("sha256")
+    ):
+        raise DeploymentError(
+            "the provider authority exporter must be a root-owned, non-writable, signed artifact"
+        )
+
+    scope_chain = snapshot.get("scope_chain")
+    identity_collections = snapshot.get("identity_collections")
+    permit_digests = snapshot.get("access_permits_sha256")
+    mutation_authorities = snapshot.get("control_plane_mutation_authorities")
+    provider_freeze = snapshot.get("provider_mutation_freeze")
+    runtime_measurements = snapshot.get("gateway_runtime_measurements")
+    signing_material = snapshot.get("signing_material")
+    completeness_token = snapshot.get("completeness_token")
+    if (
+        set(snapshot)
+        != {
+            "source",
+            "provider_api_endpoint",
+            "authority_api_server_certificate_sha256",
+            "completeness_token",
+            "project_id",
+            "cluster_id",
+            "scope_chain",
+            "identity_collections",
+            "access_permits_sha256",
+            "control_plane_mutation_authorities",
+            "provider_mutation_freeze",
+            "gateway_runtime_measurements",
+            "signing_material",
+        }
+        or snapshot.get("source") != "nebius-provider-authority-export/v1"
+        or re.fullmatch(
+            r"https://[^\s/?#]+(?:/[^\s?#]*)?",
+            str(snapshot.get("provider_api_endpoint", "")),
+        )
+        is None
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(snapshot.get("authority_api_server_certificate_sha256", "")),
+        )
+        is None
+        or snapshot.get("project_id") != project_id
+        or snapshot.get("cluster_id") != cluster_id
+        or not isinstance(scope_chain, list)
+        or not 2 <= len(scope_chain) <= 16
+        or not isinstance(identity_collections, list)
+        or not isinstance(permit_digests, Mapping)
+        or not isinstance(mutation_authorities, list)
+        or not 1 <= len(mutation_authorities) <= 256
+        or not isinstance(provider_freeze, Mapping)
+        or not isinstance(runtime_measurements, Mapping)
+        or not isinstance(signing_material, Mapping)
+        or not isinstance(completeness_token, Mapping)
+    ):
+        raise DeploymentError(
+            "the provider-native authority census is incomplete"
+        )
+    expected_parent = project_id
+    scope_ids: list[str] = []
+    for index, raw_scope in enumerate(scope_chain):
+        if not isinstance(raw_scope, Mapping) or set(raw_scope) != {
+            "kind",
+            "id",
+            "parent_id",
+            "resource_version",
+            "semantic_sha256",
+        }:
+            raise DeploymentError("provider IAM scope-chain entry is malformed")
+        kind = raw_scope.get("kind")
+        scope_id = raw_scope.get("id")
+        parent_id = raw_scope.get("parent_id")
+        if (
+            kind not in {"project", "folder", "organization"}
+            or not isinstance(scope_id, str)
+            or not scope_id
+            or scope_id != expected_parent
+            or not isinstance(parent_id, str)
+            or not isinstance(raw_scope.get("resource_version"), int)
+            or isinstance(raw_scope.get("resource_version"), bool)
+            or raw_scope["resource_version"] < 0
+            or re.fullmatch(
+                r"[a-f0-9]{64}", str(raw_scope.get("semantic_sha256", ""))
+            )
+            is None
+            or (index == 0 and kind != "project")
+            or (index == len(scope_chain) - 1 and (kind != "organization" or parent_id))
+            or (index < len(scope_chain) - 1 and not parent_id)
+        ):
+            raise DeploymentError(
+                "provider IAM scope chain is not a complete project-to-organization ancestry"
+            )
+        scope_ids.append(scope_id)
+        expected_parent = parent_id
+    if len(scope_ids) != len(set(scope_ids)):
+        raise DeploymentError("provider IAM scope chain contains duplicate scopes")
+    if (
+        set(completeness_token)
+        != {
+            "scope_root_id",
+            "resource_version",
+            "provider_response_sha256",
+            "effective_iam_inheritance_included",
+            "all_mutation_authorities_included",
+            "all_gateway_network_paths_included",
+        }
+        or completeness_token.get("scope_root_id") != scope_ids[-1]
+        or not isinstance(completeness_token.get("resource_version"), int)
+        or isinstance(completeness_token.get("resource_version"), bool)
+        or completeness_token["resource_version"] < 0
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(completeness_token.get("provider_response_sha256", "")),
+        )
+        is None
+        or completeness_token.get("effective_iam_inheritance_included") is not True
+        or completeness_token.get("all_mutation_authorities_included") is not True
+        or completeness_token.get("all_gateway_network_paths_included") is not True
+    ):
+        raise DeploymentError(
+            "provider-native completeness token does not cover inherited IAM and every gateway path"
+        )
+    collection_scope_ids: list[str] = []
+    for collection in identity_collections:
+        if (
+            not isinstance(collection, Mapping)
+            or set(collection)
+            != {
+                "scope_id",
+                "service_accounts_sha256",
+                "groups_sha256",
+                "users_sha256",
+            }
+            or collection.get("scope_id") not in scope_ids
+            or any(
+                re.fullmatch(r"[a-f0-9]{64}", str(collection.get(field, "")))
+                is None
+                for field in (
+                    "service_accounts_sha256",
+                    "groups_sha256",
+                    "users_sha256",
+                )
+            )
+        ):
+            raise DeploymentError(
+                "provider IAM identity collection is not scope-complete"
+            )
+        collection_scope_ids.append(str(collection["scope_id"]))
+    if sorted(collection_scope_ids) != sorted(scope_ids):
+        raise DeploymentError(
+            "provider IAM identity collections do not cover every inherited scope"
+        )
+    if (
+        not permit_digests
+        or any(
+            not isinstance(principal_id, str)
+            or not principal_id
+            or re.fullmatch(r"[a-f0-9]{64}", str(digest)) is None
+            for principal_id, digest in permit_digests.items()
+        )
+    ):
+        raise DeploymentError("provider IAM permit census is not principal-complete")
+
+    signing_resource_id = signing_material.get("resource_id")
+    if (
+        set(signing_material)
+        != {"resource_id", "resource_version", "semantic_sha256", "public_key_sha256"}
+        or not isinstance(signing_resource_id, str)
+        or not signing_resource_id
+        or not isinstance(signing_material.get("resource_version"), int)
+        or isinstance(signing_material.get("resource_version"), bool)
+        or any(
+            re.fullmatch(r"[a-f0-9]{64}", str(signing_material.get(field, "")))
+            is None
+            for field in ("semantic_sha256", "public_key_sha256")
+        )
+        or signing_material.get("public_key_sha256")
+        != provider_trust_root_sha256
+    ):
+        raise DeploymentError(
+            "provider signing material is not bound to the root-pinned trust key"
+        )
+    freeze_resource_id = provider_freeze.get("resource_id")
+    if not isinstance(freeze_resource_id, str) or not freeze_resource_id:
+        raise DeploymentError("provider control-plane freeze has no resource identity")
+    authority_access_permit_ids: set[str] = set()
+    authority_identities: list[str] = []
+    for authority in mutation_authorities:
+        if (
+            not isinstance(authority, Mapping)
+            or set(authority)
+            != {
+                "principal_id",
+                "principal_kind",
+                "source_scope_id",
+                "role_id",
+                "access_permit_id",
+                "protected_provider_resources",
+                "semantic_sha256",
+            }
+            or not isinstance(authority.get("principal_id"), str)
+            or not authority["principal_id"]
+            or authority.get("principal_kind")
+            not in {"service-account", "user", "group", "federated-principal"}
+            or authority.get("source_scope_id") not in scope_ids
+            or not isinstance(authority.get("role_id"), str)
+            or not authority["role_id"]
+            or not isinstance(authority.get("access_permit_id"), str)
+            or not authority["access_permit_id"]
+            or not isinstance(authority.get("protected_provider_resources"), list)
+            or not authority["protected_provider_resources"]
+            or authority["protected_provider_resources"]
+            != sorted(set(authority["protected_provider_resources"]))
+            or re.fullmatch(
+                r"[a-f0-9]{64}", str(authority.get("semantic_sha256", ""))
+            )
+            is None
+        ):
+            raise DeploymentError(
+                "provider control-plane mutation-authority census is malformed"
+            )
+        authority_access_permit_ids.add(str(authority["access_permit_id"]))
+        authority_identities.append(_json_sha256(authority))
+    if authority_identities != sorted(set(authority_identities)):
+        raise DeploymentError(
+            "provider control-plane mutation-authority census is not unique and sorted"
+        )
+    if not {
+        str(authority["principal_id"]) for authority in mutation_authorities
+    }.issubset(set(permit_digests)):
+        raise DeploymentError(
+            "provider mutation authorities are absent from the complete permit census"
+        )
+
+    runtime_fields = {
+        "instance_id",
+        "measurement_resource_id",
+        "measurement_resource_version",
+        "release_artifact_sha256",
+        "entrypoint_sha256",
+        "systemd_unit_sha256",
+        "environment_sha256",
+        "boot_image_id",
+        "boot_image_sha256",
+        "process_uid",
+        "process_executable_sha256",
+        "process_cmdline_sha256",
+        "listener_address",
+        "listener_port",
+        "listener_transport",
+        "listener_sha256",
+        "provider_attestation_sha256",
+        "front_proxy_enabled",
+        "tls_termination",
+    }
+    members_by_id = {
+        str(member["member_id"]): member for member in gateway_members
+    }
+    if set(runtime_measurements) != set(member_ids):
+        raise DeploymentError(
+            "provider runtime measurements do not cover every gateway member"
+        )
+    for member_id, measurement in runtime_measurements.items():
+        member = members_by_id.get(str(member_id))
+        expected_address = str(member.get("listener_address", "")) if member else ""
+        expected_port = member.get("listener_port", -1) if member else -1
+        if (
+            member is None
+            or not isinstance(measurement, Mapping)
+            or set(measurement) != runtime_fields
+            or measurement.get("instance_id") != member["instance"]["id"]
+            or not isinstance(measurement.get("measurement_resource_id"), str)
+            or not measurement["measurement_resource_id"]
+            or not isinstance(measurement.get("measurement_resource_version"), int)
+            or isinstance(measurement.get("measurement_resource_version"), bool)
+            or measurement["measurement_resource_version"] < 0
+            or measurement.get("listener_address") != expected_address
+            or measurement.get("listener_port") != expected_port
+            or measurement.get("listener_transport") != "tcp"
+            or measurement.get("front_proxy_enabled") is not False
+            or measurement.get("tls_termination") != "in-process-mutual-tls-1.3"
+            or not isinstance(measurement.get("process_uid"), int)
+            or isinstance(measurement.get("process_uid"), bool)
+            or measurement["process_uid"] <= 0
+            or not isinstance(measurement.get("boot_image_id"), str)
+            or not measurement["boot_image_id"]
+            or any(
+                re.fullmatch(r"[a-f0-9]{64}", str(measurement.get(field, "")))
+                is None
+                for field in {
+                    "release_artifact_sha256",
+                    "entrypoint_sha256",
+                    "systemd_unit_sha256",
+                    "environment_sha256",
+                    "boot_image_sha256",
+                    "process_executable_sha256",
+                    "process_cmdline_sha256",
+                    "listener_sha256",
+                    "provider_attestation_sha256",
+                }
+            )
+        ):
+            raise DeploymentError(
+                "provider gateway runtime/process/listener measurements are incomplete"
+            )
+
+    protected_provider_resources = sorted(
+        {
+            f"mk8s.cluster/{cluster_id}",
+            f"iam.mutation-freeze/{freeze_resource_id}",
+            f"iam.signing-material/{signing_resource_id}",
+            *(
+                f"iam.{scope['kind']}/{scope['id']}"
+                for scope in scope_chain
+            ),
+            *(f"compute.instance/{member['instance']['id']}" for member in gateway_members),
+            *(f"vpc.security-group/{member['security_group']['id']}" for member in gateway_members),
+            *(
+                f"vpc.security-rule/{rule['id']}"
+                for member in gateway_members
+                for rule in member["security_rules"]
+            ),
+            *(f"iam.service-account/{member['iam_principal_id']}" for member in gateway_members),
+            *(
+                f"iam.access-permit/{permit['id']}"
+                for member in gateway_members
+                for permit in member["access_permits"]
+            ),
+            *(f"iam.access-permit/{permit_id}" for permit_id in authority_access_permit_ids),
+            *(
+                f"compute.image/{measurement['boot_image_id']}"
+                for measurement in runtime_measurements.values()
+            ),
+            *(
+                f"provider.runtime-measurement/{measurement['measurement_resource_id']}"
+                for measurement in runtime_measurements.values()
+            ),
+        }
+    )
+    protected_provider_resource_prefixes = sorted(
+        {
+            f"iam.access-permit/{scope_id}/"
+            for scope_id in scope_ids
+        }
+        | {
+            f"iam.identity-binding/{scope_id}/"
+            for scope_id in scope_ids
+        }
+        | {
+            f"iam.service-account/{scope_id}/"
+            for scope_id in scope_ids
+        }
+        | {
+            f"iam.signing-material/{scope_id}/"
+            for scope_id in scope_ids
+        }
+    )
+    if any(
+        not set(authority["protected_provider_resources"]).issubset(
+            protected_provider_resources
+        )
+        for authority in mutation_authorities
+    ):
+        raise DeploymentError(
+            "provider mutation authority names a resource outside the frozen boundary"
+        )
+    try:
+        provider_freeze_from = datetime.fromisoformat(
+            str(provider_freeze["active_from"]).replace("Z", "+00:00")
+        )
+        provider_freeze_until = datetime.fromisoformat(
+            str(provider_freeze["active_until"]).replace("Z", "+00:00")
+        )
+    except (KeyError, ValueError) as exc:
+        raise DeploymentError("provider control-plane freeze time is malformed") from exc
+    if (
+        set(provider_freeze)
+        != {
+            "transaction_id",
+            "resource_id",
+            "resource_version",
+            "semantic_sha256",
+            "enforcement",
+            "allowed_principal_ids",
+            "protected_provider_resources",
+            "protected_provider_resource_prefixes",
+            "self_protection",
+            "active_from",
+            "active_until",
+        }
+        or provider_freeze.get("transaction_id") != freeze_transaction_id
+        or not isinstance(provider_freeze.get("resource_id"), str)
+        or not provider_freeze["resource_id"]
+        or not isinstance(provider_freeze.get("resource_version"), int)
+        or isinstance(provider_freeze.get("resource_version"), bool)
+        or re.fullmatch(
+            r"[a-f0-9]{64}", str(provider_freeze.get("semantic_sha256", ""))
+        )
+        is None
+        or provider_freeze.get("enforcement")
+        != "provider-control-plane-deny-all-exact-resources-and-scope-collections"
+        or provider_freeze.get("allowed_principal_ids") != []
+        or provider_freeze.get("protected_provider_resources")
+        != protected_provider_resources
+        or provider_freeze.get("protected_provider_resource_prefixes")
+        != protected_provider_resource_prefixes
+        or provider_freeze.get("self_protection")
+        != "provider-native-immutable-until-active-until"
+        or provider_freeze_from != freeze_active_from
+        or provider_freeze_until != freeze_active_until
+    ):
+        raise DeploymentError(
+            "provider control-plane resources are not held by the exact zero-principal freeze"
+        )
+    command = [
+        str(exporter_path),
+        "snapshot",
+        "--project-id",
+        project_id,
+        "--cluster-id",
+        cluster_id,
+        "--freeze-transaction-id",
+        freeze_transaction_id,
+        "--output",
+        "json",
+    ]
+    observations: list[dict[str, Any]] = []
+    observation_request_ids: set[str] = set()
+    observation_times: list[datetime] = []
+    for _index in range(2):
+        result = subprocess.run(
+            command,
+            env=clean_environment(),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+        try:
+            observation = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise DeploymentError(
+                "provider-native authority observation is malformed"
+            ) from exc
+        if result.returncode != 0 or not isinstance(observation, dict):
+            raise DeploymentError(
+                "provider-native authority observation failed closed"
+            )
+        request_ids = observation.get("provider_request_ids")
+        try:
+            observation_time = datetime.fromisoformat(
+                str(observation["observed_at"]).replace("Z", "+00:00")
+            )
+        except (KeyError, ValueError) as exc:
+            raise DeploymentError(
+                "provider-native authority observation time is malformed"
+            ) from exc
+        if (
+            set(observation)
+            != {
+                "schema",
+                "observed_at",
+                "provider_request_ids",
+                "snapshot",
+                "snapshot_sha256",
+            }
+            or observation.get("schema")
+            != "fs2-serve.nebius.ai/provider-control-plane-authority-observation/v1"
+            or observation.get("snapshot") != dict(snapshot)
+            or observation.get("snapshot_sha256") != census["snapshot_sha256"]
+            or not isinstance(request_ids, list)
+            or not request_ids
+            or request_ids != sorted(set(request_ids))
+            or not all(
+                isinstance(request_id, str) and 1 <= len(request_id) <= 253
+                for request_id in request_ids
+            )
+            or observation_time.tzinfo is None
+            or observation_time > datetime.now(UTC) + timedelta(seconds=30)
+            or datetime.now(UTC) - observation_time > timedelta(minutes=2)
+            or observation_request_ids.intersection(request_ids)
+        ):
+            raise DeploymentError(
+                "provider-native authority observation lacks unique live provenance"
+            )
+        observation_request_ids.update(request_ids)
+        observation_times.append(observation_time)
+        observations.append(dict(observation["snapshot"]))
+    if observations[0] != observations[1] or observation_times[1] < observation_times[0]:
+        raise DeploymentError(
+            "two provider-native authority observations are not stable and signed-equal"
+        )
+    return _provider_authority_census_stable_sha256(census)
 
 
 def _verified_provider_custody(
@@ -2885,7 +3484,7 @@ def _verified_provider_custody(
     now = datetime.now(UTC)
     if (
         attestation.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v4"
+        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v5"
         or attestation.get("cluster_id") != cluster_id
         or attestation.get("project_id") != project_id
         or attestation.get("payload_sha256") != _json_sha256(payload)
@@ -3059,7 +3658,7 @@ def _verified_provider_custody(
     }
     if (
         gateway.get("direct_control_plane_access")
-        != "provider-firewall-all-external-paths-plus-zero-in-cluster-authority"
+        != "provider-firewall-exact-hosts-plus-excluded-guard-rbac-closure"
         or gateway.get("cluster_id") != cluster_id
         or not isinstance(gateway.get("cluster_resource_version"), int)
         or isinstance(gateway.get("cluster_resource_version"), bool)
@@ -3084,6 +3683,8 @@ def _verified_provider_custody(
                 "member_id",
                 "status_url",
                 "host_cidr",
+                "listener_address",
+                "listener_port",
                 "server_certificate_sha256",
                 "iam_principal_id",
                 "instance",
@@ -3091,6 +3692,10 @@ def _verified_provider_custody(
                 "security_rules",
                 "access_permits",
             }
+            or not _is_exact_non_loopback_address(member.get("listener_address"))
+            or not isinstance(member.get("listener_port"), int)
+            or isinstance(member.get("listener_port"), bool)
+            or not 1 <= member["listener_port"] <= 65535
             or (lambda parsed: (
                 parsed.scheme != "https"
                 or not parsed.hostname
@@ -3104,9 +3709,33 @@ def _verified_provider_custody(
         != _json_sha256(provider_inventory)
         or gateway.get("kubernetes_authorization_sha256")
         != _json_sha256(kubernetes_authorization)
+        or gateway.get("provider_authority_census_sha256")
+        != _provider_authority_census_stable_sha256(
+            attestation.get("provider_authority_census", {})
+        )
+        or gateway.get("gateway_runtime_measurements_sha256")
+        != _json_sha256(
+            attestation.get("provider_authority_census", {})
+            .get("snapshot", {})
+            .get("gateway_runtime_measurements", {})
+        )
         or not re.fullmatch(r"[a-f0-9]{64}", str(gateway.get("policy_sha256", "")))
     ):
         raise DeploymentError("provider custody gateway identity is incomplete")
+
+    provider_authority_census_sha256 = _verified_provider_authority_census(
+        attestation=attestation,
+        cluster_id=cluster_id,
+        project_id=project_id,
+        provider_trust_root_sha256=provider_trust_root_sha256,
+        member_ids=[str(member_id) for member_id in member_ids],
+        gateway_members=[
+            member for member in gateway_members if isinstance(member, Mapping)
+        ],
+        freeze_active_from=freeze_active_from,
+        freeze_active_until=freeze_active_until,
+        freeze_transaction_id=str(mutation_freeze["transaction_id"]),
+    )
 
     def provider_collection(
         arguments: Sequence[str], label: str
@@ -3213,10 +3842,6 @@ def _verified_provider_custody(
     service_accounts_by_id = {
         item["metadata"]["id"]: item for item in service_accounts
     }
-    gateway_labels = {
-        "security-boundary": "model-network-provider-custody",
-        "custody-cluster-id": cluster_id,
-    }
     declared_instance_ids = sorted(member["instance"]["id"] for member in gateway_members)
     declared_security_group_ids = sorted(
         member["security_group"]["id"] for member in gateway_members
@@ -3224,38 +3849,45 @@ def _verified_provider_custody(
     declared_principal_ids = sorted(
         member["iam_principal_id"] for member in gateway_members
     )
+    allowed_gateway_addresses = {
+        str(ipaddress.ip_network(cidr, strict=True).network_address)
+        for cidr in gateway["gateway_egress_host_cidrs"]
+    }
     discovered_instance_ids = sorted(
         item["metadata"]["id"]
         for item in instances
-        if all(
-            item.get("metadata", {}).get("labels", {}).get(name) == value
-            for name, value in gateway_labels.items()
+        if any(
+            str(interface.get("public_ip_address", {}).get("address", ""))
+            in allowed_gateway_addresses
+            for interface in item.get("status", {}).get("network_interfaces", [])
+            if isinstance(interface, dict)
+            and isinstance(interface.get("public_ip_address"), dict)
         )
     )
-    discovered_security_group_ids = sorted(
-        item["metadata"]["id"]
-        for item in security_groups
-        if all(
-            item.get("metadata", {}).get("labels", {}).get(name) == value
-            for name, value in gateway_labels.items()
-        )
+    discovered_gateway_addresses = sorted(
+        str(interface.get("public_ip_address", {}).get("address", ""))
+        for item in instances
+        for interface in item.get("status", {}).get("network_interfaces", [])
+        if isinstance(interface, dict)
+        and isinstance(interface.get("public_ip_address"), dict)
+        and str(interface.get("public_ip_address", {}).get("address", ""))
+        in allowed_gateway_addresses
     )
+    discovered_security_group_ids = declared_security_group_ids
     discovered_principal_ids = sorted(
-        item["metadata"]["id"]
-        for item in service_accounts
-        if all(
-            item.get("metadata", {}).get("labels", {}).get(name) == value
-            for name, value in gateway_labels.items()
-        )
+        str(instances_by_id[instance_id].get("spec", {}).get("service_account_id", ""))
+        for instance_id in declared_instance_ids
+        if instance_id in instances_by_id
     )
     if (
         declared_instance_ids != discovered_instance_ids
+        or discovered_gateway_addresses != sorted(allowed_gateway_addresses)
         or declared_security_group_ids != discovered_security_group_ids
         or declared_principal_ids != discovered_principal_ids
         or len(declared_principal_ids) != len(set(declared_principal_ids))
     ):
         raise DeploymentError(
-            "declared gateway members do not equal the complete provider-labeled instance, firewall, and principal inventory"
+            "declared gateway members do not equal every provider instance owning an exact live API-allowlist address"
         )
     security_rule_hashes: dict[str, str] = {}
     access_permit_hashes: dict[str, str] = {}
@@ -3431,7 +4063,7 @@ def _verified_provider_custody(
                 f"provider custody gateway member {member['member_id']} is unavailable"
             ) from exc
         expected_live_status = {
-            "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v2",
+            "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v3",
             "challenge": challenge,
             "cluster_id": cluster_id,
             "policy_id": attestation.get("policy_id"),
@@ -3443,10 +4075,14 @@ def _verified_provider_custody(
             "kubernetes_authorization_sha256": gateway.get(
                 "kubernetes_authorization_sha256"
             ),
+            "provider_authority_census_sha256": provider_authority_census_sha256,
+            "gateway_runtime_measurements_sha256": gateway.get(
+                "gateway_runtime_measurements_sha256"
+            ),
             "gateway_members": gateway_members,
             "cluster_resource_version": gateway.get("cluster_resource_version"),
             "control_plane_allowed_cidrs": gateway.get("gateway_egress_host_cidrs"),
-            "direct_control_plane_access": "provider-firewall-all-external-paths-plus-zero-in-cluster-authority",
+            "direct_control_plane_access": "provider-firewall-exact-hosts-plus-excluded-guard-rbac-closure",
             "principal_bindings": dict(sorted(expected_gateway_principals.items())),
             "mutation_freeze": mutation_freeze,
             "operation_locks": operation_locks,
@@ -3928,6 +4564,16 @@ def model_network_boundary_authority_custody(
         )
         or external_custody.get("kubernetes_authorization_sha256")
         != _json_sha256(provider_attestation.get("kubernetes_authorization", {}))
+        or external_custody.get("provider_authority_census_sha256")
+        != _provider_authority_census_stable_sha256(
+            provider_attestation.get("provider_authority_census", {})
+        )
+        or external_custody.get("gateway_runtime_measurements_sha256")
+        != _json_sha256(
+            provider_attestation.get("provider_authority_census", {})
+            .get("snapshot", {})
+            .get("gateway_runtime_measurements", {})
+        )
         or external_custody.get("gateway_member_ids")
         != [
             member.get("member_id")
@@ -4831,13 +5477,18 @@ def model_network_boundary_authority_custody(
         )
 
     def grants_authority_control_access(item: Mapping[str, Any]) -> bool:
-        """Identify permissions that can invalidate the external freeze.
+        """Identify direct authority over admission objects VAP cannot protect.
 
-        The public provider gateway cannot govern calls made with an in-cluster
-        bearer token to kubernetes.default.svc.  Global custody therefore
-        requires every binding of these permissions to resolve only to one of
-        the six external X.509 users; Group and ServiceAccount subjects fail
-        closed even when they are present in the broader privileged census.
+        The exhaustive privileged census above deliberately continues to
+        include ordinary workload, Service, Endpoint, Secret and controller
+        reconciliation authority.  Those grants cannot be rejected without
+        disabling Kubernetes itself.  Receipt-bound namespaced objects are
+        instead selected by the fail-closed static-custody VAP.  This narrower
+        set contains only direct mutation authority over the five excluded
+        admission objects: Kubernetes does not send VAPs, VAP bindings, or
+        validating-webhook configurations through their own admission path.
+        An unqualified or wildcard resourceNames grant is conservatively
+        treated as authority over every excluded object.
         """
 
         rules = item.get("rules", [])
@@ -4851,33 +5502,17 @@ def model_network_boundary_authority_custody(
             "deletecollection",
             "*",
         }
-        frozen_resources = {
-            "": {
-                "configmaps",
-                "endpoints",
-                "pods",
-                "replicationcontrollers",
-                "secrets",
-                "serviceaccounts",
-                "services",
+        excluded_guard_names = {
+            "validatingadmissionpolicies": {
+                "fs2-model-network-static-custody",
+                "fs2-model-network-impersonation-guard",
             },
-            "apps": {"daemonsets", "deployments", "replicasets", "statefulsets"},
-            "batch": {"cronjobs", "jobs"},
-            "jobset.x-k8s.io": {"jobsets"},
-            "coordination.k8s.io": {"leases"},
-            "networking.k8s.io": {"networkpolicies"},
-            "policy": {"poddisruptionbudgets"},
-            "cert-manager.io": {"certificates", "issuers"},
-            "admissionregistration.k8s.io": {
-                "validatingadmissionpolicies",
-                "validatingadmissionpolicybindings",
-                "validatingwebhookconfigurations",
+            "validatingadmissionpolicybindings": {
+                "fs2-model-network-static-custody-binding",
+                "fs2-model-network-impersonation-guard-binding",
             },
-            "rbac.authorization.k8s.io": {
-                "roles",
-                "rolebindings",
-                "clusterroles",
-                "clusterrolebindings",
+            "validatingwebhookconfigurations": {
+                "fs2-model-network-boundary",
             },
         }
         for rule in rules:
@@ -4891,40 +5526,20 @@ def model_network_boundary_authority_custody(
             verbs = set(rule["verbs"])
             resources = set(rule["resources"])
             groups = set(rule["apiGroups"])
-            if verbs.intersection(
-                {"impersonate", "bind", "escalate", "approve", "sign", "*"}
+            resource_names = rule.get("resourceNames")
+            if not verbs.intersection(mutating_verbs) or not (
+                "admissionregistration.k8s.io" in groups or "*" in groups
             ):
-                return True
-            if verbs.intersection(mutating_verbs) and any(
-                (group in groups or "*" in groups)
-                and (bool(resource_names.intersection(resources)) or "*" in resources)
-                for group, resource_names in frozen_resources.items()
-            ):
-                return True
-            if verbs.intersection(
-                {"create", "get", "list", "watch", "update", "patch", "*"}
-            ) and (
-                (
-                    ("" in groups or "*" in groups)
-                    and bool(
-                        {"serviceaccounts/token", "secrets", "*"}.intersection(
-                            resources
-                        )
-                    )
-                )
-                or (
-                    ("certificates.k8s.io" in groups or "*" in groups)
-                    and bool(
-                        {
-                            "certificatesigningrequests",
-                            "certificatesigningrequests/approval",
-                            "signers",
-                            "*",
-                        }.intersection(resources)
-                    )
-                )
-            ):
-                return True
+                continue
+            for resource, protected_names in excluded_guard_names.items():
+                if resource not in resources and "*" not in resources:
+                    continue
+                if not isinstance(resource_names, list) or not resource_names:
+                    return True
+                if "*" in resource_names or protected_names.intersection(
+                    str(name) for name in resource_names
+                ):
+                    return True
         return False
 
     def binding_subjects(item: Mapping[str, Any]) -> list[dict[str, str]]:
@@ -4986,7 +5601,7 @@ def model_network_boundary_authority_custody(
         or authority_roles != census_claim.get("authority_control_roles")
     ):
         raise DeploymentError(
-            "the signed admission/RBAC/credential authority census is incomplete"
+            "the signed excluded-admission-guard authority census is incomplete"
         )
     bound_privileged_roles: list[str] = []
     privileged_bindings: list[dict[str, Any]] = []
@@ -5116,7 +5731,7 @@ def model_network_boundary_authority_custody(
         )
     ):
         raise DeploymentError(
-            "an in-cluster principal retains frozen-object, admission, RBAC, credential-mint, or impersonation authority during the provider freeze"
+            "an in-cluster principal retains direct mutation authority over an admission object excluded from self-admission"
         )
 
     static_binding = next(
@@ -6167,6 +6782,20 @@ def apply_stack(
                 or _json_sha256(attestation.get("kubernetes_authorization", {}))
                 != expected_external_custody.get(
                     "kubernetes_authorization_sha256"
+                )
+                or _provider_authority_census_stable_sha256(
+                    attestation.get("provider_authority_census", {})
+                )
+                != expected_external_custody.get(
+                    "provider_authority_census_sha256"
+                )
+                or _json_sha256(
+                    attestation.get("provider_authority_census", {})
+                    .get("snapshot", {})
+                    .get("gateway_runtime_measurements", {})
+                )
+                != expected_external_custody.get(
+                    "gateway_runtime_measurements_sha256"
                 )
             ):
                 raise DeploymentError(

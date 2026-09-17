@@ -24,7 +24,9 @@ themselves:
   update-only, selects protected labels from old **or** new objects, and admits
   repair only from external custodian/recovery identities. cert-manager may
   rotate only two exact labeled TLS Secrets and exact status subresources. No
-  in-cluster cainjector may mutate the VWC.
+  in-cluster cainjector may mutate the VWC. The exact scientific-writer
+  ServiceAccount and run-scoped JobSet-controller Deployment are selected by
+  immutable identity even if an old object predates the authority label.
 - `fs2-model-network-impersonation-guard` prevents new grants for
   impersonation, RBAC bind/escalate, CSR approve/sign, ServiceAccount token,
   Secret, or other credential-mint authority, and rejects new principals or
@@ -34,13 +36,17 @@ themselves:
 
 Before installation, the external gateway implementation in
 `components/control-plane/provider-custody/` must run on at least two
-provider-owned hosts behind its mTLS NGINX boundary. Those hosts' exact sorted
+provider-owned hosts and terminate mutual TLS in the measured gateway process.
+No client-certificate HTTP header or front proxy is trusted. Those hosts' exact sorted
 `/32` or `/128` egress routes must be the complete managed-cluster public API
 allowlist. Its digest-pinned policy denies mutation of the signed full
 inventory before kube-apiserver and rejects unresolvable or collection-wide
-writes. The provider/IAM v3 assertion binds the live policy digest, gateway,
+writes. The provider/IAM v5 assertion binds the live policy digest, gateway,
 firewall and endpoint-access resource IDs, cluster resourceVersion, host
-routes, six certificate principals, and status-challenge response. The
+routes, six certificate principals, provider-native project-to-organization
+IAM/mutation-authority observations, a self-protecting provider freeze over
+exact resources plus inherited-scope grant collections, exact gateway instance/
+runtime/process/non-loopback-listener measurements, and status-challenge response. The
 in-cluster objects remain defense in depth and detective equality, never a
 self-custody claim.
 
@@ -53,7 +59,7 @@ the transaction ID, expiry, and resource-set digest. This makes the two reads
 and immediate pre-apply revalidation one externally serialized snapshot rather
 than a cooperative in-cluster convention.
 
-The signed authority v3 receipt must be no more than 15 minutes old. It binds every
+The signed authority v4 receipt must be no more than 15 minutes old. It binds every
 protected object's UID, resourceVersion and complete semantic hash; the full
 Role/ClusterRole and binding census; every role able to mint identity, read
 Secrets, read or mutate workloads, or use exec/attach/port-forward paths and

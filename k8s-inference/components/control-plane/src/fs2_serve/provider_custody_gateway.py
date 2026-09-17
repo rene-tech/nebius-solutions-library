@@ -2,17 +2,19 @@
 
 This process is deployed on provider-owned hosts, outside the Kubernetes
 cluster.  The provider firewall makes the complete member set the cluster
-API's only external callers.  A fronting mTLS proxy verifies client certificates,
-removes all inbound identity/impersonation headers, and supplies only the
-certificate SHA-256 header on this loopback-only ASGI listener.
+API's only external callers.  The gateway process terminates mutual TLS itself;
+the HTTP protocol adapter derives the client-certificate SHA-256 directly from
+the verified TLS session and places it in per-connection ASGI state.  No HTTP
+header is accepted as identity.
 
 The gateway is deliberately not a Kubernetes admission controller and cannot
 govern in-cluster calls to kubernetes.default.svc.  It denies
 mutations to the complete frozen inventory before they reach kube-apiserver and
 admits only resourceVersion-CAS PATCH requests to the two retained
-operation Leases from their distinct provider principals.  Global custody is
-claimed only when the verifier also proves that no Group or ServiceAccount has
-RBAC authority to mutate the boundary during the same freeze.
+operation Leases from their distinct provider principals. Receipt-bound
+namespaced objects remain protected by exact-object API-server admission;
+only direct RBAC authority over admission objects excluded from self-admission
+must have no in-cluster subject.
 """
 
 from __future__ import annotations
@@ -30,9 +32,7 @@ from typing import Any
 from urllib.parse import unquote
 
 import httpx
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 _CERTIFICATE_SHA256 = re.compile(r"^[a-f0-9]{64}$")
@@ -125,7 +125,7 @@ class GatewayPolicy:
         except json.JSONDecodeError as exc:
             raise ProviderCustodyError("provider custody policy is not JSON") from exc
         if not isinstance(value, Mapping) or value.get("schema") != (
-            "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v2"
+            "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v3"
         ):
             raise ProviderCustodyError("provider custody policy schema is not exact")
         if (
@@ -140,6 +140,8 @@ class GatewayPolicy:
                 "gateway_members",
                 "provider_inventory_sha256",
                 "kubernetes_authorization_sha256",
+                "provider_authority_census_sha256",
+                "gateway_runtime_measurements_sha256",
                 "cluster_resource_version",
                 "control_plane_allowed_cidrs",
                 "principals",
@@ -155,7 +157,7 @@ class GatewayPolicy:
         ):
             raise ProviderCustodyError("provider custody policy identity is not exact")
         if value.get("direct_control_plane_access") != (
-            "provider-firewall-all-external-paths-plus-zero-in-cluster-authority"
+            "provider-firewall-exact-hosts-plus-excluded-guard-rbac-closure"
         ):
             raise ProviderCustodyError("provider custody policy does not close direct API access")
         upstream_api_url = value.get("upstream_api_url")
@@ -168,12 +170,24 @@ class GatewayPolicy:
         kubernetes_authorization_sha256 = value.get(
             "kubernetes_authorization_sha256"
         )
+        provider_authority_census_sha256 = value.get(
+            "provider_authority_census_sha256"
+        )
+        gateway_runtime_measurements_sha256 = value.get(
+            "gateway_runtime_measurements_sha256"
+        )
         raw_members = value.get("gateway_members")
         if (
             not isinstance(provider_inventory_sha256, str)
             or _CERTIFICATE_SHA256.fullmatch(provider_inventory_sha256) is None
             or not isinstance(kubernetes_authorization_sha256, str)
             or _CERTIFICATE_SHA256.fullmatch(kubernetes_authorization_sha256)
+            is None
+            or not isinstance(provider_authority_census_sha256, str)
+            or _CERTIFICATE_SHA256.fullmatch(provider_authority_census_sha256)
+            is None
+            or not isinstance(gateway_runtime_measurements_sha256, str)
+            or _CERTIFICATE_SHA256.fullmatch(gateway_runtime_measurements_sha256)
             is None
             or not isinstance(raw_members, list)
             or not 2 <= len(raw_members) <= 8
@@ -188,6 +202,8 @@ class GatewayPolicy:
                 "member_id",
                 "status_url",
                 "host_cidr",
+                "listener_address",
+                "listener_port",
                 "server_certificate_sha256",
                 "iam_principal_id",
                 "instance",
@@ -199,6 +215,11 @@ class GatewayPolicy:
             member_id = member.get("member_id")
             status_url = member.get("status_url")
             host_cidr = member.get("host_cidr")
+            listener_address = member.get("listener_address")
+            try:
+                listener_ip = ipaddress.ip_address(str(listener_address))
+            except ValueError:
+                listener_ip = None
             provider_objects = [
                 member.get("instance"),
                 member.get("security_group"),
@@ -211,6 +232,13 @@ class GatewayPolicy:
                 or not isinstance(status_url, str)
                 or re.fullmatch(r"https://[^/?#]+/v1/custody/status", status_url) is None
                 or not _is_exact_host_route(host_cidr)
+                or listener_ip is None
+                or listener_ip.is_loopback
+                or listener_ip.is_unspecified
+                or listener_ip.is_multicast
+                or not isinstance(member.get("listener_port"), int)
+                or isinstance(member.get("listener_port"), bool)
+                or not 1 <= member["listener_port"] <= 65535
                 or not isinstance(member.get("server_certificate_sha256"), str)
                 or _CERTIFICATE_SHA256.fullmatch(member["server_certificate_sha256"])
                 is None
@@ -449,16 +477,12 @@ class ProviderCustodyGateway:
         if self._owns_client:
             await self.client.aclose()
 
-    def principal(self, escaped_certificate: str | None) -> Principal:
-        if escaped_certificate is None:
+    def principal(self, certificate_sha256: object) -> Principal:
+        if (
+            not isinstance(certificate_sha256, str)
+            or _CERTIFICATE_SHA256.fullmatch(certificate_sha256) is None
+        ):
             raise ProviderCustodyError("provider mTLS client identity is absent")
-        try:
-            certificate = x509.load_pem_x509_certificate(
-                unquote(escaped_certificate).encode("ascii")
-            )
-            certificate_sha256 = certificate.fingerprint(hashes.SHA256()).hex()
-        except (ValueError, UnicodeError) as exc:
-            raise ProviderCustodyError("provider mTLS client certificate is malformed") from exc
         principal = self.policy.principals.get(certificate_sha256)
         if principal is None:
             raise ProviderCustodyError("provider mTLS client identity is not authorized")
@@ -474,7 +498,7 @@ class ProviderCustodyGateway:
         ):
             raise ProviderCustodyError("provider custody status request is unauthorized")
         return {
-            "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v2",
+            "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v3",
             "challenge": challenge,
             "cluster_id": self.policy.value["cluster_id"],
             "policy_id": self.policy.value["policy_id"],
@@ -487,6 +511,12 @@ class ProviderCustodyGateway:
             ],
             "kubernetes_authorization_sha256": self.policy.value[
                 "kubernetes_authorization_sha256"
+            ],
+            "provider_authority_census_sha256": self.policy.value[
+                "provider_authority_census_sha256"
+            ],
+            "gateway_runtime_measurements_sha256": self.policy.value[
+                "gateway_runtime_measurements_sha256"
             ],
             "gateway_members": self.policy.value["gateway_members"],
             "cluster_resource_version": self.policy.value[
@@ -698,11 +728,10 @@ def create_provider_custody_app(gateway: ProviderCustodyGateway) -> FastAPI:
         await gateway.close()
 
     @app.post("/v1/custody/status")
-    async def status(
-        request: Request,
-        x_fs2_provider_client_certificate: str | None = Header(default=None),
-    ) -> JSONResponse:
-        principal = gateway.principal(x_fs2_provider_client_certificate)
+    async def status(request: Request) -> JSONResponse:
+        principal = gateway.principal(
+            getattr(request.state, "fs2_provider_client_certificate_sha256", None)
+        )
         try:
             body = await request.json()
         except (ValueError, json.JSONDecodeError) as exc:
@@ -715,9 +744,10 @@ def create_provider_custody_app(gateway: ProviderCustodyGateway) -> FastAPI:
     async def proxy(
         path: str,
         request: Request,
-        x_fs2_provider_client_certificate: str | None = Header(default=None),
     ) -> Response:
-        principal = gateway.principal(x_fs2_provider_client_certificate)
+        principal = gateway.principal(
+            getattr(request.state, "fs2_provider_client_certificate_sha256", None)
+        )
         body = await request.body()
         if len(body) > 16 * 1024 * 1024:
             raise ProviderCustodyError("provider gateway request body exceeds 16 MiB")

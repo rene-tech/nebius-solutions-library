@@ -1,18 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fs2-serve.nebius.ai/schema/model-network-boundary-provider-custody/v4",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-boundary-provider-custody/v5",
   "title": "Provider-issued model-network boundary custody snapshot",
   "type": "object",
   "required": [
     "schema", "cluster_id", "policy_id", "policy_revision", "observed_at",
-    "expires_at", "provider_trust_domain", "project_id", "provider_enumeration", "kubernetes_authorization", "credentials",
+    "expires_at", "provider_trust_domain", "project_id", "provider_enumeration", "provider_authority_census", "kubernetes_authorization", "credentials",
     "exclusive_break_glass_principals", "protected_kubernetes_resources",
     "preventive_controls", "mutation_freeze", "operation_locks", "provider_gateway",
     "authorized_privileged_bindings", "authorized_authority_control_bindings", "release_inventory_sha256",
     "payload_sha256"
   ],
   "properties": {
-    "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v4"},
+    "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v5"},
     "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
     "policy_id": {"type": "string", "minLength": 1, "maxLength": 253},
     "policy_revision": {"type": "string", "minLength": 1, "maxLength": 253},
@@ -35,6 +35,7 @@
       },
       "additionalProperties": false
     },
+    "provider_authority_census": {"$ref": "#/$defs/providerAuthorityCensus"},
     "kubernetes_authorization": {
       "type": "object",
       "required": ["source_cluster_sha256", "authorizers", "anonymous_authentication_enabled", "static_token_authentication_enabled", "legacy_abac_enabled", "service_account_issuer", "service_account_signing_key_sha256", "privileged_client_certificate_sha256"],
@@ -127,11 +128,11 @@
     },
     "provider_gateway": {
       "type": "object",
-      "required": ["api_server_url", "policy_sha256", "direct_control_plane_access", "cluster_id", "cluster_resource_version", "gateway_egress_host_cidrs", "members", "provider_inventory_sha256", "kubernetes_authorization_sha256"],
+      "required": ["api_server_url", "policy_sha256", "direct_control_plane_access", "cluster_id", "cluster_resource_version", "gateway_egress_host_cidrs", "members", "provider_inventory_sha256", "kubernetes_authorization_sha256", "provider_authority_census_sha256", "gateway_runtime_measurements_sha256"],
       "properties": {
         "api_server_url": {"type": "string", "pattern": "^https://[^/?#]+(?::[0-9]{1,5})?$"},
         "policy_sha256": {"$ref": "#/$defs/sha256"},
-        "direct_control_plane_access": {"const": "provider-firewall-all-external-paths-plus-zero-in-cluster-authority"},
+        "direct_control_plane_access": {"const": "provider-firewall-exact-hosts-plus-excluded-guard-rbac-closure"},
         "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
         "cluster_resource_version": {"type": "integer", "minimum": 0},
         "gateway_egress_host_cidrs": {
@@ -143,7 +144,9 @@
           "items": {"$ref": "#/$defs/gatewayMember"}
         },
         "provider_inventory_sha256": {"$ref": "#/$defs/sha256"},
-        "kubernetes_authorization_sha256": {"$ref": "#/$defs/sha256"}
+        "kubernetes_authorization_sha256": {"$ref": "#/$defs/sha256"},
+        "provider_authority_census_sha256": {"$ref": "#/$defs/sha256"},
+        "gateway_runtime_measurements_sha256": {"$ref": "#/$defs/sha256"}
       },
       "additionalProperties": false
     },
@@ -231,13 +234,165 @@
       },
       "additionalProperties": false
     },
+    "providerAuthorityCensus": {
+      "type": "object",
+      "required": ["schema", "exporter", "snapshot", "snapshot_sha256"],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/provider-control-plane-authority-census/v1"},
+        "exporter": {
+          "type": "object",
+          "required": ["sha256", "source_commit", "source_tree", "provenance_sha256"],
+          "properties": {
+            "sha256": {"$ref": "#/$defs/sha256"},
+            "source_commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+            "source_tree": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+            "provenance_sha256": {"$ref": "#/$defs/sha256"}
+          },
+          "additionalProperties": false
+        },
+        "snapshot": {
+          "type": "object",
+          "required": ["source", "provider_api_endpoint", "authority_api_server_certificate_sha256", "completeness_token", "project_id", "cluster_id", "scope_chain", "identity_collections", "access_permits_sha256", "control_plane_mutation_authorities", "provider_mutation_freeze", "gateway_runtime_measurements", "signing_material"],
+          "properties": {
+            "source": {"const": "nebius-provider-authority-export/v1"},
+            "provider_api_endpoint": {"type": "string", "pattern": "^https://[^\\s/?#]+(?:/[^\\s?#]*)?$"},
+            "authority_api_server_certificate_sha256": {"$ref": "#/$defs/sha256"},
+            "completeness_token": {
+              "type": "object",
+              "required": ["scope_root_id", "resource_version", "provider_response_sha256", "effective_iam_inheritance_included", "all_mutation_authorities_included", "all_gateway_network_paths_included"],
+              "properties": {
+                "scope_root_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                "resource_version": {"type": "integer", "minimum": 0},
+                "provider_response_sha256": {"$ref": "#/$defs/sha256"},
+                "effective_iam_inheritance_included": {"const": true},
+                "all_mutation_authorities_included": {"const": true},
+                "all_gateway_network_paths_included": {"const": true}
+              },
+              "additionalProperties": false
+            },
+            "project_id": {"type": "string", "pattern": "^project-[a-z0-9]+$"},
+            "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
+            "scope_chain": {
+              "type": "array", "minItems": 2, "maxItems": 16,
+              "items": {
+                "type": "object",
+                "required": ["kind", "id", "parent_id", "resource_version", "semantic_sha256"],
+                "properties": {
+                  "kind": {"enum": ["project", "folder", "organization"]},
+                  "id": {"type": "string", "minLength": 1, "maxLength": 253},
+                  "parent_id": {"type": "string", "maxLength": 253},
+                  "resource_version": {"type": "integer", "minimum": 0},
+                  "semantic_sha256": {"$ref": "#/$defs/sha256"}
+                },
+                "additionalProperties": false
+              }
+            },
+            "identity_collections": {
+              "type": "array", "minItems": 2, "maxItems": 16,
+              "items": {
+                "type": "object",
+                "required": ["scope_id", "service_accounts_sha256", "groups_sha256", "users_sha256"],
+                "properties": {
+                  "scope_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                  "service_accounts_sha256": {"$ref": "#/$defs/sha256"},
+                  "groups_sha256": {"$ref": "#/$defs/sha256"},
+                  "users_sha256": {"$ref": "#/$defs/sha256"}
+                },
+                "additionalProperties": false
+              }
+            },
+            "access_permits_sha256": {"type": "object", "minProperties": 1, "maxProperties": 16384, "additionalProperties": {"$ref": "#/$defs/sha256"}},
+            "control_plane_mutation_authorities": {
+              "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "required": ["principal_id", "principal_kind", "source_scope_id", "role_id", "access_permit_id", "protected_provider_resources", "semantic_sha256"],
+                "properties": {
+                  "principal_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                  "principal_kind": {"enum": ["service-account", "user", "group", "federated-principal"]},
+                  "source_scope_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                  "role_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                  "access_permit_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                  "protected_provider_resources": {"type": "array", "minItems": 1, "maxItems": 128, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+                  "semantic_sha256": {"$ref": "#/$defs/sha256"}
+                },
+                "additionalProperties": false
+              }
+            },
+            "provider_mutation_freeze": {
+              "type": "object",
+              "required": ["transaction_id", "resource_id", "resource_version", "semantic_sha256", "enforcement", "allowed_principal_ids", "protected_provider_resources", "protected_provider_resource_prefixes", "self_protection", "active_from", "active_until"],
+              "properties": {
+                "transaction_id": {"type": "string", "pattern": "^[a-z][a-z0-9]{5,31}:[1-9][0-9]*:[a-f0-9]{32}$"},
+                "resource_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                "resource_version": {"type": "integer", "minimum": 0},
+                "semantic_sha256": {"$ref": "#/$defs/sha256"},
+                "enforcement": {"const": "provider-control-plane-deny-all-exact-resources-and-scope-collections"},
+                "allowed_principal_ids": {"const": []},
+                "protected_provider_resources": {"type": "array", "minItems": 8, "maxItems": 512, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+                "protected_provider_resource_prefixes": {"type": "array", "minItems": 8, "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+                "self_protection": {"const": "provider-native-immutable-until-active-until"},
+                "active_from": {"type": "string", "format": "date-time"},
+                "active_until": {"type": "string", "format": "date-time"}
+              },
+              "additionalProperties": false
+            },
+            "gateway_runtime_measurements": {
+              "type": "object", "minProperties": 2, "maxProperties": 8,
+              "additionalProperties": {
+                "type": "object",
+                "required": ["instance_id", "measurement_resource_id", "measurement_resource_version", "release_artifact_sha256", "entrypoint_sha256", "systemd_unit_sha256", "environment_sha256", "boot_image_id", "boot_image_sha256", "process_uid", "process_executable_sha256", "process_cmdline_sha256", "listener_address", "listener_port", "listener_transport", "listener_sha256", "provider_attestation_sha256", "front_proxy_enabled", "tls_termination"],
+                "properties": {
+                  "instance_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                  "measurement_resource_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                  "measurement_resource_version": {"type": "integer", "minimum": 0},
+                  "release_artifact_sha256": {"$ref": "#/$defs/sha256"},
+                  "entrypoint_sha256": {"$ref": "#/$defs/sha256"},
+                  "systemd_unit_sha256": {"$ref": "#/$defs/sha256"},
+                  "environment_sha256": {"$ref": "#/$defs/sha256"},
+                  "boot_image_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                  "boot_image_sha256": {"$ref": "#/$defs/sha256"},
+                  "process_uid": {"type": "integer", "minimum": 1},
+                  "process_executable_sha256": {"$ref": "#/$defs/sha256"},
+                  "process_cmdline_sha256": {"$ref": "#/$defs/sha256"},
+                  "listener_address": {"type": "string", "minLength": 2, "maxLength": 45},
+                  "listener_port": {"type": "integer", "minimum": 1, "maximum": 65535},
+                  "listener_transport": {"const": "tcp"},
+                  "listener_sha256": {"$ref": "#/$defs/sha256"},
+                  "provider_attestation_sha256": {"$ref": "#/$defs/sha256"},
+                  "front_proxy_enabled": {"const": false},
+                  "tls_termination": {"const": "in-process-mutual-tls-1.3"}
+                },
+                "additionalProperties": false
+              }
+            },
+            "signing_material": {
+              "type": "object",
+              "required": ["resource_id", "resource_version", "semantic_sha256", "public_key_sha256"],
+              "properties": {
+                "resource_id": {"type": "string", "minLength": 1, "maxLength": 253},
+                "resource_version": {"type": "integer", "minimum": 0},
+                "semantic_sha256": {"$ref": "#/$defs/sha256"},
+                "public_key_sha256": {"$ref": "#/$defs/sha256"}
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "snapshot_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
     "gatewayMember": {
       "type": "object",
-      "required": ["member_id", "status_url", "host_cidr", "server_certificate_sha256", "iam_principal_id", "instance", "security_group", "security_rules", "access_permits"],
+      "required": ["member_id", "status_url", "host_cidr", "listener_address", "listener_port", "server_certificate_sha256", "iam_principal_id", "instance", "security_group", "security_rules", "access_permits"],
       "properties": {
         "member_id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
         "status_url": {"type": "string", "pattern": "^https://[^/?#]+/v1/custody/status$"},
         "host_cidr": {"type": "string", "pattern": "^((([0-9]{1,3}\\.){3}[0-9]{1,3})/32|([0-9A-Fa-f:]+)/128)$"},
+        "listener_address": {"type": "string", "minLength": 2, "maxLength": 45},
+        "listener_port": {"type": "integer", "minimum": 1, "maximum": 65535},
         "server_certificate_sha256": {"$ref": "#/$defs/sha256"},
         "iam_principal_id": {"type": "string", "minLength": 1, "maxLength": 253},
         "instance": {"$ref": "#/$defs/providerObject"},

@@ -59,6 +59,8 @@ locals {
       member_id                 = member_id
       status_url                = var.model_network_provider_gateway_members[member_id].status_url
       host_cidr                 = var.model_network_provider_gateway_members[member_id].host_cidr
+      listener_address          = var.model_network_provider_gateway_members[member_id].listener_address
+      listener_port             = var.model_network_provider_gateway_members[member_id].listener_port
       server_certificate_sha256 = var.model_network_provider_gateway_members[member_id].server_certificate_sha256
       iam_principal_id           = var.model_network_provider_gateway_members[member_id].iam_principal_id
       instance = {

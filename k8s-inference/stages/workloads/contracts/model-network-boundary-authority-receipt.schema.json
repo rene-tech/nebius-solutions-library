@@ -113,9 +113,9 @@
     },
     "external_custody": {
       "type": "object",
-      "required": ["schema", "policy_id", "policy_revision", "provider_trust_root_sha256", "attestation_sha256", "stable_policy_sha256", "gateway_policy_sha256", "provider_inventory_sha256", "kubernetes_authorization_sha256", "gateway_member_ids", "cluster_resource_version", "gateway_egress_host_cidrs", "freeze_transaction_id", "freeze_expires_at", "frozen_resources_sha256"],
+      "required": ["schema", "policy_id", "policy_revision", "provider_trust_root_sha256", "attestation_sha256", "stable_policy_sha256", "gateway_policy_sha256", "provider_inventory_sha256", "kubernetes_authorization_sha256", "provider_authority_census_sha256", "gateway_runtime_measurements_sha256", "gateway_member_ids", "cluster_resource_version", "gateway_egress_host_cidrs", "freeze_transaction_id", "freeze_expires_at", "frozen_resources_sha256"],
       "properties": {
-        "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v4"},
+        "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v5"},
         "policy_id": {"type": "string", "minLength": 1, "maxLength": 253},
         "policy_revision": {"type": "string", "minLength": 1, "maxLength": 253},
         "provider_trust_root_sha256": {"$ref": "#/$defs/sha256"},
@@ -124,6 +124,8 @@
         "gateway_policy_sha256": {"$ref": "#/$defs/sha256"},
         "provider_inventory_sha256": {"$ref": "#/$defs/sha256"},
         "kubernetes_authorization_sha256": {"$ref": "#/$defs/sha256"},
+        "provider_authority_census_sha256": {"$ref": "#/$defs/sha256"},
+        "gateway_runtime_measurements_sha256": {"$ref": "#/$defs/sha256"},
         "gateway_member_ids": {
           "type": "array", "minItems": 2, "maxItems": 8, "uniqueItems": true,
           "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"}

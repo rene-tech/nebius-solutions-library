@@ -25,6 +25,34 @@ FROZEN_POLICY = (
 )
 
 
+def test_gateway_identity_is_a_verified_transport_digest_not_an_http_header() -> None:
+    entrypoint = (
+        Path(__file__).parents[1]
+        / "src/fs2_serve/provider_custody_entrypoint.py"
+    ).read_text()
+    gateway_source = (
+        Path(__file__).parents[1] / "src/fs2_serve/provider_custody_gateway.py"
+    ).read_text()
+    exporter_source = (
+        Path(__file__).parents[1] / "src/fs2_serve/provider_authority_exporter.py"
+    ).read_text()
+
+    assert 'get_extra_info("ssl_object")' in entrypoint
+    assert "getpeercert(binary_form=True)" in entrypoint
+    assert "ssl_cert_reqs=ssl.CERT_REQUIRED" in entrypoint
+    assert "ssl.TLSVersion.TLSv1_3" in entrypoint
+    assert 'policy.member["listener_address"]' in entrypoint
+    assert 'policy.member["listener_port"]' in entrypoint
+    assert "x_fs2_provider_client_certificate" not in gateway_source
+    assert "Header(" not in gateway_source
+    assert "FS2_PROVIDER_AUTHORITY_API_SERVER_CERT_SHA256" in exporter_source
+    assert "http.client.HTTPSConnection" in exporter_source
+    assert "connection.sock.getpeercert(binary_form=True)" in exporter_source
+    assert "connection.request(" in exporter_source
+    assert "ssl.TLSVersion.TLSv1_3" in exporter_source
+    assert "provider-control-plane-authority-observation/v1" in exporter_source
+
+
 class StubClient:
     def __init__(self) -> None:
         self.requests: list[tuple[str, str, bytes, object]] = []
@@ -56,18 +84,20 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProviderCu
         for index in range(1, 7)
     }
     value: dict[str, Any] = {
-        "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v2",
+        "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v3",
         "cluster_id": "mk8scluster-test",
         "policy_id": "network-boundary-test",
         "policy_revision": "1",
         "cluster_resource_version": 7,
         "upstream_api_url": "https://cluster.example.test",
         "direct_control_plane_access": (
-            "provider-firewall-all-external-paths-plus-zero-in-cluster-authority"
+            "provider-firewall-exact-hosts-plus-excluded-guard-rbac-closure"
         ),
         "gateway_members": [],
         "provider_inventory_sha256": "7" * 64,
         "kubernetes_authorization_sha256": "8" * 64,
+        "provider_authority_census_sha256": "4" * 64,
+        "gateway_runtime_measurements_sha256": "5" * 64,
         "control_plane_allowed_cidrs": ["192.0.2.10/32", "192.0.2.11/32"],
         "principals": {},
         "mutation_freeze": {
@@ -88,6 +118,8 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProviderCu
         "member_id": "gateway-a",
         "status_url": "https://192.0.2.10/v1/custody/status",
         "host_cidr": "192.0.2.10/32",
+        "listener_address": "10.0.0.10",
+        "listener_port": 8443,
         "server_certificate_sha256": "9" * 64,
         "iam_principal_id": "serviceaccount-gateway-a",
         "instance": {"id": "instance-a", "resource_version": 1, "semantic_sha256": "a" * 64},
@@ -102,6 +134,8 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProviderCu
             "member_id": "gateway-b",
             "status_url": "https://192.0.2.11/v1/custody/status",
             "host_cidr": "192.0.2.11/32",
+            "listener_address": "10.0.0.11",
+            "listener_port": 8443,
             "server_certificate_sha256": "e" * 64,
             "iam_principal_id": "serviceaccount-gateway-b",
             "instance": {"id": "instance-b", "resource_version": 1, "semantic_sha256": "f" * 64},
