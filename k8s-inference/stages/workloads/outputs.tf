@@ -414,6 +414,8 @@ output "managed_resource_count" {
     # Profile-independent identity, credential, database, queue, control-plane,
     # and Grafana egress addresses. Profile-shaped collections stay explicit.
     47 +
+    # SAI-20 adds one Terraform-owned fs2-data database ingress policy.
+    1 +
     (local.ngc_api_key_required ? 1 : 0) +
     (local.model_nvcr_credentials_required ? 1 : 0) +
     (local.dcgm_nvcr_credentials_required ? 1 : 0) +

@@ -25,6 +25,9 @@ resource "kubernetes_manifest" "control_database" {
       name      = "fs2-control-db"
       namespace = "fs2-data"
       labels    = local.common_labels
+      annotations = {
+        "fs2.nebius.ai/ingress-network-policy" = kubernetes_network_policy_v1.control_database_ingress.metadata[0].name
+      }
     }
     spec = {
       instances = var.deployment_profile == "full_catalog" ? 3 : 1

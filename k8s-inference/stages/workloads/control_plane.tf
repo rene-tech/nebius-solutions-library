@@ -236,6 +236,7 @@ resource "helm_release" "control_plane" {
   values = [
     file("${local.fs2_root}/charts/control-plane/control-plane.values.yaml"),
     yamlencode(local.control_plane_overrides),
+    yamlencode(local.sai20_control_plane_network_policy_overrides),
     yamlencode(local.admin_control_plane_overrides),
     yamlencode(local.bootstrap_access_overrides),
     yamlencode(local.scientific_access_overrides),
@@ -273,6 +274,7 @@ resource "helm_release" "control_plane" {
 
   depends_on = [
     kubernetes_manifest.model_deployment_crd,
+    kubernetes_network_policy_v1.control_database_ingress,
     kubernetes_manifest.control_database,
     kubernetes_secret_v1.database_consumer,
     kubernetes_secret_v1.grafana_datasource,
