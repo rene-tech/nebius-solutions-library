@@ -1348,7 +1348,17 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         headers: object,
         newurl: str,
     ) -> None:
-        return None
+        # Raise here rather than returning ``None`` and relying on the opener's
+        # later error-handler fallback.  No redirected Request is constructed,
+        # so neither ordinary headers nor future credential-bearing headers can
+        # be copied to an unreviewed authority.
+        raise urllib.error.HTTPError(
+            req.full_url,
+            code,
+            "source download redirects are forbidden",
+            headers,
+            fp,
+        )
 
 
 def fetch_source(destination: Path, contract: LocalizationContract, *, timeout_seconds: float = 900.0) -> Path:
@@ -1362,7 +1372,12 @@ def fetch_source(destination: Path, contract: LocalizationContract, *, timeout_s
         source_url = urllib.parse.urlsplit(contract.source.source_uri)
     except ValueError as error:
         raise ArtifactLocalizationError("source_uri must be a well-formed https URL") from error
-    if source_url.scheme != "https" or source_url.hostname is None:
+    if (
+        source_url.scheme != "https"
+        or source_url.hostname is None
+        or source_url.username is not None
+        or source_url.password is not None
+    ):
         raise ArtifactLocalizationError("source_uri must be https")
     destination.parent.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256()

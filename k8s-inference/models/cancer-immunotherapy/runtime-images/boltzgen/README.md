@@ -25,6 +25,11 @@ adapter source, cluster identity, and the explicit B300 prohibition.  The
 checkpoint localization receipt records which predecessor bytes were reused
 and the content-addressed publication result.
 
+The injected checkpoint localizer opens only the HTTPS mirror URI formed from
+the pinned revision and filename. HTTP 301, 302, 303, 307, and 308 responses
+are terminal, including relative locations, and no redirect target request is
+constructed, so Range or future credential-bearing headers cannot be forwarded.
+
 The lock retains the adapter digest used by the original image-level
 configure/design qualification as `qualified_source_sha256`, separately from
 the current production `source_sha256`. The later route adapter change appends

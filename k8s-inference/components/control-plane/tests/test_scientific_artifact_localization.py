@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tarfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 import zlib
@@ -42,6 +43,7 @@ from fs2_serve.scientific_batch.adapters.localization import (
     ArtifactLocalizationError,
     LocalizationContract,
     TreeEntry,
+    _NoRedirectHandler,
     count_generation,
     fetch_source,
     generation_directory,
@@ -78,6 +80,14 @@ SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters"
 PROFILE_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json"
 CONTRACT_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-artifact-localization.json"
+ACTIVE_LOCALIZER_PATHS = (
+    SOLUTION_ROOT / "components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py",
+    SOLUTION_ROOT
+    / "models/cancer-immunotherapy/runtime-images/boltzgen/qualification/localize_checkpoints.py",
+)
+LOCALIZATION_RENDERER_PATH = (
+    SOLUTION_ROOT / "models/cancer-immunotherapy/artifact-localization/render_localization_jobs.py"
+)
 
 MOLECULES_ID = "boltzgen-inference-molecules"
 # The academic-assets plane's published identity for the installed PyRosetta
@@ -648,8 +658,8 @@ def test_fetch_source_uses_a_no_redirect_https_opener(tmp_path: Path, monkeypatc
     handlers = observed["handlers"]
     assert isinstance(handlers, tuple) and len(handlers) == 1
     redirect_handler = handlers[0]
-    assert isinstance(redirect_handler, urllib.request.HTTPRedirectHandler)
-    assert (
+    assert isinstance(redirect_handler, _NoRedirectHandler)
+    with pytest.raises(urllib.error.HTTPError, match="redirects are forbidden"):
         redirect_handler.redirect_request(
             urllib.request.Request(contract.source.source_uri),
             io.BytesIO(),
@@ -658,11 +668,17 @@ def test_fetch_source_uses_a_no_redirect_https_opener(tmp_path: Path, monkeypatc
             {},
             "http://127.0.0.1/internal",
         )
-        is None
-    )
 
 
-@pytest.mark.parametrize("source_uri", ["http://example.invalid/source", "file:///tmp/source", "https:///source"])
+@pytest.mark.parametrize(
+    "source_uri",
+    [
+        "http://example.invalid/source",
+        "file:///tmp/source",
+        "https:///source",
+        "https://user:secret@example.invalid/source",
+    ],
+)
 def test_fetch_source_refuses_non_https_or_hostless_urls_before_opening(
     source_uri: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -679,9 +695,10 @@ def test_fetch_source_refuses_non_https_or_hostless_urls_before_opening(
         fetch_source(tmp_path / "source", contract)
 
 
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
 @pytest.mark.parametrize(
-    ("status", "redirect_target"),
-    [(302, "http://example.invalid/plaintext"), (307, "https://127.0.0.1/internal")],
+    "redirect_target",
+    ["/same-authority-relative", "http://example.invalid/plaintext", "https://127.0.0.1/internal"],
 )
 def test_fetch_source_rejects_redirects_and_leaves_no_partial_file(
     status: int,
@@ -709,6 +726,87 @@ def test_fetch_source_rejects_redirects_and_leaves_no_partial_file(
     with pytest.raises(ArtifactLocalizationError, match="redirects are forbidden"):
         fetch_source(destination, contract)
     assert not destination.exists()
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+@pytest.mark.parametrize("redirect_target", ["/relative-target", "https://other.invalid/target"])
+def test_no_redirect_handler_never_builds_a_secondary_request_or_forwards_headers(
+    status: int,
+    redirect_target: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = urllib.request.Request(
+        "https://source.invalid/artifact",
+        headers={"Authorization": "Bearer fixture", "Cookie": "session=fixture"},
+    )
+
+    def unexpected_secondary_request(*args: object, **kwargs: object) -> None:
+        raise AssertionError(f"redirect handling constructed a secondary request: {args!r} {kwargs!r}")
+
+    monkeypatch.setattr(urllib.request, "Request", unexpected_secondary_request)
+    with pytest.raises(urllib.error.HTTPError) as captured:
+        _NoRedirectHandler().redirect_request(
+            original,
+            io.BytesIO(),
+            status,
+            "Redirect",
+            {"Location": redirect_target},
+            redirect_target,
+        )
+    assert captured.value.code == status
+    assert captured.value.url == original.full_url
+
+
+def test_every_active_scientific_localizer_installs_an_explicit_no_redirect_opener() -> None:
+    for path in ACTIVE_LOCALIZER_PATHS:
+        source = path.read_text(encoding="utf-8")
+        assert "urlopen(" not in source, path
+        assert "build_opener(_NoRedirectHandler())" in source, path
+        assert "class _NoRedirectHandler" in source, path
+        assert "raise urllib.error.HTTPError(" in source, path
+    renderer = LOCALIZATION_RENDERER_PATH.read_text(encoding="utf-8")
+    assert '"localization.py": (PACKAGE_ROOT / "localization.py").read_text' in renderer
+
+
+def test_redirect_prone_contracts_use_reviewed_direct_origins_without_identity_drift() -> None:
+    expected = {
+        MOLECULES_ID: (
+            "https://hf-mirror.com/datasets/boltzgen/inference-data/resolve/"
+            "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip",
+            391401102,
+            "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+        ),
+        SOLUBLE_MPNN_ID: (
+            "https://codeload.github.com/sokrypton/ColabDesign/tar.gz/"
+            "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+            50276715,
+            "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+        ),
+        VANILLA_MPNN_ID: (
+            "https://codeload.github.com/sokrypton/ColabDesign/tar.gz/"
+            "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+            50276715,
+            "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+        ),
+        MOSAIC_BOLTZ2_CONF_ID: (
+            "https://hf-mirror.com/boltz-community/boltz-2/resolve/"
+            "6fdef46d763fee7fbb83ca5501ccceff43b85607/boltz2_conf.ckpt",
+            2286561469,
+            "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+        ),
+    }
+    for artifact_id, (expected_uri, expected_bytes, expected_sha256) in expected.items():
+        document = _contract_artifact(artifact_id)
+        source = document.get("archive", document.get("file"))
+        assert isinstance(source, dict)
+        assert source["source_uri"] == expected_uri
+        assert source["bytes"] == expected_bytes
+        assert source["sha256"] == expected_sha256
+        parsed = urllib.parse.urlsplit(source["source_uri"])
+        assert parsed.scheme == "https"
+        assert parsed.hostname in {"hf-mirror.com", "codeload.github.com"}
+        assert parsed.username is None and parsed.password is None
+        assert not (parsed.hostname == "github.com" and "/archive/" in parsed.path)
 
 
 def test_a_bound_tree_no_stage_ever_names_is_rejected() -> None:

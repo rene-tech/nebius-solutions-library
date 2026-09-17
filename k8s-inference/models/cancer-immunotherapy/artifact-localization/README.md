@@ -61,6 +61,17 @@ Operators must update and review the contract when an upstream object's
 canonical URL changes; the existing byte limit and SHA-256 verification still
 bind the response from the accepted URL.
 
+The active contract avoids publisher endpoints that are known to answer with a
+redirect. ColabDesign archives use the immutable revision on
+`codeload.github.com`, while the three Hugging Face-owned artifact sets used by
+this localization flow use the HTTPS mirror authority `hf-mirror.com`. The
+publisher repository and immutable revision remain the provenance identity;
+the mirror is only the transport origin. Changing an origin must not change the
+contracted filename, byte count, SHA-256, archive member prefix, or localized
+tree identity. The BoltzGen checkpoint Job embeds the same policy in its
+checked-in image lock and refuses URLs with a non-HTTPS scheme, missing host, or
+embedded credentials.
+
 ## A generation, not a path
 
 A verified tree at a mutable path can change after it was verified. Every

@@ -50,7 +50,7 @@
     "boltzgen-checkpoints": {
       "source_uri": "hf://boltzgen/boltzgen-1",
       "source_revision": "c1be29e1f82ffcc72264f64b993c43fb4e0d17f0",
-      "source_url_template": "https://huggingface.co/boltzgen/boltzgen-1/resolve/{revision}/{name}",
+      "source_url_template": "https://hf-mirror.com/boltzgen/boltzgen-1/resolve/{revision}/{name}",
       "license": "MIT",
       "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
       "inventory_algorithm": "fs2-flat-tree-inventory/v1",
@@ -68,7 +68,7 @@
       ]
     },
     "boltzgen-inference-molecules": {
-      "source_uri": "https://huggingface.co/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip",
+      "source_uri": "https://hf-mirror.com/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip",
       "source_revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
       "license": "MIT",
       "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",

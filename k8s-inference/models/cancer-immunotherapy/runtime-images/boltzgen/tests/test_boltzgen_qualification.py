@@ -7,7 +7,11 @@ import json
 import tarfile
 import tempfile
 import unittest
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
+from unittest import mock
 
 import gemmi
 import numpy as np
@@ -218,6 +222,82 @@ class ImageContractTests(unittest.TestCase):
 
 
 class LocalizationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.lock = json.loads((HERE / "image-lock.json").read_text(encoding="utf-8"))
+
+    def test_checkpoint_sources_require_https_without_embedded_credentials(self) -> None:
+        contract = {
+            "source_revision": "revision",
+            "source_url_template": "{name}",
+        }
+        for source in (
+            "http://example.invalid/checkpoint",
+            "file:///tmp/checkpoint",
+            "https:///checkpoint",
+            "https://user:secret@example.invalid/checkpoint",
+        ):
+            with self.subTest(source=source), self.assertRaises(localize.LocalizationError):
+                localize.checkpoint_url(contract, source)
+
+    def test_all_redirect_statuses_and_relative_locations_fail_before_a_second_request(self) -> None:
+        original = urllib.request.Request(
+            "https://source.invalid/checkpoint",
+            headers={"Authorization": "Bearer fixture", "Cookie": "session=fixture"},
+        )
+        for status in (301, 302, 303, 307, 308):
+            for target in ("/relative-target", "https://other.invalid/target"):
+                with self.subTest(status=status, target=target):
+                    with mock.patch.object(
+                        urllib.request,
+                        "Request",
+                        side_effect=AssertionError("redirect constructed a secondary request"),
+                    ):
+                        with self.assertRaises(urllib.error.HTTPError) as captured:
+                            localize._NoRedirectHandler().redirect_request(
+                                original,
+                                io.BytesIO(),
+                                status,
+                                "Redirect",
+                                {"Location": target},
+                                target,
+                            )
+                    self.assertEqual(captured.exception.code, status)
+                    self.assertEqual(captured.exception.url, original.full_url)
+
+    def test_active_lock_uses_direct_https_mirror_without_identity_drift(self) -> None:
+        contract = self.lock["artifacts"]["boltzgen-checkpoints"]
+        parsed = urllib.parse.urlsplit(
+            contract["source_url_template"].format(
+                revision=contract["source_revision"],
+                name=contract["files"][0]["path"],
+            )
+        )
+        self.assertEqual(parsed.scheme, "https")
+        self.assertEqual(parsed.hostname, "hf-mirror.com")
+        self.assertIsNone(parsed.username)
+        self.assertIsNone(parsed.password)
+        self.assertEqual(contract["entry_count"], 6)
+        self.assertEqual(contract["total_bytes"], 10234382415)
+        self.assertEqual(
+            [item["sha256"] for item in contract["files"]],
+            [
+                "6dc13d488015666d3c3fdffd29fab54d72e4f2597b654f996cdcf5937feab090",
+                "525a51ef306da7282a54d23a4a5b91212fc60d0ff6b23b56dd6351de3b387530",
+                "ac7078b3dc13064c68e0c3fd542e5bc538c33558bf6607f65e499eb336ca5e5d",
+                "360af8bd6e59527ff6ec25dd81253967f3bd3567d200053b10680634751f8e3c",
+                "dd4cf108c94471bdc3a326b7b180fa3854dc019110fae780208c30b50bd56578",
+                "e2455b6ff5156218ef3999be894d1a8e4574f0531cefcd9d67d9c1d2d015937b",
+            ],
+        )
+
+    def test_injected_localizer_has_no_redirect_following_urlopen_path(self) -> None:
+        source = (QUALIFICATION / "localize_checkpoints.py").read_text(encoding="utf-8")
+        renderer = (QUALIFICATION / "render_localization_job.py").read_text(encoding="utf-8")
+        self.assertNotIn("urllib.request.urlopen(", source)
+        self.assertIn("urllib.request.build_opener(_NoRedirectHandler())", source)
+        self.assertIn('"localize_checkpoints.py": (HERE / "localize_checkpoints.py").read_text()', renderer)
+        self.assertIn('"image-lock.json": (ROOT / "image-lock.json").read_text()', renderer)
+
     def test_completed_staging_is_reused_and_marker_uses_physical_root(self) -> None:
         payloads = {"a.ckpt": b"checkpoint-a", "b.ckpt": b"checkpoint-b"}
         contract = {

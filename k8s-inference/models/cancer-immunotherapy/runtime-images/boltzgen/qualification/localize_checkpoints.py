@@ -15,6 +15,8 @@ import hashlib
 import json
 import os
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 import zlib
 from pathlib import Path
@@ -28,10 +30,32 @@ MARKER = ".fs2-runtime-tree.json"
 MARKER_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
 INVENTORY_ALGORITHM = "fs2-flat-tree-inventory/v1"
 PLANE_PREFIX = "scientific-localization/public"
+REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
 
 
 class LocalizationError(RuntimeError):
     """The exact immutable publication contract was not satisfied."""
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Terminate redirects before urllib can construct a target request."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> None:
+        raise urllib.error.HTTPError(
+            req.full_url,
+            code,
+            "checkpoint download redirects are forbidden",
+            headers,
+            fp,
+        )
 
 
 def canonical_json(value: object, *, indent: int | None = None) -> bytes:
@@ -61,9 +85,21 @@ def inventory_generation(rows: list[dict[str, object]]) -> str:
 
 
 def checkpoint_url(contract: dict[str, Any], filename: str) -> str:
-    return contract["source_url_template"].format(
+    url = contract["source_url_template"].format(
         revision=contract["source_revision"], name=filename
     )
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError as error:
+        raise LocalizationError("checkpoint source must be a well-formed HTTPS URL") from error
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise LocalizationError("checkpoint source must be HTTPS without embedded credentials")
+    return url
 
 
 def download_or_resume(
@@ -120,22 +156,28 @@ def download_or_resume(
                 "Range": f"bytes={start}-{end}",
             },
         )
-        with urllib.request.urlopen(request, timeout=300) as response:
-            status = getattr(response, "status", response.getcode())
-            content_range = response.headers.get("Content-Range", "")
-            if status != 206 or not content_range.startswith(f"bytes {start}-{end}/"):
-                raise LocalizationError(
-                    f"server refused exact byte range {start}-{end} for {target.name}"
-                )
-            written = 0
-            with temporary.open("wb") as handle:
-                while chunk := response.read(CHUNK):
-                    written += len(chunk)
-                    if written > expected_length:
-                        raise LocalizationError(f"range exceeded contract: {target.name}")
-                    handle.write(chunk)
-                handle.flush()
-                os.fsync(handle.fileno())
+        opener = urllib.request.build_opener(_NoRedirectHandler())
+        try:
+            with opener.open(request, timeout=300) as response:
+                status = getattr(response, "status", response.getcode())
+                content_range = response.headers.get("Content-Range", "")
+                if status != 206 or not content_range.startswith(f"bytes {start}-{end}/"):
+                    raise LocalizationError(
+                        f"server refused exact byte range {start}-{end} for {target.name}"
+                    )
+                written = 0
+                with temporary.open("wb") as handle:
+                    while chunk := response.read(CHUNK):
+                        written += len(chunk)
+                        if written > expected_length:
+                            raise LocalizationError(f"range exceeded contract: {target.name}")
+                        handle.write(chunk)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+        except urllib.error.HTTPError as error:
+            if error.code in REDIRECT_STATUS_CODES:
+                raise LocalizationError("checkpoint download redirects are forbidden") from error
+            raise
         if written != expected_length:
             raise LocalizationError(
                 f"short range {start}-{end} for {target.name}: {written} bytes"
