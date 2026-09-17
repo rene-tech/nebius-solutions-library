@@ -1586,16 +1586,18 @@ async def test_read_withholds_preserved_legacy_response_and_incomplete_request_w
     await store.record(legacy)
     got = await store.get(legacy.id)
     assert got is not None
-    # The request is wire-INCOMPLETE => the row is NON-bounded => it is served METADATA-ONLY, without
-    # decrypting/serving ANY sensitive field (bodies, headers, query, detail all withheld).
+    # The stored payload is small, so the row is BOUNDED (cheap to decrypt) and egress-sanitized: the
+    # wire-INCOMPLETE request BODY and the response BODY are both withheld (whole-or-withhold), while the
+    # separate disclosure fields (headers, query, error_detail) are re-scrubbed/failed-closed on the way out.
     assert got.response_body.truncated and got.response_body.redacted
     assert "LEGACY-RESPONSE-LEAK" not in got.response_body.data and got.response_body.data == "[REDACTED]"
     assert got.request_body.truncated and "partial-legacy-INPUT" not in got.request_body.data
     assert got.request_body.data == "[REDACTED]" and got.request_body.observed_bytes == 64
-    # error_detail is failed closed to the generic marker when an error was recorded (never raw free-text).
+    # error_detail is failed closed to the generic marker (never the raw stored free-text).
     assert got.error_detail == "[detail withheld on read]" and "LEGACYDETAILLEAK" not in (got.error_detail or "")
-    # Headers and query are WITHHELD wholesale for a non-bounded row (not re-scrubbed) — nothing decrypted.
-    assert got.query_string == "" and got.request_headers == [] and got.response_headers == []
+    # Header/query VALUES are re-scrubbed under current rules (auth header redacted; query secret gone).
+    assert "QUERYLEAK" not in got.query_string
+    assert ["authorization", "[REDACTED]"] in [list(pair) for pair in got.request_headers]
     dumped = got.model_dump_json()
     assert "REQHEADERLEAK" not in dumped and "RESPHEADERLEAK" not in dumped and "QUERYLEAK" not in dumped
     # The stored row itself is NOT rewritten or deleted (a separately owned purge handles TTL).
@@ -1725,28 +1727,25 @@ async def test_queue_drain_recovers_after_worker_cancellation_without_hanging():
     await queue.aclose()
 
 
-def test_bounded_for_summary_gates_request_size_and_only_raw_response_size():
-    """SAI-01: a row is BOUNDED (decrypt + exact sanitize) when its REQUEST is complete and within the
-    effective ceiling. The RESPONSE only affects the DECRYPT cost, and only when it was stored RAW: a
-    CURRENT row (response withheld, response_redacted True) is bounded regardless of the response's wire
-    length (the response is never stored), so the safe request is served; a LEGACY row that stored a RAW
-    response (response_redacted False) over the ceiling shares the ciphertext and is NOT bounded. The hard
-    ceiling always applies to the request even when the cap is None."""
+def test_bounded_for_summary_gates_on_actual_stored_payload_size():
+    """SAI-01 (blocker 1): boundedness is decided by the ACTUAL STORED PAYLOAD SIZE only — the ciphertext
+    byte length for the encrypted store, the stored body byte lengths for the in-memory store — NOT the
+    wire-observed length and NOT any redacted flag. A payload within the effective ceiling is bounded
+    (decrypt + exact sanitize); one over it is non-bounded (metadata-only, never decrypted). The hard
+    ceiling applies even when the cap is None."""
     from fs2_serve.request_debug import _MAX_SANITIZE_BODY, _bounded_for_summary
 
     cap = 1024
-    # signature: (request_observed, response_observed, request_complete, response_redacted, max_body_bytes)
-    assert _bounded_for_summary(100, 100, True, True, cap) is True  # small request + withheld response
-    assert _bounded_for_summary(5000, 100, True, True, cap) is False  # large REQUEST -> not bounded
-    assert _bounded_for_summary(100, 100, False, True, cap) is False  # incomplete request -> not bounded
-    # RESPONSE size: withheld (current) response NEVER un-bounds a small-request row; raw (legacy) does.
-    assert _bounded_for_summary(100, 5000, True, True, cap) is True  # huge WITHHELD response -> BOUNDED (served)
-    assert _bounded_for_summary(100, 5000, True, False, cap) is False  # huge RAW legacy response -> not bounded
-    assert _bounded_for_summary(100, 100, True, False, cap) is True  # small raw response -> bounded
-    # No cap configured must NOT disable the hard ceiling on the REQUEST.
-    assert _bounded_for_summary(10**9, 100, True, True, None) is False  # huge request -> not bounded
-    assert _bounded_for_summary(_MAX_SANITIZE_BODY, 100, True, True, None) is True  # request within ceiling
-    assert _bounded_for_summary(_MAX_SANITIZE_BODY + 1, 100, True, True, None) is False  # request past ceiling
+    # signature: (stored_payload_size, max_body_bytes)
+    assert _bounded_for_summary(100, cap) is True  # small stored payload -> bounded
+    assert _bounded_for_summary(cap, cap) is True  # exactly at the cap -> bounded
+    assert _bounded_for_summary(cap + 1, cap) is False  # over the cap -> non-bounded
+    assert _bounded_for_summary(10**9, cap) is False  # huge stored payload -> non-bounded
+    # No cap configured must NOT disable the hard ceiling.
+    assert _bounded_for_summary(_MAX_SANITIZE_BODY, None) is True  # within the hard ceiling
+    assert _bounded_for_summary(_MAX_SANITIZE_BODY + 1, None) is False  # past the hard ceiling
+    # cap is clamped to the hard ceiling: a configured cap larger than the ceiling cannot raise it.
+    assert _bounded_for_summary(_MAX_SANITIZE_BODY + 1, 10**9) is False
 
 
 async def test_queue_reprocesses_item_after_mid_item_cancellation():
@@ -1870,39 +1869,42 @@ async def test_current_row_with_huge_withheld_response_still_serves_the_safe_req
     await store.record(current)
     detail = await store.get(current.id)
     assert detail is not None
-    # BOUNDED on the request (response never bounds a current row): the safe request is SERVED, not withheld.
+    # BOUNDED: the stored payload is small (request + a tiny withheld response marker), so the safe
+    # request is decrypted and SERVED — a huge response WIRE length does not enlarge the stored payload.
     assert _stored_bytes(detail.request_body) != b"[REDACTED]" and detail.request_body.redacted is False
     assert _stored_bytes(detail.response_body) == b"[REDACTED]"  # response withheld (always)
     summary = (await store.list()).items[0]
     assert summary.request_redacted is False and summary.response_redacted is True  # list agrees with detail
 
 
-async def test_legacy_raw_huge_response_row_withholds_request_and_is_metadata_only(monkeypatch):
-    """SAI-01 regression (blocker 3 legacy case + metadata-only nonfetch): a LEGACY row that stored a RAW
-    response (response_redacted False) which is over the cap shares ONE ciphertext with that response, so
-    decrypting the request would decrypt the over-cap response — such a row is withheld WHOLE and
-    summarized metadata-only WITHOUT decrypting. Proven by counting normalize calls: only the bounded row
-    is sanitized. Authored; not executed here."""
+async def test_legacy_huge_stored_response_is_not_bounded_even_when_redacted(monkeypatch):
+    """SAI-01 regression (blocker 1, the exact ancestor 88520758f case): a LEGACY row whose STORED response
+    is huge (over the ceiling) AND carries response_redacted=True (the ancestor set redacted=true whenever
+    any bytes were scrubbed) must be NON-bounded. The redacted flag is NOT proof of a tiny marker — the
+    ACTUAL stored size governs — so the row is withheld WHOLE and summarized metadata-only WITHOUT
+    decrypting. Proven by counting normalize calls: only the genuinely-small bounded row is sanitized.
+    Authored; not executed here."""
     import fs2_serve.request_debug as rd
+    from fs2_serve.request_debug import _MAX_SANITIZE_BODY
 
     cap = 1024
     store = InMemoryDebugStore(max_body_bytes=cap)
     bounded = row(request_body=body_capture(b'{"input":"small"}', "application/json", True))
-    legacy_raw = row(
+    legacy_huge = row(
         started_at=NOW - timedelta(seconds=1),  # sorts after `bounded`
         request_body=body_capture(b'{"input":"small"}', "application/json", True),
         response_body=DebugBody(
             encoding="utf-8",
-            data='{"r":"legacy raw stored response"}',
+            data="x" * (_MAX_SANITIZE_BODY + 100),  # genuinely-LARGE stored response data
             content_type="application/json",
-            observed_bytes=10_000,  # over cap AND stored raw (redacted False) => shares the ciphertext
+            observed_bytes=_MAX_SANITIZE_BODY + 100,
             complete=True,
-            redacted=False,
+            redacted=True,  # ancestor 88520758f set redacted=True when scrubbed — NOT a tiny marker
             truncated=False,
         ),
     )
     await store.record(bounded)
-    await store.record(legacy_raw)
+    await store.record(legacy_huge)
 
     calls: list = []
     original = rd.normalize_exchange_for_read
@@ -1914,11 +1916,46 @@ async def test_legacy_raw_huge_response_row_withholds_request_and_is_metadata_on
     monkeypatch.setattr(rd, "normalize_exchange_for_read", _counting)
     listing = await store.list()
     assert len(listing.items) == 2
-    assert calls == [bounded.id]  # only the bounded row was sanitized; the legacy raw-response row was not
-    detail = await store.get(legacy_raw.id)
+    assert calls == [bounded.id]  # the huge legacy row (redacted=True) is NOT decrypted/sanitized
+    detail = await store.get(legacy_huge.id)
     assert detail is not None
-    assert _stored_bytes(detail.request_body) == b"[REDACTED]"  # request withheld (can't decrypt safely)
+    assert _stored_bytes(detail.request_body) == b"[REDACTED]"  # request withheld (stored payload too large)
     assert detail.request_headers == [] and detail.query_string == ""  # metadata-only
+
+
+async def test_in_memory_record_dual_index_add_is_fault_atomic():
+    """SAI-01 regression (blocker 2): record() adds the same row to two indexes — the dict (detail source
+    + list liveness authority) and the ordered list (list iteration). A fault BETWEEN the two must not
+    permanently desync them (a row visible on one path but not the other). The dict insert is done AFTER
+    the ordered append and rolled back on failure, and list() filters to rows present in the dict, so a
+    partial add is invisible on BOTH paths and a retry cleanly adds both with no duplicate. Authored; not
+    executed here."""
+    real_setitem = dict.__setitem__
+    calls = {"n": 0}
+
+    class _FlakyDict(dict):
+        def __setitem__(self, key: object, value: object) -> None:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise MemoryError("simulated dict resize failure")
+            real_setitem(self, key, value)
+
+    store = InMemoryDebugStore()
+    store.exchanges = _FlakyDict()  # type: ignore[assignment]
+    ex = row(id=uuid4())
+    with pytest.raises(MemoryError):
+        await store.record(ex)  # dict insert fails AFTER the ordered append -> rollback
+    # Rolled back: neither index carries a partial entry (no orphan in _ordered, nothing in the dict).
+    assert len(store.exchanges) == 0 and store._ordered == []
+    assert (await store.list()).items == [] and await store.get(ex.id) is None
+    # Retry succeeds and adds to BOTH — the row is now visible on detail AND list, exactly once.
+    await store.record(ex)
+    assert list(store.exchanges) == [ex.id] and len(store._ordered) == 1
+    assert [item.id for item in (await store.list()).items] == [ex.id]
+    assert (await store.get(ex.id)) is not None
+    # A further retry is idempotent: no duplicate in the ordered list.
+    await store.record(ex)
+    assert len(store._ordered) == 1
 
 
 async def test_bounded_legacy_row_rescrubbed_on_read_agrees_between_detail_and_list():

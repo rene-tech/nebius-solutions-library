@@ -13,7 +13,7 @@ from test_request_debug import NOW, row
 from test_users_apps_postgres import database, operation, token  # noqa: F401
 
 from fs2_serve.postgres import PostgresStore
-from fs2_serve.request_debug import _MAX_SANITIZE_BODY, DebugBody, PostgresDebugStore, body_capture
+from fs2_serve.request_debug import _MAX_SANITIZE_BODY, PostgresDebugStore, body_capture, suppressed_body
 
 pytestmark = pytest.mark.postgres
 
@@ -70,41 +70,47 @@ async def test_actual_encrypted_detail_pagination_unauthenticated_and_same_tenan
         await store.get(first.id)
 
 
-async def test_oversized_legacy_row_is_metadata_only_on_detail_and_list_without_decrypt(debug_database):
-    """SAI-01 regression: even under a DEFAULT cap=None, a NON-bounded row (a body over the hard per-row
-    ceiling) must be served METADATA-ONLY on BOTH detail and list, WITHOUT fetching/decrypting its
-    payload. Proven by corrupting the ciphertext: if either path decrypted, it would raise InvalidTag;
-    instead both return the withheld, clear-column view. This covers the unsafe-default-cap, detail-path
-    ceiling, and two-phase (no-decrypt-for-non-bounded) gaps. Postgres-marked; run by CI."""
+async def test_oversized_stored_ciphertext_is_metadata_only_on_detail_and_list_without_decrypt(debug_database):
+    """SAI-01 regression (blocker 1): boundedness is gated on the ACTUAL STORED CIPHERTEXT LENGTH
+    (octet_length(ciphertext)), not observed_bytes and not the redacted flag. Even under a DEFAULT
+    cap=None, a row whose stored ciphertext exceeds the hard per-row ceiling is served METADATA-ONLY on
+    BOTH detail and list, WITHOUT fetching/decrypting it. Proven by overwriting the ciphertext with an
+    over-ceiling blob: octet_length marks it non-bounded so no phase-2 fetch/decrypt happens (a decrypt
+    would raise InvalidTag on the garbage). This is the ancestor-88520758f case where redacted=True does
+    NOT imply a tiny stored payload. Postgres-marked; run by CI."""
     db = debug_database
     store = PostgresDebugStore(db.pool, db.cipher)  # cap=None: the hard ceiling must still bound the read
     big = row(
-        request_body=DebugBody(
-            encoding="utf-8",
-            data="x",  # tiny actual ciphertext; the CLEAR observed size marks it over the ceiling
-            content_type="text/plain",
-            observed_bytes=_MAX_SANITIZE_BODY + 1,
-            complete=True,
-            redacted=False,
-            truncated=False,
-        ),
+        request_body=body_capture(b"small request body", "text/plain", True),
         error_detail="raw upstream detail with sk-OVERSIZE-LEAK",
     )
     await store.record(big)
-    # Corrupt the ciphertext so ANY decrypt attempt raises — proving neither detail nor list decrypts a
-    # non-bounded row.
-    await db.pool.execute("UPDATE fs2_request_debug SET ciphertext=$2 WHERE id=$1", big.id, b"\x00" * 16)
+    # Overwrite the ciphertext with an over-ceiling garbage blob: octet_length(ciphertext) now exceeds the
+    # hard ceiling, so the read path classifies the row non-bounded and NEVER fetches/decrypts it (a decrypt
+    # of the garbage would raise InvalidTag). redacted flag is irrelevant — only the stored length matters.
+    await db.pool.execute(
+        "UPDATE fs2_request_debug SET ciphertext=$2 WHERE id=$1", big.id, b"\x00" * (_MAX_SANITIZE_BODY + 1)
+    )
     detail = await store.get(big.id, "tenant-a")
-    assert detail is not None  # did NOT raise InvalidTag => never decrypted
+    assert detail is not None  # did NOT raise InvalidTag => never decrypted the oversized ciphertext
     assert detail.request_body.data == "[REDACTED]" and detail.request_body.redacted is True
-    assert detail.request_body.observed_bytes == _MAX_SANITIZE_BODY + 1  # factual size preserved
     assert detail.response_body.data == "[REDACTED]"
     assert detail.request_headers == [] and detail.response_headers == [] and detail.query_string == ""
     assert "OVERSIZE-LEAK" not in (detail.error_detail or "")  # raw stored detail never disclosed
     summary = (await store.list(tenant_id="tenant-a")).items[0]
     assert summary.id == big.id
     assert summary.request_redacted is True and summary.response_redacted is True  # agrees with detail
-    assert summary.request_observed_bytes == _MAX_SANITIZE_BODY + 1
+
+    # And a row whose stored ciphertext is small stays BOUNDED and serves its safe request even with a huge
+    # response WIRE length (the response is a withheld marker, so it does not enlarge the ciphertext).
+    current = row(
+        request_body=body_capture(b'{"input":"served"}', "application/json", True),
+        response_body=suppressed_body("application/json", observed_bytes=5_000_000, complete=True),
+    )
+    await store.record(current)
+    served = await store.get(current.id, "tenant-a")
+    assert served is not None and served.request_body.data == '{"input":"served"}'  # request served
+    assert served.response_body.data == "[REDACTED]"  # response withheld
 
 
 async def test_actual_generated_runtime_role_can_insert_list_and_decrypt(debug_database):
