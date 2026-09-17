@@ -1725,24 +1725,28 @@ async def test_queue_drain_recovers_after_worker_cancellation_without_hanging():
     await queue.aclose()
 
 
-def test_bounded_for_summary_excludes_large_and_incomplete_rows():
-    """SAI-01: the list derives read-time summary truth by a BOUNDED per-row decrypt only for complete
-    rows within the current cap; large or incomplete rows (withheld on detail anyway) are summarized
-    conservatively from clear columns without loading their full payload — this is what prevents the
-    list from decrypting an unbounded (up to legacy-cap × limit) result set."""
+def test_bounded_for_summary_gates_request_size_and_only_raw_response_size():
+    """SAI-01: a row is BOUNDED (decrypt + exact sanitize) when its REQUEST is complete and within the
+    effective ceiling. The RESPONSE only affects the DECRYPT cost, and only when it was stored RAW: a
+    CURRENT row (response withheld, response_redacted True) is bounded regardless of the response's wire
+    length (the response is never stored), so the safe request is served; a LEGACY row that stored a RAW
+    response (response_redacted False) over the ceiling shares the ciphertext and is NOT bounded. The hard
+    ceiling always applies to the request even when the cap is None."""
     from fs2_serve.request_debug import _MAX_SANITIZE_BODY, _bounded_for_summary
 
     cap = 1024
-    assert _bounded_for_summary(100, 100, True, cap) is True  # small + complete -> bounded decrypt
-    assert _bounded_for_summary(5000, 100, True, cap) is False  # large request -> conservative, no decrypt
-    assert _bounded_for_summary(100, 5000, True, cap) is False  # large response -> conservative, no decrypt
-    assert _bounded_for_summary(100, 100, False, cap) is False  # incomplete -> conservative
-    # No cap configured must NOT treat an arbitrarily large legacy row as bounded: the HARD ceiling
-    # (_MAX_SANITIZE_BODY) applies even when max_body_bytes is None, so a huge row stays conservative
-    # (no load-everything decrypt). A row within the ceiling is bounded; one past it is not.
-    assert _bounded_for_summary(10**9, 10**9, True, None) is False  # no cap -> hard ceiling still bounds
-    assert _bounded_for_summary(_MAX_SANITIZE_BODY, _MAX_SANITIZE_BODY, True, None) is True  # within ceiling
-    assert _bounded_for_summary(_MAX_SANITIZE_BODY + 1, 100, True, None) is False  # past ceiling
+    # signature: (request_observed, response_observed, request_complete, response_redacted, max_body_bytes)
+    assert _bounded_for_summary(100, 100, True, True, cap) is True  # small request + withheld response
+    assert _bounded_for_summary(5000, 100, True, True, cap) is False  # large REQUEST -> not bounded
+    assert _bounded_for_summary(100, 100, False, True, cap) is False  # incomplete request -> not bounded
+    # RESPONSE size: withheld (current) response NEVER un-bounds a small-request row; raw (legacy) does.
+    assert _bounded_for_summary(100, 5000, True, True, cap) is True  # huge WITHHELD response -> BOUNDED (served)
+    assert _bounded_for_summary(100, 5000, True, False, cap) is False  # huge RAW legacy response -> not bounded
+    assert _bounded_for_summary(100, 100, True, False, cap) is True  # small raw response -> bounded
+    # No cap configured must NOT disable the hard ceiling on the REQUEST.
+    assert _bounded_for_summary(10**9, 100, True, True, None) is False  # huge request -> not bounded
+    assert _bounded_for_summary(_MAX_SANITIZE_BODY, 100, True, True, None) is True  # request within ceiling
+    assert _bounded_for_summary(_MAX_SANITIZE_BODY + 1, 100, True, True, None) is False  # request past ceiling
 
 
 async def test_queue_reprocesses_item_after_mid_item_cancellation():
@@ -1851,49 +1855,54 @@ async def test_mid_persist_cancel_reprocesses_idempotently_without_double_write(
     await queue.aclose()
 
 
-async def test_list_and_detail_agree_metadata_only_for_oversized_response_row():
-    """SAI-01 regression (one shared derivation, no arbitrary decrypt on detail): a row that is
-    non-bounded because its RESPONSE is oversized is NOT decrypted on EITHER path — decrypting to serve
-    the small request would require reading the whole oversized payload, which the read path refuses.
-    Detail and the list summary therefore agree by construction: BOTH withhold the request (and the
-    response), rendered metadata-only from clear columns. Authored; not executed here."""
+async def test_current_row_with_huge_withheld_response_still_serves_the_safe_request():
+    """SAI-01 regression (blocker 3 / capability preservation): a CURRENT row (response ALWAYS withheld,
+    response_redacted True) with a small complete request but a HUGE response wire-length must STILL SERVE
+    the safe retained request on BOTH detail and list — the response is never stored, so serving the
+    request never requires decrypting a huge payload. Detail and list agree (request served, response
+    withheld). Authored; not executed here."""
     cap = 1024
     store = InMemoryDebugStore(max_body_bytes=cap)
-    legacy = row(
+    current = row(
         request_body=body_capture(b'{"input":"clean"}', "application/json", True),  # small, clean, complete
-        response_body=suppressed_body("application/json", observed_bytes=5000, complete=True),  # over cap
+        response_body=suppressed_body("application/json", observed_bytes=5000, complete=True),  # withheld marker
     )
-    await store.record(legacy)
-    detail = await store.get(legacy.id)
+    await store.record(current)
+    detail = await store.get(current.id)
     assert detail is not None
-    # Non-bounded by the oversized response => metadata-only detail: request withheld too (not decrypted).
-    assert _stored_bytes(detail.request_body) == b"[REDACTED]" and detail.request_body.redacted is True
-    assert _stored_bytes(detail.response_body) == b"[REDACTED]"
-    assert detail.request_headers == [] and detail.query_string == ""
-    listing = await store.list()
-    summary = listing.items[0]
-    # The list summary is _summary() of the SAME metadata-only view, so it agrees exactly with detail.
-    assert summary.response_redacted is True and summary.request_redacted is True
-    assert summary.request_observed_bytes == detail.request_body.observed_bytes
+    # BOUNDED on the request (response never bounds a current row): the safe request is SERVED, not withheld.
+    assert _stored_bytes(detail.request_body) != b"[REDACTED]" and detail.request_body.redacted is False
+    assert _stored_bytes(detail.response_body) == b"[REDACTED]"  # response withheld (always)
+    summary = (await store.list()).items[0]
+    assert summary.request_redacted is False and summary.response_redacted is True  # list agrees with detail
 
 
-async def test_list_summarizes_oversized_row_from_metadata_without_sanitizing_its_body(monkeypatch):
-    """SAI-01 regression (metadata-only oversized nonfetch): the list must summarize a non-bounded
-    (oversized/incomplete) row from its CLEAR columns WITHOUT sanitizing/decrypting its payload — only
-    BOUNDED rows are sanitized. Proven by counting normalize_exchange_for_read calls: exactly one, for
-    the single bounded row, none for the oversized row. Authored; not executed here."""
+async def test_legacy_raw_huge_response_row_withholds_request_and_is_metadata_only(monkeypatch):
+    """SAI-01 regression (blocker 3 legacy case + metadata-only nonfetch): a LEGACY row that stored a RAW
+    response (response_redacted False) which is over the cap shares ONE ciphertext with that response, so
+    decrypting the request would decrypt the over-cap response — such a row is withheld WHOLE and
+    summarized metadata-only WITHOUT decrypting. Proven by counting normalize calls: only the bounded row
+    is sanitized. Authored; not executed here."""
     import fs2_serve.request_debug as rd
 
     cap = 1024
     store = InMemoryDebugStore(max_body_bytes=cap)
     bounded = row(request_body=body_capture(b'{"input":"small"}', "application/json", True))
-    oversized = row(
+    legacy_raw = row(
         started_at=NOW - timedelta(seconds=1),  # sorts after `bounded`
         request_body=body_capture(b'{"input":"small"}', "application/json", True),
-        response_body=suppressed_body("application/json", observed_bytes=10_000, complete=True),  # over cap
+        response_body=DebugBody(
+            encoding="utf-8",
+            data='{"r":"legacy raw stored response"}',
+            content_type="application/json",
+            observed_bytes=10_000,  # over cap AND stored raw (redacted False) => shares the ciphertext
+            complete=True,
+            redacted=False,
+            truncated=False,
+        ),
     )
     await store.record(bounded)
-    await store.record(oversized)
+    await store.record(legacy_raw)
 
     calls: list = []
     original = rd.normalize_exchange_for_read
@@ -1905,7 +1914,11 @@ async def test_list_summarizes_oversized_row_from_metadata_without_sanitizing_it
     monkeypatch.setattr(rd, "normalize_exchange_for_read", _counting)
     listing = await store.list()
     assert len(listing.items) == 2
-    assert calls == [bounded.id]  # only the bounded row was sanitized; the oversized row was metadata-only
+    assert calls == [bounded.id]  # only the bounded row was sanitized; the legacy raw-response row was not
+    detail = await store.get(legacy_raw.id)
+    assert detail is not None
+    assert _stored_bytes(detail.request_body) == b"[REDACTED]"  # request withheld (can't decrypt safely)
+    assert detail.request_headers == [] and detail.query_string == ""  # metadata-only
 
 
 async def test_bounded_legacy_row_rescrubbed_on_read_agrees_between_detail_and_list():
@@ -1934,12 +1947,13 @@ async def test_bounded_legacy_row_rescrubbed_on_read_agrees_between_detail_and_l
     assert summary.request_redacted is True  # list agrees with detail (both decrypt + normalize the row)
 
 
-async def test_in_memory_list_snapshots_and_selects_entirely_off_the_event_loop(monkeypatch):
-    """SAI-01 regression (blocker 2): NO O(N) step may run on the event loop — the snapshot, filter, and
-    bounded top-k selection all happen INSIDE the to_thread. Proven deterministically: a row inserted at
-    to_thread-call time is INCLUDED in the result, which is only possible if the snapshot is taken inside
-    _derive (in the thread), not on the loop before the offload. Also checks bounded top-k pagination and
-    newest-first ordering. Authored; not executed here."""
+async def test_in_memory_list_iterates_off_loop_without_an_on_loop_o_n_snapshot(monkeypatch):
+    """SAI-01 regression (blocker 2): the list must do its iteration + bounded top-k selection OFF the
+    event loop WITHOUT an O(N) full-list snapshot copy. It iterates the append-only ordered list directly
+    (no list()/copy) inside the to_thread, feeding an O(limit) heap. Proven deterministically: a row
+    appended at to_thread-call time is INCLUDED in the result — only possible because the iteration reads
+    the live append-only list inside _derive, not an on-loop copy taken before the offload. Also checks
+    bounded top-k pagination and newest-first ordering. Authored; not executed here."""
     store = InMemoryDebugStore(max_body_bytes=64 * 1024)
     for index in range(5):
         await store.record(row(started_at=NOW + timedelta(seconds=index)))
@@ -1948,8 +1962,8 @@ async def test_in_memory_list_snapshots_and_selects_entirely_off_the_event_loop(
 
     async def _spy(func, /, *args, **kwargs):
         used["thread"] = True
-        # Mutate the store at to_thread-call time. If the snapshot were taken on the loop BEFORE the
-        # offload, this row would be missed; it appears only because the snapshot is inside _derive.
+        # Append a row at to_thread-call time. It appears in the result only because _derive iterates the
+        # live append-only list inside the offload — never an on-loop copy captured before the offload.
         await store.record(row(started_at=NOW + timedelta(seconds=99)))
         return await real_to_thread(func, *args, **kwargs)
 
@@ -1958,9 +1972,7 @@ async def test_in_memory_list_snapshots_and_selects_entirely_off_the_event_loop(
     assert used["thread"] is True
     assert len(page.items) == 3 and page.next_cursor is not None  # bounded top-k page with more remaining
     assert page.items[0].started_at >= page.items[1].started_at >= page.items[2].started_at  # newest-first
-    # The row inserted at to_thread-call time (started_at +99s) is the newest => it was snapshotted OFF
-    # the loop inside _derive, proving no O(N) snapshot ran on the loop first.
-    assert page.items[0].started_at == NOW + timedelta(seconds=99)
+    assert page.items[0].started_at == NOW + timedelta(seconds=99)  # the offload-time row was iterated off-loop
 
 
 def test_normalize_clamps_to_hard_ceiling_even_with_cap_none():
@@ -2021,6 +2033,46 @@ async def test_commit_notification_failure_does_not_hang_drain(monkeypatch):
     assert len(queue._pending) == 1 and queue._inflight() == 1
     # 3) Restore signaling; drain must re-signal _wake and complete (not hang), processing the item.
     monkeypatch.undo()
+    await queue.drain()
+    assert queue._inflight() == 0 and len(store.exchanges) == 2 and len(queue._pending) == 0
+    await queue.aclose()
+
+
+async def test_idle_clear_failure_does_not_busy_spin_or_starve_drain(monkeypatch):
+    """SAI-01 regression (blocker 1): if enqueue-time `_idle.clear()` raises, `_idle` is left SET with an
+    item pending. drain() must NOT busy-spin — `await Event.wait()` on an ALREADY-SET event returns WITHOUT
+    yielding, which would starve the worker task forever — so drain re-clears `_idle` each iteration and the
+    wait then yields, letting the worker run and complete the item. Deterministic: fault `_idle.clear`
+    during one commit, then drain must recover and process the item. Authored; not executed here."""
+    from fs2_serve.request_debug import DebugPersistQueue
+
+    store = InMemoryDebugStore()
+    queue = DebugPersistQueue(store, maxsize=8, max_inflight=8)
+    # 1) Run the worker to sleep so _idle is genuinely set and the worker is parked on _wake.
+    r1 = queue.reserve()
+    assert r1 is not None
+    with r1:
+        assert r1.submit(lambda: row(id=uuid4())) is True
+    await queue.drain()
+    assert queue._idle.is_set()  # truly idle
+
+    real_clear = queue._idle.clear
+    calls = {"n": 0}
+
+    def _flaky_clear() -> None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("simulated idle.clear failure")
+        real_clear()
+
+    # 2) Fault the NEXT _idle.clear (the enqueue-time one) so _idle is left SET with an item pending.
+    monkeypatch.setattr(queue._idle, "clear", _flaky_clear)
+    r2 = queue.reserve()
+    assert r2 is not None
+    with r2:
+        assert r2.submit(lambda: row(id=uuid4())) is True  # committed; _idle.clear raised, _idle stays set
+    assert len(queue._pending) == 1 and queue._idle.is_set()  # stale: idle SET while work is pending
+    # 3) drain must re-clear _idle (so the wait yields) and complete without busy-spinning/starving.
     await queue.drain()
     assert queue._inflight() == 0 and len(store.exchanges) == 2 and len(queue._pending) == 0
     await queue.aclose()

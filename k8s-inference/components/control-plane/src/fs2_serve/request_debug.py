@@ -833,18 +833,33 @@ def _effective_cap(max_body_bytes: int | None) -> int:
 
 
 def _bounded_for_summary(
-    request_observed: int, response_observed: int, request_complete: bool, max_body_bytes: int | None
+    request_observed: int,
+    response_observed: int,
+    request_complete: bool,
+    response_redacted: bool,
+    max_body_bytes: int | None,
 ) -> bool:
-    """True when a row's read-time truth can be derived by a BOUNDED read: the request is wire-complete
-    AND both bodies are within the effective ceiling, so the stored payload is small and cheap to fetch
-    and decrypt. Bounded rows are decrypted and fully egress-sanitized (exact truncation/redaction truth
-    on BOTH detail and list); a row failing this is NON-bounded and is rendered METADATA-ONLY on both
-    paths WITHOUT fetching/decrypting its (possibly huge) payload — no memory/event-loop DoS and no
-    arbitrary-body disclosure on detail."""
+    """True when a row's read-time truth can be derived by a BOUNDED read: the stored ciphertext is small
+    and cheap to fetch + decrypt, so the row is decrypted and fully egress-sanitized (exact truth on BOTH
+    detail and list). A row failing this is NON-bounded and rendered METADATA-ONLY on both paths WITHOUT
+    fetching/decrypting its (possibly huge) payload.
+
+    The RESPONSE body is ALWAYS withheld on read, so it only affects the DECRYPT COST, not disclosure:
+      - a CURRENT row never stores the response (it is a small withheld marker; ``response_redacted`` is
+        True), so its wire-observed length does NOT bound the ciphertext — the row is bounded on its
+        REQUEST alone and the safe retained request is SERVED even when the response was huge on the wire;
+      - only a LEGACY row that stored a RAW response (``response_redacted`` False) shares ONE ciphertext
+        with that possibly pre-cap-huge response, so decrypting the request would mean decrypting the
+        over-cap response — such a row is gated on the response size and withheld WHOLE when it is over
+        the ceiling (the genuinely-unsafe case; no separate-storage schema change can avoid it here).
+    """
     if not request_complete:
         return False
     limit = _effective_cap(max_body_bytes)
-    return request_observed <= limit and response_observed <= limit
+    if request_observed > limit:
+        return False
+    # Gate on the response size ONLY for a legacy row that stored the response RAW (shares the ciphertext).
+    return response_redacted or response_observed <= limit
 
 
 def _conservative_exchange(meta: DebugExchangeSummary) -> DebugExchange:
@@ -884,12 +899,17 @@ def _read_view(
 ) -> DebugExchange:
     """THE single per-row read derivation shared by detail (get) and the list summary.
 
-    A BOUNDED row (complete + both bodies within the effective ceiling) is decrypted (``decrypt()``,
-    invoked ONLY here) and fully egress-sanitized for exact truncation/redaction truth. A NON-bounded
-    row is rendered metadata-only WITHOUT decrypting. So detail and the list summary agree by
-    construction, and no read path fetches/decrypts/serves a body past the ceiling."""
+    A BOUNDED row (complete request within the ceiling; the response never bounds a current row, whose
+    response is always a withheld marker) is decrypted (``decrypt()``, invoked ONLY here) and fully
+    egress-sanitized for exact truncation/redaction truth. A NON-bounded row is rendered metadata-only
+    WITHOUT decrypting. So detail and the list summary agree by construction, and no read path
+    fetches/decrypts/serves a body past the ceiling."""
     if _bounded_for_summary(
-        meta.request_observed_bytes, meta.response_observed_bytes, meta.request_complete, max_body_bytes
+        meta.request_observed_bytes,
+        meta.response_observed_bytes,
+        meta.request_complete,
+        meta.response_redacted,
+        max_body_bytes,
     ):
         return normalize_exchange_for_read(decrypt(), max_body_bytes)
     return _conservative_exchange(meta)
@@ -930,6 +950,12 @@ def _pagination(limit: int, cursor: str | None) -> tuple[datetime, UUID] | None:
 class InMemoryDebugStore:
     def __init__(self, *, max_body_bytes: int | None = None) -> None:
         self.exchanges: dict[UUID, DebugExchange] = {}
+        # An APPEND-ONLY list holding the SAME row objects in insertion order (no data duplication, just
+        # extra references). list() iterates THIS off the loop feeding a bounded heap — a Python list is
+        # iterated by index and never raises "changed size during iteration" (unlike dict.values()), so a
+        # concurrent append is safe WITHOUT taking an O(N) snapshot copy. There is no deletion (no-delete
+        # retention), so it never holds stale entries and stays in lockstep with `exchanges`.
+        self._ordered: list[DebugExchange] = []
         # Current cap, used to withhold legacy request bodies over today's cap on the read/list path.
         self._max_body_bytes = max_body_bytes
 
@@ -937,7 +963,9 @@ class InMemoryDebugStore:
         # The exchange is already sanitized exactly once, off the event loop, by the
         # capturing middleware/runtime (offload_capture); the store never re-sanitizes.
         if exchange.id not in self.exchanges:
-            self.exchanges[exchange.id] = exchange.model_copy(deep=True)
+            copy = exchange.model_copy(deep=True)
+            self.exchanges[exchange.id] = copy
+            self._ordered.append(copy)
 
     async def list(
         self,
@@ -952,17 +980,16 @@ class InMemoryDebugStore:
     ) -> DebugExchangeList:
         after = _pagination(limit, cursor)
         cap = self._max_body_bytes
-        exchanges = self.exchanges  # O(1) reference; NO O(N) step runs on the loop — see _derive
+        ordered = self._ordered  # O(1) reference to the append-only list; NO O(N) copy is ever taken
 
         def _derive() -> tuple[list[DebugExchangeSummary], bool]:
-            # EVERYTHING O(N) runs OFF the event loop here. The snapshot is taken INSIDE the thread as a
-            # single list(dict.values()) — a GIL-atomic C copy with no Python checkpoints, so a concurrent
-            # insert on the loop can't corrupt it; record() only ever INSERTS (never mutates a row), so the
-            # snapshot is a stable view. Selection uses a BOUNDED top-k min-heap (size <= limit) instead of
-            # a full sort: O(N log limit) time and O(limit) selection memory, never an O(N)-sorted list.
+            # EVERYTHING runs OFF the event loop here, with NO O(N) auxiliary snapshot: we iterate the
+            # append-only list DIRECTLY (index-based iteration is safe under a concurrent append and never
+            # copies), feeding a BOUNDED top-k min-heap (size <= limit). Total auxiliary memory is O(limit)
+            # (the heap), and time is O(N log limit) — never an O(N) full list() copy or O(N)-sorted list.
             heap: list[tuple[datetime, UUID, DebugExchange]] = []
             matched = 0
-            for row in list(exchanges.values()):
+            for row in ordered:
                 if not (
                     (model_id is None or row.model_id == model_id)
                     and (operation_id is None or row.operation_id == operation_id)
@@ -1094,7 +1121,11 @@ class PostgresDebugStore:
             row["id"]
             for row in page
             if _bounded_for_summary(
-                row["request_observed_bytes"], row["response_observed_bytes"], row["request_complete"], cap
+                row["request_observed_bytes"],
+                row["response_observed_bytes"],
+                row["request_complete"],
+                row["response_redacted"],
+                cap,
             )
         ]
         truthful: dict[UUID, DebugExchangeSummary] = {}
@@ -1150,7 +1181,11 @@ class PostgresDebugStore:
             return None
         meta = DebugExchangeSummary.model_validate(dict(meta_row))
         if not _bounded_for_summary(
-            meta.request_observed_bytes, meta.response_observed_bytes, meta.request_complete, self._max_body_bytes
+            meta.request_observed_bytes,
+            meta.response_observed_bytes,
+            meta.request_complete,
+            meta.response_redacted,
+            self._max_body_bytes,
         ):
             # NON-bounded (incomplete or a body over the effective ceiling): metadata-only view, NO
             # ciphertext fetch/decrypt — identical to this row's list summary (one shared derivation),
@@ -1519,14 +1554,18 @@ class DebugPersistQueue:
         once ``_closed`` is set, their submit is fenced to a no-op, so waiting on them could only hang
         shutdown for a capture that will never be enqueued.
 
-        FAULT RECOVERY: each iteration also RE-SIGNALS ``_wake`` after (re)starting the worker, so a
-        worker already asleep on ``_wake.wait()`` that missed a failed ``_commit`` notification is
-        deterministically woken — drain cannot hang on a stranded item just because its enqueue-time
-        signal raised. The worker clears ``_wake`` and self-corrects ``_idle`` when it picks up work, so
-        the re-signal converges (no busy-spin) and drain returns once the backlog is truly processed."""
+        FAULT RECOVERY: because there IS work in the loop body, ``_idle`` MUST be false — so each
+        iteration deterministically RE-CLEARS ``_idle`` and RE-SIGNALS ``_wake`` before waiting. This
+        recovers ANY inconsistent enqueue-time state, whether ``_wake.set()`` or ``_idle.clear()`` raised
+        in ``_commit``: re-clearing ``_idle`` is essential because ``await Event.wait()`` on an
+        ALREADY-SET event returns WITHOUT yielding, which would busy-spin this loop and STARVE the worker
+        task (it would never get scheduled). Clearing guarantees the wait blocks (yields to the loop) so
+        the worker runs, and the worker sets ``_idle`` only when truly idle, so drain returns exactly once
+        the committed backlog is processed and never busy-spins."""
         while self._pending or self._processing:
             self._start_worker()
             self._wake.set()  # wake a possibly-sleeping worker that missed a failed enqueue notification
+            self._idle.clear()  # drop a stale-set latch (failed _commit _idle.clear) so wait() yields
             await self._idle.wait()
 
     async def aclose(self) -> None:
