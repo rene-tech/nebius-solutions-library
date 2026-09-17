@@ -11,7 +11,12 @@ from .access_models import OperatorPrincipal, OperatorRole
 from .admin import AdminProblemError
 from .admin_models import AdminContext, AdminEnvelope
 from .apps import AppsService
-from .request_debug import DebugExchange, DebugExchangeList, DebugStore
+from .request_debug import (
+    DebugExchange,
+    DebugExchangeList,
+    DebugStore,
+    sanitize_debug_exchange,
+)
 from .request_debug_authorization import RequestDebugAuthorization
 
 
@@ -244,6 +249,7 @@ def request_debug_router(
                         "request_debug_not_found",
                         "captured request was not found",
                     )
+                result = sanitize_debug_exchange(result)
             except Exception as error:
                 await audit(
                     identity,

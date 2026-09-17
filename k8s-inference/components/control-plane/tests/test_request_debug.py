@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -12,13 +13,16 @@ import pytest
 from fs2_serve.models import Principal
 from fs2_serve.request_debug import (
     DebugCaptureMiddleware,
+    DebugBody,
     DebugExchange,
     InMemoryDebugStore,
+    REDACTED,
     body_capture,
     credential_values,
     persist_debug_exchange,
     redact_headers,
     redact_query,
+    sanitize_debug_exchange,
 )
 from fs2_serve.request_telemetry import (
     InMemoryRequestTelemetryStore,
@@ -131,6 +135,90 @@ def test_identifiable_json_credentials_redacted_even_malformed_or_sse(raw):
     body = body_capture(raw, "application/json", False)
     assert body.redacted and "JSON_SECRET" not in body.data and "ACDEFG" in body.data
     assert body.observed_bytes == len(raw) and not body.complete
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "api_token",
+        "github_token",
+        "private_key",
+        "secret_access_key",
+        "aws_secret_access_key",
+    ],
+)
+@pytest.mark.parametrize("complete", [False, True])
+def test_normalized_structured_secret_keys_are_redacted(name, complete):
+    raw = json.dumps(
+        {
+            name: "STRUCTURED_SECRET",
+            "max_tokens": 128,
+            "input_tokens": 64,
+            "output_tokens": 32,
+        },
+        separators=(",", ":"),
+    ).encode()
+    body = body_capture(raw, "application/json", complete)
+    assert "STRUCTURED_SECRET" not in body.data
+    assert '"max_tokens":128' in body.data
+    assert '"input_tokens":64' in body.data
+    assert '"output_tokens":32' in body.data
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"github=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+        b"token=github_pat_11AA22BB33_CC44DD55EE66FF77GG88HH99",
+        b"AWS_SECRET_ACCESS_KEY=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/=",
+        (
+            b"-----BEGIN PRIVATE KEY-----\n"
+            b"cHJpdmF0ZS1rZXktbWF0ZXJpYWw=\n"
+            b"-----END PRIVATE KEY-----"
+        ),
+    ],
+)
+def test_recognizable_secret_formats_are_redacted(raw):
+    body = body_capture(raw, "text/plain", True)
+    assert body.redacted
+    assert body.data == REDACTED or REDACTED in body.data
+    assert b"PRIVATE KEY" not in body.data.encode()
+    assert b"ghp_" not in body.data.encode()
+    assert b"github_pat_" not in body.data.encode()
+    assert b"AbCdEf" not in body.data.encode()
+
+
+async def test_legacy_or_custom_store_rows_are_resanitized_on_read_and_export():
+    store = InMemoryDebugStore()
+    unsafe = row(
+        request_body=DebugBody(
+            encoding="utf-8",
+            data='{"api_token":"ghp_abcdefghijklmnopqrstuvwxyz0123456789","max_tokens":8}',
+            content_type="application/json",
+            observed_bytes=74,
+            complete=True,
+            redacted=False,
+        ),
+        response_body=DebugBody(
+            encoding="utf-8",
+            data="-----BEGIN PRIVATE KEY-----\nunsafe\n-----END PRIVATE KEY-----",
+            content_type="text/plain",
+            observed_bytes=60,
+            complete=True,
+            redacted=False,
+        ),
+    )
+    # Simulate retained pre-hardening data or a custom adapter that did not
+    # pass through record(). Every read/export boundary must sanitize it.
+    store.exchanges[unsafe.id] = unsafe
+    loaded = await store.get(unsafe.id, unsafe.tenant_id)
+    assert loaded is not None
+    assert "ghp_" not in loaded.model_dump_json()
+    assert "PRIVATE KEY" not in loaded.model_dump_json()
+    assert loaded.request_body.data.endswith('"max_tokens":8}')
+    exported = sanitize_debug_exchange(unsafe)
+    assert "ghp_" not in exported.model_dump_json()
+    assert "PRIVATE KEY" not in exported.model_dump_json()
 
 
 def test_query_headers_and_partial_known_credentials_are_redacted_without_changing_inputs():

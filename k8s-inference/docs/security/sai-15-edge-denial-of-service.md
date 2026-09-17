@@ -289,6 +289,19 @@ selects only the retained run-root name and is not opened in this lane. The
 proxy broker remains an explicit local availability dependency; it is not
 replaced with ambient cloud credentials.
 
+Request-debug redaction uses a normalized exact-name taxonomy rather than a
+blanket `*token` suffix, so scientific telemetry fields including
+`max_tokens`, `input_tokens`, and `output_tokens` remain useful. Exact secret
+keys include API/GitHub/personal-access tokens, private/deploy keys, AWS secret
+access keys/session credentials, passwords, cookies, signatures, and existing
+authorization headers. Recognizable GitHub token, contextual AWS secret/access
+key, authorization-scheme, JWT, and PEM private-key formats are removed even
+from malformed or partial bodies. The current policy is re-applied before every
+store write, decrypted read, and API export; a retained pre-hardening row or a
+custom store therefore cannot bypass a later taxonomy improvement. The
+separate accepted SAI-02 integration continues to own the exact 90-day record
+retention and purge.
+
 For cloud-authorized commands, the brokered token descriptor is not part of
 the global child FD set. Only a child whose environment carries the exact
 current signed delegated-auth envelope receives that one descriptor; local

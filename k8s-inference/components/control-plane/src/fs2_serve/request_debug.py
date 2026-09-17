@@ -42,14 +42,24 @@ _AUTH_NAMES = frozenset(
         "xauthtoken",
         "xaccesstoken",
         "authtoken",
+        "apitoken",
         "accesstoken",
         "refreshtoken",
         "idtoken",
+        "githubtoken",
+        "personalaccesstoken",
         "clientsecret",
         "password",
         "passwd",
         "secret",
         "secretkey",
+        "secretaccesskey",
+        "awssecretaccesskey",
+        "awsaccesskeyid",
+        "awssessiontoken",
+        "privatekey",
+        "privatekeydata",
+        "deploykey",
         "token",
         "credentials",
         "ngcapikey",
@@ -68,9 +78,18 @@ _AUTH_NAMES = frozenset(
 )
 _AUTH_TOKEN = re.compile(
     rb"(?:fs2_(?:pat|admin)_[A-Za-z0-9_-]{16,}|nvapi-[A-Za-z0-9_-]{16,}|hf_[A-Za-z0-9]{16,}"
+    rb"|gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}"
+    rb"|(?:AKIA|ASIA|AIDA|AROA|AIPA|ANPA|ANVA|ASCA)[A-Z0-9]{16}"
     rb"|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)"
 )
 _AUTH_SCHEME = re.compile(rb"\b(?:Bearer|Basic)\s+[A-Za-z0-9+/_=.:-]+", re.IGNORECASE)
+_AWS_SECRET_ASSIGNMENT = re.compile(
+    rb"(?i)(\b(?:aws_)?secret_access_key\b[\s\"']*[:=][\s\"']*)([A-Za-z0-9/+=]{32,128})"
+)
+_PRIVATE_KEY = re.compile(
+    rb"-----BEGIN ((?:[A-Z0-9]+ )?PRIVATE KEY)-----.*?-----END \1-----",
+    re.DOTALL,
+)
 _JSON_SCALAR = re.compile(rb'("(?:[^"\\]|\\.)*")(\s*:\s*)("(?:[^"\\]|\\.)*"|[^,}\]\s]+)')
 
 
@@ -174,7 +193,12 @@ def _known_bytes(known_credentials: Credentials) -> tuple[bytes, ...]:
 def _redact_bytes(raw: bytes, known_credentials: Credentials = ()) -> bytes:
     for credential in _known_bytes(known_credentials):
         raw = raw.replace(credential, REDACTED.encode())
-    return _AUTH_SCHEME.sub(REDACTED.encode(), _AUTH_TOKEN.sub(REDACTED.encode(), raw))
+    raw = _PRIVATE_KEY.sub(REDACTED.encode(), raw)
+    raw = _AWS_SECRET_ASSIGNMENT.sub(
+        lambda match: match.group(1) + REDACTED.encode(), raw
+    )
+    raw = _AUTH_TOKEN.sub(REDACTED.encode(), raw)
+    return _AUTH_SCHEME.sub(REDACTED.encode(), raw)
 
 
 def redact_text(value: str, known_credentials: Credentials = ()) -> str:
@@ -337,6 +361,12 @@ def _sanitize(exchange: DebugExchange) -> DebugExchange:
     )
 
 
+def sanitize_debug_exchange(exchange: DebugExchange) -> DebugExchange:
+    """Re-apply current redaction policy before every persistence/export boundary."""
+
+    return _sanitize(exchange)
+
+
 def _summary(exchange: DebugExchange) -> DebugExchangeSummary:
     return DebugExchangeSummary(
         **{field: getattr(exchange, field) for field in DebugMetadata.model_fields},
@@ -377,7 +407,9 @@ class InMemoryDebugStore:
 
     async def record(self, exchange: DebugExchange) -> None:
         if exchange.id not in self.exchanges:
-            self.exchanges[exchange.id] = _sanitize(exchange).model_copy(deep=True)
+            self.exchanges[exchange.id] = sanitize_debug_exchange(exchange).model_copy(
+                deep=True
+            )
 
     async def list(
         self,
@@ -410,7 +442,11 @@ class InMemoryDebugStore:
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
         row = self.exchanges.get(exchange_id)
-        return row.model_copy(deep=True) if row and (tenant_id is None or row.tenant_id == tenant_id) else None
+        return (
+            sanitize_debug_exchange(row).model_copy(deep=True)
+            if row and (tenant_id is None or row.tenant_id == tenant_id)
+            else None
+        )
 
 
 class PostgresDebugStore:
@@ -436,7 +472,7 @@ class PostgresDebugStore:
                 exchange.tenant_id,
             )
             exchange = exchange.model_copy(update={"model_id": model_id})
-        exchange = _sanitize(exchange)
+        exchange = sanitize_debug_exchange(exchange)
         metadata = _summary(exchange).model_dump()
         encrypted = self.cipher.encrypt(
             exchange.model_dump_json().encode(),
@@ -527,7 +563,7 @@ class PostgresDebugStore:
             Ciphertext(row["key_id"], bytes(row["nonce"]), bytes(row["ciphertext"])),
             aad=self._aad(row["id"], row["tenant_id"], row["model_id"]),
         )
-        return DebugExchange.model_validate_json(raw)
+        return sanitize_debug_exchange(DebugExchange.model_validate_json(raw))
 
 
 async def persist_debug_exchange(
