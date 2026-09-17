@@ -377,43 +377,73 @@ def validate_first_party_inventory(
             for field in ("commit", "tree")
         ):
             raise EvidenceError(f"{path}: {identifier} build source is invalid")
-        receipt = image.get("build_receipt")
-        if not isinstance(receipt, dict):
-            raise EvidenceError(f"{path}: {identifier} build receipt is missing")
-        receipt_value = receipt.get("path")
-        expected_sha256 = receipt.get("sha256")
-        signature_value = receipt.get("signature_path")
-        signature_sha256 = receipt.get("signature_sha256")
+        attestation = image.get("build_attestation")
+        if not isinstance(attestation, dict):
+            raise EvidenceError(f"{path}: {identifier} build attestation is missing")
+        attestation_value = attestation.get("path")
+        expected_sha256 = attestation.get("sha256")
+        signature_value = attestation.get("signature_path")
+        signature_sha256 = attestation.get("signature_sha256")
         if (
-            not isinstance(receipt_value, str)
-            or Path(receipt_value).is_absolute()
+            not isinstance(attestation_value, str)
+            or Path(attestation_value).is_absolute()
             or not isinstance(expected_sha256, str)
             or not HEX_SHA256.fullmatch(expected_sha256)
-            or signature_value != f"{receipt_value}.sig"
+            or signature_value != f"{attestation_value}.sig"
             or not isinstance(signature_sha256, str)
             or not HEX_SHA256.fullmatch(signature_sha256)
         ):
-            raise EvidenceError(f"{path}: {identifier} build receipt binding is invalid")
-        receipt_path = (path.parent / receipt_value).resolve()
+            raise EvidenceError(f"{path}: {identifier} build attestation binding is invalid")
+        attestation_path = (path.parent / attestation_value).resolve()
         signature_path = (path.parent / signature_value).resolve()
         try:
-            receipt_path.relative_to(path.parent.resolve())
+            attestation_path.relative_to(path.parent.resolve())
             signature_path.relative_to(path.parent.resolve())
         except ValueError as exc:
-            raise EvidenceError(f"{path}: {identifier} build receipt escapes lock root") from exc
-        if _sha256(receipt_path) != expected_sha256:
-            raise EvidenceError(f"{path}: {identifier} build receipt hash mismatch")
+            raise EvidenceError(f"{path}: {identifier} build attestation escapes lock root") from exc
+        if _sha256(attestation_path) != expected_sha256:
+            raise EvidenceError(f"{path}: {identifier} build attestation hash mismatch")
         if _sha256(signature_path) != signature_sha256:
             raise EvidenceError(f"{path}: {identifier} build signature hash mismatch")
-        validate_receipt(receipt_path, trust_path)
-        document = _load_object(receipt_path)
+        validate_detached_signature(attestation_path, signature_path, trust_path)
+        document = _load_object(attestation_path)
+        if document.get("schema") != "fs2-serve.nebius.ai/first-party-build-attestation/v1":
+            raise EvidenceError(f"{attestation_path}: unsupported build attestation schema")
         if document.get("source") != build_source:
-            raise EvidenceError(f"{path}: {identifier} build source differs from receipt")
-        if document.get("subject") != {
-            "kind": "image",
-            "identity": digest_reference,
-        }:
+            raise EvidenceError(f"{path}: {identifier} build source differs from attestation")
+        if document.get("subject") != digest_reference:
             raise EvidenceError(f"{path}: {identifier} build subject differs from lock")
+        dockerfile = document.get("dockerfile")
+        if not isinstance(dockerfile, dict) or dockerfile.get("path") != image.get(
+            "dockerfile"
+        ) or not HEX_SHA256.fullmatch(str(dockerfile.get("sha256", ""))):
+            raise EvidenceError(f"{path}: {identifier} Dockerfile attestation is invalid")
+        retained = document.get("retained_evidence")
+        if not isinstance(retained, dict):
+            raise EvidenceError(f"{path}: {identifier} retained evidence is missing")
+        for field in (
+            "buildkit_provenance_sha256",
+            "oci_archive_sha256",
+            "sbom_sha256",
+            "report_sha256",
+            "scan_receipt_sha256",
+            "evidence_archive_sha256",
+        ):
+            if not HEX_SHA256.fullmatch(str(retained.get(field, ""))):
+                raise EvidenceError(
+                    f"{path}: {identifier} retained evidence {field} is invalid"
+                )
+        if retained.get("oci_manifest_sha256") != digest_reference.rsplit(":", 1)[1]:
+            raise EvidenceError(f"{path}: {identifier} manifest hash differs")
+        if not isinstance(retained.get("artifact_id"), str) or not retained[
+            "artifact_id"
+        ].isdigit() or not isinstance(retained.get("retention_until"), str) or not retained[
+            "retention_until"
+        ]:
+            raise EvidenceError(f"{path}: {identifier} retained artifact identity is invalid")
+        validate_attestation_identity(
+            document.get("attestation"), trust_path, purpose=str(attestation_path)
+        )
     return images
 
 

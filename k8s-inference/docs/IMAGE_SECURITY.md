@@ -57,6 +57,11 @@ digests.
   `security/image-attestation-trust.json`. It rewrites reviewed third-party
   tags to digests, accepts exact attested first-party digests, and rejects every
   unknown tag or unlisted digest; observability is not removed.
+- First-party locks reference small signed build attestations containing the
+  exact source, Dockerfile, manifest, BuildKit provenance, OCI archive, SBOM,
+  report, scan-receipt, retained-artifact hashes, and retention deadline. The
+  large OCI archive remains in the 90-day evidence store rather than Git; the
+  protected closure job independently scans the production digest again.
 - `security/release_image_closure.py` discovers the Terraform Helm resources
   from source, checks all direct installers, and requires an out-of-tree signed
   render packet. Every render provenance record binds an authorized builder,

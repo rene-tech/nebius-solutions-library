@@ -41,7 +41,7 @@
     "inventory": "security/first-party-images.lock.json",
     "promotion_status": "blocked_pending_protected_build_attestation",
     "requirements": [
-      "bind the production repository and digest to a signed build-and-scan receipt",
+      "bind the production repository and digest to a signed build attestation containing exact hashes for retained build, SBOM, report, and scan-receipt evidence",
       "require the exact production digest in the rendered release",
       "scan the rendered production digest rather than treating a local source build as promotion evidence"
     ]

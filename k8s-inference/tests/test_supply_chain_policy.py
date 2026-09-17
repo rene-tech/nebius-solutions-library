@@ -137,6 +137,8 @@ def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
         "admin-console",
     }
     assert all(image["digest_reference"] is None for image in first_party["images"])
+    assert all("build_attestation" in image for image in first_party["images"])
+    assert all("build_receipt" not in image for image in first_party["images"])
 
     catalog_map = json.loads((ROOT / "security/catalog-images.lock.json").read_text())
     assert catalog_map["mapping_state"] == (

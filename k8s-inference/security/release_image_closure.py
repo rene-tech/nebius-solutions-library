@@ -740,7 +740,7 @@ def derive_closure(
             "kind": "first-party-build-and-render",
             "build_id": identifier,
             "dockerfile_sha256": _sha256(dockerfile),
-            "build_receipt_sha256": image["build_receipt"]["sha256"],
+            "build_attestation_sha256": image["build_attestation"]["sha256"],
             "surfaces": sorted(actual_surfaces_for_build),
         }
     for path in _catalog_files(root, manifest["catalog_image_sources"]):
