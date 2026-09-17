@@ -1,0 +1,2619 @@
+{
+  "reviewer": "Codex agent; not clinician-adjudicated or blinded",
+  "method": "Manual full-text comparison; script extracts literal evidence and counts explicit judgments, it does not make the judgments",
+  "scope": "44 post-hoc checklist items across two English simulated consultations, first attempts; not independent clinical samples",
+  "grades": {
+    "P": "preserved: stated medical content is recoverable directly without repairing a clinical term or quantity",
+    "D": "degraded: phonetic/wording/confirmation damage requires review or repair; not automatically a different diagnosis",
+    "M": "missing_or_changed: a specific required fact is not reliably present; do not reconstruct it by guessing"
+  },
+  "limitations": [
+    "Reference transcripts include uncertain/overlapping speech; audio has not been independently re-adjudicated by a clinician",
+    "Clinician notes contain unspoken details and conflicting facts and are not primary gold",
+    "No severity weights or clinical-accuracy percentage; item granularity and phonetic judgments are subjective",
+    "No downstream report regeneration or new inference calls in this content review",
+    "German has only one applicable model in this comparison, not a head-to-head medical ranking"
+  ],
+  "totals": {
+    "nemotron-speech-en-0-6b": {
+      "P": 39,
+      "D": 5,
+      "M": 0
+    },
+    "nemotron-speech-multilingual-0-6b": {
+      "P": 32,
+      "D": 12,
+      "M": 0
+    },
+    "parakeet-realtime-eou-120m-v1": {
+      "P": 33,
+      "D": 10,
+      "M": 1
+    }
+  },
+  "by_category": {
+    "nemotron-speech-en-0-6b": {
+      "history": {
+        "P": 11
+      },
+      "quantity": {
+        "P": 5
+      },
+      "negation": {
+        "P": 10
+      },
+      "anatomy": {
+        "P": 2
+      },
+      "diagnosis": {
+        "P": 2
+      },
+      "plan": {
+        "P": 6,
+        "D": 1
+      },
+      "medication": {
+        "D": 4,
+        "P": 3
+      }
+    },
+    "nemotron-speech-multilingual-0-6b": {
+      "history": {
+        "P": 10,
+        "D": 1
+      },
+      "quantity": {
+        "P": 4,
+        "D": 1
+      },
+      "negation": {
+        "P": 8,
+        "D": 2
+      },
+      "anatomy": {
+        "P": 1,
+        "D": 1
+      },
+      "diagnosis": {
+        "P": 2
+      },
+      "plan": {
+        "P": 6,
+        "D": 1
+      },
+      "medication": {
+        "D": 6,
+        "P": 1
+      }
+    },
+    "parakeet-realtime-eou-120m-v1": {
+      "history": {
+        "P": 11
+      },
+      "quantity": {
+        "P": 4,
+        "M": 1
+      },
+      "negation": {
+        "P": 10
+      },
+      "anatomy": {
+        "P": 1,
+        "D": 1
+      },
+      "diagnosis": {
+        "D": 1,
+        "P": 1
+      },
+      "plan": {
+        "P": 6,
+        "D": 1
+      },
+      "medication": {
+        "D": 7
+      }
+    }
+  },
+  "items": [
+    {
+      "id": "GI01",
+      "case": "en-01",
+      "category": "history",
+      "reference_fact_paraphrase": "Diarrhea for three days",
+      "reference_evidence": [
+        {
+          "start": 0,
+          "end": 402,
+          "quote": "Hello? Hi. Um, should we start? Yeah, okay. Hello how um. Good morning sir, how can I help you this morning? Hello, how are you? Oh hey, um, I've just had some diarrhea for the last three days, um, and it's been affecting me I need to stay close to the toilet. And, um, yeah, it's been affecting my day-to-day activities. Sorry to hear that. Um, and and when you say diarrhea, what'd you mean by diarrh"
+        },
+        {
+          "start": 4514,
+          "end": 4929,
+          "quote": "in concern. Okay. Yeah. And have you, are you currently working at the moment? Uh, yes, yeah. I I work, er. Um, I'm an accountant. Would, would work. Okay. Have you been going into work the last three days, or have you been at home? Uh, yeah, I've been going to work. Yeah. Yeah, it's been quite difficult. okay. That must be difficult for you then. fine. And you said, you mentioned you live with your wife and two"
+        },
+        {
+          "start": 5154,
+          "end": 5569,
+          "quote": "k alcohol, no. Okay. so um, er normally at this stage I like to um, examine you if that's okay, but um, um, but but having listened to your story, sir, I think uh, um, just to recap for the last three days you've been having loose stool, diarrhea, a bit of tummy pain uh mainly on the left-hand side, um and vomiting and fever and you're quite weak and lethargic um, you mentioned you had this Chinese takeaway as l"
+        }
+      ],
+      "adjudication": "Duration stated by all three.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 0,
+              "end": 331,
+              "quote": "Hello hello yeah, okay hello how can I help you this morning hi um I've just had some um diarrhea for the last three days um and it's been affecting me I need to stay close to the toilet and um yeah it's been affecting my day to day activities sorry to hear that um and when you say diarrhea what do you mean by diarrhea do you mea"
+            },
+            {
+              "start": 4051,
+              "end": 4466,
+              "quote": " um yeah other than that it's uh yeah the main concern and have you are you currently working at the moment uh yeah I I work work um I'm an accountant okay have you been going into work the last three days or have you been at home uh yeah I've been going to work okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Ye"
+            },
+            {
+              "start": 4697,
+              "end": 5112,
+              "quote": "mine you if that's okay but um um but but but but but but but but but but but but but but but but but but but but but having listened to your stories uh I think um just to recap the for the last three days you've been having loose dull diarrhea a bit of tummy pain mainly on the left hand side uh um and vomiting and being generally quite weak and lethargic you mentioned you having this Chinese takeaway as well th"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 0,
+              "end": 328,
+              "quote": "Hello hello stop yep okay hello how can I help you this morning I've just had some um diarrhea for the last three days and it's been affecting me I need to stay close to the toilet and um yeah it's been affecting my day to day activities sorry to hear that um and when you say diarrhea what do you mean by diarrhea do you mean y"
+            },
+            {
+              "start": 3942,
+              "end": 4357,
+              "quote": "ee days other than that it's uh yeah the main concern and have you are you currently working at the moment yeah i i work uh work um I'm in accountants okay have you been going into work the last three days or have you been at home uh yeah I've been going to work that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right yes yea"
+            },
+            {
+              "start": 4583,
+              "end": 4998,
+              "quote": " to uh examine you if that's okay but um but but but but but but but but but but but but but but but but but but but but but haven't listened to your stories uh i think um just to recap for last three days you've been having loose or diarrhea bit of tummy pain mainly on the left hand side uh and vomiting and things generally quite weak and lethargic um you mentioned you're having this Chinese takeaway as well th"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 0,
+              "end": 309,
+              "quote": "hello how hello so how can i help you this morning i just had some diarrhea for the last three days and it's been affecting me i need to stay close to the toilet and yeah it's been affecting my day to day activities sorry to hear that and when you say diarrhea what do you mean by diarrhea do you mean you're "
+            },
+            {
+              "start": 3810,
+              "end": 4225,
+              "quote": "ay yeah other than that it's yeah that's the main concern and have you are you currently working at the moment yeah i i work people work i'm an accountant okay have you been going into work last three days or have you been at home yeah i've been going to work okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right yes y"
+            },
+            {
+              "start": 4343,
+              "end": 4758,
+              "quote": " the web alcohol uh no i d i don't drink alcohol though okay wow so normally at this day i like to examine you if that's okay but have a listen to your stories i think just to recap for the last three days you've been having loose dual diarrhea a bit of tummy pain mainly in the left hand side and vomiting in themes are you quite weak and lethargic you mentioned you're having this chinese takeaway as well three d"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI02",
+      "case": "en-01",
+      "category": "quantity",
+      "reference_fact_paraphrase": "Six or seven bowel movements per day",
+      "reference_evidence": [
+        {
+          "start": 527,
+          "end": 945,
+          "quote": "ol, going to the toilet quite often, uh and like some pain in my, like, lower stomach? Okay. And how many times a day are you going, let's say, in the last couple of days? Um, probably like six or seven times a day? Yeah. Six, seven times a day. And you mention it's mainly watery. Have you noticed any other things, like blood in your stools? No, no blood, yeah, just watery and loose stool. Okay. And you mentioned y"
+        },
+        {
+          "start": 559,
+          "end": 975,
+          "quote": "ten, uh and like some pain in my, like, lower stomach? Okay. And how many times a day are you going, let's say, in the last couple of days? Um, probably like six or seven times a day? Yeah. Six, seven times a day. And you mention it's mainly watery. Have you noticed any other things, like blood in your stools? No, no blood, yeah, just watery and loose stool. Okay. And you mentioned you've had some pain in your tu"
+        }
+      ],
+      "adjudication": "The 6–7 range is preserved.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 428,
+              "end": 843,
+              "quote": " watery stool going to the toilet quite often um and like some pain in my like lower stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had s"
+            },
+            {
+              "start": 450,
+              "end": 865,
+              "quote": " the toilet quite often um and like some pain in my like lower stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 410,
+              "end": 825,
+              "quote": "ke loose and watery stool going to the toilet quite often like some pain in my like lower stomach and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention it's mainly water tree have you noticed any other things like blood in your stalls no no blood yeah just watery and loose stall okay and you mentioned you've had"
+            },
+            {
+              "start": 432,
+              "end": 847,
+              "quote": "ool going to the toilet quite often like some pain in my like lower stomach and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention it's mainly water tree have you noticed any other things like blood in your stalls no no blood yeah just watery and loose stall okay and you mentioned you've had some pain in your tum"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 395,
+              "end": 810,
+              "quote": "nd watery stall going to the toilet quite often and like some pain in my like lowest stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention it's mainly watery have you noticed any other things like blood in your stools no no blood yeah just watery and loose stalk okay and you mentioned you've had som"
+            },
+            {
+              "start": 417,
+              "end": 832,
+              "quote": "to the toilet quite often and like some pain in my like lowest stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention it's mainly watery have you noticed any other things like blood in your stools no no blood yeah just watery and loose stalk okay and you mentioned you've had some pain in your tummy a"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI03",
+      "case": "en-01",
+      "category": "negation",
+      "reference_fact_paraphrase": "No blood in stool",
+      "reference_evidence": [
+        {
+          "start": 681,
+          "end": 1093,
+          "quote": "t couple of days? Um, probably like six or seven times a day? Yeah. Six, seven times a day. And you mention it's mainly watery. Have you noticed any other things, like blood in your stools? No, no blood, yeah, just watery and loose stool. Okay. And you mentioned you've had some pain in your tummy as well. Whereabouts is the pain, exactly? Yep. So in my lower abdomen, so, uh, like, um...yeah, just to one side."
+        },
+        {
+          "start": 2291,
+          "end": 2702,
+          "quote": "as your vomit, I know it's not a nice thing to talk about, but was it just normal food colour Yeah. And there was no blood in your vomit, is that right? Yeah, yeah, just normal vomit, yeah. No no blood, no. Yeah. No, okay. Um, and um, any any other symptoms at all? So you mentioned tummy pain, you mentioned diarrhea, you mentioned your vomiting, uh, anything else that comes to mind? Yep. Um, I had a loss of "
+        }
+      ],
+      "adjudication": "Explicit denial retained.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 573,
+              "end": 984,
+              "quote": "y over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy as well Yeah whereabouts is a pain exactly so it's like in my lower abdomen so uh like um yeah just to one side one si"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 557,
+              "end": 968,
+              "quote": "over the last couple of days probably like six seven times a day six seven times a day and you may mention it's mainly water tree have you noticed any other things like blood in your stalls no no blood yeah just watery and loose stall okay and you mentioned you've had some pain in your tummy as well whereabouts is the pain exactly in my lower abdomen so uh like uh yeah just to one side one side and what side"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 538,
+              "end": 949,
+              "quote": "say over the last couple of days probably like six seven times a day six seven times a day and you may mention it's mainly watery have you noticed any other things like blood in your stools no no blood yeah just watery and loose stalk okay and you mentioned you've had some pain in your tummy as well whereabouts is a pain exactly in my lower abdomen so like yeah just to one side one side and what side is that"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI04",
+      "case": "en-01",
+      "category": "anatomy",
+      "reference_fact_paraphrase": "Pain in the lower abdomen, on the left side",
+      "reference_evidence": [
+        {
+          "start": 846,
+          "end": 1259,
+          "quote": "ke blood in your stools? No, no blood, yeah, just watery and loose stool. Okay. And you mentioned you've had some pain in your tummy as well. Whereabouts is the pain, exactly? Yep. So in my lower abdomen, so, uh, like, um...yeah, just to one side. One side. And what side is that? Uh, on the left side. Left side. Okay, and can you describe the pain to me? Yeah, it feels, um, like a cramp, like a muscular cramp,"
+        }
+      ],
+      "adjudication": "Location and laterality retained in adjacent dialogue.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 738,
+              "end": 1151,
+              "quote": "ike blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy as well Yeah whereabouts is a pain exactly so it's like in my lower abdomen so uh like um yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me Yeah it feels um like uh cramp uh like a muscular cramp and um yeah I f"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 706,
+              "end": 1119,
+              "quote": "y other things like blood in your stalls no no blood yeah just watery and loose stall okay and you mentioned you've had some pain in your tummy as well whereabouts is the pain exactly in my lower abdomen so uh like uh yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me yeah it feels um like a cramp uh like a muscular cramp and um yeah i fe"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 685,
+              "end": 1098,
+              "quote": "any other things like blood in your stools no no blood yeah just watery and loose stalk okay and you mentioned you've had some pain in your tummy as well whereabouts is a pain exactly in my lower abdomen so like yeah just to one side one side and what side is that on the left side left side okay and can you describe the pain to me yeah it feels like a cram like a muscular cramp and yeah i feel a bit weak and s"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI05",
+      "case": "en-01",
+      "category": "history",
+      "reference_fact_paraphrase": "Cramping pain comes and goes",
+      "reference_evidence": [
+        {
+          "start": 1054,
+          "end": 1468,
+          "quote": " uh, like, um...yeah, just to one side. One side. And what side is that? Uh, on the left side. Left side. Okay, and can you describe the pain to me? Yeah, it feels, um, like a cramp, like a muscular cramp, and, um, yeah i feel a bit uh weak and shaky. Okay. And is the pain, is that, is it there all the time, or does it come and go? Uh, it comes and goes. Come and go. Does the pain move anywhere else, for exampl"
+        }
+      ],
+      "adjudication": "Cramp and intermittent course retained.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 931,
+              "end": 1345,
+              "quote": "er abdomen so uh like um yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me Yeah it feels um like uh cramp uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um "
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 898,
+              "end": 1312,
+              "quote": "wer abdomen so uh like uh yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me yeah it feels um like a cramp uh like a muscular cramp and um yeah i feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and go does a pain move anywhere else for example towards your back "
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 861,
+              "end": 1275,
+              "quote": "exactly in my lower abdomen so like yeah just to one side one side and what side is that on the left side left side okay and can you describe the pain to me yeah it feels like a cram like a muscular cramp and yeah i feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go it comes and goes to go there's a pain move anywhere else for example towards your back no j"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI06",
+      "case": "en-01",
+      "category": "negation",
+      "reference_fact_paraphrase": "Felt hot at onset but no current fever",
+      "reference_evidence": [
+        {
+          "start": 1594,
+          "end": 2013,
+          "quote": " well. What do you mean by shaky? Do you mean you've been having, uh have you been feeling feverish, for example? Yeah. Um, yeah, it doesn't feel like -- yeah, it just makes me feel weak. I haven't had a fever, um, at the moment, but I did notice um a temperature when the symptoms started, so, um, yeah around about three or four days ago. You measure your temperature then? Yeah, I uh I didn't mention my temperature,"
+        }
+      ],
+      "adjudication": "Current-versus-past distinction retained.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1423,
+              "end": 1842,
+              "quote": "e weak and shaky as well would you mean by shaky do you mean you've been having uh are you been feeling feverish for example um yeah it doesn't feel like uh yeah I just mainly feel weaker I haven't had a fever um at the moment but I did notice um a temperature when the symptom started so um yeah around about three or four days ago you measure your temperature then yeah I didn't measure my temperature no but I felt u"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1386,
+              "end": 1805,
+              "quote": "ite weak and shaky as well would you mean by shaky do you mean you've been having uh you've been feeling feverish for example um yeah it doesn't feel like uh yeah I just make me feel weak I haven't had a fever at the moment but I did notice um a temperature when the symptoms started so um yeah around about three or four days ago you measure your temperature then yeah I didn't imagine my temperature node but I felt u"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1332,
+              "end": 1751,
+              "quote": "ng quite weak and shaky as well would you mean by shake do you mean you've been having are you been feeling feverish for example um yeah it doesn't feel like yeah i just made me feel weak i haven't had a fever um at the moment but i did notice a temperature when the symptoms started so yeah around about three or four days ago can you measure your temperature then yeah i didn't measure my temperature no but i felt ju"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI07",
+      "case": "en-01",
+      "category": "history",
+      "reference_fact_paraphrase": "Vomited at onset; vomiting has stopped",
+      "reference_evidence": [
+        {
+          "start": 2050,
+          "end": 2466,
+          "quote": "And, y'know. Okay. Okay. Any other symptoms like sweating, or um, night sweats? No? And, uh, any vomiting at all? Uh, no. Yeah, so um, I vomited at the start of the symptoms but now um I've stopped vomiting. You stopped vomiting, okay. And was your vomit, I know it's not a nice thing to talk about, but was it just normal food colour Yeah. And there was no blood in your vomit, is that right? Yeah, yeah, just norma"
+        },
+        {
+          "start": 2072,
+          "end": 2488,
+          "quote": "y. Any other symptoms like sweating, or um, night sweats? No? And, uh, any vomiting at all? Uh, no. Yeah, so um, I vomited at the start of the symptoms but now um I've stopped vomiting. You stopped vomiting, okay. And was your vomit, I know it's not a nice thing to talk about, but was it just normal food colour Yeah. And there was no blood in your vomit, is that right? Yeah, yeah, just normal vomit, yeah. No no b"
+        }
+      ],
+      "adjudication": "Resolution is not changed into continuing vomiting.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1814,
+              "end": 2230,
+              "quote": " temperature no but I felt um just a bit hot okay okay any other symptoms like sweating or um no and uh any vomiting at all Yeah so um I vomited at the start of the symptoms but now um I've stopped vomiting stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food colour yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1772,
+              "end": 2188,
+              "quote": " my temperature node but I felt um just a bit hot okay any other symptoms like sweating or um no and uh any vomiting at all yeah so um a vomited at the start of the symptoms but now um I've stopped vomiting you stopped vomiting okay and was your vomits I know it's not nice to talk about but was it just normal food colour yeah yeah just normal vomit yeah and there was no blood in your vomits is that right no okay "
+            },
+            {
+              "start": 1793,
+              "end": 2209,
+              "quote": "but I felt um just a bit hot okay any other symptoms like sweating or um no and uh any vomiting at all yeah so um a vomited at the start of the symptoms but now um I've stopped vomiting you stopped vomiting okay and was your vomits I know it's not nice to talk about but was it just normal food colour yeah yeah just normal vomit yeah and there was no blood in your vomits is that right no okay and um any other symp"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1708,
+              "end": 2124,
+              "quote": "n't measure my temperature no but i felt just a bit hot okay okay any other symptoms like sweating or night no any vomiting at all yes so i vomited at the start of the symptoms but now i've stopped vomiting okay and was your vomit i know it's not nice to talk about but was it just normal food color yeah yeah just normal vomit and there was no blood in your vomit is that right no no okay and any other symptoms at "
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI08",
+      "case": "en-01",
+      "category": "history",
+      "reference_fact_paraphrase": "Vomit described as normal food colour",
+      "reference_evidence": [
+        {
+          "start": 2176,
+          "end": 2594,
+          "quote": ", so um, I vomited at the start of the symptoms but now um I've stopped vomiting. You stopped vomiting, okay. And was your vomit, I know it's not a nice thing to talk about, but was it just normal food colour Yeah. And there was no blood in your vomit, is that right? Yeah, yeah, just normal vomit, yeah. No no blood, no. Yeah. No, okay. Um, and um, any any other symptoms at all? So you mentioned tummy pain, you ment"
+        }
+      ],
+      "adjudication": "Do not score the conflicting note's bilious description as gold.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1926,
+              "end": 2344,
+              "quote": "ting at all Yeah so um I vomited at the start of the symptoms but now um I've stopped vomiting stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food colour yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vom"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1886,
+              "end": 2304,
+              "quote": "ng at all yeah so um a vomited at the start of the symptoms but now um I've stopped vomiting you stopped vomiting okay and was your vomits I know it's not nice to talk about but was it just normal food colour yeah yeah just normal vomit yeah and there was no blood in your vomits is that right no okay and um any other symptoms at all so you mentioned Tommy Payne you mentioned diarrhea you mentioned the vomiting anyt"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1800,
+              "end": 2217,
+              "quote": "eating or night no any vomiting at all yes so i vomited at the start of the symptoms but now i've stopped vomiting okay and was your vomit i know it's not nice to talk about but was it just normal food color yeah yeah just normal vomit and there was no blood in your vomit is that right no no okay and any other symptoms at all so you mentioned tummy pain you mentioned diarrhea you mentioned your vomiting anything e"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI09",
+      "case": "en-01",
+      "category": "negation",
+      "reference_fact_paraphrase": "Dialogue establishes no blood in vomit",
+      "reference_evidence": [
+        {
+          "start": 2218,
+          "end": 2637,
+          "quote": "ptoms but now um I've stopped vomiting. You stopped vomiting, okay. And was your vomit, I know it's not a nice thing to talk about, but was it just normal food colour Yeah. And there was no blood in your vomit, is that right? Yeah, yeah, just normal vomit, yeah. No no blood, no. Yeah. No, okay. Um, and um, any any other symptoms at all? So you mentioned tummy pain, you mentioned diarrhea, you mentioned your vomiting"
+        }
+      ],
+      "adjudication": "All retain the negative question and response; the English output retains the clearest explicit no-blood answer. Not scored as reversal.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1995,
+              "end": 2414,
+              "quote": " um I've stopped vomiting stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food colour yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vomiting anything else that comes to mind um I had a loss of appetite um "
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1955,
+              "end": 2374,
+              "quote": "m I've stopped vomiting you stopped vomiting okay and was your vomits I know it's not nice to talk about but was it just normal food colour yeah yeah just normal vomit yeah and there was no blood in your vomits is that right no okay and um any other symptoms at all so you mentioned Tommy Payne you mentioned diarrhea you mentioned the vomiting anything else that comes to mind um I had a loss of appetite so I haven't "
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1863,
+              "end": 2282,
+              "quote": "start of the symptoms but now i've stopped vomiting okay and was your vomit i know it's not nice to talk about but was it just normal food color yeah yeah just normal vomit and there was no blood in your vomit is that right no no okay and any other symptoms at all so you mentioned tummy pain you mentioned diarrhea you mentioned your vomiting anything else that comes to mind i had to loss of appetite so i haven't bee"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI10",
+      "case": "en-01",
+      "category": "history",
+      "reference_fact_paraphrase": "Can retain oral fluids despite loss of appetite",
+      "reference_evidence": [
+        {
+          "start": 2582,
+          "end": 2998,
+          "quote": "in, you mentioned diarrhea, you mentioned your vomiting, uh, anything else that comes to mind? Yep. Um, I had a loss of appetite, um, so I haven't been eating as much, but I've been able to hold down fluids. Okay. Okay, so you're drinking fluids. Um, what kind of foods have you managed to eat, if anything? Yep. Um, just soups, and, uh, yeah, light foods. Like smoothies and, yeah, liquid foods mainly. Okay. Fine. "
+        }
+      ],
+      "adjudication": "Multilingual halt down is a damaged verb; remaining context suggests the intended ability, but requires repair.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 2282,
+              "end": 2698,
+              "quote": "tioned tummy pain you mentioned diarrhea you mentioned the vomiting anything else that comes to mind um I had a loss of appetite um so I haven't been eating as much um but I've been able to hold down fluids okay so you're drinking fluids what kind of foods have you managed to eat anything um just soups and uh yeah light foods like smoothies and yeah liquid foods mainly okay fine um and so you start just three day"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 2226,
+              "end": 2642,
+              "quote": "u mentioned Tommy Payne you mentioned diarrhea you mentioned the vomiting anything else that comes to mind um I had a loss of appetite so I haven't been eating as much but I've been able to halt down fluids okay so you're drinking fluids what kind of foods have you managed to eat anything just soups and uh yeah like foods like smoothies and yeah liquid foods mainly okay fine um and so you start just three days ag"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 2131,
+              "end": 2547,
+              "quote": "you mentioned tummy pain you mentioned diarrhea you mentioned your vomiting anything else that comes to mind i had to loss of appetite so i haven't been eating as much but i've been able to hold down fluids okay so you're drinking fluids what kind of foods have you managed to eat anything just soups and yeah light foods like smoothies and yeah liquid foods mainly okay and so the start is three days ago the sympto"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI11",
+      "case": "en-01",
+      "category": "history",
+      "reference_fact_paraphrase": "One child vomited but did not have diarrhea",
+      "reference_evidence": [
+        {
+          "start": 3400,
+          "end": 3818,
+          "quote": "re you ate? Um, yeah, I ate at a Chinese restaurant with friends. Yeah. Okay. Anyone else unwell with similar symptoms? Um, so no one else in the family, so a wife and two kids and one, um, child was vomiting, but they haven't got diarrhea. There's no one with the same symptoms. Okay, okay. Fine. Um, alright. And uh, in terms of your , your overall health, are you normally fit and well? Or, uh Um, yeah, I mean, oth"
+        }
+      ],
+      "adjudication": "Do not broaden this to the entire family from the reference note.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3031,
+              "end": 3449,
+              "quote": "remember where you ate um yeah I ate at a Chinese restaurant with friends okay anyone else on well with similar symptoms um so no one else in the family so I uh wife and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms okay okay fine um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 2967,
+              "end": 3385,
+              "quote": " you remember where you eat um yeah i ate uh Chinese restaurant with friends okay anyone else on well with similar symptoms um so no one else in the family side wife and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms right and uh in terms of your overall health are you normally fishing well or um yeah i mean other than um asthma uh using inhaler everything"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 2845,
+              "end": 3263,
+              "quote": " think unusual yeah do you remember where you ate yeah i did a chinese restaurant with friends okay anyone else unwell with similar symptoms so no one else in the family and two kids in one child was vomiting but they haven't got diarrhea there's no one with the same symptoms okay okay fine right and in terms of your your overall health are you normally fishing well yeah i mean other than asthma like use it inhaler"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI12",
+      "case": "en-01",
+      "category": "history",
+      "reference_fact_paraphrase": "Asthma managed with an inhaler",
+      "reference_evidence": [
+        {
+          "start": 3625,
+          "end": 4045,
+          "quote": "t got diarrhea. There's no one with the same symptoms. Okay, okay. Fine. Um, alright. And uh, in terms of your , your overall health, are you normally fit and well? Or, uh Um, yeah, I mean, other than um athsma, um I use an inhaler, everything uh else is fine. Okay. And, is your asthma well-controlled? Uh, yeah, that's fine. I just, yeah, use an inhaler, and uh that's under control. Fine. And you don't have any other"
+        }
+      ],
+      "adjudication": "Spoken condition/inhaler association retained.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3234,
+              "end": 3654,
+              "quote": "iting but they haven't got diarrhea there's no one with the same symptoms okay okay fine um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine okay and did your asthma well controlled uh yeah that's fine just yeah you send inhaler and uh that's under control fine and you don't have any other tummy proble"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3147,
+              "end": 3567,
+              "quote": "nd one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms right and uh in terms of your overall health are you normally fishing well or um yeah i mean other than um asthma uh using inhaler everything uh else is fine okay and did you ask a well controlled uh yeah that's fine uh just yeah you send inhaler and uh that's under control fine and you don't have any other tummy problem "
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3036,
+              "end": 3453,
+              "quote": "hild was vomiting but they haven't got diarrhea there's no one with the same symptoms okay okay fine right and in terms of your your overall health are you normally fishing well yeah i mean other than asthma like use it inhaler everything else is fine okay and did you asthma well controlled yeah that's fine just yeah you send inhaler and that's under control and you don't have any other tummy problem bowel problem"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI13",
+      "case": "en-01",
+      "category": "negation",
+      "reference_fact_paraphrase": "No other medications besides inhalers",
+      "reference_evidence": [
+        {
+          "start": 3971,
+          "end": 4388,
+          "quote": "n inhaler, and uh that's under control. Fine. And you don't have any other tummy problem, bowel problems I should be aware of? No. No, okay. Um, and apart from the inhalers, do you take any other medications? Uh, no, no other medications. Okay, fine. And in terms of just your day to day life, you said it's been affecting your life, um, in what way has it been affecting your life? Yeah. Uh, so, I need to stay close"
+        },
+        {
+          "start": 4001,
+          "end": 4418,
+          "quote": " control. Fine. And you don't have any other tummy problem, bowel problems I should be aware of? No. No, okay. Um, and apart from the inhalers, do you take any other medications? Uh, no, no other medications. Okay, fine. And in terms of just your day to day life, you said it's been affecting your life, um, in what way has it been affecting your life? Yeah. Uh, so, I need to stay close to the toilet 'cause I go qui"
+        }
+      ],
+      "adjudication": "Explicit negative medication history retained.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3564,
+              "end": 3981,
+              "quote": "ou send inhaler and uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in t ap apart from the inhalers do you take any other medications uh no no other medications okay fine and in terms of just your your day to day life you said it's been affecting your life um in what way has it been affecting your life uh sorry I need to stay close to the to"
+            },
+            {
+              "start": 3591,
+              "end": 4008,
+              "quote": "'s under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in t ap apart from the inhalers do you take any other medications uh no no other medications okay fine and in terms of just your your day to day life you said it's been affecting your life um in what way has it been affecting your life uh sorry I need to stay close to the toilet cause I go quite frequ"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3470,
+              "end": 3887,
+              "quote": "eah you send inhaler and uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in apart from the inhalers do you take any other medications uh no other medications okay fine and in terms of just your your day to day life you said he's been affecting your life um yeah in what way has it been affecting your life uh so i need to stay close to the toi"
+            },
+            {
+              "start": 3494,
+              "end": 3911,
+              "quote": " uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in apart from the inhalers do you take any other medications uh no other medications okay fine and in terms of just your your day to day life you said he's been affecting your life um yeah in what way has it been affecting your life uh so i need to stay close to the toilet because I go quite f"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3339,
+              "end": 3756,
+              "quote": " fine just yeah you send inhaler and that's under control and you don't have any other tummy problem bowel problem that should be aware of no no okay apart from the inhalers do you take any other medications uh no no other medications okay point in terms of just your your day to day life you said it's been affecting your life in what way has it been affecting your life so i need to stay close to the toilet because"
+            },
+            {
+              "start": 3366,
+              "end": 3783,
+              "quote": "haler and that's under control and you don't have any other tummy problem bowel problem that should be aware of no no okay apart from the inhalers do you take any other medications uh no no other medications okay point in terms of just your your day to day life you said it's been affecting your life in what way has it been affecting your life so i need to stay close to the toilet because i go quite frequently duri"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI14",
+      "case": "en-01",
+      "category": "diagnosis",
+      "reference_fact_paraphrase": "Clinician suggests gastroenteritis, not a proven diagnosis",
+      "reference_evidence": [
+        {
+          "start": 5533,
+          "end": 5948,
+          "quote": "d you had this Chinese takeaway as little as three days ago and I wondered whether that might be the cause of your problems. Yeah. Okay. Um, it seems like you may have something, uh, called gastroenteritis, which essentially just a tummy bug or infection of your uh of your tummy. Uh, mainly caused by viruses but there can be a possibility of bacteria uh causing its symptoms. Um. Yeah. Yeah. At this stage, uh, wh"
+        }
+      ],
+      "adjudication": "Parakeet corrupts the disease name; tentative wording remains. No diagnostic-validity judgment is made.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5052,
+              "end": 5467,
+              "quote": "ic you mentioned you having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay um it seems like you may have something uh called gastroenteritis which essentially just uh tummy bug or infection of your of your tummy mainly caused by viruses but it can be uh possibility of bacteria uh causing your symptoms at this stage uh what what we'd recommend is ju"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4935,
+              "end": 5350,
+              "quote": "um you mentioned you're having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay it seems like you may have something uh called gastroenteritis which essentially just uh tummy bug or infection of your of your tummy uh mainly caused by viruses but they can be uh possibility of bacteria uh. causing symptoms at this stage uh what what we'd recommend is j"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 4682,
+              "end": 5098,
+              "quote": " lethargic you mentioned you're having this chinese takeaway as well three days ago and i wonder whether that might be the cause of your problems it seems like you may have something called gastropentaritis which essentially just tummy bug or infection of your of your tummy mainly caused by viruses but they can be possibility of bacteria causing a symptoms at this stage what we'd recommend is just what we say con"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI15",
+      "case": "en-01",
+      "category": "plan",
+      "reference_fact_paraphrase": "Clinician does not recommend antibiotics",
+      "reference_evidence": [
+        {
+          "start": 5853,
+          "end": 6283,
+          "quote": "can be a possibility of bacteria uh causing its symptoms. Um. Yeah. Yeah. At this stage, uh, what, what we'd recommend is just what we say conservative management. So, um, I don't think you need anything like antibiotics. It's really just, um, making sure you're well hydrated, so drinking fluids. Mm-hmm. Um, there are things like Dioralyte you can get from the pharmacy, which uh it's um it helps helps replenish your minerals a"
+        }
+      ],
+      "adjudication": "Treatment negation preserved; this is a statement about the dialogue, not advice.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5337,
+              "end": 5767,
+              "quote": "aused by viruses but it can be uh possibility of bacteria uh causing your symptoms at this stage uh what what we'd recommend is just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated so drinking fluids um there are things like dire light you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins an"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5224,
+              "end": 5654,
+              "quote": "used by viruses but they can be uh possibility of bacteria uh. causing symptoms at this stage uh what what we'd recommend is just what we say conservative management so uh I don't think you need anything like antibiotics is really just um making sure you're wealth hydrated so drinking fluids um uh there are things like dirolite you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4950,
+              "end": 5380,
+              "quote": " tummy mainly caused by viruses but they can be possibility of bacteria causing a symptoms at this stage what we'd recommend is just what we say conservative management so i don't think you need anything like antibiotics it's really just to make sure you're well hydrated so drinking with your fluids there are things like dirolite you can get from the farmy which it helps replenish some of your minerals and vitamins okay and if"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI16",
+      "case": "en-01",
+      "category": "medication",
+      "reference_fact_paraphrase": "Dioralyte mentioned as a pharmacy product",
+      "reference_evidence": [
+        {
+          "start": 5995,
+          "end": 6404,
+          "quote": "servative management. So, um, I don't think you need anything like antibiotics. It's really just, um, making sure you're well hydrated, so drinking fluids. Mm-hmm. Um, there are things like Dioralyte you can get from the pharmacy, which uh it's um it helps helps replenish your minerals and vitamins. Okay. Um, and if you are having vomiting diarrhea I would say recommend that in the first, you know, first c"
+        }
+      ],
+      "adjudication": "All corrupt the product spelling/segmentation; do not silently repair the transcript.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 5463,
+              "end": 5873,
+              "quote": "s just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated so drinking fluids um there are things like dire light you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins and if you are having vomiting and diarrhea I would certainly recommend that and first you know first couple"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 5355,
+              "end": 5763,
+              "quote": "hat we say conservative management so uh I don't think you need anything like antibiotics is really just um making sure you're wealth hydrated so drinking fluids um uh there are things like dirolite you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins okay um and if you are having vomiting and diary i would certainly recommend that on a first you know first "
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 5083,
+              "end": 5491,
+              "quote": "what we say conservative management so i don't think you need anything like antibiotics it's really just to make sure you're well hydrated so drinking with your fluids there are things like dirolite you can get from the farmy which it helps replenish some of your minerals and vitamins okay and if you are having vomiting and diary i would soon recommend that of first you know first couple of days if you ar"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI17",
+      "case": "en-01",
+      "category": "medication",
+      "reference_fact_paraphrase": "Paracetamol named",
+      "reference_evidence": [
+        {
+          "start": 6287,
+          "end": 6698,
+          "quote": "itamins. Okay. Um, and if you are having vomiting diarrhea I would say recommend that in the first, you know, first couple of days. Yep. If you are feeling feverish and weak, eh taking some paracetamol, uh, two tablets up to four times a day for the first few days can also help. Yep. I will certainly advise you to take some time off work, actually I know you're quite keen to work but I would say the next two"
+        }
+      ],
+      "adjudication": "Parakeet parasetamol is recognizable but noncanonical, so degraded rather than a different drug.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5746,
+              "end": 6157,
+              "quote": "erals and vitamins and if you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol two tablets up to four times a day for the first few days can also help I would certainly advise you to take some time work actually I know you're quite keen to work but um I would say next two two to three da"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5642,
+              "end": 6053,
+              "quote": "and vitamins okay um and if you are having vomiting and diary i would certainly recommend that on a first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol uh two tables up to four times a day for the first few days can also help I would certainly advise you to take some time of work actually I know you're quite keen to work um I would say next two to three days "
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 5341,
+              "end": 5752,
+              "quote": " your minerals and vitamins okay and if you are having vomiting and diary i would soon recommend that of first you know first couple of days if you are feeling feverish and weak taking some parasetamol tube it's up to four times a day for the first few days can also help i was certainly advised you to take some time to work actually i know you're quite keen to work i would say next two to three days as selec"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI18",
+      "case": "en-01",
+      "category": "quantity",
+      "reference_fact_paraphrase": "Two tablets per dose stated in the dialogue",
+      "reference_evidence": [
+        {
+          "start": 6316,
+          "end": 6738,
+          "quote": " are having vomiting diarrhea I would say recommend that in the first, you know, first couple of days. Yep. If you are feeling feverish and weak, eh taking some paracetamol, uh, two tablets up to four times a day for the first few days can also help. Yep. I will certainly advise you to take some time off work, actually I know you're quite keen to work but I would say the next two, two to three days as the infection cle"
+        }
+      ],
+      "adjudication": "English: two tablets; multilingual: two tables; Parakeet: tube it's, losing reliable quantity/form. Never infer the dose from usual practice.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5770,
+              "end": 6192,
+              "quote": "f you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol two tablets up to four times a day for the first few days can also help I would certainly advise you to take some time work actually I know you're quite keen to work but um I would say next two two to three days um clears from your system take "
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 5668,
+              "end": 6090,
+              "quote": "f you are having vomiting and diary i would certainly recommend that on a first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol uh two tables up to four times a day for the first few days can also help I would certainly advise you to take some time of work actually I know you're quite keen to work um I would say next two to three days um clears from your system just take "
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "M",
+          "evidence": [
+            {
+              "start": 5363,
+              "end": 5785,
+              "quote": "amins okay and if you are having vomiting and diary i would soon recommend that of first you know first couple of days if you are feeling feverish and weak taking some parasetamol tube it's up to four times a day for the first few days can also help i was certainly advised you to take some time to work actually i know you're quite keen to work i would say next two to three days as selection clears from your system just"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI19",
+      "case": "en-01",
+      "category": "quantity",
+      "reference_fact_paraphrase": "Frequency limit up to four times per day",
+      "reference_evidence": [
+        {
+          "start": 6316,
+          "end": 6738,
+          "quote": " are having vomiting diarrhea I would say recommend that in the first, you know, first couple of days. Yep. If you are feeling feverish and weak, eh taking some paracetamol, uh, two tablets up to four times a day for the first few days can also help. Yep. I will certainly advise you to take some time off work, actually I know you're quite keen to work but I would say the next two, two to three days as the infection cle"
+        }
+      ],
+      "adjudication": "Frequency retained even when the adjacent tablet quantity is damaged.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5770,
+              "end": 6192,
+              "quote": "f you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol two tablets up to four times a day for the first few days can also help I would certainly advise you to take some time work actually I know you're quite keen to work but um I would say next two two to three days um clears from your system take "
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5668,
+              "end": 6090,
+              "quote": "f you are having vomiting and diary i would certainly recommend that on a first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol uh two tables up to four times a day for the first few days can also help I would certainly advise you to take some time of work actually I know you're quite keen to work um I would say next two to three days um clears from your system just take "
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5363,
+              "end": 5785,
+              "quote": "amins okay and if you are having vomiting and diary i would soon recommend that of first you know first couple of days if you are feeling feverish and weak taking some parasetamol tube it's up to four times a day for the first few days can also help i was certainly advised you to take some time to work actually i know you're quite keen to work i would say next two to three days as selection clears from your system just"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI20",
+      "case": "en-01",
+      "category": "plan",
+      "reference_fact_paraphrase": "Rest/time off work for two to three days",
+      "reference_evidence": [
+        {
+          "start": 6510,
+          "end": 6927,
+          "quote": "o four times a day for the first few days can also help. Yep. I will certainly advise you to take some time off work, actually I know you're quite keen to work but I would say the next two, two to three days as the infection clears from your system to take some time off and rest. Okay. Yeah. Um, I'll admit if your symptoms haven't got better, you know, in in three to four days, I'd like to come and see you again. "
+        }
+      ],
+      "adjudication": "Later explicit time off and rest resolves awkward earlier wording.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5952,
+              "end": 6369,
+              "quote": "tablets up to four times a day for the first few days can also help I would certainly advise you to take some time work actually I know you're quite keen to work but um I would say next two two to three days um clears from your system take some time off and rest um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again because if it is ongoing then we"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5845,
+              "end": 6262,
+              "quote": "h two tables up to four times a day for the first few days can also help I would certainly advise you to take some time of work actually I know you're quite keen to work um I would say next two to three days um clears from your system just take some time off and rest um you know if your simples haven't got better you know in in three to four days I'll right to come back and see me again because if it is ongoing th"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5536,
+              "end": 5953,
+              "quote": "etamol tube it's up to four times a day for the first few days can also help i was certainly advised you to take some time to work actually i know you're quite keen to work i would say next two to three days as selection clears from your system just take some time off and rest if your symptoms haven't got better you know in in three to four days i'd like to come back and see you again okay because if it is ongoing"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI21",
+      "case": "en-01",
+      "category": "plan",
+      "reference_fact_paraphrase": "Review in three to four days if not improving",
+      "reference_evidence": [
+        {
+          "start": 6681,
+          "end": 7099,
+          "quote": " say the next two, two to three days as the infection clears from your system to take some time off and rest. Okay. Yeah. Um, I'll admit if your symptoms haven't got better, you know, in in three to four days, I'd like to come and see you again. Okay, sure. Because if it is ongoing then we have to wonder whether something else caused your symptoms. Yep. Uh, and we may need to do further tests like um taking a sampl"
+        }
+      ],
+      "adjudication": "The conditional follow-up is preserved; the note gives a different range.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6088,
+              "end": 6506,
+              "quote": "you're quite keen to work but um I would say next two two to three days um clears from your system take some time off and rest um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again because if it is ongoing then we have to wonder whether there's something else causing symptoms and we may need to do further tests like um taking a sample of your store"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5985,
+              "end": 6403,
+              "quote": "now you're quite keen to work um I would say next two to three days um clears from your system just take some time off and rest um you know if your simples haven't got better you know in in three to four days I'll right to come back and see me again because if it is ongoing then we have to wonder whether there's something else causing symptoms and we may need to do further tests like um taking a sample of your stor"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5675,
+              "end": 6093,
+              "quote": " i know you're quite keen to work i would say next two to three days as selection clears from your system just take some time off and rest if your symptoms haven't got better you know in in three to four days i'd like to come back and see you again okay because if it is ongoing then we have to wonder whether there's something else causing symptoms and we may need to do further tests like taking a sample of your sto"
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "GI22",
+      "case": "en-01",
+      "category": "plan",
+      "reference_fact_paraphrase": "Possible future stool sample if symptoms persist",
+      "reference_evidence": [
+        {
+          "start": 6904,
+          "end": 7318,
+          "quote": "ome and see you again. Okay, sure. Because if it is ongoing then we have to wonder whether something else caused your symptoms. Yep. Uh, and we may need to do further tests like um taking a sample of your stool so we can test that. Um, etcetera etcetera. Yep, sure, yep. How's that sound? That sounds great, yeah. Yeah. Do you have any questions for me? Um, no, no further questions, no. Okay, and is uh is the tre"
+        }
+      ],
+      "adjudication": "All render stool as store in this clause; future conditional testing is retained but specimen name needs repair.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 6296,
+              "end": 6710,
+              "quote": " I'd like to come back and see you again because if it is ongoing then we have to wonder whether there's something else causing symptoms and we may need to do further tests like um taking a sample of your store so we can test that um et cetera et cetera yeah sure yeah how's that sound that sounds great Yeah yeah do you have any questions for me um no further questions okay is is is the treatment plan clear uh y"
+            }
+          ],
+          "operation_id": "bf05012d-3314-4ec2-b3dd-37710885581f",
+          "transcript_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 6194,
+              "end": 6608,
+              "quote": "I'll right to come back and see me again because if it is ongoing then we have to wonder whether there's something else causing symptoms and we may need to do further tests like um taking a sample of your store so we can test that um et cetera et cetera yep sure yeah how's that sound that sounds great yeah yeah do you have any questions for me um no further questions is a treatment plan clear uh yeah that's tha"
+            }
+          ],
+          "operation_id": "0ebc74c8-eeeb-48b7-8052-ede05d14a62b",
+          "transcript_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 5885,
+              "end": 6299,
+              "quote": "'d like to come back and see you again okay because if it is ongoing then we have to wonder whether there's something else causing symptoms and we may need to do further tests like taking a sample of your store so we can test that etc etc yeah sure yeah how's that sound that sounds great yeah yeah do you have any questions for me no no further questions is a treatment plan clear uh yeah yeah that's that's very "
+            }
+          ],
+          "operation_id": "675011d4-1edb-4498-ba9d-cea81356fea6",
+          "transcript_sha256": "966fc1a2c40f57c71e9242694b5370e271a613f86c4f2e5c1038596b9cb68216"
+        }
+      }
+    },
+    {
+      "id": "EC01",
+      "case": "en-02",
+      "category": "history",
+      "reference_fact_paraphrase": "Corrected symptom duration is four days",
+      "reference_evidence": [
+        {
+          "start": 3263,
+          "end": 3677,
+          "quote": "know um, I don't feel really comfortable asking about these questions. It's kind of intimate that. So I your help now. Mm. Mm. No no, OK. That's OK. Um Fine, so just to resummarize. For the last four days, you've had very itchy skin, very sore skin all over your body, mainly your chest. And did you also mention your arms and legs as well? Yeah. Uh, no. Just the chest, hands and like, like inside the elbows. Yea"
+        }
+      ],
+      "adjudication": "The later four-day recap remains even where an earlier correction is lost.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3024,
+              "end": 3438,
+              "quote": "round me because it's kind of you know um I don't feel really comfortable asking about these questions it's kind of intimate and so I no okay that's okay fine so just to resummarize for the last four days you've had very itchy skin very sore skin all over your body, mainly your chest and did you also mention your arms and legs as well just the chest hands and like like inside the elbows okay and anything on you"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 2940,
+              "end": 3354,
+              "quote": " because it's kind of you know um I don't feel really comfortable asking about these questions it's kind of intimate and so I really head now okay that's okay so just to resummarize for the last four days you've had very itchy skin, very sore skin all over your body, men your chest. And did you also mention your arms and legs as well uh no just the chest and like like inside the airbows okay anything on your fa"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 2926,
+              "end": 3340,
+              "quote": "t's kind of you know i don't feel really comfortable asking about these questions it's kind of intimate and so i reach your help now no no okay that's okay fine so just to resummize for the last four days you've had very itchy skin very sore skin all over your body many your chest and did you also mention your arms and legs as well and no just the chest hands and like like inside the airballs okay and anything "
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC02",
+      "case": "en-02",
+      "category": "history",
+      "reference_fact_paraphrase": "Red, itchy, sore and cracked skin",
+      "reference_evidence": [
+        {
+          "start": 76,
+          "end": 484,
+          "quote": "t's a bit, it's a bit, it's not very clear. But let's continue anyway. OK. Uh, OK. Let's start again. So how can I help you sir? Yes. So, it's been a few days now. I have like a sore, and a red skin. It's kind of, it's really itchy, and it's like super annoying. So I'd like to find something quick to solve it. OK. No, no problem. I'm happy to help. Um whereabouts in your skin is it affected? Uh, mostly li"
+        },
+        {
+          "start": 2245,
+          "end": 2655,
+          "quote": "like showers every day to be able to, cannot uh ease this itching part, which is very very annoying. Yes. No. Well OK. That's so you mentioned the itchiness. Um you also mentioned it's been quite sore. Yeah. Um have you, have you noticed any uh bleeding or discharge from your skins? . OK. No. Um so my skin is a bit cracked in some parts, like kind of cracked, if you see what I mean. But uh, yeah. OK. You've"
+        },
+        {
+          "start": 2358,
+          "end": 2779,
+          "quote": "l OK. That's so you mentioned the itchiness. Um you also mentioned it's been quite sore. Yeah. Um have you, have you noticed any uh bleeding or discharge from your skins? . OK. No. Um so my skin is a bit cracked in some parts, like kind of cracked, if you see what I mean. But uh, yeah. OK. You've not, haven't uh seen any other uh pus or blood, coming out of your skin. No. No. And you mentioned it all started three day"
+        }
+      ],
+      "adjudication": "Full transcript retains all descriptors; saw/sore at one occurrence alone is not treated as whole-fact loss.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 59,
+              "end": 467,
+              "quote": " better. So it's a bit it's a bit it's not very clear but let let's continue anyway okay let's start again. So how can I help you sirYes so it's been uh few days now I have like a saw and a red skin it's kind of it's really itchy and it's like super annoying so I like to find something quick to solve it no problems I'm happy to help um whereabouts in your skin is it affected uh mostly like my chest my my "
+            },
+            {
+              "start": 2098,
+              "end": 2508,
+              "quote": " take like showers every day to be able to kind of ease this itching part which is very very annoying no well okay that's okay so you mentioned the itchiness um you also mentioned it's been quite sore um have you have you noticed any uh bleeding or discharge from your skin no um so my skin is a bit cracked in some parts like kind of cracked if you see what I mean okay but uh yeah I have not any other uh pus"
+            },
+            {
+              "start": 2194,
+              "end": 2615,
+              "quote": "oying no well okay that's okay so you mentioned the itchiness um you also mentioned it's been quite sore um have you have you noticed any uh bleeding or discharge from your skin no um so my skin is a bit cracked in some parts like kind of cracked if you see what I mean okay but uh yeah I have not any other uh pus or blood coming out of your skin no no and you mentioned it all started three days ago are you four days a"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 39,
+              "end": 447,
+              "quote": "it's a bit better it's a bit it's not very clear but let's let's continue anyway okay let's start again so how can I help you sir yes so it's been uh a few days now I have like a sore and a red skin it's kind of it's really itchy and it's like super annoying so I like to find something quick to solve it no problems I'm happy to help um whereabouts in your skin is it affected uh mostly like my chest my my "
+            },
+            {
+              "start": 2050,
+              "end": 2460,
+              "quote": " take like showers every day to be able to kind of uh ease this itching part which is very very annoying no well okay that's okay so you mentioned the itchiness you also mentioned it's been quite sore have you noticed any uh bleeding or discharge from your skins no um so my skin is a bit cracked in some parts like kind of cracked if you see what I mean okay but uh yeah I'm looking uh any other uh pass or bl"
+            },
+            {
+              "start": 2135,
+              "end": 2556,
+              "quote": " very very annoying no well okay that's okay so you mentioned the itchiness you also mentioned it's been quite sore have you noticed any uh bleeding or discharge from your skins no um so my skin is a bit cracked in some parts like kind of cracked if you see what I mean okay but uh yeah I'm looking uh any other uh pass or blood coming out of your skin and you mentioned it all started three days ago days ago are you awa"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 40,
+              "end": 448,
+              "quote": "t's a bit better it's a bit it's a bit it's not very clear but let's continue anyway okay let's start again so how can i help you sir yes so it's been a few days now i have like a saw and a red skin it's kind of it's really itchy and it's like super annoying so i like to find something quick to solve it no no problem i'm happy to help whereabout your skin is it affected mostly like my chest my hands my ar"
+            },
+            {
+              "start": 2013,
+              "end": 2423,
+              "quote": " to take like showers every day to be able to kind of ease this itching part which is very very annoying no well okay that's okay so you mentioned the itchiness you also mentioned it's been quite sore have you noticed any bleeding or discharge from your skin no so my skin is a bit cracked in some parts like kind of cracked if you see what i mean okay but uh yeah you d i have nothing uh any other uh past or "
+            },
+            {
+              "start": 2091,
+              "end": 2512,
+              "quote": "hich is very very annoying no well okay that's okay so you mentioned the itchiness you also mentioned it's been quite sore have you noticed any bleeding or discharge from your skin no so my skin is a bit cracked in some parts like kind of cracked if you see what i mean okay but uh yeah you d i have nothing uh any other uh past or blood coming out of your skin no and you mentioned it all started three days ago four day"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC03",
+      "case": "en-02",
+      "category": "anatomy",
+      "reference_fact_paraphrase": "Patient specifies chest, hands and inside elbows",
+      "reference_evidence": [
+        {
+          "start": 3465,
+          "end": 3882,
+          "quote": "ys, you've had very itchy skin, very sore skin all over your body, mainly your chest. And did you also mention your arms and legs as well? Yeah. Uh, no. Just the chest, hands and like, like inside the elbows. Yeah. OK. anything on your face at all? Am I what? On your face? On my face? No. No, OK. And apart from this, any other symptoms have you noticed? For example, have you noticed any temperature or fevers? No. "
+        }
+      ],
+      "adjudication": "Inner-elbow anatomy becomes airbows/airballs. Do not resolve the separate speaker disagreement about chest/back/legs using the clinician note.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3206,
+              "end": 3623,
+              "quote": "for the last four days you've had very itchy skin very sore skin all over your body, mainly your chest and did you also mention your arms and legs as well just the chest hands and like like inside the elbows okay and anything on your face at all in my what on your face oh on my face no no okay and apart from this any other symptoms have you noticed for example have you noticed any temperature or fevers no just itc"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 3121,
+              "end": 3539,
+              "quote": " for the last four days you've had very itchy skin, very sore skin all over your body, men your chest. And did you also mention your arms and legs as well uh no just the chest and like like inside the airbows okay anything on your face at all in my what on your face oh on my face? No, okay, and apart from this, any other symptoms have you noticed? For example, have you noticed any temperature or feversNos are itchi"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 3112,
+              "end": 3531,
+              "quote": "the last four days you've had very itchy skin very sore skin all over your body many your chest and did you also mention your arms and legs as well and no just the chest hands and like like inside the airballs okay and anything on your face at all hold your face oh on my face no no okay and apart from this any other symptoms have you noticed for example have you noticed any temperature or fevers no those are itchy i"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC04",
+      "case": "en-02",
+      "category": "negation",
+      "reference_fact_paraphrase": "No bleeding/discharge from the skin",
+      "reference_evidence": [
+        {
+          "start": 2300,
+          "end": 2721,
+          "quote": "is itching part, which is very very annoying. Yes. No. Well OK. That's so you mentioned the itchiness. Um you also mentioned it's been quite sore. Yeah. Um have you, have you noticed any uh bleeding or discharge from your skins? . OK. No. Um so my skin is a bit cracked in some parts, like kind of cracked, if you see what I mean. But uh, yeah. OK. You've not, haven't uh seen any other uh pus or blood, coming out of you"
+        }
+      ],
+      "adjudication": "The initial explicit denial survives all three; one later repetition is not required to count it.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 2145,
+              "end": 2566,
+              "quote": " of ease this itching part which is very very annoying no well okay that's okay so you mentioned the itchiness um you also mentioned it's been quite sore um have you have you noticed any uh bleeding or discharge from your skin no um so my skin is a bit cracked in some parts like kind of cracked if you see what I mean okay but uh yeah I have not any other uh pus or blood coming out of your skin no no and you mentioned "
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 2085,
+              "end": 2506,
+              "quote": "able to kind of uh ease this itching part which is very very annoying no well okay that's okay so you mentioned the itchiness you also mentioned it's been quite sore have you noticed any uh bleeding or discharge from your skins no um so my skin is a bit cracked in some parts like kind of cracked if you see what I mean okay but uh yeah I'm looking uh any other uh pass or blood coming out of your skin and you mentioned "
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 2045,
+              "end": 2466,
+              "quote": "to be able to kind of ease this itching part which is very very annoying no well okay that's okay so you mentioned the itchiness you also mentioned it's been quite sore have you noticed any bleeding or discharge from your skin no so my skin is a bit cracked in some parts like kind of cracked if you see what i mean okay but uh yeah you d i have nothing uh any other uh past or blood coming out of your skin no and you me"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC05",
+      "case": "en-02",
+      "category": "negation",
+      "reference_fact_paraphrase": "No facial involvement",
+      "reference_evidence": [
+        {
+          "start": 3549,
+          "end": 3959,
+          "quote": ". And did you also mention your arms and legs as well? Yeah. Uh, no. Just the chest, hands and like, like inside the elbows. Yeah. OK. anything on your face at all? Am I what? On your face? On my face? No. No, OK. And apart from this, any other symptoms have you noticed? For example, have you noticed any temperature or fevers? No. just very itchy. Nothing else. Itchy. OK. So your, your bowels are working OK"
+        }
+      ],
+      "adjudication": "Explicit face-specific denial retained.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3289,
+              "end": 3699,
+              "quote": ", mainly your chest and did you also mention your arms and legs as well just the chest hands and like like inside the elbows okay and anything on your face at all in my what on your face oh on my face no no okay and apart from this any other symptoms have you noticed for example have you noticed any temperature or fevers no just itching itching nothing else okay so your your bowels are working okay you're c"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3201,
+              "end": 3611,
+              "quote": " body, men your chest. And did you also mention your arms and legs as well uh no just the chest and like like inside the airbows okay anything on your face at all in my what on your face oh on my face? No, okay, and apart from this, any other symptoms have you noticed? For example, have you noticed any temperature or feversNos are itching itching nothing yet so you're bowels are working okay your chest is o"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3188,
+              "end": 3598,
+              "quote": "ody many your chest and did you also mention your arms and legs as well and no just the chest hands and like like inside the airballs okay and anything on your face at all hold your face oh on my face no no okay and apart from this any other symptoms have you noticed for example have you noticed any temperature or fevers no those are itchy itchy nothing else okay so your bowels are working okay your chest i"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC06",
+      "case": "en-02",
+      "category": "negation",
+      "reference_fact_paraphrase": "No fever with this rash",
+      "reference_evidence": [
+        {
+          "start": 3665,
+          "end": 4086,
+          "quote": " elbows. Yeah. OK. anything on your face at all? Am I what? On your face? On my face? No. No, OK. And apart from this, any other symptoms have you noticed? For example, have you noticed any temperature or fevers? No. just very itchy. Nothing else. Itchy. OK. So your, your bowels are working OK? Your chest is OK? No cough, no breathing difficulties? No. You're passing urine OK. I I think so. OK, alright. Um It's always"
+        }
+      ],
+      "adjudication": "Multilingual merges the answer into Nos are itching; likely no, but explicit denial is degraded, not counted as positive fever.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3400,
+              "end": 3821,
+              "quote": "de the elbows okay and anything on your face at all in my what on your face oh on my face no no okay and apart from this any other symptoms have you noticed for example have you noticed any temperature or fevers no just itching itching nothing else okay so your your bowels are working okay you're chest is okay no cough no breathing difficulties no you're passing urine okay uh I think so okay all right um it's always g"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 3315,
+              "end": 3736,
+              "quote": "de the airbows okay anything on your face at all in my what on your face oh on my face? No, okay, and apart from this, any other symptoms have you noticed? For example, have you noticed any temperature or feversNos are itching itching nothing yet so you're bowels are working okay your chest is okay no cough, no breathing difficulties you're passing urine okay uh I think so okay all right it's always good to know so I "
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3299,
+              "end": 3720,
+              "quote": "ke inside the airballs okay and anything on your face at all hold your face oh on my face no no okay and apart from this any other symptoms have you noticed for example have you noticed any temperature or fevers no those are itchy itchy nothing else okay so your bowels are working okay your chest is ok no cough no breathing difficulties no you're passing urine ok i i think so okay all right it's always good to know so"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC07",
+      "case": "en-02",
+      "category": "negation",
+      "reference_fact_paraphrase": "Patient denies cough/breathing difficulties",
+      "reference_evidence": [
+        {
+          "start": 3799,
+          "end": 4224,
+          "quote": "oms have you noticed? For example, have you noticed any temperature or fevers? No. just very itchy. Nothing else. Itchy. OK. So your, your bowels are working OK? Your chest is OK? No cough, no breathing difficulties? No. You're passing urine OK. I I think so. OK, alright. Um It's always good to know. So, I mean, do you have any ideas as to what could be causing your symptoms? Any what? Any ideas, as to what could be causi"
+        }
+      ],
+      "adjudication": "Multilingual keeps the clinician's negative question but drops the separate patient no before the urine question. Confirmation is less clear, not a demonstrated polarity reversal.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3531,
+              "end": 3956,
+              "quote": "symptoms have you noticed for example have you noticed any temperature or fevers no just itching itching nothing else okay so your your bowels are working okay you're chest is okay no cough no breathing difficulties no you're passing urine okay uh I think so okay all right um it's always good to know so I mean do you have any ideas as to what could be causing your symptoms any what any ideas as to what could be causing yo"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 3435,
+              "end": 3860,
+              "quote": "ny other symptoms have you noticed? For example, have you noticed any temperature or feversNos are itching itching nothing yet so you're bowels are working okay your chest is okay no cough, no breathing difficulties you're passing urine okay uh I think so okay all right it's always good to know so I mean do you have any ideas as to what could be causing your symptoms anyways any ideas as to what could be causing your symp"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 3422,
+              "end": 3847,
+              "quote": "y other symptoms have you noticed for example have you noticed any temperature or fevers no those are itchy itchy nothing else okay so your bowels are working okay your chest is ok no cough no breathing difficulties no you're passing urine ok i i think so okay all right it's always good to know so i mean do you have any ideas as to what could be causing your symptoms any ones any ideas as to what could be causing your sym"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC08",
+      "case": "en-02",
+      "category": "history",
+      "reference_fact_paraphrase": "Past asthma, described by patient as no longer active",
+      "reference_evidence": [
+        {
+          "start": 4770,
+          "end": 5188,
+          "quote": " couple of questions I wanted to ask you, which I completely forgot, my apologies. Um, apart from the eczema, do you have any other medical problems I should be aware of? Uh, no. I just had asthma in the past. But not anymore. OK. Not anymore, OK. And do you take any regular medications at the moment? Uh no. No, OK. Do you have any allergies to anything? I like some , sorry? Yeah? sorry I said do you have any aller"
+        }
+      ],
+      "adjudication": "Past-versus-current wording preserved; no inference about actual disease resolution.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4443,
+              "end": 4861,
+              "quote": "um sorry couple of questions I wanted to ask you which I completely forgot my apologies um apart from the eczema do you have any other medical problems I should be aware of uh no I just had asthma in the past but okay not anymore not anymore okay and do you take any regular medications at the moment uh no okay do you have any allergies to anything sorry sorry hello hello yes can you hear me uh sorry I think it cra "
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4343,
+              "end": 4761,
+              "quote": "here's a couple of questions I want to ask you which are completely forgot my apologies um apart from the eczema do you have any other medical problems I should be aware of uh no I just had asthma in the past but okay not anymore not anymore okay and do you take any regular medications at the moment uh no okay do you have any allergies to anything sorry things can you hear me uh sorry I think it cry uh do you have "
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4316,
+              "end": 4734,
+              "quote": "there's a couple of questions i wanted to ask you richard i completely forgot my apologies apart from the eczema do you have any other medical problems i should be aware of uh no i just had asthma in the past but okay not anymore not anymore okay and do you take any regular medications at the moment uh no nope okay do you have any allergies to anything sorry yeah sorry i was in jimmy out of these things hello yes h"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC09",
+      "case": "en-02",
+      "category": "negation",
+      "reference_fact_paraphrase": "No regular current medication",
+      "reference_evidence": [
+        {
+          "start": 4848,
+          "end": 5267,
+          "quote": "ies. Um, apart from the eczema, do you have any other medical problems I should be aware of? Uh, no. I just had asthma in the past. But not anymore. OK. Not anymore, OK. And do you take any regular medications at the moment? Uh no. No, OK. Do you have any allergies to anything? I like some , sorry? Yeah? sorry I said do you have any allergies to anything? Hello? Hello? Yes. can you hear me? That's alright I think it"
+        }
+      ],
+      "adjudication": "Explicit no retained.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4520,
+              "end": 4939,
+              "quote": " apologies um apart from the eczema do you have any other medical problems I should be aware of uh no I just had asthma in the past but okay not anymore not anymore okay and do you take any regular medications at the moment uh no okay do you have any allergies to anything sorry sorry hello hello yes can you hear me uh sorry I think it cra uh do you have any allergies at all? Oh, allergies uh no no okay um and tell m"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4420,
+              "end": 4839,
+              "quote": " apologies um apart from the eczema do you have any other medical problems I should be aware of uh no I just had asthma in the past but okay not anymore not anymore okay and do you take any regular medications at the moment uh no okay do you have any allergies to anything sorry things can you hear me uh sorry I think it cry uh do you have any allergies at all allergies uh no no okay um and tell me about your um uh y"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4393,
+              "end": 4812,
+              "quote": " my apologies apart from the eczema do you have any other medical problems i should be aware of uh no i just had asthma in the past but okay not anymore not anymore okay and do you take any regular medications at the moment uh no nope okay do you have any allergies to anything sorry yeah sorry i was in jimmy out of these things hello yes how can you hear me sorry i think it do you have any allergies at allergies no "
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC10",
+      "case": "en-02",
+      "category": "negation",
+      "reference_fact_paraphrase": "Patient denies allergies",
+      "reference_evidence": [
+        {
+          "start": 5099,
+          "end": 5515,
+          "quote": " any allergies to anything? I like some , sorry? Yeah? sorry I said do you have any allergies to anything? Hello? Hello? Yes. can you hear me? That's alright I think it . Uh do you have any allergies at all? Ohh, allergies. Uh, no. No, OK. Um and tell me about your um uh your situation at home. Who do you live with? Uh so, I live with a few flatmates. I'm a, so you know I'm thirty one. Uh I, yeah I'm I have a ful"
+        }
+      ],
+      "adjudication": "The repeated allergy question and final denial survive.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4690,
+              "end": 5106,
+              "quote": "and do you take any regular medications at the moment uh no okay do you have any allergies to anything sorry sorry hello hello yes can you hear me uh sorry I think it cra uh do you have any allergies at all? Oh, allergies uh no no okay um and tell me about your um your situation at home who do you live with um so um I live with a few flatmates I'm uh so you know I'm thirty one uh I yeah I'm I have a full time job"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4575,
+              "end": 4991,
+              "quote": "t anymore okay and do you take any regular medications at the moment uh no okay do you have any allergies to anything sorry things can you hear me uh sorry I think it cry uh do you have any allergies at all allergies uh no no okay um and tell me about your um uh your situation at home who do you live with a few flatmates so you know I'm thirty one uh i yeah a full time job and so i'm leaving with a few people to "
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4596,
+              "end": 5012,
+              "quote": "ations at the moment uh no nope okay do you have any allergies to anything sorry yeah sorry i was in jimmy out of these things hello yes how can you hear me sorry i think it do you have any allergies at allergies no okay and tell me about your your situation at home who do you live with so you know i'm thirty one i yeah i have a full time job and so i'm living with a few people to save money okay and what do you "
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC11",
+      "case": "en-02",
+      "category": "medication",
+      "reference_fact_paraphrase": "OTC steroid cream used last night without benefit",
+      "reference_evidence": [
+        {
+          "start": 1393,
+          "end": 1812,
+          "quote": "That's, those symptoms, like these symptoms appear like, when the symptoms appeared again, I tried those and it didn't work. I've tried a few things. Like I bought a, a steroid cream at the pharmacy last night. But it apparently didn't help, because it's still itching a lot today. Uh, yeah. OK. OK. Do you remember the name of the cream you bought? A steroid cream. OK, steroid, OK. um would you say these symptoms are"
+        }
+      ],
+      "adjudication": "English first statement says steroid; multilingual says sterile and Parakeet spirit. Later steroid wording provides context but the conflicting history needs review.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 1289,
+              "end": 1708,
+              "quote": "me yes but the symptoms like these symptoms are uh like when these symptoms appeared again I tried those and it didn't work I've tried a few things like I bought like a steroid cream at the pharmacy last night but it apparently didn't help because it's still itching a lot today okay uh yeah do you remember the name of the cream you bought uh stirrid cream okay steroid okay uh okay um do would you say do symptoms are"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 1256,
+              "end": 1675,
+              "quote": " time yes but the symptoms like these symptoms are like when the symptoms appeared again I tried those and they didn't work I've tried a few things like I bought like a sterile cream at the pharmacy last night but it apparently didn't help because it's still itching a lot today do you remember the name of the creamy you bought steward cream okay steroid okay uh it's okay um do would you say these symptoms are very s"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 1234,
+              "end": 1653,
+              "quote": "an at that time yes but the symptoms like these symptoms when these symptoms appeared again i tried those and it didn't work i've tried a few things like i bought like a spirit cream at the pharmacy last night but it apparently didn't help because it's still itching a lot today okay yeah do you remember the name of the creamy bought okay steroid okay do would you say do symptoms are very similar to your eczema sympt"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC12",
+      "case": "en-02",
+      "category": "history",
+      "reference_fact_paraphrase": "Antihistamines already tried without benefit",
+      "reference_evidence": [
+        {
+          "start": 7542,
+          "end": 7960,
+          "quote": " use, in terms of shower gels or soap. Because if that's causing your symptoms, then we need to have a discussion about an eczema CU. OK. Yes, I have tried antihistamines, uh lately, but it didn't really help. Ohh, could you say that again, sorry? I have tried uh antihistamines, but uh but it didn't really help. OK. OK. So it's something for you to think about. you can get different types of antihistamines. I can g"
+        },
+        {
+          "start": 7646,
+          "end": 8064,
+          "quote": "iscussion about an eczema CU. OK. Yes, I have tried antihistamines, uh lately, but it didn't really help. Ohh, could you say that again, sorry? I have tried uh antihistamines, but uh but it didn't really help. OK. OK. So it's something for you to think about. you can get different types of antihistamines. I can give you something a little bit stronger today as well. Um, something like Fexofenadine, which I can give"
+        }
+      ],
+      "adjudication": "Whole-dialogue context retains prior use and lack of benefit despite damaged repetitions.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 7000,
+              "end": 7418,
+              "quote": "erms of shower gels or soap because if that's causing your symptoms then we need to have a discussion about that next time I see you okay just I I have tried antihistamines uh lately but it didn't really help oh could you say again sorry I have tried the antihistamines okay uh but it didn't really help again okay so it's something for you to think about you you can get different type of antistamines I can give you "
+            },
+            {
+              "start": 7095,
+              "end": 7513,
+              "quote": "ussion about that next time I see you okay just I I have tried antihistamines uh lately but it didn't really help oh could you say again sorry I have tried the antihistamines okay uh but it didn't really help again okay so it's something for you to think about you you can get different type of antistamines I can give you something a little bit stronger today as well something like fetcophenidine which I can give to"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6846,
+              "end": 7264,
+              "quote": "e in terms of shower gels or soap because if that's causing your symptoms then we need to have a discussion about our next time I see you okay just I have to ride entimines uh lately but it didn't really help could you say again sorry I have tried the anti histamines okay uh but it didn't okay so it's something for you to think about you can get different type of ancestamines I can give you something a little bit s"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6720,
+              "end": 7138,
+              "quote": "n terms of shower gels or soap because if that's causing your symptoms then we need to have a discussion about that next time i see you okay just i i have tried antihistamines lately but it didn't really help oh could you say it again sorry i have tried the antihistamines okay but it didn't really okay so it's something for you to think about you can get different type of ancestors i can give you something a little"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC13",
+      "case": "en-02",
+      "category": "diagnosis",
+      "reference_fact_paraphrase": "Clinician suspects an eczema flare",
+      "reference_evidence": [
+        {
+          "start": 6345,
+          "end": 6768,
+          "quote": " stage I've got to say this sound quality is not uh great. But I will continue because we've come this far. Um So um, based on everything you mentioned Sarah , I do wonder whether this is a flare-up of your eczema. Um The reason being that you said it was quite itchy. Um it's mainly affecting your chest and your back. Um and uh, having looked at your skin, uh the the the rash does appear quite familiar. Um you mentioned"
+        }
+      ],
+      "adjudication": "Suspected assessment and correct eczema label survive.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5858,
+              "end": 6281,
+              "quote": "t this stage I've got to say the sound quality is not uh great but I will continue because we've come this far um so um based on everything you mentioned sir I I do wonder whether this is a flare up of your eczema um the reason being that you said it's quite itchy um it's manufacturing your chest and your back and uh the having looked at your skin uh the the rash does appear quite familiar you mentioned using steroid cr"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5715,
+              "end": 6138,
+              "quote": "nna say at this stage I've got to say the sound quality is not uh great but I will continue because we've come this far based on everything you mentioned sir i i do wonder whether this is a flare up of your eczema um the reason being that you said it's quite itchy um it's many affecting your chest and your back um and uh having looked at your skin uh the the rash does pick quite familiar um you mentioned you using steri"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5650,
+              "end": 6073,
+              "quote": "s gonna say at this stage i've got to say this sound quality is not great but i will continue because we've come this far based on everything you mentioned sir i do wonder whether this is a flare up of your eczema the reason being that you said it's quite itchy it's many affecting your chest and your backing looked at your skin the rash does pick quite familiar you mentioned you using steroid creams yesterday from the p"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC14",
+      "case": "en-02",
+      "category": "plan",
+      "reference_fact_paraphrase": "Plan to prescribe a stronger steroid",
+      "reference_evidence": [
+        {
+          "start": 6664,
+          "end": 7085,
+          "quote": " Um and uh, having looked at your skin, uh the the the rash does appear quite familiar. Um you mentioned using steroid creams, yesterday. Um from the pharmacy. I wonder whether giving you a stronger prescription of a of a steroid may be beneficial. Uh, which I'm happy to prescribe to you today. As well as, I'm going to give you something, some emollients, which helps to moisturize the skin. OK. OK. Um which use in the"
+        }
+      ],
+      "adjudication": "Future prescription plan preserved, not an already taken treatment.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6155,
+              "end": 6576,
+              "quote": " and your back and uh the having looked at your skin uh the the rash does appear quite familiar you mentioned using steroid creams yesterday um from the pharmacy I wonder whether giving you stronger prescription of a of a steroid may be beneficial which I'm happy to prescribe to you today as well as I'm gonna give you something some ammoience which helps to moisturise the skin um which you use in the bath and shower a"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6017,
+              "end": 6438,
+              "quote": " your back um and uh having looked at your skin uh the the rash does pick quite familiar um you mentioned you using sterile creams yesterday um from the pharmacy i wonder whether giving you stronger prescription of a steroid maybe beneficial uh which I'm happy to prescribe to you today as well as I'm going to give you something some ammolians which helps to moisturize the skin use in the bath and shower and it's defin"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 5919,
+              "end": 6340,
+              "quote": "ny affecting your chest and your backing looked at your skin the rash does pick quite familiar you mentioned you using steroid creams yesterday from the pharmacy i wonder whether giving you stronger prescription of a steroid maybe beneficial which i'm happy to prescribe to you today as well as i'm going to give you some amoleins which helps to moisturize the skin what to use in a bath and shower and it's definitely wo"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC15",
+      "case": "en-02",
+      "category": "medication",
+      "reference_fact_paraphrase": "Emollients/moisturizing skin treatment in the plan",
+      "reference_evidence": [
+        {
+          "start": 6820,
+          "end": 7230,
+          "quote": "cy. I wonder whether giving you a stronger prescription of a of a steroid may be beneficial. Uh, which I'm happy to prescribe to you today. As well as, I'm going to give you something, some emollients, which helps to moisturize the skin. OK. OK. Um which use in the bath and shower. And it's definitely worth um using that for the first seven to ten days. OK. Uh before we make the decision on whether it's wor"
+        },
+        {
+          "start": 8004,
+          "end": 8414,
+          "quote": "y as well. Um, something like Fexofenadine, which I can give to you today. It's definitely worth trying, and it's not going to do you any harm. OK. Um but I think using the steroids and the emollients, um on a regular basis Uh over the next week to ten days, should hopefully control your symptoms. But do come back and see me next week, if things don't get better. That sounds good. OK? Um do you have any que"
+        }
+      ],
+      "adjudication": "English has a correct later emollients occurrence, despite ammoience initially. Neither other model has a clean term; moisturizing purpose remains.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6300,
+              "end": 6709,
+              "quote": "rom the pharmacy I wonder whether giving you stronger prescription of a of a steroid may be beneficial which I'm happy to prescribe to you today as well as I'm gonna give you something some ammoience which helps to moisturise the skin um which you use in the bath and shower and it's definitely worth um using that for the first seven to ten days uh before we make a decision on whether it's working or not it"
+            },
+            {
+              "start": 7446,
+              "end": 7856,
+              "quote": "ger today as well something like fetcophenidine which I can give to you today it's definitely worth trying it it's not gonna do you any harm but I certainly think using the steroids and the emollients um on a regular basis um over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good okay um do you have any question"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 6162,
+              "end": 6571,
+              "quote": "rom the pharmacy i wonder whether giving you stronger prescription of a steroid maybe beneficial uh which I'm happy to prescribe to you today as well as I'm going to give you something some ammolians which helps to moisturize the skin use in the bath and shower and it's definitely worth uh using that for the first seven to ten days uh before we make a decision on whether it's working or not um it's also wo"
+            },
+            {
+              "start": 7267,
+              "end": 7676,
+              "quote": "nger today as well something like fexapenide which I can give to you today it's definitely worth trying it it's not going to do you any harm but I certainly think using the steroids and the ammolions um a regular basis over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good any questions for me uh no that's it o"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 6051,
+              "end": 6459,
+              "quote": "s yesterday from the pharmacy i wonder whether giving you stronger prescription of a steroid maybe beneficial which i'm happy to prescribe to you today as well as i'm going to give you some amoleins which helps to moisturize the skin what to use in a bath and shower and it's definitely worth using that for the first seven to ten days before we make a decision on whether it's working or not it's also worth"
+            },
+            {
+              "start": 7147,
+              "end": 7555,
+              "quote": "nger today as well something like fx ephenidine which i can give to you today it's definitely worth trying it it's not going to do you any harm but i say anything using the steroids and the amoleins on a regular basis over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good okay do you have any questions for me "
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC16",
+      "case": "en-02",
+      "category": "quantity",
+      "reference_fact_paraphrase": "Initial skin-treatment trial seven to ten days",
+      "reference_evidence": [
+        {
+          "start": 6961,
+          "end": 7384,
+          "quote": "s well as, I'm going to give you something, some emollients, which helps to moisturize the skin. OK. OK. Um which use in the bath and shower. And it's definitely worth um using that for the first seven to ten days. OK. Uh before we make the decision on whether it's working or not. OK. Um it's also worth um using antihistamines, which you can sometimes buy over counter. Things like Loratadine or Piriton, which can help t"
+        }
+      ],
+      "adjudication": "Range retained; do not import invented drug dose/frequency from the note.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6433,
+              "end": 6856,
+              "quote": "o you today as well as I'm gonna give you something some ammoience which helps to moisturise the skin um which you use in the bath and shower and it's definitely worth um using that for the first seven to ten days uh before we make a decision on whether it's working or not it's also worth um using antihistamines which you can sometimes buy over the counter things like latidine or puritan which can help the itchiness of "
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6282,
+              "end": 6705,
+              "quote": "rescribe to you today as well as I'm going to give you something some ammolians which helps to moisturize the skin use in the bath and shower and it's definitely worth uh using that for the first seven to ten days uh before we make a decision on whether it's working or not um it's also worth um using antihistamines which you can sometimes buy over counter things like loratidine or piritin which can help with the itchine"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6173,
+              "end": 6596,
+              "quote": "ppy to prescribe to you today as well as i'm going to give you some amoleins which helps to moisturize the skin what to use in a bath and shower and it's definitely worth using that for the first seven to ten days before we make a decision on whether it's working or not it's also worth using antihistamines which can sometimes buy over counter things like la ratadine or piritin which can help the itchiness of your skin a"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC17",
+      "case": "en-02",
+      "category": "medication",
+      "reference_fact_paraphrase": "Loratadine example named",
+      "reference_evidence": [
+        {
+          "start": 7155,
+          "end": 7565,
+          "quote": "t seven to ten days. OK. Uh before we make the decision on whether it's working or not. OK. Um it's also worth um using antihistamines, which you can sometimes buy over counter. Things like Loratadine or Piriton, which can help the itchiness of your skin. OK. And uh, um it's also worth keeping a diary of any triggers which are affecting your symptoms, anything you wear or anything you use, in terms of showe"
+        }
+      ],
+      "adjudication": "latidine / loratidine / la ratadine require correction. Phonetic proximity is not independently validated drug identification.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 6614,
+              "end": 7022,
+              "quote": " for the first seven to ten days uh before we make a decision on whether it's working or not it's also worth um using antihistamines which you can sometimes buy over the counter things like latidine or puritan which can help the itchiness of your skin and uh um it's also worth keeping a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels or"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 6462,
+              "end": 6872,
+              "quote": "t for the first seven to ten days uh before we make a decision on whether it's working or not um it's also worth um using antihistamines which you can sometimes buy over counter things like loratidine or piritin which can help with the itchiness of your skin and uh it's also worth kiffing a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels "
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 6340,
+              "end": 6751,
+              "quote": "rth using that for the first seven to ten days before we make a decision on whether it's working or not it's also worth using antihistamines which can sometimes buy over counter things like la ratadine or piritin which can help the itchiness of your skin and it's also worth keeping a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels or soap "
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC18",
+      "case": "en-02",
+      "category": "medication",
+      "reference_fact_paraphrase": "Piriton example named",
+      "reference_evidence": [
+        {
+          "start": 7169,
+          "end": 7576,
+          "quote": " days. OK. Uh before we make the decision on whether it's working or not. OK. Um it's also worth um using antihistamines, which you can sometimes buy over counter. Things like Loratadine or Piriton, which can help the itchiness of your skin. OK. And uh, um it's also worth keeping a diary of any triggers which are affecting your symptoms, anything you wear or anything you use, in terms of shower gels or s"
+        }
+      ],
+      "adjudication": "All require a brand-name correction.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 6626,
+              "end": 7033,
+              "quote": "st seven to ten days uh before we make a decision on whether it's working or not it's also worth um using antihistamines which you can sometimes buy over the counter things like latidine or puritan which can help the itchiness of your skin and uh um it's also worth keeping a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels or soap becau"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 6476,
+              "end": 6883,
+              "quote": "t seven to ten days uh before we make a decision on whether it's working or not um it's also worth um using antihistamines which you can sometimes buy over counter things like loratidine or piritin which can help with the itchiness of your skin and uh it's also worth kiffing a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels or soap bec"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 6355,
+              "end": 6762,
+              "quote": "for the first seven to ten days before we make a decision on whether it's working or not it's also worth using antihistamines which can sometimes buy over counter things like la ratadine or piritin which can help the itchiness of your skin and it's also worth keeping a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels or soap because if "
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC19",
+      "case": "en-02",
+      "category": "medication",
+      "reference_fact_paraphrase": "Fexofenadine proposed",
+      "reference_evidence": [
+        {
+          "start": 7844,
+          "end": 8256,
+          "quote": "eally help. OK. OK. So it's something for you to think about. you can get different types of antihistamines. I can give you something a little bit stronger today as well. Um, something like Fexofenadine, which I can give to you today. It's definitely worth trying, and it's not going to do you any harm. OK. Um but I think using the steroids and the emollients, um on a regular basis Uh over the next week to ten"
+        }
+      ],
+      "adjudication": "All three corrupt the drug name; no model gets a clean pass.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 7289,
+              "end": 7703,
+              "quote": "'t really help again okay so it's something for you to think about you you can get different type of antistamines I can give you something a little bit stronger today as well something like fetcophenidine which I can give to you today it's definitely worth trying it it's not gonna do you any harm but I certainly think using the steroids and the emollients um on a regular basis um over the next week to ten days "
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 7111,
+              "end": 7521,
+              "quote": "es okay uh but it didn't okay so it's something for you to think about you can get different type of ancestamines I can give you something a little bit stronger today as well something like fexapenide which I can give to you today it's definitely worth trying it it's not going to do you any harm but I certainly think using the steroids and the ammolions um a regular basis over the next week to ten days shou"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "D",
+          "evidence": [
+            {
+              "start": 6991,
+              "end": 7404,
+              "quote": "s okay but it didn't really okay so it's something for you to think about you can get different type of ancestors i can give you something a little bit stronger today as well something like fx ephenidine which i can give to you today it's definitely worth trying it it's not going to do you any harm but i say anything using the steroids and the amoleins on a regular basis over the next week to ten days should h"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC20",
+      "case": "en-02",
+      "category": "plan",
+      "reference_fact_paraphrase": "Keep a diary of possible triggers",
+      "reference_evidence": [
+        {
+          "start": 7262,
+          "end": 7683,
+          "quote": "rth um using antihistamines, which you can sometimes buy over counter. Things like Loratadine or Piriton, which can help the itchiness of your skin. OK. And uh, um it's also worth keeping a diary of any triggers which are affecting your symptoms, anything you wear or anything you use, in terms of shower gels or soap. Because if that's causing your symptoms, then we need to have a discussion about an eczema CU. OK. Yes"
+        }
+      ],
+      "adjudication": "Diary and triggers remain despite multilingual kiffing instead of keeping.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6712,
+              "end": 7133,
+              "quote": "also worth um using antihistamines which you can sometimes buy over the counter things like latidine or puritan which can help the itchiness of your skin and uh um it's also worth keeping a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels or soap because if that's causing your symptoms then we need to have a discussion about that next time I see you "
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6564,
+              "end": 6985,
+              "quote": "also worth um using antihistamines which you can sometimes buy over counter things like loratidine or piritin which can help with the itchiness of your skin and uh it's also worth kiffing a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels or soap because if that's causing your symptoms then we need to have a discussion about our next time I see you o"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 6435,
+              "end": 6856,
+              "quote": "g or not it's also worth using antihistamines which can sometimes buy over counter things like la ratadine or piritin which can help the itchiness of your skin and it's also worth keeping a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels or soap because if that's causing your symptoms then we need to have a discussion about that next time i see you "
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC21",
+      "case": "en-02",
+      "category": "plan",
+      "reference_fact_paraphrase": "Return next week if not improving",
+      "reference_evidence": [
+        {
+          "start": 8134,
+          "end": 8550,
+          "quote": "you any harm. OK. Um but I think using the steroids and the emollients, um on a regular basis Uh over the next week to ten days, should hopefully control your symptoms. But do come back and see me next week, if things don't get better. That sounds good. OK? Um do you have any questions for me? Uh, no that's it. Thank you very much. Bye. Thank you as well. Bye. OK. Well I wish you all the best. Thank you. Have a g"
+        }
+      ],
+      "adjudication": "Conditional timing retained; do not replace with the note's 10–14 days.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 7573,
+              "end": 7955,
+              "quote": " you any harm but I certainly think using the steroids and the emollients um on a regular basis um over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good okay um do you have any questions for me no that's it okay well I wish you all the best thank you very much have a good day bye bye"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 7387,
+              "end": 7748,
+              "quote": "g to do you any harm but I certainly think using the steroids and the ammolions um a regular basis over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good any questions for me uh no that's it okay well I wish you all the best thank you very much have a good day bye"
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 7266,
+              "end": 7656,
+              "quote": "going to do you any harm but i say anything using the steroids and the amoleins on a regular basis over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good okay do you have any questions for me uh no that's it okay well i was sure the best thank you very much thank you have a good day right bye"
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    },
+    {
+      "id": "EC22",
+      "case": "en-02",
+      "category": "quantity",
+      "reference_fact_paraphrase": "Patient gives age thirty-one",
+      "reference_evidence": [
+        {
+          "start": 5286,
+          "end": 5696,
+          "quote": "ny allergies at all? Ohh, allergies. Uh, no. No, OK. Um and tell me about your um uh your situation at home. Who do you live with? Uh so, I live with a few flatmates. I'm a, so you know I'm thirty one. Uh I, yeah I'm I have a full time job. And so I'm living with a few people to save money. OK. And what do you do for work? Uh I work uh at a pharmaceutical company. So it's been a, it's been a few years now. "
+        }
+      ],
+      "adjudication": "Age retained; no age inference from other demographic context.",
+      "models": {
+        "nemotron-speech-en-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4869,
+              "end": 5279,
+              "quote": "u have any allergies at all? Oh, allergies uh no no okay um and tell me about your um your situation at home who do you live with um so um I live with a few flatmates I'm uh so you know I'm thirty one uh I yeah I'm I have a full time job and so I'm living with a few people to save money okay and what do you do for workUh, I work uh at a pharmaceutical company so it's been uh it's been a few years now uh it'"
+            }
+          ],
+          "operation_id": "2c68a3e9-1db5-4264-b27c-12dc6466a7c1",
+          "transcript_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+        },
+        "nemotron-speech-multilingual-0-6b": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4724,
+              "end": 5134,
+              "quote": " sorry I think it cry uh do you have any allergies at all allergies uh no no okay um and tell me about your um uh your situation at home who do you live with a few flatmates so you know I'm thirty one uh i yeah a full time job and so i'm leaving with a few people to save money okay and what do you do for work uh i work uh at a pharmaceutical company so it's been uh it's been a few years now uh it's uh it's "
+            }
+          ],
+          "operation_id": "a1a2fa88-1c22-4b1c-a670-43d0abd1b9ca",
+          "transcript_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+        },
+        "parakeet-realtime-eou-120m-v1": {
+          "grade": "P",
+          "evidence": [
+            {
+              "start": 4710,
+              "end": 5120,
+              "quote": "these things hello yes how can you hear me sorry i think it do you have any allergies at allergies no okay and tell me about your your situation at home who do you live with so you know i'm thirty one i yeah i have a full time job and so i'm living with a few people to save money okay and what do you do for work i work at a pharmaceutical company so it's been a few years now it's kind of interesting we are "
+            }
+          ],
+          "operation_id": "fe0d93e9-63be-4521-8869-af8eb37dceb4",
+          "transcript_sha256": "ecbf999dad73e5bfa9aadf2fa54c53ba43e89152ab06ec5f8f57aee75cf8b325"
+        }
+      }
+    }
+  ],
+  "german_illustrative_findings_not_a_separate_score": [
+    {
+      "case": "de-0338",
+      "finding": "missing",
+      "explanation": "Birth year 1963 is omitted; the day and month remain.",
+      "reference": "Frau Menzel, Sie sind am 14. März 1963 geboren, ist das richtig? Ja, das stimmt. Und ich wohne im Hüttenweg 23 und nicht Hüterweg.",
+      "text": "Frau Menzel, Sie sind am vierzehnten März geboren. Ist das richtig? Ja, das stimmt. Und ich wohne im Hüttenweg dreiundzwanzig und nicht Hüterweg.",
+      "operation_id": "5df399a0-d1ae-451a-9255-b97b42a91ae9",
+      "wer": 0.125
+    },
+    {
+      "case": "de-0526",
+      "finding": "degraded",
+      "explanation": "Tachykardie becomes Tarykadie and Oligurie becomes Aligorie; these terms require correction. Hematocrit 53 percent is retained as words.",
+      "reference": "Gastroenteritis. Seit gestern leichte Verwirrtheit und Tachykardie. Klinisch typische Zeichen der Dehydration, Oligurie, Elektrolyte im Normbereich bei erhöhtem Hämatokrit von 53 % … Und Frau Steffen, was hätten Sie vorgeschlagen?",
+      "text": "Gastroenteritis. Seit gestern leichte Verwirrtheit und Tarykadie klinisch typische Zeichen der Dehydration, Aligorie, Elektrolyte im Normbereich bei erhöhtem Hematokrit von drei und fünfzig ProzentUnd Frau Steffen, was hätten Sie vorgeschaut?",
+      "operation_id": "53dc67da-bd1c-4f64-8e24-9e4b800277bb",
+      "wer": 0.25
+    },
+    {
+      "case": "de-1090",
+      "finding": "preserved",
+      "explanation": "Blood pressure 130/90, described as slightly elevated, and planned blood tests are retained. Spelled-out numbers inflate raw WER without changing their values.",
+      "reference": "130 zu 90. Ihr Blutdruck ist leicht erhöht. Wir überprüfen noch Ihre Blutwerte.",
+      "text": "hundertdreißig zu neunzig. Hm Ihr Blutdruck ist leicht erhöhtWir überprüfen noch ihre Blutwerte",
+      "operation_id": "b6db7e14-3402-4014-936f-82d99cdbc9a8",
+      "wer": 0.38461538461538464
+    },
+    {
+      "case": "de-0939",
+      "finding": "unsupported_content",
+      "explanation": "Output adds an allergy phrase and segment-related wording absent from the reference, besides corrupting the bed-positioning instruction. Not evidence of a patient allergy.",
+      "reference": "Dementsprechend müssen wir das Bett hochfahren oder hochpumpen. Nicht erschrecken, wir machen jetzt Oberkörper ein Stück runter. Alles klar? - Ja.",
+      "text": "Dementsprechend müssen wir das Bett entweder hoch sein oder nicht public. Noch welche Allergie und weniger schrecken, wir machen jetzt Obergörter, diese Stückchen runter und haben irgendwas am ersten vier Segment alles klar.",
+      "operation_id": "4fb738a6-1e0a-446f-a482-ca7ea9ded1e1",
+      "wer": 1.1
+    },
+    {
+      "case": "de-0193",
+      "finding": "empty",
+      "explanation": "No transcript; all reference content missing. API completion is not a transcription-quality pass.",
+      "reference": "96, 110, 96. * Musik * Hallihallo. (Frau) Emily, falsches Zimmer.",
+      "text": "",
+      "operation_id": "c755b04b-32b6-4c9e-b35d-ceb12d33c358",
+      "wer": 1.0
+    }
+  ]
+}

@@ -1,0 +1,190 @@
+{
+  "case": "de-0112",
+  "language": "de",
+  "audio_seconds": 11.76,
+  "source_sha256": "532d7daa582f607773c374f3a022578cb9c48fffc4fa77da4a3bce19bf9bce5d",
+  "reference": "Das passiert ganz oft, dass du denkst, du kannst das nicht. Und dann ist das wie so eine Blockade in deinem Kopf. Sobald du aber anfängst, es zu machen, funktioniert es.",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 112
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:45:34.946326+00:00",
+  "submit_status": 202,
+  "operation_id": "48fb3a94-e7e3-4b61-b6f5-3a60f137e4fc",
+  "operation": {
+    "id": "48fb3a94-e7e3-4b61-b6f5-3a60f137e4fc",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-7a9f766b4c3348dabdc276a0d0b6e227",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:45:35.460290Z",
+    "available_at": "2026-09-16T21:45:35.460290Z",
+    "deadline_at": "2026-09-16T23:45:35.451561Z",
+    "activation_started_at": "2026-09-16T21:45:35.468784Z",
+    "ready_at": "2026-09-16T21:45:36.235907Z",
+    "started_at": "2026-09-16T21:45:36.251812Z",
+    "completed_at": "2026-09-16T21:45:37.386005Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:45:35.460290Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.775617,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 11.76
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 3.2357587376609445,
+  "text": "das macht, also es passiert irgendwie ganz oft, dass du dann denkst, du kannst das nicht und dann ist es wie so eine sage ich mal wie so eine Blockade in deinem Kopf oder so. Und sobald du aber anfängst es zu machen, dann funktioniert es do",
+  "result_audio_seconds": 11.76,
+  "processing_seconds": 0.6739149058703333,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "e016053a1a477c6b67453c33127ce12805522e2cbefcfde0fb34edab03a49dfd",
+  "quality": {
+    "reference_words": 31,
+    "hypothesis_words": 47,
+    "wer": 0.5483870967741935,
+    "substitutions": 1,
+    "deletions": 0,
+    "insertions": 16,
+    "correct": 30,
+    "errors": [
+      {
+        "type": "insertion",
+        "reference_index": 1,
+        "recognized": "macht"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 1,
+        "recognized": "also"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 1,
+        "recognized": "es"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 2,
+        "recognized": "irgendwie"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 6,
+        "recognized": "dann"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 14,
+        "recognized": "es"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 14,
+        "recognized": "wie"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 14,
+        "recognized": "so"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 14,
+        "recognized": "eine"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 14,
+        "recognized": "sage"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 14,
+        "recognized": "ich"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 14,
+        "reference": "das",
+        "recognized": "mal"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 22,
+        "recognized": "oder"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 22,
+        "recognized": "so"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 22,
+        "recognized": "und"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 29,
+        "recognized": "dann"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 31,
+        "recognized": "do"
+      }
+    ],
+    "reference_characters": 132,
+    "character_errors": 59,
+    "cer": 0.44696969696969696
+  },
+  "finished_at": "2026-09-16T21:45:38.183361+00:00"
+}

@@ -1,0 +1,231 @@
+{
+  "schema": "fs2-bioir-snapshot-storage/v1",
+  "generated_at": "2026-09-15 22:47:26 UTC",
+  "observation_window_utc": "2026-09-15 22:45–22:47 UTC",
+  "scope": "Bounded read-only provenance check of active OF3 and Protenix-xjaw checkpoint disks, plus saved checkpoint PVC recipes; no resize, changes or I/O benchmark.",
+  "classification": "RWO ext4 filesystems on managed network block disks, not a shared RWX filesystem.",
+  "storage_class": {
+    "name": "compute-csi-default-sc",
+    "uid": "c3ec20f2-0cc7-49ab-b830-792115f7a707",
+    "provisioner": "compute.csi.nebius.com",
+    "volume_binding_mode": "WaitForFirstConsumer",
+    "reclaim_policy": "Delete",
+    "allow_volume_expansion": true,
+    "parameters_present": false,
+    "read_command": "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s get storageclass compute-csi-default-sc -o json"
+  },
+  "cli": {
+    "version": "0.12.206",
+    "profile": "sandbox"
+  },
+  "live_volumes": [
+    {
+      "model_id": "openfold3",
+      "pvc": {
+        "namespace": "fs2-bioir-snapshot",
+        "name": "fs2-bioir-of3-checkpoints",
+        "uid": "16d2d25a-6319-4ecc-be38-96d19c12ae28",
+        "requested_gib": 64,
+        "capacity_gib": 64,
+        "access_modes": [
+          "ReadWriteOnce"
+        ],
+        "volume_mode": "Filesystem",
+        "storage_class": "compute-csi-default-sc",
+        "phase": "Bound"
+      },
+      "pv": {
+        "name": "pvc-16d2d25a-6319-4ecc-be38-96d19c12ae28",
+        "uid": "7f998e5c-919a-4d54-9f78-7ff65636fb60",
+        "driver": "compute.csi.nebius.com",
+        "fs_type": "ext4",
+        "volume_handle": "computedisk-e00fs7s2hmh5s7vd6k",
+        "reclaim_policy": "Delete",
+        "phase": "Bound"
+      },
+      "provider_disk": {
+        "metadata": {
+          "id": "computedisk-e00fs7s2hmh5s7vd6k",
+          "parent_id": "project-e00rene",
+          "name": "pvc-16d2d25a-6319-4ecc-be38-96d19c12ae28",
+          "created_at": "2026-09-15T22:31:52.720685Z",
+          "resource_version": "1"
+        },
+        "spec": {
+          "size_bytes": "68719476736",
+          "type": "NETWORK_SSD",
+          "disk_encryption": {}
+        },
+        "status": {
+          "state": "READY",
+          "read_write_attachment": "computeinstance-e00j20a9hkb508cn4a",
+          "size_bytes": "68719476736",
+          "block_size_bytes": "4096"
+        }
+      },
+      "explicit_iops_or_throughput_override_present": false,
+      "documented_size_derived_upper_bounds": {
+        "allocation_units": 2,
+        "read_mib_per_second": 30,
+        "write_mib_per_second": 30,
+        "read_iops": 2000,
+        "write_iops": 2000,
+        "measured": false
+      },
+      "read_commands": [
+        "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s -n fs2-bioir-snapshot get pvc fs2-bioir-of3-checkpoints -o json",
+        "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s get pv pvc-16d2d25a-6319-4ecc-be38-96d19c12ae28 -o json",
+        "/usr/local/bin/nebius --profile sandbox --no-browser --timeout 20s --retries 1 compute disk get --id computedisk-e00fs7s2hmh5s7vd6k --format json"
+      ]
+    },
+    {
+      "model_id": "protenix-xjaw",
+      "pvc": {
+        "namespace": "fs2-bioir-protenix",
+        "name": "fs2-bioir-protenix-snapshot-xjaw",
+        "uid": "8845dff7-ccce-4a13-9140-d9655bcfa217",
+        "requested_gib": 128,
+        "capacity_gib": 128,
+        "access_modes": [
+          "ReadWriteOnce"
+        ],
+        "volume_mode": "Filesystem",
+        "storage_class": "compute-csi-default-sc",
+        "phase": "Bound"
+      },
+      "pv": {
+        "name": "pvc-8845dff7-ccce-4a13-9140-d9655bcfa217",
+        "uid": "b244419a-fe22-41a9-a5c6-ce6a8f1021a4",
+        "driver": "compute.csi.nebius.com",
+        "fs_type": "ext4",
+        "volume_handle": "computedisk-e00w0kxpqcmx2b9tse",
+        "reclaim_policy": "Delete",
+        "phase": "Bound"
+      },
+      "provider_disk": {
+        "metadata": {
+          "id": "computedisk-e00w0kxpqcmx2b9tse",
+          "parent_id": "project-e00rene",
+          "name": "pvc-8845dff7-ccce-4a13-9140-d9655bcfa217",
+          "created_at": "2026-09-15T22:39:15.745129Z",
+          "resource_version": "1"
+        },
+        "spec": {
+          "size_bytes": "137438953472",
+          "type": "NETWORK_SSD",
+          "disk_encryption": {}
+        },
+        "status": {
+          "state": "READY",
+          "read_write_attachment": "computeinstance-e00xjaw5jqexvvnpat",
+          "size_bytes": "137438953472",
+          "block_size_bytes": "4096"
+        }
+      },
+      "explicit_iops_or_throughput_override_present": false,
+      "documented_size_derived_upper_bounds": {
+        "allocation_units": 4,
+        "read_mib_per_second": 60,
+        "write_mib_per_second": 60,
+        "read_iops": 4000,
+        "write_iops": 4000,
+        "measured": false
+      },
+      "read_commands": [
+        "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s -n fs2-bioir-protenix get pvc fs2-bioir-protenix-snapshot-xjaw -o json",
+        "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100 --request-timeout=20s get pv pvc-8845dff7-ccce-4a13-9140-d9655bcfa217 -o json",
+        "/usr/local/bin/nebius --profile sandbox --no-browser --timeout 20s --retries 1 compute disk get --id computedisk-e00w0kxpqcmx2b9tse --format json"
+      ]
+    }
+  ],
+  "saved_recipes": [
+    {
+      "model_id": "boltz2",
+      "manifest": "snapshot/manifests/pvc.json",
+      "namespace": "fs2-bioir-boltz2",
+      "pvc": "fs2-bioir-snapshot-checkpoints",
+      "requested_gib": 128,
+      "access_modes": [
+        "ReadWriteOnce"
+      ],
+      "storage_class": "compute-csi-default-sc",
+      "provider_disk_queried": false,
+      "note": "Already cleaned checkpoint PVC; do not infer exact historical provider disk type from current other-lane queries."
+    },
+    {
+      "model_id": "openfold2",
+      "manifest": "snapshot/manifests/of2-pvc.json",
+      "namespace": "fs2-bioir-snapshot",
+      "pvc": "fs2-bioir-snapshot-openfold2-checkpoints",
+      "requested_gib": 64,
+      "access_modes": [
+        "ReadWriteOnce"
+      ],
+      "storage_class": "compute-csi-default-sc",
+      "provider_disk_queried": false,
+      "note": "Already cleaned checkpoint PVC."
+    },
+    {
+      "model_id": "protenix-fkt",
+      "manifest": "snapshot/protenix/manifests/pvc.json",
+      "namespace": "fs2-bioir-protenix",
+      "pvc": "fs2-bioir-protenix-snapshot",
+      "requested_gib": 128,
+      "access_modes": [
+        "ReadWriteOnce"
+      ],
+      "storage_class": "compute-csi-default-sc",
+      "provider_disk_queried": false,
+      "note": "Interrupted old cohort retained by peer; this check targets the fresh xjaw cohort."
+    }
+  ],
+  "primary_documentation": {
+    "title": "Types of storage volumes in Compute",
+    "url": "https://docs.nebius.com/compute/storage/types#disk-performance",
+    "retrieved_date": "2026-09-15",
+    "source_note": "Opened current primary page, not stale search snippet; 32 GiB Network SSD allocation unit, 15 MiB/s read/write and 1000 read/write IOPS per unit. Values are workload-dependent upper bounds.",
+    "network_ssd_allocation_unit_gib": 32,
+    "per_unit_read_mib_s": 15,
+    "per_unit_write_mib_s": 15,
+    "per_unit_read_iops": 1000,
+    "per_unit_write_iops": 1000,
+    "type_vs_kubernetes_note": "Kubernetes volumeMode=Filesystem describes ext4 presentation on a block disk, not the provider shared-filesystem product."
+  },
+  "existing_of3_capture": {
+    "evidence": "snapshot/openfold3/raw/fs2-bioir-of3-donor/capture-stdout.json",
+    "checkpoint_flush_seconds": 290.6338212870005,
+    "cuda_checkpoint_seconds": 1.1484224189998713,
+    "criu_dump_seconds": 4.525278920999881,
+    "note": "Existing capture receipt, not a new I/O measurement. Parent observed approximately 8.5 GB durable bundle; no finalized bundle inventory was available in this bounded check, so no inferred byte-rate is reported."
+  },
+  "interpretation": [
+    "These cold-start results qualify the exact checkpoint-storage recipes, image initialization, checkpoint payload and restore software together; they are not generic snapshot-technology speed measurements.",
+    "Documented disk limits provide a plausible storage constraint to investigate later, but do not establish saturation or quantify how much restore time is storage-limited.",
+    "Flush duration is directly measured in the retained capture receipt. No block-device bandwidth, cache state, I/O queue depth, or per-stage restore I/O profile was collected by this check.",
+    "Slower restore under these recipes does not imply BIR is intrinsically slower, nor predict results on larger, different, or local storage.",
+    "The Boltz2 evaluation model-cache RWX filesystem is separate from its RWO checkpoint PVC; do not conflate them.",
+    "No changes, extra I/O benchmark, infrastructure cost mutation, causal forensic expansion or peer evidence edits."
+  ],
+  "evidence_sha256": [
+    {
+      "path": "snapshot/openfold3/manifests/pvc.json",
+      "sha256": "65c3358e96d688858392373e00bfa8e751679de5e413dc9c28d34a1fff5041c0"
+    },
+    {
+      "path": "snapshot/protenix/xjaw/manifests/pvc.json",
+      "sha256": "f8d581b1f1f1bc5eae297738fda2782e60dc84aa4743e5071cd3750eaead3066"
+    },
+    {
+      "path": "snapshot/manifests/of2-pvc.json",
+      "sha256": "0b02c28e2c6067b3ff4b87ea51ef37a6198f495896dc22753d0d8d6116a33bb0"
+    },
+    {
+      "path": "snapshot/manifests/pvc.json",
+      "sha256": "67459dc927bf9e061ef3e8a1b139ef5b1e17b0864263cb51d645e8eb169fba63"
+    },
+    {
+      "path": "snapshot/openfold3/raw/fs2-bioir-of3-donor/capture-stdout.json",
+      "sha256": "441e6114cdeba934dacb530ac35671ba7c7cb4aa270c938f2051cb20637a6489"
+    }
+  ]
+}

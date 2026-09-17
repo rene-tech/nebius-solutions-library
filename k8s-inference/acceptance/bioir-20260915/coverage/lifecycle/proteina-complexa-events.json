@@ -1,0 +1,172 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:31:49Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-proteina-complexa",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42256033",
+        "uid": "d9c51198-b816-4c13-a7a5-ca42836286be"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:31:49Z",
+      "message": "Successfully assigned fs2-bioir-coverage/fs2-bioir-coverage-proteina-complexa to computeinstance-e00r9tdjfszjs3angk",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:31:49Z",
+        "name": "fs2-bioir-coverage-proteina-complexa.18d59bf68189ce52",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42256035",
+        "uid": "4e607a8b-e0e3-410a-ad2b-abebb8564216"
+      },
+      "reason": "Scheduled",
+      "reportingComponent": "default-scheduler",
+      "reportingInstance": "",
+      "source": {
+        "component": "default-scheduler"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:31:50Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-proteina-complexa",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42256034",
+        "uid": "d9c51198-b816-4c13-a7a5-ca42836286be"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:31:50Z",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca\"",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:31:50Z",
+        "name": "fs2-bioir-coverage-proteina-complexa.18d59bf6a1edbe8d",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42256057",
+        "uid": "79206791-2bd1-4e3a-942c-2e0c5fb90637"
+      },
+      "reason": "Pulling",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:33:31Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-proteina-complexa",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42256034",
+        "uid": "d9c51198-b816-4c13-a7a5-ca42836286be"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:33:31Z",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca\" in 1m41.001s (1m41.001s including waiting). Image size: 4373177599 bytes.",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:33:31Z",
+        "name": "fs2-bioir-coverage-proteina-complexa.18d59c0e26144863",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42260322",
+        "uid": "7b194c9a-5b5d-4d29-8efe-28318282c101"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:33:33Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-proteina-complexa",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42256034",
+        "uid": "d9c51198-b816-4c13-a7a5-ca42836286be"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:33:33Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:33:33Z",
+        "name": "fs2-bioir-coverage-proteina-complexa.18d59c0e8f12755e",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42260394",
+        "uid": "eca84ad9-9295-4735-a249-b7ed75e43efe"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    },
+    {
+      "apiVersion": "v1",
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-09-15T21:33:36Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{runtime}",
+        "kind": "Pod",
+        "name": "fs2-bioir-coverage-proteina-complexa",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42256034",
+        "uid": "d9c51198-b816-4c13-a7a5-ca42836286be"
+      },
+      "kind": "Event",
+      "lastTimestamp": "2026-09-15T21:33:36Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-09-15T21:33:36Z",
+        "name": "fs2-bioir-coverage-proteina-complexa.18d59c0f45919ff9",
+        "namespace": "fs2-bioir-coverage",
+        "resourceVersion": "42260533",
+        "uid": "78ae448f-e375-462e-a468-56b0030c3b7c"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+      "source": {
+        "component": "kubelet",
+        "host": "computeinstance-e00r9tdjfszjs3angk"
+      },
+      "type": "Normal"
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "case": "de-0338",
+  "language": "de",
+  "audio_seconds": 11.67,
+  "source_sha256": "0207328d81a33cd472ecf963dd05e9ba7e28c6682488d995b6ee18832848dca6",
+  "reference": "Frau Menzel, Sie sind am 14. März 1963 geboren, ist das richtig? Ja, das stimmt. Und ich wohne im Hüttenweg 23 und nicht Hüterweg.",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 338
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:45:59.941307+00:00",
+  "submit_status": 202,
+  "operation_id": "5df399a0-d1ae-451a-9255-b97b42a91ae9",
+  "operation": {
+    "id": "5df399a0-d1ae-451a-9255-b97b42a91ae9",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-c82cd9b614134d3a93cc8ae617e790ca",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:00.593159Z",
+    "available_at": "2026-09-16T21:46:00.593159Z",
+    "deadline_at": "2026-09-16T23:46:00.585469Z",
+    "activation_started_at": "2026-09-16T21:46:00.614674Z",
+    "ready_at": "2026-09-16T21:46:00.863536Z",
+    "started_at": "2026-09-16T21:46:00.867042Z",
+    "completed_at": "2026-09-16T21:46:01.925009Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:00.593159Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.270377,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 11.67
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.6523209791630507,
+  "text": "Frau Menzel, Sie sind am vierzehnten März geboren. Ist das richtig? Ja, das stimmt. Und ich wohne im Hüttenweg dreiundzwanzig und nicht Hüterweg.",
+  "result_audio_seconds": 11.67,
+  "processing_seconds": 0.6617750260047615,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "c34bc1f31fafce331f88bbbaf5b476899c929e57adee90780cbafc8a3d3c2b12",
+  "quality": {
+    "reference_words": 24,
+    "hypothesis_words": 23,
+    "wer": 0.125,
+    "substitutions": 2,
+    "deletions": 1,
+    "insertions": 0,
+    "correct": 21,
+    "errors": [
+      {
+        "type": "substitution",
+        "reference_index": 5,
+        "reference": "14",
+        "recognized": "vierzehnten"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 7,
+        "reference": "1963"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 20,
+        "reference": "23",
+        "recognized": "dreiundzwanzig"
+      }
+    ],
+    "reference_characters": 100,
+    "character_errors": 28,
+    "cer": 0.28
+  },
+  "finished_at": "2026-09-16T21:46:02.594637+00:00"
+}

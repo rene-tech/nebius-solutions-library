@@ -1,0 +1,748 @@
+{
+  "started_at": "2026-09-16T21:39:09.717428+00:00",
+  "scope": "public API transcription quality, not clinical validation or cold-start qualification",
+  "models": [
+    "parakeet-realtime-eou-120m-v1",
+    "nemotron-speech-en-0-6b",
+    "nemotron-speech-multilingual-0-6b"
+  ],
+  "repetitions": 3,
+  "max_concurrency": 2,
+  "warmup": "existing resident production models; no extra warmup or restart; all first requests retained",
+  "source_commit": "53721fb03b212c9c8b45826e375e260b4e89b7f5",
+  "driver_sha256": "8cc9d657d6780af3d93d383c172d124a21a5e874ddbce612fa0864695d209585",
+  "key_revoked": true,
+  "workers_before": [
+    {
+      "pod": "nemotron-speech-en-0-6b-hot-h100-reserved-8x-5fcb547dc6-mmtmb",
+      "uid": "c7d2f95b-af74-432d-ab93-8bf2936d1c1a",
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2"
+      ],
+      "container_statuses": [
+        {
+          "allocatedResources": {
+            "cpu": "2",
+            "ephemeral-storage": "8Gi",
+            "memory": "16Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://c0e0a5cd5500cfcfcd0587cd1c06f573d2499b576afc1ac6faebcfdd4442019a",
+          "image": "sha256:263529806f4b82ecb1efe6faee05296bfa0ab64995c8319492b83299a3d93656",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+          "lastState": {},
+          "name": "runtime",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "4",
+              "ephemeral-storage": "24Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "2",
+              "ephemeral-storage": "8Gi",
+              "memory": "16Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-16T12:00:33Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/cache",
+              "name": "cache"
+            },
+            {
+              "mountPath": "/tmp",
+              "name": "tmp"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pod": "nemotron-speech-multilingual-0-6b-hot-h100-reserved-8x-74cdxpgr",
+      "uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205"
+      ],
+      "container_statuses": [
+        {
+          "allocatedResources": {
+            "cpu": "2",
+            "ephemeral-storage": "8Gi",
+            "memory": "16Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://ce6260c1305b46b6ff7a218c7f8d22f725cec50d009bfcb6920a7c18ba0faf9b",
+          "image": "sha256:b4ad7e539f505b1a6cb47be0803a162e46cd24cd0e3139ae20fc4674fdc285f0",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+          "lastState": {},
+          "name": "runtime",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "4",
+              "ephemeral-storage": "24Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "2",
+              "ephemeral-storage": "8Gi",
+              "memory": "16Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-16T12:00:29Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/cache",
+              "name": "cache"
+            },
+            {
+              "mountPath": "/tmp",
+              "name": "tmp"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+      "uid": "c0e1254f-210d-42e4-b608-b754465ccb95",
+      "node": "computeinstance-e00vt3d3s01p9xsrwt",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa"
+      ],
+      "container_statuses": [
+        {
+          "allocatedResources": {
+            "cpu": "2",
+            "ephemeral-storage": "16Gi",
+            "memory": "16Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://2b1f5bcefe933b9494adc832f30483cb3adced1bd90e0dc1882fb9e7bc1d8386",
+          "image": "sha256:1107537970377d13d0dc159384910db319de2506dc4f318a4fb001c38a9eedb0",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+          "lastState": {},
+          "name": "voice",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "4",
+              "ephemeral-storage": "32Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "2",
+              "ephemeral-storage": "16Gi",
+              "memory": "16Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-16T17:47:46Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/cache",
+              "name": "cache"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pinned_models": {
+    "parakeet-realtime-eou-120m-v1": {
+      "kind": "huggingface",
+      "repository": "nvidia/parakeet_realtime_eou_120m-v1",
+      "revision": "a7e2b4629593dce0ec19f600e00e9904353fda2d",
+      "license": {
+        "id": "NVIDIA-Open-Model-License",
+        "state": "verified",
+        "notes": "Pinned official NVIDIA Open Model License; see docs/voice-agent-onboarding-20260916.md. Non-clinical only."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "Public ungated checkpoint; independent NeMo adapter, not NVIDIA NIM."
+      }
+    },
+    "nemotron-speech-en-0-6b": {
+      "kind": "huggingface",
+      "repository": "nvidia/nemotron-speech-streaming-en-0.6b",
+      "revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50",
+      "license": {
+        "id": "NVIDIA-Open-Model-License",
+        "state": "verified",
+        "notes": "Pinned upstream checkpoint license reviewed in docs/nemotron-speech-onboarding-20260916.md. ASR output is not clinical validation."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "Public ungated checkpoint; independent NeMo adapter, not NVIDIA NIM."
+      }
+    },
+    "nemotron-speech-multilingual-0-6b": {
+      "kind": "huggingface",
+      "repository": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+      "revision": "ea30d66debe3740a08b573244286791d423d6b3e",
+      "license": {
+        "id": "OpenMDW-1.1",
+        "state": "verified",
+        "notes": "Pinned upstream checkpoint license reviewed in docs/nemotron-speech-onboarding-20260916.md. ASR output is not clinical validation."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "Public ungated checkpoint; independent NeMo adapter, not NVIDIA NIM."
+      }
+    }
+  },
+  "temporary_key_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+  "cases": [
+    {
+      "case": "en-01",
+      "language": "en",
+      "audio_seconds": 457.92,
+      "source_sha256": "bed0455e336172d5e8c8eaa56bf54efa69cce5f115fba17cfb7d92d482953af5",
+      "reference": "Hello? Hi. Um, should we start? Yeah, okay. <UNSURE>Hello how</UNSURE> um. Good morning sir, how can I help you this morning? Hello, how are you? <UNSURE>Oh</UNSURE> <UNSURE>hey</UNSURE>, um, I've just had some diarrhea for the last three days, um, and it's been affecting me I need to stay close to the toilet. And, um, yeah, it's been affecting my day-to-day activities. <UNIN/> Sorry to hear that. Um, and and when you say diarrhea, what'd you mean by diarrhea? Do you mean you're going to the toilet more often? Or are your stools more loose? Yeah, so it's like loose and watery stool, going to the toilet quite often, uh and like some pain in my, like, lower stomach? <UNIN/> Okay. And how many times a day are you going, let's say, in the last couple of days? <UNSURE>Um</UNSURE>, probably like six or seven times a day? Yeah. Six, seven times a day. And you <UNIN/> mention it's mainly watery. Have you noticed any other things, like blood in your stools? No, no blood, yeah, just watery and loose stool. Okay. And you mentioned you've had some pain in your tummy as well. <UNIN/> Whereabouts is the pain, exactly? Yep. So <UNIN/> in my lower abdomen, so, uh, like, um...yeah, just to one side. One side. <UNSURE>And</UNSURE> what side is that? Uh, on the left side. Left side. Okay, and can you describe the pain to me? Yeah, it feels, um, like a cramp, like a muscular cramp, and, um, yeah i feel a bit uh weak and shaky. Okay. And is the pain, is that, is it there all the time, or does it come and go? Uh, it comes and goes. <UNSURE>Come</UNSURE> and go. Does the pain move anywhere else, for example towards your back? Uh...no, just maybe my stomach. Okay, fine. And you mentioned you've been feeling quite weak and shaky as well. What do you mean by shaky? Do you mean you've been having, uh have you been feeling feverish, for example? <UNSURE>Yeah</UNSURE>. Um, yeah, it doesn't feel like -- yeah, it just <UNSURE>makes</UNSURE> me feel weak. I haven't had a fever, um, at the moment, but I did notice um a temperature when the symptoms started, so, um, yeah around about three or four days ago. <UNIN/> <UNSURE>You</UNSURE> measure your temperature then? Yeah, I <UNSURE>uh</UNSURE> I didn't mention my temperature, no, but I felt, um, just a bit hot. <UNSURE>And</UNSURE>, <UNSURE>y'know</UNSURE>. Okay. Okay. Any other symptoms like sweating, or um, night <UNSURE>sweats</UNSURE>? No? And, uh, any vomiting at all? Uh, no. Yeah, so um, I vomited at the start of the symptoms but now um I've stopped vomiting. <UNSURE>You</UNSURE> stopped vomiting, okay. And was your vomit, I know it's not <UNSURE>a nice thing</UNSURE> to talk about, but was it just normal food colour <UNIN/> Yeah. And there was no blood in your vomit, is that right? Yeah, yeah, just normal vomit, yeah. No no <UNSURE>blood</UNSURE>, no. Yeah. No, okay. Um, and um, any any other symptoms at all? So you mentioned tummy pain, you mentioned diarrhea, you mentioned your vomiting, uh, anything else that comes to mind? Yep. Um, I had a loss of appetite, um, so I haven't been eating as much, but I've been able to hold down fluids. <UNIN/> Okay. Okay, so you're drinking fluids. Um, what kind of foods have you managed to eat, <UNSURE>if</UNSURE> anything? Yep. Um, just soups, and, uh, yeah, light foods. Like smoothies and, yeah, liquid foods mainly. Okay. Fine. Um, and sir <UNIN/> <UNSURE>these</UNSURE> started three days ago the symptoms. <UNSURE>Are you</UNSURE> aware of any triggers which may have caused the <UNSURE>symptoms</UNSURE> uh to kick on. So <UNSURE>for</UNSURE> example, <UNSURE>think like</UNSURE> takeaway foods or eating out or <UNSURE>being</UNSURE> around other people <UNSURE>with</UNSURE> similar symptoms. <UNIN/> Yeah, so I had takeaway about four days ago, um, <UNSURE>uh</UNSURE>, but other than that I've, yeah, been, uh, eating normally. Nothing unusual here. <UNSURE>Okay</UNSURE>. Do you remember <UNSURE>where</UNSURE> you ate? Um, yeah, I <UNIN/> ate at a Chinese restaurant with friends. Yeah. Okay. Anyone else unwell with similar <UNSURE>symptoms</UNSURE>? Um, so no one else in the family, so <UNIN/> a wife and two kids and one, um, child was vomiting, but they haven't got diarrhea. There's no one with the same symptoms. Okay, okay. Fine. Um, alright. And uh, in terms of your <UNIN/>, your overall health, are you normally <UNSURE>fit and</UNSURE> well? Or, uh Um, yeah, I mean, other than um athsma, um I use an inhaler, everything uh else is fine. Okay. And, is your asthma well-controlled? Uh, yeah, that's fine. I just, yeah, use an inhaler, and uh that's under control. Fine. And you don't have any other tummy problem, bowel problems I should be aware of? No. No, okay. Um, and <UNIN/> apart from the inhalers, do you take any other medications? Uh, no, no other medications. <UNSURE>Okay</UNSURE>, fine. And in terms of just your day to day life, you said it's been affecting your life, um, in what way has it been affecting your life? Yeah. Uh, so, I need to stay close to the toilet 'cause I go quite frequently during the these past three days. Um, yeah, other than that, it's uh, yeah, the main concern. Okay. Yeah. And have you, are you currently working at the moment? <UNIN/> Uh, <UNSURE>yes</UNSURE>, yeah. I I work, er. Um, I'm an accountant. <UNSURE>Would, would</UNSURE> work. Okay. Have you been going into work the last three days, or <UNSURE>have you</UNSURE> been at home? Uh, yeah, I've been going to work. Yeah. Yeah, it's been quite difficult. <UNIN/> <UNSURE>okay</UNSURE>. That must be difficult for you then. <UNIN/> <UNSURE>fine</UNSURE>. And you said, you mentioned you live with your wife and two children, is that right? Yes, yeah. <UNSURE>Right</UNSURE>, alright. Um, just <UNSURE>a</UNSURE> couple of other question we need to ask, <UNSURE>sir</UNSURE>. Um, do you smoke at all? Uh, no, I don't smoke. And do you drink much in the way of alcohol? Uh, no, I I don't drink alcohol, no. <UNIN/> Okay. <UNIN/> so um, er normally at this stage I like to um, examine you if that's okay, but um, um, but but having listened to your story, sir, I think uh, um, just to recap <UNIN/> for the last three days you've been having loose stool, diarrhea, a bit of tummy pain uh mainly on the left-hand side, um and <UNIN/> vomiting and <UNSURE>fever and</UNSURE> you're quite weak and lethargic um, you mentioned you had this Chinese takeaway as <UNSURE>little as</UNSURE> three days ago and I wondered whether that might be the cause of your problems. Yeah. <UNIN/> Okay. Um, it seems like you may have something, uh, called gastroenteritis, which essentially just a tummy bug or infection of your <UNSURE>uh</UNSURE> of your tummy. <UNIN/> Uh, mainly caused by viruses but there can be a possibility of bacteria uh causing <UNSURE>its</UNSURE> symptoms. Um. Yeah. Yeah. At this stage, uh, what, what we'd recommend is just what we <UNSURE>say</UNSURE> conservative management. So, um, I don't think you need anything like antibiotics. It's really just, um, making sure you're well hydrated, so drinking fluids. <UNIN/> Mm-hmm. Um, <UNIN/> there are things like Dioralyte you can get from the pharmacy, which uh it's um it helps helps replenish your minerals and vitamins. Okay. Um, and if you are having vomiting diarrhea I <UNSURE>would say</UNSURE> recommend <UNSURE>that</UNSURE> in the first, you know, first couple of days. Yep. <UNIN/> If you are feeling feverish and weak, <UNSURE>eh</UNSURE> taking some paracetamol, uh, <UNIN/> two tablets up to four times a day for the first few days can also help. <UNSURE>Yep</UNSURE>. I <UNSURE>will</UNSURE> certainly advise you to take some time <UNSURE>off</UNSURE> work, <UNSURE>actually</UNSURE> I know you're quite keen to work but I would say the next two, two to three days as <UNSURE>the infection</UNSURE> clears from your system to take some time off and rest. Okay. Yeah. Um, <UNSURE>I'll admit</UNSURE> if your symptoms haven't got better, you know, in in three to four days, <UNSURE>I'd</UNSURE> like to come and see you again. <UNIN/> Okay, <UNSURE>sure</UNSURE>. Because if it is ongoing then we have to wonder whether something else <UNSURE>caused</UNSURE> your symptoms. Yep. <UNSURE>Uh</UNSURE>, and we may need to do further <UNSURE>tests</UNSURE> like um taking a sample of your stool so we can test that. <UNIN/> Um, etcetera etcetera. Yep, sure, yep. How's that sound? That sounds great, yeah. Yeah. <UNIN/> Do you have any questions for me? Um, no, no further questions, <UNSURE>no</UNSURE>. Okay, and is uh is the treatment plan clear? Uh, <UNSURE>yes</UNSURE>, yeah, that's that's very clear. Thank you. Great. Well, I wish you all the best. Okay, thank you. Bye. <UNIN/> Thank you. <UNSURE>Bye bye</UNSURE>.",
+      "reference_provenance": {
+        "files": [
+          {
+            "path": "references/en/day1_consultation01_doctor.TextGrid",
+            "sha256": "a727b4f53fd0c21750405fa683a0079585d9cf3cf763d3ced51bde9673a3eb04"
+          },
+          {
+            "path": "references/en/day1_consultation01_patient.TextGrid",
+            "sha256": "7082e1abf185b30a82d57d585b999d4f11263e006359249aeffbad1061bfd0bd"
+          }
+        ],
+        "overlapping_adjacent_turns": 65
+      },
+      "media_type": "audio/flac"
+    },
+    {
+      "case": "en-02",
+      "language": "en",
+      "audio_seconds": 559.2,
+      "source_sha256": "58283edfe790ba2dd2c5d72af217e24c1f1a22f8a7c28b9f2691f0b5250d8602",
+      "reference": "Hello? Hello. Can you hear me well? Uh uh yes. I think. It's a bit better. It's a bit, it's a bit, it's not very clear. But <UNIN/> let's continue anyway. OK. Uh, OK. Let's start again. So how can I help you sir? Yes. So, it's been a few days now. I have like a sore, and a red skin. It's kind of, it's really itchy, and it's like super annoying. So I'd like to find something quick to solve it. OK. No, no problem. I'm happy to help. Um whereabouts in your skin is it affected? Uh, mostly like my chest, my, my hands, my arms. Like, like really, it's it's super annoying. Like it's itching a lot, like all the time. And I can't even sleep at night. <UNIN/> I really need something quickly to, to solve it. Because even at work I, I can, when I'm in a meeting and I have to, like uh think about my work, I can't focus, I can't actually focus on my work. It's really annoying because I can't actually think about, uh, what I have to say. I'm always like, uh, disturbed by this disease. Yeah. <INAUDIBLE_SPEECH/> No no, OK. <INAUDIBLE_SPEECH/> I'm <UNSURE>certain </UNSURE> this is obviously affecting you. And uh we'll try our very best to get get this sorted out for you. Um, have you had anything like this before in the past? Um so yes. Uh earlier I was like prescribed for my eczema. OK. And <INAUDIBLE_SPEECH/> they gave me like some cream, and something to, uh when I like <UNIN/> shower, when I was in the shower, had to put something. But um OK. Did it help? Um I mean, at that time yes. That's, those symptoms, like these symptoms appear like, when the symptoms appeared again, I tried those and it didn't work. I've tried a few things. Like I bought a, a steroid cream at the pharmacy last night. But it apparently didn't help, because it's still itching a lot today. Uh, yeah. <UNSURE>OK</UNSURE>. OK. Do you remember the name of the cream you bought? A steroid cream. OK, steroid, OK. <UNIN/> um <UNIN/> would you say these symptoms are very similar to your eczema symptoms, or different? Um <UNIN/> it's much more like itchy. And my eczema was more like only in the arm. But now it's <UNIN/> also on the chest. And in the on the, on the hands as well. OK. Like <UNSURE>pretty</UNSURE>, yeah when, like I like, for instance hiking, during the weekend. And <INAUDIBLE_SPEECH/> I am, I can't really do it anymore, because it's like very <UNIN/> like I wanted to do that last weekend. And because super painful, and I I have to take like showers every day to be able to, cannot uh ease this itching part, which is very very annoying. Yes. No. <UNIN/> Well OK. That's <UNIN/> so you mentioned the itchiness. Um you also mentioned it's been quite sore. Yeah. Um have you, have you noticed any uh bleeding or discharge from your skins? <UNIN/>. OK. No. Um so my skin is a bit cracked in some parts, like kind of cracked, if you see what I mean. But uh, yeah. OK. You've not, haven't uh seen any other uh pus or blood, coming out of your skin. No. No. And you mentioned it all started three days ago. Are you, four days ago. Are you aware of any triggers, or anything that you may have done, that may have caused your symptoms to start? Four days ago. So for example, have you changed your uh shower gel, any clothing? Have you been around anyone else? No I <UNIN/>. It's actually like, it's really annoying, because I'm thinking about, <UNIN/> maybe I should change something. Because I I haven't, and I don't understand <UNIN/> I cannot, um afraid of asking people around me because it's cannot you know um, I don't feel really comfortable asking about these questions. It's kind of intimate that. So I <INAUDIBLE_SPEECH/> your help now. Mm. Mm. No no, OK. That's OK. Um Fine, so just to resummarize. For the last four days, you've had very itchy skin, very sore skin all over your body, mainly your chest. And did you also mention your arms and legs as well? <UNSURE>Yeah</UNSURE>. Uh, no. Just the chest, hands and like, like inside the elbows. Yeah. <INAUDIBLE_SPEECH/> OK. <UNIN/> anything on your face at all? Am I what? On your face? On my face? No. No, OK. And apart from this, any other symptoms have you noticed? For example, have you noticed any temperature or fevers? No. <UNIN/> just very itchy. Nothing else. Itchy. OK. So your, your bowels are working OK? Your chest is OK? No cough, no breathing difficulties? No. You're passing urine OK. I I think so. OK, alright. Um It's always good to know. So, I mean, do you have any ideas as to what could be causing your symptoms? Any what? Any ideas, as to what could be causing your symptoms? Um <UNIN/> so I had eczema before. So maybe it's <UNSURE>disease</UNSURE>, but it seems like more uh, like uh my eczema was only on the arms. So, I'm I'm not sure. I I really have no idea. <INAUDIBLE_SPEECH/> OK. That's OK. So um, normally at this stage I like to examine you. Um To see the rash itself, to see exactly what type of rash it is. But from what you've told me, you mentioned it's, you've got some dry skin and some, uh cracked skin as well. Uh and has been very itchy. And so would your um Yeah. Uh your your background of eczema. Um <UNSURE>So</UNSURE> Sorry to say, there's a couple of questions I wanted to ask you, which I completely forgot, my apologies. Um, apart from the eczema, do you have any other medical problems I should be aware of? Uh, no. I just had asthma in the past. But not anymore. OK. Not anymore, OK. And do you take any regular medications at the moment? Uh no. No, OK. Do you have any allergies to anything? I <UNIN/> like some <UNIN/>, sorry? Yeah? <UNIN/> sorry I said do you have any allergies to anything? <INAUDIBLE_SPEECH/> Hello? Hello? Yes. <UNIN/> can you hear me? That's alright I think it <UNIN/>. Uh do you have any allergies at all? Ohh, allergies. Uh, no. No, OK. Um and tell me about your um uh your situation at home. Who do you live with? Uh so, I live with a few flatmates. I'm a, so you know I'm thirty one. Uh I, yeah I'm I have a full time job. And so I'm living with a few people to save money. OK. And what do you do for work? Uh I work uh at a pharmaceutical company. So it's been a, it's been a few years now. Uh it's uh, it's kind of interesting. We're working I'm a, like a kind of project manager. Uh I mean, do you want to, to know more about it? OK. Uh no no no that's <UNIN/>, that's absolutely fine. Um just a couple of questions I want to ask you, which can sometimes affect your symptoms, is, do you smoke at all? No. No. And do you drink much in the way of alcohol? <INAUDIBLE_SPEECH/> Uh you know, <UNIN/> once in a while I can, I like hanging out with people once in a while. So yeah I'd say a few, a few beers per week. Something like this. Nothing, nothing crazy. I used to drink a lot more when I was younger. But it's been, it's been a while. <UNIN/> OK. OK. OK I've got to say, at this stage I've got to say <UNIN/> this sound quality is not uh great. But I will continue because we've come this far. Um So um, based on everything you mentioned <UNSURE>Sarah </UNSURE>, <UNIN/> I do wonder whether this is a flare-up of your eczema. Um <INAUDIBLE_SPEECH/> The reason being that you said it was quite itchy. Um it's mainly affecting your chest and your back. Um and uh, having looked at your skin, uh the the the rash does appear quite familiar. Um you mentioned <UNIN/> using steroid creams, yesterday. <INAUDIBLE_SPEECH/> Um from the pharmacy. I wonder whether giving you a stronger prescription of a <UNIN/> of a steroid may be beneficial. Uh, which I'm happy to prescribe to you today. As well as, I'm going to give you something, some emollients, which helps to moisturize the skin. OK. OK. Um which <UNIN/> use in the bath and shower. And it's definitely worth um using that for the first seven to ten days. OK. Uh before we make the decision on whether it's working or not. OK. Um it's also worth um using antihistamines, which you can sometimes buy over counter. Things like Loratadine or Piriton, which can help the itchiness of your skin. OK. And uh, um it's also worth keeping a diary of any triggers which are affecting your symptoms, anything you wear or anything you use, in terms of shower gels or soap. Because if that's causing your symptoms, then we need to have a discussion about an eczema CU. OK. Yes, I have tried antihistamines, uh lately, but it didn't really help. Ohh, could you say that again, sorry? I have tried uh antihistamines, but uh but it didn't really help. OK. <UNIN/> OK. So it's something for you to think about. <UNIN/> you can get different types of antihistamines. I can give you something a little bit stronger today as well. Um, something like Fexofenadine, which I can give to you today. It's definitely worth trying, and it's not going to do you any harm. OK. Um but I <UNIN/> think using the steroids and the emollients, um on a regular basis Uh over the next week to ten days, should hopefully <UNIN/> control your symptoms. But do come back and see me next week, if things don't get better. That sounds good. OK? Um do you have any questions for me? Uh, no that's it. Thank you very much. Bye. Thank you as well. Bye. OK. Well I wish you all the best. Thank you. Have a good day.",
+      "reference_provenance": {
+        "files": [
+          {
+            "path": "references/en/day1_consultation02_doctor.TextGrid",
+            "sha256": "4a33e030a4670936754821469855e63cb3263b1575da098cacd1158b48684277"
+          },
+          {
+            "path": "references/en/day1_consultation02_patient.TextGrid",
+            "sha256": "61ae00734844852f9fd70df574b02aa79b3da4b654464bd0d70191266a5f78fa"
+          }
+        ],
+        "overlapping_adjacent_turns": 47
+      },
+      "media_type": "audio/flac"
+    },
+    {
+      "case": "de-0000",
+      "language": "de",
+      "audio_seconds": 12.52,
+      "source_sha256": "733c8fc54418d4750bd802e4f5beba27b07a7d51718595adecdfddde24e0ae50",
+      "reference": "nicht nur HIV sein, Maßnahmen ergreift, um den Ausbruch einer Erkrankung zu verhindern oder, ich sage es etwas zurückhaltender, ihren Verlauf abzumildern! Das machen Sie",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 0
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0037",
+      "language": "de",
+      "audio_seconds": 11.37,
+      "source_sha256": "6108f470b693bea52dbc7697b5c4df7b5886989c406c687e8f6b8f4ea8a8a02b",
+      "reference": "Sie sind jetzt im Krankenhaus, Herr Müller … Ich werde Sie jetzt untersuchen und der Herr Fuchs neben mir wird Ihnen den Blutdruck messen … Er hat ja vorhin nur gelallt. Jetzt hat",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 37
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0075",
+      "language": "de",
+      "audio_seconds": 10.83,
+      "source_sha256": "f3e74643530840907e5b2c31b6dc3792c388ce23deec8e7802ba725996941bfe",
+      "reference": "Aber er hat wahnsinnig geblutet und dann noch der Sprung? Das kann man doch gar nicht überleben. Oder? Herr Doktor, wird er überleben? Ich fühle mich so schuldig …",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 75
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0112",
+      "language": "de",
+      "audio_seconds": 11.76,
+      "source_sha256": "532d7daa582f607773c374f3a022578cb9c48fffc4fa77da4a3bce19bf9bce5d",
+      "reference": "Das passiert ganz oft, dass du denkst, du kannst das nicht. Und dann ist das wie so eine Blockade in deinem Kopf. Sobald du aber anfängst, es zu machen, funktioniert es.",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 112
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0150",
+      "language": "de",
+      "audio_seconds": 13.14,
+      "source_sha256": "15eb61e09ade62f968983f98eb79d97f86dec93037a6d37600ed53bf477bb719",
+      "reference": "wirklich notwendig ist. Schließlich wollen Sie ja auch diesen Blasenkatheter wieder loswerden. So, was liegt für heute noch an? Die Oberärztin möchte, dass wir die komplette Tumordiagnostik durchführen, bevor Herr Trabitz entlassen wird.",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 150
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0187",
+      "language": "de",
+      "audio_seconds": 11.16,
+      "source_sha256": "57dcfb6c92d66254bb24d6f098f7534e9d465d5a172a966b05033a2b2fe840fa",
+      "reference": "der oben kurz angesprochenen Grundbedingungen erfüllen, werden Sie als potentieller Partner des Unternehmen-Weltladen ausgewählt und bekommen Zugang zu unserem umfangreichen Informationspool.",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 187
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0193",
+      "language": "de",
+      "audio_seconds": 12.92,
+      "source_sha256": "476ddedbd48ab113371175a659dc2931ee25926364c961e47d415a9b9bed5b42",
+      "reference": "96, 110, 96. * Musik * Hallihallo. (Frau) Emily, falsches Zimmer.",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 193
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0225",
+      "language": "de",
+      "audio_seconds": 17.34,
+      "source_sha256": "0046ee52825013bf7830a0b2a404c1aac0cf4f3fca57b04d04d1472938f6e124",
+      "reference": "Welt ihrer Leidenschaft nachgehen der Musik. Bad Arolsen, eine Kleinstadt in Nordhessen, nordwestlich von Kassel, hat rund 15.500 Einwohner. Umso erstaunlicher, dass hier",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 225
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0263",
+      "language": "de",
+      "audio_seconds": 12.06,
+      "source_sha256": "3e82698bfd898de2f2d75f644f11b12590c6054ba6ac72d8599861ace13064a8",
+      "reference": "Der Roboter ist nie krank, braucht keinen Urlaub, hat keine Familie, für die er sorgen muss und arbeitet präziser und gleichmäßiger als sein menschlicher Kollege. Der Mensch wird",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 263
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0300",
+      "language": "de",
+      "audio_seconds": 15.79,
+      "source_sha256": "12d589edea71119c453c7c9d35d3afbad639e27958dc64331ae5ce1373cbbf29",
+      "reference": "Wie ist Ihre Einschätzung bezüglich seiner Alkoholabhängigkeit? Er gibt an, seit einem Jahr fast nichts mehr zu trinken. Und er wirkt auf mich psychisch sehr geordnet und glaubwürdig. Darüber hinaus hat der Patient keine Vorerkrankungen. Vielleicht",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 300
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0338",
+      "language": "de",
+      "audio_seconds": 11.67,
+      "source_sha256": "0207328d81a33cd472ecf963dd05e9ba7e28c6682488d995b6ee18832848dca6",
+      "reference": "Frau Menzel, Sie sind am 14. März 1963 geboren, ist das richtig? Ja, das stimmt. Und ich wohne im Hüttenweg 23 und nicht Hüterweg.",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 338
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0375",
+      "language": "de",
+      "audio_seconds": 9.46,
+      "source_sha256": "24285e5ad8bec21b28183930c00290a9fa7a672de15b5ec859b26b15b838b154",
+      "reference": "setzt die Fettverbrennung ein, eine halbe Stunde täglich ist mindestens anzustreben. Sie sind ja selbst ein Spätberufener in Laufdingen?",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 375
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0413",
+      "language": "de",
+      "audio_seconds": 13.71,
+      "source_sha256": "a6a0cb2543d062797d33fb6f2c81acfe52098699a462dc0000a136f9ddd400ef",
+      "reference": "Ja, da ist in der letzten Zeit einiges dazugekommen. Wieso? Nach dem Tod meiner Frau, da ging es mir gar nicht gut. Und da konnte ich überhaupt nicht mehr schlafen. Und es ging mit mir nur noch bergab …",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 413
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0451",
+      "language": "de",
+      "audio_seconds": 10.24,
+      "source_sha256": "09206d21e39da39a8eb5b4976abf770fa55eeb8873874f4b2b3c0f0e33de500c",
+      "reference": "Sie studiert Pflegemanagement. Ich weiß, wenn ich abends schlafen gehe, kann ich mit einem guten Gewissen schlafen.",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 451
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0488",
+      "language": "de",
+      "audio_seconds": 11.64,
+      "source_sha256": "e5c629b041e19d4b93313a7f6f7e888de76b0eeb96a58c1bb89f3ac1029fd919",
+      "reference": "oder Bären die geplante Untersuchung vorspielen … … das dürfte wohl kaum das Jahresbudget sprengen. Frau Dierhof, Sie möchten noch etwas einwenden? Nein, nein. Ich möchte auf einen weiteren Punkt",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 488
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0526",
+      "language": "de",
+      "audio_seconds": 15.9,
+      "source_sha256": "c361235aae6bcc2f8fc90217a1b8371d14e2cc2480ae1739be5996ff80f669db",
+      "reference": "Gastroenteritis. Seit gestern leichte Verwirrtheit und Tachykardie. Klinisch typische Zeichen der Dehydration, Oligurie, Elektrolyte im Normbereich bei erhöhtem Hämatokrit von 53 % … Und Frau Steffen, was hätten Sie vorgeschlagen?",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 526
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0563",
+      "language": "de",
+      "audio_seconds": 12.33,
+      "source_sha256": "10c6bdd3219200d4342b9aeb6ccffc5561c73dd5ceb1e93b3976c6d720455d40",
+      "reference": "haben in unseren büroräumen jetzt über 30 grad das ist nicht akzeptabel schicken sie bitte umgehend einen techniker der das in ordnung bringt das muss heute noch erledigt werden bis 17 uhr bin",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 563
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0601",
+      "language": "de",
+      "audio_seconds": 9.51,
+      "source_sha256": "55626205bc3f5903c50996ca8fc296f7347c471a4cfb17692780cee1e6480354",
+      "reference": "Wir wollen ja morgen früh nach Spanien. Und wegen der Bauchschmerzen. Also, die hat er schon öfter, bevor wir losfahren, wissen Sie … Morgen besuchen wir erst Oma und",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 601
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0638",
+      "language": "de",
+      "audio_seconds": 9.37,
+      "source_sha256": "a58575b5398aabefaef92c8b70d6bf53d4ba55e9739e51396aba09a657a990a0",
+      "reference": "auch in der Notaufnahme, wenn Sie zum Beispiel gegen Tetanus impfen! Es sollte auch klar sein, dass eine solche Prophylaxe nicht zu 100 Prozent wirkt! So, bevor wir später auf die Details eingehen, nun der zweite Fall:",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 638
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0676",
+      "language": "de",
+      "audio_seconds": 14.37,
+      "source_sha256": "92df0b55da7019fa398b645522ca5cbc787a563ab4ebe75b48d9ee76aa95828a",
+      "reference": "zur firma das heißt sie dürfen mit ihrer chipkarte die haupteingangstür und alle türen zu den bereichen in denen sie arbeiten öffnen zum beispiel sie frau und mann sind assistentin der",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 676
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0714",
+      "language": "de",
+      "audio_seconds": 11.88,
+      "source_sha256": "0b500dc0826a913a75c5428c9d0790f226d9a0b19f76fd9d0c58c7ae876e0d98",
+      "reference": "zuführen, die er von selbst nicht oder nicht in genügend von selbst produziert. Das heißt, dass man seinen Körper künstlich manipuliert und das hat in den allermeisten Fällen eine negative",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 714
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0751",
+      "language": "de",
+      "audio_seconds": 11.52,
+      "source_sha256": "b54685aac064dd1c7c7ee02a01ac3fe9ba26c54f444037baa48a22acf031b670",
+      "reference": "Dann können Schmerzen **ziehend** sein. Ziehende Schmerzen — so, als würde jemand an eurem Körperteil ziehen oder euch auseinanderziehen.",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 751
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0789",
+      "language": "de",
+      "audio_seconds": 10.65,
+      "source_sha256": "7467bfd5f34786b7c3f5e115e1942d7f6a5251e2524ba0769cb6ac42437f493b",
+      "reference": "normal gewesen, aber dann zum Mittagessen nicht mehr erschienen. Eine Pflegekraft habe sie sehr unruhig und aggressiv im Bett vorgefunden. Bei der Aufnahme war",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 789
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0826",
+      "language": "de",
+      "audio_seconds": 10.04,
+      "source_sha256": "2235be49b9c73724c10059509121b68d1cfb6fa608973f893ab004c6dc01ca89",
+      "reference": "woher ich komme. Und leider Universitäten in Simbabwe sind ein bisschen teuer. Aber trotzdem, jetzt ist eine neue Umgebung und so,",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 826
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0864",
+      "language": "de",
+      "audio_seconds": 16.02,
+      "source_sha256": "7bd03c1e0aeb7c1aac88e1d8e174d7dff0ace434e0b927c111cb144ac84213ff",
+      "reference": "sondern diesen teil vorher auch trainieren ja jetzt spreche ich über angemessene kleidung für das vorstellungsgespräch denn auch die kleiderwahl ist davon abhängig wo man sich bewirbt angemessen",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 864
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0902",
+      "language": "de",
+      "audio_seconds": 19.5,
+      "source_sha256": "e5a35a5822e5ada96d273bd99e3cc2d6944331da446c4be4aa73b4376ac35b11",
+      "reference": "dank dann kommen wir zur eigentlichen prüfung zu teil 1 a herr gül fangen sie bitte an hier sind zwei themen zur auswahl suchen sie sich ein thema aus und sprechen sie darüber er danke [Musik] ich",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 902
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0939",
+      "language": "de",
+      "audio_seconds": 12.68,
+      "source_sha256": "28767f821ff854e606d3365518c4b54cd5eef783681e8977dfbbacf94ab552ae",
+      "reference": "Dementsprechend müssen wir das Bett hochfahren oder hochpumpen. Nicht erschrecken, wir machen jetzt Oberkörper ein Stück runter. Alles klar? - Ja.",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 939
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-0977",
+      "language": "de",
+      "audio_seconds": 11.07,
+      "source_sha256": "0839e7ae62187b9b9ee7183d21dd974dbe83593dcf22264edfff7c93582eed1b",
+      "reference": "Ich meine ja auch meine Igel, die ich kenne. Du schaffst das niemals! Doch! Das will ich sehen, ob du das schaffst! So, guck hier! Super, da kann ich",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 977
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-1014",
+      "language": "de",
+      "audio_seconds": 16.4,
+      "source_sha256": "9cd0b487090df57e5f65314ccaeb726aca854f15c8cb04fe14132122ce083fac",
+      "reference": "hilfe von kollegen die noch nicht da sind oder schon weg sind da bin ich mir nicht so sicher es kann auch sein dass ich allein im büro mehr stress habe das ist doch toll dann kannst du arbeiten und",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 1014
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-1052",
+      "language": "de",
+      "audio_seconds": 10.95,
+      "source_sha256": "a411087e591c4625b0363912b64d4b222cb144fc596dc970321b74c498dece6f",
+      "reference": "Muss ich ja! Alles Gute, Herr Trabitz. So, und das ist der Herr … Die junge Frau kenn ich! Das ist die Frau Steffens. Die hat heute Morgen bei Ihnen Blut abgenommen.",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 1052
+      },
+      "media_type": "audio/ogg"
+    },
+    {
+      "case": "de-1090",
+      "language": "de",
+      "audio_seconds": 10.9,
+      "source_sha256": "1ae7d2fe1e5f8efcb7a25996d7b18b5bbf9ea7dd362812184648a9b7246900df",
+      "reference": "130 zu 90. Ihr Blutdruck ist leicht erhöht. Wir überprüfen noch Ihre Blutwerte.",
+      "reference_provenance": {
+        "dataset": "leduckhai/MultiMed",
+        "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+        "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+        "row": 1090
+      },
+      "media_type": "audio/ogg"
+    }
+  ],
+  "cohorts": [
+    6,
+    6,
+    37
+  ],
+  "finished_at": "2026-09-16T21:55:27.918122+00:00"
+}

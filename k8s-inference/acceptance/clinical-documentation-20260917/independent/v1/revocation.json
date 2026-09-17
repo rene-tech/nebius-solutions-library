@@ -1,0 +1,8 @@
+{
+  "method": "DELETE",
+  "status_code": 200,
+  "key_revoked": true,
+  "temporary_key_id": "e8aa8437-aca4-424b-bcf1-341d25ddba2d",
+  "completed_at": "2026-09-17T06:39:17.880299+00:00",
+  "reason": "Parent discovered POST :revoke in existing acceptance harness used wrong verb after this process had started."
+}

@@ -1,0 +1,22 @@
+# Evaluation only: exact deployed featurizer/dumper, public BIR model backend.
+# Upstream's PyTorch 2.7/CUDA12 layernorm extension is NOT used by the BIR model.
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e AS upstream
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce
+RUN python -m venv --system-site-packages /opt/protenix-venv
+COPY --from=upstream /opt/protenix-venv/lib/python3.11/site-packages/protenix /opt/protenix-venv/lib/python3.12/site-packages/protenix
+COPY --from=upstream /opt/protenix-venv/lib/python3.11/site-packages/runner /opt/protenix-venv/lib/python3.12/site-packages/runner
+COPY --from=upstream /opt/protenix-venv/lib/python3.11/site-packages/configs /opt/protenix-venv/lib/python3.12/site-packages/configs
+COPY --from=upstream /opt/protenix-venv/lib/python3.11/site-packages/protenix-2.0.0.dist-info /opt/protenix-venv/lib/python3.12/site-packages/protenix-2.0.0.dist-info
+COPY --from=upstream /opt/protenix-venv/bin/protenix /opt/protenix-venv/bin/protenix
+COPY --from=upstream /opt/fs2 /opt/fs2
+COPY --from=upstream /usr/local/bin/fs2-run-protenix /usr/local/bin/fs2-run-protenix
+ENV PATH=/opt/protenix-venv/bin:$PATH LAYERNORM_TYPE=torch \
+    PROTENIX_ROOT_DIR=/models/protenix-v2 PYTHONUNBUFFERED=1
+RUN python -m pip install --no-cache-dir \
+    ml-collections==1.1.0 pandas==2.3.1 matplotlib==3.10.5 \
+    pdbeccdutils==1.0.0 fair-esm==2.0.0 scikit-learn==1.7.1 \
+    optree==0.17.0 icecream==2.1.7 cuequivariance-torch==0.11.1 \
+    tqdm==4.67.1 click==8.1.8
+RUN python -c 'from runner.inference import InferenceRunner; from runner.dumper import DataDumper; from bionemo_ir.models.protenix import Protenix; print("candidate imports verified")'
+RUN python -m pip freeze > /opt/candidate-pip-freeze.txt
+WORKDIR /opt/fs2/runtime

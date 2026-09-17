@@ -1,0 +1,428 @@
+{
+  "unix": 1789512746.8585956,
+  "node": {
+    "apiVersion": "v1",
+    "kind": "Node",
+    "metadata": {
+      "annotations": {
+        "cluster.x-k8s.io/annotations-from-machine": "",
+        "cluster.x-k8s.io/cluster-name": "mk8scluster-e00j5z9te7x5dd9g6a",
+        "cluster.x-k8s.io/cluster-namespace": "mk8s",
+        "cluster.x-k8s.io/labels-from-machine": "",
+        "cluster.x-k8s.io/machine": "mk8snodegroup-e00n67290jzpdmffbv-2klx8-8h92r",
+        "cluster.x-k8s.io/owner-kind": "MachineSet",
+        "cluster.x-k8s.io/owner-name": "mk8snodegroup-e00n67290jzpdmffbv-2klx8",
+        "csi.volume.kubernetes.io/nodeid": "{\"compute.csi.nebius.com\":\"computeinstance-e00xjaw5jqexvvnpat\",\"mounted-fs-path.csi.nebius.ai\":\"computeinstance-e00xjaw5jqexvvnpat\"}",
+        "node.alpha.kubernetes.io/ttl": "0",
+        "volumes.kubernetes.io/controller-managed-attach-detach": "true"
+      },
+      "creationTimestamp": "2026-09-15T20:41:28Z",
+      "labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+        "accelerator.fs2.nebius/pool-id": "h100-1x",
+        "beta.kubernetes.io/arch": "amd64",
+        "beta.kubernetes.io/instance-type": "gpu-h100-sxm",
+        "beta.kubernetes.io/os": "linux",
+        "capacity.fs2.nebius/gpu-count": "1",
+        "capacity.fs2.nebius/type": "preemptible",
+        "failure-domain.beta.kubernetes.io/region": "eu-north1",
+        "kubernetes.io/arch": "amd64",
+        "kubernetes.io/hostname": "computeinstance-e00xjaw5jqexvvnpat",
+        "kubernetes.io/os": "linux",
+        "lifecycle.fs2.nebius/run": "r927c465c6d",
+        "local-nvme.fs2.nebius/eligible": "false",
+        "nebius.com/cuda_version": "13.0.3-1",
+        "nebius.com/driverful": "true",
+        "nebius.com/drivers-preset": "cuda13.0",
+        "nebius.com/gdrcopy_version": "2.5.1",
+        "nebius.com/gpu": "true",
+        "nebius.com/gpu-name": "H100",
+        "nebius.com/mlnx_openmpi_version": "4.1.9a1-1.20250722.92f9fca4eb.2507097",
+        "nebius.com/nccl_version": "2.30.4-1-cuda13.0",
+        "nebius.com/node-group-id": "mk8snodegroup-e00n67290jzpdmffbv",
+        "nebius.com/nvidia_driver_version": "580.159.04-1ubuntu1",
+        "nebius.com/ofed_version": "25.07.OFED.25.07.0.9.7.1-1",
+        "nebius.com/preemptible": "true",
+        "nebius.com/resource-preset": "1gpu-16vcpu-200gb",
+        "node.kubernetes.io/instance-type": "gpu-h100-sxm",
+        "nvidia.com/gpu.deploy.operands": "false",
+        "snapshot.fs2.nebius/eligible": "false",
+        "storage.fs2.nebius/reference-data": "true",
+        "storage.fs2.nebius/shared-cache": "true",
+        "topology.fs2.nebius/scope": "standalone",
+        "topology.kubernetes.io/region": "eu-north1",
+        "workload.fs2.nebius/gpu": "true"
+      },
+      "name": "computeinstance-e00xjaw5jqexvvnpat",
+      "resourceVersion": "42459199",
+      "uid": "54fff439-0b80-434e-a60f-7edee7051c44"
+    },
+    "spec": {
+      "podCIDR": "10.6.6.0/24",
+      "podCIDRs": [
+        "10.6.6.0/24"
+      ],
+      "providerID": "nebius://computeinstance-e00xjaw5jqexvvnpat",
+      "taints": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "value": "fs2-inference"
+        }
+      ]
+    },
+    "status": {
+      "addresses": [
+        {
+          "address": "10.6.68.10",
+          "type": "InternalIP"
+        },
+        {
+          "address": "computeinstance-e00xjaw5jqexvvnpat",
+          "type": "Hostname"
+        }
+      ],
+      "allocatable": {
+        "cpu": "15900m",
+        "ephemeral-storage": "297467776530",
+        "hugepages-1Gi": "0",
+        "hugepages-2Mi": "0",
+        "memory": "194634704Ki",
+        "nvidia.com/gpu": "1",
+        "pods": "110"
+      },
+      "capacity": {
+        "cpu": "16",
+        "ephemeral-storage": "323938280Ki",
+        "hugepages-1Gi": "0",
+        "hugepages-2Mi": "0",
+        "memory": "206122960Ki",
+        "nvidia.com/gpu": "1",
+        "pods": "110"
+      },
+      "conditions": [
+        {
+          "lastHeartbeatTime": "2026-09-15T22:47:30Z",
+          "lastTransitionTime": "2026-09-15T21:07:17Z",
+          "message": "No disk I/O error detected for vda disk",
+          "reason": "NoBootDiskIOError",
+          "status": "False",
+          "type": "NebiusBootDiskIOError"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:47:30Z",
+          "lastTransitionTime": "2026-09-15T21:07:17Z",
+          "message": "kernel has no deadlock",
+          "reason": "KernelHasNoDeadlock",
+          "status": "False",
+          "type": "KernelDeadlock"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:47:30Z",
+          "lastTransitionTime": "2026-09-15T21:07:17Z",
+          "message": "XFS has not shutdown",
+          "reason": "XfsHasNotShutDown",
+          "status": "False",
+          "type": "XfsShutdown"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:47:30Z",
+          "lastTransitionTime": "2026-09-15T21:07:17Z",
+          "message": "UEFI CPER has no fatal error",
+          "reason": "CperHardwareHasNoFatalError",
+          "status": "False",
+          "type": "CperHardwareErrorFatal"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:47:30Z",
+          "lastTransitionTime": "2026-09-15T21:07:17Z",
+          "message": "All checks have passed",
+          "reason": "NoGPUErrorMK8S",
+          "status": "False",
+          "type": "NebiusGPUError"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T20:41:54Z",
+          "lastTransitionTime": "2026-09-15T20:41:54Z",
+          "message": "Cilium is running on this node",
+          "reason": "CiliumIsUp",
+          "status": "False",
+          "type": "NetworkUnavailable"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:52:19Z",
+          "lastTransitionTime": "2026-09-15T21:06:49Z",
+          "message": "No monitored processes in D-state",
+          "reason": "ContainerRuntimeHealthy",
+          "status": "False",
+          "type": "NebiusContainerRuntimeError"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:52:22Z",
+          "lastTransitionTime": "2026-09-15T21:06:45Z",
+          "message": "kubelet has sufficient memory available",
+          "reason": "KubeletHasSufficientMemory",
+          "status": "False",
+          "type": "MemoryPressure"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:52:22Z",
+          "lastTransitionTime": "2026-09-15T21:06:45Z",
+          "message": "kubelet has no disk pressure",
+          "reason": "KubeletHasNoDiskPressure",
+          "status": "False",
+          "type": "DiskPressure"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:52:22Z",
+          "lastTransitionTime": "2026-09-15T21:06:45Z",
+          "message": "kubelet has sufficient PID available",
+          "reason": "KubeletHasSufficientPID",
+          "status": "False",
+          "type": "PIDPressure"
+        },
+        {
+          "lastHeartbeatTime": "2026-09-15T22:52:22Z",
+          "lastTransitionTime": "2026-09-15T21:06:45Z",
+          "message": "kubelet is posting ready status",
+          "reason": "KubeletReady",
+          "status": "True",
+          "type": "Ready"
+        }
+      ],
+      "daemonEndpoints": {
+        "kubeletEndpoint": {
+          "Port": 10250
+        }
+      },
+      "features": {
+        "supplementalGroupsPolicy": true
+      },
+      "images": [
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e"
+          ],
+          "sizeBytes": 3760054419
+        },
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94"
+          ],
+          "sizeBytes": 3722860672
+        },
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/mirror/io/quay/cilium/cilium@sha256:a5b7cf9d06c527f8f817fbffd056bab314fe664329d8a65b6e4500d9997af967",
+            "cr.eu-north1.nebius.cloud/mirror/io/quay/cilium/cilium:v1.18.12"
+          ],
+          "sizeBytes": 250095800
+        },
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+          ],
+          "sizeBytes": 224071224
+        },
+        {
+          "names": [
+            "nvcr.io/nvidia/k8s-device-plugin@sha256:037160a36de0f060fc21cc0cb2f795d980282ff1471b55530433ca4350b24c4f",
+            "nvcr.io/nvidia/k8s-device-plugin:v0.17.2"
+          ],
+          "sizeBytes": 203083899
+        },
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/mk8s/node-problem-detector-gpu@sha256:b1f555be93e07d4263fca241b936de614fa347c6de9db991872ac31f2a45a479",
+            "cr.eu-north1.nebius.cloud/mk8s/node-problem-detector-gpu:1.0.19"
+          ],
+          "sizeBytes": 90415564
+        },
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/mk8s/nebius-compute-csi-driver@sha256:9df97cf5d3e89e37d40302f5cfa3a3e4971e222869f3f402a2b649fdb0bc2c4c",
+            "cr.eu-north1.nebius.cloud/mk8s/nebius-compute-csi-driver:0.1.32"
+          ],
+          "sizeBytes": 81078799
+        },
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/mirror/io/quay/cilium/cilium-envoy@sha256:cc084c6477408c482546fd784f81da60fcc4cefb318719a504cd0d14edf79fea",
+            "cr.eu-north1.nebius.cloud/mirror/io/quay/cilium/cilium-envoy:v1.36.9-1782267392-edeb3f2af56c37c407efa1f63f0b32f595399bbc"
+          ],
+          "sizeBytes": 74615014
+        },
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:08ecbf73a86061ceeef51d1262a00352c02b0ee154fd1af949a9b813372cd0c1"
+          ],
+          "sizeBytes": 59806024
+        },
+        {
+          "names": [
+            "nvcr.io/nvidia/k8s/dcgm-exporter@sha256:b4df763de9558e5b3f1f1d79bc65b772fcf65b8a9c3664ea7173e47153112b4a"
+          ],
+          "sizeBytes": 59652198
+        },
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/mk8s/csi-mounted-fs-path@sha256:e43d3912d97881169172e8ef4aad7c8ba703ce2c80c865f218da9fa0a1b3f460",
+            "cr.eu-north1.nebius.cloud/mk8s/csi-mounted-fs-path:0.1.7"
+          ],
+          "sizeBytes": 49215104
+        },
+        {
+          "names": [
+            "ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s@sha256:3a8f46e1ff33546d36ddd94ef8721c5807718e25825f3e3f6eb5d552fd24e422",
+            "ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s:0.159.0"
+          ],
+          "sizeBytes": 48416595
+        },
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/mk8s/container-runtime-monitor@sha256:2affc1cb3dc213c1da84aaec1e064dbeb3162168479056ec327316dc64a7ba47",
+            "cr.eu-north1.nebius.cloud/mk8s/container-runtime-monitor:0.0.9"
+          ],
+          "sizeBytes": 44095425
+        },
+        {
+          "names": [
+            "registry.k8s.io/kube-apiserver@sha256:5bb9700f458af4d1cea5f7bbd080f2c66140fb000d9840a436569f16978489d8",
+            "registry.k8s.io/kube-apiserver:v1.35.6"
+          ],
+          "sizeBytes": 27616105
+        },
+        {
+          "names": [
+            "registry.k8s.io/sig-storage/csi-provisioner@sha256:893e37a388e7a7463d6c3523311b28cfbc5ae536dbef35430eed272cdc6850dc",
+            "registry.k8s.io/sig-storage/csi-provisioner:v3.4.1"
+          ],
+          "sizeBytes": 27612908
+        },
+        {
+          "names": [
+            "registry.k8s.io/kube-proxy@sha256:d8cb1b26c2c9289bea51e7c0d928c06a8c5b873616d15c996c66e703f9435319",
+            "registry.k8s.io/kube-proxy:v1.35.6"
+          ],
+          "sizeBytes": 25727251
+        },
+        {
+          "names": [
+            "registry.k8s.io/etcd@sha256:60a30b5d81b2217555e2cfb9537f655b7ba97220b99c39ee2e162a7127225890",
+            "registry.k8s.io/etcd:3.6.6-0"
+          ],
+          "sizeBytes": 23641797
+        },
+        {
+          "names": [
+            "registry.k8s.io/coredns/coredns@sha256:9b9128672209474da07c91439bf15ed704ae05ad918dd6454e5b6ae14e35fee6",
+            "registry.k8s.io/coredns/coredns:v1.13.1"
+          ],
+          "sizeBytes": 23553139
+        },
+        {
+          "names": [
+            "registry.k8s.io/kube-controller-manager@sha256:7277ab445774ad6fa62e7859151f819a8deb749e1203cbd6ddf7ac8dce5c0e1e",
+            "registry.k8s.io/kube-controller-manager:v1.35.6"
+          ],
+          "sizeBytes": 23048145
+        },
+        {
+          "names": [
+            "registry.k8s.io/sig-storage/csi-external-health-monitor-controller@sha256:46346c621c4d7e0976ddfb1e8722f1eb0af4e32a1d9648228b04364d9d4830ec",
+            "registry.k8s.io/sig-storage/csi-external-health-monitor-controller:v0.3.0"
+          ],
+          "sizeBytes": 21111424
+        },
+        {
+          "names": [
+            "registry.k8s.io/kube-scheduler@sha256:51a32afb3c6966c974cd3b351042b1cb1b15af0619cb25e006c409d91367ea2e",
+            "registry.k8s.io/kube-scheduler:v1.35.6"
+          ],
+          "sizeBytes": 17149986
+        },
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/mirror/io/k8s/registry/sig-storage/csi-node-driver-registrar@sha256:8331d680e6c40c56909f436ea3126fdca39761cf87781cd2db8d05c9082b05f5",
+            "cr.eu-north1.nebius.cloud/mirror/io/k8s/registry/sig-storage/csi-node-driver-registrar:v2.11.1"
+          ],
+          "sizeBytes": 13588268
+        },
+        {
+          "names": [
+            "quay.io/prometheus/node-exporter@sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106",
+            "quay.io/prometheus/node-exporter:v1.12.1-distroless"
+          ],
+          "sizeBytes": 13123706
+        },
+        {
+          "names": [
+            "registry.k8s.io/sig-storage/csi-node-driver-registrar@sha256:2dee3fe5fe861bb66c3a4ac51114f3447a4cd35870e0f2e2b558c7a400d89589",
+            "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.2.0"
+          ],
+          "sizeBytes": 8561694
+        },
+        {
+          "names": [
+            "registry.k8s.io/sig-storage/livenessprobe@sha256:1b7c978a792a8fa4e96244e8059bd71bb49b07e2e5a897fb0c867bdc6db20d5d",
+            "registry.k8s.io/sig-storage/livenessprobe:v2.3.0"
+          ],
+          "sizeBytes": 7933739
+        },
+        {
+          "names": [
+            "registry.k8s.io/pause@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c",
+            "registry.k8s.io/pause:3.10.1"
+          ],
+          "sizeBytes": 320448
+        },
+        {
+          "names": [
+            "cr.eu-north1.nebius.cloud/mirror/io/k8s/registry/pause@sha256:a9fc01b32f33046d9562a9b8c1ad88528d6f5a0c828074d3e02cedcee5f08d4b",
+            "registry.k8s.io/pause@sha256:7031c1b283388d2c2e09b57badb803c05ebed362dc88d84b480cc47f72a21097",
+            "cr.eu-north1.nebius.cloud/mirror/io/k8s/registry/pause:3.9",
+            "registry.k8s.io/pause:3.9"
+          ],
+          "sizeBytes": 319856
+        }
+      ],
+      "nodeInfo": {
+        "architecture": "amd64",
+        "bootID": "ac0c8329-6896-4b10-bc95-37b9878b6bc1",
+        "containerRuntimeVersion": "containerd://2.2.6",
+        "kernelVersion": "6.11.0-1016-nvidia",
+        "kubeProxyVersion": "",
+        "kubeletVersion": "v1.35.6",
+        "machineID": "73687e71f90d5da0b5532c271b8fa97a",
+        "operatingSystem": "linux",
+        "osImage": "Ubuntu 24.04.4 LTS",
+        "systemUUID": "73687e71-f90d-5da0-b553-2c271b8fa97a"
+      },
+      "runtimeHandlers": [
+        {
+          "features": {
+            "recursiveReadOnlyMounts": true,
+            "userNamespaces": true
+          },
+          "name": ""
+        },
+        {
+          "features": {
+            "recursiveReadOnlyMounts": true,
+            "userNamespaces": true
+          },
+          "name": "nvidia"
+        },
+        {
+          "features": {
+            "recursiveReadOnlyMounts": true,
+            "userNamespaces": true
+          },
+          "name": "runc"
+        }
+      ]
+    }
+  },
+  "allocated": [],
+  "pending_customer_gpu_pods": []
+}
