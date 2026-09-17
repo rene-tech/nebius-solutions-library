@@ -6,7 +6,51 @@ bounded resumable OpenFold2/Boltz2 SDK/HTTP driver with representative ESMFold2
 batch readback. This is **not a complete customer release gate**. Raw client
 passes never establish actual LibreChat or all-App readiness.
 
-Latest checkpoint (2026-09-17 15:11 UTC): release 143 CP
+## Final bounded release-145 result
+
+Two consecutive bounded cohorts passed on 2026-09-17, 15:30:54–15:48:40 UTC,
+on CP `sha256:849020eabbcf07d07112bcebae4032639e8e995a9eda078410ccf4879a188ee8`,
+using collector source `2e8f4633b0ff6c0be1b448aefce672dc6cd5da94` and the same
+ordinary-user Stockholm canary policy. Each cohort passed eight OpenFold2/Boltz2
+named/generic/legacy-nested/HTTP cases with semantic validation and replay, five
+mixed operations with server-observed overlap exactly five, and one ESMFold2
+batch with released resources and three size/SHA-verified HTTPS artifacts.
+Totals: 26 protein operations, two batches, four input-upload operations and six
+artifact downloads. Both batch transport journals recorded zero failures/retries.
+Before/after discovery, deployment/configuration/policy and target model/runtime
+identities matched. `cohorts-release145/partial-receipt.json` deliberately reports
+`partial_scope_passed` and `customer_ready: false`: this covers three models,
+not all 30 non-Cosmos Apps or actual hosted LibreChat.
+
+The first batch's CPU preparation encountered retained `FailedScheduling`
+events, triggered normal node-group scale-up from one to two, then scheduled
+and succeeded. The second batch used the available CPU node. No manual capacity
+change, operation cancellation, resubmission or recovery was needed. These
+explained events are retained, not silently relabeled as zero warnings.
+
+`finalization-release145/usage.json` matches exactly 28 inference operations and
+30 terminal, reconciled lifecycle subjects, with no missing lifecycle and zero
+admission reservations. Exclusive scientific occupancy is application-observed,
+estimated 130 GPU-seconds (56 active, 74 startup); all 26 shared serving subjects
+are excluded from additive occupancy. Six serving operations retain unavailable
+runtime attribution; no empty/zero sentinel is treated as measured GPU usage.
+These are not billing figures, and no ledger was changed. Exact retained batch
+Pod scheduling events plus available operation-bound serving Pods identify three
+GPU nodes; all three corresponding observer Pods were PodReady at readback.
+That snapshot is not continuous telemetry or whole-cluster health.
+
+All 102 operations across this disposable canary's complete testing history were
+terminal before teardown. Only token `aa718c7c-c4ff-4750-bcf5-3ec94284848d` was
+revoked, at 15:49:21.268719 UTC. Its subsequent public read returned HTTP 401,
+and other key metadata was unchanged. Durable teardown evidence is
+`finalization-release145/completed.json`; no operation/artifact/history or real
+customer key was deleted. `sibling-preservation-release145.json` preserves all
+five speech entries, disabled own-user Stockholm storage and public MindEval
+catalog HTTP 200. Optional internal MindEval health remains unavailable.
+
+## Retained earlier attempts
+
+Earlier checkpoint (2026-09-17 15:11 UTC): release 143 CP
 `sha256:624763c6141a990125c37b71fccc0a8d7ba5371a4efd5be325336cbc58d54020`
 completed one full bounded cohort: 13 OpenFold2/Boltz2 operations with semantic
 validation/replay, actual outstanding overlap five, and ESMFold2 batch
@@ -16,8 +60,8 @@ failures. Six serving calls in cohort two also succeeded before the release
 owner paused new admissions for a separate Cosmos T2I envelope fix. All admitted
 work settled; no replacement requests were submitted. The partial receipt's
 sole failure is `operator_paused_new_submissions`, not a failed model operation.
-This is **not a final pair**. The disposable key remains available for the next
-explicit release-owner GO; teardown is deferred until testing has finished.
+This was **not a final pair**. At that checkpoint the disposable key was retained
+for the next explicit release-owner GO, with teardown deferred until testing finished.
 Release-143 speech discovery/storage/MindEval public checks passed separately;
 the optional internal MindEval health probe remained unavailable.
 
@@ -89,8 +133,9 @@ occupancy 65s (28s active, 37s startup), with scheduler-event Pod/node correlati
 
 Private evidence is under
 `/home/tux/secure-handoff/stockholm-live-acceptance-20260917/`, mode 0700; files
-are 0600. A new same-policy `stockholm-canary-*` key expires at
-2026-09-17 19:43:47 UTC. No real team key or hosted client setting was changed.
+are 0600. The same-policy `stockholm-canary-*` key was issued with expiry
+2026-09-17 19:43:47 UTC and revoked early as recorded above. No real team key or
+hosted client setting was changed.
 
 `verify_receipt.py` builds per-App capability manifests using the existing
 [`customer-readiness/capability_gate.py`](../customer-readiness/capability_gate.py)
@@ -297,11 +342,10 @@ The following pieces remain incomplete or unexecuted:
 2. Actual hosted LibreChat canary binding and conversation/tool traces. Installed
    skill hashes do not prove use; per-model skills must be mapped honestly into
    the verifier's BioNeMo integration evidence, not fabricated group labels.
-3. Two complete unchanged-final-release cohorts, including concurrency five,
-   representative batch and failure/cancellation behavior. Release 143 has one
-   complete bounded cohort and six passing calls in its interrupted second
-   cohort; the next corrected CP image requires a fresh pair. The bounded driver
-   is not a full all-model or LibreChat driver.
+3. Two complete all-App/client cohorts, including their promised workload states
+   and failure/cancellation behavior. Two unchanged-final-release bounded
+   three-model cohorts now pass, but do not fill the all-model, actual LibreChat,
+   or broader failure/cancellation matrix.
 4. Approved, bounded, model-specific synthetic inputs and semantic/artifact
    validators for every advertised serving and scientific App. No fake
    all-model fixture inventory is supplied here.
@@ -309,8 +353,8 @@ The following pieces remain incomplete or unexecuted:
    lifecycle identity and warning/restart/resource counts. Scoped usage and
    guarded disposable-key cleanup collectors exist; missing serving runtime
    attribution is explicitly unavailable, not fabricated from Pod snapshots.
-6. Root-owned release evaluation, disposable-key teardown evidence and a
-   human-readable customer handoff. The first live discovery advertised 21
+6. Root-owned full release evaluation and human-readable customer handoff;
+   bounded disposable-key teardown is now verified. The first live discovery advertised 21
    serving and 10 scientific Apps / 60 tools; excluding Cosmos leaves 30 Apps,
    not the two protein models selected for the first bounded run.
 
@@ -347,7 +391,7 @@ collector receipts are retained, including pagination and redaction corrections;
 use `librechat-final-readback.json` for the complete 32-skill inventory. No
 historical scientific data or customer key was deleted.
 
-Latest bounded collector/verifier/shared-gate suite: **82 passed in 0.62s**;
+Latest bounded collector/verifier/shared-gate suite: **82 passed in 0.61s**;
 Ruff and diff checks passed. This includes persisted GET-only transport retry
 failures, POST/PUT no-retry negatives, concurrency-five validation and explicit
 missing-runtime-identity handling. Acceptance-only source commits include

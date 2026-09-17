@@ -1,7 +1,7 @@
 # Cosmos and Stockholm remediation — 17 September 2026
 
-Release status: **Helm 145 deployed; public workflow validation in progress;
-not customer-qualified**.
+Release status: **Helm 145 bounded tests recorded; upload-demand correction
+rolling out as Helm 146; not customer-qualified**.
 The implementation is integrated on `agent/fs2-cosmos-stockholm-remediation-r20260917`, based on
 `bad3f9cba9cac2762ddbe0b62f8c6ab3a780a6d7`. This baseline preserves the newer
 speech, tenant storage, and workshop APIs. The old dirty `main` checkout was not
@@ -45,8 +45,9 @@ desired resources and explicit application/controller/metrics verification.
 The failed/cancelled 141 receipt is retained; no rollback or further node removal
 was used to make it appear successful.
 
-Source and reproducible release helpers through `7b7411a68` are pushed to the
-integration branch. See the [complete contract handoff](../acceptance/cosmos-stockholm-deployment-20260917/CONTRACT-HANDOFF.md)
+Source and reproducible release helpers are retained on the integration branch.
+The upload-demand correction is source `bce48ba034675eaf17bec473e3990fd4003185f2`.
+See the [complete contract handoff](../acceptance/cosmos-stockholm-deployment-20260917/CONTRACT-HANDOFF.md)
 for hashes, preservation proof, owner API cutover and rollback ordering.
 The final bounded public cohorts are separate from these deployment checks.
 
@@ -131,6 +132,45 @@ completed inference in 1.7 seconds on attempt one. Its exact readiness-wait caus
 is not established; Ready containers are not equivalent to a Ready Pod. These
 are retained intermediate results, not the final unchanged-release pair or
 actual hosted-LibreChat/full-catalog qualification.
+
+### Release-145 results and CPU-upload scaling correction
+
+Stockholm completed two unchanged release-145 bounded cohorts: 26 OpenFold2/
+Boltz2 serving operations, two ESMFold2 batches, concurrency five in each cohort,
+and six verified result downloads, with no transport failures. The exact 28
+inference operations reconciled to usage. All 102 operations in that disposable
+canary's history were terminal before its key was revoked at 15:49:21 UTC;
+the public read then returned 401 and other key metadata was unchanged. Six
+serving operations had unavailable per-request GPU attribution, not measured
+zero use. These tests do not qualify hosted LibreChat or the remaining catalog.
+
+Cosmos passed all four compatibility cases and the first eight-case video matrix
+on release 145, including HTTP/MCP, HTTPS/upload inputs, V2V and transfer, replay,
+artifact SHA/size and full decoding. The first matrix's cold activation was
+290.032357 seconds, including a 170.519-second image pull on an **existing**
+preemptible H100 node; it was not new-node provisioning. Its other seven calls
+were hot. Cached-node compatibility T2I activation was 37.839581 seconds.
+Neither figure is an all-input latency guarantee or proof of robot-action fidelity.
+
+The second matrix stopped before admitting any generation: its input upload
+unexpectedly activated Cosmos from zero. Read-only correlation proved that
+`scientific-artifact-upload-v1` was included in `queue_counts()` and therefore
+the GPU-demand gauge, even though uploads use CPU transport and serving workers
+already exclude them. The upload ran 15:43:32.949–15:43:33.869 UTC; the overlapping
+15:43:33.418 scrape produced a demand pulse, followed by two restoring Pods.
+The exact intermediate HPA decisions were not reconstructed. No startup-retention
+feedback-loop claim is made, and its formula/settings remain unchanged.
+
+Source `bce48ba03` excludes only upload operations from that demand path in
+PostgreSQL and memory. Upload operation views, debugging records, terminal
+outcomes and usage are preserved; actual native/chat/batch demand still counts.
+27 focused tests passed, including real PostgreSQL and unchanged startup-retention
+tests. Published image is
+`sha256:25438d07ec2caae07ae30209f6267d215b6a037b453aa9f0a3a5a76cb5b6e37e`.
+The rendered 146 delta changes only 12 image references across the same 84
+resources. It changes no model, schema, admin image, scaling policy or quota.
+Live held-upload verification and fresh bounded cohorts are required on that
+digest; successful 145 results are retained, not relabeled as 146 results.
 
 ## What changed
 
