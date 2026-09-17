@@ -217,3 +217,29 @@ workloads provider/helper paths. Empty external enrollment and debug-authorizer
 roots remain fail-closed integration gates. Tests were authored but not run;
 there was no Terraform, Helm, provider, live, credential, cleanup or deletion
 action. This is a static candidate, not a source/integration/live GO claim.
+
+## Post-`e8ac34b7` dynamic credential closure
+
+Exact `e8ac34b7b9dd670015655d43cb24d14907abf8f1` / tree
+`fddc6702a78ad54d3f95d830b880e8e2524edfda` remains rejected. The successor
+uses one source-owned field contract for both static and admission-time Pod
+Secret-reference classification, including CSI, FlexVolume and every listed
+legacy volume Secret field. Any non-empty Secret reference is privileged even
+when its name was created after the signed inventory; an exact CREATE contract
+may consume it only after a fresh metadata-only inventory has observed it.
+
+Debug authorization binds an exact signed inventory of all current Pod UIDs
+and classifications. Unknown and controller-replacement UIDs fail closed until
+the next signed generation. Ephemeral-container UPDATE crosses both the exact
+lease webhook and credential custody; the latter compares the complete old/new
+Pod specs and permits no ServiceAccount, token-automount or non-empty Secret
+reference change. Privileged controller CREATE contracts bind the full object
+spec and require a non-running state. Their exact name and UID must then enter
+the signed workload inventory before a release UPDATE can activate them or an
+exact native controller can create owner-bound children.
+
+The added regressions are source-only and were not executed. No test, parser,
+formatter, Terraform, Helm, provider, live, credential, cleanup or deletion
+action occurred. Empty external enrollment and debug-authorizer roots remain
+fail-closed integration gates; this is not a source, integration or live GO
+claim.

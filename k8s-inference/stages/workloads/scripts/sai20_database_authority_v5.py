@@ -41,6 +41,7 @@ REJECTED_COMMITS = {
     "948e1836b4058779aff2c0c91c62aa898968da5d",
     "17469ed79eb56ae63327f0ddecb81d21b2170722",
     "6e1bf0f00d85a80d228a7cea803511391076fb5a",
+    "e8ac34b7b9dd670015655d43cb24d14907abf8f1",
 }
 ROLLOUT_LINEAGE_LABEL = "security.fs2.nebius.ai/sai20-rollout-lineage"
 CREDENTIAL_CUSTODY_NAMESPACES = (
@@ -70,6 +71,26 @@ NATIVE_WORKLOAD_CONTROLLER_IDENTITY = {
     "username": "system:kube-controller-manager",
     "groups": ["system:authenticated"],
     "extra": {},
+}
+POD_SECRET_REFERENCE_PATHS = {
+    "azure-file": ("volumes", "*", "azureFile", "secretName"),
+    "cephfs": ("volumes", "*", "cephfs", "secretRef", "name"),
+    "cinder": ("volumes", "*", "cinder", "secretRef", "name"),
+    "container-env": ("containers", "*", "env", "*", "valueFrom", "secretKeyRef", "name"),
+    "container-env-from": ("containers", "*", "envFrom", "*", "secretRef", "name"),
+    "csi-node-publish": ("volumes", "*", "csi", "nodePublishSecretRef", "name"),
+    "ephemeral-container-env": ("ephemeralContainers", "*", "env", "*", "valueFrom", "secretKeyRef", "name"),
+    "ephemeral-container-env-from": ("ephemeralContainers", "*", "envFrom", "*", "secretRef", "name"),
+    "flex-volume": ("volumes", "*", "flexVolume", "secretRef", "name"),
+    "image-pull": ("imagePullSecrets", "*", "name"),
+    "init-container-env": ("initContainers", "*", "env", "*", "valueFrom", "secretKeyRef", "name"),
+    "init-container-env-from": ("initContainers", "*", "envFrom", "*", "secretRef", "name"),
+    "iscsi": ("volumes", "*", "iscsi", "secretRef", "name"),
+    "projected-volume": ("volumes", "*", "projected", "sources", "*", "secret", "name"),
+    "rbd": ("volumes", "*", "rbd", "secretRef", "name"),
+    "scale-io": ("volumes", "*", "scaleIO", "secretRef", "name"),
+    "secret-volume": ("volumes", "*", "secret", "secretName"),
+    "storage-os": ("volumes", "*", "storageos", "secretRef", "name"),
 }
 PEER_NAMESPACES = ("fs2-data", "cnpg-system")
 PEER_RESOURCES = tuple(sorted(v4.WORKLOAD_TYPES))
@@ -122,6 +143,7 @@ SUCCESSOR_SOURCE_PATHS = {
     "k8s-inference/security/sai20/root-enrollment-receipts-v1.json",
     "k8s-inference/stages/workloads/contracts/sai20-bootstrap-guard-v5.json",
     "k8s-inference/stages/workloads/contracts/sai20-debug-authorizer-v1.json",
+    "k8s-inference/stages/workloads/contracts/sai20-pod-secret-references-v1.json",
     "k8s-inference/stages/workloads/sai20_database_authority_v5.tf",
     "k8s-inference/stages/workloads/locals.tf",
     "k8s-inference/stages/workloads/providers.tf",
@@ -360,37 +382,110 @@ def workload_pod_spec(item: dict[str, Any], resource: str) -> dict[str, Any]:
     return value
 
 
-def pod_secret_names(spec: dict[str, Any]) -> list[str]:
-    """Extract every Secret reference without reading Secret contents."""
+def verify_pod_secret_reference_contract(
+    query: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Load the one source-owned field map used by inventory and admission."""
 
-    names: set[str] = set()
+    contract = source_json(
+        query,
+        "pod_secret_reference_contract_path",
+        "expected_pod_secret_reference_contract_sha256",
+        "Pod Secret reference contract",
+    )
+    exact_keys(contract, {"schema", "references"}, "Pod Secret reference contract")
+    require(
+        contract["schema"]
+        == "fs2-serve.nebius.ai/sai20-pod-secret-references/v1",
+        "Pod Secret reference contract schema mismatch",
+    )
+    references = contract["references"]
+    require(isinstance(references, list), "Pod Secret references must be a list")
+    normalized: list[dict[str, Any]] = []
+    for index, reference in enumerate(references):
+        where = f"Pod Secret references[{index}]"
+        require(isinstance(reference, dict), f"{where} must be an object")
+        exact_keys(reference, {"id", "path", "cel_surface"}, where)
+        identifier = text(reference["id"], f"{where}.id")
+        path = reference["path"]
+        require(
+            identifier in POD_SECRET_REFERENCE_PATHS
+            and path == list(POD_SECRET_REFERENCE_PATHS[identifier]),
+            f"{where} path is not the source-defined Kubernetes field",
+        )
+        cel_surface = text(reference["cel_surface"], f"{where}.cel_surface")
+        require(
+            cel_surface.count("{spec}") >= 1
+            and "== secret" not in cel_surface,
+            f"{where} CEL must derive names independently of a frozen Secret inventory",
+        )
+        normalized.append(
+            {"id": identifier, "path": path, "cel_surface": cel_surface}
+        )
+    require(
+        [item["id"] for item in normalized]
+        == sorted(POD_SECRET_REFERENCE_PATHS),
+        "Pod Secret reference contract must contain every exact path in lexical order",
+    )
+    return normalized
 
-    def visit(value: Any, parent_key: str = "") -> None:
-        if isinstance(value, dict):
-            for key, entry in value.items():
-                if key == "secretName" and isinstance(entry, str) and entry:
-                    names.add(entry)
-                elif key in {"secretRef", "secretKeyRef", "secret"} and isinstance(entry, dict):
-                    name = entry.get("name")
-                    if isinstance(name, str) and name:
-                        names.add(name)
-                elif key == "imagePullSecrets" and isinstance(entry, list):
-                    for reference in entry:
-                        if isinstance(reference, dict) and isinstance(reference.get("name"), str) and reference["name"]:
-                            names.add(reference["name"])
-                visit(entry, key)
-        elif isinstance(value, list):
-            for entry in value:
-                visit(entry, parent_key)
 
-    visit(spec)
-    return sorted(names)
+def path_values(value: Any, path: list[str]) -> list[str]:
+    if not path:
+        return [value] if isinstance(value, str) and value else []
+    token, *remaining = path
+    if token == "*":
+        if not isinstance(value, list):
+            return []
+        return [name for item in value for name in path_values(item, remaining)]
+    if not isinstance(value, dict) or token not in value:
+        return []
+    return path_values(value[token], remaining)
+
+
+def pod_secret_reference_surface(
+    spec: dict[str, Any], references: list[dict[str, Any]]
+) -> dict[str, list[list[str]]]:
+    """Return the exact per-first-list-item surface emitted by contract CEL."""
+
+    surface: dict[str, list[list[str]]] = {}
+    for reference in references:
+        path = reference["path"]
+        wildcard = path.index("*")
+        collection: Any = spec
+        for token in path[:wildcard]:
+            if not isinstance(collection, dict) or token not in collection:
+                collection = []
+                break
+            collection = collection[token]
+        if not isinstance(collection, list):
+            collection = []
+        remaining = path[wildcard + 1 :]
+        surface[reference["id"]] = [
+            path_values(item, remaining) for item in collection
+        ]
+    return surface
+
+
+def pod_secret_names(
+    spec: dict[str, Any], references: list[dict[str, Any]]
+) -> list[str]:
+    surface = pod_secret_reference_surface(spec, references)
+    return sorted(
+        {
+            name
+            for groups in surface.values()
+            for group in groups
+            for name in group
+        }
+    )
 
 
 def credential_workload_inventory(
     entries: dict[str, dict[str, Any]],
     v4_context: dict[str, Any],
     privileged_service_accounts: set[tuple[str, str]],
+    secret_references: list[dict[str, Any]],
 ) -> dict[str, Any]:
     protected_accounts = sorted(
         {
@@ -409,7 +504,6 @@ def credential_workload_inventory(
         }
     )
     account_set = set(protected_accounts)
-    secret_set = set(protected_secrets)
     workloads: list[dict[str, Any]] = []
     for namespace in CREDENTIAL_CUSTODY_NAMESPACES:
         for resource in sorted(v4.WORKLOAD_TYPES):
@@ -422,17 +516,17 @@ def credential_workload_inventory(
                 spec = workload_pod_spec(item, resource)
                 service_account = spec.get("serviceAccountName") or "default"
                 require(isinstance(service_account, str), "workload serviceAccountName must be a string")
-                secret_names = pod_secret_names(spec)
-                protected_secret_references = sorted(
-                    name for name in secret_names if (namespace, name) in secret_set
+                secret_reference_surface = pod_secret_reference_surface(
+                    spec, secret_references
                 )
+                secret_names = pod_secret_names(spec, secret_references)
                 protected_account = (namespace, service_account) in account_set
                 surface = {
                     "service_account_name": service_account,
                     "automount_service_account_token": spec.get("automountServiceAccountToken", True),
-                    "secret_names": secret_names,
+                    "secret_reference_names": secret_names,
+                    "secret_reference_surface": secret_reference_surface,
                     "protected_service_account": protected_account,
-                    "protected_secret_names": protected_secret_references,
                 }
                 workloads.append(
                     {
@@ -445,7 +539,7 @@ def credential_workload_inventory(
                             "credential workload resourceVersion",
                         ),
                         "credential_bearing": protected_account
-                        or bool(protected_secret_references),
+                        or bool(secret_names),
                         "credential_surface": surface,
                         "credential_surface_sha256": digest(surface),
                     }
@@ -489,7 +583,9 @@ def credential_workload_inventory(
                 "controller_groups": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["groups"],
                 "controller_extra": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["extra"],
                 "service_account_name": item["credential_surface"]["service_account_name"],
-                "protected_secret_names": item["credential_surface"]["protected_secret_names"],
+                "automount_service_account_token": item["credential_surface"]["automount_service_account_token"],
+                "secret_reference_names": item["credential_surface"]["secret_reference_names"],
+                "secret_reference_surface": item["credential_surface"]["secret_reference_surface"],
             }
         )
         if child_resource is None:
@@ -509,7 +605,9 @@ def credential_workload_inventory(
                 "controller_groups": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["groups"],
                 "controller_extra": NATIVE_WORKLOAD_CONTROLLER_IDENTITY["extra"],
                 "service_account_name": surface["service_account_name"],
-                "protected_secret_names": surface["protected_secret_names"],
+                "automount_service_account_token": surface["automount_service_account_token"],
+                "secret_reference_names": surface["secret_reference_names"],
+                "secret_reference_surface": surface["secret_reference_surface"],
                 "credential_surface_sha256": item["credential_surface_sha256"],
             }
         )
@@ -523,6 +621,17 @@ def credential_workload_inventory(
             item["namespace"], item["resource"], item["name"], item["uid"]
         )
     )
+    debug_targets = [
+        {
+            "namespace": item["namespace"],
+            "name": item["name"],
+            "uid": item["uid"],
+            "credential_bearing": item["credential_bearing"],
+            "credential_surface_sha256": item["credential_surface_sha256"],
+        }
+        for item in workloads
+        if item["resource"] == "pods"
+    ]
     return {
         "workloads": workloads,
         "protected_service_accounts": [
@@ -534,6 +643,7 @@ def credential_workload_inventory(
             for namespace, name in protected_secrets
         ],
         "protected_pods": protected_pods,
+        "debug_targets": debug_targets,
         "protected_parents": protected_parents,
         "protected_objects": protected_objects,
         "controller_identities": sorted(
@@ -726,8 +836,9 @@ def verify_workload_create_contracts(
     authorization: dict[str, Any],
     v4_context: dict[str, Any],
     boundary: dict[str, Any],
+    secret_references: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Bind privileged credential selection to exact signed Pod templates."""
+    """Bind privileged selection to exact, inert signed workload objects."""
 
     principals = {
         principal["id"]: principal
@@ -743,10 +854,6 @@ def verify_workload_create_contracts(
         (item["namespace"], item["name"])
         for item in boundary["protected_service_accounts"]
     }
-    protected_secrets = {
-        (item["namespace"], item["name"])
-        for item in boundary["protected_secrets"]
-    }
     contracts = authorization["workload_create_contracts"]
     require(isinstance(contracts, list), "workload_create_contracts must be a list")
     normalized: list[dict[str, Any]] = []
@@ -757,7 +864,8 @@ def verify_workload_create_contracts(
         exact_keys(
             contract,
             {
-                "principal_id", "namespace", "resource", "name", "pod_spec",
+                "principal_id", "namespace", "resource", "name",
+                "object_spec", "object_spec_sha256", "pod_spec",
                 "pod_spec_sha256",
             },
             where,
@@ -788,28 +896,80 @@ def verify_workload_create_contracts(
             f"{where} is outside the principal's exact signed CREATE grant",
         )
         pod_spec = contract["pod_spec"]
+        object_spec = contract["object_spec"]
+        require(isinstance(object_spec, dict), f"{where}.object_spec must be an object")
         require(isinstance(pod_spec, dict), f"{where}.pod_spec must be an object")
+        require(
+            digest(object_spec) == contract["object_spec_sha256"],
+            f"{where} object spec digest differs",
+        )
         require(digest(pod_spec) == contract["pod_spec_sha256"], f"{where} Pod spec digest differs")
+        require(
+            workload_pod_spec({"spec": object_spec}, resource) == pod_spec,
+            f"{where} Pod spec is not derived from the exact object spec",
+        )
+        inert_mode = "direct-pod"
+        if resource in {
+            "deployments", "replicasets", "replicationcontrollers", "statefulsets"
+        }:
+            require(
+                object_spec.get("replicas") == 0,
+                f"{where} controller must be created with replicas zero",
+            )
+            inert_mode = "replicas-zero"
+        elif resource in {"cronjobs", "jobs"}:
+            require(
+                object_spec.get("suspend") is True,
+                f"{where} batch controller must be created suspended",
+            )
+            inert_mode = "suspended"
+        elif resource == "daemonsets":
+            terms = (
+                pod_spec.get("affinity", {})
+                .get("nodeAffinity", {})
+                .get("requiredDuringSchedulingIgnoredDuringExecution", {})
+                .get("nodeSelectorTerms")
+            )
+            require(
+                terms
+                == [
+                    {
+                        "matchExpressions": [
+                            {
+                                "key": "security.fs2.nebius.ai/sai20-inert",
+                                "operator": "Exists",
+                            },
+                            {
+                                "key": "security.fs2.nebius.ai/sai20-inert",
+                                "operator": "DoesNotExist",
+                            },
+                        ]
+                    }
+                ],
+                f"{where} DaemonSet must use the contradictory source-owned node affinity",
+            )
+            inert_mode = "contradictory-node-affinity"
         service_account = pod_spec.get("serviceAccountName") or "default"
         require(
             isinstance(service_account, str)
             and (namespace, service_account) in known_accounts,
             f"{where} selects an unknown ServiceAccount",
         )
-        secret_names = pod_secret_names(pod_spec)
+        secret_names = pod_secret_names(pod_spec, secret_references)
         require(
             all((namespace, secret_name) in known_secrets for secret_name in secret_names),
             f"{where} selects a Secret outside the metadata-only inventory",
         )
         require(
             (namespace, service_account) in protected_accounts
-            or any((namespace, secret_name) in protected_secrets for secret_name in secret_names),
+            or bool(secret_names),
             f"{where} is not a privileged credential-bearing CREATE",
         )
         normalized.append(
             {
                 **contract,
                 "identity": identities[principal_id],
+                "inert_mode": inert_mode,
             }
         )
     normalized.sort(
@@ -838,7 +998,8 @@ def verify_debug_authorizer(
         {
             "schema", "url", "ca_bundle_base64", "ca_sha256",
             "server_spki_sha256", "lease_payload_sha256",
-            "protected_pod_targets_sha256",
+            "protected_pod_targets_sha256", "debug_target_inventory_sha256",
+            "credential_boundary_sha256",
             "max_clock_skew_seconds", "failure_policy", "policy_sha256",
             "attested_at", "operator_principal_id",
         },
@@ -903,6 +1064,23 @@ def verify_debug_authorizer(
         value["protected_pod_targets_sha256"]
         == digest(boundary["protected_pods"]),
         "debug authorizer does not bind the exact protected Pod targets",
+    )
+    require(
+        value["debug_target_inventory_sha256"]
+        == digest(boundary["debug_targets"]),
+        "debug authorizer does not bind every current Pod UID and credential classification",
+    )
+    credential_boundary = {
+        "pod_secret_reference_contract_sha256": query[
+            "expected_pod_secret_reference_contract_sha256"
+        ],
+        "protected_service_accounts": boundary["protected_service_accounts"],
+        "protected_workload_parents": boundary["protected_parents"],
+        "workload_controller_identities": boundary["controller_identities"],
+    }
+    require(
+        value["credential_boundary_sha256"] == digest(credential_boundary),
+        "debug authorizer does not bind the complete credential-classification boundary",
     )
     require(
         type(value["max_clock_skew_seconds"]) is int
@@ -1555,6 +1733,7 @@ def verify_supplemental_bundle(
             "debug_broker_principal_id", "debug_access_leases",
             "debug_access_leases_sha256", "workload_create_contracts",
             "workload_create_contracts_sha256", "debug_authorizer",
+            "pod_secret_reference_contract_sha256",
         },
         "v5 authorization",
     )
@@ -1564,9 +1743,15 @@ def verify_supplemental_bundle(
         "provider_group_response_sha256", "provider_observer_sha256",
         "provider_observer_credential_subject_sha256",
         "credential_workload_inventory_sha256", "debug_access_leases_sha256",
-        "workload_create_contracts_sha256",
+        "workload_create_contracts_sha256", "pod_secret_reference_contract_sha256",
     ):
         sha256(authorization[field], f"v5 authorization.{field}")
+    secret_references = verify_pod_secret_reference_contract(query)
+    require(
+        authorization["pod_secret_reference_contract_sha256"]
+        == query["expected_pod_secret_reference_contract_sha256"],
+        "signed authorization does not bind the source-owned Pod Secret reference contract",
+    )
     preliminary_sensitive = binding_authority_records(
         v4_context["entries"], v4_context["namespaces"], "sensitive"
     )
@@ -1587,6 +1772,7 @@ def verify_supplemental_bundle(
         entries,
         v4_context,
         privileged_service_accounts,
+        secret_references,
     )
     require(
         digest(boundary["workloads"])
@@ -1631,6 +1817,7 @@ def verify_supplemental_bundle(
         authorization,
         v4_context,
         boundary,
+        secret_references,
     )
     require(
         digest(authorization["workload_create_contracts"])
@@ -1770,6 +1957,7 @@ def verify_supplemental_bundle(
         "debug_access_leases_sha256": authorization["debug_access_leases_sha256"],
         "debug_authorizer_sha256": digest(debug_authorizer),
         "workload_create_contracts_sha256": authorization["workload_create_contracts_sha256"],
+        "pod_secret_reference_contract_sha256": authorization["pod_secret_reference_contract_sha256"],
         "protected_service_accounts_json": json.dumps(
             boundary["protected_service_accounts"], sort_keys=True, separators=(",", ":")
         ),
@@ -1778,6 +1966,9 @@ def verify_supplemental_bundle(
         ),
         "protected_pod_targets_json": json.dumps(
             boundary["protected_pods"], sort_keys=True, separators=(",", ":")
+        ),
+        "debug_target_inventory_json": json.dumps(
+            boundary["debug_targets"], sort_keys=True, separators=(",", ":")
         ),
         "protected_workload_parents_json": json.dumps(
             boundary["protected_parents"], sort_keys=True, separators=(",", ":")
@@ -2045,6 +2236,8 @@ def main() -> int:
             "root_enrollment_receipts_path", "expected_root_enrollment_receipts_sha256",
             "bootstrap_guard_contract_path", "expected_bootstrap_guard_contract_sha256",
             "debug_authorizer_contract_path", "expected_debug_authorizer_contract_sha256",
+            "pod_secret_reference_contract_path",
+            "expected_pod_secret_reference_contract_sha256",
         }
         runtime = {"kubeconfig_path", "kube_context", "kubectl_path", "provider_group_observer_path", "apply_nonce"}
         apply_only = {"expected_successor_admission_objects_json"}

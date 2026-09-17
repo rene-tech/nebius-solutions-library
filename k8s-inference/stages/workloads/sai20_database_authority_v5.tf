@@ -30,6 +30,12 @@ locals {
   sai20_authority_v5_debug_authorizer_contract_path = abspath(
     "${path.module}/contracts/sai20-debug-authorizer-v1.json"
   )
+  sai20_authority_v5_pod_secret_reference_contract_path = abspath(
+    "${path.module}/contracts/sai20-pod-secret-references-v1.json"
+  )
+  sai20_authority_v5_pod_secret_reference_contract = jsondecode(
+    file(local.sai20_authority_v5_pod_secret_reference_contract_path)
+  )
   sai20_authority_v5_common_query = merge(local.sai20_authority_v4_common_query, {
     successor_bundle_path                     = var.sai20_database_authority_v5.successor_bundle_path
     enrollment_authorities_path               = local.sai20_authority_v5_enrollment_authorities_path
@@ -40,6 +46,8 @@ locals {
     expected_bootstrap_guard_contract_sha256   = filesha256(local.sai20_authority_v5_bootstrap_guard_contract_path)
     debug_authorizer_contract_path             = local.sai20_authority_v5_debug_authorizer_contract_path
     expected_debug_authorizer_contract_sha256  = filesha256(local.sai20_authority_v5_debug_authorizer_contract_path)
+    pod_secret_reference_contract_path         = local.sai20_authority_v5_pod_secret_reference_contract_path
+    expected_pod_secret_reference_contract_sha256 = filesha256(local.sai20_authority_v5_pod_secret_reference_contract_path)
   })
 }
 
@@ -143,6 +151,7 @@ resource "terraform_data" "sai20_database_authority_v5_identity" {
         data.external.sai20_database_authority_v5_identity.result.debug_access_leases_sha256 == terraform_data.sai20_database_authority_v5_plan.output.debug_access_leases_sha256 &&
         data.external.sai20_database_authority_v5_identity.result.debug_authorizer_sha256 == terraform_data.sai20_database_authority_v5_plan.output.debug_authorizer_sha256 &&
         data.external.sai20_database_authority_v5_identity.result.workload_create_contracts_sha256 == terraform_data.sai20_database_authority_v5_plan.output.workload_create_contracts_sha256 &&
+        data.external.sai20_database_authority_v5_identity.result.pod_secret_reference_contract_sha256 == terraform_data.sai20_database_authority_v5_plan.output.pod_secret_reference_contract_sha256 &&
         data.external.sai20_database_authority_v5_identity.result.source_commit == terraform_data.sai20_database_authority_v5_plan.output.source_commit &&
         data.external.sai20_database_authority_v5_identity.result.source_tree == terraform_data.sai20_database_authority_v5_plan.output.source_tree,
         false,
@@ -229,9 +238,6 @@ locals {
   sai20_authority_v5_protected_service_accounts = jsondecode(
     terraform_data.sai20_database_authority_v5_identity.output.protected_service_accounts_json
   )
-  sai20_authority_v5_protected_secrets = jsondecode(
-    terraform_data.sai20_database_authority_v5_identity.output.protected_secret_names_json
-  )
   sai20_authority_v5_protected_workload_parents = jsondecode(
     terraform_data.sai20_database_authority_v5_identity.output.protected_workload_parents_json
   )
@@ -249,6 +255,13 @@ locals {
   )
   sai20_authority_v5_principal_identities = jsondecode(
     terraform_data.sai20_database_authority_v5_identity.output.principal_identities_json
+  )
+  sai20_authority_v5_principal_identities_by_id = {
+    for principal in local.sai20_authority_v5_principal_identities :
+    principal.id => principal
+  }
+  sai20_authority_v5_debug_access_leases = jsondecode(
+    terraform_data.sai20_database_authority_v5_identity.output.debug_access_leases_json
   )
   sai20_authority_v5_debug_access_bindings = jsondecode(
     terraform_data.sai20_database_authority_v5_identity.output.debug_access_bindings_json
@@ -276,34 +289,60 @@ locals {
       if item.namespace == namespace
     ]
   }
-  sai20_authority_v5_secrets_by_namespace = {
-    for namespace in ["cnpg-system", "fs2-data", "fs2-observability", "fs2-system"] :
-    namespace => [
-      for item in local.sai20_authority_v5_protected_secrets : item.name
-      if item.namespace == namespace
-    ]
-  }
+  sai20_authority_v5_target_secret_reference_surface_cel = format("{%s}", join(", ", [
+    for reference in local.sai20_authority_v5_pod_secret_reference_contract.references : format(
+      "%s: (%s)",
+      jsonencode(reference.id),
+      replace(reference.cel_surface, "{spec}", "variables.targetSpec"),
+    )
+  ]))
+  sai20_authority_v5_old_secret_reference_surface_cel = format("{%s}", join(", ", [
+    for reference in local.sai20_authority_v5_pod_secret_reference_contract.references : format(
+      "%s: (%s)",
+      jsonencode(reference.id),
+      replace(reference.cel_surface, "{spec}", "variables.oldTargetSpec"),
+    )
+  ]))
+  sai20_authority_v5_target_has_secret_reference_cel = join(" || ", [
+    for reference in local.sai20_authority_v5_pod_secret_reference_contract.references : format(
+      "variables.targetSecretReferenceSurface[%s].exists(group, group.size() > 0)",
+      jsonencode(reference.id),
+    )
+  ])
+  sai20_authority_v5_unchanged_secret_references_cel = join(" && ", [
+    for reference in local.sai20_authority_v5_pod_secret_reference_contract.references : format(
+      "variables.targetSecretReferenceSurface[%s].filter(group, group.size() > 0) == variables.oldSecretReferenceSurface[%s].filter(group, group.size() > 0)",
+      jsonencode(reference.id),
+      jsonencode(reference.id),
+    )
+  ])
   sai20_authority_v5_exact_workload_writer_terms = flatten([
     for principal in local.sai20_authority_v5_workload_mutation_grants : [
-      for grant in principal.grants : format(
-        "(has(request.userInfo.uid) && request.userInfo.uid == %s && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)) && request.namespace == %s && request.resource.resource == %s && request.operation in %s && variables.targetObject.metadata.name in %s)",
-        jsonencode(principal.identity.uid),
-        jsonencode(principal.identity.username),
-        length(principal.identity.groups),
-        jsonencode(principal.identity.groups),
-        jsonencode(principal.identity.extra),
-        jsonencode(principal.identity.extra),
-        jsonencode(grant.namespace),
-        jsonencode(grant.resource),
-        jsonencode(grant.operations),
-        jsonencode(grant.names),
-      )
+      for grant in principal.grants : [
+        for item in local.sai20_authority_v5_protected_workload_objects : format(
+          "(has(request.userInfo.uid) && request.userInfo.uid == %s && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)) && request.operation == 'UPDATE' && request.namespace == %s && request.resource.resource == %s && variables.targetObject.metadata.name == %s && has(variables.targetObject.metadata.uid) && string(variables.targetObject.metadata.uid) == %s)",
+          jsonencode(principal.identity.uid),
+          jsonencode(principal.identity.username),
+          length(principal.identity.groups),
+          jsonencode(principal.identity.groups),
+          jsonencode(principal.identity.extra),
+          jsonencode(principal.identity.extra),
+          jsonencode(item.namespace),
+          jsonencode(item.resource),
+          jsonencode(item.name),
+          jsonencode(item.uid),
+        )
+        if grant.namespace == item.namespace &&
+        grant.resource == item.resource &&
+        contains(grant.operations, "UPDATE") &&
+        contains(grant.names, item.name)
+      ]
     ]
   ])
   sai20_authority_v5_exact_workload_writer_cel = length(local.sai20_authority_v5_exact_workload_writer_terms) == 0 ? "false" : join(" || ", local.sai20_authority_v5_exact_workload_writer_terms)
   sai20_authority_v5_exact_workload_create_terms = [
     for contract in local.sai20_authority_v5_workload_create_contracts : format(
-      "(has(request.userInfo.uid) && request.userInfo.uid == %s && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)) && request.operation == 'CREATE' && request.namespace == %s && request.resource.resource == %s && variables.targetObject.metadata.name == %s && variables.targetSpec == %s)",
+      "(has(request.userInfo.uid) && request.userInfo.uid == %s && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)) && request.operation == 'CREATE' && request.namespace == %s && request.resource.resource == %s && variables.targetObject.metadata.name == %s && variables.targetObject.spec == %s && variables.targetSpec == %s)",
       jsonencode(contract.identity.uid),
       jsonencode(contract.identity.username),
       length(contract.identity.groups),
@@ -313,13 +352,14 @@ locals {
       jsonencode(contract.namespace),
       jsonencode(contract.resource),
       jsonencode(contract.name),
+      jsonencode(contract.object_spec),
       jsonencode(contract.pod_spec),
     )
   ]
   sai20_authority_v5_exact_workload_create_cel = length(local.sai20_authority_v5_exact_workload_create_terms) == 0 ? "false" : join(" || ", local.sai20_authority_v5_exact_workload_create_terms)
   sai20_authority_v5_controller_owned_credential_child_terms = [
     for parent in local.sai20_authority_v5_protected_workload_parents : format(
-      "((%s) && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)) && request.operation == 'CREATE' && request.namespace == %s && request.resource.resource == %s && has(variables.targetObject.metadata.ownerReferences) && variables.targetObject.metadata.ownerReferences.exists(owner, has(owner.controller) && owner.controller && owner.apiVersion == %s && owner.kind == %s && owner.name == %s && string(owner.uid) == %s) && variables.targetServiceAccount == %s && variables.targetProtectedSecrets == %s && %s)",
+      "((%s) && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)) && request.operation == 'CREATE' && request.namespace == %s && request.resource.resource == %s && has(variables.targetObject.metadata.ownerReferences) && variables.targetObject.metadata.ownerReferences.exists(owner, has(owner.controller) && owner.controller && owner.apiVersion == %s && owner.kind == %s && owner.name == %s && string(owner.uid) == %s) && variables.targetServiceAccount == %s && variables.targetAutomountServiceAccountToken == %s && variables.targetSecretReferenceSurface == %s)",
       parent.controller_uid == "" ? "!has(request.userInfo.uid)" : format("has(request.userInfo.uid) && request.userInfo.uid == %s", jsonencode(parent.controller_uid)),
       jsonencode(parent.controller_username),
       length(parent.controller_groups),
@@ -333,14 +373,14 @@ locals {
       jsonencode(parent.name),
       jsonencode(parent.uid),
       jsonencode(parent.service_account_name),
-      jsonencode(parent.protected_secret_names),
-      parent.resource == "deployments" ? "has(variables.targetObject.spec.replicas) && variables.targetObject.spec.replicas == 0" : parent.resource == "cronjobs" ? "has(variables.targetObject.spec.suspend) && variables.targetObject.spec.suspend" : "true",
+      jsonencode(parent.automount_service_account_token),
+      jsonencode(parent.secret_reference_surface),
     )
   ]
   sai20_authority_v5_controller_owned_credential_child_cel = length(local.sai20_authority_v5_controller_owned_credential_child_terms) == 0 ? "false" : join(" || ", local.sai20_authority_v5_controller_owned_credential_child_terms)
   sai20_authority_v5_controller_managed_credential_object_terms = [
     for item in local.sai20_authority_v5_protected_workload_objects : format(
-      "((%s) && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)) && request.operation == 'UPDATE' && request.namespace == %s && request.resource.resource == %s && variables.targetObject.metadata.name == %s && string(variables.targetObject.metadata.uid) == %s && variables.targetServiceAccount == %s && variables.targetProtectedSecrets == %s && variables.unchangedCredentialSurface)",
+      "((%s) && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)) && request.operation == 'UPDATE' && request.namespace == %s && request.resource.resource == %s && variables.targetObject.metadata.name == %s && string(variables.targetObject.metadata.uid) == %s && variables.targetServiceAccount == %s && variables.targetAutomountServiceAccountToken == %s && variables.targetSecretReferenceSurface == %s && variables.unchangedCredentialSurface)",
       item.controller_uid == "" ? "!has(request.userInfo.uid)" : format("has(request.userInfo.uid) && request.userInfo.uid == %s", jsonencode(item.controller_uid)),
       jsonencode(item.controller_username),
       length(item.controller_groups),
@@ -352,10 +392,30 @@ locals {
       jsonencode(item.name),
       jsonencode(item.uid),
       jsonencode(item.service_account_name),
-      jsonencode(item.protected_secret_names),
+      jsonencode(item.automount_service_account_token),
+      jsonencode(item.secret_reference_surface),
     )
   ]
   sai20_authority_v5_controller_managed_credential_object_cel = length(local.sai20_authority_v5_controller_managed_credential_object_terms) == 0 ? "false" : join(" || ", local.sai20_authority_v5_controller_managed_credential_object_terms)
+  sai20_authority_v5_exact_debug_ephemeral_update_terms = [
+    for lease in local.sai20_authority_v5_debug_access_leases : format(
+      "(request.operation == 'UPDATE' && request.subResource == 'ephemeralcontainers' && has(request.userInfo.uid) && request.userInfo.uid == %s && request.userInfo.username == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && ((%s == {} && !has(request.userInfo.extra)) || (has(request.userInfo.extra) && request.userInfo.extra == %s)) && request.namespace == %s && variables.targetObject.metadata.name == %s && has(variables.targetObject.metadata.uid) && string(variables.targetObject.metadata.uid) == %s)",
+      jsonencode(local.sai20_authority_v5_principal_identities_by_id[lease.principal_id].uid),
+      jsonencode(local.sai20_authority_v5_principal_identities_by_id[lease.principal_id].username),
+      length(local.sai20_authority_v5_principal_identities_by_id[lease.principal_id].groups),
+      jsonencode(local.sai20_authority_v5_principal_identities_by_id[lease.principal_id].groups),
+      jsonencode(local.sai20_authority_v5_principal_identities_by_id[lease.principal_id].extra),
+      jsonencode(local.sai20_authority_v5_principal_identities_by_id[lease.principal_id].extra),
+      jsonencode(lease.namespace),
+      jsonencode(lease.pod_name),
+      jsonencode(lease.pod_uid),
+    )
+    if length([
+      for verb in try(lease.operations["pods/ephemeralcontainers"], []) : verb
+      if contains(["patch", "update"], verb)
+    ]) > 0
+  ]
+  sai20_authority_v5_exact_debug_ephemeral_update_cel = length(local.sai20_authority_v5_exact_debug_ephemeral_update_terms) == 0 ? "false" : join(" || ", local.sai20_authority_v5_exact_debug_ephemeral_update_terms)
   sai20_authority_v5_exact_debug_lease_cel = length(local.sai20_authority_v5_debug_access_bindings) == 0 ? "false" : join(" || ", [
     for lease in local.sai20_authority_v5_debug_access_bindings : format(
       "(request.namespace == %s && variables.targetObject.metadata.name == %s && has(variables.targetObject.metadata.annotations) && %s.all(key, variables.targetObject.metadata.annotations[key] == %s[key]) && ((request.resource.resource == 'roles' && variables.targetObject.rules == %s) || (request.resource.resource == 'rolebindings' && variables.targetObject.roleRef == %s && variables.targetObject.subjects == %s)))",
@@ -599,11 +659,14 @@ resource "kubernetes_manifest" "sai20_database_peer_identity_binding_v5" {
 
 # A writer in a platform namespace must not turn an otherwise innocuous Pod or
 # controller into a credential proxy by selecting a protected ServiceAccount or
-# mounting a protected same-namespace Secret. Exact release writers may retain,
-# but not change, an existing credential surface. Native controllers may create
-# only an exact-owner child with the parent's signed surface; Deployment and
-# CronJob intermediates are admitted inert and require a fresh signed renewal
-# before they can create Pods.
+# mounting any same-namespace Secret. Exact release writers may retain, but not
+# change, the credential surface of an exact name+UID already in the signed
+# inventory. New signed controllers are admitted only with an inert full spec;
+# after a fresh inventory binds the parent's UID, native controllers may create
+# only exact-owner children with that signed credential surface. An exact
+# leased ephemeral-container UPDATE may change no ServiceAccount, token-mount
+# state or non-empty Secret-reference group; the fail-closed webhook separately
+# enforces the same lease on every request at server time.
 resource "kubernetes_manifest" "sai20_workload_credential_custody_v6" {
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -615,6 +678,7 @@ resource "kubernetes_manifest" "sai20_workload_credential_custody_v6" {
       })
       annotations = {
         "security.fs2.nebius.ai/credential-inventory-sha256" = terraform_data.sai20_database_authority_v5_identity.output.credential_workload_inventory_sha256
+        "security.fs2.nebius.ai/pod-secret-reference-contract-sha256" = terraform_data.sai20_database_authority_v5_identity.output.pod_secret_reference_contract_sha256
         "security.fs2.nebius.ai/debug-leases-sha256"         = terraform_data.sai20_database_authority_v5_identity.output.debug_access_leases_sha256
         "security.fs2.nebius.ai/successor-bundle-sha256"     = terraform_data.sai20_database_authority_v5_identity.output.successor_bundle_sha256
       }
@@ -629,6 +693,13 @@ resource "kubernetes_manifest" "sai20_workload_credential_custody_v6" {
             apiVersions = ["v1"]
             operations  = ["CREATE", "UPDATE"]
             resources   = ["pods", "replicationcontrollers"]
+            scope       = "Namespaced"
+          },
+          {
+            apiGroups   = [""]
+            apiVersions = ["v1"]
+            operations  = ["UPDATE"]
+            resources   = ["pods/ephemeralcontainers"]
             scope       = "Namespaced"
           },
           {
@@ -655,6 +726,7 @@ resource "kubernetes_manifest" "sai20_workload_credential_custody_v6" {
         {
           name = "targetSpec"
           expression = join(" ", [
+            "request.subResource == 'ephemeralcontainers' ? object.spec :",
             "request.resource.resource == 'pods' ? object.spec :",
             "request.resource.resource == 'cronjobs' ? object.spec.jobTemplate.spec.template.spec :",
             "object.spec.template.spec",
@@ -664,6 +736,7 @@ resource "kubernetes_manifest" "sai20_workload_credential_custody_v6" {
           name = "oldTargetSpec"
           expression = join(" ", [
             "request.operation != 'UPDATE' ? variables.targetSpec :",
+            "request.subResource == 'ephemeralcontainers' ? oldObject.spec :",
             "request.resource.resource == 'pods' ? oldObject.spec :",
             "request.resource.resource == 'cronjobs' ? oldObject.spec.jobTemplate.spec.template.spec :",
             "oldObject.spec.template.spec",
@@ -674,10 +747,6 @@ resource "kubernetes_manifest" "sai20_workload_credential_custody_v6" {
           expression = "${jsonencode(local.sai20_authority_v5_service_accounts_by_namespace)}[request.namespace]"
         },
         {
-          name       = "namespaceProtectedSecrets"
-          expression = "${jsonencode(local.sai20_authority_v5_secrets_by_namespace)}[request.namespace]"
-        },
-        {
           name       = "targetServiceAccount"
           expression = "has(variables.targetSpec.serviceAccountName) && variables.targetSpec.serviceAccountName != '' ? variables.targetSpec.serviceAccountName : 'default'"
         },
@@ -686,50 +755,36 @@ resource "kubernetes_manifest" "sai20_workload_credential_custody_v6" {
           expression = "has(variables.oldTargetSpec.serviceAccountName) && variables.oldTargetSpec.serviceAccountName != '' ? variables.oldTargetSpec.serviceAccountName : 'default'"
         },
         {
-          name = "targetProtectedSecrets"
-          expression = join(" ", [
-            "variables.namespaceProtectedSecrets.filter(secret,",
-            "(has(variables.targetSpec.imagePullSecrets) && variables.targetSpec.imagePullSecrets.exists(ref, ref.name == secret)) ||",
-            "(has(variables.targetSpec.volumes) && variables.targetSpec.volumes.exists(volume,",
-            "(has(volume.secret) && volume.secret.secretName == secret) ||",
-            "(has(volume.projected) && volume.projected.sources.exists(source, has(source.secret) && source.secret.name == secret)))) ||",
-            "variables.targetSpec.containers.exists(container,",
-            "(has(container.envFrom) && container.envFrom.exists(source, has(source.secretRef) && source.secretRef.name == secret)) ||",
-            "(has(container.env) && container.env.exists(env, has(env.valueFrom) && has(env.valueFrom.secretKeyRef) && env.valueFrom.secretKeyRef.name == secret))) ||",
-            "(has(variables.targetSpec.initContainers) && variables.targetSpec.initContainers.exists(container,",
-            "(has(container.envFrom) && container.envFrom.exists(source, has(source.secretRef) && source.secretRef.name == secret)) ||",
-            "(has(container.env) && container.env.exists(env, has(env.valueFrom) && has(env.valueFrom.secretKeyRef) && env.valueFrom.secretKeyRef.name == secret)))) ||",
-            "(has(variables.targetSpec.ephemeralContainers) && variables.targetSpec.ephemeralContainers.exists(container,",
-            "(has(container.envFrom) && container.envFrom.exists(source, has(source.secretRef) && source.secretRef.name == secret)) ||",
-            "(has(container.env) && container.env.exists(env, has(env.valueFrom) && has(env.valueFrom.secretKeyRef) && env.valueFrom.secretKeyRef.name == secret)))))",
-          ])
+          name       = "targetAutomountServiceAccountToken"
+          expression = "has(variables.targetSpec.automountServiceAccountToken) ? variables.targetSpec.automountServiceAccountToken : true"
         },
         {
-          name = "oldProtectedSecrets"
-          expression = join(" ", [
-            "variables.namespaceProtectedSecrets.filter(secret,",
-            "(has(variables.oldTargetSpec.imagePullSecrets) && variables.oldTargetSpec.imagePullSecrets.exists(ref, ref.name == secret)) ||",
-            "(has(variables.oldTargetSpec.volumes) && variables.oldTargetSpec.volumes.exists(volume,",
-            "(has(volume.secret) && volume.secret.secretName == secret) ||",
-            "(has(volume.projected) && volume.projected.sources.exists(source, has(source.secret) && source.secret.name == secret)))) ||",
-            "variables.oldTargetSpec.containers.exists(container,",
-            "(has(container.envFrom) && container.envFrom.exists(source, has(source.secretRef) && source.secretRef.name == secret)) ||",
-            "(has(container.env) && container.env.exists(env, has(env.valueFrom) && has(env.valueFrom.secretKeyRef) && env.valueFrom.secretKeyRef.name == secret))) ||",
-            "(has(variables.oldTargetSpec.initContainers) && variables.oldTargetSpec.initContainers.exists(container,",
-            "(has(container.envFrom) && container.envFrom.exists(source, has(source.secretRef) && source.secretRef.name == secret)) ||",
-            "(has(container.env) && container.env.exists(env, has(env.valueFrom) && has(env.valueFrom.secretKeyRef) && env.valueFrom.secretKeyRef.name == secret)))) ||",
-            "(has(variables.oldTargetSpec.ephemeralContainers) && variables.oldTargetSpec.ephemeralContainers.exists(container,",
-            "(has(container.envFrom) && container.envFrom.exists(source, has(source.secretRef) && source.secretRef.name == secret)) ||",
-            "(has(container.env) && container.env.exists(env, has(env.valueFrom) && has(env.valueFrom.secretKeyRef) && env.valueFrom.secretKeyRef.name == secret)))))",
-          ])
+          name       = "oldAutomountServiceAccountToken"
+          expression = "has(variables.oldTargetSpec.automountServiceAccountToken) ? variables.oldTargetSpec.automountServiceAccountToken : true"
+        },
+        {
+          name       = "targetSecretReferenceSurface"
+          expression = local.sai20_authority_v5_target_secret_reference_surface_cel
+        },
+        {
+          name       = "oldSecretReferenceSurface"
+          expression = local.sai20_authority_v5_old_secret_reference_surface_cel
+        },
+        {
+          name       = "targetHasSecretReference"
+          expression = local.sai20_authority_v5_target_has_secret_reference_cel
         },
         {
           name       = "credentialBearing"
-          expression = "variables.targetServiceAccount in variables.namespaceProtectedServiceAccounts || variables.targetProtectedSecrets.size() > 0"
+          expression = "variables.targetServiceAccount in variables.namespaceProtectedServiceAccounts || variables.targetHasSecretReference"
         },
         {
           name       = "unchangedCredentialSurface"
-          expression = "request.operation == 'UPDATE' && variables.targetServiceAccount == variables.oldServiceAccount && variables.targetProtectedSecrets == variables.oldProtectedSecrets"
+          expression = "request.operation == 'UPDATE' && variables.targetServiceAccount == variables.oldServiceAccount && variables.targetAutomountServiceAccountToken == variables.oldAutomountServiceAccountToken && variables.targetSecretReferenceSurface == variables.oldSecretReferenceSurface"
+        },
+        {
+          name       = "debugCredentialSurfacePreserved"
+          expression = "request.operation == 'UPDATE' && request.subResource == 'ephemeralcontainers' && variables.targetServiceAccount == variables.oldServiceAccount && variables.targetAutomountServiceAccountToken == variables.oldAutomountServiceAccountToken && ${local.sai20_authority_v5_unchanged_secret_references_cel}"
         },
         {
           name = "custodian"
@@ -759,10 +814,14 @@ resource "kubernetes_manifest" "sai20_workload_credential_custody_v6" {
           name       = "controllerManagedCredentialObject"
           expression = local.sai20_authority_v5_controller_managed_credential_object_cel
         },
+        {
+          name       = "exactDebugEphemeralUpdate"
+          expression = local.sai20_authority_v5_exact_debug_ephemeral_update_cel
+        },
       ]
       validations = [{
-        expression = "!variables.credentialBearing || variables.custodian || variables.exactWorkloadCreate || (variables.exactWorkloadWriter && variables.unchangedCredentialSurface) || variables.controllerOwnedCredentialChild || variables.controllerManagedCredentialObject"
-        message    = "protected ServiceAccount or Secret selection requires the exact custodian, an exact signed writer retaining the surface, or an exact native-controller transition"
+        expression = "!variables.credentialBearing || variables.custodian || variables.exactWorkloadCreate || (variables.exactWorkloadWriter && variables.unchangedCredentialSurface) || variables.controllerOwnedCredentialChild || variables.controllerManagedCredentialObject || (variables.exactDebugEphemeralUpdate && variables.debugCredentialSurfacePreserved)"
+        message    = "protected ServiceAccount or Secret selection requires the exact custodian, an inert signed CREATE, a signed name+UID UPDATE retaining the surface, an exact native-controller transition, or an exact leased ephemeral-container UPDATE with no credential change"
         reason     = "Forbidden"
       }]
     }
@@ -782,6 +841,7 @@ resource "kubernetes_manifest" "sai20_workload_credential_custody_binding_v6" {
       })
       annotations = {
         "security.fs2.nebius.ai/credential-inventory-sha256" = terraform_data.sai20_database_authority_v5_identity.output.credential_workload_inventory_sha256
+        "security.fs2.nebius.ai/pod-secret-reference-contract-sha256" = terraform_data.sai20_database_authority_v5_identity.output.pod_secret_reference_contract_sha256
         "security.fs2.nebius.ai/successor-bundle-sha256"     = terraform_data.sai20_database_authority_v5_identity.output.successor_bundle_sha256
       }
     }
@@ -953,6 +1013,8 @@ resource "kubernetes_manifest" "sai20_debug_request_authorizer_v6" {
         "security.fs2.nebius.ai/debug-authorizer-sha256" = terraform_data.sai20_database_authority_v5_identity.output.debug_authorizer_sha256
         "security.fs2.nebius.ai/debug-leases-sha256"     = terraform_data.sai20_database_authority_v5_identity.output.debug_access_leases_sha256
         "security.fs2.nebius.ai/protected-pods-sha256"   = local.sai20_authority_v5_debug_authorizer.protected_pod_targets_sha256
+        "security.fs2.nebius.ai/debug-target-inventory-sha256" = local.sai20_authority_v5_debug_authorizer.debug_target_inventory_sha256
+        "security.fs2.nebius.ai/credential-boundary-sha256" = local.sai20_authority_v5_debug_authorizer.credential_boundary_sha256
         "security.fs2.nebius.ai/server-spki-sha256"      = local.sai20_authority_v5_debug_authorizer.server_spki_sha256
       }
     }
@@ -1168,6 +1230,7 @@ resource "terraform_data" "sai20_database_authority_v5_apply" {
         data.external.sai20_database_authority_v5_apply.result.debug_access_leases_sha256 == terraform_data.sai20_database_authority_v5_identity.output.debug_access_leases_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.debug_authorizer_sha256 == terraform_data.sai20_database_authority_v5_identity.output.debug_authorizer_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.workload_create_contracts_sha256 == terraform_data.sai20_database_authority_v5_identity.output.workload_create_contracts_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.pod_secret_reference_contract_sha256 == terraform_data.sai20_database_authority_v5_identity.output.pod_secret_reference_contract_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.peer_workload_inventory_sha256 == terraform_data.sai20_database_authority_v5_identity.output.peer_workload_inventory_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.cluster_authority_review_sha256 == terraform_data.sai20_database_authority_v5_plan.output.cluster_authority_review_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.namespace_inventory_sha256 == terraform_data.sai20_database_authority_v5_plan.output.namespace_inventory_sha256 &&
@@ -1178,6 +1241,7 @@ resource "terraform_data" "sai20_database_authority_v5_apply" {
         data.external.sai20_database_authority_v5_apply.result.debug_access_leases_sha256 == terraform_data.sai20_database_authority_v5_plan.output.debug_access_leases_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.debug_authorizer_sha256 == terraform_data.sai20_database_authority_v5_plan.output.debug_authorizer_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.workload_create_contracts_sha256 == terraform_data.sai20_database_authority_v5_plan.output.workload_create_contracts_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.pod_secret_reference_contract_sha256 == terraform_data.sai20_database_authority_v5_plan.output.pod_secret_reference_contract_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.successor_transition_mode == terraform_data.sai20_database_authority_v5_plan.output.successor_transition_mode &&
         data.external.sai20_database_authority_v5_apply.result.successor_old_objects_sha256 == terraform_data.sai20_database_authority_v5_plan.output.successor_old_objects_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.successor_planned_objects_sha256 == terraform_data.sai20_database_authority_v5_plan.output.successor_planned_objects_sha256 &&

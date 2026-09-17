@@ -3,8 +3,9 @@
 The coordinator explicitly forbids executing tests or parsers in this task.
 These assertions include the provider-identity, target-classification,
 credential-workload and scoped-debug blockers finally reported against
-6e1bf0f00d85a80d228a7cea803511391076fb5a, in addition to the
-four final blocker groups reported against 948e1836b4058779aff2c0c91c62aa898968da5d.
+6e1bf0f00d85a80d228a7cea803511391076fb5a, plus the four dynamic
+credential-custody blockers finally reported against
+e8ac34b7b9dd670015655d43cb24d14907abf8f1.
 They are authored evidence only;
 this task's coordinator boundary forbids executing them.
 """
@@ -32,6 +33,7 @@ STACK = ROOT / "inference-stack"
 INGRESS = ROOT / "stages/workloads/contracts/sai20-control-db-ingress-v4.json"
 BOOTSTRAP = ROOT / "stages/workloads/contracts/sai20-bootstrap-guard-v5.json"
 DEBUG_AUTHORIZER = ROOT / "stages/workloads/contracts/sai20-debug-authorizer-v1.json"
+POD_SECRET_REFERENCES = ROOT / "stages/workloads/contracts/sai20-pod-secret-references-v1.json"
 ROOTS = ROOT / "security/sai20/authority-roots-v1.json"
 ANCHORS = ROOT / "security/sai20/enrollment-authorities-v1.json"
 RECEIPTS = ROOT / "security/sai20/root-enrollment-receipts-v1.json"
@@ -55,6 +57,9 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         cls.ingress = json.loads(INGRESS.read_text(encoding="utf-8"))
         cls.bootstrap = json.loads(BOOTSTRAP.read_text(encoding="utf-8"))
         cls.debug_authorizer = json.loads(DEBUG_AUTHORIZER.read_text(encoding="utf-8"))
+        cls.pod_secret_references = json.loads(
+            POD_SECRET_REFERENCES.read_text(encoding="utf-8")
+        )
         cls.roots = json.loads(ROOTS.read_text(encoding="utf-8"))
         cls.anchors = json.loads(ANCHORS.read_text(encoding="utf-8"))
         cls.receipts = json.loads(RECEIPTS.read_text(encoding="utf-8"))
@@ -66,6 +71,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("948e1836b4058779aff2c0c91c62aa898968da5d", self.v5_py)
         self.assertIn("17469ed79eb56ae63327f0ddecb81d21b2170722", self.v5_py)
         self.assertIn("6e1bf0f00d85a80d228a7cea803511391076fb5a", self.v5_py)
+        self.assertIn("e8ac34b7b9dd670015655d43cb24d14907abf8f1", self.v5_py)
         self.assertIn("source is a preserved rejected candidate", self.v5_py)
         self.assertIn("sai20_database_authority_v5_plan.output.successor_verified", self.v4_tf)
         self.assertIn("sai20_database_authority_v5_identity.output.bootstrap_reobserved", self.v4_tf)
@@ -247,6 +253,114 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertEqual(decision["maximum_clock_skew_seconds"], 5)
         self.assertEqual(decision["stale_or_replayed_lease"], "deny")
         self.assertEqual(decision["unavailable_or_invalid_evidence"], "deny")
+
+    def test_static_and_admission_classifiers_share_every_pod_secret_reference(self) -> None:
+        references = self.pod_secret_references["references"]
+        self.assertEqual(
+            [reference["id"] for reference in references],
+            sorted(reference["id"] for reference in references),
+        )
+        self.assertEqual(
+            {reference["id"] for reference in references},
+            {
+                "azure-file",
+                "cephfs",
+                "cinder",
+                "container-env",
+                "container-env-from",
+                "csi-node-publish",
+                "ephemeral-container-env",
+                "ephemeral-container-env-from",
+                "flex-volume",
+                "image-pull",
+                "init-container-env",
+                "init-container-env-from",
+                "iscsi",
+                "projected-volume",
+                "rbd",
+                "scale-io",
+                "secret-volume",
+                "storage-os",
+            },
+        )
+        paths = {tuple(reference["path"]) for reference in references}
+        for path in (
+            ("volumes", "*", "azureFile", "secretName"),
+            ("volumes", "*", "cephfs", "secretRef", "name"),
+            ("volumes", "*", "cinder", "secretRef", "name"),
+            ("volumes", "*", "csi", "nodePublishSecretRef", "name"),
+            ("volumes", "*", "flexVolume", "secretRef", "name"),
+            ("volumes", "*", "iscsi", "secretRef", "name"),
+            ("volumes", "*", "rbd", "secretRef", "name"),
+            ("volumes", "*", "scaleIO", "secretRef", "name"),
+            ("volumes", "*", "storageos", "secretRef", "name"),
+        ):
+            self.assertIn(path, paths)
+        self.assertIn("POD_SECRET_REFERENCE_PATHS", self.v5_py)
+        self.assertIn("pod_secret_reference_surface", self.v5_py)
+        self.assertIn("bool(secret_names)", self.v5_py)
+        self.assertIn("sai20_authority_v5_pod_secret_reference_contract", self.v5_tf)
+        self.assertIn("targetSecretReferenceSurface", self.v5_tf)
+        self.assertIn("targetHasSecretReference", self.v5_tf)
+        self.assertIn("targetAutomountServiceAccountToken", self.v5_tf)
+        self.assertIn('"automount_service_account_token"', self.v5_py)
+        self.assertNotIn("namespaceProtectedSecrets", self.v5_tf)
+        self.assertNotIn("targetProtectedSecrets", self.v5_tf)
+
+    def test_debug_authorizer_denies_unknown_and_replacement_pod_uids(self) -> None:
+        decision = self.debug_authorizer["decision_contract"]
+        self.assertEqual(
+            decision["target_inventory"],
+            "require_exact_signed_namespace_pod_name_uid_and_credential_classification",
+        )
+        self.assertEqual(
+            decision["unknown_or_replacement_uid"],
+            "deny_generation_refresh_required",
+        )
+        self.assertIn("debug_targets", self.v5_py)
+        self.assertIn("debug_target_inventory_sha256", self.v5_py)
+        self.assertIn("credential_boundary_sha256", self.v5_py)
+        self.assertIn("debug-target-inventory-sha256", self.v5_tf)
+        self.assertIn("credential-boundary-sha256", self.v5_tf)
+
+    def test_ephemeral_container_updates_cross_both_debug_and_credential_custody(self) -> None:
+        self.assertGreaterEqual(
+            self.v5_tf.count('resources   = ["pods/ephemeralcontainers"]'),
+            2,
+        )
+        self.assertIn("request.subResource == 'ephemeralcontainers' ? object.spec", self.v5_tf)
+        self.assertIn("request.subResource == 'ephemeralcontainers' ? oldObject.spec", self.v5_tf)
+        self.assertIn("sai20_authority_v5_exact_debug_ephemeral_update_terms", self.v5_tf)
+        self.assertIn("exactDebugEphemeralUpdate", self.v5_tf)
+        self.assertIn("debugCredentialSurfacePreserved", self.v5_tf)
+        self.assertIn("sai20_authority_v5_unchanged_secret_references_cel", self.v5_tf)
+        self.assertIn("lease.pod_uid", self.v5_tf)
+        self.assertIn("variables.targetObject.metadata.uid", self.v5_tf)
+        self.assertIn(
+            "an exact leased ephemeral-container UPDATE with no credential change",
+            self.v5_tf,
+        )
+        self.assertIn(
+            "ephemeral_container_update_intersects_exact_lease_and_credential_custody",
+            self.debug_authorizer["decision_contract"]["credential_boundary"],
+        )
+        self.assertEqual(
+            self.debug_authorizer["decision_contract"][
+                "ephemeral_container_admission_operation"
+            ],
+            "UPDATE_for_signed_patch_or_update_lease",
+        )
+
+    def test_privileged_controller_create_is_exact_inert_and_two_phase(self) -> None:
+        self.assertIn('"object_spec", "object_spec_sha256", "pod_spec"', self.v5_py)
+        self.assertIn("controller must be created with replicas zero", self.v5_py)
+        self.assertIn("batch controller must be created suspended", self.v5_py)
+        self.assertIn("contradictory source-owned node affinity", self.v5_py)
+        self.assertIn("variables.targetObject.spec ==", self.v5_tf)
+        self.assertIn("local.sai20_authority_v5_protected_workload_objects", self.v5_tf)
+        self.assertIn("string(variables.targetObject.metadata.uid)", self.v5_tf)
+        self.assertNotIn('parent.resource == "deployments" ?', self.v5_tf)
+        self.assertNotIn('parent.resource == "cronjobs" ?', self.v5_tf)
 
     def test_kubectl_is_executed_only_from_a_sealed_static_elf_snapshot(self) -> None:
         self.assertIn('os.memfd_create("sai20-kubectl"', self.v4_py)

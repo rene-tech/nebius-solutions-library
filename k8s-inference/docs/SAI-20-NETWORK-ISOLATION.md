@@ -631,3 +631,54 @@ this source candidate does not claim they exist. Regression tests were authored
 but not executed under the coordinator boundary. No Terraform, Helm, provider,
 cluster, database, credential, deployment, cleanup or deletion action was
 performed, and this candidate is not a source, integration or live GO claim.
+
+## Final independent-review correction after `e8ac34b7`
+
+Exact `e8ac34b7b9dd670015655d43cb24d14907abf8f1` / tree
+`fddc6702a78ad54d3f95d830b880e8e2524edfda` is preserved as
+SOURCE/INTEGRATION/LIVE NO-GO evidence. Its static and live credential
+classifiers differed, post-attestation Secret names were outside custody,
+replacement Pod UIDs could bypass debug leases, and a newly admitted active
+controller could be accepted while its still-unattested children were denied.
+
+The successor has one source-owned Pod Secret-reference contract consumed by
+both the Python evidence verifier and the generated admission CEL. It covers
+container, init-container and ephemeral-container environment references,
+image-pull references, projected and direct Secret volumes, CSI
+`nodePublishSecretRef`, and the legacy Azure File, CephFS, Cinder, FlexVolume,
+iSCSI, RBD, ScaleIO and StorageOS volume fields. Every non-empty reference is
+credential-bearing regardless of the point-in-time Secret inventory. A signed
+CREATE may name only a Secret present in the fresh metadata-only inventory, so
+a later Secret cannot be consumed until a new signed evidence generation.
+Secret contents remain excluded.
+
+The external debug-authorizer attestation now binds every current Pod by
+namespace, name, UID, credential classification and surface digest. An unknown
+or replacement UID is denied until a fresh signed generation classifies it;
+only an exact signed credential-free UID may use the no-lease branch. This
+keeps controller replacements from inheriting stale debug authorization while
+retaining the audited, tenant-scoped, per-request lease path.
+
+The credential-custody policy also matches `pods/ephemeralcontainers` UPDATE,
+using the full new and old Pod specs. A protected-Pod debug update must match
+the exact signed lease principal, namespace, Pod name and UID and must preserve
+the ServiceAccount, token-automount state and every non-empty Secret-reference
+group. The separate fail-closed webhook still enforces that same lease's
+server-time expiry and replay rules on every request. Thus a credential-free
+ephemeral container remains usable for authorized debugging, while `env` or
+`envFrom` Secret injection is denied.
+
+A credential-bearing controller CREATE now binds the complete object spec and
+must be inert: scalable controllers use zero replicas, Job and CronJob objects
+are suspended, and DaemonSets use a source-owned contradictory required node
+affinity. Release UPDATE authority is limited to an exact existing object
+name and UID in the signed workload inventory. After fresh re-attestation of
+the new parent's UID and credential surface, the exact release actor may
+activate it and the exact native controller may create owner-bound children.
+
+Regression tests were authored but not executed under the coordinator
+boundary. No parser, formatter, Terraform, Helm, build, package manager,
+scanner, provider, cluster, database, registry, credential, deployment,
+probe, cleanup or deletion action ran. This remains a source-only candidate
+for fresh independent review and makes no SOURCE GO, integration, deployment
+or live claim.
