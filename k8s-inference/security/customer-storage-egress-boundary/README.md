@@ -44,6 +44,12 @@ exact signed group set; every ServiceAccount subject must resolve to the signed
 ServiceAccount inventory. Provider access and mutation sets come from the
 signed provider-native effective-authority graph, including inherited,
 federated and external principals, rather than candidate declarations.
+Each signed ServiceAccount and Kubernetes-native User/Group also carries the
+digest of its direct-plus-group rule closure and the exact expanded dangerous
+capability set. Wildcards and resource names are evaluated semantically for
+Secret, ConfigMap, Pod/exec/attach/binding, TokenRequest, node, workload,
+NetworkPolicy, RBAC bind/escalate, impersonation, admission and CSR pivots;
+matching the cluster-wide RBAC hash alone is insufficient.
 `capture_kubernetes_rbac_inventory.py` emits only the canonical unsigned body
 through descriptor-bound, read-only Kubernetes calls; the separate checkpoint
 owner signs and installs it on the authority's read-only anchor.
@@ -60,6 +66,12 @@ admission layer remains defense in depth: the target-cluster node group's
 provider VPC security group and exact provider IAM inventory are the canonical
 boundary.
 
+Every retained v3 policy and Deny binding is listed with its full canonical
+spec in the separately signed prior boundary checkpoint. Before a successor is
+created, both this root and the workloads root read every listed live object
+and require exact equality. A drifted older generation therefore cannot hide
+behind Terraform `ignore_changes`.
+
 A second content-bound policy covers Pods, ServiceAccounts, Deployments,
 ReplicaSets, DaemonSets, StatefulSets, Jobs and CronJobs. The release identity
 can create only the exact token-blind ServiceAccount and Deployment. Only the
@@ -69,6 +81,19 @@ Pods must keep the signed image, generation labels, protected node target,
 Secret and image-pull-secret allowlists; projected Secrets, host paths, PVCs,
 CSI volumes, `spec.nodeName`, and additional secret-backed environment sources
 are denied.
+The workload policy also has a cluster-wide guard branch: outside the exact
+storage and Kubernetes system namespaces it denies direct `nodeName`, the
+generation's node selector/taint, and blanket `Exists` tolerations. Retained
+policies protect their own retained node groups without selecting later exact
+storage workloads in `fs2-system`.
+
+The ConfigMap Helm driver is not a namespace-wide exemption. RBAC may grant
+the release identity namespace-scoped create only because Kubernetes cannot
+resource-name-restrict create; update/patch must be restricted to the exact
+generation's Helm v1 record. The active policy matches every ConfigMap request
+from that identity and admits only that record's canonical labels and sole
+`release` data key. Contract/trust ConfigMaps and all other namespace config
+remain unreachable, and delete is never admitted.
 
 The retained first additive policy uses component `storage-reconciler-v2`.
 Compatibility-v3 uses disjoint `fs2-storage-v3-*` names, the
@@ -103,8 +128,9 @@ source-only; no live action is authorized.
 
 The only future execution entry point is
 `security/apply_custodied_additive_plan.py`. It descriptor-binds the exact
-root-owned saved-plan bytes, externally signed approval, public key, clean
-source commit/tree and predecessor state; rejects every action other than
+root-owned saved-plan bytes, externally signed approval under a fixed
+read-only public key/execution profile, clean source commit/tree, accepted
+SAI-10 ancestry and predecessor state; rejects every action other than
 create/read/no-op; applies those same bytes; then proves the expected successor
 lineage, minimum serial and exact address set. It has no plan-generation or
 cleanup mode.

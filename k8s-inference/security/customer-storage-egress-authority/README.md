@@ -17,6 +17,17 @@ at `null`. The signed prior state carries an explicit installed-generation
 hash chain whose final content digest must equal the separately anchored prior
 generation head. A successor-only manifest begins from that exact digest; no
 lexical ordering of content-derived names is treated as chronology. The root
+requires the checkpoint to retain each installed or partially installed
+generation's complete content-bound payload. Every provider resource iterates
+the union of those retained payloads and the new signed payloads at the same
+state addresses; installed entries use `ignore_changes = all` plus
+`prevent_destroy`, while a successor is still created from its exact signed
+payload. Omitting a retained key therefore cannot turn a rotation into a
+destroy proposal or a `prevent_destroy` dead end.
+The same checkpoint carries the canonical spec/digest and Deny binding for
+every retained v3 admission generation. Both the security root and ordinary
+workloads consumer re-read all of them live; state ownership or
+`ignore_changes` is never accepted as live-equality evidence. The root
 also descriptor-reads the initialized backend metadata and requires its
 complete S3 configuration digest, lock setting, actual remote lineage,
 serial/snapshot bytes, exact non-empty managed-address set, and remote object
@@ -61,7 +72,12 @@ mutate the security project.
 A future owner-approved saved plan must be exported to JSON and pass
 `security/verify_additive_plan.py`; only `create`, `read`, and `no-op` actions
 are valid. Execution must then use `security/apply_custodied_additive_plan.py`,
-which verifies externally signed exact plan bytes, clean source commit/tree,
-predecessor remote state and the successor address contract before applying
-the same open descriptor. It verifies the actual post-apply state and has no
-plan, destroy, replace, state-forget, or cleanup mode.
+which has fixed public-key and execution-profile paths on root-owned read-only
+filesystems. That profile digest-binds descriptor-open Terraform and Git
+binaries, the CLI config, a read-only plugin/data directory, and a minimal
+environment whose credential files are separately hashed. No inherited
+`PATH`, `TF_*`, plugin or credential environment is used. The wrapper keeps
+the backend metadata and dependency-lock descriptors stable across the exact
+saved-plan apply, verifies clean source and rejected-SAI-10 ancestry, and
+proves predecessor and successor remote-state identities. It has no plan,
+destroy, replace, state-forget, or cleanup mode.

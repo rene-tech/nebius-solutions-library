@@ -25,8 +25,32 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 MAX_BYTES = 64 * 1024 * 1024
-SAFE_ACTIONS = {(), ("no-op",), ("read",), ("create",)}
+SAFE_ACTIONS = {("no-op",), ("read",), ("create",)}
 STATE_VERSION_ADAPTER = Path("/usr/libexec/fs2-security/terraform-state-version")
+EXECUTION_PUBLIC_KEY = Path(
+    "/etc/fs2-security-ro/authority/additive-plan-execution-public-key.pem"
+)
+EXECUTION_PROFILE = Path(
+    "/etc/fs2-security-ro/authority/additive-plan-execution-profile.json"
+)
+REJECTED_SAI10 = "1ae009b858924138de70932ac84b8e595a2656a1"
+PROFILE_SCHEMA = "fs2-serve.nebius.ai/additive-plan-execution-profile/v1"
+RECEIPT_SCHEMA = "fs2-serve.nebius.ai/additive-plan-execution/v2"
+PROFILE_ENVIRONMENT = {
+    "PATH",
+    "HOME",
+    "XDG_CONFIG_HOME",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NEBIUS_CONFIG",
+    "KUBECONFIG",
+    "AWS_SHARED_CREDENTIALS_FILE",
+    "AWS_CONFIG_FILE",
+    "AWS_PROFILE",
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+    "HELM_DRIVER",
+}
 
 
 def _open(path: Path, *, root_owned: bool, executable: bool = False) -> tuple[int, bytes]:
@@ -53,7 +77,14 @@ def _open(path: Path, *, root_owned: bool, executable: bool = False) -> tuple[in
         not stat.S_ISREG(metadata.st_mode)
         or metadata.st_size <= 0
         or metadata.st_size > MAX_BYTES
-        or (root_owned and (metadata.st_uid != 0 or metadata.st_mode & 0o077))
+        or (
+            root_owned
+            and (
+                metadata.st_uid != 0
+                or metadata.st_mode & 0o022
+                or (not executable and metadata.st_mode & 0o077)
+            )
+        )
         or (root_owned and not filesystem.f_flag & getattr(os, "ST_RDONLY", 1))
         or (executable and not metadata.st_mode & 0o111)
     ):
@@ -78,9 +109,17 @@ def _open(path: Path, *, root_owned: bool, executable: bool = False) -> tuple[in
 
 
 def _object(payload: bytes, label: str) -> dict[str, Any]:
+    def pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError(f"{label} contains a duplicate field")
+            result[key] = value
+        return result
+
     try:
-        value = json.loads(payload)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        value = json.loads(payload, object_pairs_hook=pairs)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         raise ValueError(f"{label} is not JSON") from exc
     if not isinstance(value, dict):
         raise ValueError(f"{label} is not an object")
@@ -91,48 +130,265 @@ def _canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
-def _terraform(module: Path, *arguments: str, pass_fds: tuple[int, ...] = ()) -> bytes:
+def _digest(value: object, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ValueError(f"{label} is not a SHA-256 digest")
+    return value
+
+
+def _open_directory(path: Path, *, root_owned: bool) -> int:
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    parts = absolute.parts[1:]
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("custody directory is invalid")
+    descriptor = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for component in parts:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=descriptor,
+            )
+            os.close(descriptor)
+            descriptor = next_fd
+        metadata = os.fstat(descriptor)
+        filesystem = os.fstatvfs(descriptor)
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or (root_owned and (metadata.st_uid != 0 or metadata.st_mode & 0o022))
+            or (root_owned and not filesystem.f_flag & getattr(os, "ST_RDONLY", 1))
+        ):
+            raise ValueError("custody directory is not root-owned and read-only")
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _open_at(directory_fd: int, name: str) -> tuple[int, bytes, os.stat_result]:
+    if not name or "/" in name or name in {".", ".."}:
+        raise ValueError("custody child name is invalid")
+    descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+    before = os.fstat(descriptor)
+    if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= MAX_BYTES:
+        os.close(descriptor)
+        raise ValueError("custody child is not a bounded regular file")
+    payload = b""
+    while len(payload) <= MAX_BYTES:
+        chunk = os.read(descriptor, min(65536, MAX_BYTES + 1 - len(payload)))
+        if not chunk:
+            break
+        payload += chunk
+    after = os.fstat(descriptor)
+    if (
+        len(payload) != before.st_size
+        or (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+        != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+    ):
+        os.close(descriptor)
+        raise ValueError("custody child changed during its descriptor-bound read")
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    return descriptor, payload, before
+
+
+def _unchanged(descriptor: int, before: os.stat_result, label: str) -> None:
+    after = os.fstat(descriptor)
+    if (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+    ) != (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+    ):
+        raise ValueError(f"{label} changed during custodied execution")
+
+
+def _load_execution_profile() -> dict[str, Any]:
+    profile_fd, profile_bytes = _open(EXECUTION_PROFILE, root_owned=True)
+    key_fd = terraform_fd = git_fd = cli_fd = data_fd = -1
+    try:
+        profile = _object(profile_bytes, "execution profile")
+        expected = {
+            "schema",
+            "terraform_binary_path",
+            "terraform_binary_sha256",
+            "git_binary_path",
+            "git_binary_sha256",
+            "terraform_cli_config_path",
+            "terraform_cli_config_sha256",
+            "terraform_data_dir",
+            "environment",
+            "environment_file_sha256",
+        }
+        if set(profile) != expected or profile.get("schema") != PROFILE_SCHEMA:
+            raise ValueError("execution profile fields or schema differ")
+        environment = profile.get("environment")
+        environment_files = profile.get("environment_file_sha256")
+        if (
+            not isinstance(environment, dict)
+            or not set(environment) <= PROFILE_ENVIRONMENT
+            or any(
+                not isinstance(name, str)
+                or not isinstance(value, str)
+                or not value
+                for name, value in environment.items()
+            )
+            or environment.get("HELM_DRIVER") != "configmap"
+            or not isinstance(environment.get("PATH"), str)
+            or not environment["PATH"]
+            or not isinstance(environment_files, dict)
+            or set(environment_files)
+            != set(environment)
+            & {
+                "KUBECONFIG",
+                "NEBIUS_CONFIG",
+                "SSL_CERT_FILE",
+                "AWS_SHARED_CREDENTIALS_FILE",
+                "AWS_CONFIG_FILE",
+            }
+        ):
+            raise ValueError("execution profile environment is not the fixed allowlist")
+        for name in (
+            "terraform_binary_path",
+            "git_binary_path",
+            "terraform_cli_config_path",
+            "terraform_data_dir",
+        ):
+            value = profile.get(name)
+            if not isinstance(value, str) or not value.startswith("/") or ".." in Path(value).parts:
+                raise ValueError("execution profile path is not absolute and canonical")
+        terraform_fd, terraform_bytes = _open(
+            Path(profile["terraform_binary_path"]), root_owned=True, executable=True
+        )
+        git_fd, git_bytes = _open(
+            Path(profile["git_binary_path"]), root_owned=True, executable=True
+        )
+        cli_fd, cli_bytes = _open(
+            Path(profile["terraform_cli_config_path"]), root_owned=True
+        )
+        data_fd = _open_directory(Path(profile["terraform_data_dir"]), root_owned=True)
+        for name in ("HOME", "XDG_CONFIG_HOME", "SSL_CERT_DIR"):
+            if name in environment:
+                directory_fd = _open_directory(Path(environment[name]), root_owned=True)
+                os.close(directory_fd)
+        for path_entry in environment["PATH"].split(":"):
+            if not path_entry or not path_entry.startswith("/") or ".." in Path(path_entry).parts:
+                raise ValueError("execution profile PATH is not an absolute fixed set")
+            path_fd = _open_directory(Path(path_entry), root_owned=True)
+            os.close(path_fd)
+        for name, expected_sha256 in environment_files.items():
+            environment_fd, environment_bytes = _open(
+                Path(environment[name]), root_owned=True
+            )
+            try:
+                if hashlib.sha256(environment_bytes).hexdigest() != _digest(
+                    expected_sha256, f"{name} custody file"
+                ):
+                    raise ValueError(f"{name} differs from the fixed execution profile")
+            finally:
+                os.close(environment_fd)
+        if hashlib.sha256(terraform_bytes).hexdigest() != _digest(
+            profile.get("terraform_binary_sha256"), "Terraform binary"
+        ):
+            raise ValueError("Terraform binary differs from the fixed execution profile")
+        if hashlib.sha256(git_bytes).hexdigest() != _digest(
+            profile.get("git_binary_sha256"), "Git binary"
+        ):
+            raise ValueError("Git binary differs from the fixed execution profile")
+        if hashlib.sha256(cli_bytes).hexdigest() != _digest(
+            profile.get("terraform_cli_config_sha256"), "Terraform CLI config"
+        ):
+            raise ValueError("Terraform CLI config differs from the fixed execution profile")
+        key_fd, key_bytes = _open(EXECUTION_PUBLIC_KEY, root_owned=True)
+        sanitized_environment = {
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+            "TF_IN_AUTOMATION": "1",
+            "CHECKPOINT_DISABLE": "1",
+            "TF_CLI_CONFIG_FILE": profile["terraform_cli_config_path"],
+            "TF_DATA_DIR": profile["terraform_data_dir"],
+            **environment,
+        }
+        return {
+            "profile": profile,
+            "profile_sha256": hashlib.sha256(_canonical(profile)).hexdigest(),
+            "profile_fd": profile_fd,
+            "key_fd": key_fd,
+            "key_bytes": key_bytes,
+            "terraform_fd": terraform_fd,
+            "git_fd": git_fd,
+            "cli_fd": cli_fd,
+            "data_fd": data_fd,
+            "environment": sanitized_environment,
+        }
+    except Exception:
+        for descriptor in (profile_fd, key_fd, terraform_fd, git_fd, cli_fd, data_fd):
+            if descriptor >= 0:
+                os.close(descriptor)
+        raise
+
+
+def _terraform(
+    execution: dict[str, Any],
+    module: Path,
+    *arguments: str,
+    pass_fds: tuple[int, ...] = (),
+) -> bytes:
+    descriptors = tuple(set((execution["terraform_fd"], *pass_fds)))
     result = subprocess.run(
-        ["terraform", f"-chdir={module}", *arguments],
+        [f"/proc/self/fd/{execution['terraform_fd']}", f"-chdir={module}", *arguments],
         check=False,
         capture_output=True,
-        env={**os.environ, "TF_IN_AUTOMATION": "1"},
+        env=execution["environment"],
         timeout=900,
-        pass_fds=pass_fds,
+        pass_fds=descriptors,
     )
     if result.returncode != 0 or len(result.stdout) > MAX_BYTES:
         raise ValueError("Terraform custody command failed")
     return result.stdout
 
 
-def _backend(module: Path) -> dict[str, Any]:
-    descriptor, payload = _open(
-        module / ".terraform" / "terraform.tfstate", root_owned=False
+def _backend(execution: dict[str, Any]) -> tuple[dict[str, Any], int, os.stat_result]:
+    descriptor, payload, before = _open_at(
+        execution["data_fd"], "terraform.tfstate"
     )
     try:
         metadata = _object(payload, "Terraform backend metadata")
-    finally:
+        backend = metadata.get("backend")
+        if not isinstance(backend, dict) or set(backend) != {"type", "config", "hash"}:
+            raise ValueError("Terraform backend metadata fields differ")
+        config = backend.get("config")
+        if backend.get("type") != "s3" or not isinstance(config, dict):
+            raise ValueError("custodied execution requires an S3 backend")
+        for field in ("bucket", "key", "region", "endpoints"):
+            if (
+                field not in config
+                or config[field] is None
+                or config[field] == ""
+                or config[field] == {}
+            ):
+                raise ValueError("Terraform backend identity is incomplete")
+        if config.get("use_lockfile") is not True:
+            raise ValueError("custodied execution requires native state locking")
+        return {"type": backend["type"], "config": config}, descriptor, before
+    except Exception:
         os.close(descriptor)
-    backend = metadata.get("backend")
-    if not isinstance(backend, dict) or set(backend) != {"type", "config", "hash"}:
-        raise ValueError("Terraform backend metadata fields differ")
-    config = backend.get("config")
-    if backend.get("type") != "s3" or not isinstance(config, dict):
-        raise ValueError("custodied execution requires an S3 backend")
-    for field in ("bucket", "key", "region", "endpoints"):
-        if (
-            field not in config
-            or config[field] is None
-            or config[field] == ""
-            or config[field] == {}
-        ):
-            raise ValueError("Terraform backend identity is incomplete")
-    if config.get("use_lockfile") is not True:
-        raise ValueError("custodied execution requires native state locking")
-    return {"type": backend["type"], "config": config}
+        raise
 
 
-def _state_version(backend: dict[str, Any], expected_adapter_sha256: str) -> str:
+def _state_version(
+    execution: dict[str, Any],
+    backend: dict[str, Any],
+    expected_adapter_sha256: str,
+) -> str:
     descriptor, adapter = _open(STATE_VERSION_ADAPTER, root_owned=True, executable=True)
     try:
         if hashlib.sha256(adapter).hexdigest() != expected_adapter_sha256:
@@ -149,6 +405,7 @@ def _state_version(backend: dict[str, Any], expected_adapter_sha256: str) -> str
             check=False,
             capture_output=True,
             text=True,
+            env=execution["environment"],
             timeout=30,
             pass_fds=(descriptor,),
         )
@@ -162,14 +419,18 @@ def _state_version(backend: dict[str, Any], expected_adapter_sha256: str) -> str
         os.close(descriptor)
 
 
-def _state(module: Path, expected_adapter_sha256: str) -> dict[str, Any]:
-    backend = _backend(module)
-    version_before = _state_version(backend, expected_adapter_sha256)
-    payload = _terraform(module, "state", "pull")
+def _state(
+    execution: dict[str, Any],
+    module: Path,
+    backend: dict[str, Any],
+    expected_adapter_sha256: str,
+) -> dict[str, Any]:
+    version_before = _state_version(execution, backend, expected_adapter_sha256)
+    payload = _terraform(execution, module, "state", "pull")
     state = _object(payload, "remote state")
     addresses = sorted(
         line.strip()
-        for line in _terraform(module, "state", "list").decode().splitlines()
+        for line in _terraform(execution, module, "state", "list").decode().splitlines()
         if line.strip()
     )
     if (
@@ -183,7 +444,7 @@ def _state(module: Path, expected_adapter_sha256: str) -> dict[str, Any]:
         or state["version"] < 4
     ):
         raise ValueError("remote state has no canonical managed-address closure")
-    version_after = _state_version(backend, expected_adapter_sha256)
+    version_after = _state_version(execution, backend, expected_adapter_sha256)
     if version_before != version_after:
         raise ValueError("remote state changed during its custodied read")
     return {
@@ -196,38 +457,94 @@ def _state(module: Path, expected_adapter_sha256: str) -> dict[str, Any]:
     }
 
 
-def _source_identity(module: Path) -> tuple[str, str]:
-    root = _terraform(module, "version")  # Proves the configured binary is callable before Git custody.
+def _git(
+    execution: dict[str, Any],
+    repository: Path,
+    *arguments: str,
+    accepted: frozenset[int] = frozenset({0}),
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        [f"/proc/self/fd/{execution['git_fd']}", "-C", os.fspath(repository), *arguments],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=execution["environment"],
+        timeout=10,
+        pass_fds=(execution["git_fd"],),
+    )
+    if (
+        result.returncode not in accepted
+        or len(result.stdout.encode()) > MAX_BYTES
+        or len(result.stderr.encode()) > MAX_BYTES
+    ):
+        raise ValueError("Git custody command failed")
+    return result
+
+
+def _source_identity(
+    execution: dict[str, Any], module: Path
+) -> tuple[Path, str, str]:
+    root = _terraform(
+        execution, module, "version"
+    )  # Proves the fixed descriptor-bound binary is callable before Git custody.
     if not root:
         raise ValueError("Terraform binary identity is absent")
-    repository = subprocess.run(
-        ["git", "-C", os.fspath(module), "rev-parse", "--show-toplevel"],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=10,
+    repository_result = _git(execution, module, "rev-parse", "--show-toplevel")
+    repository_path = Path(repository_result.stdout.strip())
+    status = _git(
+        execution,
+        repository_path,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
     )
-    if repository.returncode != 0:
-        raise ValueError("module is not inside the custodied Git repository")
-    repository_path = repository.stdout.strip()
-    status = subprocess.run(
-        ["git", "-C", repository_path, "status", "--porcelain=v1", "--untracked-files=all"],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    identities = subprocess.run(
-        ["git", "-C", repository_path, "rev-parse", "HEAD", "HEAD^{tree}"],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    identities = _git(execution, repository_path, "rev-parse", "HEAD", "HEAD^{tree}")
     values = identities.stdout.splitlines()
-    if status.returncode != 0 or status.stdout or identities.returncode != 0 or len(values) != 2:
+    if status.stdout or len(values) != 2:
         raise ValueError("execution requires an exact clean Git commit and tree")
-    return values[0], values[1]
+    return repository_path, values[0], values[1]
+
+
+def _is_ancestor(
+    execution: dict[str, Any], repository: Path, ancestor: str, descendant: str
+) -> bool:
+    result = _git(
+        execution,
+        repository,
+        "merge-base",
+        "--is-ancestor",
+        ancestor,
+        descendant,
+        accepted=frozenset({0, 1}),
+    )
+    if result.stdout:
+        raise ValueError("Git ancestry check returned unexpected output")
+    return result.returncode == 0
+
+
+def _verify_sai10_ancestry(
+    execution: dict[str, Any], repository: Path, receipt: dict[str, Any]
+) -> None:
+    commit = receipt.get("accepted_sai10_commit")
+    tree = receipt.get("accepted_sai10_tree")
+    if (
+        not isinstance(commit, str)
+        or len(commit) != 40
+        or not isinstance(tree, str)
+        or len(tree) != 40
+    ):
+        raise ValueError("execution approval lacks accepted SAI-10 commit/tree custody")
+    observed_tree = _git(
+        execution, repository, "show", "-s", "--format=%T", commit
+    ).stdout.strip()
+    if observed_tree != tree:
+        raise ValueError("accepted SAI-10 commit does not have the approved tree")
+    if _is_ancestor(execution, repository, REJECTED_SAI10, commit):
+        raise ValueError("accepted SAI-10 custody descends from the rejected lineage")
+    if _is_ancestor(execution, repository, REJECTED_SAI10, "HEAD"):
+        raise ValueError("executing source descends from the rejected SAI-10 lineage")
+    if not _is_ancestor(execution, repository, commit, "HEAD"):
+        raise ValueError("accepted SAI-10 custody is not an ancestor of executing source")
 
 
 def _verify_receipt(receipt: dict[str, Any], public_key: bytes) -> None:
@@ -249,41 +566,67 @@ def main() -> int:
     parser.add_argument("--module", type=Path, required=True)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
-    parser.add_argument("--public-key", type=Path, required=True)
     parser.add_argument("--execute", action="store_true", required=True)
     args = parser.parse_args()
     if not args.module.is_absolute() or ".." in args.module.parts:
         parser.error("--module must be an absolute path without traversal")
-    plan_fd = receipt_fd = key_fd = -1
+    plan_fd = receipt_fd = lock_fd = backend_fd = module_fd = -1
+    execution: dict[str, Any] | None = None
     try:
+        module_fd = _open_directory(args.module, root_owned=False)
+        execution = _load_execution_profile()
         plan_fd, plan_bytes = _open(args.plan, root_owned=True)
         receipt_fd, receipt_bytes = _open(args.receipt, root_owned=True)
-        key_fd, key_bytes = _open(args.public_key, root_owned=True)
         receipt = _object(receipt_bytes, "execution receipt")
-        _verify_receipt(receipt, key_bytes)
+        _verify_receipt(receipt, execution["key_bytes"])
         expected_fields = {
-            "schema", "source_commit", "source_tree", "plan_sha256", "plan_json_sha256",
+            "schema", "execution_profile_sha256", "module_repository_path",
+            "source_commit", "source_tree", "accepted_sai10_commit",
+            "accepted_sai10_tree", "accepted_sai10_review_receipt_sha256",
+            "terraform_lock_sha256", "plan_sha256", "plan_json_sha256",
             "state_version_adapter_sha256",
             "prior_state", "successor_state_contract", "payload_sha256", "signature",
         }
-        if set(receipt) != expected_fields or receipt.get("schema") != "fs2-serve.nebius.ai/additive-plan-execution/v1":
+        if set(receipt) != expected_fields or receipt.get("schema") != RECEIPT_SCHEMA:
             raise ValueError("execution receipt fields or schema differ")
+        if receipt.get("execution_profile_sha256") != execution["profile_sha256"]:
+            raise ValueError("fixed execution profile differs from the signed approval")
+        _digest(
+            receipt.get("accepted_sai10_review_receipt_sha256"),
+            "accepted SAI-10 review receipt",
+        )
         adapter_sha256 = receipt.get("state_version_adapter_sha256")
-        if (
-            not isinstance(adapter_sha256, str)
-            or len(adapter_sha256) != 64
-            or any(character not in "0123456789abcdef" for character in adapter_sha256)
-        ):
-            raise ValueError("execution approval lacks the state-version adapter digest")
+        _digest(adapter_sha256, "state-version adapter")
         if hashlib.sha256(plan_bytes).hexdigest() != receipt["plan_sha256"]:
             raise ValueError("saved-plan bytes differ from approval")
-        source_commit, source_tree = _source_identity(args.module)
+        repository, source_commit, source_tree = _source_identity(execution, args.module)
         if (source_commit, source_tree) != (receipt["source_commit"], receipt["source_tree"]):
             raise ValueError("Git source identity differs from execution approval")
-        prior_state = _state(args.module, adapter_sha256)
+        try:
+            module_relative = args.module.relative_to(repository).as_posix()
+        except ValueError as exc:
+            raise ValueError("module is outside the approved Git repository") from exc
+        if module_relative != receipt.get("module_repository_path"):
+            raise ValueError("module path differs from execution approval")
+        _verify_sai10_ancestry(execution, repository, receipt)
+        lock_fd, lock_bytes = _open(repository / ".terraform.lock.hcl", root_owned=False)
+        if hashlib.sha256(lock_bytes).hexdigest() != _digest(
+            receipt.get("terraform_lock_sha256"), "Terraform dependency lock"
+        ):
+            raise ValueError("Terraform dependency lock differs from execution approval")
+        lock_before = os.fstat(lock_fd)
+        backend, backend_fd, backend_before = _backend(execution)
+        prior_state = _state(execution, args.module, backend, adapter_sha256)
         if prior_state != receipt["prior_state"]:
             raise ValueError("remote predecessor state differs from execution approval")
-        plan_json = _terraform(args.module, "show", "-json", f"/proc/self/fd/{plan_fd}", pass_fds=(plan_fd,))
+        plan_json = _terraform(
+            execution,
+            args.module,
+            "show",
+            "-json",
+            f"/proc/self/fd/{plan_fd}",
+            pass_fds=(plan_fd,),
+        )
         if hashlib.sha256(plan_json).hexdigest() != receipt["plan_json_sha256"]:
             raise ValueError("saved-plan JSON differs from execution approval")
         plan = _object(plan_json, "saved plan")
@@ -306,8 +649,19 @@ def main() -> int:
             != sorted(set(successor_contract["managed_addresses"]))
         ):
             raise ValueError("successor state contract is not canonical")
-        _terraform(args.module, "apply", "-input=false", f"/proc/self/fd/{plan_fd}", pass_fds=(plan_fd,))
-        successor_state = _state(args.module, adapter_sha256)
+        _unchanged(backend_fd, backend_before, "Terraform backend descriptor")
+        _terraform(
+            execution,
+            args.module,
+            "apply",
+            "-input=false",
+            f"/proc/self/fd/{plan_fd}",
+            pass_fds=(plan_fd,),
+        )
+        _unchanged(backend_fd, backend_before, "Terraform backend descriptor")
+        successor_state = _state(execution, args.module, backend, adapter_sha256)
+        _unchanged(backend_fd, backend_before, "Terraform backend descriptor")
+        _unchanged(lock_fd, lock_before, "Terraform dependency lock")
         if (
             successor_state["lineage"] != successor_contract["lineage"]
             or successor_state["serial"] < successor_contract["minimum_serial"]
@@ -331,9 +685,21 @@ def main() -> int:
         print(f"custodied additive plan rejected: {exc}", file=sys.stderr)
         return 2
     finally:
-        for descriptor in (plan_fd, receipt_fd, key_fd):
+        for descriptor in (plan_fd, receipt_fd, lock_fd, backend_fd, module_fd):
             if descriptor >= 0:
                 os.close(descriptor)
+        if execution is not None:
+            for name in (
+                "profile_fd",
+                "key_fd",
+                "terraform_fd",
+                "git_fd",
+                "cli_fd",
+                "data_fd",
+            ):
+                descriptor = execution[name]
+                if descriptor >= 0:
+                    os.close(descriptor)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+SECURITY_ROOT = Path(__file__).resolve().parents[1]
+if os.fspath(SECURITY_ROOT) not in sys.path:
+    sys.path.insert(0, os.fspath(SECURITY_ROOT))
+
+from rbac_authority import verify_subject_inventory  # noqa: E402
+
 MAX_KUBECONFIG_BYTES = 1024 * 1024
 MAX_OUTPUT_BYTES = 8 * 1024 * 1024
 
@@ -520,6 +526,11 @@ def _protected_permissions(
             names["release_workload"],
             namespace,
         ),
+        "release-record": (
+            "configmaps",
+            names["release_record"],
+            namespace,
+        ),
     }
     result: dict[str, bool] = {}
     for label, (resource, name, resource_namespace) in resources.items():
@@ -632,17 +643,17 @@ def verify(query: dict[str, str]) -> dict[str, str]:
                 "create:network-policy",
             }
             if item["category"] == "release":
-                # Helm's ConfigMap driver updates only its own release record.
-                # The already-active boundary denies this identity updates to
-                # either immutable public contract generation.
+                # The already-active boundary matches every ConfigMap request
+                # by this identity and admits only the content-named Helm v1
+                # record. This is an exact admission-mediated permission, not
+                # a namespace-wide ConfigMap exemption.
                 admission_mediated.update(
                     {
                         "create:release-serviceaccount",
                         "create:release-deployment",
-                        "update:contract",
-                        "patch:contract",
-                        "update:trust",
-                        "patch:trust",
+                        "create:release-record",
+                        "update:release-record",
+                        "patch:release-record",
                     }
                 )
             forbidden = {
@@ -680,8 +691,6 @@ def verify(query: dict[str, str]) -> dict[str, str]:
                 "create-serviceaccounts",
                 "create-deployments.apps",
                 "create-configmaps",
-                "update-configmaps",
-                "patch-configmaps",
             }
             dangerous = [
                 permission
@@ -738,13 +747,34 @@ def verify(query: dict[str, str]) -> dict[str, str]:
     for subject in declared_service_accounts:
         if (
             not isinstance(subject, dict)
-            or set(subject) != {"namespace", "name", "owner", "groups"}
+            or set(subject)
+            != {
+                "namespace",
+                "name",
+                "owner",
+                "groups",
+                "effective_authority_sha256",
+                "dangerous_permissions",
+            }
             or any(
                 not isinstance(subject.get(field), str) or not subject[field]
                 for field in ("namespace", "name", "owner")
             )
             or not isinstance(subject.get("groups"), list)
             or subject["groups"] != sorted(set(subject["groups"]))
+            or not isinstance(subject.get("effective_authority_sha256"), str)
+            or len(subject["effective_authority_sha256"]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in subject["effective_authority_sha256"]
+            )
+            or not isinstance(subject.get("dangerous_permissions"), list)
+            or subject["dangerous_permissions"]
+            != sorted(set(subject["dangerous_permissions"]))
+            or any(
+                not isinstance(permission, str) or not permission
+                for permission in subject["dangerous_permissions"]
+            )
         ):
             raise ValueError("signed ServiceAccount inventory is malformed")
         authorized_service_accounts.add((subject["namespace"], subject["name"]))
@@ -755,13 +785,37 @@ def verify(query: dict[str, str]) -> dict[str, str]:
     for subject in declared_system_subjects:
         if (
             not isinstance(subject, dict)
-            or set(subject) != {"kind", "name", "namespace", "owner"}
+            or set(subject)
+            != {
+                "kind",
+                "name",
+                "namespace",
+                "owner",
+                "groups",
+                "effective_authority_sha256",
+                "dangerous_permissions",
+            }
             or subject.get("kind") not in {"User", "Group"}
             or not isinstance(subject.get("name"), str)
             or not subject["name"].startswith("system:")
             or subject.get("namespace") != ""
             or not isinstance(subject.get("owner"), str)
             or not subject["owner"]
+            or not isinstance(subject.get("groups"), list)
+            or subject["groups"] != sorted(set(subject["groups"]))
+            or not isinstance(subject.get("effective_authority_sha256"), str)
+            or len(subject["effective_authority_sha256"]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in subject["effective_authority_sha256"]
+            )
+            or not isinstance(subject.get("dangerous_permissions"), list)
+            or subject["dangerous_permissions"]
+            != sorted(set(subject["dangerous_permissions"]))
+            or any(
+                not isinstance(permission, str) or not permission
+                for permission in subject["dangerous_permissions"]
+            )
         ):
             raise ValueError("signed Kubernetes system-subject inventory is malformed")
         identity = (subject["kind"], subject["name"])
@@ -770,8 +824,14 @@ def verify(query: dict[str, str]) -> dict[str, str]:
         seen_system_subjects.add(identity)
         if subject["kind"] == "User":
             authorized_users.add(subject["name"])
+            authorized_groups.update(subject["groups"])
         else:
             authorized_groups.add(subject["name"])
+    verify_subject_inventory(
+        declared_service_accounts,
+        declared_system_subjects,
+        effective_authority,
+    )
     for subject in rbac_subjects:
         if subject["kind"] == "User" and subject["name"] not in authorized_users:
             raise ValueError("live RBAC has an undeclared User subject")

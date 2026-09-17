@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 MAX_BYTES = 64 * 1024
-SCHEMA = "fs2-serve.nebius.ai/sai-08-integration-dependencies/v4"
+SCHEMA = "fs2-serve.nebius.ai/sai-08-integration-dependencies/v5"
 REJECTED_SAI10 = "1ae009b858924138de70932ac84b8e595a2656a1"
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -132,6 +132,7 @@ def verify(record: dict[str, Any], expected: dict[str, str]) -> dict[str, str]:
         "provider_authority_adapter_sha256",
         "provider_state_custody_sha256",
         "boundary_state_custody_sha256",
+        "retained_v3_admission_custody_sha256",
         "kubernetes_rbac_inventory_receipt_sha256",
         "kubernetes_rbac_effective_authority_sha256",
         "kubernetes_service_account_inventory_sha256",

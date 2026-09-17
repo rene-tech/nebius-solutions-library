@@ -1,7 +1,7 @@
 output "current_handoff" {
   description = "Non-secret provider-enforced egress handoff for the additive compatibility-v3 reconciler."
   value = {
-    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v3"
+    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v4"
     generation                                        = local.authority.current_generation
     authority_manifest_sha256                         = data.external.authority.result.manifest_sha256
     prior_head_receipt_sha256                         = data.external.authority.result.prior_head_receipt_sha256
@@ -35,6 +35,9 @@ output "current_handoff" {
     provider_authority_adapter_sha256                 = data.external.authority.result.provider_authority_adapter_sha256
     provider_state_custody_sha256                     = data.external.authority.result.provider_state_custody_sha256
     boundary_state_custody_sha256                     = data.external.authority.result.boundary_state_custody_sha256
+    retained_v3_boundary_policies                     = jsondecode(data.external.authority.result.retained_v3_boundary_policies_json)
+    retained_v3_workload_policies                     = jsondecode(data.external.authority.result.retained_v3_workload_policies_json)
+    retained_v3_admission_custody_sha256              = data.external.authority.result.retained_v3_admission_custody_sha256
     accepted_sai10_commit                             = data.external.authority.result.accepted_sai10_commit
     accepted_sai10_tree                               = data.external.authority.result.accepted_sai10_tree
     sai10_independent_review_receipt_sha256           = data.external.authority.result.sai10_independent_review_receipt_sha256

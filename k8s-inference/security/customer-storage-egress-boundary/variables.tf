@@ -159,10 +159,12 @@ variable "security_owner_group" {
 variable "kubernetes_service_account_inventory" {
   description = "Exact sorted ServiceAccount subject closure from the signed RBAC authority receipt."
   type = list(object({
-    namespace = string
-    name      = string
-    owner     = string
-    groups    = list(string)
+    namespace                  = string
+    name                       = string
+    owner                      = string
+    groups                     = list(string)
+    effective_authority_sha256 = string
+    dangerous_permissions      = list(string)
   }))
   validation {
     condition = (
@@ -170,7 +172,9 @@ variable "kubernetes_service_account_inventory" {
       alltrue([
         for subject in var.kubernetes_service_account_inventory :
         subject.namespace != "" && subject.name != "" && subject.owner != "" &&
-        subject.groups == sort(distinct(subject.groups))
+        subject.groups == sort(distinct(subject.groups)) &&
+        can(regex("^[a-f0-9]{64}$", subject.effective_authority_sha256)) &&
+        subject.dangerous_permissions == sort(distinct(subject.dangerous_permissions))
       ])
     )
     error_message = "The complete signed Kubernetes ServiceAccount subject inventory is required."
@@ -180,17 +184,23 @@ variable "kubernetes_service_account_inventory" {
 variable "kubernetes_system_subject_inventory" {
   description = "Exact Kubernetes-native system User/Group subjects from the signed RBAC authority receipt."
   type = list(object({
-    kind      = string
-    name      = string
-    namespace = string
-    owner     = string
+    kind                       = string
+    name                       = string
+    namespace                  = string
+    owner                      = string
+    groups                     = list(string)
+    effective_authority_sha256 = string
+    dangerous_permissions      = list(string)
   }))
   validation {
     condition = alltrue([
       for subject in var.kubernetes_system_subject_inventory :
       contains(["User", "Group"], subject.kind) &&
       startswith(subject.name, "system:") &&
-      subject.namespace == "" && subject.owner != ""
+      subject.namespace == "" && subject.owner != "" &&
+      subject.groups == sort(distinct(subject.groups)) &&
+      can(regex("^[a-f0-9]{64}$", subject.effective_authority_sha256)) &&
+      subject.dangerous_permissions == sort(distinct(subject.dangerous_permissions))
     ])
     error_message = "Only explicitly owned Kubernetes-native system User/Group subjects are accepted."
   }
@@ -329,15 +339,34 @@ variable "provider_authority" {
     provider_authority_adapter_sha256                 = string
     provider_state_custody_sha256                     = string
     boundary_state_custody_sha256                     = string
-    workloads_service_account_sha256                  = string
-    accepted_sai10_commit                             = string
-    accepted_sai10_tree                               = string
-    sai10_independent_review_receipt_sha256           = string
+    retained_v3_boundary_policies = map(object({
+      name          = string
+      policy_sha256 = string
+      policy_spec   = any
+      binding_spec = object({
+        policyName        = string
+        validationActions = list(string)
+      })
+    }))
+    retained_v3_workload_policies = map(object({
+      name          = string
+      policy_sha256 = string
+      policy_spec   = any
+      binding_spec = object({
+        policyName        = string
+        validationActions = list(string)
+      })
+    }))
+    retained_v3_admission_custody_sha256    = string
+    workloads_service_account_sha256        = string
+    accepted_sai10_commit                   = string
+    accepted_sai10_tree                     = string
+    sai10_independent_review_receipt_sha256 = string
   })
 
   validation {
     condition = (
-      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v3" &&
+      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v4" &&
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.generation)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.authority_manifest_sha256)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.prior_head_receipt_sha256)) &&
@@ -376,6 +405,7 @@ variable "provider_authority" {
           var.provider_authority.provider_authority_adapter_sha256,
           var.provider_authority.provider_state_custody_sha256,
           var.provider_authority.boundary_state_custody_sha256,
+          var.provider_authority.retained_v3_admission_custody_sha256,
           var.provider_authority.workloads_service_account_sha256,
           var.provider_authority.sai10_independent_review_receipt_sha256,
         ] : can(regex("^[a-f0-9]{64}$", digest))
@@ -384,6 +414,22 @@ variable "provider_authority" {
       can(regex("^[a-f0-9]{40}$", var.provider_authority.accepted_sai10_tree)) &&
       !startswith(var.provider_authority.accepted_sai10_commit, "1ae009b85") &&
       var.provider_authority.authority_service_account_sha256 != var.provider_authority.workloads_service_account_sha256
+      && alltrue([
+        for generation, policy in merge(
+          var.provider_authority.retained_v3_boundary_policies,
+          var.provider_authority.retained_v3_workload_policies,
+        ) :
+        can(regex("^g[0-9]{14}-[a-f0-9]{12}$", generation)) &&
+        can(regex("^[a-f0-9]{64}$", policy.policy_sha256)) &&
+        endswith(generation, substr(policy.policy_sha256, 0, 12)) &&
+        sha256(jsonencode(policy.policy_spec)) == policy.policy_sha256 &&
+        policy.binding_spec.policyName == policy.name &&
+        policy.binding_spec.validationActions == ["Deny"]
+      ])
+      && sha256(jsonencode({
+        retained_v3_boundary_policies = var.provider_authority.retained_v3_boundary_policies
+        retained_v3_workload_policies = var.provider_authority.retained_v3_workload_policies
+      })) == var.provider_authority.retained_v3_admission_custody_sha256
     )
     error_message = "provider_authority must be the exact provider-enforced, identity-separated VPC/node handoff."
   }

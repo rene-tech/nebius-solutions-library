@@ -19,17 +19,55 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
+SECURITY_ROOT = Path(__file__).resolve().parents[1]
+if os.fspath(SECURITY_ROOT) not in sys.path:
+    sys.path.insert(0, os.fspath(SECURITY_ROOT))
+
+from rbac_authority import verify_subject_inventory  # noqa: E402
+
 REGISTRY_PATH = Path("/etc/fs2-security-ro/authority/customer-storage-egress-authority.json")
 PRIOR_HEAD_PATH = Path(
     "/var/lib/fs2-security-checkpoints-ro/customer-storage-egress-prior-head.json"
 )
-REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v4"
-PRIOR_HEAD_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-prior-head/v3"
+REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v5"
+PRIOR_HEAD_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-prior-head/v4"
 MANIFEST_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-ledger/v3"
 MAX_BYTES = 1024 * 1024
 NEBIUS_TERRAFORM_PROVIDER_VERSION = "0.5.232"
 REJECTED_SAI10_COMMIT = "1ae009b858924138de70932ac84b8e595a2656a1"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+GENERATION_FIELDS = {
+    "generation",
+    "predecessor_sha256",
+    "contract_sha256",
+    "predecessor_compatibility_sha256",
+    "boundary_policy_sha256",
+    "workload_policy_sha256",
+    "release_values_sha256",
+    "provider_iam_receipt_sha256",
+    "provider_authority_graph_receipt_sha256",
+    "kubernetes_rbac_receipt_sha256",
+    "provider_state_custody_sha256",
+    "boundary_state_custody_sha256",
+    "prior_live_custody_sha256",
+    "accepted_sai10_commit",
+    "accepted_sai10_tree",
+    "accepted_sai10_review_sha256",
+    "cluster_id",
+    "network_id",
+    "subnet_id",
+    "node_service_account_id",
+    "kubernetes_version",
+    "nebius_terraform_provider_version",
+    "provider_api_cidrs",
+    "kubernetes_api_cidrs",
+    "bootstrap_https_cidrs",
+    "private_cidrs",
+    "platform",
+    "preset",
+    "boot_disk_type",
+    "boot_disk_gib",
+}
 
 
 def canonical(value: object) -> bytes:
@@ -318,7 +356,15 @@ def verify(manifest_json: str) -> dict[str, str]:
         or not service_account_subjects
         or any(
             not isinstance(item, dict)
-            or set(item) != {"namespace", "name", "owner", "groups"}
+            or set(item)
+            != {
+                "namespace",
+                "name",
+                "owner",
+                "groups",
+                "effective_authority_sha256",
+                "dangerous_permissions",
+            }
             or any(
                 not isinstance(item[field], str) or not item[field]
                 for field in ("namespace", "name", "owner")
@@ -326,6 +372,19 @@ def verify(manifest_json: str) -> dict[str, str]:
             or not isinstance(item.get("groups"), list)
             or item["groups"] != sorted(set(item["groups"]))
             or any(not isinstance(group, str) or not group for group in item["groups"])
+            or not isinstance(item.get("effective_authority_sha256"), str)
+            or len(item["effective_authority_sha256"]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in item["effective_authority_sha256"]
+            )
+            or not isinstance(item.get("dangerous_permissions"), list)
+            or item["dangerous_permissions"]
+            != sorted(set(item["dangerous_permissions"]))
+            or any(
+                not isinstance(permission, str) or not permission
+                for permission in item["dangerous_permissions"]
+            )
             for item in service_account_subjects
         )
         or service_account_subjects
@@ -342,13 +401,37 @@ def verify(manifest_json: str) -> dict[str, str]:
         not isinstance(system_subjects, list)
         or any(
             not isinstance(item, dict)
-            or set(item) != {"kind", "name", "namespace", "owner"}
+            or set(item)
+            != {
+                "kind",
+                "name",
+                "namespace",
+                "owner",
+                "groups",
+                "effective_authority_sha256",
+                "dangerous_permissions",
+            }
             or item.get("kind") not in {"User", "Group"}
             or not isinstance(item.get("name"), str)
             or not item["name"].startswith("system:")
             or item.get("namespace") != ""
             or not isinstance(item.get("owner"), str)
             or not item["owner"]
+            or not isinstance(item.get("groups"), list)
+            or item["groups"] != sorted(set(item["groups"]))
+            or not isinstance(item.get("effective_authority_sha256"), str)
+            or len(item["effective_authority_sha256"]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in item["effective_authority_sha256"]
+            )
+            or not isinstance(item.get("dangerous_permissions"), list)
+            or item["dangerous_permissions"]
+            != sorted(set(item["dangerous_permissions"]))
+            or any(
+                not isinstance(permission, str) or not permission
+                for permission in item["dangerous_permissions"]
+            )
             for item in system_subjects
         )
         or system_subjects
@@ -568,6 +651,12 @@ def verify(manifest_json: str) -> dict[str, str]:
     authorized_groups.update(
         item["name"] for item in system_subjects if item["kind"] == "Group"
     )
+    authorized_groups.update(
+        group
+        for item in system_subjects
+        if item["kind"] == "User"
+        for group in item["groups"]
+    )
     for subject in rbac_subjects:
         if subject["kind"] == "User" and subject["name"] not in authorized_users:
             raise ValueError("RBAC contains a User absent from the authority identity inventory")
@@ -579,6 +668,11 @@ def verify(manifest_json: str) -> dict[str, str]:
             raise ValueError(
                 "RBAC contains a ServiceAccount absent from the authority identity inventory"
             )
+    verify_subject_inventory(
+        service_account_subjects,
+        system_subjects,
+        effective_authority,
+    )
 
     custody = registry["accepted_custody"]
     if not isinstance(custody, dict) or set(custody) != {
@@ -636,6 +730,7 @@ def verify(manifest_json: str) -> dict[str, str]:
         "generation_chain_anchor_sha256",
         "generation_chain",
         "authority_gate_generations",
+        "retained_generations",
         "managed_addresses",
     }
     provider_address_prefixes = (
@@ -681,8 +776,44 @@ def verify(manifest_json: str) -> dict[str, str]:
             or not generation.startswith("g")
             for generation in provider_state_custody["authority_gate_generations"]
         )
+        or not isinstance(provider_state_custody.get("retained_generations"), dict)
+        or set(provider_state_custody["retained_generations"])
+        != set(provider_state_custody["authority_gate_generations"])
     ):
         raise ValueError("provider state custody is not canonical and complete")
+    retained_generations = provider_state_custody["retained_generations"]
+    retained_generation_digests: dict[str, str] = {}
+    for generation, retained in retained_generations.items():
+        if (
+            not isinstance(retained, dict)
+            or set(retained) != GENERATION_FIELDS
+            or retained.get("generation") != generation
+        ):
+            raise ValueError("provider retained-generation payload fields differ")
+        content = {key: value for key, value in retained.items() if key != "generation"}
+        content_sha256 = hashlib.sha256(canonical(content)).hexdigest()
+        if generation[-12:] != content_sha256[:12]:
+            raise ValueError("provider retained generation is not content-bound")
+        host_routes(retained.get("provider_api_cidrs"), "retained provider API CIDRs")
+        host_routes(
+            retained.get("kubernetes_api_cidrs"), "retained Kubernetes API CIDRs"
+        )
+        host_routes(
+            retained.get("bootstrap_https_cidrs"), "retained bootstrap HTTPS CIDRs"
+        )
+        private_routes(retained.get("private_cidrs"))
+        if (
+            not isinstance(retained.get("platform"), str)
+            or not retained["platform"]
+            or not isinstance(retained.get("preset"), str)
+            or not retained["preset"]
+            or retained.get("boot_disk_type")
+            not in {"NETWORK_SSD", "NETWORK_SSD_NON_REPLICATED"}
+            or not isinstance(retained.get("boot_disk_gib"), int)
+            or not 32 <= retained["boot_disk_gib"] <= 256
+        ):
+            raise ValueError("provider retained generation node shape is invalid")
+        retained_generation_digests[generation] = content_sha256
     installed_generation_names: list[str] = []
     installed_predecessor: str | None = None
     for index, installed in enumerate(provider_state_custody["generation_chain"]):
@@ -714,6 +845,10 @@ def verify(manifest_json: str) -> dict[str, str]:
             raise ValueError("provider installed-generation chain is discontinuous")
         installed_generation_names.append(generation)
         installed_predecessor = content_sha256
+        if retained_generation_digests.get(generation) != content_sha256:
+            raise ValueError(
+                "provider retained-generation payload differs from installed chain"
+            )
     if installed_predecessor != prior_head["head_generation_sha256"]:
         raise ValueError("provider installed-generation chain does not end at prior head")
     for field in (
@@ -738,6 +873,8 @@ def verify(manifest_json: str) -> dict[str, str]:
         "state_version_id",
         "state_version_adapter_sha256",
         "state_snapshot_sha256",
+        "retained_v3_boundary_policies",
+        "retained_v3_workload_policies",
         "managed_addresses",
     }
     boundary_address_prefixes = (
@@ -789,6 +926,82 @@ def verify(manifest_json: str) -> dict[str, str]:
         )
     ):
         raise ValueError("boundary state custody is not canonical and complete")
+    retained_policy_sets: dict[str, dict[str, Any]] = {}
+    for field, name_prefix, policy_address, binding_address in (
+        (
+            "retained_v3_boundary_policies",
+            "fs2-storage-v3-boundary-",
+            "kubernetes_manifest.boundary_policy_v3[",
+            "kubernetes_manifest.boundary_binding_v3[",
+        ),
+        (
+            "retained_v3_workload_policies",
+            "fs2-storage-v3-workload-",
+            "kubernetes_manifest.workload_policy_v3[",
+            "kubernetes_manifest.workload_binding_v3[",
+        ),
+    ):
+        retained = boundary_state_custody.get(field)
+        if not isinstance(retained, dict):
+            raise ValueError("retained v3 admission custody is absent")
+        for generation, policy in retained.items():
+            if (
+                not isinstance(generation, str)
+                or len(generation) != 28
+                or not generation.startswith("g")
+                or not isinstance(policy, dict)
+                or set(policy)
+                != {"name", "policy_sha256", "policy_spec", "binding_spec"}
+                or policy.get("name") != f"{name_prefix}{generation}"
+                or policy.get("binding_spec")
+                != {"policyName": policy.get("name"), "validationActions": ["Deny"]}
+            ):
+                raise ValueError("retained v3 admission identity is malformed")
+            policy_sha256 = digest(
+                policy.get("policy_sha256"), "retained v3 admission policy"
+            )
+            if (
+                not isinstance(policy.get("policy_spec"), dict)
+                or hashlib.sha256(canonical(policy["policy_spec"])).hexdigest()
+                != policy_sha256
+                or generation[-12:] != policy_sha256[:12]
+            ):
+                raise ValueError("retained v3 admission policy is not content-bound")
+            quoted = json.dumps(generation)
+            required = {
+                f"{policy_address}{quoted}]",
+                f"{binding_address}{quoted}]",
+            }
+            if not required <= set(boundary_state_custody["managed_addresses"]):
+                raise ValueError("retained v3 policy/binding is absent from state custody")
+        observed_policy_generations: set[str] = set()
+        observed_binding_generations: set[str] = set()
+        for address in boundary_state_custody["managed_addresses"]:
+            for prefix, observed in (
+                (policy_address, observed_policy_generations),
+                (binding_address, observed_binding_generations),
+            ):
+                if not address.startswith(prefix):
+                    continue
+                if not address.endswith("]"):
+                    raise ValueError("retained v3 admission state address is malformed")
+                try:
+                    generation = json.loads(address[len(prefix) : -1])
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        "retained v3 admission state generation is malformed"
+                    ) from exc
+                if not isinstance(generation, str):
+                    raise ValueError("retained v3 admission generation is not a string")
+                observed.add(generation)
+        if (
+            observed_policy_generations != set(retained)
+            or observed_binding_generations != set(retained)
+        ):
+            raise ValueError(
+                "retained v3 admission custody does not cover every state-owned policy/binding"
+            )
+        retained_policy_sets[field] = retained
     for field in (
         "backend_config_sha256",
         "backend_lineage",
@@ -942,39 +1155,7 @@ def verify(manifest_json: str) -> dict[str, str]:
     normalized: dict[str, dict[str, Any]] = {}
     predecessor = prior_head["head_generation_sha256"]
     for entry in generations:
-        fields = {
-            "generation",
-            "predecessor_sha256",
-            "contract_sha256",
-            "predecessor_compatibility_sha256",
-            "boundary_policy_sha256",
-            "workload_policy_sha256",
-            "release_values_sha256",
-            "provider_iam_receipt_sha256",
-            "provider_authority_graph_receipt_sha256",
-            "kubernetes_rbac_receipt_sha256",
-            "provider_state_custody_sha256",
-            "boundary_state_custody_sha256",
-            "prior_live_custody_sha256",
-            "accepted_sai10_commit",
-            "accepted_sai10_tree",
-            "accepted_sai10_review_sha256",
-            "cluster_id",
-            "network_id",
-            "subnet_id",
-            "node_service_account_id",
-            "kubernetes_version",
-            "nebius_terraform_provider_version",
-            "provider_api_cidrs",
-            "kubernetes_api_cidrs",
-            "bootstrap_https_cidrs",
-            "private_cidrs",
-            "platform",
-            "preset",
-            "boot_disk_type",
-            "boot_disk_gib",
-        }
-        if not isinstance(entry, dict) or set(entry) != fields:
+        if not isinstance(entry, dict) or set(entry) != GENERATION_FIELDS:
             raise ValueError("authority generation fields differ")
         content = {key: value for key, value in entry.items() if key != "generation"}
         content_digest = hashlib.sha256(canonical(content)).hexdigest()
@@ -1065,7 +1246,7 @@ def verify(manifest_json: str) -> dict[str, str]:
     # terminates at prior_head.head_generation_sha256. The successor-only
     # manifest begins from that exact hash (checked above); names need only be
     # disjoint because their suffixes bind content, not chronological order.
-    if set(installed_generation_names) & set(manifest_generation_order):
+    if set(retained_generations) & set(manifest_generation_order):
         raise ValueError("provider successor generations overlap prior custody")
     for generation in installed_generation_names:
         quoted = json.dumps(generation)
@@ -1108,6 +1289,9 @@ def verify(manifest_json: str) -> dict[str, str]:
         ],
         "manifest_json": json.dumps(manifest, sort_keys=True, separators=(",", ":")),
         "generations_json": json.dumps(normalized, sort_keys=True, separators=(",", ":")),
+        "retained_generations_json": json.dumps(
+            retained_generations, sort_keys=True, separators=(",", ":")
+        ),
         "authority_project_id": registry["authority_project_id"],
         "authority_service_account_id": registry["authority_service_account_id"],
         "authority_group_id": registry["authority_group_id"],
@@ -1131,6 +1315,19 @@ def verify(manifest_json: str) -> dict[str, str]:
             separators=(",", ":"),
         ),
         "boundary_state_custody_sha256": prior_head["boundary_state_custody_sha256"],
+        "retained_v3_boundary_policies_json": json.dumps(
+            retained_policy_sets["retained_v3_boundary_policies"],
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "retained_v3_workload_policies_json": json.dumps(
+            retained_policy_sets["retained_v3_workload_policies"],
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "retained_v3_admission_custody_sha256": hashlib.sha256(
+            canonical(retained_policy_sets)
+        ).hexdigest(),
         "kubernetes_rbac_inventory_receipt_sha256": rbac_receipt_sha256,
         "kubernetes_rbac_inventory_sha256": rbac_receipt["inventory_sha256"],
         "kubernetes_rbac_effective_authority_sha256": rbac_effective_authority_sha256,
