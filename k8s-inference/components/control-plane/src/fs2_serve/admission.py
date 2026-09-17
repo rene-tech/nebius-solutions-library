@@ -9,6 +9,7 @@ import json
 import logging
 import socket
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -59,7 +60,47 @@ LOGGER = logging.getLogger(__name__)
 
 
 class PublicModelPolicyNotFoundError(KeyError):
-    """Hide a final public HTTP model-policy denial behind not-found semantics."""
+    """Coalesce public HTTP unknown and model-policy denial after refresh."""
+
+
+@dataclass(frozen=True)
+class PublicModelAuthorization:
+    """One model authorized from a refreshed public-route registry snapshot."""
+
+    principal: Principal
+    requested_model_id: str
+    surface: str
+    model: OperationalModel
+
+
+@dataclass(frozen=True)
+class PublicRouteBoundary:
+    """Model-independent refresh followed by fail-closed public resolution."""
+
+    registry: Registry
+    principal: Principal
+    routes_fresh: bool
+
+    def authorize(self, model_id: str, *, surface: str) -> PublicModelAuthorization:
+        try:
+            model = self.registry.resolve_for_principal(
+                model_id,
+                self.principal,
+                surface=surface,
+                require_enabled=False,
+            )
+        except (KeyError, PermissionError):
+            raise PublicModelPolicyNotFoundError("model not found") from None
+        if not self.routes_fresh and model.dynamic_policy is not None:
+            raise ModelRouteUnavailableError("dynamic model route evidence is unavailable")
+        if not model.enabled:
+            raise ModelRouteUnavailableError("model is not routable")
+        return PublicModelAuthorization(
+            principal=self.principal,
+            requested_model_id=model_id,
+            surface=surface,
+            model=model,
+        )
 
 
 def _publication_surface(*, protocol: str, required_scope: str) -> str:
@@ -190,36 +231,60 @@ class AdmissionService:
         await self.stop()
         await self.runtime.close()
 
+    async def begin_public_route(self, principal: Principal) -> PublicRouteBoundary:
+        """Refresh route evidence before parsing model-dependent request detail."""
+
+        principal.require(Scope.INFERENCE_INVOKE)
+        routes_fresh = self.route_refresh is None or await self.route_refresh()
+        return PublicRouteBoundary(
+            registry=self.registry,
+            principal=principal,
+            routes_fresh=routes_fresh,
+        )
+
     async def admit(
         self,
         principal: Principal,
         admission: AdmissionRequest,
         *,
         required_scope: str = "inference.invoke",
+        public_authorization: PublicModelAuthorization | None = None,
     ) -> OperationView:
         principal.require(required_scope)
-        routes_fresh = True
-        if self.route_refresh is not None:
-            routes_fresh = await self.route_refresh()
-        model = self.registry.get(admission.model_id, require_enabled=False)
-        try:
-            self.registry.authorize_principal(
-                model,
-                principal,
-                requested_model_id=admission.model_id,
-                surface=_publication_surface(
-                    protocol=admission.protocol,
-                    required_scope=required_scope,
-                ),
-            )
-        except PermissionError:
-            if required_scope == Scope.INFERENCE_INVOKE.value:
-                raise PublicModelPolicyNotFoundError("model not found") from None
-            raise
-        if not routes_fresh and model.dynamic_policy is not None:
-            raise ModelRouteUnavailableError("dynamic model route evidence is unavailable")
-        if not model.enabled:
-            raise ModelRouteUnavailableError("model is not routable")
+        surface = _publication_surface(
+            protocol=admission.protocol,
+            required_scope=required_scope,
+        )
+        if public_authorization is not None:
+            # Public HTTP routes already refreshed and authorized this exact
+            # model without an intervening await. Re-resolving here would
+            # recreate the model-dependent pre-admission branch.
+            if (
+                required_scope != Scope.INFERENCE_INVOKE.value
+                or public_authorization.principal != principal
+                or public_authorization.requested_model_id != admission.model_id
+                or public_authorization.surface != surface
+            ):
+                raise RuntimeError("public route authorization context mismatch")
+            model = public_authorization.model
+        else:
+            routes_fresh = self.route_refresh is None or await self.route_refresh()
+            model = self.registry.get(admission.model_id, require_enabled=False)
+            try:
+                self.registry.authorize_principal(
+                    model,
+                    principal,
+                    requested_model_id=admission.model_id,
+                    surface=surface,
+                )
+            except PermissionError:
+                if required_scope == Scope.INFERENCE_INVOKE.value:
+                    raise PublicModelPolicyNotFoundError("model not found") from None
+                raise
+            if not routes_fresh and model.dynamic_policy is not None:
+                raise ModelRouteUnavailableError("dynamic model route evidence is unavailable")
+            if not model.enabled:
+                raise ModelRouteUnavailableError("model is not routable")
         self.registry.authorize(model, principal.scopes)
         if admission.operation not in model.gateway.policy_operations:
             raise PermissionError("operation is outside model policy")

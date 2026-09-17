@@ -252,13 +252,134 @@ def test_missing_inference_scope_does_not_disclose_model_existence(
 
 
 @pytest.mark.parametrize(
-    ("path_template", "request_payload"),
+    ("model_id", "path_template", "request_payload"),
     [
-        ("/v1/chat/completions", {"messages": [{"role": "user", "content": "fixture"}]}),
-        ("/v1/models/{model_id}:invoke", {"operation": "chat", "payload": {"input": "fixture"}}),
+        (
+            "qwen3-8b",
+            "/v1/chat/completions",
+            {"messages": [{"role": "user", "content": "fixture"}]},
+        ),
+        (
+            "cosmos3-nano",
+            "/v1/models/{model_id}:invoke",
+            {"operation": "generate-media", "payload": {"prompt": "fixture"}},
+        ),
     ],
 )
-def test_post_refresh_policy_tightening_is_identical_to_an_unknown_model(
+def test_public_routes_refresh_once_for_authorized_and_unknown_models(
+    registry,
+    cipher,
+    hasher,
+    model_id,
+    path_template,
+    request_payload,
+):
+    runtime = build_runtime(registry, cipher, hasher)
+    refresh_calls = []
+
+    async def record_refresh():
+        refresh_calls.append(True)
+        return True
+
+    runtime.admission.route_refresh = record_refresh
+    with TestClient(create_app(runtime)) as client:
+        token = issue(
+            client,
+            principal="public-boundary-user",
+            tenant="tenant-a",
+            scopes=["inference.invoke"],
+            models=[model_id],
+        )
+        headers = {"authorization": f"Bearer {token}", "idempotency-key": "public-boundary-refresh-key"}
+        known_payload = dict(request_payload)
+        unknown_payload = dict(request_payload)
+        if "{model_id}" not in path_template:
+            known_payload["model"] = model_id
+            unknown_payload["model"] = "unknown-private-app"
+        known = client.post(path_template.format(model_id=model_id), headers=headers, json=known_payload)
+        unknown = client.post(
+            path_template.format(model_id="unknown-private-app"),
+            headers=headers,
+            json=unknown_payload,
+        )
+
+        assert known.status_code == 202
+        assert unknown.status_code == 404
+        assert refresh_calls == [True, True]
+
+
+@pytest.mark.parametrize(
+    ("model_id", "path", "request_payload", "expected_status"),
+    [
+        (
+            "qwen3-8b",
+            "/v1/chat/completions",
+            {"model": "qwen3-8b", "messages": [], "stream": True},
+            400,
+        ),
+        (
+            "cosmos3-nano",
+            "/v1/models/cosmos3-nano:invoke",
+            {"operation": "INVALID", "payload": {}},
+            422,
+        ),
+    ],
+)
+def test_authorized_public_request_errors_remain_after_the_policy_boundary(
+    registry,
+    cipher,
+    hasher,
+    model_id,
+    path,
+    request_payload,
+    expected_status,
+):
+    runtime = build_runtime(registry, cipher, hasher)
+    refresh_calls = []
+
+    async def record_refresh():
+        refresh_calls.append(True)
+        return True
+
+    runtime.admission.route_refresh = record_refresh
+    with TestClient(create_app(runtime)) as client:
+        token = issue(
+            client,
+            principal="authorized-request-error-user",
+            tenant="tenant-a",
+            scopes=["inference.invoke"],
+            models=[model_id],
+        )
+        response = client.post(path, headers={"authorization": f"Bearer {token}"}, json=request_payload)
+
+        assert response.status_code == expected_status
+        assert refresh_calls == [True]
+        assert not runtime.store.operations
+
+
+def test_native_public_boundary_keeps_the_typed_request_schema(registry, cipher, hasher):
+    schema = create_app(build_runtime(registry, cipher, hasher)).openapi()
+    request_body = schema["paths"]["/v1/models/{model_id}:invoke"]["post"]["requestBody"]
+    invocation = request_body["content"]["application/json"]["schema"]
+
+    assert request_body["required"] is True
+    assert invocation["additionalProperties"] is False
+    assert set(invocation["required"]) == {"operation", "payload"}
+    assert invocation["properties"]["operation"]["pattern"] == r"^[a-z][a-z0-9._-]*$"
+    assert invocation["properties"]["payload"]["type"] == "object"
+
+
+@pytest.mark.parametrize(
+    ("path_template", "request_payload"),
+    [
+        (
+            "/v1/chat/completions",
+            {"messages": [{"role": "user", "content": "fixture"}], "stream": True},
+        ),
+        ("/v1/models/{model_id}:invoke", {"operation": "INVALID", "payload": {"input": "fixture"}}),
+    ],
+)
+def test_post_refresh_policy_tightening_precedes_route_and_request_errors(
     registry,
     cipher,
     hasher,
@@ -283,15 +404,15 @@ def test_post_refresh_policy_tightening_is_identical_to_an_unknown_model(
     runtime = build_runtime(registry, cipher, hasher)
     refresh_calls = []
 
-    async def tighten_policy_during_admission():
+    async def tighten_policy_at_public_boundary():
         refresh_calls.append(True)
         assert registry.set_dynamic_publications(
             tightened_snapshot,
             valid_until=datetime.now(UTC) + timedelta(minutes=5),
         )
-        return True
+        return False
 
-    runtime.admission.route_refresh = tighten_policy_during_admission
+    runtime.admission.route_refresh = tighten_policy_at_public_boundary
     expected = {"error": {"type": "not_found", "message": "model or operation was not found"}}
     with TestClient(create_app(runtime)) as client:
         token = issue(
@@ -318,7 +439,7 @@ def test_post_refresh_policy_tightening_is_identical_to_an_unknown_model(
             json=unknown_payload,
         )
 
-        assert refresh_calls == [True]
+        assert refresh_calls == [True, True]
         assert denied.status_code == unknown.status_code == 404
         assert denied.content == unknown.content
         assert denied.json() == unknown.json() == expected

@@ -908,12 +908,57 @@ class Registry:
         surface: str,
     ) -> None:
         snapshot = self._current()
+        self._authorize_principal_from_snapshot(
+            snapshot,
+            model,
+            principal,
+            requested_model_id=requested_model_id,
+            surface=surface,
+        )
+
+    def resolve_for_principal(
+        self,
+        model_id: str,
+        principal: Principal,
+        *,
+        surface: str,
+        require_enabled: bool = True,
+    ) -> OperationalModel:
+        """Resolve and authorize one model against the same registry snapshot."""
+
+        snapshot = self._current()
+        resolved = snapshot.aliases.get(model_id, model_id)
+        try:
+            model = snapshot.models[resolved]
+        except KeyError as exc:
+            raise KeyError(f"unknown model: {model_id}") from exc
+        self._authorize_principal_from_snapshot(
+            snapshot,
+            model,
+            principal,
+            requested_model_id=model_id,
+            surface=surface,
+        )
+        if require_enabled and not model.enabled:
+            raise ModelRouteUnavailableError("model is not routable")
+        return model
+
+    @classmethod
+    def _authorize_principal_from_snapshot(
+        cls,
+        snapshot: _Snapshot,
+        model: OperationalModel,
+        principal: Principal,
+        *,
+        requested_model_id: str,
+        surface: str,
+    ) -> None:
         resolved = snapshot.aliases.get(requested_model_id, requested_model_id)
         if resolved != model.id or not (
             principal.permits_model(requested_model_id) or principal.permits_model(model.id)
         ):
             raise PermissionError("model is outside token policy")
-        if not self._dynamic_permits(model, principal, surface=surface):
+        if not cls._dynamic_permits(model, principal, surface=surface):
             raise PermissionError("model is outside dynamic route policy")
 
     def operation_for_protocol(self, model: OperationalModel, protocol: str) -> str:

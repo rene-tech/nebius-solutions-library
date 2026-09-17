@@ -19,7 +19,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.types import ASGIApp, Message, Receive, Send
 from starlette.types import Scope as ASGIScope
 
@@ -61,7 +61,7 @@ from .admin_models import (
     AdminSource,
     AdminSourceState,
 )
-from .admission import AdmissionService
+from .admission import AdmissionService, PublicModelAuthorization, PublicRouteBoundary
 from .app_observability import AppObservabilityService, AppObservationHistory
 from .app_observability_routes import app_observability_router
 from .apps import AppsService
@@ -517,29 +517,15 @@ async def _operation_response(runtime: AppRuntime, operation: OperationView) -> 
 
 
 def create_app(runtime: AppRuntime) -> FastAPI:
-    def public_model_or_not_found(
-        model_id: str,
+    async def begin_public_request(
+        request: Request,
         identity: Principal,
-        *,
-        surface: str,
-    ) -> OperationalModel:
-        """Resolve public-route policy without disclosing a model's existence."""
+    ) -> tuple[bytes, PublicRouteBoundary]:
+        """Check scope, receive the bounded body, and refresh without a model lookup."""
 
         identity.require(Scope.INFERENCE_INVOKE)
-        model = runtime.registry.get(model_id, require_enabled=False)
-        try:
-            runtime.registry.authorize_principal(
-                model,
-                identity,
-                requested_model_id=model_id,
-                surface=surface,
-            )
-        except PermissionError:
-            # Reuse the exact unknown-model handler body. Readiness is checked
-            # only after policy permits the caller, so a private disabled App
-            # cannot be distinguished from an unknown model either.
-            raise KeyError("unknown model") from None
-        return model
+        body = await request.body()
+        return body, await runtime.admission.begin_public_route(identity)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -1046,6 +1032,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         *,
         request: Request,
         identity: Principal,
+        public_authorization: PublicModelAuthorization,
         model_id: str,
         protocol: str,
         operation: str,
@@ -1087,6 +1074,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 traceparent=request.headers.get("traceparent"),
                 deadline_at=deadline_at,
             ),
+            public_authorization=public_authorization,
         )
         request.state.operation_id = admitted.id
         span = trace.get_current_span()
@@ -1112,22 +1100,23 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         idempotency_key: str | None,
         wait_seconds: str | None,
     ) -> Response:
-        body = await request.body()
+        body, boundary = await begin_public_request(request, identity)
         try:
             payload = json.loads(body)
         except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="request body must be JSON") from None
         if not isinstance(payload, dict) or not isinstance(payload.get("model"), str):
             raise HTTPException(status_code=400, detail="OpenAI-compatible request requires string model")
-        if payload.get("stream") is True:
-            raise HTTPException(status_code=400, detail="streaming is not enabled in phase 1; use an async operation")
         model_id = _validate_model_id(payload["model"])
         request.state.model_id = model_id
-        model = public_model_or_not_found(model_id, identity, surface="openai")
-        resolved_operation = runtime.registry.operation_for_protocol(model, protocol)
+        public_authorization = boundary.authorize(model_id, surface="openai")
+        if payload.get("stream") is True:
+            raise HTTPException(status_code=400, detail="streaming is not enabled in phase 1; use an async operation")
+        resolved_operation = runtime.registry.operation_for_protocol(public_authorization.model, protocol)
         return await invoke(
             request=request,
             identity=identity,
+            public_authorization=public_authorization,
             model_id=model_id,
             protocol=protocol,
             operation=resolved_operation,
@@ -1172,19 +1161,39 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     ) -> Response:
         return await openai_route(request, identity, "openai-images", idempotency_key, wait_seconds)
 
-    @app.post("/v1/models/{model_id}:invoke")
+    @app.post(
+        "/v1/models/{model_id}:invoke",
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {"application/json": {"schema": NativeInvocation.model_json_schema()}},
+            }
+        },
+    )
     async def native_invoke(
         model_id: str,
-        payload: NativeInvocation,
         request: Request,
         identity: Annotated[Principal, Depends(principal)],
         idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
         wait_seconds: Annotated[str | None, Header(alias="x-fs2-wait-seconds")] = None,
     ) -> Response:
-        public_model_or_not_found(_validate_model_id(model_id), identity, surface="mcp")
+        body, boundary = await begin_public_request(request, identity)
+        model_id = _validate_model_id(model_id)
+        request.state.model_id = model_id
+        public_authorization = boundary.authorize(model_id, surface="mcp")
+        try:
+            payload = NativeInvocation.model_validate_json(body)
+        except ValidationError as exc:
+            errors = []
+            for error in exc.errors():
+                field_error = dict(error)
+                field_error["loc"] = ("body", *error.get("loc", ()))
+                errors.append(field_error)
+            raise RequestValidationError(errors) from None
         return await invoke(
             request=request,
             identity=identity,
+            public_authorization=public_authorization,
             model_id=model_id,
             protocol="native",
             operation=payload.operation,
