@@ -128,7 +128,7 @@ def test_workloads_root_only_reads_the_external_versioned_boundary() -> None:
         'data.kubernetes_config_map_v1.customer_storage_egress_trust[0].data["public-key.pem"]'
         in source
     )
-    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v8" in source
+    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v9" in source
     assert '"uv"' in source and '"--frozen"' in source
     assert "egress_contract_public_key_pem" not in source
 
@@ -443,11 +443,16 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert "requirement.operator == 'Exists'" in protected_lane
     assert "(!has(toleration.effect) || toleration.effect == ''" in protected_lane
     assert "has({path}.nodeName)" in protected_lane
-    assert 'nodeName in {node_names}' in protected_lane
+    assert "nodeName == {node_name}" in protected_lane
     assert "protected_node_inventory_sha256" in protected_lane
     assert "protected_node_inventory_sha256" in authority
+    assert "protected_node_scheduling_labels_sha256" in protected_lane
+    assert "protected_node_scheduling_labels_sha256" in authority
     assert "metadata.name" in protected_lane
-    assert "lane_constraint or direct_affinity" in protected_lane
+    assert "_constraints_match" in protected_lane
+    assert "_tolerates_protected_taint" in protected_lane
+    assert "term.matchExpressions.all" in protected_lane
+    assert "term.matchFields.all" in protected_lane
     assert "min_node_count = try(each.value.min_node_count, 0)" in provider
     assert "max_node_count = try(each.value.max_node_count, 1)" in provider
     assert "fixed_node_count = null" in provider

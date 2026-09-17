@@ -10,20 +10,22 @@ data "external" "protected_lane_admission" {
   ]
   query = {
     contract_json = jsonencode({
-      schema                        = "fs2-serve.nebius.ai/protected-lane-admission/v2"
-      generation                    = var.provider_authority.generation
-      lane_id                       = var.provider_authority.lane_id
-      selector_key                  = var.provider_authority.node_selector_key
-      selector_value                = var.provider_authority.node_selector_value
-      taint_key                     = var.provider_authority.taint_key
-      taint_value                   = var.provider_authority.taint_value
-      taint_effect                  = var.provider_authority.taint_effect
-      protected_node_names          = var.provider_authority.protected_node_names
-      protected_node_inventory_sha256 = var.provider_authority.protected_node_inventory_sha256
-      daemonset_controller_username = var.daemonset_controller_username
-      scheduler_username            = var.scheduler_username
-      observers                     = var.provider_authority.protected_observers
-      observer_inventory_sha256     = var.provider_authority.protected_observer_inventory_sha256
+      schema                                    = "fs2-serve.nebius.ai/protected-lane-admission/v3"
+      generation                                = var.provider_authority.generation
+      lane_id                                   = var.provider_authority.lane_id
+      selector_key                              = var.provider_authority.node_selector_key
+      selector_value                            = var.provider_authority.node_selector_value
+      taint_key                                 = var.provider_authority.taint_key
+      taint_value                               = var.provider_authority.taint_value
+      taint_effect                              = var.provider_authority.taint_effect
+      protected_node_names                      = var.provider_authority.protected_node_names
+      protected_node_inventory_sha256           = var.provider_authority.protected_node_inventory_sha256
+      protected_node_scheduling_labels          = var.provider_authority.protected_node_scheduling_labels
+      protected_node_scheduling_labels_sha256   = var.provider_authority.protected_node_scheduling_labels_sha256
+      daemonset_controller_username             = var.daemonset_controller_username
+      scheduler_username                        = var.scheduler_username
+      observers                                 = var.provider_authority.protected_observers
+      observer_inventory_sha256                 = var.provider_authority.protected_observer_inventory_sha256
     })
   }
 }
@@ -639,25 +641,26 @@ locals {
         pullSecrets = release.image_pull_secrets
       }
       authority = {
-        schema                         = var.provider_authority.schema
-        generation                     = var.provider_authority.generation
-        laneId                         = var.provider_authority.lane_id
-        manifestSha256                 = var.provider_authority.authority_manifest_sha256
-        priorHeadReceiptSha256         = var.provider_authority.prior_head_receipt_sha256
-        iamInventoryReceiptSha256      = var.provider_authority.provider_project_iam_inventory_receipt_sha256
-        rbacInventoryReceiptSha256     = var.provider_authority.kubernetes_rbac_inventory_receipt_sha256
-        predecessorCompatibilitySha256 = var.provider_authority.predecessor_compatibility_sha256
-        boundaryPolicySha256           = var.provider_authority.boundary_policy_sha256
-        workloadPolicySha256           = var.provider_authority.workload_policy_sha256
-        releaseValuesSha256            = var.provider_authority.release_values_sha256
-        providerIdentitySha256         = var.provider_authority.provider_identity_sha256
-        securityGroupId                = var.provider_authority.security_group_id
-        nodeGroupId                    = var.provider_authority.node_group_id
-        nodeSelectorKey                = var.provider_authority.node_selector_key
-        nodeSelectorValue              = var.provider_authority.node_selector_value
-        taintKey                       = var.provider_authority.taint_key
-        taintValue                     = var.provider_authority.taint_value
-        taintEffect                    = var.provider_authority.taint_effect
+        schema                                      = var.provider_authority.schema
+        generation                                  = var.provider_authority.generation
+        laneId                                      = var.provider_authority.lane_id
+        manifestSha256                              = var.provider_authority.authority_manifest_sha256
+        priorHeadReceiptSha256                      = var.provider_authority.prior_head_receipt_sha256
+        iamInventoryReceiptSha256                   = var.provider_authority.provider_project_iam_inventory_receipt_sha256
+        rbacInventoryReceiptSha256                  = var.provider_authority.kubernetes_rbac_inventory_receipt_sha256
+        predecessorCompatibilitySha256              = var.provider_authority.predecessor_compatibility_sha256
+        boundaryPolicySha256                        = var.provider_authority.boundary_policy_sha256
+        workloadPolicySha256                        = var.provider_authority.workload_policy_sha256
+        releaseValuesSha256                         = var.provider_authority.release_values_sha256
+        providerIdentitySha256                      = var.provider_authority.provider_identity_sha256
+        securityGroupId                             = var.provider_authority.security_group_id
+        nodeGroupId                                 = var.provider_authority.node_group_id
+        protectedNodeSchedulingLabelsSha256         = var.provider_authority.protected_node_scheduling_labels_sha256
+        nodeSelectorKey                             = var.provider_authority.node_selector_key
+        nodeSelectorValue                           = var.provider_authority.node_selector_value
+        taintKey                                    = var.provider_authority.taint_key
+        taintValue                                  = var.provider_authority.taint_value
+        taintEffect                                 = var.provider_authority.taint_effect
       }
       contract = {
         generation         = var.current_generation
@@ -1005,6 +1008,7 @@ resource "terraform_data" "separate_security_owner" {
     provider_node_group_id             = var.provider_authority.node_group_id
     protected_observer_inventory       = var.provider_authority.protected_observer_inventory_sha256
     protected_node_inventory           = var.provider_authority.protected_node_inventory_sha256
+    protected_node_scheduling_labels   = var.provider_authority.protected_node_scheduling_labels_sha256
     protected_observer_live = sha256(jsonencode({
       for role, observer in data.kubernetes_resource.protected_observer : role => {
         uid         = observer.object.metadata.uid
@@ -1236,6 +1240,7 @@ resource "terraform_data" "security_generation_v4" {
     predecessor_compatibility_sha256           = local.predecessor_compatibility_sha256
     protected_observer_inventory_sha256        = var.provider_authority.protected_observer_inventory_sha256
     protected_node_inventory_sha256            = var.provider_authority.protected_node_inventory_sha256
+    protected_node_scheduling_labels_sha256    = var.provider_authority.protected_node_scheduling_labels_sha256
     protected_observer_live_sha256 = sha256(jsonencode({
       for role, observer in data.kubernetes_resource.protected_observer : role => {
         uid         = observer.object.metadata.uid

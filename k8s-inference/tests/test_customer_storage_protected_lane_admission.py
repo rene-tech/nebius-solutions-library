@@ -95,8 +95,17 @@ def contract(generation: str) -> dict[str, object]:
         }
     scheduling_key = f"workload.fs2.nebius/customer-storage-egress-{suffix}"
     protected_node_names = ["computeinstance-protected"]
+    protected_node_scheduling_labels = {
+        protected_node_names[0]: {
+            scheduling_key: lane_id,
+            "kubernetes.io/hostname": protected_node_names[0],
+            "kubernetes.io/os": "linux",
+            "topology.kubernetes.io/zone": "us-north1-a",
+            "workload.fs2.nebius/system": "false",
+        }
+    }
     result = {
-        "schema": "fs2-serve.nebius.ai/protected-lane-admission/v2",
+        "schema": "fs2-serve.nebius.ai/protected-lane-admission/v3",
         "generation": generation,
         "lane_id": lane_id,
         "selector_key": scheduling_key,
@@ -106,6 +115,10 @@ def contract(generation: str) -> dict[str, object]:
         "taint_effect": "NoSchedule",
         "protected_node_names": protected_node_names,
         "protected_node_inventory_sha256": ADMISSION.digest(protected_node_names),
+        "protected_node_scheduling_labels": protected_node_scheduling_labels,
+        "protected_node_scheduling_labels_sha256": ADMISSION.digest(
+            protected_node_scheduling_labels
+        ),
         "daemonset_controller_username": "system:controller:daemon-set-controller",
         "scheduler_username": "system:kube-scheduler",
         "observers": observers,
@@ -505,6 +518,34 @@ def test_affinity_without_a_matching_toleration_is_not_a_scheduling_path() -> No
     assert not ADMISSION.request_targets_lane(request, successor)
 
 
+def test_blanket_toleration_without_constraints_is_guarded_and_denied() -> None:
+    successor = contract("g20260917020000-222222222222")
+    request = {
+        "resource": "pods",
+        "operation": "CREATE",
+        "namespace": "kube-system",
+        "username": "system:controller:daemon-set-controller",
+        "object": {
+            "metadata": {
+                "name": "rogue-blanket",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "apps/v1",
+                        "kind": "DaemonSet",
+                        "name": "rogue-blanket",
+                        "uid": "00000000-0000-4000-8000-999999999998",
+                        "controller": True,
+                        "blockOwnerDeletion": True,
+                    }
+                ],
+            },
+            "spec": {"tolerations": [{"operator": "Exists", "effect": "NoSchedule"}]},
+        },
+    }
+    assert ADMISSION.request_targets_lane(request, successor)
+    assert not ADMISSION.successor_allows(request, successor)
+
+
 def test_blanket_toleration_with_unrelated_selector_is_not_lane_targeting() -> None:
     successor = contract("g20260917020000-222222222222")
     request = {
@@ -531,6 +572,105 @@ def test_blanket_toleration_with_unrelated_selector_is_not_lane_targeting() -> N
                         "tolerations": [{"operator": "Exists"}],
                     }
                 }
+            },
+        },
+    }
+    assert not ADMISSION.request_targets_lane(request, successor)
+
+
+def test_required_affinity_uses_term_or_and_requirement_and_semantics() -> None:
+    successor = contract("g20260917020000-222222222222")
+    key = successor["selector_key"]
+    required = {
+        "nodeSelectorTerms": [
+            {
+                "matchExpressions": [
+                    {"key": key, "operator": "Exists"},
+                    {
+                        "key": "kubernetes.io/os",
+                        "operator": "In",
+                        "values": ["windows"],
+                    },
+                ]
+            },
+            {
+                "matchExpressions": [
+                    {
+                        "key": "topology.kubernetes.io/zone",
+                        "operator": "In",
+                        "values": ["us-north1-a"],
+                    },
+                    {
+                        "key": "workload.fs2.nebius/system",
+                        "operator": "NotIn",
+                        "values": ["true"],
+                    },
+                ],
+                "matchFields": [
+                    {
+                        "key": "metadata.name",
+                        "operator": "In",
+                        "values": successor["protected_node_names"],
+                    }
+                ],
+            },
+        ]
+    }
+    request = {
+        "resource": "pods",
+        "operation": "CREATE",
+        "namespace": "fs2-system",
+        "object": {
+            "metadata": {"name": "term-semantics"},
+            "spec": {
+                "affinity": {
+                    "nodeAffinity": {
+                        "requiredDuringSchedulingIgnoredDuringExecution": required
+                    }
+                },
+                "tolerations": [{"operator": "Exists"}],
+            },
+        },
+    }
+    assert ADMISSION.request_targets_lane(request, successor)
+
+    required["nodeSelectorTerms"] = required["nodeSelectorTerms"][:1]
+    assert not ADMISSION.request_targets_lane(request, successor)
+
+
+def test_required_affinity_field_and_expression_must_match_in_same_term() -> None:
+    successor = contract("g20260917020000-222222222222")
+    request = {
+        "resource": "pods",
+        "operation": "CREATE",
+        "namespace": "fs2-system",
+        "object": {
+            "metadata": {"name": "anded-field"},
+            "spec": {
+                "affinity": {
+                    "nodeAffinity": {
+                        "requiredDuringSchedulingIgnoredDuringExecution": {
+                            "nodeSelectorTerms": [
+                                {
+                                    "matchExpressions": [
+                                        {
+                                            "key": successor["selector_key"],
+                                            "operator": "Exists",
+                                        }
+                                    ],
+                                    "matchFields": [
+                                        {
+                                            "key": "metadata.name",
+                                            "operator": "NotIn",
+                                            "values": successor["protected_node_names"],
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    }
+                },
+                "tolerations": [{"operator": "Exists"}],
             },
         },
     }
@@ -578,6 +718,7 @@ def test_existing_critical_node_agents_survive_retained_policy_conjunction() -> 
     successor = contract("g20260917020000-222222222222")
     for role in NODE_AGENT_ROLES:
         request = observer_pod_request(successor, role)
+        assert ADMISSION.request_targets_lane(request, successor)
         assert ADMISSION.predecessor_allows(request, predecessor)
         assert ADMISSION.successor_allows(request, successor)
         assert ADMISSION.conjunction_allows(

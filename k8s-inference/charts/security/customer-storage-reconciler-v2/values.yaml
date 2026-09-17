@@ -18,6 +18,7 @@ authority:
   providerIdentitySha256: ""
   securityGroupId: ""
   nodeGroupId: ""
+  protectedNodeSchedulingLabelsSha256: ""
   nodeSelectorKey: ""
   nodeSelectorValue: ""
   taintKey: ""
