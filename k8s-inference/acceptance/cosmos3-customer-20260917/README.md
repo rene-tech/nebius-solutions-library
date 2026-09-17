@@ -5,6 +5,46 @@ compatibility with the new media adapter. It is deliberately not a public
 customer acceptance receipt. `ADAPTER-CUTOVER.md` contains the separately
 reviewed shared-template promotion plan.
 
+## Final release146 bounded public result
+
+`public-media-release146-summary.json` links the final immutable-image evidence:
+20 first-attempt generations passed (four image/video compatibility cases and
+two eight-case HTTP/MCP × HTTPS/upload × V2V/edge-transfer matrices). All outputs
+were fully decoded and checksum-verified; in-flight and terminal replays kept
+the same operation IDs. The ordinary upload-first path remained enabled.
+An independently observed 90-second queued upload stayed CPU-only across fresh
+metrics scrapes, then finalized normally.
+
+The MCP-first and HTTP-first matrix cold starts were 38.225737 and 37.809772
+seconds, respectively; end-to-end times were 42.546559 and 41.677109 seconds.
+Both used existing cached preemptible H100s and confirmed r7 restore, not new
+node provisioning. The first matrix's synchronous metrics-pair assertion failed
+on a stale sample but the orchestration incorrectly continued. Six independent
+advancing zero samples strictly before admission prove its actual cold state;
+this does not make the preflight clean. The second launch explicitly required
+a successful paired preflight. The harness negative is retained.
+
+Three first-matrix operations have unavailable per-Pod/GPU attribution when
+multiple ready Pods existed; zero-valued placeholders are not measured usage.
+The second Pod's first-matrix logs were missed after natural deletion. Complete
+other logs retain the explained TUN/iptables diagnostics reprinted at shutdown
+by the immutable entrypoint, alongside successful CRIU/CUDA/unlock return codes.
+No zero-warning or complete observability claim is made.
+
+The canary had no outstanding work and was revoked at 16:21:23.926422 UTC;
+an ordinary public read then returned 401. Cosmos naturally reached zero Pods,
+zero demand and zero startup hold by 16:22:58.933 UTC, without manual scaling or
+deletion. All media and receipts remain retained. An unused extra replica pulled
+9.19 GB in 163.623 seconds and restored before normal shutdown; it served no
+generation and is recorded as startup overhead, not per-request measured usage.
+
+This qualifies only the tested bounded media paths. LeRobot remains unrouted;
+public parent/child datasets, installed LibreChat/skills, Timothy's exact video,
+physical action fidelity, concurrency and the full admin/usage release gate are
+still incomplete. Combined customer readiness remains false.
+
+## Retained earlier attempts
+
 `public-media-failure-20260917.json` records the first real public cold request
 after promotion. It failed with control-plane `runtime_protocol_error` despite
 successful r7 restore and three adapter HTTP200 responses. No generated result
@@ -12,7 +52,7 @@ artifact reached the caller, and the remaining matrix was stopped. The initial
 runner corrections and exact same-key operation recovery are retained explicitly;
 this is neither a clean cohort nor a public media pass. The likely failure is
 the gateway's JSON-only native semantic validation preceding binary result
-artifactization. The release owner is handling that separate control-plane fix.
+artifactization. Release143 corrected that separate control-plane failure.
 
 Release 143 corrected binary media handling and passed one complete eight-case
 HTTP/MCP × HTTPS/upload × V2V/edge-transfer cohort with real artifact decode and
@@ -31,9 +71,9 @@ legacy HTTP T2V, typed T2V and typed I2V using the generated PNG upload.
 video matrix, all first attempts, with continuous runtime/adapter logs.
 The second matrix's cold guard stopped before generation: its finalized input
 upload was briefly counted as GPU demand and reactivated Cosmos. Exact evidence
-is in `public-cold-guard-negative-release145.json`. The release owner is fixing
-that classification; these twelve generation passes are intermediate evidence,
-not a final unchanged-release pair, and must be rerun on the next digest.
+is in `public-cold-guard-negative-release145.json`. Release146 corrected that
+classification and reran the affected paths above; these twelve earlier
+generation passes remain intermediate evidence, not final-digest qualification.
 
 `public_compatibility.py` prepares four small supplemental cases: typed MCP T2I,
 legacy HTTP T2V without a delivery override, typed MCP T2V, and typed MCP I2V
