@@ -505,6 +505,11 @@ locals {
     for compatibility in values(var.model_runtime_security_compatibilities) :
     join("|", [
       compatibility.model_id,
+      compatibility.runtime_profile,
+      compatibility.template_digest,
+      compatibility.pool_id,
+      compatibility.transport_mode,
+      coalesce(try(compatibility.snapshot_bundle_id, null), "none"),
       compatibility.container_class,
       compatibility.container_name,
       compatibility.image,
@@ -523,7 +528,13 @@ locals {
       compatibility.container_name,
       compatibility.image,
     ]) => compatibility
-    if compatibility.capability_profile == "none"
+    if contains(local.selected_model_ids, compatibility.model_id) &&
+    compatibility.capability_profile == "none" &&
+    try(compatibility.runtime_profile == local.catalog_models[compatibility.model_id].runtime.kind, false) &&
+    try(compatibility.template_digest == local.model_runtime_security_source_template_digests[compatibility.model_id], false) &&
+    compatibility.transport_mode == "none" &&
+    try(compatibility.snapshot_bundle_id, null) == null &&
+    try(compatibility.pool_id == local.model_runtime_security_static_pool_ids[compatibility.model_id], false)
   }
   model_runtime_security_pod_profiles_by_model = {
     for model_id in local.selected_model_ids : model_id => jsondecode(one(distinct([
@@ -531,11 +542,23 @@ locals {
         supplementalGroups = compatibility.pod_supplemental_groups
         fsGroup            = try(compatibility.pod_fs_group, null)
       })
-      if compatibility.model_id == model_id && compatibility.capability_profile == "none"
+      if compatibility.model_id == model_id &&
+      compatibility.runtime_profile == local.catalog_models[model_id].runtime.kind &&
+      compatibility.template_digest == local.model_runtime_security_source_template_digests[model_id] &&
+      compatibility.pool_id == local.model_runtime_security_static_pool_ids[model_id] &&
+      compatibility.transport_mode == "none" &&
+      try(compatibility.snapshot_bundle_id, null) == null &&
+      compatibility.capability_profile == "none"
     ])))
     if length([
       for compatibility in values(var.model_runtime_security_compatibilities) : compatibility
-      if compatibility.model_id == model_id && compatibility.capability_profile == "none"
+      if compatibility.model_id == model_id &&
+      compatibility.runtime_profile == local.catalog_models[model_id].runtime.kind &&
+      compatibility.template_digest == local.model_runtime_security_source_template_digests[model_id] &&
+      compatibility.pool_id == local.model_runtime_security_static_pool_ids[model_id] &&
+      compatibility.transport_mode == "none" &&
+      try(compatibility.snapshot_bundle_id, null) == null &&
+      compatibility.capability_profile == "none"
     ]) > 0
   }
   model_tmp_only_volume_names = {
@@ -566,7 +589,15 @@ locals {
   image_overridden_model_documents = [
     for document in local.raw_model_documents : merge(document, {
       manifest = jsondecode(
-        document.manifest.kind == "Deployment" ?
+        document.manifest.kind == "Deployment" &&
+        try(document.manifest.spec.template.spec.hostNetwork, false) == false &&
+        try(document.manifest.spec.template.spec.hostPID, false) == false &&
+        try(document.manifest.spec.template.spec.hostIPC, false) == false &&
+        try(document.manifest.spec.template.spec.shareProcessNamespace, false) == false &&
+        !can(document.manifest.spec.template.spec.hostUsers) &&
+        try(length(document.manifest.spec.template.spec.securityContext.sysctls), 0) == 0 &&
+        !can(document.manifest.spec.template.spec.securityContext.seLinuxOptions) &&
+        !can(document.manifest.spec.template.spec.securityContext.windowsOptions) ?
         jsonencode(merge(document.manifest, {
           spec = merge(document.manifest.spec, {
             template = merge(document.manifest.spec.template, {
@@ -631,6 +662,34 @@ locals {
     })
   ]
 
+  # Bind compatibility to the exact immutable-image source bundle before any
+  # security or placement mutation. The renderer validates the complete final
+  # Pod after mutation, while this independent digest prevents a record for a
+  # different template from authorizing Terraform's static/default path.
+  model_runtime_security_source_template_digests = {
+    for model_id in local.selected_model_ids : model_id => "sha256:${sha256(jsonencode({
+      resources = [
+        for document in local.image_overridden_model_documents : document.manifest
+        if document.model_id == model_id && contains([
+          "v1/ConfigMap",
+          "v1/Service",
+          "v1/ServiceAccount",
+          "apps/v1/Deployment",
+        ], "${document.manifest.apiVersion}/${document.manifest.kind}")
+      ]
+    }))}"
+  }
+  model_runtime_security_static_pool_ids = {
+    for model_id in local.selected_model_ids : model_id => try(
+      contains(local.managed_cpu_model_ids, model_id) ?
+      local.general_cpu_runtime_class.pool_resolution.pool_id :
+      contains(keys(var.model_pool_overrides), model_id) ?
+      var.model_pool_overrides[model_id] :
+      local.effective_model_placements[model_id].compatible_pool_ids[0],
+      "",
+    )
+  }
+
   # Apply the restricted envelope to every Terraform-rendered Deployment,
   # including static and controller-ineligible manifests. Each exact final
   # image/name/class needs a separately reviewed writable-path compatibility
@@ -638,7 +697,21 @@ locals {
   security_hardened_model_documents = [
     for document in local.image_overridden_model_documents : merge(document, {
       manifest = jsondecode(
-        document.manifest.kind == "Deployment" ?
+        document.manifest.kind == "Deployment" &&
+        try(document.manifest.spec.template.spec.hostNetwork, false) == false &&
+        try(document.manifest.spec.template.spec.hostPID, false) == false &&
+        try(document.manifest.spec.template.spec.hostIPC, false) == false &&
+        try(document.manifest.spec.template.spec.shareProcessNamespace, false) == false &&
+        !can(document.manifest.spec.template.spec.hostUsers) &&
+        length(setsubtract(
+          toset(keys(try(document.manifest.spec.template.spec.securityContext, {}))),
+          toset(["runAsNonRoot", "seccompProfile", "supplementalGroupsPolicy", "supplementalGroups", "fsGroup"]),
+        )) == 0 &&
+        (!can(document.manifest.spec.template.spec.securityContext.runAsNonRoot) || try(document.manifest.spec.template.spec.securityContext.runAsNonRoot, false) == true) &&
+        (!can(document.manifest.spec.template.spec.securityContext.seccompProfile) || try(jsonencode(document.manifest.spec.template.spec.securityContext.seccompProfile) == jsonencode({ type = "RuntimeDefault" }), false)) &&
+        (!can(document.manifest.spec.template.spec.securityContext.supplementalGroupsPolicy) || try(document.manifest.spec.template.spec.securityContext.supplementalGroupsPolicy, "") == "Strict") &&
+        (!can(document.manifest.spec.template.spec.securityContext.supplementalGroups) || try(document.manifest.spec.template.spec.securityContext.supplementalGroups, []) == try(local.model_runtime_security_pod_profiles_by_model[document.model_id].supplementalGroups, [])) &&
+        (!can(document.manifest.spec.template.spec.securityContext.fsGroup) || try(document.manifest.spec.template.spec.securityContext.fsGroup, null) == try(local.model_runtime_security_pod_profiles_by_model[document.model_id].fsGroup, null)) ?
         jsonencode(merge(document.manifest, {
           spec = merge(document.manifest.spec, {
             template = merge(document.manifest.spec.template, {
@@ -669,7 +742,10 @@ locals {
                       jsondecode(contains(
                         keys(local.model_runtime_security_none_compatibilities_by_key),
                         join("|", [document.model_id, "containers", container.name, container.image]),
-                        ) && try(container.securityContext.capabilities.add, []) == [] && alltrue([
+                        ) && try(container.securityContext.capabilities.add, []) == [] && length(setsubtract(
+                          toset(keys(try(container.securityContext, {}))),
+                          toset(["allowPrivilegeEscalation", "appArmorProfile", "capabilities", "privileged", "readOnlyRootFilesystem", "runAsGroup", "runAsNonRoot", "runAsUser", "seccompProfile"]),
+                        )) == 0 && alltrue([
                           for mount in try(container.volumeMounts, []) : !can(mount.subPathExpr)
                         ]) ? jsonencode({
                           securityContext = {
@@ -748,7 +824,10 @@ locals {
                       jsondecode(contains(
                         keys(local.model_runtime_security_none_compatibilities_by_key),
                         join("|", [document.model_id, "initContainers", container.name, container.image]),
-                        ) && try(container.securityContext.capabilities.add, []) == [] && alltrue([
+                        ) && try(container.securityContext.capabilities.add, []) == [] && length(setsubtract(
+                          toset(keys(try(container.securityContext, {}))),
+                          toset(["allowPrivilegeEscalation", "appArmorProfile", "capabilities", "privileged", "readOnlyRootFilesystem", "runAsGroup", "runAsNonRoot", "runAsUser", "seccompProfile"]),
+                        )) == 0 && alltrue([
                           for mount in try(container.volumeMounts, []) : !can(mount.subPathExpr)
                         ]) ? jsonencode({
                           securityContext = {
@@ -797,7 +876,10 @@ locals {
                       jsondecode(contains(
                         keys(local.model_runtime_security_none_compatibilities_by_key),
                         join("|", [document.model_id, "ephemeralContainers", container.name, container.image]),
-                        ) && try(container.securityContext.capabilities.add, []) == [] && alltrue([
+                        ) && try(container.securityContext.capabilities.add, []) == [] && length(setsubtract(
+                          toset(keys(try(container.securityContext, {}))),
+                          toset(["allowPrivilegeEscalation", "appArmorProfile", "capabilities", "privileged", "readOnlyRootFilesystem", "runAsGroup", "runAsNonRoot", "runAsUser", "seccompProfile"]),
+                        )) == 0 && alltrue([
                           for mount in try(container.volumeMounts, []) : !can(mount.subPathExpr)
                         ]) ? jsonencode({
                           securityContext = {

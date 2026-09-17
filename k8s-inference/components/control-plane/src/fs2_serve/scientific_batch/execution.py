@@ -552,26 +552,54 @@ class FileScientificManifestRenderer:
         self.runtime_cache_boundaries = MappingProxyType(runtime_cache_boundaries)
         raw_cache_owner = root.get("runtime_cache_admission")
         if raw_cache_owner is None:
-            self.runtime_cache_owner_reference: Mapping[str, Any] | None = None
+            self.runtime_cache_admission_binding: Mapping[str, Any] | None = None
         else:
             cache_owner = _object(raw_cache_owner, "runtime cache admission owner")
+            external_fields = {
+                "security_boundary_name": "fs2-platform-security-admission-guard",
+                "controller_admission_name": "fs2-scientific-cache-controller-chain",
+            }
             if (
                 set(cache_owner)
-                != {"apiVersion", "kind", "name", "uid", "controller", "blockOwnerDeletion"}
-                or cache_owner["apiVersion"] != "admissionregistration.k8s.io/v1"
-                or cache_owner["kind"] != "ValidatingAdmissionPolicy"
+                != {
+                    "schema", "name", "uid", "resource_version", "activation_id",
+                    "security_boundary_name", "security_boundary_uid",
+                    "security_boundary_resource_version", "security_boundary_sha256",
+                    "controller_admission_name", "controller_admission_uid",
+                    "controller_admission_resource_version", "controller_admission_sha256",
+                }
+                or cache_owner["schema"]
+                != "fs2-serve.nebius.ai/runtime-cache-admission-binding/v2"
                 or cache_owner["name"] != "fs2-scientific-runtime-cache-writer-fence"
+                or any(cache_owner.get(field) != value for field, value in external_fields.items())
                 or not isinstance(cache_owner["uid"], str)
                 or re.fullmatch(
                     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
                     cache_owner["uid"],
                 )
                 is None
-                or cache_owner["controller"] is not False
-                or cache_owner["blockOwnerDeletion"] is not False
+                or not isinstance(cache_owner["resource_version"], str)
+                or re.fullmatch(r"[1-9][0-9]*", cache_owner["resource_version"]) is None
+                or not isinstance(cache_owner["activation_id"], str)
+                or re.fullmatch(r"[a-f0-9]{64}", cache_owner["activation_id"]) is None
+                or any(
+                    re.fullmatch(
+                        r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                        str(cache_owner.get(field, "")),
+                    ) is None
+                    for field in ("security_boundary_uid", "controller_admission_uid")
+                )
+                or any(
+                    re.fullmatch(r"[1-9][0-9]*", str(cache_owner.get(field, ""))) is None
+                    for field in ("security_boundary_resource_version", "controller_admission_resource_version")
+                )
+                or any(
+                    re.fullmatch(r"[a-f0-9]{64}", str(cache_owner.get(field, ""))) is None
+                    for field in ("security_boundary_sha256", "controller_admission_sha256")
+                )
             ):
                 raise ScientificExecutionMapError("runtime cache admission owner differs")
-            self.runtime_cache_owner_reference = MappingProxyType(dict(cache_owner))
+            self.runtime_cache_admission_binding = MappingProxyType(dict(cache_owner))
         try:
             self.snapshot_bundles = MappingProxyType(
                 {
@@ -2481,6 +2509,7 @@ class FileScientificManifestRenderer:
             pod_metadata["annotations"] = {
                 "fs2-serve.nebius.ai/runtime-cache-activation": cache_boundary.activation_id,
                 "fs2-serve.nebius.ai/runtime-cache-boundary": cache_boundary.boundary_sha256,
+                "fs2-serve.nebius.ai/runtime-cache-stage": execution.stage_id,
             }
         effective_pod = apply_startup_policy(
             {"metadata": pod_metadata, "spec": pod_spec},
@@ -2770,6 +2799,35 @@ class FileScientificManifestRenderer:
             raise ScientificExecutionMapError(
                 "scientific startup adapter left the final volume inventory unclosed"
             )
+        if cache_boundary is not None:
+            if self.runtime_cache_admission_binding is None:
+                raise ScientificExecutionMapError(
+                    "runtime-cache execution lacks the external controller-chain admission binding"
+                )
+            execution_subject = {
+                "schema": "fs2-serve.nebius.ai/scientific-cache-execution/v1",
+                "tenant_id": resource.tenant_id,
+                "model_id": resource.model_id,
+                "stage_id": execution.stage_id,
+                "image": execution.image,
+                "pod_spec": effective_spec,
+            }
+            execution_sha256 = hashlib.sha256(
+                json.dumps(execution_subject, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            effective_pod.setdefault("metadata", {}).setdefault("annotations", {}).update(
+                {
+                    "fs2-serve.nebius.ai/runtime-cache-execution-sha256": execution_sha256,
+                    "fs2-serve.nebius.ai/controller-admission": self.runtime_cache_admission_binding["controller_admission_name"],
+                    "fs2-serve.nebius.ai/controller-admission-uid": self.runtime_cache_admission_binding["controller_admission_uid"],
+                    "fs2-serve.nebius.ai/controller-admission-resource-version": self.runtime_cache_admission_binding["controller_admission_resource_version"],
+                    "fs2-serve.nebius.ai/controller-admission-sha256": self.runtime_cache_admission_binding["controller_admission_sha256"],
+                    "fs2-serve.nebius.ai/security-boundary": self.runtime_cache_admission_binding["security_boundary_name"],
+                    "fs2-serve.nebius.ai/security-boundary-uid": self.runtime_cache_admission_binding["security_boundary_uid"],
+                    "fs2-serve.nebius.ai/security-boundary-resource-version": self.runtime_cache_admission_binding["security_boundary_resource_version"],
+                    "fs2-serve.nebius.ai/security-boundary-sha256": self.runtime_cache_admission_binding["security_boundary_sha256"],
+                }
+            )
         return effective_pod
 
     def render(self, resource: WorkloadResource) -> Mapping[str, Any]:
@@ -2786,11 +2844,28 @@ class FileScientificManifestRenderer:
         if pod.get("metadata", {}).get("annotations", {}).get(
             "fs2-serve.nebius.ai/runtime-cache-boundary"
         ):
-            if self.runtime_cache_owner_reference is None:
+            if self.runtime_cache_admission_binding is None:
                 raise ScientificExecutionMapError(
-                    "runtime-cache workload lacks its exact admission-policy owner"
+                    "runtime-cache workload lacks its exact non-owning admission-policy binding"
                 )
-            metadata["ownerReferences"] = [dict(self.runtime_cache_owner_reference)]
+            binding = self.runtime_cache_admission_binding
+            metadata["annotations"] = {
+                "fs2-serve.nebius.ai/runtime-cache-admission-policy": binding["name"],
+                "fs2-serve.nebius.ai/runtime-cache-admission-policy-uid": binding["uid"],
+                "fs2-serve.nebius.ai/runtime-cache-admission-policy-resource-version": binding[
+                    "resource_version"
+                ],
+                "fs2-serve.nebius.ai/runtime-cache-activation": binding["activation_id"],
+                "fs2-serve.nebius.ai/runtime-cache-execution-sha256": pod["metadata"]["annotations"]["fs2-serve.nebius.ai/runtime-cache-execution-sha256"],
+                "fs2-serve.nebius.ai/controller-admission": binding["controller_admission_name"],
+                "fs2-serve.nebius.ai/controller-admission-uid": binding["controller_admission_uid"],
+                "fs2-serve.nebius.ai/controller-admission-resource-version": binding["controller_admission_resource_version"],
+                "fs2-serve.nebius.ai/controller-admission-sha256": binding["controller_admission_sha256"],
+                "fs2-serve.nebius.ai/security-boundary": binding["security_boundary_name"],
+                "fs2-serve.nebius.ai/security-boundary-uid": binding["security_boundary_uid"],
+                "fs2-serve.nebius.ai/security-boundary-resource-version": binding["security_boundary_resource_version"],
+                "fs2-serve.nebius.ai/security-boundary-sha256": binding["security_boundary_sha256"],
+            }
         if resource.kind is WorkloadKind.JOB:
             return {
                 "apiVersion": "batch/v1",

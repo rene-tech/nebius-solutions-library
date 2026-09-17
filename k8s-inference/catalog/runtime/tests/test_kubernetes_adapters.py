@@ -42,6 +42,9 @@ from fs2_serve_catalog.evidence import (
 )
 from fs2_serve_catalog.prerequisites import bind_runtime_prerequisites
 from fs2_serve_catalog.workloads import (
+    _metadata,
+    _nim_admission_object_sha256,
+    _replica_annotations,
     replica_field_ownership,
     render_kserve_standard_workload,
     render_native_http_workload,
@@ -150,28 +153,270 @@ class KubernetesAdapterTests(unittest.TestCase):
             "registry.test/private/nim/security-proxy@sha256:"
             + self.digest("nim-security-proxy")
         )
-        subject: dict[str, object] = {
-            "schema": "fs2-serve.nebius.ai/nim-operator-security-subject/v4",
-            "model_id": record.model_id,
-            "resource_kind": resource_kind,
-            "operator_image_digest": self.digest("nim-operator-image"),
-            "private_registry": "registry.test",
-            "descendant_image": descendant_image,
-            "custom_resource_image": custom_resource_image,
-            "runtime_container_name": "model",
-            "admission_policy": "fs2-nim-operator-restricted",
-            "admission_policy_sha256": self.digest("nim-admission-policy"),
-            "admission_actors": {
-                "custom_resource": "system:serviceaccount:fs2-system:fs2-model-controller",
-                "descendant_pod": "system:serviceaccount:nim-operator:nim-operator-controller",
+        pod_spec = {
+            "automountServiceAccountToken": False,
+            "hostIPC": False,
+            "hostNetwork": False,
+            "hostPID": False,
+            "runtimeClassName": None,
+            "securityContext": {
+                "runAsNonRoot": True,
+                "seccompProfile": {"type": "RuntimeDefault"},
+                "supplementalGroupsPolicy": "Strict",
             },
-            "owner_reference": {
-                "apiVersion": "apps.nvidia.com/v1alpha1",
-                "kind": resource_kind,
+            "serviceAccountName": "nim-model-runtime",
+            "shareProcessNamespace": False,
+            "containers": [
+                {
+                    "name": "model",
+                    "image": descendant_image,
+                    "securityContext": container_security,
+                    "ports": [],
+                    "volumeMounts": [
+                        {"name": "tmp", "mountPath": "/tmp", "readOnly": False}
+                    ],
+                },
+                {
+                    "name": "security-proxy",
+                    "image": companion_image,
+                    "securityContext": companion_security,
+                    "ports": [],
+                    "volumeMounts": [
+                        {
+                            "name": "security-proxy-tmp",
+                            "mountPath": "/var/run/fs2",
+                            "readOnly": False,
+                        }
+                    ],
+                },
+            ],
+            "volumes": [
+                {"name": "tmp", "emptyDir": {"sizeLimit": "8Gi"}},
+                {
+                    "name": "security-proxy-tmp",
+                    "emptyDir": {"sizeLimit": "64Mi"},
+                },
+            ],
+        }
+        owner = {
+            "apiVersion": "apps.nvidia.com/v1alpha1",
+            "kind": resource_kind,
+            "name": record.model_id,
+            "uid": "11111111-1111-4111-8111-111111111111",
+            "controller": True,
+            "blockOwnerDeletion": True,
+        }
+
+        def descendant_object(kind: str, owner_kind: str) -> dict[str, object]:
+            api_version = {
+                "Deployment": "apps/v1",
+                "ReplicaSet": "apps/v1",
+                "StatefulSet": "apps/v1",
+                "Job": "batch/v1",
+                "Pod": "v1",
+            }[kind]
+            owner_api_version = (
+                "apps.nvidia.com/v1alpha1"
+                if owner_kind in {"NIMCache", "NIMService"}
+                else "batch/v1"
+                if owner_kind == "Job"
+                else "apps/v1"
+            )
+            owner_reference = {
+                "apiVersion": owner_api_version,
+                "kind": owner_kind,
                 "name": record.model_id,
                 "uid": "11111111-1111-4111-8111-111111111111",
                 "controller": True,
                 "blockOwnerDeletion": True,
+            }
+            metadata = {
+                "name": record.model_id,
+                "namespace": "fs2-models",
+                "labels": {},
+                "annotations": {
+                    "fs2-serve.nebius.ai/operator-security-envelope-sha256": "0" * 64
+                },
+                "ownerReferences": [owner_reference],
+            }
+            if kind == "Pod":
+                return {
+                    "apiVersion": api_version,
+                    "kind": kind,
+                    "metadata": metadata,
+                    "spec": pod_spec,
+                }
+            return {
+                "apiVersion": api_version,
+                "kind": kind,
+                "metadata": metadata,
+                "spec": {
+                    "template": {
+                        "metadata": {
+                            "labels": {},
+                            "annotations": {
+                                "fs2-serve.nebius.ai/operator-security-envelope-sha256": "0" * 64
+                            },
+                        },
+                        "spec": pod_spec,
+                    }
+                },
+            }
+
+        resource_graph = (
+            {"Job": ("NIMCache", "nim_operator"), "Pod": ("Job", "kube_controller_manager")}
+            if resource_kind == "NIMCache"
+            else {
+                "Deployment": ("NIMService", "nim_operator"),
+                "ReplicaSet": ("Deployment", "kube_controller_manager"),
+                "StatefulSet": ("NIMService", "nim_operator"),
+                "Job": ("NIMService", "nim_operator"),
+                "Pod": ("ReplicaSet", "kube_controller_manager"),
+            }
+        )
+        descendants = {
+            kind: descendant_object(kind, owner_kind)
+            for kind, (owner_kind, _) in resource_graph.items()
+        }
+        metadata = _metadata(record, backend_capability)
+        pull_secret = self.prerequisites.resource("fs2-models/ngc-pull-secret")
+        runtime_secret = self.prerequisites.resource("fs2-models/ngc-runtime-secret")
+        pvc = self.prerequisites.resource("fs2-models/shared-cache-pvc")
+        custom_annotations = dict(metadata["annotations"])
+        if resource_kind == "NIMCache":
+            custom_annotations.update(
+                {
+                    "fs2-serve.nebius.ai/cache-owner": "nim-operator-nimcache",
+                    "fs2-serve.nebius.ai/cache-pvc-requirement-id": "fs2-models/shared-cache-pvc",
+                    "fs2-serve.nebius.ai/expected-runtime-image-digest": image["digest"],
+                }
+            )
+            custom_spec = {
+                "source": {
+                    "ngc": {
+                        "modelPuller": descendant_image,
+                        "pullSecret": pull_secret["name"],
+                        "authSecret": runtime_secret["name"],
+                    }
+                },
+                "storage": {"pvc": {"create": False, "name": pvc["name"]}},
+                "nodeSelector": backend_capability.node_selector,
+                "tolerations": backend_capability.tolerations,
+            }
+        else:
+            custom_annotations.update(_replica_annotations("apps.nvidia.com/v1alpha1", "NIMService"))
+            custom_annotations.update(
+                {
+                    "fs2-serve.nebius.ai/expected-runtime-image-digest": nim_image["expected_digest"],
+                    "fs2-serve.nebius.ai/nim-tag-binding-receipt-digest": nim_image["tag_binding_receipt_digest"],
+                    "fs2-serve.nebius.ai/route-state": "disabled-pending-pod-imageid-and-semantic-receipts",
+                    "fs2-serve.nebius.ai/cache-pvc-requirement-id": "fs2-models/shared-cache-pvc",
+                }
+            )
+            gpu_count = record.to_dict()["resources"]["gpu"]["count"]
+            custom_spec = {
+                "image": {
+                    "repository": custom_resource_image["repository"],
+                    "tag": custom_resource_image["tag"],
+                    "pullPolicy": "Always",
+                    "pullSecrets": [pull_secret["name"]],
+                },
+                "authSecret": runtime_secret["name"],
+                "command": list(record.to_dict()["runtime"]["command"]),
+                "storage": {"nimCache": {"name": record.model_id, "profile": ""}, "readOnly": True},
+                "nodeSelector": backend_capability.node_selector,
+                "tolerations": backend_capability.tolerations,
+                "resources": {
+                    "requests": {
+                        "cpu": f"{record.to_dict()['resources']['cpu_millis']}m",
+                        "memory": str(record.to_dict()["resources"]["memory_bytes"]),
+                        "nvidia.com/gpu": gpu_count,
+                    },
+                    "limits": {
+                        "cpu": f"{record.to_dict()['resources']['cpu_millis']}m",
+                        "memory": str(record.to_dict()["resources"]["memory_bytes"]),
+                        "nvidia.com/gpu": gpu_count,
+                    },
+                },
+                "replicas": 0,
+                "inferencePlatform": "standalone",
+                "expose": {"service": {"type": "ClusterIP", "port": 8000}},
+            }
+        custom_annotations.update(
+            {
+                "fs2-serve.nebius.ai/operator-security-envelope-sha256": "0" * 64,
+                "fs2-serve.nebius.ai/operator-security-admission-policy": "fs2-nim-operator-restricted",
+                "fs2-serve.nebius.ai/expected-descendant-image": descendant_image,
+            }
+        )
+        custom_resource = {
+            "apiVersion": "apps.nvidia.com/v1alpha1",
+            "kind": resource_kind,
+            "metadata": {
+                "name": record.model_id,
+                "namespace": "fs2-models",
+                "labels": metadata["labels"],
+                "annotations": custom_annotations,
+            },
+            "spec": custom_spec,
+        }
+        subject: dict[str, object] = {
+            "schema": "fs2-serve.nebius.ai/nim-operator-security-subject/v5",
+            "model_id": record.model_id,
+            "resource_kind": resource_kind,
+            "private_registry": "registry.test",
+            "descendant_image": descendant_image,
+            "custom_resource_image": custom_resource_image,
+            "custom_resource_sha256": _nim_admission_object_sha256(custom_resource),
+            "runtime_container_name": "model",
+            "admission_policy": "fs2-nim-operator-restricted",
+            "admission_policy_sha256": self.digest("nim-admission-policy"),
+            "actor_identities": {
+                "custom_resource": {
+                    "kind": "pod-bound-service-account",
+                    "username": "system:serviceaccount:fs2-system:fs2-model-controller",
+                    "namespace": "fs2-system",
+                    "service_account_name": "fs2-model-controller",
+                    "deployment_name": "fs2-serve-control-plane",
+                    "deployment_uid": "22222222-2222-4222-8222-222222222222",
+                    "container_name": "model-controller",
+                    "image": "registry.test/private/control-plane@sha256:" + self.digest("control-plane"),
+                },
+                "nim_operator": {
+                    "kind": "pod-bound-service-account",
+                    "username": "system:serviceaccount:nim-operator:nim-operator-controller",
+                    "namespace": "nim-operator",
+                    "service_account_name": "nim-operator-controller",
+                    "deployment_name": "nim-operator-controller",
+                    "deployment_uid": "33333333-3333-4333-8333-333333333333",
+                    "container_name": "manager",
+                    "image": "registry.test/private/nim/operator@sha256:" + self.digest("nim-operator-image"),
+                },
+                "kube_controller_manager": {
+                    "kind": "kubernetes-control-plane",
+                    "username": "system:kube-controller-manager",
+                    "groups": ["system:authenticated"],
+                },
+            },
+            "descendant_resources": {
+                kind: {
+                    "api_version": descendants[kind]["apiVersion"],
+                    "group": "" if descendants[kind]["apiVersion"] == "v1" else descendants[kind]["apiVersion"].split("/", 1)[0],
+                    "version": "v1",
+                    "resource": {
+                        "Deployment": "deployments",
+                        "ReplicaSet": "replicasets",
+                        "StatefulSet": "statefulsets",
+                        "Job": "jobs",
+                        "Pod": "pods",
+                    }[kind],
+                    "actor_identity": actor_identity,
+                    "owner_kinds": [owner_kind],
+                    "pod_template": kind != "Pod",
+                    "name_pattern": f"^{record.model_id}(?:-[a-z0-9]+)?$",
+                    "object_sha256": _nim_admission_object_sha256(descendants[kind]),
+                }
+                for kind, (owner_kind, actor_identity) in resource_graph.items()
             },
             "pod_spec": {
                 "automountServiceAccountToken": False,
@@ -266,6 +511,82 @@ class KubernetesAdapterTests(unittest.TestCase):
             "attestation": attestation,
             "attestation_sha256": hashlib.sha256(canonical_bytes(attestation)).hexdigest(),
         }, trusted, session_id
+
+    @staticmethod
+    def nim_actor_chain(identity: dict[str, object]) -> tuple[dict[str, object], list[dict[str, object]]]:
+        pod_uid = "44444444-4444-4444-8444-444444444444"
+        replica_set_uid = "55555555-5555-4555-8555-555555555555"
+        pod_name = f"{identity['deployment_name']}-pod"
+        replica_set_name = f"{identity['deployment_name']}-rs"
+        controller_edge = {
+            "controller": True,
+            "blockOwnerDeletion": True,
+        }
+        pod = {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "name": pod_name,
+                "namespace": identity["namespace"],
+                "uid": pod_uid,
+                "ownerReferences": [{
+                    "apiVersion": "apps/v1",
+                    "kind": "ReplicaSet",
+                    "name": replica_set_name,
+                    "uid": replica_set_uid,
+                    **controller_edge,
+                }],
+            },
+            "spec": {
+                "serviceAccountName": identity["service_account_name"],
+                "containers": [{
+                    "name": identity["container_name"],
+                    "image": identity["image"],
+                }],
+            },
+        }
+        replica_set = {
+            "apiVersion": "apps/v1",
+            "kind": "ReplicaSet",
+            "metadata": {
+                "name": replica_set_name,
+                "namespace": identity["namespace"],
+                "uid": replica_set_uid,
+                "ownerReferences": [{
+                    "apiVersion": "apps/v1",
+                    "kind": "Deployment",
+                    "name": identity["deployment_name"],
+                    "uid": identity["deployment_uid"],
+                    **controller_edge,
+                }],
+            },
+        }
+        deployment = {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "name": identity["deployment_name"],
+                "namespace": identity["namespace"],
+                "uid": identity["deployment_uid"],
+            },
+            "spec": {
+                "template": {
+                    "spec": {
+                        "containers": [{
+                            "name": identity["container_name"],
+                            "image": identity["image"],
+                        }]
+                    }
+                }
+            },
+        }
+        return {
+            "username": identity["username"],
+            "extra": {
+                "authentication.kubernetes.io/pod-name": [pod_name],
+                "authentication.kubernetes.io/pod-uid": [pod_uid],
+            },
+        }, [pod, replica_set, deployment]
 
     def resolved_qwen(self) -> ModelRecord:
         original = self.catalog.model("qwen3-8b")
@@ -1265,6 +1586,9 @@ class KubernetesAdapterTests(unittest.TestCase):
             "nim-operator-nimcache",
             cache["metadata"]["annotations"]["fs2-serve.nebius.ai/cache-owner"],
         )
+        cache_actor, cache_actor_chain = self.nim_actor_chain(
+            cache_envelope["subject"]["actor_identities"]["custom_resource"]
+        )
         cache_resource_response = validate_nim_operator_admission_review(
             {
                 "apiVersion": "admission.k8s.io/v1",
@@ -1272,7 +1596,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                 "request": {
                     "uid": "admission-unit-cache-cr-1",
                     "operation": "CREATE",
-                    "userInfo": {"username": cache_envelope["subject"]["admission_actors"]["custom_resource"]},
+                    "userInfo": cache_actor,
                     "namespace": "fs2-models",
                     "resource": {
                         "group": "apps.nvidia.com",
@@ -1287,6 +1611,7 @@ class KubernetesAdapterTests(unittest.TestCase):
             security_session_id=cache_session,
             resource_kind="NIMCache",
             record=boltz,
+            resolved_actor_chain=cache_actor_chain,
         )
         self.assertEqual(
             {"uid": "admission-unit-cache-cr-1", "allowed": True},
@@ -1316,6 +1641,9 @@ class KubernetesAdapterTests(unittest.TestCase):
         self.assertEqual([GPU_TOLERATION], service["spec"]["tolerations"])
         self.assertIn("disabled-pending-pod-imageid", json.dumps(service))
         self.assertNotIn("hostPath", json.dumps(service))
+        service_actor, service_actor_chain = self.nim_actor_chain(
+            service_envelope["subject"]["actor_identities"]["custom_resource"]
+        )
         custom_resource_response = validate_nim_operator_admission_review(
             {
                 "apiVersion": "admission.k8s.io/v1",
@@ -1323,7 +1651,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                 "request": {
                     "uid": "admission-unit-cr-1",
                     "operation": "CREATE",
-                    "userInfo": {"username": service_envelope["subject"]["admission_actors"]["custom_resource"]},
+                    "userInfo": service_actor,
                     "namespace": "fs2-models",
                     "resource": {
                         "group": "apps.nvidia.com",
@@ -1338,58 +1666,150 @@ class KubernetesAdapterTests(unittest.TestCase):
             security_session_id=service_session,
             resource_kind="NIMService",
             record=boltz,
+            resolved_actor_chain=service_actor_chain,
         )
         self.assertEqual(
             {"uid": "admission-unit-cr-1", "allowed": True},
             custom_resource_response["response"],
         )
-        subject = service_envelope["subject"]
-        descendant = {
-            "metadata": {
-                "annotations": {
-                    "fs2-serve.nebius.ai/operator-security-envelope-sha256": service_envelope[
-                        "subject_sha256"
-                    ]
+        owned_service = copy.deepcopy(service)
+        owned_service["metadata"]["ownerReferences"] = [
+            {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "name": "foreign-owner",
+                "uid": "99999999-9999-4999-8999-999999999999",
+                "controller": True,
+                "blockOwnerDeletion": True,
+            }
+        ]
+        with self.assertRaisesRegex(CatalogError, "complete signed projection"):
+            validate_nim_operator_admission_review(
+                {
+                    "apiVersion": "admission.k8s.io/v1",
+                    "kind": "AdmissionReview",
+                    "request": {
+                        "uid": "admission-unit-owned-cr",
+                        "operation": "CREATE",
+                        "userInfo": service_actor,
+                        "namespace": "fs2-models",
+                        "resource": {
+                            "group": "apps.nvidia.com",
+                            "version": "v1alpha1",
+                            "resource": "nimservices",
+                        },
+                        "object": owned_service,
+                    },
                 },
-                "ownerReferences": [subject["owner_reference"]],
+                security_envelope=service_envelope,
+                trusted_attestors=service_attestors,
+                security_session_id=service_session,
+                resource_kind="NIMService",
+                record=boltz,
+                resolved_actor_chain=service_actor_chain,
+            )
+        subject = service_envelope["subject"]
+        descendant_pod_spec = {
+            **subject["pod_spec"],
+            "containers": [
+                {
+                    "name": "model",
+                    "image": subject["descendant_image"],
+                    "securityContext": subject["containers"]["model"]["security_context"],
+                    "ports": [],
+                    "volumeMounts": [
+                        {"name": "tmp", "mountPath": "/tmp", "readOnly": False}
+                    ],
+                },
+                {
+                    "name": "security-proxy",
+                    "image": subject["containers"]["security-proxy"]["image"],
+                    "securityContext": subject["containers"]["security-proxy"]["security_context"],
+                    "ports": [],
+                    "volumeMounts": [
+                        {
+                            "name": "security-proxy-tmp",
+                            "mountPath": "/var/run/fs2",
+                            "readOnly": False,
+                        }
+                    ],
+                },
+            ],
+            "volumes": [
+                {"name": "tmp", "emptyDir": {"sizeLimit": "8Gi"}},
+                {"name": "security-proxy-tmp", "emptyDir": {"sizeLimit": "64Mi"}},
+            ],
+        }
+        controller_edge = {"controller": True, "blockOwnerDeletion": True}
+        replica_set_uid = "66666666-6666-4666-8666-666666666666"
+        deployment_uid = "77777777-7777-4777-8777-777777777777"
+        custom_resource_uid = "88888888-8888-4888-8888-888888888888"
+
+        def descendant_metadata(owner_kind, owner_api, owner_uid):
+            return {
+                "name": boltz.model_id,
+                "namespace": "fs2-models",
+                "labels": {},
+                "annotations": {
+                    "fs2-serve.nebius.ai/operator-security-envelope-sha256": service_envelope["subject_sha256"]
+                },
+                "ownerReferences": [{
+                    "apiVersion": owner_api,
+                    "kind": owner_kind,
+                    "name": boltz.model_id,
+                    "uid": owner_uid,
+                    **controller_edge,
+                }],
+            }
+
+        descendant = {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": descendant_metadata("ReplicaSet", "apps/v1", replica_set_uid),
+            "spec": descendant_pod_spec,
+        }
+        replica_set = {
+            "apiVersion": "apps/v1",
+            "kind": "ReplicaSet",
+            "metadata": {
+                **descendant_metadata("Deployment", "apps/v1", deployment_uid),
+                "uid": replica_set_uid,
             },
             "spec": {
-                **subject["pod_spec"],
-                "containers": [
-                    {
-                        "name": "model",
-                        "image": subject["descendant_image"],
-                        "securityContext": subject["containers"]["model"]["security_context"],
-                        "volumeMounts": [
-                            {"name": "tmp", "mountPath": "/tmp", "readOnly": False}
-                        ],
+                "template": {
+                    "metadata": {
+                        "labels": {},
+                        "annotations": {
+                            "fs2-serve.nebius.ai/operator-security-envelope-sha256": service_envelope["subject_sha256"]
+                        },
                     },
-                    {
-                        "name": "security-proxy",
-                        "image": subject["containers"]["security-proxy"]["image"],
-                        "securityContext": subject["containers"]["security-proxy"][
-                            "security_context"
-                        ],
-                        "volumeMounts": [
-                            {
-                                "name": "security-proxy-tmp",
-                                "mountPath": "/var/run/fs2",
-                                "readOnly": False,
-                            }
-                        ],
-                    },
-                ],
-                "volumes": [
-                    {"name": "tmp", "emptyDir": {"sizeLimit": "8Gi"}},
-                    {
-                        "name": "security-proxy-tmp",
-                        "emptyDir": {"sizeLimit": "64Mi"},
-                    },
-                ],
+                    "spec": descendant_pod_spec,
+                }
             },
         }
+        deployment = copy.deepcopy(replica_set)
+        deployment["kind"] = "Deployment"
+        deployment["metadata"] = {
+            **descendant_metadata(
+                "NIMService", "apps.nvidia.com/v1alpha1", custom_resource_uid
+            ),
+            "uid": deployment_uid,
+        }
+        persisted_service = copy.deepcopy(service)
+        persisted_service["metadata"]["uid"] = custom_resource_uid
         validate_nim_operator_descendant(
             descendant,
+            security_envelope=service_envelope,
+            trusted_attestors=service_attestors,
+            security_session_id=service_session,
+            resource_kind="NIMService",
+            record=boltz,
+        )
+        generated_descendant = copy.deepcopy(descendant)
+        generated_descendant["metadata"]["name"] = f"{boltz.model_id}-abc123"
+        generated_descendant["metadata"]["labels"]["pod-template-hash"] = "abc123"
+        validate_nim_operator_descendant(
+            generated_descendant,
             security_envelope=service_envelope,
             trusted_attestors=service_attestors,
             security_session_id=service_session,
@@ -1403,10 +1823,13 @@ class KubernetesAdapterTests(unittest.TestCase):
                 "request": {
                     "uid": "admission-unit-1",
                     "operation": "CREATE",
-                    "userInfo": {"username": subject["admission_actors"]["descendant_pod"]},
+                    "userInfo": {
+                        "username": "system:kube-controller-manager",
+                        "groups": ["system:authenticated"],
+                    },
                     "namespace": "fs2-models",
                     "resource": {"group": "", "version": "v1", "resource": "pods"},
-                    "object": {"apiVersion": "v1", "kind": "Pod", **descendant},
+                    "object": descendant,
                 },
             },
             security_envelope=service_envelope,
@@ -1414,6 +1837,7 @@ class KubernetesAdapterTests(unittest.TestCase):
             security_session_id=service_session,
             resource_kind="NIMService",
             record=boltz,
+            resolved_owner_chain=[replica_set, deployment, persisted_service],
         )
         self.assertEqual(
             {"uid": "admission-unit-1", "allowed": True},
@@ -1423,7 +1847,7 @@ class KubernetesAdapterTests(unittest.TestCase):
         poisoned["spec"]["containers"][0]["volumeDevices"] = [
             {"name": "shared-cache", "devicePath": "/dev/cache"}
         ]
-        with self.assertRaisesRegex(CatalogError, "writable block device"):
+        with self.assertRaisesRegex(CatalogError, "signed resource projection"):
             validate_nim_operator_descendant(
                 poisoned,
                 security_envelope=service_envelope,
@@ -1436,7 +1860,7 @@ class KubernetesAdapterTests(unittest.TestCase):
         host_port["spec"]["containers"][0]["ports"] = [
             {"name": "inference", "containerPort": 8000, "hostPort": 8000}
         ]
-        with self.assertRaisesRegex(CatalogError, "host port"):
+        with self.assertRaisesRegex(CatalogError, "signed resource projection"):
             validate_nim_operator_descendant(
                 host_port,
                 security_envelope=service_envelope,
@@ -1446,10 +1870,8 @@ class KubernetesAdapterTests(unittest.TestCase):
                 record=boltz,
             )
         wrong_owner = copy.deepcopy(descendant)
-        wrong_owner["metadata"]["ownerReferences"][0]["uid"] = (
-            "22222222-2222-4222-8222-222222222222"
-        )
-        with self.assertRaisesRegex(CatalogError, "owner/security binding"):
+        wrong_owner["metadata"]["ownerReferences"][0]["uid"] = "not-a-uid"
+        with self.assertRaisesRegex(CatalogError, "selector or owner edge"):
             validate_nim_operator_descendant(
                 wrong_owner,
                 security_envelope=service_envelope,
@@ -1462,7 +1884,7 @@ class KubernetesAdapterTests(unittest.TestCase):
         read_only_expression["spec"]["containers"][0]["volumeMounts"][0].update(
             {"readOnly": True, "subPathExpr": "$(POD_NAME)"}
         )
-        with self.assertRaisesRegex(CatalogError, "mount projection is unsafe"):
+        with self.assertRaisesRegex(CatalogError, "signed resource projection"):
             validate_nim_operator_descendant(
                 read_only_expression,
                 security_envelope=service_envelope,
@@ -1473,9 +1895,22 @@ class KubernetesAdapterTests(unittest.TestCase):
             )
         changed_read_only_source = copy.deepcopy(descendant)
         changed_read_only_source["spec"]["volumes"][0]["emptyDir"]["sizeLimit"] = "9Gi"
-        with self.assertRaisesRegex(CatalogError, "volume sources differ"):
+        with self.assertRaisesRegex(CatalogError, "signed resource projection"):
             validate_nim_operator_descendant(
                 changed_read_only_source,
+                security_envelope=service_envelope,
+                trusted_attestors=service_attestors,
+                security_session_id=service_session,
+                resource_kind="NIMService",
+                record=boltz,
+            )
+        wrong_policy = copy.deepcopy(descendant)
+        wrong_policy["metadata"]["annotations"][
+            "fs2-serve.nebius.ai/operator-security-admission-policy"
+        ] = "foreign-policy"
+        with self.assertRaisesRegex(CatalogError, "selector or owner edge"):
+            validate_nim_operator_descendant(
+                wrong_policy,
                 security_envelope=service_envelope,
                 trusted_attestors=service_attestors,
                 security_session_id=service_session,

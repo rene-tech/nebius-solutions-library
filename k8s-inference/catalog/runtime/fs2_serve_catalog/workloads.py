@@ -6,7 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit
 
 from .artifacts import canonical_bytes
@@ -31,7 +31,27 @@ REPLICA_FIELD_MANAGER = "fs2-model-activation-controller"
 REPLICA_OWNERSHIP_SCHEMA = "fs2-serve.nebius.ai/replica-field-ownership/v1"
 MOUNTED_CONTENT_MODELS = frozenset({"qwen3-8b", "glm-5-2-fp8", "nv-reason-cxr-3b"})
 RUNTIME_NETWORK_POLICY_SCHEMA = "fs2-serve.nebius.ai/runtime-startup-network-policy/v1"
-NIM_OPERATOR_SECURITY_SCHEMA = "fs2-serve.nebius.ai/nim-operator-security-subject/v4"
+NIM_OPERATOR_SECURITY_SCHEMA = "fs2-serve.nebius.ai/nim-operator-security-subject/v5"
+NIM_ENVELOPE_ANNOTATION = "fs2-serve.nebius.ai/operator-security-envelope-sha256"
+NIM_POLICY_ANNOTATION = "fs2-serve.nebius.ai/operator-security-admission-policy"
+NIM_IMAGE_ANNOTATION = "fs2-serve.nebius.ai/expected-descendant-image"
+NIM_ENVELOPE_TOKEN = "{subject_sha256}"
+NIM_POLICY_TOKEN = "{admission_policy}"
+NIM_IMAGE_TOKEN = "{descendant_image}"
+NIM_DYNAMIC_NAME_TOKEN = "{kubernetes-controller-name}"
+NIM_DYNAMIC_LABELS = frozenset(
+    {
+        "batch.kubernetes.io/controller-uid",
+        "batch.kubernetes.io/job-name",
+        "controller-revision-hash",
+        "controller-uid",
+        "job-name",
+        "pod-template-generation",
+        "pod-template-hash",
+        "statefulset.kubernetes.io/pod-name",
+    }
+)
+NIM_DYNAMIC_ANNOTATIONS = frozenset({"deployment.kubernetes.io/revision"})
 RESTRICTED_VOLUME_SOURCES = frozenset(
     {"configMap", "csi", "downwardAPI", "emptyDir", "ephemeral", "persistentVolumeClaim", "projected", "secret"}
 )
@@ -120,15 +140,15 @@ def _nim_operator_security_envelope(
         "schema",
         "model_id",
         "resource_kind",
-        "operator_image_digest",
         "private_registry",
         "descendant_image",
         "custom_resource_image",
+        "custom_resource_sha256",
         "runtime_container_name",
         "admission_policy",
         "admission_policy_sha256",
-        "admission_actors",
-        "owner_reference",
+        "actor_identities",
+        "descendant_resources",
         "pod_spec",
         "volumes",
         "containers",
@@ -142,6 +162,78 @@ def _nim_operator_security_envelope(
     containers = subject["containers"]
     runtime_container_name = subject["runtime_container_name"]
     custom_resource_image = subject["custom_resource_image"]
+    actor_identities = subject["actor_identities"]
+    descendant_resources = subject["descendant_resources"]
+    expected_resource_graph = (
+        {
+            "Job": {
+                "api_version": "batch/v1",
+                "group": "batch",
+                "version": "v1",
+                "resource": "jobs",
+                "actor_identity": "nim_operator",
+                "owner_kinds": ["NIMCache"],
+                "pod_template": True,
+            },
+            "Pod": {
+                "api_version": "v1",
+                "group": "",
+                "version": "v1",
+                "resource": "pods",
+                "actor_identity": "kube_controller_manager",
+                "owner_kinds": ["Job"],
+                "pod_template": False,
+            },
+        }
+        if expected_kind == "NIMCache"
+        else {
+            "Deployment": {
+                "api_version": "apps/v1",
+                "group": "apps",
+                "version": "v1",
+                "resource": "deployments",
+                "actor_identity": "nim_operator",
+                "owner_kinds": ["NIMService"],
+                "pod_template": True,
+            },
+            "ReplicaSet": {
+                "api_version": "apps/v1",
+                "group": "apps",
+                "version": "v1",
+                "resource": "replicasets",
+                "actor_identity": "kube_controller_manager",
+                "owner_kinds": ["Deployment"],
+                "pod_template": True,
+            },
+            "StatefulSet": {
+                "api_version": "apps/v1",
+                "group": "apps",
+                "version": "v1",
+                "resource": "statefulsets",
+                "actor_identity": "nim_operator",
+                "owner_kinds": ["NIMService"],
+                "pod_template": True,
+            },
+            "Job": {
+                "api_version": "batch/v1",
+                "group": "batch",
+                "version": "v1",
+                "resource": "jobs",
+                "actor_identity": "nim_operator",
+                "owner_kinds": ["NIMService"],
+                "pod_template": True,
+            },
+            "Pod": {
+                "api_version": "v1",
+                "group": "",
+                "version": "v1",
+                "resource": "pods",
+                "actor_identity": "kube_controller_manager",
+                "owner_kinds": ["ReplicaSet", "StatefulSet", "Job"],
+                "pod_template": False,
+            },
+        }
+    )
     if (
         value["subject_sha256"] != subject_sha256
         or value["attestation_sha256"] != attestation_sha256
@@ -168,30 +260,95 @@ def _nim_operator_security_envelope(
         or not subject["pod_spec"]["serviceAccountName"]
         or subject["pod_spec"].get("runtimeClassName") is not None
         and not isinstance(subject["pod_spec"]["runtimeClassName"], str)
-        or not isinstance(subject["admission_actors"], Mapping)
-        or subject["admission_actors"]
-        != {
-            "custom_resource": subject["admission_actors"].get("custom_resource"),
-            "descendant_pod": subject["admission_actors"].get("descendant_pod"),
-        }
+        or not isinstance(subject["custom_resource_sha256"], str)
+        or re.fullmatch(r"[a-f0-9]{64}", subject["custom_resource_sha256"]) is None
+        or not isinstance(actor_identities, Mapping)
+        or set(actor_identities)
+        != {"custom_resource", "nim_operator", "kube_controller_manager"}
         or any(
-            not isinstance(actor, str) or not actor.startswith("system:serviceaccount:")
-            for actor in subject["admission_actors"].values()
+            not isinstance(identity, Mapping)
+            for identity in actor_identities.values()
         )
-        or not isinstance(subject["owner_reference"], Mapping)
-        or set(subject["owner_reference"])
-        != {"apiVersion", "kind", "name", "uid", "controller", "blockOwnerDeletion"}
-        or subject["owner_reference"].get("apiVersion") != "apps.nvidia.com/v1alpha1"
-        or subject["owner_reference"].get("kind") != expected_kind
-        or subject["owner_reference"].get("name") != record.model_id
-        or not isinstance(subject["owner_reference"].get("uid"), str)
-        or re.fullmatch(
-            r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
-            subject["owner_reference"].get("uid", ""),
+        or any(
+            set(actor_identities[name])
+            != {
+                "kind",
+                "username",
+                "namespace",
+                "service_account_name",
+                "deployment_name",
+                "deployment_uid",
+                "container_name",
+                "image",
+            }
+            or actor_identities[name]["kind"] != "pod-bound-service-account"
+            or actor_identities[name]["username"]
+            != f"system:serviceaccount:{actor_identities[name]['namespace']}:{actor_identities[name]['service_account_name']}"
+            or re.fullmatch(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?", actor_identities[name]["namespace"])
+            is None
+            or re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?", actor_identities[name]["deployment_name"])
+            is None
+            or re.fullmatch(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?", actor_identities[name]["service_account_name"])
+            is None
+            or re.fullmatch(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?", actor_identities[name]["container_name"])
+            is None
+            or re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                actor_identities[name]["deployment_uid"],
+            )
+            is None
+            or re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", actor_identities[name]["image"])
+            is None
+            or actor_identities[name]["image"].split("/", 1)[0]
+            != subject["private_registry"]
+            for name in ("custom_resource", "nim_operator")
         )
-        is None
-        or subject["owner_reference"].get("controller") is not True
-        or subject["owner_reference"].get("blockOwnerDeletion") is not True
+        or set(actor_identities["kube_controller_manager"])
+        != {"kind", "username", "groups"}
+        or actor_identities["kube_controller_manager"]["kind"]
+        != "kubernetes-control-plane"
+        or actor_identities["kube_controller_manager"]["username"]
+        != "system:kube-controller-manager"
+        or actor_identities["kube_controller_manager"]["groups"]
+        != ["system:authenticated"]
+        or not isinstance(descendant_resources, Mapping)
+        or set(descendant_resources) != set(expected_resource_graph)
+        or any(
+            not isinstance(descendant_resources[kind], Mapping)
+            or set(descendant_resources[kind])
+            != {
+                "api_version",
+                "group",
+                "version",
+                "resource",
+                "actor_identity",
+                "owner_kinds",
+                "pod_template",
+                "name_pattern",
+                "object_sha256",
+            }
+            or {
+                key: descendant_resources[kind][key]
+                for key in (
+                    "api_version",
+                    "group",
+                    "version",
+                    "resource",
+                    "actor_identity",
+                    "owner_kinds",
+                    "pod_template",
+                )
+            }
+            != contract
+            or not isinstance(descendant_resources[kind]["object_sha256"], str)
+            or re.fullmatch(r"[a-f0-9]{64}", descendant_resources[kind]["object_sha256"])
+            is None
+            or not isinstance(descendant_resources[kind]["name_pattern"], str)
+            or len(descendant_resources[kind]["name_pattern"]) > 256
+            or re.fullmatch(descendant_resources[kind]["name_pattern"], record.model_id)
+            is None
+            for kind, contract in expected_resource_graph.items()
+        )
         or subject["volume_devices"] != "forbidden"
         or not isinstance(descendant_image, str)
         or not descendant_image.endswith("@" + runtime_digest)
@@ -271,8 +428,6 @@ def _nim_operator_security_envelope(
         is None
         or not isinstance(subject["admission_policy_sha256"], str)
         or re.fullmatch(r"[a-f0-9]{64}", subject["admission_policy_sha256"]) is None
-        or not isinstance(subject["operator_image_digest"], str)
-        or re.fullmatch(r"[a-f0-9]{64}", subject["operator_image_digest"]) is None
         or not isinstance(subject["volumes"], Mapping)
         or not subject["volumes"]
         or any(
@@ -326,8 +481,185 @@ def _nim_operator_security_envelope(
     )
 
 
+def _nim_normalized_annotations(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    annotations = dict(value)
+    if NIM_ENVELOPE_ANNOTATION in annotations:
+        annotations[NIM_ENVELOPE_ANNOTATION] = NIM_ENVELOPE_TOKEN
+    if NIM_POLICY_ANNOTATION in annotations:
+        annotations[NIM_POLICY_ANNOTATION] = NIM_POLICY_TOKEN
+    if NIM_IMAGE_ANNOTATION in annotations:
+        annotations[NIM_IMAGE_ANNOTATION] = NIM_IMAGE_TOKEN
+    for name in NIM_DYNAMIC_ANNOTATIONS.intersection(annotations):
+        annotations.pop(name)
+    return annotations
+
+
+def _nim_normalized_labels(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    labels = dict(value)
+    for name in NIM_DYNAMIC_LABELS.intersection(labels):
+        labels.pop(name)
+    return labels
+
+
+def _nim_normalized_descendant_value(value: object) -> object:
+    """Normalize controller-assigned values inside an otherwise exact object."""
+
+    if isinstance(value, Mapping):
+        normalized: dict[str, object] = {}
+        for key, item in value.items():
+            if key in {"labels", "matchLabels"}:
+                normalized[str(key)] = _nim_normalized_labels(item)
+            elif key == "annotations":
+                normalized[str(key)] = _nim_normalized_annotations(item)
+            else:
+                normalized[str(key)] = _nim_normalized_descendant_value(item)
+        return normalized
+    if isinstance(value, list):
+        return [_nim_normalized_descendant_value(item) for item in value]
+    return value
+
+
+def _nim_admission_object_projection(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the exact security-relevant object with API-assigned fields removed."""
+
+    metadata = value.get("metadata")
+    spec = value.get("spec")
+    if not isinstance(metadata, Mapping) or not isinstance(spec, Mapping):
+        raise CatalogError("NIM admission object metadata/spec is absent")
+    unexpected = set(value) - {"apiVersion", "kind", "metadata", "spec", "status"}
+    if unexpected:
+        raise CatalogError("NIM admission object carries unsigned top-level fields")
+    custom_resource = value.get("kind") in {"NIMCache", "NIMService"}
+    projected_metadata = {
+        "name": metadata.get("name") if custom_resource else NIM_DYNAMIC_NAME_TOKEN,
+        "namespace": metadata.get("namespace", "fs2-models"),
+        "labels": (
+            dict(metadata.get("labels", {}))
+            if custom_resource and isinstance(metadata.get("labels", {}), Mapping)
+            else _nim_normalized_labels(metadata.get("labels", {}))
+        ),
+        "annotations": _nim_normalized_annotations(metadata.get("annotations", {})),
+        "finalizers": metadata.get("finalizers", []),
+    }
+    projected_spec = (
+        json.loads(json.dumps(spec))
+        if custom_resource
+        else _nim_normalized_descendant_value(json.loads(json.dumps(spec)))
+    )
+    template = projected_spec.get("template") if isinstance(projected_spec, dict) else None
+    if isinstance(template, dict) and isinstance(template.get("metadata"), dict):
+        template["metadata"]["annotations"] = _nim_normalized_annotations(
+            template["metadata"].get("annotations", {})
+        )
+    return {
+        "apiVersion": value.get("apiVersion"),
+        "kind": value.get("kind"),
+        "metadata": projected_metadata,
+        "spec": projected_spec,
+    }
+
+
+def _nim_admission_object_sha256(value: Mapping[str, Any]) -> str:
+    return hashlib.sha256(canonical_bytes(_nim_admission_object_projection(value))).hexdigest()
+
+
+def _validate_nim_custom_resource(
+    value: Mapping[str, Any],
+    *,
+    subject: Mapping[str, Any],
+    resource_kind: str,
+    record: ModelRecord,
+) -> None:
+    metadata = value.get("metadata")
+    allowed_metadata = {
+        "annotations",
+        "creationTimestamp",
+        "deletionGracePeriodSeconds",
+        "deletionTimestamp",
+        "finalizers",
+        "generation",
+        "labels",
+        "managedFields",
+        "name",
+        "namespace",
+        "resourceVersion",
+        "uid",
+    }
+    if (
+        value.get("apiVersion") != "apps.nvidia.com/v1alpha1"
+        or value.get("kind") != resource_kind
+        or not isinstance(metadata, Mapping)
+        or bool(set(metadata) - allowed_metadata)
+        or "ownerReferences" in metadata
+        or metadata.get("name") != record.model_id
+        or metadata.get("namespace", "fs2-models") != "fs2-models"
+        or _nim_admission_object_sha256(value) != subject["custom_resource_sha256"]
+    ):
+        raise CatalogError("NIM custom resource differs from its complete signed projection")
+
+
+def validate_persisted_nim_operator_root(
+    value: Mapping[str, Any],
+    *,
+    security_envelope: Mapping[str, Any],
+    trusted_attestors: Mapping[str, str],
+    security_session_id: str,
+    resource_kind: str,
+    record: ModelRecord,
+) -> str:
+    """Validate a persisted NIM root before its API-assigned UID is enrolled.
+
+    This entry point is intentionally actor-independent: the admission webhook
+    has already authenticated and validated creation, while the root-enrollment
+    reconciler reads the persisted object back from the Kubernetes API.  The
+    reconciler therefore proves the complete signed object projection and the
+    externally attested security envelope before recording the server-assigned
+    UID.  It never treats the root's own annotations as authority.
+    """
+
+    subject_sha256, _, _, _ = _nim_operator_security_envelope(
+        security_envelope,
+        trusted_attestors=trusted_attestors,
+        expected_session_id=security_session_id,
+        expected_kind=resource_kind,
+        record=record,
+    )
+    metadata = value.get("metadata")
+    uid = metadata.get("uid") if isinstance(metadata, Mapping) else None
+    if (
+        not isinstance(uid, str)
+        or re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+            uid,
+        )
+        is None
+    ):
+        raise CatalogError("persisted NIM root lacks its API-assigned UID")
+    _validate_nim_custom_resource(
+        value,
+        subject=security_envelope["subject"],
+        resource_kind=resource_kind,
+        record=record,
+    )
+    return subject_sha256
+
+
+def _nim_pod_view(value: Mapping[str, Any], *, contract: Mapping[str, Any]) -> Mapping[str, Any]:
+    if contract["pod_template"] is False:
+        return value
+    spec = value.get("spec")
+    template = spec.get("template") if isinstance(spec, Mapping) else None
+    if not isinstance(template, Mapping):
+        raise CatalogError("NIM controller descendant lacks its signed Pod template")
+    return template
+
+
 def validate_nim_operator_descendant(
-    pod: Mapping[str, Any],
+    descendant: Mapping[str, Any],
     *,
     security_envelope: Mapping[str, Any],
     trusted_attestors: Mapping[str, str],
@@ -335,7 +667,7 @@ def validate_nim_operator_descendant(
     resource_kind: str,
     record: ModelRecord,
 ) -> None:
-    """Admission-webhook validator for the actual Pod emitted by NIM Operator."""
+    """Validate one actual Pod-bearing object in a signed NIM owner graph."""
 
     subject_sha256, _, descendant_image, _ = _nim_operator_security_envelope(
         security_envelope,
@@ -345,11 +677,63 @@ def validate_nim_operator_descendant(
         record=record,
     )
     subject = security_envelope["subject"]
+    kind = descendant.get("kind")
+    contract = subject["descendant_resources"].get(kind)
+    metadata = descendant.get("metadata")
+    if (
+        not isinstance(kind, str)
+        or not isinstance(contract, Mapping)
+        or descendant.get("apiVersion") != contract["api_version"]
+        or not isinstance(metadata, Mapping)
+        or metadata.get("namespace", "fs2-models") != "fs2-models"
+        or not isinstance(metadata.get("name"), str)
+        or re.fullmatch(contract["name_pattern"], metadata["name"]) is None
+        or _nim_admission_object_sha256(descendant) != contract["object_sha256"]
+    ):
+        raise CatalogError("NIM Operator descendant object differs from its signed resource projection")
+    annotations = metadata.get("annotations", {})
+    template = _nim_pod_view(descendant, contract=contract)
+    template_metadata = template.get("metadata")
+    template_annotations = (
+        template_metadata.get("annotations", {})
+        if isinstance(template_metadata, Mapping)
+        else {}
+    )
+    owner_references = metadata.get("ownerReferences")
+    if (
+        not isinstance(annotations, Mapping)
+        or not isinstance(template_annotations, Mapping)
+        or annotations.get(NIM_ENVELOPE_ANNOTATION) not in {None, subject_sha256}
+        or template_annotations.get(NIM_ENVELOPE_ANNOTATION)
+        not in {None, subject_sha256}
+        or annotations.get(NIM_POLICY_ANNOTATION)
+        not in {None, subject["admission_policy"]}
+        or template_annotations.get(NIM_POLICY_ANNOTATION)
+        not in {None, subject["admission_policy"]}
+        or annotations.get(NIM_IMAGE_ANNOTATION) not in {None, descendant_image}
+        or template_annotations.get(NIM_IMAGE_ANNOTATION)
+        not in {None, descendant_image}
+        or not isinstance(owner_references, list)
+        or len(owner_references) != 1
+        or not isinstance(owner_references[0], Mapping)
+        or set(owner_references[0])
+        != {"apiVersion", "kind", "name", "uid", "controller", "blockOwnerDeletion"}
+        or owner_references[0].get("kind") not in contract["owner_kinds"]
+        or not isinstance(owner_references[0].get("name"), str)
+        or re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+            str(owner_references[0].get("uid", "")),
+        )
+        is None
+        or owner_references[0].get("controller") is not True
+        or owner_references[0].get("blockOwnerDeletion") is not True
+    ):
+        raise CatalogError("NIM Operator descendant lost its signed selector or owner edge")
+    pod = template
     metadata = pod.get("metadata")
     spec = pod.get("spec")
     if not isinstance(metadata, Mapping) or not isinstance(spec, Mapping):
         raise CatalogError("NIM Operator descendant is not a Pod object")
-    annotations = metadata.get("annotations", {})
     observed_pod_spec = {
         "automountServiceAccountToken": spec.get("automountServiceAccountToken", True),
         "hostIPC": spec.get("hostIPC", False),
@@ -361,13 +745,9 @@ def validate_nim_operator_descendant(
         "shareProcessNamespace": spec.get("shareProcessNamespace", False),
     }
     if (
-        not isinstance(annotations, Mapping)
-        or annotations.get("fs2-serve.nebius.ai/operator-security-envelope-sha256")
-        != subject_sha256
-        or metadata.get("ownerReferences") != [subject["owner_reference"]]
-        or observed_pod_spec != subject["pod_spec"]
+        observed_pod_spec != subject["pod_spec"]
     ):
-        raise CatalogError("NIM Operator descendant lost its signed Pod owner/security binding")
+        raise CatalogError("NIM Operator descendant lost its signed Pod security binding")
     volumes = spec.get("volumes", [])
     if not isinstance(volumes, list):
         raise CatalogError("NIM Operator descendant volumes are invalid")
@@ -469,6 +849,166 @@ def validate_nim_operator_descendant(
         raise CatalogError("NIM Operator actual descendants differ from signed image/security/mount admission")
 
 
+def _nim_owner_reference(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    metadata = value.get("metadata")
+    references = metadata.get("ownerReferences") if isinstance(metadata, Mapping) else None
+    if not isinstance(references, list) or len(references) != 1 or not isinstance(references[0], Mapping):
+        raise CatalogError("NIM owner graph requires one controller edge")
+    return references[0]
+
+
+def _validate_nim_owner_chain(
+    descendant: Mapping[str, Any],
+    owners: Sequence[Mapping[str, Any]],
+    *,
+    security_envelope: Mapping[str, Any],
+    trusted_attestors: Mapping[str, str],
+    security_session_id: str,
+    resource_kind: str,
+    record: ModelRecord,
+) -> None:
+    if not owners or len(owners) > 4:
+        raise CatalogError("NIM descendant lacks a bounded live owner chain")
+    subject = security_envelope["subject"]
+    child = descendant
+    seen_uids: set[str] = set()
+    for index, owner in enumerate(owners):
+        edge = _nim_owner_reference(child)
+        metadata = owner.get("metadata")
+        if not isinstance(metadata, Mapping):
+            raise CatalogError("NIM live owner metadata is absent")
+        owner_uid = metadata.get("uid")
+        if (
+            not isinstance(owner_uid, str)
+            or owner_uid in seen_uids
+            or edge.get("apiVersion") != owner.get("apiVersion")
+            or edge.get("kind") != owner.get("kind")
+            or edge.get("name") != metadata.get("name")
+            or edge.get("uid") != owner_uid
+            or edge.get("controller") is not True
+            or edge.get("blockOwnerDeletion") is not True
+        ):
+            raise CatalogError("NIM descendant owner edge differs from the persisted owner")
+        seen_uids.add(owner_uid)
+        if owner.get("kind") == resource_kind:
+            if index != len(owners) - 1:
+                raise CatalogError("NIM owner chain continues beyond its custom resource")
+            _validate_nim_custom_resource(
+                owner,
+                subject=subject,
+                resource_kind=resource_kind,
+                record=record,
+            )
+            return
+        if owner.get("kind") not in subject["descendant_resources"]:
+            raise CatalogError("NIM owner chain contains an unsigned controller kind")
+        validate_nim_operator_descendant(
+            owner,
+            security_envelope=security_envelope,
+            trusted_attestors=trusted_attestors,
+            security_session_id=security_session_id,
+            resource_kind=resource_kind,
+            record=record,
+        )
+        child = owner
+    raise CatalogError("NIM owner chain does not terminate at the persisted custom resource")
+
+
+def _validate_nim_actor_identity(
+    user_info: Mapping[str, Any],
+    identity: Mapping[str, Any],
+    resolved_actor_chain: Sequence[Mapping[str, Any]],
+) -> None:
+    if user_info.get("username") != identity["username"]:
+        raise CatalogError("NIM admission actor differs from its signed identity")
+    if identity["kind"] == "kubernetes-control-plane":
+        groups = user_info.get("groups", [])
+        if not isinstance(groups, list) or any(
+            group not in groups for group in identity["groups"]
+        ):
+            raise CatalogError("NIM controller-manager group identity differs")
+        if resolved_actor_chain:
+            raise CatalogError("Kubernetes control-plane actor may not supply a workload identity")
+        return
+    if len(resolved_actor_chain) != 3:
+        raise CatalogError("NIM service-account actor lacks its live Pod owner chain")
+    pod, replica_set, deployment = resolved_actor_chain
+    pod_metadata = pod.get("metadata")
+    pod_spec = pod.get("spec")
+    extra = user_info.get("extra")
+    if not isinstance(pod_metadata, Mapping) or not isinstance(pod_spec, Mapping) or not isinstance(extra, Mapping):
+        raise CatalogError("NIM service-account actor identity is incomplete")
+    pod_names = extra.get("authentication.kubernetes.io/pod-name", [])
+    pod_uids = extra.get("authentication.kubernetes.io/pod-uid", [])
+    if (
+        pod.get("apiVersion") != "v1"
+        or pod.get("kind") != "Pod"
+        or pod_metadata.get("namespace") != identity["namespace"]
+        or pod_names != [pod_metadata.get("name")]
+        or pod_uids != [pod_metadata.get("uid")]
+        or pod_spec.get("serviceAccountName") != identity["service_account_name"]
+    ):
+        raise CatalogError("NIM service-account token is not bound to its persisted Pod")
+    pod_containers = pod_spec.get("containers", [])
+    if not isinstance(pod_containers, list) or not any(
+        isinstance(container, Mapping)
+        and container.get("name") == identity["container_name"]
+        and container.get("image") == identity["image"]
+        for container in pod_containers
+    ):
+        raise CatalogError("NIM actor Pod does not run the signed controller image")
+    pod_owner = _nim_owner_reference(pod)
+    rs_metadata = replica_set.get("metadata")
+    if (
+        replica_set.get("apiVersion") != "apps/v1"
+        or replica_set.get("kind") != "ReplicaSet"
+        or not isinstance(rs_metadata, Mapping)
+        or pod_owner.get("apiVersion") != "apps/v1"
+        or pod_owner.get("kind") != "ReplicaSet"
+        or pod_owner.get("name") != rs_metadata.get("name")
+        or pod_owner.get("uid") != rs_metadata.get("uid")
+        or pod_owner.get("controller") is not True
+        or pod_owner.get("blockOwnerDeletion") is not True
+    ):
+        raise CatalogError("NIM actor Pod is not owned by the resolved ReplicaSet")
+    rs_owner = _nim_owner_reference(replica_set)
+    deployment_metadata = deployment.get("metadata")
+    deployment_spec = deployment.get("spec")
+    deployment_template = (
+        deployment_spec.get("template") if isinstance(deployment_spec, Mapping) else None
+    )
+    deployment_pod_spec = (
+        deployment_template.get("spec") if isinstance(deployment_template, Mapping) else None
+    )
+    deployment_containers = (
+        deployment_pod_spec.get("containers", [])
+        if isinstance(deployment_pod_spec, Mapping)
+        else []
+    )
+    if (
+        deployment.get("apiVersion") != "apps/v1"
+        or deployment.get("kind") != "Deployment"
+        or not isinstance(deployment_metadata, Mapping)
+        or deployment_metadata.get("namespace") != identity["namespace"]
+        or deployment_metadata.get("name") != identity["deployment_name"]
+        or deployment_metadata.get("uid") != identity["deployment_uid"]
+        or rs_owner.get("apiVersion") != "apps/v1"
+        or rs_owner.get("kind") != "Deployment"
+        or rs_owner.get("name") != identity["deployment_name"]
+        or rs_owner.get("uid") != identity["deployment_uid"]
+        or rs_owner.get("controller") is not True
+        or rs_owner.get("blockOwnerDeletion") is not True
+        or not isinstance(deployment_containers, list)
+        or not any(
+            isinstance(container, Mapping)
+            and container.get("name") == identity["container_name"]
+            and container.get("image") == identity["image"]
+            for container in deployment_containers
+        )
+    ):
+        raise CatalogError("NIM actor ReplicaSet is not owned by the signed controller Deployment")
+
+
 def validate_nim_operator_admission_review(
     review: Mapping[str, Any],
     *,
@@ -477,6 +1017,8 @@ def validate_nim_operator_admission_review(
     security_session_id: str,
     resource_kind: str,
     record: ModelRecord,
+    resolved_owner_chain: Sequence[Mapping[str, Any]] = (),
+    resolved_actor_chain: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Validate the exact AdmissionReview for a NIM CR or emitted Pod.
 
@@ -519,11 +1061,24 @@ def validate_nim_operator_admission_review(
         record=record,
     )
     signed_subject = security_envelope["subject"]
-    if resource == {"group": "", "version": "v1", "resource": "pods"}:
-        if user_info["username"] != signed_subject["admission_actors"]["descendant_pod"]:
-            raise CatalogError("NIM Operator descendant admission actor differs")
-        if admitted_object.get("apiVersion") != "v1" or admitted_object.get("kind") != "Pod":
-            raise CatalogError("NIM Operator descendant admission object is not a Pod")
+    descendant_contract = next(
+        (
+            contract
+            for contract in signed_subject["descendant_resources"].values()
+            if resource
+            == {
+                "group": contract["group"],
+                "version": contract["version"],
+                "resource": contract["resource"],
+            }
+        ),
+        None,
+    )
+    if descendant_contract is not None:
+        identity = signed_subject["actor_identities"][
+            descendant_contract["actor_identity"]
+        ]
+        _validate_nim_actor_identity(user_info, identity, resolved_actor_chain)
         validate_nim_operator_descendant(
             admitted_object,
             security_envelope=security_envelope,
@@ -532,9 +1087,21 @@ def validate_nim_operator_admission_review(
             resource_kind=resource_kind,
             record=record,
         )
+        _validate_nim_owner_chain(
+            admitted_object,
+            resolved_owner_chain,
+            security_envelope=security_envelope,
+            trusted_attestors=trusted_attestors,
+            security_session_id=security_session_id,
+            resource_kind=resource_kind,
+            record=record,
+        )
     else:
-        if user_info["username"] != signed_subject["admission_actors"]["custom_resource"]:
-            raise CatalogError("NIM Operator custom-resource admission actor differs")
+        _validate_nim_actor_identity(
+            user_info,
+            signed_subject["actor_identities"]["custom_resource"],
+            resolved_actor_chain,
+        )
         expected_resource = {
             "NIMCache": "nimcaches",
             "NIMService": "nimservices",
@@ -566,6 +1133,31 @@ def validate_nim_operator_admission_review(
             or not isinstance(spec, Mapping)
         ):
             raise CatalogError("NIM Operator custom resource lost its signed security binding")
+        _validate_nim_custom_resource(
+            admitted_object,
+            subject=signed_subject,
+            resource_kind=resource_kind,
+            record=record,
+        )
+        if resolved_owner_chain:
+            raise CatalogError("NIM custom-resource admission may not supply an owner chain")
+        if request.get("operation") == "CREATE" and "uid" in metadata:
+            raise CatalogError("NIM custom-resource UID must be assigned by the API server")
+        if request.get("operation") == "UPDATE":
+            old_object = request.get("oldObject")
+            old_metadata = old_object.get("metadata") if isinstance(old_object, Mapping) else None
+            if (
+                not isinstance(old_metadata, Mapping)
+                or not isinstance(metadata.get("uid"), str)
+                or metadata.get("uid") != old_metadata.get("uid")
+            ):
+                raise CatalogError("NIM custom-resource update changed its persisted UID")
+            _validate_nim_custom_resource(
+                old_object,
+                subject=signed_subject,
+                resource_kind=resource_kind,
+                record=record,
+            )
         if resource_kind == "NIMCache":
             source = spec.get("source")
             ngc = source.get("ngc") if isinstance(source, Mapping) else None
@@ -1105,7 +1697,7 @@ def render_nim_operator_cache(
             "fs2-serve.nebius.ai/expected-descendant-image": descendant_image,
         }
     )
-    return {
+    result = {
         "apiVersion": "apps.nvidia.com/v1alpha1",
         "kind": "NIMCache",
         "metadata": {
@@ -1121,6 +1713,13 @@ def render_nim_operator_cache(
             "tolerations": backend_capability.tolerations,
         },
     }
+    _validate_nim_custom_resource(
+        result,
+        subject=security_envelope["subject"],
+        resource_kind="NIMCache",
+        record=record,
+    )
+    return result
 
 
 def render_nim_operator_service(
@@ -1197,7 +1796,7 @@ def render_nim_operator_service(
             "nvidia.com/gpu": gpu_count,
         },
     }
-    return {
+    result = {
         "apiVersion": "apps.nvidia.com/v1alpha1",
         "kind": "NIMService",
         "metadata": {
@@ -1230,3 +1829,10 @@ def render_nim_operator_service(
             "expose": {"service": {"type": "ClusterIP", "port": 8000}},
         },
     }
+    _validate_nim_custom_resource(
+        result,
+        subject=security_envelope["subject"],
+        resource_kind="NIMService",
+        record=record,
+    )
+    return result

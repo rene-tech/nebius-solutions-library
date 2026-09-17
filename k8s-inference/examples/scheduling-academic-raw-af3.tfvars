@@ -100,7 +100,49 @@ deployment = {
   scientific_batch = {
     enabled = true
     # The committed scientific recipes mount the shared runtime cache.
-    runtime_cache = { enabled = true }
+    # Cache activation is deliberately fail-closed: replace every illustrative
+    # receipt value below with the output of the admission-policy/quiescence
+    # evidence workflow and add its external runtime-security authorization.
+    # The four actors are distinct authenticated Kubernetes identities; they
+    # are not labels that a customer Job or JobSet can self-assert.
+    runtime_cache = {
+      enabled = true
+      admission_actors = {
+        bootstrap_job_creator       = "system:serviceaccount:fs2-system:terraform-workloads"
+        scientific_workload_creator = "system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime"
+        job_controller              = "system:kube-controller-manager"
+        jobset_controller           = "system:serviceaccount:jobset-system:jobset-controller-manager"
+      }
+      migration_quiescence = {
+        lease_name                       = ".fs2-cache-writer-admission.lock"
+        lease_uid                        = "0000000000000000000000000000000000000000000000000000000000000000"
+        lock_device                      = 0
+        lock_inode                       = 1
+        lock_content_sha256              = "0000000000000000000000000000000000000000000000000000000000000000"
+        zero_writers                     = true
+        writer_admission_fenced          = true
+        active_writer_count              = 0
+        activation_id                    = "0000000000000000000000000000000000000000000000000000000000000000"
+        admission_policy_name            = "fs2-scientific-runtime-cache-writer-fence"
+        admission_policy_uid             = "00000000-0000-4000-8000-000000000000"
+        admission_policy_resource_version = "1"
+        admission_policy_sha256          = "0000000000000000000000000000000000000000000000000000000000000000"
+        admission_binding_name           = "fs2-scientific-runtime-cache-writer-fence"
+        security_boundary_name             = "fs2-platform-security-admission-guard"
+        security_boundary_uid              = "00000000-0000-4000-8000-000000000000"
+        security_boundary_resource_version = "1"
+        security_boundary_sha256           = "0000000000000000000000000000000000000000000000000000000000000000"
+        controller_admission_name          = "fs2-scientific-cache-controller-chain"
+        controller_admission_uid           = "00000000-0000-4000-8000-000000000000"
+        controller_admission_resource_version = "1"
+        controller_admission_sha256        = "0000000000000000000000000000000000000000000000000000000000000000"
+        observed_at                      = "1970-01-01T00:00:00Z"
+        expires_at                       = "1970-01-01T00:00:01Z"
+        evidence_sha256                  = "0000000000000000000000000000000000000000000000000000000000000000"
+        authorization_id                 = "replace-with-cache-quiescence-authorization"
+        quiescence_sha256                = "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    }
   }
 
   scheduling = {

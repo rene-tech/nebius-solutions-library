@@ -71,6 +71,9 @@ locals {
         model_id           = try(model.model_id, "")
         stage_id           = try(stage.stage_id, "")
         workload_namespace = try(model.workload_namespace, "")
+        image              = try(stage.image, "")
+        service_account_name = try(stage.service_account_name, "")
+        termination_grace_seconds = try(stage.termination_grace_seconds, null)
         workspace_uid      = try(stage.workspace_uid, null)
         workspace_gid      = try(stage.workspace_gid, null)
         cache_mount_path = try(one([
@@ -138,7 +141,7 @@ locals {
   )
   scientific_runtime_cache_bootstrap_instance_cel = [
     for namespace, claim in local.scientific_runtime_cache_namespace_claims : format(
-      "(object.metadata.namespace == %s && ((request.resource.resource == 'jobs' && request.userInfo.username == %s && variables.hasPolicyOwner && object.metadata.name == %s) || (request.resource.resource == 'pods' && request.subResource != 'ephemeralcontainers' && request.userInfo.username == %s && has(object.metadata.ownerReferences) && object.metadata.ownerReferences.size() == 1 && object.metadata.ownerReferences.exists_one(o, o.apiVersion == 'batch/v1' && o.kind == 'Job' && o.name == %s && o.uid.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$') && o.controller == true && o.blockOwnerDeletion == true))))",
+      "(object.metadata.namespace == %s && ((request.resource.resource == 'jobs' && request.userInfo.username == %s && variables.hasPolicyBinding && object.metadata.name == %s) || (request.resource.resource == 'pods' && request.subResource != 'ephemeralcontainers' && request.userInfo.username == %s && has(object.metadata.ownerReferences) && object.metadata.ownerReferences.size() == 1 && object.metadata.ownerReferences.exists_one(o, o.apiVersion == 'batch/v1' && o.kind == 'Job' && o.name == %s && o.uid.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$') && o.controller == true && o.blockOwnerDeletion == true))))",
       jsonencode(namespace),
       jsonencode(var.scientific_batch.runtime_cache.admission_actors.bootstrap_job_creator),
       jsonencode(claim.bootstrap_job),
@@ -153,27 +156,57 @@ locals {
       jsonencode(jsonencode(contract)),
     )
   ]
-  scientific_runtime_cache_writer_boundary_cel = [
-    for boundary in local.scientific_runtime_cache_directory_claims : format(
-      "(object.metadata.namespace == %s && variables.podMetadata.annotations[%s] == %s && variables.podMetadata.annotations[%s] == %s && variables.podSpec.securityContext.supplementalGroupsPolicy == 'Strict' && variables.podSpec.securityContext.supplementalGroups.exists(g, g == %d) && variables.podSpec.securityContext.supplementalGroups.filter(g, variables.allCacheGroups.exists(cacheGroup, cacheGroup == g)).size() == 1 && variables.podSpec.containers.exists_one(c, c.name == 'scientific-stage' && c.securityContext.runAsUser == %d && c.securityContext.runAsGroup == %d && c.env.exists_one(e, e.name == 'FS2_RUNTIME_CACHE_ACTIVATION_ID' && e.value == %s) && c.volumeMounts.filter(m, variables.cacheVolumeNames.exists(v, v == m.name)).size() == 2 && c.volumeMounts.exists_one(m, variables.cacheVolumeNames.exists(v, v == m.name) && m.mountPath == '/cache' && m.subPath == %s && m.readOnly == false) && c.volumeMounts.exists_one(m, variables.cacheVolumeNames.exists(v, v == m.name) && m.mountPath == '/var/run/fs2-cache-writer-admission.lock' && m.subPath == '.fs2-cache-writer-admission.lock' && m.readOnly == true)) && variables.podSpec.containers.filter(c, c.name != 'scientific-stage').all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !variables.cacheVolumeNames.exists(v, v == m.name))) && (!has(variables.podSpec.initContainers) || variables.podSpec.initContainers.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !variables.cacheVolumeNames.exists(v, v == m.name)))) && (!has(variables.podSpec.ephemeralContainers) || variables.podSpec.ephemeralContainers.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !variables.cacheVolumeNames.exists(v, v == m.name)))))",
-      jsonencode(boundary.workload_namespace),
-      jsonencode("fs2-serve.nebius.ai/runtime-cache-activation"),
-      jsonencode(boundary.activation_id),
-      jsonencode("fs2-serve.nebius.ai/runtime-cache-boundary"),
-      jsonencode(boundary.boundary_sha256),
-      boundary.legacy_gid,
-      boundary.run_as_user,
-      boundary.run_as_group,
-      jsonencode(boundary.activation_id),
-      jsonencode(boundary.directory),
-    )
-  ]
+  scientific_runtime_cache_writer_boundary_cel = flatten([
+    for boundary in local.scientific_runtime_cache_directory_claims : [
+      for consumer in local.scientific_runtime_cache_consumers : format(
+        "(object.metadata.namespace == %s && variables.podMetadata.annotations[%s] == %s && variables.podMetadata.annotations[%s] == %s && variables.podMetadata.annotations[%s] == %s && variables.podSpec.serviceAccountName == %s && variables.podSpec.automountServiceAccountToken == false && variables.podSpec.enableServiceLinks == false && variables.podSpec.restartPolicy == 'Never' && variables.podSpec.terminationGracePeriodSeconds == %d && (!has(variables.podSpec.hostNetwork) || variables.podSpec.hostNetwork == false) && (!has(variables.podSpec.hostPID) || variables.podSpec.hostPID == false) && (!has(variables.podSpec.hostIPC) || variables.podSpec.hostIPC == false) && (!has(variables.podSpec.shareProcessNamespace) || variables.podSpec.shareProcessNamespace == false) && !has(variables.podSpec.hostUsers) && variables.podSpec.securityContext.runAsNonRoot == true && variables.podSpec.securityContext.seccompProfile.type == 'RuntimeDefault' && variables.podSpec.securityContext.supplementalGroupsPolicy == 'Strict' && !has(variables.podSpec.securityContext.fsGroup) && (!has(variables.podSpec.securityContext.sysctls) || variables.podSpec.securityContext.sysctls.size() == 0) && !has(variables.podSpec.securityContext.seLinuxOptions) && !has(variables.podSpec.securityContext.windowsOptions) && variables.podSpec.securityContext.supplementalGroups.exists(g, g == %d) && variables.podSpec.securityContext.supplementalGroups.filter(g, variables.allCacheGroups.exists(cacheGroup, cacheGroup == g)).size() == 1 && variables.podSpec.containers.size() == 2 && variables.podSpec.containers.exists_one(c, c.name == 'scientific-stage' && c.image == %s && c.imagePullPolicy == 'IfNotPresent' && c.securityContext == %s && c.command.size() >= 4 && c.command[0] == 'python' && c.command[1].matches('^/mnt/fs2-scientific(?:/[A-Za-z0-9._-]+)*/\\.fs2/stage-runner\\.py$') && c.command[2] == '--' && (!has(c.args) || c.args.size() == 0) && (!has(c.envFrom) || c.envFrom.size() == 0) && c.workingDir.matches('^/mnt/fs2-scientific(?:/[A-Za-z0-9._-]+)*$') && c.env.exists_one(e, e.name == 'FS2_RUNTIME_CACHE_ACTIVATION_ID' && e.value == %s) && c.volumeMounts.filter(m, variables.cacheVolumeNames.exists(v, v == m.name)).size() == 2 && c.volumeMounts.exists_one(m, variables.cacheVolumeNames.exists(v, v == m.name) && m.mountPath == '/cache' && m.subPath == %s && m.readOnly == false) && c.volumeMounts.exists_one(m, variables.cacheVolumeNames.exists(v, v == m.name) && m.mountPath == '/var/run/fs2-cache-writer-admission.lock' && m.subPath == '.fs2-cache-writer-admission.lock' && m.readOnly == true)) && variables.podSpec.containers.exists_one(c, c.name == 'result-collector' && c.image == %s && c.imagePullPolicy == 'IfNotPresent' && c.securityContext == %s && c.command.size() >= 2 && c.command[0] == 'fs2-serve' && c.command[1] == 'scientific-collect' && (!has(c.args) || c.args.size() == 0) && (!has(c.envFrom) || c.envFrom.size() == 0)) && variables.podSpec.containers.filter(c, c.name != 'scientific-stage').all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !variables.cacheVolumeNames.exists(v, v == m.name))) && (!has(variables.podSpec.initContainers) || variables.podSpec.initContainers.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !variables.cacheVolumeNames.exists(v, v == m.name)))) && (!has(variables.podSpec.ephemeralContainers) || variables.podSpec.ephemeralContainers.size() == 0))",
+        jsonencode(boundary.workload_namespace),
+        jsonencode("fs2-serve.nebius.ai/runtime-cache-activation"),
+        jsonencode(boundary.activation_id),
+        jsonencode("fs2-serve.nebius.ai/runtime-cache-boundary"),
+        jsonencode(boundary.boundary_sha256),
+        jsonencode("fs2-serve.nebius.ai/runtime-cache-stage"),
+        jsonencode(consumer.stage_id),
+        jsonencode(consumer.service_account_name),
+        consumer.termination_grace_seconds,
+        boundary.legacy_gid,
+        jsonencode(consumer.image),
+        jsonencode({
+          allowPrivilegeEscalation = false
+          capabilities             = { drop = ["ALL"] }
+          readOnlyRootFilesystem   = true
+          runAsNonRoot             = true
+          runAsUser                = boundary.run_as_user
+          runAsGroup               = boundary.run_as_group
+        }),
+        jsonencode(boundary.activation_id),
+        jsonencode(boundary.directory),
+        jsonencode("${var.control_plane_image.repository}@${var.control_plane_image.digest}"),
+        jsonencode({
+          allowPrivilegeEscalation = false
+          capabilities             = { drop = ["ALL"] }
+          readOnlyRootFilesystem   = true
+          runAsNonRoot             = true
+          runAsUser                = boundary.run_as_user
+          runAsGroup               = boundary.run_as_group
+        }),
+      ) if consumer.model_id == boundary.model_id && consumer.workload_namespace == boundary.workload_namespace
+    ]
+  ])
   scientific_runtime_cache_writer_fence_manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
     metadata = {
       name = local.scientific_runtime_cache_writer_fence_name
-      labels = local.common_labels
+      labels = merge(local.common_labels, {
+        "fs2-serve.nebius.ai/immutable-security-boundary" = "true"
+      })
+      annotations = {
+        "fs2-serve.nebius.ai/security-boundary" = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_name
+        "fs2-serve.nebius.ai/security-boundary-uid" = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_uid
+        "fs2-serve.nebius.ai/security-boundary-resource-version" = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_resource_version
+        "fs2-serve.nebius.ai/security-boundary-sha256" = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_sha256
+      }
     }
     spec = {
       failurePolicy = "Fail"
@@ -227,12 +260,16 @@ locals {
           expression = "has(variables.podSpec.volumes) ? variables.podSpec.volumes.filter(v, has(v.persistentVolumeClaim) && v.persistentVolumeClaim.claimName == '${local.scientific_runtime_cache_claim_name}').map(v, v.name) : []"
         },
         {
+          name = "allContainers"
+          expression = "variables.podSpec.containers + (has(variables.podSpec.initContainers) ? variables.podSpec.initContainers : []) + (has(variables.podSpec.ephemeralContainers) ? variables.podSpec.ephemeralContainers : [])"
+        },
+        {
           name       = "allCacheGroups"
           expression = jsonencode(sort(distinct(concat([for boundary in local.scientific_runtime_cache_directory_claims : boundary.run_as_group], [for boundary in local.scientific_runtime_cache_directory_claims : boundary.legacy_gid]))))
         },
         {
-          name       = "hasPolicyOwner"
-          expression = "has(object.metadata.ownerReferences) && object.metadata.ownerReferences.size() == 1 && object.metadata.ownerReferences.exists_one(o, o.apiVersion == 'admissionregistration.k8s.io/v1' && o.kind == 'ValidatingAdmissionPolicy' && o.name == '${local.scientific_runtime_cache_writer_fence_name}' && o.uid == '${var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid}' && o.controller == false && o.blockOwnerDeletion == false)"
+          name       = "hasPolicyBinding"
+          expression = "(!has(object.metadata.ownerReferences) || object.metadata.ownerReferences.size() == 0) && has(object.metadata.annotations) && object.metadata.annotations['fs2-serve.nebius.ai/runtime-cache-admission-policy'] == '${local.scientific_runtime_cache_writer_fence_name}' && object.metadata.annotations['fs2-serve.nebius.ai/runtime-cache-admission-policy-uid'] == '${var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid}' && object.metadata.annotations['fs2-serve.nebius.ai/runtime-cache-admission-policy-resource-version'] == '${var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_resource_version}' && object.metadata.annotations['fs2-serve.nebius.ai/runtime-cache-activation'] == '${var.scientific_batch.runtime_cache.migration_quiescence.activation_id}' && object.metadata.annotations['fs2-serve.nebius.ai/controller-admission'] == '${var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_name}' && object.metadata.annotations['fs2-serve.nebius.ai/controller-admission-uid'] == '${var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_uid}' && object.metadata.annotations['fs2-serve.nebius.ai/controller-admission-resource-version'] == '${var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_resource_version}'"
         },
         {
           name       = "isControllerProduct"
@@ -240,7 +277,7 @@ locals {
         },
         {
           name       = "isDirectWorkload"
-          expression = "request.resource.resource in ['jobs', 'jobsets'] && request.userInfo.username == ${jsonencode(var.scientific_batch.runtime_cache.admission_actors.scientific_workload_creator)} && variables.hasPolicyOwner"
+          expression = "request.resource.resource in ['jobs', 'jobsets'] && request.userInfo.username == ${jsonencode(var.scientific_batch.runtime_cache.admission_actors.scientific_workload_creator)} && variables.hasPolicyBinding"
         },
         {
           name       = "isBootstrapInstance"
@@ -273,12 +310,28 @@ locals {
           message    = "scientific runtime-cache access requires an authenticated controller path and exact owner chain"
         },
         {
+          expression = "variables.cacheVolumeNames.size() == 0 || variables.isBootstrap || (has(variables.podMetadata.annotations) && variables.podMetadata.annotations['fs2-serve.nebius.ai/runtime-cache-execution-sha256'].matches('^[a-f0-9]{64}$') && variables.podMetadata.annotations['fs2-serve.nebius.ai/controller-admission'] == '${var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_name}' && variables.podMetadata.annotations['fs2-serve.nebius.ai/controller-admission-uid'] == '${var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_uid}' && variables.podMetadata.annotations['fs2-serve.nebius.ai/controller-admission-resource-version'] == '${var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_resource_version}' && variables.podMetadata.annotations['fs2-serve.nebius.ai/controller-admission-sha256'] == '${var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_sha256}' && variables.podMetadata.annotations['fs2-serve.nebius.ai/security-boundary'] == '${var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_name}' && variables.podMetadata.annotations['fs2-serve.nebius.ai/security-boundary-uid'] == '${var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_uid}' && variables.podMetadata.annotations['fs2-serve.nebius.ai/security-boundary-resource-version'] == '${var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_resource_version}' && variables.podMetadata.annotations['fs2-serve.nebius.ai/security-boundary-sha256'] == '${var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_sha256}')"
+          message    = "scientific runtime-cache access requires the externally protected SAI-09 live-parent and exact execution-tuple admission binding"
+        },
+        {
           expression = "variables.cacheVolumeNames.size() == 0 || variables.podSpec.containers.all(c, (!has(c.volumeMounts) || c.volumeMounts.all(m, !has(m.subPathExpr))) && (!has(c.ports) || c.ports.all(p, !has(p.hostIP) && (!has(p.hostPort) || p.hostPort == 0)))) && (!has(variables.podSpec.initContainers) || variables.podSpec.initContainers.all(c, (!has(c.volumeMounts) || c.volumeMounts.all(m, !has(m.subPathExpr))) && (!has(c.ports) || c.ports.all(p, !has(p.hostIP) && (!has(p.hostPort) || p.hostPort == 0))))) && (!has(variables.podSpec.ephemeralContainers) || variables.podSpec.ephemeralContainers.all(c, (!has(c.volumeMounts) || c.volumeMounts.all(m, !has(m.subPathExpr))) && (!has(c.ports) || c.ports.all(p, !has(p.hostIP) && (!has(p.hostPort) || p.hostPort == 0)))))"
           message    = "scientific runtime-cache workloads may not use subPathExpr or host ports"
         },
         {
           expression = "variables.cacheVolumeNames.size() == 0 || variables.podSpec.containers.all(c, !has(c.volumeDevices) || c.volumeDevices.size() == 0) && (!has(variables.podSpec.initContainers) || variables.podSpec.initContainers.all(c, !has(c.volumeDevices) || c.volumeDevices.size() == 0)) && (!has(variables.podSpec.ephemeralContainers) || variables.podSpec.ephemeralContainers.all(c, !has(c.volumeDevices) || c.volumeDevices.size() == 0))"
           message    = "scientific runtime-cache workloads may not project block devices"
+        },
+        {
+          expression = "variables.cacheVolumeNames.size() == 0 || variables.isBootstrap || ((!has(variables.podSpec.ephemeralContainers) || variables.podSpec.ephemeralContainers.size() == 0) && variables.podSpec.initContainers.all(c, c.image == ${jsonencode("${var.control_plane_image.repository}@${var.control_plane_image.digest}")} && c.imagePullPolicy == 'IfNotPresent' && c.command.size() >= 2 && c.command[0] == 'fs2-serve' && c.command[1] in ['scientific-prepare-workspace', 'scientific-verify-runtime-artifacts', 'scientific-materialize', 'scientific-materialize-many'] && (!has(c.args) || c.args.size() == 0) && (!has(c.envFrom) || c.envFrom.size() == 0) && c.securityContext.allowPrivilegeEscalation == false && c.securityContext.readOnlyRootFilesystem == true && c.securityContext.runAsNonRoot == true && c.securityContext.runAsUser > 0 && c.securityContext.runAsGroup > 0 && c.securityContext.capabilities.drop == ['ALL'] && (!has(c.securityContext.capabilities.add) || c.securityContext.capabilities.add.size() == 0) && (!has(c.securityContext.privileged) || c.securityContext.privileged == false) && !has(c.securityContext.procMount) && !has(c.securityContext.seLinuxOptions) && !has(c.securityContext.windowsOptions)))"
+          message    = "scientific runtime-cache init containers require the exact tools image, command family, tokenless argv shape and restricted security context"
+        },
+        {
+          expression = "variables.cacheVolumeNames.size() == 0 || variables.isBootstrap || variables.podSpec.volumes.all(v, (has(v.emptyDir) && has(v.emptyDir.sizeLimit) && v.emptyDir.sizeLimit.matches('^[1-9][0-9]*(Ki|Mi|Gi|Ti)$')) || (has(v.persistentVolumeClaim) && (v.persistentVolumeClaim.claimName == '${local.scientific_runtime_cache_claim_name}' ? (!has(v.persistentVolumeClaim.readOnly) || v.persistentVolumeClaim.readOnly == false) : has(v.persistentVolumeClaim.readOnly) && v.persistentVolumeClaim.readOnly == true)) || (has(v.hostPath) && v.hostPath.path == '/mnt/fs2-reference-data/data' && v.hostPath.type == 'Directory') || has(v.configMap) || has(v.secret) || has(v.projected) || has(v.downwardAPI) || has(v.csi) || has(v.ephemeral))"
+          message    = "scientific runtime-cache workloads require a closed bounded volume-source inventory"
+        },
+        {
+          expression = "variables.cacheVolumeNames.size() == 0 || variables.isBootstrap || (variables.allContainers.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, variables.podSpec.volumes.exists_one(v, v.name == m.name) && (m.readOnly == true || variables.podSpec.volumes.exists_one(v, v.name == m.name && has(v.emptyDir)) || (variables.cacheVolumeNames.exists(cacheName, cacheName == m.name) && c.name == 'scientific-stage' && m.mountPath == '/cache')))) && variables.podSpec.volumes.all(v, variables.allContainers.exists(c, has(c.volumeMounts) && c.volumeMounts.exists(m, m.name == v.name))))"
+          message    = "scientific runtime-cache workloads must mount every volume and may write only bounded emptyDir or the exact model cache directory"
         },
         {
           expression = "variables.cacheVolumeNames.size() == 0 || variables.isBootstrap || (${join(" || ", local.scientific_runtime_cache_writer_boundary_cel)})"
@@ -296,7 +349,7 @@ locals {
   # self-referential digests lets the same VAP compare the bootstrap Job's
   # ownership JSON byte-for-byte instead of trusting a same-author assertion.
   scientific_runtime_cache_active_fence = {
-    schema                            = "fs2-serve.nebius.ai/scientific-runtime-cache-active-fence/v1"
+    schema                            = "fs2-serve.nebius.ai/scientific-runtime-cache-active-fence/v2"
     lease_name                        = var.scientific_batch.runtime_cache.migration_quiescence.lease_name
     lease_uid                         = var.scientific_batch.runtime_cache.migration_quiescence.lease_uid
     lock_device                       = var.scientific_batch.runtime_cache.migration_quiescence.lock_device
@@ -310,6 +363,14 @@ locals {
     admission_policy_uid              = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid
     admission_policy_resource_version = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_resource_version
     admission_binding_name            = var.scientific_batch.runtime_cache.migration_quiescence.admission_binding_name
+    security_boundary_name            = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_name
+    security_boundary_uid             = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_uid
+    security_boundary_resource_version = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_resource_version
+    security_boundary_sha256          = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_sha256
+    controller_admission_name         = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_name
+    controller_admission_uid          = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_uid
+    controller_admission_resource_version = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_resource_version
+    controller_admission_sha256       = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_sha256
     observed_at                       = var.scientific_batch.runtime_cache.migration_quiescence.observed_at
     expires_at                        = var.scientific_batch.runtime_cache.migration_quiescence.expires_at
     evidence_sha256                   = var.scientific_batch.runtime_cache.migration_quiescence.evidence_sha256
@@ -323,7 +384,7 @@ locals {
   }
   scientific_runtime_cache_quiescence_valid = try(
     var.scientific_batch.runtime_cache.migration_quiescence.quiescence_sha256 == sha256(jsonencode({
-      schema          = "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v2"
+      schema          = "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v3"
       lease_name      = var.scientific_batch.runtime_cache.migration_quiescence.lease_name
       lease_uid       = var.scientific_batch.runtime_cache.migration_quiescence.lease_uid
       lock_device     = var.scientific_batch.runtime_cache.migration_quiescence.lock_device
@@ -338,6 +399,14 @@ locals {
       admission_policy_resource_version = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_resource_version
       admission_policy_sha256 = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_sha256
       admission_binding_name = var.scientific_batch.runtime_cache.migration_quiescence.admission_binding_name
+      security_boundary_name = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_name
+      security_boundary_uid = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_uid
+      security_boundary_resource_version = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_resource_version
+      security_boundary_sha256 = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_sha256
+      controller_admission_name = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_name
+      controller_admission_uid = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_uid
+      controller_admission_resource_version = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_resource_version
+      controller_admission_sha256 = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_sha256
       observed_at     = var.scientific_batch.runtime_cache.migration_quiescence.observed_at
       expires_at      = var.scientific_batch.runtime_cache.migration_quiescence.expires_at
       evidence_sha256 = var.scientific_batch.runtime_cache.migration_quiescence.evidence_sha256
@@ -348,7 +417,7 @@ locals {
       var.scientific_batch.runtime_cache.migration_quiescence.authorization_id,
     ) &&
     local.verified_runtime_security_authorizations[var.scientific_batch.runtime_cache.migration_quiescence.authorization_id].kind == "cache-migration-quiescence" &&
-    local.verified_runtime_security_authorizations[var.scientific_batch.runtime_cache.migration_quiescence.authorization_id].subject_schema == "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v2" &&
+    local.verified_runtime_security_authorizations[var.scientific_batch.runtime_cache.migration_quiescence.authorization_id].subject_schema == "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v3" &&
     local.verified_runtime_security_authorizations[var.scientific_batch.runtime_cache.migration_quiescence.authorization_id].subject_sha256 == var.scientific_batch.runtime_cache.migration_quiescence.quiescence_sha256,
     false,
   )
@@ -533,12 +602,19 @@ locals {
             }
           }
           runtime_cache_admission = var.scientific_batch.runtime_cache.enabled ? {
-            apiVersion         = "admissionregistration.k8s.io/v1"
-            kind               = "ValidatingAdmissionPolicy"
-            name               = local.scientific_runtime_cache_writer_fence_name
-            uid                = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid
-            controller         = false
-            blockOwnerDeletion = false
+            schema           = "fs2-serve.nebius.ai/runtime-cache-admission-binding/v2"
+            name             = local.scientific_runtime_cache_writer_fence_name
+            uid              = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid
+            resource_version = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_resource_version
+            activation_id    = var.scientific_batch.runtime_cache.migration_quiescence.activation_id
+            security_boundary_name = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_name
+            security_boundary_uid = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_uid
+            security_boundary_resource_version = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_resource_version
+            security_boundary_sha256 = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_sha256
+            controller_admission_name = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_name
+            controller_admission_uid = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_uid
+            controller_admission_resource_version = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_resource_version
+            controller_admission_sha256 = var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_sha256
           } : null
         },
         length(var.scientific_batch.gpu_snapshots.bundles) == 0 ? {} : {
@@ -717,7 +793,15 @@ resource "kubernetes_manifest" "scientific_runtime_cache_writer_fence_binding" {
     kind       = "ValidatingAdmissionPolicyBinding"
     metadata = {
       name   = local.scientific_runtime_cache_writer_fence_name
-      labels = local.common_labels
+      labels = merge(local.common_labels, {
+        "fs2-serve.nebius.ai/immutable-security-boundary" = "true"
+      })
+      annotations = {
+        "fs2-serve.nebius.ai/security-boundary" = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_name
+        "fs2-serve.nebius.ai/security-boundary-uid" = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_uid
+        "fs2-serve.nebius.ai/security-boundary-resource-version" = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_resource_version
+        "fs2-serve.nebius.ai/security-boundary-sha256" = var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_sha256
+      }
     }
     spec = {
       policyName        = local.scientific_runtime_cache_writer_fence_name
@@ -792,14 +876,10 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap" {
     annotations = {
       "fs2.nebius.ai/runtime-cache-ownership-sha256" = local.scientific_runtime_cache_ownership_sha256
       "fs2.nebius.ai/runtime-cache-bootstrap-sha256" = local.scientific_runtime_cache_bootstrap_sha256
-    }
-    owner_references {
-      api_version          = "admissionregistration.k8s.io/v1"
-      kind                 = "ValidatingAdmissionPolicy"
-      name                 = local.scientific_runtime_cache_writer_fence_name
-      uid                  = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid
-      controller           = false
-      block_owner_deletion = false
+      "fs2-serve.nebius.ai/runtime-cache-admission-policy" = local.scientific_runtime_cache_writer_fence_name
+      "fs2-serve.nebius.ai/runtime-cache-admission-policy-uid" = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid
+      "fs2-serve.nebius.ai/runtime-cache-admission-policy-resource-version" = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_resource_version
+      "fs2-serve.nebius.ai/runtime-cache-activation" = var.scientific_batch.runtime_cache.migration_quiescence.activation_id
     }
   }
 
@@ -812,6 +892,12 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap" {
         labels = merge(local.common_labels, {
           "app.kubernetes.io/component" = "scientific-runtime-cache-bootstrap"
         })
+        annotations = {
+          "fs2-serve.nebius.ai/runtime-cache-admission-policy" = local.scientific_runtime_cache_writer_fence_name
+          "fs2-serve.nebius.ai/runtime-cache-admission-policy-uid" = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid
+          "fs2-serve.nebius.ai/runtime-cache-admission-policy-resource-version" = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_resource_version
+          "fs2-serve.nebius.ai/runtime-cache-activation" = var.scientific_batch.runtime_cache.migration_quiescence.activation_id
+        }
       }
 
       spec {
@@ -915,14 +1001,10 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap_additional" {
     annotations = {
       "fs2.nebius.ai/runtime-cache-ownership-sha256" = local.scientific_runtime_cache_additional_ownership_sha256[each.key]
       "fs2.nebius.ai/runtime-cache-bootstrap-sha256" = local.scientific_runtime_cache_additional_bootstrap_sha256[each.key]
-    }
-    owner_references {
-      api_version          = "admissionregistration.k8s.io/v1"
-      kind                 = "ValidatingAdmissionPolicy"
-      name                 = local.scientific_runtime_cache_writer_fence_name
-      uid                  = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid
-      controller           = false
-      block_owner_deletion = false
+      "fs2-serve.nebius.ai/runtime-cache-admission-policy" = local.scientific_runtime_cache_writer_fence_name
+      "fs2-serve.nebius.ai/runtime-cache-admission-policy-uid" = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid
+      "fs2-serve.nebius.ai/runtime-cache-admission-policy-resource-version" = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_resource_version
+      "fs2-serve.nebius.ai/runtime-cache-activation" = var.scientific_batch.runtime_cache.migration_quiescence.activation_id
     }
   }
 
@@ -935,6 +1017,12 @@ resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap_additional" {
         labels = merge(local.common_labels, {
           "app.kubernetes.io/component" = "scientific-runtime-cache-bootstrap"
         })
+        annotations = {
+          "fs2-serve.nebius.ai/runtime-cache-admission-policy" = local.scientific_runtime_cache_writer_fence_name
+          "fs2-serve.nebius.ai/runtime-cache-admission-policy-uid" = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_uid
+          "fs2-serve.nebius.ai/runtime-cache-admission-policy-resource-version" = var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_resource_version
+          "fs2-serve.nebius.ai/runtime-cache-activation" = var.scientific_batch.runtime_cache.migration_quiescence.activation_id
+        }
       }
 
       spec {

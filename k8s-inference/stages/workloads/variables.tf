@@ -381,6 +381,14 @@ variable "scientific_batch" {
         admission_policy_resource_version = string
         admission_policy_sha256           = string
         admission_binding_name            = string
+        security_boundary_name            = string
+        security_boundary_uid             = string
+        security_boundary_resource_version = string
+        security_boundary_sha256          = string
+        controller_admission_name         = string
+        controller_admission_uid          = string
+        controller_admission_resource_version = string
+        controller_admission_sha256       = string
         observed_at     = string
         expires_at      = string
         evidence_sha256 = string
@@ -454,6 +462,14 @@ variable "scientific_batch" {
         can(regex("^[1-9][0-9]*$", var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_resource_version)) &&
         can(regex("^[a-f0-9]{64}$", var.scientific_batch.runtime_cache.migration_quiescence.admission_policy_sha256)) &&
         var.scientific_batch.runtime_cache.migration_quiescence.admission_binding_name == "fs2-scientific-runtime-cache-writer-fence" &&
+        var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_name == "fs2-platform-security-admission-guard" &&
+        can(regex("^[a-f0-9-]{36}$", var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_uid)) &&
+        can(regex("^[1-9][0-9]*$", var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_resource_version)) &&
+        can(regex("^[a-f0-9]{64}$", var.scientific_batch.runtime_cache.migration_quiescence.security_boundary_sha256)) &&
+        var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_name == "fs2-scientific-cache-controller-chain" &&
+        can(regex("^[a-f0-9-]{36}$", var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_uid)) &&
+        can(regex("^[1-9][0-9]*$", var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_resource_version)) &&
+        can(regex("^[a-f0-9]{64}$", var.scientific_batch.runtime_cache.migration_quiescence.controller_admission_sha256)) &&
         can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.scientific_batch.runtime_cache.migration_quiescence.observed_at)) &&
         can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.scientific_batch.runtime_cache.migration_quiescence.expires_at)) &&
         can(regex("^[a-f0-9]{64}$", var.scientific_batch.runtime_cache.migration_quiescence.evidence_sha256)) &&
@@ -1377,6 +1393,11 @@ variable "model_runtime_security_compatibilities" {
   description = "Reviewed immutable-image compatibility records required before Terraform enables a restricted, read-only final container."
   type = map(object({
     model_id             = string
+    runtime_profile      = string
+    template_digest      = string
+    pool_id              = string
+    transport_mode       = string
+    snapshot_bundle_id   = optional(string)
     container_class      = string
     container_name       = string
     image                = string
@@ -1416,6 +1437,11 @@ variable "model_runtime_security_compatibilities" {
         var.enabled_model_ids,
         compatibility.model_id,
       ) &&
+      can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", compatibility.runtime_profile)) &&
+      can(regex("^sha256:[0-9a-f]{64}$", compatibility.template_digest)) &&
+      contains(keys(var.accelerator_pool_contract.pools), compatibility.pool_id) &&
+      contains(["none", "fallback", "nixl-rdma"], compatibility.transport_mode) &&
+      (try(compatibility.snapshot_bundle_id, null) == null || can(regex("^[A-Za-z0-9._-]{1,128}$", compatibility.snapshot_bundle_id))) &&
       contains(["initContainers", "containers", "ephemeralContainers"], compatibility.container_class) &&
       can(regex("^[a-z0-9](?:[-a-z0-9.]{0,61}[a-z0-9])?$", compatibility.container_name)) &&
       can(regex("^[^\\s@]+@sha256:[0-9a-f]{64}$", compatibility.image)) &&
@@ -1473,6 +1499,9 @@ variable "model_runtime_security_compatibilities" {
         compatibility.capability_profile == "serving-snapshot-tools" ? compatibility.container_class == "initContainers" && length(compatibility.allowed_capabilities) == 0 :
         compatibility.container_class == "initContainers" && compatibility.allowed_capabilities == ["NET_ADMIN"]
       ) &&
+      (!strcontains(compatibility.capability_profile, "modelexpress-nixl-rdma") || compatibility.transport_mode == "nixl-rdma") &&
+      (!(compatibility.transport_mode == "fallback") || !strcontains(compatibility.capability_profile, "modelexpress")) &&
+      (!startswith(compatibility.capability_profile, "serving-snapshot-") || try(compatibility.snapshot_bundle_id, null) != null) &&
       (
         startswith(compatibility.capability_profile, "serving-snapshot-") ? (
           compatibility.run_as_user == 0 && compatibility.run_as_group == 0 && compatibility.privileged == false &&
@@ -1486,8 +1515,13 @@ variable "model_runtime_security_compatibilities" {
       can(regex("^[0-9a-f]{64}$", compatibility.review_sha256)) &&
       contains(keys(var.model_runtime_security_authorizations), compatibility.authorization_id) &&
       compatibility.compatibility_sha256 == sha256(jsonencode({
-        schema          = "fs2-serve.nebius.ai/runtime-security-compatibility/v4"
+        schema          = "fs2-serve.nebius.ai/runtime-security-compatibility/v5"
         model_id        = compatibility.model_id
+        runtime_profile = compatibility.runtime_profile
+        template_digest = compatibility.template_digest
+        pool_id         = compatibility.pool_id
+        transport_mode  = compatibility.transport_mode
+        snapshot_bundle_id = try(compatibility.snapshot_bundle_id, null)
         container_class = compatibility.container_class
         container_name  = compatibility.container_name
         image           = compatibility.image
@@ -1509,7 +1543,7 @@ variable "model_runtime_security_compatibilities" {
       })) &&
       var.model_runtime_security_authorizations[compatibility.authorization_id].kind == "runtime-compatibility" &&
       var.model_runtime_security_authorizations[compatibility.authorization_id].model_id == compatibility.model_id &&
-      var.model_runtime_security_authorizations[compatibility.authorization_id].subject_schema == "fs2-serve.nebius.ai/runtime-security-compatibility/v4" &&
+      var.model_runtime_security_authorizations[compatibility.authorization_id].subject_schema == "fs2-serve.nebius.ai/runtime-security-compatibility/v5" &&
       var.model_runtime_security_authorizations[compatibility.authorization_id].subject_sha256 == compatibility.compatibility_sha256
     ])
     error_message = "model_runtime_security_compatibilities must bind every final immutable image/container to a reviewed non-root identity and bounded /tmp writable-path contract."
@@ -1519,9 +1553,16 @@ variable "model_runtime_security_compatibilities" {
 variable "nim_operator_admission" {
   description = "Fail-closed NIM CR/descendant webhook inputs bound to the fixed independent runtime-security authority."
   type = object({
-    enabled         = optional(bool, false)
     tls_secret_name = optional(string, "")
     ca_bundle       = optional(string, "")
+    security_boundary = optional(object({
+      name             = string
+      policy_uid              = string
+      policy_resource_version = string
+      binding_uid              = string
+      binding_resource_version = string
+      subject_sha256   = string
+    }), {})
     entries = optional(map(object({
       resource_kind    = string
       model_id         = string
@@ -1534,11 +1575,7 @@ variable "nim_operator_admission" {
   nullable = false
 
   validation {
-    condition = !var.nim_operator_admission.enabled || (
-      can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$", var.nim_operator_admission.tls_secret_name)) &&
-      length(var.nim_operator_admission.ca_bundle) >= 1 &&
-      can(base64decode(var.nim_operator_admission.ca_bundle)) &&
-      length(var.nim_operator_admission.entries) >= 1 &&
+    condition = length(var.nim_operator_admission.entries) == 0 || (
       alltrue([
         for entry in values(var.nim_operator_admission.entries) :
         contains(["NIMCache", "NIMService"], entry.resource_kind) &&
@@ -1548,18 +1585,18 @@ variable "nim_operator_admission" {
           var.enabled_model_ids,
           entry.model_id,
         ) &&
-        try(entry.subject.schema, "") == "fs2-serve.nebius.ai/nim-operator-security-subject/v4" &&
+        try(entry.subject.schema, "") == "fs2-serve.nebius.ai/nim-operator-security-subject/v5" &&
         try(entry.subject.model_id, "") == entry.model_id &&
         try(entry.subject.resource_kind, "") == entry.resource_kind &&
-        entry.subject_sha256 == sha256(jsonencode(entry.subject)) &&
+        entry.subject_sha256 == sha256("${jsonencode(entry.subject)}\n") &&
         contains(keys(var.model_runtime_security_authorizations), entry.authorization_id) &&
         var.model_runtime_security_authorizations[entry.authorization_id].kind == "nim-operator-descendant-admission" &&
         var.model_runtime_security_authorizations[entry.authorization_id].model_id == entry.model_id &&
-        var.model_runtime_security_authorizations[entry.authorization_id].subject_schema == "fs2-serve.nebius.ai/nim-operator-security-subject/v4" &&
+        var.model_runtime_security_authorizations[entry.authorization_id].subject_schema == "fs2-serve.nebius.ai/nim-operator-security-subject/v5" &&
         var.model_runtime_security_authorizations[entry.authorization_id].subject_sha256 == entry.subject_sha256
       ])
     )
-    error_message = "Enabled NIM admission requires TLS/CA inputs and one externally authorized schema-v4 subject for every configured NIM CR kind/model."
+    error_message = "NIM admission entries must be externally authorized schema-v5 subjects for selected NIM CR kinds/models; selection itself makes admission mandatory."
   }
 }
 

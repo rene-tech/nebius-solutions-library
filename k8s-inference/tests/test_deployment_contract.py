@@ -3116,7 +3116,27 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("security_hardened_model_documents", workload_locals)
         self.assertIn("model_runtime_security_validations", workload_locals)
         self.assertIn("model_runtime_security_none_compatibilities_by_key", workload_locals)
+        self.assertIn("model_runtime_security_source_template_digests", workload_locals)
+        self.assertIn("model_runtime_security_static_pool_ids", workload_locals)
+        self.assertIn("compatibility.runtime_profile == local.catalog_models", workload_locals)
+        self.assertIn("compatibility.template_digest == local.model_runtime_security_source_template_digests", workload_locals)
+        self.assertIn("compatibility.pool_id == local.model_runtime_security_static_pool_ids", workload_locals)
+        self.assertIn('compatibility.transport_mode == "none"', workload_locals)
         self.assertIn("try(container.securityContext.capabilities.add, []) == []", workload_locals)
+        self.assertIn('toset(["allowPrivilegeEscalation", "appArmorProfile", "capabilities"', workload_locals)
+        self.assertIn(
+            "try(document.manifest.spec.template.spec.hostNetwork, false) == false",
+            workload_locals,
+        )
+        self.assertIn("!can(document.manifest.spec.template.spec.hostUsers)", workload_locals)
+        self.assertIn(
+            'toset(["runAsNonRoot", "seccompProfile", "supplementalGroupsPolicy", "supplementalGroups", "fsGroup"])',
+            workload_locals,
+        )
+        self.assertIn(
+            "!can(document.manifest.spec.template.spec.securityContext.seccompProfile)",
+            workload_locals,
+        )
         self.assertIn("for mount in record.container.volumeMounts : mount if can(mount.subPathExpr)", workload_locals)
         self.assertIn("if can(port.hostIP) || try(port.hostPort, 0) != 0", workload_locals)
         self.assertIn("supplementalGroupsPolicy = \"Strict\"", workload_locals)
@@ -3752,6 +3772,35 @@ class DeploymentContractTests(unittest.TestCase):
             ["cpu", "memory", "ephemeral-storage"],
         )
         self.assertIn("deployment", manager["integrations"]["frameworks"])
+
+    def test_sai25_external_guard_and_sai09_cache_chain_are_fail_closed(self) -> None:
+        guard = (DEPLOY_ROOT / "policies/sai-25-platform-security-admission-guard.yaml").read_text()
+        cache = (DEPLOY_ROOT / "stages/workloads/scientific_artifacts.tf").read_text()
+        renderer = (
+            DEPLOY_ROOT
+            / "components/control-plane/src/fs2_serve/scientific_batch/execution.py"
+        ).read_text()
+        nim = (
+            DEPLOY_ROOT
+            / "components/control-plane/src/fs2_serve/nim_admission.py"
+        ).read_text()
+
+        self.assertIn("fs2-platform-security-admission-guard", guard)
+        self.assertIn("platform-security-release", guard)
+        self.assertIn("fs2-scientific-runtime-cache-writer-fence", guard)
+        self.assertIn("fs2-scientific-cache-controller-chain", guard)
+        self.assertIn("validatingwebhookconfigurations", guard)
+        self.assertIn("request.operation == 'CREATE'", guard)
+        self.assertIn("security_boundary_sha256", cache)
+        self.assertIn("controller_admission_sha256", cache)
+        self.assertIn("scientific-runtime-cache-quiescence/v3", cache)
+        self.assertIn("runtime-cache-execution-sha256", renderer)
+        self.assertIn('"pod_spec": effective_spec', renderer)
+        self.assertIn("owner_chain_to_nim", nim)
+        self.assertLess(
+            nim.index("await resolver.owner_chain_to_nim("),
+            nim.index("selected = config.select(review"),
+        )
 
 
 if __name__ == "__main__":

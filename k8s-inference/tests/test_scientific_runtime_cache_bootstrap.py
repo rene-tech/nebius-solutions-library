@@ -469,7 +469,13 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
     assert "scientific_workload_creator" in cache_source
     assert "job_controller" in cache_source
     assert "jobset_controller" in cache_source
-    assert "hasPolicyOwner" in cache_source
+    assert "hasPolicyBinding" in cache_source
+    assert "(!has(object.metadata.ownerReferences) || object.metadata.ownerReferences.size() == 0)" in cache_source
+    assert "runtime-cache-admission-policy-resource-version" in cache_source
+    assert "variables.podSpec.containers.exists_one(c, c.name == 'scientific-stage'" in cache_source
+    assert "c.command[1].matches('^/mnt/fs2-scientific" in cache_source
+    assert "variables.podSpec.serviceAccountName" in cache_source
+    assert "variables.podSpec.automountServiceAccountToken == false" in cache_source
     assert "scientific_runtime_cache_bootstrap_contract_cel" in cache_source
     assert "containers[0].env[0].value" in cache_source
     assert "scientific runtime-cache workloads may not use subPathExpr or host ports" in cache_source

@@ -152,8 +152,13 @@ def test_terraform_accepted_mechanism_envelope_loads_through_the_controller(tmp_
         "XDG_CACHE_HOME": "/tmp/fs2-cache/xdg",
     }
     compatibility = {
-        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v4",
+        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v5",
         "model_id": "qwen3-8b",
+        "runtime_profile": "vllm",
+        "template_digest": "sha256:" + ("1" * 64),
+        "pool_id": "pool-a",
+        "transport_mode": "none",
+        "snapshot_bundle_id": None,
         "container_class": "containers",
         "container_name": "vllm",
         "image": QWEN_IMAGE,

@@ -133,6 +133,10 @@ def cpu_renderer(pod_spec=None) -> LegacyManifestRenderer:
         runtime_security_compatibilities=[
             runtime_security_compatibility(
                 model_id="clinical-phenoage",
+                runtime_profile="native",
+                template_digest=digest("c"),
+                pool_id="general-cpu",
+                transport_mode="none",
                 container_class=container_class,
                 container_name=container["name"],
                 image=(

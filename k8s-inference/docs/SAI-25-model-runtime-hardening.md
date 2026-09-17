@@ -27,8 +27,17 @@ found that the NIM validator had no production admission endpoint, cache
 bootstrap/writer admission trusted forgeable object fields and missed the
 ephemeral-container subresource and namespace scope, final Restricted checks
 missed host ports, and serving snapshot plus NIXL/RDMA composed incompatible
-capability profiles. This document describes the next additive successor; it
-does not convert any rejected commit into integration or deployment approval.
+capability profiles. Rejected successor
+`cfa919a0ab146e35f365a786aaa116a389a92ce0` (tree
+`d5c1e8335ae8c71d2c0a49f1b2a50edec6ac3694`) fixed those points but remained
+SOURCE NO-GO: its webhook TLS key was unreadable by the non-root process,
+admission remained optional, NIM CR/controller/UID/policy closure was
+incomplete, ordinary cache writers were underbound, VAP owner references
+created a garbage-collection edge to customer Jobs/JobSets, runtime
+compatibility was not bound to the exact pool/bundle/transport tuple, and the
+enabled example omitted its actor identities. This document describes the
+next additive successor; it does not convert any rejected commit into
+integration or deployment approval.
 
 ## Security contract
 
@@ -64,15 +73,19 @@ envelope after cache and fast-start adapters have finished mutating the Pod:
 Terraform applies the same envelope to every selected Deployment before
 placement, cache-claim, and autoscaling rendering, whether the model is static,
 controller-eligible, or controller-ineligible. It does so only when an exact
-`runtime_security_compatibilities` record binds the final model ID, container
-class/name, immutable image, non-zero UID/GID, Pod groups, bounded `/tmp` size,
+`runtime_security_compatibilities` record binds the final model ID, runtime
+profile, independent source-template digest, exact static pool (including the
+CPU runtime class or explicit pool override), transport, snapshot bundle,
+container class/name, immutable image, non-zero UID/GID, Pod groups, bounded `/tmp` size,
 all required writable environment paths, the complete mount inventory, exact
 security profile, external review digest, and canonical binding
 digest. The final-render precondition checks every application, init, and
 ephemeral container. Missing records do not fall back to the image's default
 USER or to a generic writable-path guess.
 
-The same records are part of the controller bundle and its template digest.
+The same records are part of the controller bundle and bind the independently
+computed resource-template digest; they are deliberately outside the digest's
+preimage so a compatibility record cannot create a self-referential identity.
 After snapshot, cache, residency, or transport adapters run, the controller
 again requires an exact record for every final container before enabling the
 read-only root. Adapter-added helpers are therefore ineligible until their
@@ -94,8 +107,10 @@ Ordinary model rendering remains available when a snapshot bundle lacks those
 records; only that unapproved bundle is withheld. Scientific read-only
 reference `hostPath` is likewise an explicit signed exception over the final
 security projection, never a claimed Restricted volume. Terraform-owned static
-manifests refuse any pre-existing added capability or `subPathExpr` instead of
-erasing it. The dynamic ModelExpress path remains supported only for its exact
+manifests refuse pre-existing host namespace use, `hostUsers`, unknown or
+conflicting Pod security fields, added capabilities, unknown container-security
+fields, and `subPathExpr` instead of erasing them. The dynamic ModelExpress path
+remains supported only for its exact
 signed `nixl-rdma` runtime record and exact `IPC_LOCK` capability.
 
 Compatibility, image-promotion, scientific-image, cache-boundary, and cache
@@ -127,28 +142,71 @@ The static Cosmos3-Nano manifest retains its explicit scratch and runtime-cache
 mounts, so localization and media-generation paths remain writable.
 
 NIMCache and disabled-at-zero NIMService rendering require a signed
-`nim-operator-security-subject/v4` for the exact model, CR kind, private
-digest-pinned descendant image, operator digest, admission-policy digest, Pod
-service account/token and host-namespace state, exact CR and descendant
-admission actors, exact controller owner reference including UID, every final
-volume source digest, every read-only and writable mount, every container
-class/image/security context and host-port closure, the NIMCache `modelPuller` or disabled NIMService
-repository/tag fields, and the prohibition on block devices. Each signed container also carries an
-explicit non-zero UID/GID; companion images may differ from the runtime image
-but must have their own immutable private image and exact security/mount entry.
-The catalog exposes both the exact descendant validator and an AdmissionReview
-handler for the actual operator-created Pod, enumerating init, application, and
-ephemeral containers. Admission verifies the external signature before trusting
-the signed actor and then compares the request actor, owner, complete volume
-and mount closure, and effective Pod. The control-plane image now exposes a
-dedicated TLS admission-server command, and the opt-in chart path installs two
-restricted replicas, a ClusterIP Service, and a `failurePolicy: Fail`
-`ValidatingWebhookConfiguration` over both CR kinds, Pods, and the
-`pods/ephemeralcontainers` subresource in exactly `fs2-models`. Terraform will
-enable it only with a TLS Secret/CA and exactly one independently signed
-NIMCache and NIMService subject for every selected NIM model. The source path
-is disabled by default and has not been rendered, installed, or live-tested;
+`nim-operator-security-subject/v5` for the exact model, complete normalized CR,
+CR kind, private digest-pinned descendant image, exact pod-bound source and NIM
+operator controller Deployments/images, installed admission-policy digest, Pod
+service account/token and host-namespace state, and the complete expected
+NIMCache Job→Pod or NIMService Deployment→ReplicaSet→Pod,
+StatefulSet→Pod, and Job→Pod graph. Each graph node binds its complete
+security-relevant object projection, permitted owner kind, name pattern,
+actor, Pod-template status, container inventory, immutable images, exact
+volume sources and mounts, host-port closure, and block-device prohibition.
+Controller-assigned names, rollout revisions, and standard controller hash
+labels are normalized in that projection and then constrained by the signed
+name pattern and live owner UID chain; no other label, annotation, or spec field
+is excluded.
+Every signed container carries an explicit non-zero UID/GID; companion images
+may differ from the runtime image but must have their own private digest and
+exact security/mount entry.
+
+The production AdmissionReview endpoint now handles both CRs and the real
+Deployment, ReplicaSet, StatefulSet, Job, Pod, and ephemeral-container paths.
+For every descendant it resolves each owner edge read-only from the Kubernetes
+API, verifies the exact persisted UID at every hop, and terminates at the live
+CR whose complete normalized projection matches the signed subject. Outside the
+admission request path, a dedicated persisted-root reconciler lists the two NIM
+CR kinds, revalidates each persisted CR and its external signature, and
+atomically creates an immutable, generation-addressed ConfigMap binding the signed
+subject to that API-assigned root UID. The name contains the subject prefix and
+exact root UID, so a legitimate delete/recreate retains the old record and gets
+a distinct generation without update or deletion. Admission performs GET-only verification
+of that exact record and denies descendants and root updates until enrollment
+exists, so the webhook's declared `sideEffects: None` remains true. A concurrent
+reconcile retry must read back byte-identical content; delete/recreate remains
+denied until the new UID record exists, and neither the admission handler nor a
+model actor has update/delete permission on retained enrollments. Pod-bound token
+extras likewise resolve the request actor through Pod→ReplicaSet→the exact
+signed controller Deployment and private image; the controller-manager actor
+is admitted only on its exact built-in identity.
+
+The chart installs two restricted replicas under a dedicated tokenless service
+account, a ClusterIP Service, get-only owner/policy RBAC, exact get/list access
+to the two NIM root inventories, narrowly scoped create/get access for immutable
+root-enrollment ConfigMaps, and a
+`failurePolicy: Fail` webhook over the full
+graph in `fs2-models`. Selection of any NIM model makes this path mandatory;
+the chart rejects attempts to disable it. The non-root webhook reads its TLS
+Secret and short-lived projected API token through group-owned mode `0440`
+volumes with `fsGroup: 65532`. Readiness remains false until the reconciler has
+read back the installed webhook, compared its CA digest, rules, selector,
+failure/match policy, timeout, and Service target to the externally signed
+policy digest, and completed one exact persisted-root inventory pass. The
+signed admission-policy v5 additionally carries the external guard's exact
+name, UID, resourceVersion, and subject digest. Startup and every reconciliation
+read back both the live guard policy and binding under get-only RBAC and remain
+unready if either identity or immutable-boundary label differs. Missing TLS/CA,
+subjects, actors, private digests, or policy identity fail the source
+contract closed. This path has not been rendered, installed, or live-tested;
 it is not deployment approval.
+The webhook NetworkPolicy permits egress only to selected DNS Pods and explicit
+Kubernetes API CIDRs on TCP 443. The webhook configuration, Service/CA
+identity, immutable enrollments, and scientific-cache policy objects are also
+covered by the checked-in external Platform Security guard contract. Only the
+security release principal may mutate protected admission objects; only the
+exact NIM admission service account may create a structurally exact immutable
+enrollment. Workload activation must bind the observed guard UID,
+resourceVersion, and digest to an external signature. This task authors that
+contract but does not install or claim ownership of the boundary.
 NIMService remains at zero and route-disabled until that descendant admission
 succeeds; a tag-to-digest annotation alone is not activation authority.
 
@@ -222,9 +280,23 @@ The cluster-scoped `ValidatingAdmissionPolicy` and Deny/Audit binding are the
 writer fence, while the binding selects only the exact namespaces that own a
 scientific runtime-cache claim. It matches direct Jobs/JobSets, their
 controller-created Jobs and Pods, and `pods/ephemeralcontainers`. Direct
-objects must carry the observed policy UID as their sole owner and arrive from
-the separately configured bootstrap or scientific-workload actor; descendants
-must arrive from the exact Job or JobSet controller with one controller owner.
+objects carry a non-owning annotation tuple for the observed policy name,
+UID/resourceVersion, and activation, and must have no owner reference. This
+prevents a VAP lifecycle or garbage collection from deleting customer Jobs or
+JobSets. They must arrive from the separately configured bootstrap or
+scientific-workload actor; descendants must arrive from the exact Job or JobSet
+controller with one ordinary controller owner.
+That local controller identity and owner-reference shape are defense in depth,
+not authorization. SAI-09 is an explicit integration dependency: the separately
+owned `fs2-scientific-cache-controller-chain` admission service must resolve the
+exact live Pod→Job→JobSet UID chain and recompute a canonical execution digest
+over tenant, model, stage, immutable image, complete rendered Pod spec,
+commands, resources, security context, and mounts. Each parent and Pod template
+carry that digest plus the observed external admission UID/resourceVersion.
+The signed cache-quiescence v3 subject binds the controller-admission digest and
+the external guard digest. Missing or stale identities make cache activation
+ineligible; a stable controller username, synthetic owner reference, or
+arbitrary `stage-runner.py -- ...` tail is never sufficient authority.
 After activation, a workload may mount the claim only as the one exact
 tenant/model scientific stage (two projections: its cache directory and the
 read-only lock) or as the exact-name, fixed-image, fixed-program, tokenless
@@ -291,7 +363,8 @@ Source tests were updated to cover:
 - external Ed25519 verification, same-document self-authorization rejection,
   and signed NIM CR plus actual-descendant actor, owner, volume-source,
   read-only-mount, host-port, and security validation through the production
-  fail-closed admission-server/chart path;
+  fail-closed admission-server/chart path, including create-once root-UID
+  enrollment and retry mismatch rejection;
 - authenticated cache bootstrap/writer actors, immutable owner chains, exact
   bootstrap environment and Pod closure, consumer-namespace selection,
   Job/JobSet descendants, and denied ephemeral-container injection;

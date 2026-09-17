@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 import tarfile
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -235,12 +236,19 @@ def authorize_runtime_security(
     value["runtime_cache_boundaries"] = boundaries
     if boundaries:
         value["runtime_cache_admission"] = {
-            "apiVersion": "admissionregistration.k8s.io/v1",
-            "kind": "ValidatingAdmissionPolicy",
+            "schema": "fs2-serve.nebius.ai/runtime-cache-admission-binding/v2",
             "name": "fs2-scientific-runtime-cache-writer-fence",
             "uid": "11111111-1111-4111-8111-111111111111",
-            "controller": False,
-            "blockOwnerDeletion": False,
+            "resource_version": "7",
+            "activation_id": "7" * 64,
+            "security_boundary_name": "fs2-platform-security-admission-guard",
+            "security_boundary_uid": "22222222-2222-4222-8222-222222222222",
+            "security_boundary_resource_version": "11",
+            "security_boundary_sha256": "2" * 64,
+            "controller_admission_name": "fs2-scientific-cache-controller-chain",
+            "controller_admission_uid": "33333333-3333-4333-8333-333333333333",
+            "controller_admission_resource_version": "13",
+            "controller_admission_sha256": "3" * 64,
         }
     return trusted
 
@@ -1091,7 +1099,7 @@ def test_runtime_binding_emits_only_the_selected_exact_variant_source(
         assert "unused-variant" not in {item["name"] for item in container["volumeMounts"]}
 
 
-def test_runtime_cache_is_terraform_owned_model_only_and_never_triggers_recursive_chown(tmp_path: Path) -> None:
+def test_runtime_cache_uses_a_non_owning_exact_policy_binding_and_never_triggers_recursive_chown(tmp_path: Path) -> None:
     plan = runtime_plan()
     renderer = runtime_execution_map(tmp_path, runtime_cache=True)
     access = ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a")
@@ -1123,15 +1131,29 @@ def test_runtime_cache_is_terraform_owned_model_only_and_never_triggers_recursiv
         execution_binding=bound.execution_binding("prepare"),
     )
     manifest = renderer.render(resource)
-    assert manifest["metadata"]["ownerReferences"] == [
-        {
-            "apiVersion": "admissionregistration.k8s.io/v1",
-            "kind": "ValidatingAdmissionPolicy",
-            "name": "fs2-scientific-runtime-cache-writer-fence",
-            "uid": "11111111-1111-4111-8111-111111111111",
-            "controller": False,
-            "blockOwnerDeletion": False,
-        }
+    assert "ownerReferences" not in manifest["metadata"]
+    annotations = manifest["metadata"]["annotations"]
+    assert {
+        "fs2-serve.nebius.ai/runtime-cache-admission-policy": "fs2-scientific-runtime-cache-writer-fence",
+        "fs2-serve.nebius.ai/runtime-cache-admission-policy-uid": "11111111-1111-4111-8111-111111111111",
+        "fs2-serve.nebius.ai/runtime-cache-admission-policy-resource-version": "7",
+        "fs2-serve.nebius.ai/runtime-cache-activation": "7" * 64,
+        "fs2-serve.nebius.ai/controller-admission": "fs2-scientific-cache-controller-chain",
+        "fs2-serve.nebius.ai/controller-admission-uid": "33333333-3333-4333-8333-333333333333",
+        "fs2-serve.nebius.ai/controller-admission-resource-version": "13",
+        "fs2-serve.nebius.ai/controller-admission-sha256": "3" * 64,
+        "fs2-serve.nebius.ai/security-boundary": "fs2-platform-security-admission-guard",
+        "fs2-serve.nebius.ai/security-boundary-uid": "22222222-2222-4222-8222-222222222222",
+        "fs2-serve.nebius.ai/security-boundary-resource-version": "11",
+        "fs2-serve.nebius.ai/security-boundary-sha256": "2" * 64,
+    }.items() <= annotations.items()
+    assert re.fullmatch(
+        r"[a-f0-9]{64}",
+        annotations["fs2-serve.nebius.ai/runtime-cache-execution-sha256"],
+    )
+    pod_annotations = manifest["spec"]["template"]["metadata"]["annotations"]
+    assert pod_annotations["fs2-serve.nebius.ai/runtime-cache-execution-sha256"] == annotations[
+        "fs2-serve.nebius.ai/runtime-cache-execution-sha256"
     ]
     pod = manifest["spec"]["template"]["spec"]  # type: ignore[index]
     model = pod["containers"][0]

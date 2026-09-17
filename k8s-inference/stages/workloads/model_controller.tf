@@ -600,6 +600,11 @@ locals {
     for model_id in local.selected_model_ids : model_id => [
       for compatibility in values(var.model_runtime_security_compatibilities) : {
         modelId             = compatibility.model_id
+        runtimeProfile      = compatibility.runtime_profile
+        templateDigest      = compatibility.template_digest
+        poolId              = compatibility.pool_id
+        transportMode       = compatibility.transport_mode
+        snapshotBundleId    = try(compatibility.snapshot_bundle_id, null)
         containerClass      = compatibility.container_class
         containerName       = compatibility.container_name
         image               = compatibility.image
@@ -631,11 +636,8 @@ locals {
     ]
   }
   model_controller_candidate_template_digests = {
-    for model_id, resources in local.model_controller_candidate_bundle_resources :
-    model_id => "sha256:${sha256(jsonencode({
-      resources                      = resources
-      runtimeSecurityCompatibilities = local.model_controller_runtime_security_compatibilities[model_id]
-    }))}"
+    for model_id in local.selected_model_ids :
+    model_id => local.model_runtime_security_source_template_digests[model_id]
   }
   model_controller_bundle_requires_shared_cache = {
     # Cache PVCs remain Terraform-owned across the explicit serving-resource
@@ -744,48 +746,209 @@ locals {
       )) > 0
     ])
   }
-  model_controller_snapshot_security_missing = {
-    for bundle_id, bundle in local.serving_snapshot_bundles : bundle_id => [
-        for requirement in concat([
-          {
-            container_class   = "containers"
-            container_name    = try(local.model_controller_runtime_container_names[bundle.model_ref], "")
-            image             = bundle.runtime_image
-            capability_profile = "serving-snapshot-runtime"
-          },
-          {
-            container_class   = "initContainers"
-            container_name    = "snapshot-tools"
-            image             = bundle.tools_image
-            capability_profile = "serving-snapshot-tools"
-          },
-          {
-            container_class   = "initContainers"
-            container_name    = "snapshot-local-address"
-            image             = bundle.runtime_image
-            capability_profile = "serving-snapshot-address"
-          },
-        ], (
-          contains(keys(var.model_express.models), bundle.model_ref) &&
-          anytrue([
-            for pool_id in try(local.model_controller_qualified_pool_ids[bundle.model_ref], []) :
-            lookup(var.model_express.models[bundle.model_ref].pool_transports, pool_id, var.model_express.models[bundle.model_ref].transport).mode == "nixl-rdma"
-          ])
-        ) ? [{
-          container_class    = "containers"
-          container_name     = try(local.model_controller_runtime_container_names[bundle.model_ref], "")
+  # Runtime compatibility is admitted for the exact execution tuple rather
+  # than by record count. A record for another pool, transport, bundle, image,
+  # or runtime template cannot make an otherwise-unrenderable path eligible.
+  model_controller_security_transport_modes = {
+    for model_id in local.selected_model_ids : model_id => {
+      for pool_id in local.model_controller_qualified_pool_ids[model_id] : pool_id => (
+        var.model_express.enabled && contains(keys(var.model_express.models), model_id) ?
+        lookup(
+          var.model_express.models[model_id].pool_transports,
+          pool_id,
+          var.model_express.models[model_id].transport,
+        ).mode : "none"
+      )
+    }
+  }
+  model_controller_renderer_security_expected = {
+    for model_id in local.selected_model_ids : model_id => flatten([
+      for pool_id in local.model_controller_qualified_pool_ids[model_id] : flatten([
+        for document in local.model_documents : concat(
+          [for container in try(document.manifest.spec.template.spec.initContainers, []) : {
+            runtime_profile    = local.catalog_models[model_id].runtime.kind
+            template_digest    = local.model_controller_candidate_template_digests[model_id]
+            pool_id            = pool_id
+            transport_mode     = local.model_controller_security_transport_modes[model_id][pool_id]
+            snapshot_bundle_id = null
+            container_class    = "initContainers"
+            container_name     = container.name
+            image              = container.image
+            capability_profile = "none"
+          }],
+          [for container in try(document.manifest.spec.template.spec.containers, []) : {
+            runtime_profile    = local.catalog_models[model_id].runtime.kind
+            template_digest    = local.model_controller_candidate_template_digests[model_id]
+            pool_id            = pool_id
+            transport_mode     = local.model_controller_security_transport_modes[model_id][pool_id]
+            snapshot_bundle_id = null
+            container_class    = "containers"
+            container_name     = container.name
+            image              = container.image
+            capability_profile = (
+              container.name == local.model_controller_runtime_container_names[model_id] &&
+              local.model_controller_security_transport_modes[model_id][pool_id] == "nixl-rdma"
+            ) ? "modelexpress-nixl-rdma" : "none"
+          }],
+          [for container in try(document.manifest.spec.template.spec.ephemeralContainers, []) : {
+            runtime_profile    = local.catalog_models[model_id].runtime.kind
+            template_digest    = local.model_controller_candidate_template_digests[model_id]
+            pool_id            = pool_id
+            transport_mode     = local.model_controller_security_transport_modes[model_id][pool_id]
+            snapshot_bundle_id = null
+            container_class    = "ephemeralContainers"
+            container_name     = container.name
+            image              = container.image
+            capability_profile = "none"
+          }],
+        ) if document.model_id == model_id && document.manifest.kind == "Deployment"
+      ])
+    ])
+  }
+  model_controller_renderer_security_actual = {
+    for model_id in local.selected_model_ids : model_id => [
+      for compatibility in values(var.model_runtime_security_compatibilities) : {
+        runtime_profile    = compatibility.runtime_profile
+        template_digest    = compatibility.template_digest
+        pool_id            = compatibility.pool_id
+        transport_mode     = compatibility.transport_mode
+        snapshot_bundle_id = try(compatibility.snapshot_bundle_id, null)
+        container_class    = compatibility.container_class
+        container_name     = compatibility.container_name
+        image              = compatibility.image
+        capability_profile = compatibility.capability_profile
+      }
+      if compatibility.model_id == model_id &&
+      try(compatibility.snapshot_bundle_id, null) == null &&
+      compatibility.container_name != "residency-agent" &&
+      contains(["none", "modelexpress-nixl-rdma"], compatibility.capability_profile)
+    ]
+  }
+  model_controller_snapshot_security_expected = {
+    for bundle_id, bundle in local.serving_snapshot_bundles : bundle_id => flatten([
+      for pool_id in try(local.model_controller_qualified_pool_ids[bundle.model_ref], []) : concat(
+        flatten([
+          for document in local.model_documents : concat(
+            [for container in try(document.manifest.spec.template.spec.initContainers, []) : {
+              runtime_profile    = local.catalog_models[bundle.model_ref].runtime.kind
+              template_digest    = local.model_controller_candidate_template_digests[bundle.model_ref]
+              pool_id            = pool_id
+              transport_mode     = local.model_controller_security_transport_modes[bundle.model_ref][pool_id]
+              snapshot_bundle_id = bundle_id
+              container_class    = "initContainers"
+              container_name     = container.name
+              image              = container.image
+              capability_profile = "none"
+            }],
+            [for container in try(document.manifest.spec.template.spec.containers, []) : {
+              runtime_profile    = local.catalog_models[bundle.model_ref].runtime.kind
+              template_digest    = local.model_controller_candidate_template_digests[bundle.model_ref]
+              pool_id            = pool_id
+              transport_mode     = local.model_controller_security_transport_modes[bundle.model_ref][pool_id]
+              snapshot_bundle_id = bundle_id
+              container_class    = "containers"
+              container_name     = container.name
+              image              = container.name == local.model_controller_runtime_container_names[bundle.model_ref] ? bundle.runtime_image : container.image
+              capability_profile = container.name == local.model_controller_runtime_container_names[bundle.model_ref] ? (
+                local.model_controller_security_transport_modes[bundle.model_ref][pool_id] == "nixl-rdma" ?
+                "serving-snapshot-runtime-modelexpress-nixl-rdma" : "serving-snapshot-runtime"
+              ) : "none"
+            }],
+            [for container in try(document.manifest.spec.template.spec.ephemeralContainers, []) : {
+              runtime_profile    = local.catalog_models[bundle.model_ref].runtime.kind
+              template_digest    = local.model_controller_candidate_template_digests[bundle.model_ref]
+              pool_id            = pool_id
+              transport_mode     = local.model_controller_security_transport_modes[bundle.model_ref][pool_id]
+              snapshot_bundle_id = bundle_id
+              container_class    = "ephemeralContainers"
+              container_name     = container.name
+              image              = container.image
+              capability_profile = "none"
+            }],
+          ) if document.model_id == bundle.model_ref && document.manifest.kind == "Deployment"
+        ]),
+        [{
+          runtime_profile    = local.catalog_models[bundle.model_ref].runtime.kind
+          template_digest    = local.model_controller_candidate_template_digests[bundle.model_ref]
+          pool_id            = pool_id
+          transport_mode     = local.model_controller_security_transport_modes[bundle.model_ref][pool_id]
+          snapshot_bundle_id = bundle_id
+          container_class    = "initContainers"
+          container_name     = "snapshot-tools"
+          image              = bundle.tools_image
+          capability_profile = "serving-snapshot-tools"
+        }, {
+          runtime_profile    = local.catalog_models[bundle.model_ref].runtime.kind
+          template_digest    = local.model_controller_candidate_template_digests[bundle.model_ref]
+          pool_id            = pool_id
+          transport_mode     = local.model_controller_security_transport_modes[bundle.model_ref][pool_id]
+          snapshot_bundle_id = bundle_id
+          container_class    = "initContainers"
+          container_name     = "snapshot-local-address"
           image              = bundle.runtime_image
-          capability_profile = "serving-snapshot-runtime-modelexpress-nixl-rdma"
-        }] : []) : "${requirement.container_class}:${requirement.container_name}:${requirement.capability_profile}"
-        if length([
-          for compatibility in values(var.model_runtime_security_compatibilities) : compatibility
-          if compatibility.model_id == bundle.model_ref &&
-          compatibility.container_class == requirement.container_class &&
-          compatibility.container_name == requirement.container_name &&
-          compatibility.image == requirement.image &&
-          compatibility.capability_profile == requirement.capability_profile
-        ]) != 1
-      ]
+          capability_profile = "serving-snapshot-address"
+        }],
+      )
+    ])
+  }
+  model_controller_snapshot_security_actual = {
+    for bundle_id, bundle in local.serving_snapshot_bundles : bundle_id => [
+      for compatibility in values(var.model_runtime_security_compatibilities) : {
+        runtime_profile    = compatibility.runtime_profile
+        template_digest    = compatibility.template_digest
+        pool_id            = compatibility.pool_id
+        transport_mode     = compatibility.transport_mode
+        snapshot_bundle_id = try(compatibility.snapshot_bundle_id, null)
+        container_class    = compatibility.container_class
+        container_name     = compatibility.container_name
+        image              = compatibility.image
+        capability_profile = compatibility.capability_profile
+      }
+      if compatibility.model_id == bundle.model_ref &&
+      try(compatibility.snapshot_bundle_id, null) == bundle_id
+    ]
+  }
+  model_controller_snapshot_security_missing = {
+    for bundle_id in keys(local.serving_snapshot_bundles) : bundle_id => sort(tolist(setsubtract(
+      toset([for compatibility in local.model_controller_snapshot_security_expected[bundle_id] : jsonencode(compatibility)]),
+      toset([for compatibility in local.model_controller_snapshot_security_actual[bundle_id] : jsonencode(compatibility)]),
+    )))
+  }
+  model_controller_residency_security_expected = {
+    for model_id in local.selected_model_ids : model_id => try(
+      local.model_controller_fast_start_mechanism_declarations[model_id].hostMemoryResidency.residencyMode != "runtime-sleep-offload" ? [
+        for pool_id in local.model_controller_fast_start_mechanism_declarations[model_id].hostMemoryResidency.poolRefs : {
+          runtime_profile    = local.catalog_models[model_id].runtime.kind
+          template_digest    = local.model_controller_candidate_template_digests[model_id]
+          pool_id            = pool_id
+          transport_mode     = "none"
+          snapshot_bundle_id = null
+          container_class    = "containers"
+          container_name     = "residency-agent"
+          image              = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
+          capability_profile = local.model_controller_fast_start_mechanism_declarations[model_id].hostMemoryResidency.residencyMode == "locked-payload-residency" ? "host-memory-locked-residency" : "none"
+        }
+        if contains(local.model_controller_qualified_pool_ids[model_id], pool_id)
+      ] : [],
+      [],
+    )
+  }
+  model_controller_residency_security_actual = {
+    for model_id in local.selected_model_ids : model_id => [
+      for compatibility in values(var.model_runtime_security_compatibilities) : {
+        runtime_profile    = compatibility.runtime_profile
+        template_digest    = compatibility.template_digest
+        pool_id            = compatibility.pool_id
+        transport_mode     = compatibility.transport_mode
+        snapshot_bundle_id = try(compatibility.snapshot_bundle_id, null)
+        container_class    = compatibility.container_class
+        container_name     = compatibility.container_name
+        image              = compatibility.image
+        capability_profile = compatibility.capability_profile
+      }
+      if compatibility.model_id == model_id &&
+      compatibility.container_name == "residency-agent"
+    ]
   }
   model_controller_qualification_checks = {
     for model_id in local.selected_model_ids : model_id => {
@@ -861,13 +1024,20 @@ locals {
           if container.name == local.model_controller_runtime_container_names[model_id]
         ]) == var.model_image_overrides[model_id] &&
         length(local.model_controller_candidate_bundle_resources[model_id]) > 0 &&
-        length(local.model_controller_runtime_security_compatibilities[model_id]) >= length(flatten([
-          for document in local.model_documents : concat(
-            try(document.manifest.spec.template.spec.initContainers, []),
-            try(document.manifest.spec.template.spec.containers, []),
-            try(document.manifest.spec.template.spec.ephemeralContainers, []),
-          ) if document.model_id == model_id && document.manifest.kind == "Deployment"
-        ])),
+        toset([
+          for compatibility in local.model_controller_renderer_security_expected[model_id] :
+          jsonencode(compatibility)
+        ]) == toset([
+          for compatibility in local.model_controller_renderer_security_actual[model_id] :
+          jsonencode(compatibility)
+        ]) &&
+        toset([
+          for compatibility in local.model_controller_residency_security_expected[model_id] :
+          jsonencode(compatibility)
+        ]) == toset([
+          for compatibility in local.model_controller_residency_security_actual[model_id] :
+          jsonencode(compatibility)
+        ]),
         false,
       )
     }

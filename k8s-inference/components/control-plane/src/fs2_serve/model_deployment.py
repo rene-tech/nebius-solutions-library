@@ -1812,6 +1812,11 @@ class RuntimeMountCompatibility(KubernetesModel):
 
 class RuntimeSecurityCompatibility(KubernetesModel):
     model_id: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
+    runtime_profile: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
+    template_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
+    pool_id: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
+    transport_mode: Literal["none", "fallback", "nixl-rdma"]
+    snapshot_bundle_id: str | None = Field(default=None, min_length=1, max_length=128)
     container_class: Literal["initContainers", "containers", "ephemeralContainers"]
     container_name: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
     image: str = Field(min_length=73, max_length=768, pattern=IMAGE_DIGEST_PATTERN)
@@ -1981,9 +1986,27 @@ class RuntimeSecurityCompatibility(KubernetesModel):
             and self.container_class != "initContainers"
         ):
             raise ValueError("runtime security compatibility capability profile differs")
+        if (
+            "modelexpress-nixl-rdma" in self.capability_profile
+            and self.transport_mode != "nixl-rdma"
+        ) or (
+            self.transport_mode == "fallback"
+            and "modelexpress" in self.capability_profile
+        ) or (
+            self.capability_profile.startswith("serving-snapshot-")
+            and self.snapshot_bundle_id is None
+        ):
+            raise ValueError(
+                "runtime security compatibility capability lacks its exact pool/transport/bundle tuple"
+            )
         payload = {
-            "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v4",
+            "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v5",
             "model_id": self.model_id,
+            "runtime_profile": self.runtime_profile,
+            "template_digest": self.template_digest,
+            "pool_id": self.pool_id,
+            "transport_mode": self.transport_mode,
+            "snapshot_bundle_id": self.snapshot_bundle_id,
             "container_class": self.container_class,
             "container_name": self.container_name,
             "image": self.image,
@@ -2030,7 +2053,7 @@ class RuntimeSecurityCompatibility(KubernetesModel):
                 "authorization_id": self.authorization_id,
                 "kind": "runtime-compatibility",
                 "model_id": self.model_id,
-                "subject_schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v4",
+                "subject_schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v5",
                 "subject_sha256": self.compatibility_sha256,
                 "decision": "accepted",
                 "reviewer_role": "independent-platform-security",
@@ -2043,7 +2066,7 @@ class RuntimeSecurityCompatibility(KubernetesModel):
                 trusted_attestors=trusted_attestors,
                 expected_session_id=self.authorization_session_id,
                 expected_kind="runtime-compatibility",
-                expected_schema="fs2-serve.nebius.ai/runtime-security-compatibility/v4",
+                expected_schema="fs2-serve.nebius.ai/runtime-security-compatibility/v5",
                 expected_digest="sha256:" + self.compatibility_sha256,
                 expected_model_id=self.model_id,
             )
@@ -2334,6 +2357,11 @@ def _enforce_restricted_runtime_security(
     runtime_container_name: str,
     *,
     model_id: str,
+    runtime_profile: str,
+    template_digest: str,
+    pool_id: str,
+    transport_mode: str,
+    snapshot_bundle_id: str | None,
     compatibilities: Sequence[RuntimeSecurityCompatibility],
     active_capability_profiles: Mapping[tuple[str, str], str] | None = None,
     volume_source_rewrites: Mapping[str, Mapping[str, Any]] | None = None,
@@ -2349,23 +2377,31 @@ def _enforce_restricted_runtime_security(
     pod_security = pod_spec.get("securityContext", {})
     if not isinstance(pod_security, Mapping):
         raise ValueError("primary Deployment Pod securityContext is invalid")
-    compatibility_by_key = {
-        (item.container_class, item.container_name, item.image, item.capability_profile): item
+    tuple_compatibilities = [
+        item
         for item in compatibilities
         if item.model_id == model_id
+        and item.runtime_profile == runtime_profile
+        and item.template_digest == template_digest
+        and item.pool_id == pool_id
+        and item.transport_mode == transport_mode
+        and item.snapshot_bundle_id == snapshot_bundle_id
+    ]
+    compatibility_by_key = {
+        (item.container_class, item.container_name, item.image, item.capability_profile): item
+        for item in tuple_compatibilities
     }
     active_profiles = dict(active_capability_profiles or {})
     snapshot_exception_active = any(
         profile.startswith("serving-snapshot-") for profile in active_profiles.values()
     )
     if len(compatibility_by_key) != len(
-        [item for item in compatibilities if item.model_id == model_id]
+        tuple_compatibilities
     ):
         raise ValueError("runtime security compatibility records are duplicated")
     pod_group_profiles = {
         (tuple(item.pod_supplemental_groups), item.pod_fs_group)
-        for item in compatibilities
-        if item.model_id == model_id
+        for item in tuple_compatibilities
     }
     if len(pod_group_profiles) != 1:
         raise ValueError("runtime security compatibility Pod group records differ")
@@ -3188,11 +3224,20 @@ class LegacyManifestRenderer:
             _validate_serving_snapshot_selection(
                 spec, selected_snapshot, [pool.accelerator_class for pool in (context.eligible_pools or [context.pool])]
             )
-            if context.model_express is not None or (
+            if context.model_express is not None and any(
+                context.model_express.pool_transports[pool.pool_id].mode != "nixl-rdma"
+                for pool in (context.eligible_pools or [context.pool])
+            ):
+                raise ValueError(
+                    "serving snapshot plus ModelExpress requires the signed nixl-rdma composition"
+                )
+            if (
                 context.fast_start_mechanism is not None
                 and context.fast_start_mechanism.mechanism is not FastStartMechanism.CONVENTIONAL
             ):
-                raise ValueError("serving snapshot cannot be combined with another effective loader")
+                raise ValueError(
+                    "serving snapshot cannot be combined with another effective fast-start mechanism"
+                )
 
         labels = {
             "app.kubernetes.io/managed-by": "fs2-model-controller",
@@ -3472,6 +3517,11 @@ class LegacyManifestRenderer:
                 context.model_express is not None
                 and context.model_express.pool_transports[segment.pool.pool_id].mode == "nixl-rdma"
             )
+            selected_transport_mode = (
+                context.model_express.pool_transports[segment.pool.pool_id].mode
+                if context.model_express is not None
+                else "none"
+            )
             if rdma_profile:
                 active_capability_profiles[("containers", bundle.runtime_container_name)] = (
                     "serving-snapshot-runtime-modelexpress-nixl-rdma"
@@ -3524,6 +3574,11 @@ class LegacyManifestRenderer:
                 pod_spec,
                 bundle.runtime_container_name,
                 model_id=spec.model_ref,
+                runtime_profile=spec.runtime.profile,
+                template_digest=bundle.template_digest,
+                pool_id=segment.pool.pool_id,
+                transport_mode=selected_transport_mode,
+                snapshot_bundle_id=(selected_snapshot.bundle_id if selected_snapshot is not None else None),
                 compatibilities=bundle.runtime_security_compatibilities,
                 active_capability_profiles=active_capability_profiles,
             )
@@ -3535,6 +3590,11 @@ class LegacyManifestRenderer:
                     )
                     for compatibility in bundle.runtime_security_compatibilities
                     if compatibility.model_id == spec.model_ref
+                    and compatibility.runtime_profile == spec.runtime.profile
+                    and compatibility.template_digest == bundle.template_digest
+                    and compatibility.pool_id == segment.pool.pool_id
+                    and compatibility.transport_mode == selected_transport_mode
+                    and compatibility.snapshot_bundle_id == selected_snapshot.bundle_id
                     and (
                         (
                             compatibility.container_class == "containers"
@@ -3602,13 +3662,18 @@ class LegacyManifestRenderer:
             # effective Pod after snapshot, residency, ModelExpress, resource,
             # and replica transforms so a late adapter cannot reintroduce root,
             # an unconfined profile, an unreviewed capability, or a writable
-            # mount. Legacy CRIU snapshot bundles currently request exactly
-            # those privileges and therefore fail closed until independently
-            # qualified under a separate restricted-compatible contract.
+            # mount. CUDA/CRIU and CUDA/CRIU+nixl-rdma profiles are accepted
+            # only when their complete pool/transport/bundle tuple has a
+            # separately signed compatibility record.
             _enforce_restricted_runtime_security(
                 pod_spec,
                 bundle.runtime_container_name,
                 model_id=spec.model_ref,
+                runtime_profile=spec.runtime.profile,
+                template_digest=bundle.template_digest,
+                pool_id=segment.pool.pool_id,
+                transport_mode=selected_transport_mode,
+                snapshot_bundle_id=(selected_snapshot.bundle_id if selected_snapshot is not None else None),
                 compatibilities=bundle.runtime_security_compatibilities,
                 active_capability_profiles=active_capability_profiles,
             )
@@ -3756,10 +3821,20 @@ class LegacyManifestRenderer:
                 if residency.residency_mode == "locked-payload-residency"
                 else "none"
             )
+            # The residency agent does not speak the serving transport. Its
+            # IPC_LOCK need is independently authorized by the exact holder
+            # profile, so binding it to NIXL would manufacture a capability
+            # composition that the holder never uses.
+            holder_transport_mode = "none"
             holder_compatibilities = [
                 compatibility
                 for compatibility in bundle.runtime_security_compatibilities
                 if compatibility.model_id == spec.model_ref
+                and compatibility.runtime_profile == spec.runtime.profile
+                and compatibility.template_digest == bundle.template_digest
+                and compatibility.pool_id == pool_id
+                and compatibility.transport_mode == holder_transport_mode
+                and compatibility.snapshot_bundle_id is None
                 and compatibility.container_class == "containers"
                 and compatibility.container_name == "residency-agent"
                 and compatibility.image == context.residency_holder_image
@@ -3777,6 +3852,11 @@ class LegacyManifestRenderer:
                     holder_template["spec"],
                     "residency-agent",
                     model_id=spec.model_ref,
+                    runtime_profile=spec.runtime.profile,
+                    template_digest=bundle.template_digest,
+                    pool_id=pool_id,
+                    transport_mode=holder_transport_mode,
+                    snapshot_bundle_id=None,
                     compatibilities=bundle.runtime_security_compatibilities,
                     active_capability_profiles={
                         ("containers", "residency-agent"): holder_profile

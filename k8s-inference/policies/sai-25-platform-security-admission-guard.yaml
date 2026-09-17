@@ -1,0 +1,84 @@
+# Source contract only. This policy is owned and installed by Platform Security,
+# not by the workload release. SAI-25 and its SAI-09 controller-chain dependency
+# must observe and sign the installed UID/resourceVersion/digest before either
+# runtime-cache or NIM admission can become ready.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: fs2-platform-security-admission-guard
+  labels:
+    app.kubernetes.io/managed-by: platform-security
+    fs2-serve.nebius.ai/immutable-security-boundary: "true"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["admissionregistration.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources:
+          - validatingadmissionpolicies
+          - validatingadmissionpolicybindings
+          - validatingwebhookconfigurations
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps", "services"]
+  matchConditions:
+    - name: exact-sai-25-security-objects
+      expression: >-
+        (has(object.metadata) && (object.metadata.name in [
+          'fs2-platform-security-admission-guard',
+          'fs2-scientific-runtime-cache-writer-fence',
+          'fs2-scientific-cache-controller-chain',
+          'fs2-nim-operator-admission',
+          'fs2-nim-admission'
+        ] || object.metadata.name.startsWith('fs2-nim-root-') ||
+        (has(object.metadata.labels) &&
+        'fs2-serve.nebius.ai/immutable-security-boundary' in object.metadata.labels &&
+        object.metadata.labels['fs2-serve.nebius.ai/immutable-security-boundary'] == 'true'))) ||
+        (has(oldObject.metadata) && (oldObject.metadata.name in [
+          'fs2-platform-security-admission-guard',
+          'fs2-scientific-runtime-cache-writer-fence',
+          'fs2-scientific-cache-controller-chain',
+          'fs2-nim-operator-admission',
+          'fs2-nim-admission'
+        ] || oldObject.metadata.name.startsWith('fs2-nim-root-') ||
+        (has(oldObject.metadata.labels) &&
+        'fs2-serve.nebius.ai/immutable-security-boundary' in oldObject.metadata.labels &&
+        oldObject.metadata.labels['fs2-serve.nebius.ai/immutable-security-boundary'] == 'true')))
+  validations:
+    - expression: >-
+        request.operation == 'CREATE' &&
+        object.kind == 'ConfigMap' &&
+        object.metadata.namespace == 'fs2-system' &&
+        object.metadata.name.startsWith('fs2-nim-root-')
+          ? request.userInfo.username ==
+              'system:serviceaccount:fs2-system:fs2-serve-control-plane-nim-admission' &&
+            object.immutable == true &&
+            object.metadata.labels == {
+              'fs2-serve.nebius.ai/nim-root-enrollment':'true'
+            } &&
+            object.data.schema == 'fs2-serve.nebius.ai/nim-root-enrollment/v1' &&
+            object.data.resource_kind in ['NIMCache', 'NIMService'] &&
+            object.data.root_uid.matches(
+              '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+            ) &&
+            object.data.subject_sha256.matches('^[a-f0-9]{64}$') &&
+            object.metadata.name.matches('^fs2-nim-root-[a-f0-9]{12}-[0-9a-f-]{36}$')
+          : request.userInfo.username ==
+              'system:serviceaccount:fs2-security:platform-security-release'
+      message: >-
+        protected SAI-25 objects require the external Platform Security release
+        identity; immutable NIM enrollment CREATE is restricted to the exact
+        admission reconciler and generation-addressed signed-root schema
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: fs2-platform-security-admission-guard
+  labels:
+    app.kubernetes.io/managed-by: platform-security
+spec:
+  policyName: fs2-platform-security-admission-guard
+  validationActions: [Deny, Audit]

@@ -205,10 +205,20 @@ class Settings(BaseSettings):
     model_controller_workers: int = Field(default=2, ge=1, le=16)
     model_controller_api_timeout_seconds: float = Field(default=5, ge=0.5, le=30)
     model_controller_health_port: int = Field(default=8081, ge=1024, le=65535)
-    nim_admission_enabled: bool = False
+    nim_admission_enabled: bool = True
     nim_admission_config_file: Path = Path("/etc/fs2-nim-admission/admission.json")
     nim_admission_tls_certificate_file: Path = Path("/var/run/secrets/fs2-nim-admission/tls.crt")
     nim_admission_tls_private_key_file: Path = Path("/var/run/secrets/fs2-nim-admission/tls.key")
+    nim_admission_kubernetes_api_url: str = Field(
+        default="https://kubernetes.default.svc", min_length=1, max_length=2048
+    )
+    nim_admission_kubernetes_token_file: Path = Path(
+        "/var/run/secrets/fs2-nim-admission/kubernetes/token"
+    )
+    nim_admission_kubernetes_ca_file: Path = Path(
+        "/var/run/secrets/fs2-nim-admission/kubernetes/ca.crt"
+    )
+    nim_admission_kubernetes_timeout_seconds: float = Field(default=3.0, ge=0.5, le=10.0)
     nim_admission_port: int = Field(default=8443, ge=1024, le=65535)
     scientific_batch_enabled: bool = False
     scientific_batch_writes_enabled: bool = False

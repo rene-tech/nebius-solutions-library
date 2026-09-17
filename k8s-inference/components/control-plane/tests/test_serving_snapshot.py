@@ -633,38 +633,46 @@ def test_registered_snapshot_is_admitted_and_preserves_scheduling_resources_and_
 
 def test_snapshot_and_modelexpress_rdma_use_one_signed_combined_capability_profile():
     source, infrastructure, bundle, _config, context = fixture()
-    runtime_index, runtime_compatibility = next(
-        (index, item)
-        for index, item in enumerate(bundle.runtime_security_compatibilities)
-        if item.container_class == "containers"
-        and item.container_name == bundle.runtime_container_name
-        and item.capability_profile == "serving-snapshot-runtime"
-    )
-    bundle.runtime_security_compatibilities[runtime_index] = runtime_security_compatibility(
-        model_id=source.model_ref,
-        container_class="containers",
-        container_name=bundle.runtime_container_name,
-        image=runtime_compatibility.image,
-        uid=0,
-        gid=0,
-        tmp_size_limit=runtime_compatibility.tmp_size_limit,
-        exact_mounts={
-            path: mount.model_dump(mode="json", exclude_none=False)
-            for path, mount in runtime_compatibility.mounts.items()
-        },
-        capability_profile="serving-snapshot-runtime-modelexpress-nixl-rdma",
-        allowed_capabilities=[
-            "CHECKPOINT_RESTORE",
-            "NET_ADMIN",
-            "SYS_ADMIN",
-            "SYS_PTRACE",
-            "SYS_TIME",
-            "IPC_LOCK",
-        ],
-        allow_privilege_escalation=True,
-        read_only_root_filesystem=False,
-        seccomp_profile="Unconfined",
-        apparmor_profile="Unconfined",
+    snapshot_compatibilities = [
+        item
+        for item in bundle.runtime_security_compatibilities
+        if item.snapshot_bundle_id == "qwen-measured-v1"
+    ]
+    bundle.runtime_security_compatibilities.extend(
+        runtime_security_compatibility(
+            model_id=source.model_ref,
+            runtime_profile=compatibility.runtime_profile,
+            template_digest=compatibility.template_digest,
+            pool_id="pool-a",
+            transport_mode="nixl-rdma",
+            snapshot_bundle_id=compatibility.snapshot_bundle_id,
+            container_class=compatibility.container_class,
+            container_name=compatibility.container_name,
+            image=compatibility.image,
+            uid=compatibility.run_as_user,
+            gid=compatibility.run_as_group,
+            tmp_size_limit=compatibility.tmp_size_limit,
+            exact_mounts={
+                path: mount.model_dump(mode="json", exclude_none=False)
+                for path, mount in compatibility.mounts.items()
+            },
+            capability_profile=(
+                "serving-snapshot-runtime-modelexpress-nixl-rdma"
+                if compatibility.capability_profile == "serving-snapshot-runtime"
+                else compatibility.capability_profile
+            ),
+            allowed_capabilities=(
+                [*compatibility.allowed_capabilities, "IPC_LOCK"]
+                if compatibility.capability_profile == "serving-snapshot-runtime"
+                else compatibility.allowed_capabilities
+            ),
+            allow_privilege_escalation=compatibility.allow_privilege_escalation,
+            privileged=compatibility.privileged,
+            read_only_root_filesystem=compatibility.read_only_root_filesystem,
+            seccomp_profile=compatibility.seccomp_profile,
+            apparmor_profile=compatibility.apparmor_profile,
+        )
+        for compatibility in snapshot_compatibilities
     )
     context.model_express = modelexpress_qualification(
         "pool-a",

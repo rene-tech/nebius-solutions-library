@@ -123,6 +123,11 @@ WRITABLE_RUNTIME_PATHS = {
 def runtime_security_compatibility(
     *,
     model_id: str,
+    runtime_profile: str = "vllm",
+    template_digest: str = digest("c"),
+    pool_id: str = "pool-a",
+    transport_mode: str | None = None,
+    snapshot_bundle_id: str | None = None,
     container_class: str,
     container_name: str,
     image: str,
@@ -139,6 +144,16 @@ def runtime_security_compatibility(
     seccomp_profile: str = "RuntimeDefault",
     apparmor_profile: str = "RuntimeDefault",
 ) -> RuntimeSecurityCompatibility:
+    effective_transport_mode = (
+        "nixl-rdma"
+        if transport_mode is None and "modelexpress-nixl-rdma" in capability_profile
+        else transport_mode or "none"
+    )
+    effective_snapshot_bundle_id = (
+        "qwen-measured-v1"
+        if snapshot_bundle_id is None and capability_profile.startswith("serving-snapshot-")
+        else snapshot_bundle_id
+    )
     reviewed_mounts = writable_mounts or {
         "/tmp": {"kind": "emptyDir", "reference": tmp_size_limit, "sub_path": None}
     }
@@ -167,8 +182,13 @@ def runtime_security_compatibility(
         for path, mount in reviewed_mounts.items()
     }
     payload = {
-        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v4",
+        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v5",
         "model_id": model_id,
+        "runtime_profile": runtime_profile,
+        "template_digest": template_digest,
+        "pool_id": pool_id,
+        "transport_mode": effective_transport_mode,
+        "snapshot_bundle_id": effective_snapshot_bundle_id,
         "container_class": container_class,
         "container_name": container_name,
         "image": image,
@@ -214,7 +234,7 @@ def test_runtime_security_compatibility_reverifies_external_authority() -> None:
         "authorization_id": compatibility.authorization_id,
         "kind": "runtime-compatibility",
         "model_id": compatibility.model_id,
-        "subject_schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v4",
+        "subject_schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v5",
         "subject_sha256": compatibility.compatibility_sha256,
         "decision": "accepted",
         "reviewer_role": "independent-platform-security",
@@ -230,7 +250,7 @@ def test_runtime_security_compatibility_reverifies_external_authority() -> None:
         issued_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         expires_at=(now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
         kind="runtime-compatibility",
-        subject_schema="fs2-serve.nebius.ai/runtime-security-compatibility/v4",
+        subject_schema="fs2-serve.nebius.ai/runtime-security-compatibility/v5",
         subject_digest="sha256:" + compatibility.compatibility_sha256,
         model_id=compatibility.model_id,
         claims={
@@ -398,6 +418,124 @@ def reserved_and_preemptible_envelope() -> InfrastructureEnvelope:
 
 def renderer(*, runtime_memory_request: str | None = None) -> LegacyManifestRenderer:
     final_image = model_spec().runtime.image
+    runtime_mounts = {
+        "/runtime-cache": {
+            "kind": "emptyDir",
+            "reference": "16Gi",
+            "sub_path": None,
+        },
+        "/tmp": {"kind": "emptyDir", "reference": "8Gi", "sub_path": None},
+    }
+    rendered_pool_ids = ("pool-a", "pool-b", "reserved-h100", "preemptible-h100")
+    runtime_compatibilities = [
+        runtime_security_compatibility(
+            model_id="qwen.3-8b",
+            pool_id=pool_id,
+            transport_mode=transport_mode,
+            container_class=container_class,
+            container_name=container_name,
+            image=final_image,
+            writable_mounts=(
+                runtime_mounts
+                if (container_class, container_name) == ("containers", "runtime")
+                else None
+            ),
+            capability_profile=(
+                "modelexpress-nixl-rdma"
+                if transport_mode == "nixl-rdma"
+                and (container_class, container_name) == ("containers", "runtime")
+                else "none"
+            ),
+            allowed_capabilities=(
+                ["IPC_LOCK"]
+                if transport_mode == "nixl-rdma"
+                and (container_class, container_name) == ("containers", "runtime")
+                else []
+            ),
+        )
+        for pool_id in rendered_pool_ids
+        for transport_mode in ("none", "fallback", "nixl-rdma")
+        for container_class, container_name in (
+            ("containers", "runtime"),
+            ("initContainers", "fs2-warm-page-cache"),
+            ("initContainers", "fs2-verify-host-memory-residency"),
+        )
+    ]
+    residency_mounts = {
+        "/agent": {
+            "kind": "configMap",
+            "source_sha256": hashlib.sha256(
+                json.dumps(
+                    {
+                        "configMap": {
+                            "name": "fs2-residency-agent-source-sha256-"
+                            + hashlib.sha256(residency_agent_script().encode("utf-8")).hexdigest(),
+                            "defaultMode": 292,
+                        }
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+            "sub_path": None,
+            "read_only": True,
+        },
+        "/models": {
+            "kind": "persistentVolumeClaim",
+            "source_sha256": hashlib.sha256(
+                json.dumps(
+                    {
+                        "persistentVolumeClaim": {
+                            "claimName": "qwen-cache-rwx",
+                            "readOnly": True,
+                        }
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+            "sub_path": None,
+            "read_only": True,
+        },
+        "/residency": {
+            "kind": "persistentVolumeClaim",
+            "source_sha256": hashlib.sha256(
+                json.dumps(
+                    {"persistentVolumeClaim": {"claimName": "fsm-residency-receipt-rwx"}},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+            "sub_path": None,
+            "read_only": False,
+        },
+        "/tmp": {
+            "kind": "emptyDir",
+            "source_sha256": hashlib.sha256(
+                json.dumps(
+                    {"emptyDir": {"sizeLimit": "8Gi"}},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+            "sub_path": None,
+            "read_only": False,
+        },
+    }
+    runtime_compatibilities.extend(
+        runtime_security_compatibility(
+            model_id="qwen.3-8b",
+            pool_id=pool_id,
+            transport_mode="none",
+            container_class="containers",
+            container_name="residency-agent",
+            image=final_image,
+            exact_mounts=residency_mounts,
+            capability_profile="host-memory-locked-residency",
+            allowed_capabilities=["IPC_LOCK"],
+        )
+        for pool_id in rendered_pool_ids
+    )
     bundle = LegacyTemplateBundle(
         model_ref="qwen.3-8b",
         runtime_profile="vllm",
@@ -406,127 +544,7 @@ def renderer(*, runtime_memory_request: str | None = None) -> LegacyManifestRend
         runtime_container_name="runtime",
         primary_service_name="qwen-runtime",
         primary_service_port=8000,
-        runtime_security_compatibilities=[
-            runtime_security_compatibility(
-                model_id="qwen.3-8b",
-                container_class=container_class,
-                container_name=container_name,
-                image=final_image,
-                writable_mounts=(
-                    {
-                        "/runtime-cache": {
-                            "kind": "emptyDir",
-                            "reference": "16Gi",
-                            "sub_path": None,
-                        },
-                        "/tmp": {
-                            "kind": "emptyDir",
-                            "reference": "8Gi",
-                            "sub_path": None,
-                        },
-                    }
-                    if (container_class, container_name) == ("containers", "runtime")
-                    else None
-                ),
-            )
-            for container_class, container_name in (
-                ("containers", "runtime"),
-                ("initContainers", "fs2-warm-page-cache"),
-                ("initContainers", "fs2-verify-host-memory-residency"),
-            )
-        ] + [
-            runtime_security_compatibility(
-                model_id="qwen.3-8b",
-                container_class="containers",
-                container_name="runtime",
-                image=final_image,
-                writable_mounts={
-                    "/runtime-cache": {
-                        "kind": "emptyDir",
-                        "reference": "16Gi",
-                        "sub_path": None,
-                    },
-                    "/tmp": {"kind": "emptyDir", "reference": "8Gi", "sub_path": None},
-                },
-                capability_profile="modelexpress-nixl-rdma",
-                allowed_capabilities=["IPC_LOCK"],
-            ),
-            runtime_security_compatibility(
-                model_id="qwen.3-8b",
-                container_class="containers",
-                container_name="residency-agent",
-                image=final_image,
-                exact_mounts={
-                    "/agent": {
-                        "kind": "configMap",
-                        "source_sha256": hashlib.sha256(
-                            json.dumps(
-                                {
-                                    "configMap": {
-                                        "name": "fs2-residency-agent-source-sha256-"
-                                        + hashlib.sha256(
-                                            residency_agent_script().encode("utf-8")
-                                        ).hexdigest(),
-                                        "defaultMode": 292,
-                                    }
-                                },
-                                sort_keys=True,
-                                separators=(",", ":"),
-                            ).encode()
-                        ).hexdigest(),
-                        "sub_path": None,
-                        "read_only": True,
-                    },
-                    "/models": {
-                        "kind": "persistentVolumeClaim",
-                        "source_sha256": hashlib.sha256(
-                            json.dumps(
-                                {
-                                    "persistentVolumeClaim": {
-                                        "claimName": "qwen-cache-rwx",
-                                        "readOnly": True,
-                                    }
-                                },
-                                sort_keys=True,
-                                separators=(",", ":"),
-                            ).encode()
-                        ).hexdigest(),
-                        "sub_path": None,
-                        "read_only": True,
-                    },
-                    "/residency": {
-                        "kind": "persistentVolumeClaim",
-                        "source_sha256": hashlib.sha256(
-                            json.dumps(
-                                {
-                                    "persistentVolumeClaim": {
-                                        "claimName": "fsm-residency-receipt-rwx"
-                                    }
-                                },
-                                sort_keys=True,
-                                separators=(",", ":"),
-                            ).encode()
-                        ).hexdigest(),
-                        "sub_path": None,
-                        "read_only": False,
-                    },
-                    "/tmp": {
-                        "kind": "emptyDir",
-                        "source_sha256": hashlib.sha256(
-                            json.dumps(
-                                {"emptyDir": {"sizeLimit": "8Gi"}},
-                                sort_keys=True,
-                                separators=(",", ":"),
-                            ).encode()
-                        ).hexdigest(),
-                        "sub_path": None,
-                        "read_only": False,
-                    },
-                },
-                capability_profile="host-memory-locked-residency",
-                allowed_capabilities=["IPC_LOCK"],
-            ),
-        ],
+        runtime_security_compatibilities=runtime_compatibilities,
         resources=[
             {
                 "apiVersion": "apps/v1",
@@ -1085,10 +1103,12 @@ def test_final_render_rejects_unreviewed_container_identity_image_and_writable_p
         [
             runtime_security_compatibility(
                 model_id=source.model_ref,
+                pool_id=pool_id,
                 container_class=container_class,
                 container_name=container_name,
                 image=approved_image,
             )
+            for pool_id in ("pool-a", "pool-b")
             for container_class, container_name in (
                 ("initContainers", "prepare"),
                 ("containers", "metrics"),
@@ -1128,13 +1148,15 @@ def test_final_render_rejects_unreviewed_container_identity_image_and_writable_p
     with pytest.raises(ValueError, match="lacks an exact runtime security compatibility record"):
         rejected_identity.render(model_spec(), render_context())
 
-    source.runtime_security_compatibilities.append(
+    source.runtime_security_compatibilities.extend(
         runtime_security_compatibility(
             model_id=source.model_ref,
+            pool_id=pool_id,
             container_class="ephemeralContainers",
             container_name="diagnostic",
             image=approved_image,
         )
+        for pool_id in ("pool-a", "pool-b")
     )
     runtime["env"] = [{"name": "HOME", "value": "/home/runtime"}]
     rejected_writable_path = LegacyManifestRenderer({(source.model_ref, source.template_digest): source})
@@ -1487,10 +1509,16 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_https_and_modelexpr
                 runtime_security_compatibilities=[
                     runtime_security_compatibility(
                         model_id="qwen3-8b",
+                        runtime_profile="vllm",
+                        template_digest=digest("c"),
+                        pool_id=pool_id,
+                        transport_mode=transport_mode,
                         container_class=container_class,
                         container_name=container["name"],
                         image=container["image"],
                     )
+                    for pool_id in ("reserved-h100", "preemptible-h100")
+                    for transport_mode in ("none", "fallback")
                     for document in bundle_resources
                     if document["kind"] == "Deployment"
                     for container_class in ("initContainers", "containers", "ephemeralContainers")

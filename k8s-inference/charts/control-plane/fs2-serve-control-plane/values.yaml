@@ -95,16 +95,20 @@ modelController:
 
 # Dedicated TLS admission process for NIMCache/NIMService and every Pod in the
 # model namespace that is attributable to the configured NIM Operator actor.
-# It stays disabled until Terraform supplies externally signed envelopes, an
-# immutable ConfigMap, and a pre-created serving certificate/CA bundle.
+# It fails closed unless Terraform supplies externally signed envelopes, an
+# immutable ConfigMap, and a pre-created serving certificate/CA bundle. A
+# selected NIM model has no source-level disable switch.
 nimAdmission:
-  enabled: false
+  enabled: true
+  required: false
   replicaCount: 2
   namespace: fs2-models
   configMapName: ""
   configKey: admission.json
   tlsSecretName: ""
   caBundle: ""
+  admissionPolicySha256: ""
+  ownerLookupNamespaces: []
   service:
     port: 8443
   resources:

@@ -139,6 +139,10 @@ def test_actual_aging_native_runtime_can_render_and_publish_without_inventing_el
         runtime_security_compatibilities=[
             runtime_security_compatibility(
                 model_id=model_id,
+                runtime_profile=spec.runtime.profile,
+                template_digest=template_digest,
+                pool_id=pool.pool_id,
+                transport_mode="none",
                 container_class=container_class,
                 container_name=container["name"],
                 image=(

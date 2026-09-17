@@ -34,7 +34,7 @@ AUTHORIZATION_ID = re.compile(r"^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$")
 MIGRATION_PHASE = "journaled-dual-access-legacy-group"
 WRITER_LOCK_NAME = ".fs2-cache-writer-admission.lock"
 WRITER_LOCK_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-writer-lock/v1"
-ACTIVE_FENCE_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-active-fence/v1"
+ACTIVE_FENCE_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-active-fence/v2"
 
 
 class CacheOwnershipError(ValueError):
@@ -572,6 +572,14 @@ def prepare(contract: object, *, expected_root: Path = CACHE_ROOT) -> tuple[str,
             "admission_policy_uid",
             "admission_policy_resource_version",
             "admission_binding_name",
+            "security_boundary_name",
+            "security_boundary_uid",
+            "security_boundary_resource_version",
+            "security_boundary_sha256",
+            "controller_admission_name",
+            "controller_admission_uid",
+            "controller_admission_resource_version",
+            "controller_admission_sha256",
             "observed_at",
             "expires_at",
             "evidence_sha256",
@@ -603,6 +611,14 @@ def prepare(contract: object, *, expected_root: Path = CACHE_ROOT) -> tuple[str,
         or re.fullmatch(r"[1-9][0-9]*", quiescence["admission_policy_resource_version"]) is None
         or quiescence["admission_binding_name"]
         != "fs2-scientific-runtime-cache-writer-fence"
+        or quiescence["security_boundary_name"] != "fs2-platform-security-admission-guard"
+        or re.fullmatch(r"[a-f0-9-]{36}", str(quiescence["security_boundary_uid"])) is None
+        or re.fullmatch(r"[1-9][0-9]*", str(quiescence["security_boundary_resource_version"])) is None
+        or re.fullmatch(r"[a-f0-9]{64}", str(quiescence["security_boundary_sha256"])) is None
+        or quiescence["controller_admission_name"] != "fs2-scientific-cache-controller-chain"
+        or re.fullmatch(r"[a-f0-9-]{36}", str(quiescence["controller_admission_uid"])) is None
+        or re.fullmatch(r"[1-9][0-9]*", str(quiescence["controller_admission_resource_version"])) is None
+        or re.fullmatch(r"[a-f0-9]{64}", str(quiescence["controller_admission_sha256"])) is None
         or not isinstance(quiescence["evidence_sha256"], str)
         or re.fullmatch(r"[a-f0-9]{64}", quiescence["evidence_sha256"]) is None
         or not isinstance(quiescence["authorization_id"], str)
