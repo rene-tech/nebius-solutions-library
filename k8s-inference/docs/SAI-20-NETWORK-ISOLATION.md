@@ -736,3 +736,62 @@ system, credential, deployment, cleanup or deletion action ran. External root
 enrollment and authorizer operation remain fail-closed integration gates. This
 is a source-only candidate for independent review, not a SOURCE, integration,
 deployment or live GO claim.
+
+## Final independent-review correction after `23aa56e6`
+
+Exact `23aa56e61b5843744636b8112091eaa93ec43407` / tree
+`4e01cdb3af39b255f19acc6d211aa0aa2b150ef5` is preserved as
+SOURCE/INTEGRATION/LIVE NO-GO evidence. Its ordinary workload UPDATE paths
+could admit an ephemeral-container subresource request, API-injected projected
+ServiceAccount tokens made controller-template and child-Pod surfaces differ,
+certificate signer `sign` authority was outside the closure, and debug
+activation had neither an exact model scope nor a durable 90-day decision
+record.
+
+The workload custody policy now treats subresources as an exclusive branch.
+Every ordinary CREATE or UPDATE path requires an empty subresource. Every
+`pods/ephemeralcontainers` request, including one for a credential-free Pod or
+from the ordinary custodian identity, must instead match the exact signed
+principal, Pod name and UID, operation, and no-volume debugger specification.
+The fail-closed request-time authorizer remains a second gate. This prevents an
+ordinary writer or native-controller UPDATE allowance from bypassing the
+ephemeral debugger constraints.
+
+ServiceAccount-admission normalization is derived from authenticated current
+Pod GETs rather than a random volume name or caller assertion. The gate requires
+one exact cluster-wide `kube-api-access-*` projection profile, binds it to every
+currently inventoried ServiceAccount and its observed automount default, removes
+only that exact API-injected volume from the explicit surface, and adds the
+profile's audience, expiration and token path as a deterministic effective
+surface. Empty Secret-reference groups introduced by the injected volume are
+also normalized on both the static and CEL sides. Controller templates and
+their API-mutated Pods can therefore compare equal without hiding a different
+explicit token projection. A direct signed Pod must set
+`automountServiceAccountToken: false`; any needed token must be a stable,
+explicit, reviewed projection.
+
+The dangerous-authority matrix now covers the `sign` verb on
+`certificates.k8s.io/signers`, including generic and `resourceNames`-exact SARs.
+RoleBinding and ClusterRoleBinding derivation classifies the same right as both
+dangerous and sensitive, and the final apply-time loop rechecks every admitted
+principal's exact decision.
+
+Each debug lease now contains a dual-signed customer activation record binding
+one authenticated principal, exact tenant, exact model, Pod name and UID,
+reason, audit ID and request digest. Activation lasts at most seven days; an
+individual authorization lease remains at most 900 seconds and must fit wholly
+inside that activation. The external authorizer attestation must also bind a
+source-owned record contract and a separately TLS-pinned append endpoint. Both
+allow and deny records must be durably committed before the admission response,
+remain append-only for exactly 7,776,000 seconds, and exclude tokens, keys,
+Secret data and customer request/response bodies. The existing customer-request
+debugging implementation is not modified here; integration must retain its
+`/v1/storage/credentials` capture exclusion and all existing redaction/body-cap,
+tenant-access and purge controls.
+
+The external enrollment roots, debug authorizer and durable record store remain
+explicit integration gates. Tests were updated as authored regression evidence
+but were not executed. No parser, formatter, Terraform, Helm, build, package
+manager, scanner, provider, cluster, database, registry, credential, deployment,
+probe, cleanup or deletion action ran. This is a source-only candidate for fresh
+independent review, never a SOURCE GO, integration, deployment or live claim.

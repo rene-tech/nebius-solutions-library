@@ -7,7 +7,9 @@ credential-workload and scoped-debug blockers finally reported against
 credential-custody blockers finally reported against
 e8ac34b7b9dd670015655d43cb24d14907abf8f1, and the four final
 ephemeral-debug, projected-token and rollout-identity blockers reported against
-1d00f13842ea0287b1aefa628bc0f224c461c65c.
+1d00f13842ea0287b1aefa628bc0f224c461c65c, plus the exclusive-subresource,
+API-injected-token, signer-sign and tenant/model/retention blockers finally
+reported against 23aa56e61b5843744636b8112091eaa93ec43407.
 They are authored evidence only;
 this task's coordinator boundary forbids executing them.
 """
@@ -35,6 +37,7 @@ STACK = ROOT / "inference-stack"
 INGRESS = ROOT / "stages/workloads/contracts/sai20-control-db-ingress-v4.json"
 BOOTSTRAP = ROOT / "stages/workloads/contracts/sai20-bootstrap-guard-v5.json"
 DEBUG_AUTHORIZER = ROOT / "stages/workloads/contracts/sai20-debug-authorizer-v1.json"
+DEBUG_RECORD = ROOT / "stages/workloads/contracts/sai20-debug-record-v1.json"
 POD_SECRET_REFERENCES = ROOT / "stages/workloads/contracts/sai20-pod-secret-references-v1.json"
 ROOTS = ROOT / "security/sai20/authority-roots-v1.json"
 ANCHORS = ROOT / "security/sai20/enrollment-authorities-v1.json"
@@ -59,6 +62,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         cls.ingress = json.loads(INGRESS.read_text(encoding="utf-8"))
         cls.bootstrap = json.loads(BOOTSTRAP.read_text(encoding="utf-8"))
         cls.debug_authorizer = json.loads(DEBUG_AUTHORIZER.read_text(encoding="utf-8"))
+        cls.debug_record = json.loads(DEBUG_RECORD.read_text(encoding="utf-8"))
         cls.pod_secret_references = json.loads(
             POD_SECRET_REFERENCES.read_text(encoding="utf-8")
         )
@@ -75,6 +79,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("6e1bf0f00d85a80d228a7cea803511391076fb5a", self.v5_py)
         self.assertIn("e8ac34b7b9dd670015655d43cb24d14907abf8f1", self.v5_py)
         self.assertIn("1d00f13842ea0287b1aefa628bc0f224c461c65c", self.v5_py)
+        self.assertIn("23aa56e61b5843744636b8112091eaa93ec43407", self.v5_py)
         self.assertIn("source is a preserved rejected candidate", self.v5_py)
         self.assertIn("sai20_database_authority_v5_plan.output.successor_verified", self.v4_tf)
         self.assertIn("sai20_database_authority_v5_identity.output.bootstrap_reobserved", self.v4_tf)
@@ -253,6 +258,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("debug authorizer attestation does not bind", self.v5_py)
         decision = self.debug_authorizer["decision_contract"]
         self.assertEqual(decision["maximum_lease_seconds"], 900)
+        self.assertEqual(decision["maximum_activation_seconds"], 604800)
         self.assertEqual(decision["maximum_clock_skew_seconds"], 5)
         self.assertEqual(decision["stale_or_replayed_lease"], "deny")
         self.assertEqual(decision["unavailable_or_invalid_evidence"], "deny")
@@ -336,6 +342,10 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("sai20_authority_v5_exact_debug_ephemeral_update_terms", self.v5_tf)
         self.assertIn("exactDebugEphemeralUpdate", self.v5_tf)
         self.assertIn("debugCredentialSurfacePreserved", self.v5_tf)
+        self.assertIn("request.subResource == 'ephemeralcontainers' ?", self.v5_tf)
+        self.assertIn("request.subResource == ''", self.v5_tf)
+        self.assertNotIn("!variables.credentialBearing || variables.custodian", self.v5_tf)
+        self.assertIn("including an otherwise unprotected target or custodian caller", self.v5_tf)
         self.assertIn("sai20_authority_v5_unchanged_secret_references_cel", self.v5_tf)
         self.assertIn("lease.pod_uid", self.v5_tf)
         self.assertIn("variables.targetObject.metadata.uid", self.v5_tf)
@@ -514,6 +524,31 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         ):
             self.assertIn(resource, self.v4_py)
             self.assertIn(resource, self.v5_py)
+        self.assertIn('"sign-certificate-signers"', self.v4_py)
+        self.assertIn('{"sign", "*"}', self.v4_py)
+        self.assertIn('{"sign", "*"}', self.v5_py)
+        self.assertIn("sign-certificate-signer/", self.v4_py)
+        self.assertIn("signer_resource_names", self.v4_py)
+
+    def test_debug_activation_is_exact_tenant_model_and_retained_ninety_days(self) -> None:
+        self.assertIn('"customer_request_sha256"', self.v5_py)
+        self.assertIn('"model_id"', self.v5_py)
+        self.assertIn("exact signed tenant/model activation request", self.v5_py)
+        self.assertIn("debug-model-id", self.v5_tf)
+        self.assertIn("debug-customer-request-sha256", self.v5_tf)
+        self.assertEqual(self.debug_record["retention_seconds"], 7776000)
+        self.assertEqual(
+            self.debug_record["commit_order"],
+            "durable_record_commit_before_admission_response",
+        )
+        self.assertTrue(
+            {"tenant_id", "model_id", "customer_request_sha256"}
+            <= set(self.debug_record["required_fields"])
+        )
+        self.assertEqual(
+            self.debug_authorizer["decision_contract"]["decision_record"],
+            "durably_append_allow_or_deny_before_response_and_retain_exactly_7776000_seconds",
+        )
 
     def test_provider_observer_executes_the_authenticated_open_descriptor(self) -> None:
         self.assertIn("os.O_NOFOLLOW", self.v5_py)
@@ -600,6 +635,21 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("or has_token_projection", self.v5_py)
         self.assertIn("targetHasServiceAccountTokenProjection", self.v5_tf)
         self.assertIn("targetServiceAccountTokenProjectionSurface", self.v5_tf)
+        self.assertEqual(
+            projection["default_admission_volume_name_pattern"],
+            "kube-api-access-[a-z0-9]{5}",
+        )
+        self.assertIn("service_account_admission_projection", self.v5_py)
+        self.assertIn("service_account_admission_profiles", self.v5_py)
+        self.assertIn("service_account_admission_profiles_json", self.v5_tf)
+        self.assertIn("targetServiceAccountAdmissionProjection", self.v5_tf)
+        self.assertIn('"automount_service_account_token"', self.v4_py)
+        self.assertIn("authenticated Pods do not expose one cluster-wide", self.v5_py)
+        self.assertIn("filter(group, group.size() > 0)", projection["cel_surface"])
+        self.assertIn(
+            "direct signed Pod must disable admission-time token injection",
+            self.v5_py,
+        )
 
     def test_native_controller_identity_is_live_observed_not_hard_coded(self) -> None:
         self.assertIn("verify_workload_controller_transitions", self.v5_py)

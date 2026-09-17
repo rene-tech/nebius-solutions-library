@@ -86,6 +86,7 @@ DANGEROUS_REVIEWS = {
     "update-certificate-signing-request-approval": {"group": "certificates.k8s.io", "resource": "certificatesigningrequests/approval", "verb": "update"},
     "patch-certificate-signing-request-approval": {"group": "certificates.k8s.io", "resource": "certificatesigningrequests/approval", "verb": "patch"},
     "approve-certificate-signers": {"group": "certificates.k8s.io", "resource": "signers", "verb": "approve"},
+    "sign-certificate-signers": {"group": "certificates.k8s.io", "resource": "signers", "verb": "sign"},
     "escalate-roles": {"group": "rbac.authorization.k8s.io", "resource": "roles", "verb": "escalate"},
     "escalate-clusterroles": {"group": "rbac.authorization.k8s.io", "resource": "clusterroles", "verb": "escalate"},
     "bind-roles": {"group": "rbac.authorization.k8s.io", "resource": "roles", "verb": "bind"},
@@ -167,6 +168,7 @@ def dangerous_reviews(
     secret_resource_names: set[tuple[str, str, str]] = set()
     service_account_resource_names: set[tuple[str, str, str]] = set()
     pivot_resource_names: set[tuple[str, str, str, str]] = set()
+    signer_resource_names: set[str] = set()
     for namespace, resource in sorted(rbac_endpoints(namespaces)):
         if resource not in {"roles", "clusterroles"}:
             continue
@@ -218,6 +220,23 @@ def dangerous_reviews(
                                         (target_namespace, pivot_resource, verb, name)
                                         for target_namespace in pivot_namespaces
                                     )
+                if (
+                    {"certificates.k8s.io", "*"} & groups
+                    and {"signers", "*"} & resources
+                    and {"sign", "*"} & verbs
+                ):
+                    signer_resource_names.update(
+                        name
+                        for name in rule.get("resourceNames", [])
+                        if isinstance(name, str) and name
+                    )
+    for name in sorted(signer_resource_names):
+        reviews[f"sign-certificate-signer/{digest(name)[:16]}"] = {
+            "group": "certificates.k8s.io",
+            "resource": "signers",
+            "verb": "sign",
+            "name": name,
+        }
     for namespace in namespaces:
         for verb in ("get", "list", "watch"):
             reviews[f"read-secrets/{namespace}/{verb}/_all"] = {
@@ -636,8 +655,8 @@ def verify_namespace_inventory(entries: dict[str, dict[str, Any]]) -> tuple[list
 def verify_service_account_inventory(
     entries: dict[str, dict[str, Any]],
     namespaces: list[str],
-) -> tuple[list[dict[str, str]], str]:
-    normalized: list[dict[str, str]] = []
+) -> tuple[list[dict[str, Any]], str]:
+    normalized: list[dict[str, Any]] = []
     for namespace, endpoint in sorted(service_account_endpoints(namespaces).items()):
         entry_name = f"k8s/serviceaccounts/{namespace}"
         require(entry_name in entries, f"authoritative ServiceAccount list is missing for {namespace}")
@@ -653,8 +672,15 @@ def verify_service_account_inventory(
                     "name": text(metadata.get("name"), f"{where}.name"),
                     "uid": text(metadata.get("uid"), f"{where}.uid"),
                     "resource_version": text(metadata.get("resourceVersion"), f"{where}.resourceVersion"),
+                    "automount_service_account_token": item.get(
+                        "automountServiceAccountToken", True
+                    ),
                     "content_sha256": digest(stable_object(item)),
                 }
+            )
+            require(
+                type(normalized[-1]["automount_service_account_token"]) is bool,
+                f"{where}.automountServiceAccountToken must be a boolean",
             )
     normalized.sort(key=lambda item: (item["namespace"], item["name"], item["uid"]))
     identities = [(item["namespace"], item["name"]) for item in normalized]
@@ -1032,8 +1058,14 @@ def dangerous_rbac_subjects(raw_objects: dict[tuple[str, str], list[dict[str, An
                 )
                 or (
                     {"update", "patch", "*"} & set(rule.get("verbs", []))
-                    and {"certificatesigningrequests/approval", "signers", "*"}
+                    and {"certificatesigningrequests/approval", "*"}
                     & set(rule.get("resources", []))
+                )
+                or (
+                    {"sign", "*"} & set(rule.get("verbs", []))
+                    and {"signers", "*"} & set(rule.get("resources", []))
+                    and {"certificates.k8s.io", "*"}
+                    & set(rule.get("apiGroups", []))
                 )
                 or (
                     {"get", "list", "watch", "*"} & set(rule.get("verbs", []))

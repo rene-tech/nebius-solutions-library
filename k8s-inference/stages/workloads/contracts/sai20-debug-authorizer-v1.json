@@ -27,12 +27,13 @@
   "decision_contract": {
     "target_inventory": "require_exact_signed_namespace_pod_name_uid_and_credential_classification",
     "unknown_or_replacement_uid": "deny_generation_refresh_required",
-    "unprotected_target": "allow_without_lease_only_when_exact_signed_uid_is_credential_free",
+    "unprotected_target": "ephemeralcontainers_requires_exact_active_lease;other_connect_may_allow_without_lease_only_when_exact_signed_uid_is_credential_free",
     "protected_target": "require_exact_active_lease_for_exact_signed_uid",
     "credential_boundary": [
       "source_owned_complete_pod_secret_reference_contract",
       "every_nonempty_secret_reference_regardless_of_secret_inventory",
       "every_explicit_projected_service_account_token_with_exact_audience_expiration_and_path",
+      "api_injected_default_service_account_token_normalized_by_exact_observed_profile_without_random_volume_name",
       "privileged_service_account_inventory",
       "signed_controller_parent_uid_credential_surface_and_rollout_lineage",
       "live_observed_controller_identity_for_every_native_parent_child_edge",
@@ -45,6 +46,9 @@
       "extra"
     ],
     "target_match": [
+      "customer_request_sha256",
+      "tenant_id",
+      "model_id",
       "namespace",
       "pod_name",
       "pod_uid",
@@ -59,7 +63,10 @@
     "ephemeral_container_namespace_isolation": "forbid_targetContainerName_and_deny_hostPID_hostIPC_hostNetwork_or_shareProcessNamespace_targets",
     "time_match": "issued_at_minus_skew_le_server_now_lt_expires_at_plus_skew",
     "maximum_lease_seconds": 900,
+    "maximum_activation_seconds": 604800,
     "maximum_clock_skew_seconds": 5,
+    "activation_scope": "require_exact_dual_signed_customer_request_tenant_model_principal_and_pod_uid",
+    "decision_record": "durably_append_allow_or_deny_before_response_and_retain_exactly_7776000_seconds",
     "stale_or_replayed_lease": "deny",
     "unavailable_or_invalid_evidence": "deny"
   },

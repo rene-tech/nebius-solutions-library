@@ -43,6 +43,7 @@ REJECTED_COMMITS = {
     "6e1bf0f00d85a80d228a7cea803511391076fb5a",
     "e8ac34b7b9dd670015655d43cb24d14907abf8f1",
     "1d00f13842ea0287b1aefa628bc0f224c461c65c",
+    "23aa56e61b5843744636b8112091eaa93ec43407",
 }
 ROLLOUT_LINEAGE_LABEL = "security.fs2.nebius.ai/sai20-rollout-lineage"
 CREDENTIAL_ROLLOUT_LINEAGE_LABEL = (
@@ -56,6 +57,7 @@ CREDENTIAL_CUSTODY_NAMESPACES = (
 )
 DEBUG_LEASE_PREFIX = "fs2-debug-lease-"
 DEBUG_LEASE_MAX_SECONDS = 900
+DEBUG_ACTIVATION_MAX_SECONDS = 7 * 24 * 60 * 60
 POD_CONNECT_ACTIONS = {
     resource: actions
     for resource, actions in v4.CREDENTIAL_PIVOT_ACTIONS.items()
@@ -93,6 +95,7 @@ POD_SECRET_REFERENCE_PATHS = {
 SERVICE_ACCOUNT_TOKEN_PROJECTION_PATH = (
     "volumes", "*", "projected", "sources", "*", "serviceAccountToken"
 )
+SERVICE_ACCOUNT_ADMISSION_VOLUME_NAME_PATTERN = r"kube-api-access-[a-z0-9]{5}"
 PEER_NAMESPACES = ("fs2-data", "cnpg-system")
 PEER_RESOURCES = tuple(sorted(v4.WORKLOAD_TYPES))
 PEER_ENDPOINTS = {
@@ -144,6 +147,7 @@ SUCCESSOR_SOURCE_PATHS = {
     "k8s-inference/security/sai20/root-enrollment-receipts-v1.json",
     "k8s-inference/stages/workloads/contracts/sai20-bootstrap-guard-v5.json",
     "k8s-inference/stages/workloads/contracts/sai20-debug-authorizer-v1.json",
+    "k8s-inference/stages/workloads/contracts/sai20-debug-record-v1.json",
     "k8s-inference/stages/workloads/contracts/sai20-pod-secret-references-v1.json",
     "k8s-inference/stages/workloads/sai20_database_authority_v5.tf",
     "k8s-inference/stages/workloads/locals.tf",
@@ -439,7 +443,7 @@ def verify_pod_secret_reference_contract(
     )
     exact_keys(
         token_projection,
-        {"id", "path", "cel_surface"},
+        {"id", "path", "default_admission_volume_name_pattern", "cel_surface"},
         "service-account token projection contract",
     )
     require(
@@ -448,12 +452,19 @@ def verify_pod_secret_reference_contract(
         == list(SERVICE_ACCOUNT_TOKEN_PROJECTION_PATH),
         "service-account token projection path is not source-exact",
     )
+    require(
+        token_projection["default_admission_volume_name_pattern"]
+        == SERVICE_ACCOUNT_ADMISSION_VOLUME_NAME_PATTERN,
+        "service-account admission volume-name pattern is not source-exact",
+    )
     token_cel = text(
         token_projection["cel_surface"],
         "service-account token projection CEL",
     )
     require(
         token_cel.count("{spec}") >= 1
+        and token_cel.count("{automount}") >= 1
+        and token_cel.count("{default_projection}") >= 1
         and "audience=" in token_cel
         and "expiration_seconds=" in token_cel
         and "path=" in token_cel,
@@ -494,7 +505,9 @@ def pod_secret_reference_surface(
             collection = []
         remaining = path[wildcard + 1 :]
         surface[reference["id"]] = [
-            path_values(item, remaining) for item in collection
+            values
+            for item in collection
+            if (values := path_values(item, remaining))
         ]
     return surface
 
@@ -513,21 +526,107 @@ def pod_secret_names(
     )
 
 
+def service_account_admission_projection(
+    volume: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Return one exact API-injected default token profile, ignoring its random name."""
+
+    name = volume.get("name")
+    projected = volume.get("projected")
+    if (
+        not isinstance(name, str)
+        or re.fullmatch(SERVICE_ACCOUNT_ADMISSION_VOLUME_NAME_PATTERN, name) is None
+        or not isinstance(projected, dict)
+        or projected.get("defaultMode", 420) != 420
+    ):
+        return None
+    sources = projected.get("sources", [])
+    if not isinstance(sources, list) or len(sources) != 3:
+        return None
+    token_sources = [source["serviceAccountToken"] for source in sources if isinstance(source, dict) and isinstance(source.get("serviceAccountToken"), dict)]
+    root_ca_sources = [source["configMap"] for source in sources if isinstance(source, dict) and isinstance(source.get("configMap"), dict)]
+    namespace_sources = [source["downwardAPI"] for source in sources if isinstance(source, dict) and isinstance(source.get("downwardAPI"), dict)]
+    if len(token_sources) != 1 or len(root_ca_sources) != 1 or len(namespace_sources) != 1:
+        return None
+    token = token_sources[0]
+    root_ca = root_ca_sources[0]
+    namespace = namespace_sources[0]
+    if (
+        not isinstance(token.get("audience", ""), str)
+        or type(token.get("expirationSeconds", 3600)) is not int
+        or token.get("path") != "token"
+        or root_ca.get("name") != "kube-root-ca.crt"
+        or root_ca.get("items") != [{"key": "ca.crt", "path": "ca.crt"}]
+        or namespace.get("items")
+        != [
+            {
+                "fieldRef": {
+                    "apiVersion": "v1",
+                    "fieldPath": "metadata.namespace",
+                },
+                "path": "namespace",
+            }
+        ]
+    ):
+        return None
+    return {
+        "audience": token.get("audience", ""),
+        "expiration_seconds": token.get("expirationSeconds", 3600),
+        "path": token["path"],
+        "default_mode": projected.get("defaultMode", 420),
+        "root_ca_config_map": "kube-root-ca.crt",
+        "root_ca_key": "ca.crt",
+        "root_ca_path": "ca.crt",
+        "namespace_field_path": "metadata.namespace",
+        "namespace_path": "namespace",
+    }
+
+
+def token_projection_descriptor(value: dict[str, Any]) -> list[str]:
+    return [
+        f"audience={value['audience']}",
+        f"expiration_seconds={value['expiration_seconds']}",
+        f"path={value['path']}",
+    ]
+
+
+def projection_profile(value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value[key]
+        for key in (
+            "audience", "expiration_seconds", "path", "default_mode",
+            "root_ca_config_map", "root_ca_key", "root_ca_path",
+            "namespace_field_path", "namespace_path",
+        )
+    }
+
+
 def pod_service_account_token_projection_surface(
     spec: dict[str, Any],
+    default_projection: dict[str, Any] | None,
+    effective_automount: bool,
 ) -> list[list[list[str]]]:
-    """Preserve explicit projected token audience, lifetime and mount path."""
+    """Normalize API injection while preserving every explicit token surface."""
 
+    require(type(effective_automount) is bool, "effective automount must be a boolean")
     surface: list[list[list[str]]] = []
     volumes = spec.get("volumes", [])
     require(isinstance(volumes, list), "Pod volumes must be a list")
     for volume in volumes:
         require(isinstance(volume, dict), "Pod volume must be an object")
-        descriptors: list[list[str]] = []
+        observed_default = service_account_admission_projection(volume)
+        if effective_automount and observed_default is not None:
+            require(
+                default_projection is not None
+                and observed_default == projection_profile(default_projection),
+                "API-injected ServiceAccount token differs from the observed exact profile",
+            )
+            continue
         projected = volume.get("projected")
         if isinstance(projected, dict):
             sources = projected.get("sources", [])
             require(isinstance(sources, list), "projected volume sources must be a list")
+            descriptors: list[list[str]] = []
             for source in sources:
                 require(isinstance(source, dict), "projected volume source must be an object")
                 token = source.get("serviceAccountToken")
@@ -542,14 +641,81 @@ def pod_service_account_token_projection_surface(
                     "projected service-account token source is malformed",
                 )
                 descriptors.append(
-                    [
-                        f"audience={token.get('audience', '')}",
-                        f"expiration_seconds={token.get('expirationSeconds', 3600)}",
-                        f"path={token['path']}",
-                    ]
+                    token_projection_descriptor(
+                        {
+                            "audience": token.get("audience", ""),
+                            "expiration_seconds": token.get("expirationSeconds", 3600),
+                            "path": token["path"],
+                        }
+                    )
                 )
-        surface.append(descriptors)
+            if descriptors:
+                surface.append(descriptors)
+    if effective_automount:
+        require(
+            default_projection is not None,
+            "automounted ServiceAccount token lacks an API-derived default projection profile",
+        )
+        surface.insert(0, [token_projection_descriptor(default_projection)])
     return surface
+
+
+def service_account_admission_profiles(
+    entries: dict[str, dict[str, Any]],
+    v4_context: dict[str, Any],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Derive per-ServiceAccount API injection defaults from authenticated Pod GETs."""
+
+    observed_profiles: list[dict[str, Any]] = []
+    account_automount = {
+        (item["namespace"], item["name"]): item[
+            "automount_service_account_token"
+        ]
+        for item in v4_context["service_accounts"]
+        if item["namespace"] in CREDENTIAL_CUSTODY_NAMESPACES
+    }
+    for namespace in CREDENTIAL_CUSTODY_NAMESPACES:
+        if (namespace, "pods") in v4.WORKLOAD_ENDPOINTS:
+            body = v4_context["entries"][f"k8s/workloads/{namespace}/pods"]["body"]
+        else:
+            body = entries[f"k8s/peer-workloads/{namespace}/pods"]["body"]
+        for item in body["items"]:
+            spec = workload_pod_spec(item, "pods")
+            service_account = spec.get("serviceAccountName") or "default"
+            effective_automount = spec.get(
+                "automountServiceAccountToken",
+                account_automount[(namespace, service_account)],
+            )
+            if effective_automount is False:
+                continue
+            candidates = [
+                profile
+                for volume in spec.get("volumes", [])
+                if isinstance(volume, dict)
+                and (profile := service_account_admission_projection(volume))
+                is not None
+            ]
+            require(
+                len(candidates) == 1,
+                "automounted Pod does not expose one exact API-injected token profile",
+            )
+            observed_profiles.append(candidates[0])
+    unique_profiles = {digest(profile): profile for profile in observed_profiles}
+    require(
+        len(unique_profiles) == 1,
+        "authenticated Pods do not expose one cluster-wide ServiceAccount admission profile",
+    )
+    cluster_profile = next(iter(unique_profiles.values()))
+    return {
+        (item["namespace"], item["name"]): {
+            **cluster_profile,
+            "automount_service_account_token": item[
+                "automount_service_account_token"
+            ],
+        }
+        for item in v4_context["service_accounts"]
+        if item["namespace"] in CREDENTIAL_CUSTODY_NAMESPACES
+    }
 
 
 def normalized_controller_identity(value: dict[str, Any]) -> dict[str, Any]:
@@ -665,6 +831,7 @@ def credential_workload_inventory(
     secret_references: list[dict[str, Any]],
     controller_transitions: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
+    admission_profiles = service_account_admission_profiles(entries, v4_context)
     protected_accounts = sorted(
         {
             (item["namespace"], item["name"])
@@ -682,6 +849,13 @@ def credential_workload_inventory(
         }
     )
     account_set = set(protected_accounts)
+    account_automount = {
+        (item["namespace"], item["name"]): item[
+            "automount_service_account_token"
+        ]
+        for item in v4_context["service_accounts"]
+        if item["namespace"] in CREDENTIAL_CUSTODY_NAMESPACES
+    }
     workloads: list[dict[str, Any]] = []
     for namespace in CREDENTIAL_CUSTODY_NAMESPACES:
         for resource in sorted(v4.WORKLOAD_TYPES):
@@ -698,10 +872,18 @@ def credential_workload_inventory(
                     spec, secret_references
                 )
                 secret_names = pod_secret_names(spec, secret_references)
-                token_projection_surface = (
-                    pod_service_account_token_projection_surface(spec)
+                effective_automount = spec.get(
+                    "automountServiceAccountToken",
+                    account_automount[(namespace, service_account)],
                 )
-                has_token_projection = any(token_projection_surface)
+                token_projection_surface = (
+                    pod_service_account_token_projection_surface(
+                        spec,
+                        admission_profiles.get((namespace, service_account)),
+                        effective_automount,
+                    )
+                )
+                has_token_projection = bool(token_projection_surface)
                 protected_account = (namespace, service_account) in account_set
                 require(
                     all(
@@ -715,7 +897,7 @@ def credential_workload_inventory(
                 )
                 surface = {
                     "service_account_name": service_account,
-                    "automount_service_account_token": spec.get("automountServiceAccountToken", True),
+                    "automount_service_account_token": effective_automount,
                     "secret_reference_names": secret_names,
                     "secret_reference_surface": secret_reference_surface,
                     "service_account_token_projection_surface": token_projection_surface,
@@ -963,6 +1145,7 @@ def credential_workload_inventory(
             "uid": item["uid"],
             "credential_bearing": item["credential_bearing"],
             "credential_surface_sha256": item["credential_surface_sha256"],
+            "ephemeral_debug_safe": item["ephemeral_debug_safe"],
         }
         for item in workloads
         if item["resource"] == "pods"
@@ -976,6 +1159,14 @@ def credential_workload_inventory(
         "protected_secrets": [
             {"namespace": namespace, "name": name}
             for namespace, name in protected_secrets
+        ],
+        "service_account_admission_profiles": [
+            {
+                "namespace": namespace,
+                "service_account_name": service_account,
+                **profile,
+            }
+            for (namespace, service_account), profile in sorted(admission_profiles.items())
         ],
         "protected_pods": protected_pods,
         "debug_targets": debug_targets,
@@ -1126,7 +1317,7 @@ def verify_debug_leases(
     )
     targets = {
         (item["namespace"], item["name"], item["uid"]): item
-        for item in boundary["protected_pods"]
+        for item in boundary["debug_targets"]
     }
     raw_roles: dict[tuple[str, str], dict[str, Any]] = {}
     raw_bindings: dict[tuple[str, str], dict[str, Any]] = {}
@@ -1146,10 +1337,11 @@ def verify_debug_leases(
         exact_keys(
             lease,
             {
-                "lease_id", "principal_id", "tenant_id", "namespace", "pod_name",
+                "lease_id", "principal_id", "tenant_id", "model_id", "namespace", "pod_name",
                 "pod_uid", "operations", "issued_at", "expires_at", "audit_id",
                 "reason_sha256", "ephemeral_container",
-                "ephemeral_container_sha256",
+                "ephemeral_container_sha256", "customer_request",
+                "customer_request_sha256",
             },
             where,
         )
@@ -1158,13 +1350,81 @@ def verify_debug_leases(
         principal_id = text(lease["principal_id"], f"{where}.principal_id")
         require(principal_id in principals and principal_id != broker_id, f"{where} debug principal is not independently authenticated")
         target_key = (lease["namespace"], lease["pod_name"], lease["pod_uid"])
-        require(target_key in targets, f"{where} target is not an exact protected Pod")
+        require(target_key in targets, f"{where} target is not an exact inventoried Pod")
+        tenant_id = text(lease["tenant_id"], f"{where}.tenant_id")
+        model_id = text(lease["model_id"], f"{where}.model_id")
+        require(
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", tenant_id)
+            is not None,
+            f"{where}.tenant_id is not a bounded exact tenant scope",
+        )
+        require(
+            re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]{0,61}[a-z0-9])?", model_id)
+            is not None,
+            f"{where}.model_id is not a bounded exact model scope",
+        )
+        customer_request = lease["customer_request"]
+        require(
+            isinstance(customer_request, dict),
+            f"{where}.customer_request must be an object",
+        )
+        exact_keys(
+            customer_request,
+            {
+                "schema", "request_id", "principal_id", "tenant_id", "model_id",
+                "namespace", "pod_name", "pod_uid", "requested_at",
+                "expires_at", "audit_id", "reason_sha256",
+            },
+            f"{where}.customer_request",
+        )
+        request_id = text(
+            customer_request["request_id"],
+            f"{where}.customer_request.request_id",
+        )
+        require(
+            re.fullmatch(r"[a-z0-9]{12,64}", request_id) is not None,
+            f"{where}.customer_request.request_id invalid",
+        )
+        require(
+            customer_request
+            == {
+                "schema": "fs2-serve.nebius.ai/sai20-debug-activation-request/v1",
+                "request_id": request_id,
+                "principal_id": principal_id,
+                "tenant_id": tenant_id,
+                "model_id": model_id,
+                "namespace": lease["namespace"],
+                "pod_name": lease["pod_name"],
+                "pod_uid": lease["pod_uid"],
+                "requested_at": customer_request["requested_at"],
+                "expires_at": customer_request["expires_at"],
+                "audit_id": lease["audit_id"],
+                "reason_sha256": lease["reason_sha256"],
+            }
+            and digest(customer_request) == lease["customer_request_sha256"],
+            f"{where} is not bound to one exact signed tenant/model activation request",
+        )
+        requested_at = v3.parse_time(
+            customer_request["requested_at"],
+            f"{where}.customer_request.requested_at",
+        )
+        activation_expires_at = v3.parse_time(
+            customer_request["expires_at"],
+            f"{where}.customer_request.expires_at",
+        )
         issued_at = v3.parse_time(lease["issued_at"], f"{where}.issued_at")
         expires_at = v3.parse_time(lease["expires_at"], f"{where}.expires_at")
         require(
             issued_at <= observed <= datetime.now(timezone.utc) <= expires_at <= valid_until
             and expires_at - issued_at <= timedelta(seconds=DEBUG_LEASE_MAX_SECONDS),
             f"{where} is not an active bounded debug lease",
+        )
+        require(
+            requested_at <= issued_at
+            and expires_at <= activation_expires_at
+            and activation_expires_at - requested_at
+            <= timedelta(seconds=DEBUG_ACTIVATION_MAX_SECONDS),
+            f"{where} is outside its signed maximum-seven-day customer activation",
         )
         operations = lease["operations"]
         require(
@@ -1199,7 +1459,6 @@ def verify_debug_leases(
                 and lease["ephemeral_container_sha256"] is None,
                 f"{where} without ephemeral-container authority must not carry a debugger spec",
             )
-        text(lease["tenant_id"], f"{where}.tenant_id")
         text(lease["audit_id"], f"{where}.audit_id")
         sha256(lease["reason_sha256"], f"{where}.reason_sha256")
         role_name = DEBUG_LEASE_PREFIX + lease_id
@@ -1230,6 +1489,14 @@ def verify_debug_leases(
             "security.fs2.nebius.ai/debug-pod-uid": lease["pod_uid"],
             "security.fs2.nebius.ai/debug-reason-sha256": lease["reason_sha256"],
             "security.fs2.nebius.ai/debug-tenant-id": lease["tenant_id"],
+            "security.fs2.nebius.ai/debug-model-id": lease["model_id"],
+            "security.fs2.nebius.ai/debug-activation-request-id": request_id,
+            "security.fs2.nebius.ai/debug-activation-expires-at": customer_request[
+                "expires_at"
+            ],
+            "security.fs2.nebius.ai/debug-customer-request-sha256": lease[
+                "customer_request_sha256"
+            ],
         }
         for obj in (role, binding):
             annotations = obj.get("metadata", {}).get("annotations", {})
@@ -1322,6 +1589,14 @@ def verify_workload_create_contracts(
     protected_accounts = {
         (item["namespace"], item["name"])
         for item in boundary["protected_service_accounts"]
+    }
+    admission_profiles = {
+        (item["namespace"], item["service_account_name"]): {
+            key: value
+            for key, value in item.items()
+            if key not in {"namespace", "service_account_name"}
+        }
+        for item in boundary["service_account_admission_profiles"]
     }
     contracts = authorization["workload_create_contracts"]
     require(isinstance(contracts, list), "workload_create_contracts must be a list")
@@ -1418,6 +1693,11 @@ def verify_workload_create_contracts(
                 f"{where} DaemonSet must use the contradictory source-owned node affinity",
             )
             inert_mode = "contradictory-node-affinity"
+        elif resource == "pods":
+            require(
+                pod_spec.get("automountServiceAccountToken") is False,
+                f"{where} direct signed Pod must disable admission-time token injection",
+            )
         service_account = pod_spec.get("serviceAccountName") or "default"
         require(
             isinstance(service_account, str)
@@ -1426,7 +1706,19 @@ def verify_workload_create_contracts(
         )
         secret_names = pod_secret_names(pod_spec, secret_references)
         token_projection_surface = (
-            pod_service_account_token_projection_surface(pod_spec)
+            pod_service_account_token_projection_surface(
+                pod_spec,
+                admission_profiles.get((namespace, service_account)),
+                pod_spec.get(
+                    "automountServiceAccountToken",
+                    next(
+                        item["automount_service_account_token"]
+                        for item in v4_context["service_accounts"]
+                        if item["namespace"] == namespace
+                        and item["name"] == service_account
+                    ),
+                ),
+            )
         )
         require(
             all((namespace, secret_name) in known_secrets for secret_name in secret_names),
@@ -1474,6 +1766,7 @@ def verify_debug_authorizer(
             "protected_pod_targets_sha256", "debug_target_inventory_sha256",
             "credential_boundary_sha256",
             "max_clock_skew_seconds", "failure_policy", "policy_sha256",
+            "debug_record_contract_sha256", "debug_record_store",
             "attested_at", "operator_principal_id",
         },
         "debug_authorizer",
@@ -1488,10 +1781,36 @@ def verify_debug_authorizer(
         "expected_debug_authorizer_contract_sha256",
         "debug authorizer contract",
     )
+    record_contract = source_json(
+        query,
+        "debug_record_contract_path",
+        "expected_debug_record_contract_sha256",
+        "debug record contract",
+    )
+    exact_keys(
+        record_contract,
+        {
+            "schema", "retention_seconds", "retention_semantics",
+            "commit_order", "decisions", "required_fields",
+            "prohibited_fields",
+        },
+        "debug record contract",
+    )
     require(
         value["policy_sha256"]
         == query["expected_debug_authorizer_contract_sha256"],
         "debug authorizer attestation does not bind the source-owned policy",
+    )
+    require(
+        value["debug_record_contract_sha256"]
+        == query["expected_debug_record_contract_sha256"]
+        and record_contract["schema"]
+        == "fs2-serve.nebius.ai/sai20-debug-record-contract/v1"
+        and record_contract["retention_seconds"] == 90 * 24 * 60 * 60
+        and record_contract["commit_order"]
+        == "durable_record_commit_before_admission_response"
+        and record_contract["decisions"] == ["allow", "deny"],
+        "debug authorizer does not bind the exact source-owned 90-day record policy",
     )
     attested_at = v3.parse_time(value["attested_at"], "debug_authorizer.attested_at")
     require(
@@ -1529,6 +1848,62 @@ def verify_debug_authorizer(
         "debug authorizer CA bundle differs from its digest",
     )
     sha256(value["server_spki_sha256"], "debug_authorizer.server_spki_sha256")
+    record_store = value["debug_record_store"]
+    require(isinstance(record_store, dict), "debug_record_store must be an object")
+    exact_keys(
+        record_store,
+        {
+            "schema", "url", "ca_bundle_base64", "ca_sha256",
+            "server_spki_sha256", "credential_subject_sha256",
+            "retention_seconds", "append_only_until_expiry",
+            "allow_requires_durable_commit", "deny_requires_durable_commit",
+            "attested_at", "operator_principal_id",
+        },
+        "debug_record_store",
+    )
+    require(
+        record_store["schema"]
+        == "fs2-serve.nebius.ai/sai20-debug-record-store/v1"
+        and record_store["retention_seconds"] == 90 * 24 * 60 * 60
+        and record_store["append_only_until_expiry"] is True
+        and record_store["allow_requires_durable_commit"] is True
+        and record_store["deny_requires_durable_commit"] is True,
+        "debug record store does not enforce durable append-only 90-day decisions",
+    )
+    record_url = urllib.parse.urlsplit(
+        text(record_store["url"], "debug_record_store.url")
+    )
+    require(
+        record_url.scheme == "https"
+        and bool(record_url.hostname)
+        and record_url.username is None
+        and record_url.password is None
+        and record_url.query == ""
+        and record_url.fragment == ""
+        and record_url.path == "/v1/sai20/debug-records",
+        "debug record store URL must be one exact HTTPS append endpoint",
+    )
+    record_ca = v4.decode_base64(
+        record_store["ca_bundle_base64"], "debug_record_store.ca_bundle_base64"
+    )
+    require(
+        0 < len(record_ca) <= 1024 * 1024
+        and hashlib.sha256(record_ca).hexdigest() == record_store["ca_sha256"],
+        "debug record store CA bundle differs from its digest",
+    )
+    sha256(record_store["server_spki_sha256"], "debug_record_store.server_spki_sha256")
+    sha256(
+        record_store["credential_subject_sha256"],
+        "debug_record_store.credential_subject_sha256",
+    )
+    record_attested_at = v3.parse_time(
+        record_store["attested_at"], "debug_record_store.attested_at"
+    )
+    require(
+        observed <= record_attested_at <= valid_until
+        and record_store["operator_principal_id"] == operator_principal,
+        "debug record store is not freshly attested by the external reviewer",
+    )
     require(
         value["lease_payload_sha256"] == digest(leases),
         "debug authorizer does not bind the exact active lease payload",
@@ -1549,6 +1924,9 @@ def verify_debug_authorizer(
         ],
         "protected_service_accounts": boundary["protected_service_accounts"],
         "protected_workload_parents": boundary["protected_parents"],
+        "service_account_admission_profiles": boundary[
+            "service_account_admission_profiles"
+        ],
         "workload_controller_identities": boundary["controller_identities"],
         "workload_controller_transitions": boundary["controller_transitions"],
         "credential_rollout_lineages": boundary["credential_rollout_lineages"],
@@ -1645,6 +2023,10 @@ def binding_authority_records(
             "certificatesigningrequests/approval" in resources or "*" in resources
         ):
             return True
+        if verbs & {"sign", "*"} and (
+            "signers" in resources or "*" in resources
+        ) and ("certificates.k8s.io" in groups or "*" in groups):
+            return True
         if verbs & {"get", "list", "watch", "*"} and (
             "secrets" in resources or "*" in resources
         ) and ("" in groups or "*" in groups):
@@ -1677,8 +2059,18 @@ def binding_authority_records(
                 selected = any(dangerous_rule(rule, namespace) for rule in rules)
             else:
                 selected = any(
-                    mutation_verbs & set(rule.get("verbs", []))
-                    and ({"*"} | sensitive_resources) & set(rule.get("resources", []))
+                    (
+                        mutation_verbs & set(rule.get("verbs", []))
+                        and ({"*"} | sensitive_resources)
+                        & set(rule.get("resources", []))
+                    )
+                    or (
+                        {"sign", "*"} & set(rule.get("verbs", []))
+                        and {"signers", "*"}
+                        & set(rule.get("resources", []))
+                        and {"certificates.k8s.io", "*"}
+                        & set(rule.get("apiGroups", []))
+                    )
                     for rule in rules
                 )
             if not selected:
@@ -2206,6 +2598,7 @@ def verify_supplemental_bundle(
             "provider_observer_credential_subject_sha256",
             "credential_workload_inventory_sha256", "protected_service_accounts",
             "protected_secrets", "protected_pod_targets",
+            "service_account_admission_profiles",
             "workload_controller_transitions",
             "debug_broker_principal_id", "debug_access_leases",
             "debug_access_leases_sha256", "workload_create_contracts",
@@ -2275,6 +2668,11 @@ def verify_supplemental_bundle(
     require(
         boundary["protected_pods"] == authorization["protected_pod_targets"],
         "protected Pod targets differ from authoritative workload inventory",
+    )
+    require(
+        boundary["service_account_admission_profiles"]
+        == authorization["service_account_admission_profiles"],
+        "ServiceAccount admission profiles differ from authenticated Pod observations",
     )
     leases, approved_debug_bindings, rendered_debug_bindings = verify_debug_leases(
         authorization,
@@ -2454,6 +2852,9 @@ def verify_supplemental_bundle(
         "credential_workload_inventory_sha256": authorization["credential_workload_inventory_sha256"],
         "debug_access_leases_sha256": authorization["debug_access_leases_sha256"],
         "debug_authorizer_sha256": digest(debug_authorizer),
+        "debug_record_contract_sha256": query[
+            "expected_debug_record_contract_sha256"
+        ],
         "workload_create_contracts_sha256": authorization["workload_create_contracts_sha256"],
         "pod_secret_reference_contract_sha256": authorization["pod_secret_reference_contract_sha256"],
         "protected_service_accounts_json": json.dumps(
@@ -2464,6 +2865,11 @@ def verify_supplemental_bundle(
         ),
         "protected_pod_targets_json": json.dumps(
             boundary["protected_pods"], sort_keys=True, separators=(",", ":")
+        ),
+        "service_account_admission_profiles_json": json.dumps(
+            boundary["service_account_admission_profiles"],
+            sort_keys=True,
+            separators=(",", ":"),
         ),
         "debug_target_inventory_json": json.dumps(
             boundary["debug_targets"], sort_keys=True, separators=(",", ":")
@@ -2742,6 +3148,7 @@ def main() -> int:
             "root_enrollment_receipts_path", "expected_root_enrollment_receipts_sha256",
             "bootstrap_guard_contract_path", "expected_bootstrap_guard_contract_sha256",
             "debug_authorizer_contract_path", "expected_debug_authorizer_contract_sha256",
+            "debug_record_contract_path", "expected_debug_record_contract_sha256",
             "pod_secret_reference_contract_path",
             "expected_pod_secret_reference_contract_sha256",
         }

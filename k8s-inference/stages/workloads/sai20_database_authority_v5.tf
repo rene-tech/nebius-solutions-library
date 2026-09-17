@@ -30,6 +30,9 @@ locals {
   sai20_authority_v5_debug_authorizer_contract_path = abspath(
     "${path.module}/contracts/sai20-debug-authorizer-v1.json"
   )
+  sai20_authority_v5_debug_record_contract_path = abspath(
+    "${path.module}/contracts/sai20-debug-record-v1.json"
+  )
   sai20_authority_v5_pod_secret_reference_contract_path = abspath(
     "${path.module}/contracts/sai20-pod-secret-references-v1.json"
   )
@@ -46,6 +49,8 @@ locals {
     expected_bootstrap_guard_contract_sha256   = filesha256(local.sai20_authority_v5_bootstrap_guard_contract_path)
     debug_authorizer_contract_path             = local.sai20_authority_v5_debug_authorizer_contract_path
     expected_debug_authorizer_contract_sha256  = filesha256(local.sai20_authority_v5_debug_authorizer_contract_path)
+    debug_record_contract_path                 = local.sai20_authority_v5_debug_record_contract_path
+    expected_debug_record_contract_sha256      = filesha256(local.sai20_authority_v5_debug_record_contract_path)
     pod_secret_reference_contract_path         = local.sai20_authority_v5_pod_secret_reference_contract_path
     expected_pod_secret_reference_contract_sha256 = filesha256(local.sai20_authority_v5_pod_secret_reference_contract_path)
   })
@@ -150,8 +155,10 @@ resource "terraform_data" "sai20_database_authority_v5_identity" {
         data.external.sai20_database_authority_v5_identity.result.workload_controller_transitions_json == terraform_data.sai20_database_authority_v5_plan.output.workload_controller_transitions_json &&
         data.external.sai20_database_authority_v5_identity.result.credential_rollout_lineages_json == terraform_data.sai20_database_authority_v5_plan.output.credential_rollout_lineages_json &&
         data.external.sai20_database_authority_v5_identity.result.credential_workload_inventory_sha256 == terraform_data.sai20_database_authority_v5_plan.output.credential_workload_inventory_sha256 &&
+        data.external.sai20_database_authority_v5_identity.result.service_account_admission_profiles_json == terraform_data.sai20_database_authority_v5_plan.output.service_account_admission_profiles_json &&
         data.external.sai20_database_authority_v5_identity.result.debug_access_leases_sha256 == terraform_data.sai20_database_authority_v5_plan.output.debug_access_leases_sha256 &&
         data.external.sai20_database_authority_v5_identity.result.debug_authorizer_sha256 == terraform_data.sai20_database_authority_v5_plan.output.debug_authorizer_sha256 &&
+        data.external.sai20_database_authority_v5_identity.result.debug_record_contract_sha256 == terraform_data.sai20_database_authority_v5_plan.output.debug_record_contract_sha256 &&
         data.external.sai20_database_authority_v5_identity.result.workload_create_contracts_sha256 == terraform_data.sai20_database_authority_v5_plan.output.workload_create_contracts_sha256 &&
         data.external.sai20_database_authority_v5_identity.result.pod_secret_reference_contract_sha256 == terraform_data.sai20_database_authority_v5_plan.output.pod_secret_reference_contract_sha256 &&
         data.external.sai20_database_authority_v5_identity.result.source_commit == terraform_data.sai20_database_authority_v5_plan.output.source_commit &&
@@ -243,6 +250,17 @@ locals {
   sai20_authority_v5_protected_workload_parents = jsondecode(
     terraform_data.sai20_database_authority_v5_identity.output.protected_workload_parents_json
   )
+  sai20_authority_v5_service_account_admission_profiles = jsondecode(
+    terraform_data.sai20_database_authority_v5_identity.output.service_account_admission_profiles_json
+  )
+  sai20_authority_v5_service_account_admission_profiles_by_namespace = {
+    for namespace in ["cnpg-system", "fs2-data", "fs2-observability", "fs2-system"] :
+    namespace => {
+      for profile in local.sai20_authority_v5_service_account_admission_profiles :
+      profile.service_account_name => profile
+      if profile.namespace == namespace
+    }
+  }
   sai20_authority_v5_protected_workload_objects = jsondecode(
     terraform_data.sai20_database_authority_v5_identity.output.protected_workload_objects_json
   )
@@ -299,14 +317,14 @@ locals {
   }
   sai20_authority_v5_target_secret_reference_surface_cel = format("{%s}", join(", ", [
     for reference in local.sai20_authority_v5_pod_secret_reference_contract.references : format(
-      "%s: (%s)",
+      "%s: (%s).filter(group, group.size() > 0)",
       jsonencode(reference.id),
       replace(reference.cel_surface, "{spec}", "variables.targetSpec"),
     )
   ]))
   sai20_authority_v5_old_secret_reference_surface_cel = format("{%s}", join(", ", [
     for reference in local.sai20_authority_v5_pod_secret_reference_contract.references : format(
-      "%s: (%s)",
+      "%s: (%s).filter(group, group.size() > 0)",
       jsonencode(reference.id),
       replace(reference.cel_surface, "{spec}", "variables.oldTargetSpec"),
     )
@@ -324,16 +342,16 @@ locals {
       jsonencode(reference.id),
     )
   ])
-  sai20_authority_v5_target_service_account_token_projection_surface_cel = replace(
+  sai20_authority_v5_target_service_account_token_projection_surface_cel = replace(replace(replace(
     local.sai20_authority_v5_pod_secret_reference_contract.service_account_token_projection.cel_surface,
-    "{spec}",
-    "variables.targetSpec",
-  )
-  sai20_authority_v5_old_service_account_token_projection_surface_cel = replace(
+    "{spec}", "variables.targetSpec"),
+    "{automount}", "variables.targetAutomountServiceAccountToken"),
+    "{default_projection}", "variables.targetServiceAccountAdmissionProjection")
+  sai20_authority_v5_old_service_account_token_projection_surface_cel = replace(replace(replace(
     local.sai20_authority_v5_pod_secret_reference_contract.service_account_token_projection.cel_surface,
-    "{spec}",
-    "variables.oldTargetSpec",
-  )
+    "{spec}", "variables.oldTargetSpec"),
+    "{automount}", "variables.oldAutomountServiceAccountToken"),
+    "{default_projection}", "variables.oldServiceAccountAdmissionProjection")
   sai20_authority_v5_exact_workload_writer_terms = flatten([
     for principal in local.sai20_authority_v5_workload_mutation_grants : [
       for grant in principal.grants : [
@@ -729,6 +747,7 @@ resource "kubernetes_manifest" "sai20_workload_credential_custody_v6" {
       annotations = {
         "security.fs2.nebius.ai/credential-inventory-sha256" = terraform_data.sai20_database_authority_v5_identity.output.credential_workload_inventory_sha256
         "security.fs2.nebius.ai/pod-secret-reference-contract-sha256" = terraform_data.sai20_database_authority_v5_identity.output.pod_secret_reference_contract_sha256
+        "security.fs2.nebius.ai/service-account-admission-profiles-sha256" = sha256(terraform_data.sai20_database_authority_v5_identity.output.service_account_admission_profiles_json)
         "security.fs2.nebius.ai/debug-leases-sha256"         = terraform_data.sai20_database_authority_v5_identity.output.debug_access_leases_sha256
         "security.fs2.nebius.ai/successor-bundle-sha256"     = terraform_data.sai20_database_authority_v5_identity.output.successor_bundle_sha256
       }
@@ -817,12 +836,20 @@ resource "kubernetes_manifest" "sai20_workload_credential_custody_v6" {
           expression = "has(variables.oldTargetSpec.serviceAccountName) && variables.oldTargetSpec.serviceAccountName != '' ? variables.oldTargetSpec.serviceAccountName : 'default'"
         },
         {
+          name = "targetServiceAccountAdmissionProjection"
+          expression = "request.namespace in ${jsonencode(local.sai20_authority_v5_service_account_admission_profiles_by_namespace)} && variables.targetServiceAccount in ${jsonencode(local.sai20_authority_v5_service_account_admission_profiles_by_namespace)}[request.namespace] ? ${jsonencode(local.sai20_authority_v5_service_account_admission_profiles_by_namespace)}[request.namespace][variables.targetServiceAccount] : null"
+        },
+        {
+          name = "oldServiceAccountAdmissionProjection"
+          expression = "request.namespace in ${jsonencode(local.sai20_authority_v5_service_account_admission_profiles_by_namespace)} && variables.oldServiceAccount in ${jsonencode(local.sai20_authority_v5_service_account_admission_profiles_by_namespace)}[request.namespace] ? ${jsonencode(local.sai20_authority_v5_service_account_admission_profiles_by_namespace)}[request.namespace][variables.oldServiceAccount] : null"
+        },
+        {
           name       = "targetAutomountServiceAccountToken"
-          expression = "has(variables.targetSpec.automountServiceAccountToken) ? variables.targetSpec.automountServiceAccountToken : true"
+          expression = "has(variables.targetSpec.automountServiceAccountToken) ? variables.targetSpec.automountServiceAccountToken : (variables.targetServiceAccountAdmissionProjection != null ? variables.targetServiceAccountAdmissionProjection.automount_service_account_token : true)"
         },
         {
           name       = "oldAutomountServiceAccountToken"
-          expression = "has(variables.oldTargetSpec.automountServiceAccountToken) ? variables.oldTargetSpec.automountServiceAccountToken : true"
+          expression = "has(variables.oldTargetSpec.automountServiceAccountToken) ? variables.oldTargetSpec.automountServiceAccountToken : (variables.oldServiceAccountAdmissionProjection != null ? variables.oldServiceAccountAdmissionProjection.automount_service_account_token : true)"
         },
         {
           name       = "targetSecretReferenceSurface"
@@ -906,8 +933,8 @@ resource "kubernetes_manifest" "sai20_workload_credential_custody_v6" {
         },
       ]
       validations = [{
-        expression = "!variables.credentialBearing || variables.custodian || variables.exactWorkloadCreate || (variables.exactWorkloadWriter && variables.unchangedCredentialSurface) || variables.controllerOwnedCredentialChild || variables.multiHopCredentialChild || variables.controllerManagedCredentialObject || (variables.exactDebugEphemeralUpdate && variables.debugCredentialSurfacePreserved)"
-        message    = "protected ServiceAccount, Secret or projected token selection requires the exact custodian, an inert signed CREATE, a signed name+UID UPDATE retaining the surface, an exact live-observed controller transition with authenticated rollout lineage, or an exact leased no-volume ephemeral debugger"
+        expression = "request.subResource == 'ephemeralcontainers' ? (variables.exactDebugEphemeralUpdate && variables.debugCredentialSurfacePreserved) : (request.subResource == '' && (variables.custodian || !variables.credentialBearing || variables.exactWorkloadCreate || (variables.exactWorkloadWriter && variables.unchangedCredentialSurface) || variables.controllerOwnedCredentialChild || variables.multiHopCredentialChild || variables.controllerManagedCredentialObject))"
+        message    = "ordinary workload branches require an empty subresource; every ephemeral-container request, including an otherwise unprotected target or custodian caller, requires the exact signed no-volume debugger, and protected credentials otherwise require a signed exact workload transition"
         reason     = "Forbidden"
       }]
     }
@@ -1007,6 +1034,10 @@ resource "kubernetes_manifest" "sai20_debug_access_custody_v6" {
             "has(variables.targetObject.metadata.annotations) &&",
             "variables.targetObject.metadata.annotations.exists(key, key == 'security.fs2.nebius.ai/debug-audit-id') &&",
             "variables.targetObject.metadata.annotations.exists(key, key == 'security.fs2.nebius.ai/debug-tenant-id') &&",
+            "variables.targetObject.metadata.annotations.exists(key, key == 'security.fs2.nebius.ai/debug-model-id') &&",
+            "variables.targetObject.metadata.annotations.exists(key, key == 'security.fs2.nebius.ai/debug-activation-request-id') &&",
+            "variables.targetObject.metadata.annotations.exists(key, key == 'security.fs2.nebius.ai/debug-activation-expires-at') &&",
+            "variables.targetObject.metadata.annotations.exists(key, key == 'security.fs2.nebius.ai/debug-customer-request-sha256') &&",
             "variables.targetObject.metadata.annotations.exists(key, key == 'security.fs2.nebius.ai/debug-pod-uid') &&",
             "variables.targetObject.metadata.annotations.exists(key, key == 'security.fs2.nebius.ai/debug-reason-sha256') &&",
             "variables.targetObject.metadata.annotations.exists(key, key == 'security.fs2.nebius.ai/debug-issued-at') &&",
@@ -1102,6 +1133,8 @@ resource "kubernetes_manifest" "sai20_debug_request_authorizer_v6" {
         "security.fs2.nebius.ai/debug-target-inventory-sha256" = local.sai20_authority_v5_debug_authorizer.debug_target_inventory_sha256
         "security.fs2.nebius.ai/credential-boundary-sha256" = local.sai20_authority_v5_debug_authorizer.credential_boundary_sha256
         "security.fs2.nebius.ai/server-spki-sha256"      = local.sai20_authority_v5_debug_authorizer.server_spki_sha256
+        "security.fs2.nebius.ai/debug-record-contract-sha256" = local.sai20_authority_v5_debug_authorizer.debug_record_contract_sha256
+        "security.fs2.nebius.ai/debug-record-store-sha256" = sha256(jsonencode(local.sai20_authority_v5_debug_authorizer.debug_record_store))
       }
     }
     webhooks = [{
@@ -1315,8 +1348,10 @@ resource "terraform_data" "sai20_database_authority_v5_apply" {
         data.external.sai20_database_authority_v5_apply.result.workload_controller_transitions_json == terraform_data.sai20_database_authority_v5_identity.output.workload_controller_transitions_json &&
         data.external.sai20_database_authority_v5_apply.result.credential_rollout_lineages_json == terraform_data.sai20_database_authority_v5_identity.output.credential_rollout_lineages_json &&
         data.external.sai20_database_authority_v5_apply.result.credential_workload_inventory_sha256 == terraform_data.sai20_database_authority_v5_identity.output.credential_workload_inventory_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.service_account_admission_profiles_json == terraform_data.sai20_database_authority_v5_identity.output.service_account_admission_profiles_json &&
         data.external.sai20_database_authority_v5_apply.result.debug_access_leases_sha256 == terraform_data.sai20_database_authority_v5_identity.output.debug_access_leases_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.debug_authorizer_sha256 == terraform_data.sai20_database_authority_v5_identity.output.debug_authorizer_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.debug_record_contract_sha256 == terraform_data.sai20_database_authority_v5_identity.output.debug_record_contract_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.workload_create_contracts_sha256 == terraform_data.sai20_database_authority_v5_identity.output.workload_create_contracts_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.pod_secret_reference_contract_sha256 == terraform_data.sai20_database_authority_v5_identity.output.pod_secret_reference_contract_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.peer_workload_inventory_sha256 == terraform_data.sai20_database_authority_v5_identity.output.peer_workload_inventory_sha256 &&
@@ -1326,8 +1361,10 @@ resource "terraform_data" "sai20_database_authority_v5_apply" {
         data.external.sai20_database_authority_v5_apply.result.secret_metadata_inventory_sha256 == terraform_data.sai20_database_authority_v5_plan.output.secret_metadata_inventory_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.secret_names_json == terraform_data.sai20_database_authority_v5_plan.output.secret_names_json &&
         data.external.sai20_database_authority_v5_apply.result.credential_workload_inventory_sha256 == terraform_data.sai20_database_authority_v5_plan.output.credential_workload_inventory_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.service_account_admission_profiles_json == terraform_data.sai20_database_authority_v5_plan.output.service_account_admission_profiles_json &&
         data.external.sai20_database_authority_v5_apply.result.debug_access_leases_sha256 == terraform_data.sai20_database_authority_v5_plan.output.debug_access_leases_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.debug_authorizer_sha256 == terraform_data.sai20_database_authority_v5_plan.output.debug_authorizer_sha256 &&
+        data.external.sai20_database_authority_v5_apply.result.debug_record_contract_sha256 == terraform_data.sai20_database_authority_v5_plan.output.debug_record_contract_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.workload_create_contracts_sha256 == terraform_data.sai20_database_authority_v5_plan.output.workload_create_contracts_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.pod_secret_reference_contract_sha256 == terraform_data.sai20_database_authority_v5_plan.output.pod_secret_reference_contract_sha256 &&
         data.external.sai20_database_authority_v5_apply.result.successor_transition_mode == terraform_data.sai20_database_authority_v5_plan.output.successor_transition_mode &&
