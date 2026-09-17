@@ -48,6 +48,7 @@ from .models import (
     RuntimeIdentity,
     RuntimeLifecycleObservation,
     RuntimeObservationSource,
+    Scope,
 )
 from .registry import ModelRouteUnavailableError, OperationalModel, Registry
 from .runtime import ActivationError, PreemptedError, RouteUnavailableError, RuntimeClient, RuntimeOperationError
@@ -55,6 +56,10 @@ from .store import ConflictError, StaleLeaseError, Store
 from .telemetry import Metrics
 
 LOGGER = logging.getLogger(__name__)
+
+
+class PublicModelPolicyNotFoundError(KeyError):
+    """Hide a final public HTTP model-policy denial behind not-found semantics."""
 
 
 def _publication_surface(*, protocol: str, required_scope: str) -> str:
@@ -199,15 +204,20 @@ class AdmissionService:
         model = self.registry.get(admission.model_id)
         if not routes_fresh and model.dynamic_policy is not None:
             raise ModelRouteUnavailableError("dynamic model route evidence is unavailable")
-        self.registry.authorize_principal(
-            model,
-            principal,
-            requested_model_id=admission.model_id,
-            surface=_publication_surface(
-                protocol=admission.protocol,
-                required_scope=required_scope,
-            ),
-        )
+        try:
+            self.registry.authorize_principal(
+                model,
+                principal,
+                requested_model_id=admission.model_id,
+                surface=_publication_surface(
+                    protocol=admission.protocol,
+                    required_scope=required_scope,
+                ),
+            )
+        except PermissionError:
+            if required_scope == Scope.INFERENCE_INVOKE.value:
+                raise PublicModelPolicyNotFoundError("model not found") from None
+            raise
         self.registry.authorize(model, principal.scopes)
         if admission.operation not in model.gateway.policy_operations:
             raise PermissionError("operation is outside model policy")

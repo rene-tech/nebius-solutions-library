@@ -3,6 +3,26 @@
 Status: source-only candidate for independent review. This document is not an
 integration, deployment, or live-acceptance claim.
 
+## Preserved rejection and successor correction
+
+Independent review rejected exact commit
+`b596a3502bd32bd2e6d2c344389877d4469d2157` / tree
+`7935cec8167793ed3ebf76f3b781fd27f2b4d735` as SOURCE, INTEGRATION, and LIVE
+NO-GO. That candidate checked model policy before the required public inference
+scope, so a catalog-only key could still distinguish an existing granted model's
+403 from an unknown model's 404. Its check was also preliminary: a route refresh
+could tighten policy before authoritative admission and expose the final
+`PermissionError` as 403.
+
+The successor preserves the ordinary 403 missing-scope behavior by requiring
+`inference.invoke` before any registry lookup on public HTTP inference routes.
+It also converts only the final post-refresh principal/model authorization
+denial to a dedicated `KeyError` subclass. Model-required-scope, operation,
+protocol, MCP, admin/operator, and authorized readiness errors retain their
+existing behavior. The branch merges current `origin/main` at
+`0e6fdf6d9f61e5737dc6ac5cec4c0111207dd697`; rejected history is preserved
+without rebase or amendment.
+
 ## Source contract
 
 The candidate starts from commit
@@ -35,6 +55,13 @@ App name and requires identical status, bytes, JSON, and cache policy. The
 existing customer-ownership test now also requires HTTP 404 for a model-grant
 denial while retaining its authorized dispatch, missing-scope,
 disabled-principal, result-isolation, and usage checks.
+
+`test_missing_inference_scope_does_not_disclose_model_existence` requires the
+same 403 body for existing and unknown names before registry access.
+`test_post_refresh_policy_tightening_is_identical_to_an_unknown_model` changes
+the private allowlist inside `route_refresh` and requires the authoritative
+admission denial to remain byte-identical to unknown-model 404 behavior. Both
+regressions cover OpenAI chat and native HTTP invocation.
 
 The tests were authored but not executed because the parent coordinator limited
 this ticket to static additive source work. No formatter, linter, test, build,

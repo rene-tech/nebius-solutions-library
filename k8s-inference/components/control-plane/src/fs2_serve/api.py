@@ -525,6 +525,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     ) -> OperationalModel:
         """Resolve public-route policy without disclosing a model's existence."""
 
+        identity.require(Scope.INFERENCE_INVOKE)
         model = runtime.registry.get(model_id, require_enabled=False)
         try:
             runtime.registry.authorize_principal(

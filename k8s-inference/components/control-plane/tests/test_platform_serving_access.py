@@ -211,6 +211,121 @@ def test_public_http_model_policy_denials_are_identical_to_unknown_models(regist
             assert denied.headers["cache-control"] == unknown.headers["cache-control"] == "no-store"
 
 
+@pytest.mark.parametrize(
+    ("path_template", "request_payload"),
+    [
+        ("/v1/chat/completions", {"messages": [{"role": "user", "content": "fixture"}]}),
+        ("/v1/models/{model_id}:invoke", {"operation": "chat", "payload": {"input": "fixture"}}),
+    ],
+)
+def test_missing_inference_scope_does_not_disclose_model_existence(
+    registry,
+    cipher,
+    hasher,
+    path_template,
+    request_payload,
+):
+    runtime = build_runtime(registry, cipher, hasher)
+    expected = {"error": {"type": "permission_denied", "message": "request is outside token policy"}}
+    with TestClient(create_app(runtime)) as client:
+        token = issue(
+            client,
+            principal="catalog-only-model-oracle",
+            tenant="tenant-a",
+            scopes=["catalog.read"],
+            models=["*"],
+        )
+        headers = {"authorization": f"Bearer {token}", "idempotency-key": "catalog-only-model-oracle-key"}
+        responses = []
+        for model_id in ("qwen3-8b", "unknown-private-app"):
+            path = path_template.format(model_id=model_id)
+            payload = dict(request_payload)
+            if "{model_id}" not in path_template:
+                payload["model"] = model_id
+            responses.append(client.post(path, headers=headers, json=payload))
+
+        existing, unknown = responses
+        assert existing.status_code == unknown.status_code == 403
+        assert existing.content == unknown.content
+        assert existing.json() == unknown.json() == expected
+        assert existing.headers["cache-control"] == unknown.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    ("path_template", "request_payload"),
+    [
+        ("/v1/chat/completions", {"messages": [{"role": "user", "content": "fixture"}]}),
+        ("/v1/models/{model_id}:invoke", {"operation": "chat", "payload": {"input": "fixture"}}),
+    ],
+)
+def test_post_refresh_policy_tightening_is_identical_to_an_unknown_model(
+    registry,
+    cipher,
+    hasher,
+    path_template,
+    request_payload,
+):
+    revision = _revision(registry, visibility=Visibility.PRIVATE)
+    initial = project_dynamic_publications(
+        [revision],
+        {(revision.namespace, revision.name): status_view(revision)},
+    )
+    assert registry.set_dynamic_publications(initial, valid_until=datetime.now(UTC) + timedelta(minutes=5))
+    tightened_policy = revision.spec.policy.model_copy(update={"allowed_principal_ids": ["replacement-user"]})
+    tightened_spec = revision.spec.model_copy(update={"policy": tightened_policy})
+    tightened = revision.model_copy(
+        update={"revision": revision.revision + 1, "spec": tightened_spec, "etag": spec_digest(tightened_spec)}
+    )
+    tightened_snapshot = project_dynamic_publications(
+        [tightened],
+        {(tightened.namespace, tightened.name): status_view(tightened)},
+    )
+    runtime = build_runtime(registry, cipher, hasher)
+    refresh_calls = []
+
+    async def tighten_policy_during_admission():
+        refresh_calls.append(True)
+        assert registry.set_dynamic_publications(
+            tightened_snapshot,
+            valid_until=datetime.now(UTC) + timedelta(minutes=5),
+        )
+        return True
+
+    runtime.admission.route_refresh = tighten_policy_during_admission
+    expected = {"error": {"type": "not_found", "message": "model or operation was not found"}}
+    with TestClient(create_app(runtime)) as client:
+        token = issue(
+            client,
+            principal="private-user",
+            tenant="tenant-a",
+            scopes=["inference.invoke"],
+            models=["qwen3-8b"],
+        )
+        headers = {"authorization": f"Bearer {token}", "idempotency-key": "policy-tightening-oracle-key"}
+        existing_payload = dict(request_payload)
+        unknown_payload = dict(request_payload)
+        if "{model_id}" not in path_template:
+            existing_payload["model"] = "qwen3-8b"
+            unknown_payload["model"] = "unknown-private-app"
+        denied = client.post(
+            path_template.format(model_id="qwen3-8b"),
+            headers=headers,
+            json=existing_payload,
+        )
+        unknown = client.post(
+            path_template.format(model_id="unknown-private-app"),
+            headers=headers,
+            json=unknown_payload,
+        )
+
+        assert refresh_calls == [True]
+        assert denied.status_code == unknown.status_code == 404
+        assert denied.content == unknown.content
+        assert denied.json() == unknown.json() == expected
+        assert denied.headers["cache-control"] == unknown.headers["cache-control"] == "no-store"
+        assert not runtime.store.operations
+
+
 @pytest.mark.parametrize("visibility", [Visibility.PRIVATE, Visibility.TENANT])
 @pytest.mark.parametrize("surface", ["catalog", "openai", "mcp", "native"])
 def test_explicit_principal_restrictions_remain_tenant_qualified(registry, visibility, surface):
