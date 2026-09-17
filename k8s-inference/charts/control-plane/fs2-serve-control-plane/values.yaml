@@ -438,6 +438,7 @@ networkPolicy:
       app.kubernetes.io/name: fs2-edge-rate-limit-redis
       app.kubernetes.io/component: edge-rate-limit-store
     port: 6379
+    sentinelPort: 26379
   solver:
     namespaceLabels:
       kubernetes.io/metadata.name: fs2-system

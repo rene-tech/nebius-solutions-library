@@ -717,11 +717,14 @@ plan before reconciling the Service.
 The same `EnvoyProxy` requires two data-plane replicas, bounded CPU/memory, a
 one-Pod minimum disruption budget, rolling updates with zero unavailable Pods,
 and hostname topology spread. The foundation runs Envoy Gateway's shared
-rate-limit service with two replicas and a network-isolated ephemeral Redis
-counter store. Rate-limit backend failure is fail-open for customer
-availability; data-plane connection/stream caps and application token budgets
-remain enforced. The store contains counters only and is not a customer-data
-or request-debugging system.
+rate-limit service with two replicas and a network-isolated ephemeral
+three-member Redis replication group supervised by three Sentinels. The RLS
+NetworkPolicy admits only DNS plus Redis data port 6379 and Sentinel discovery
+port 26379 to those store Pods. Sentinel preserves one logical writable counter
+authority through a member loss; if the complete RLS/store authority is
+unavailable, Envoy fails closed instead of silently removing edge protection.
+The store contains counters only and is not a customer-data or request-debugging
+system.
 
 Nebius worker security groups must admit all three layers for both protocols:
 public listeners `80/443`, shifted Envoy targets `10080/10443`, and pinned
@@ -746,8 +749,10 @@ for client-bucket selection. Do not deploy it until the retained load balancer
 is proven to append that position and direct header forgery is excluded. Both
 HTTP and HTTPS listeners cap concurrent connections, connection and stream
 lifetime, requests per connection, incomplete request reception, idle time,
-and concurrent HTTP/2 streams. Active streams may run for at most two hours;
-idle streams are released after five minutes.
+and concurrent HTTP/2 streams. Active streams may run for at most 7,500
+seconds, preserving the supported audio allowance; the 7,800-second connection
+lifetime supplies five minutes of setup/transport headroom. Idle streams are
+released after five minutes.
 
 The optional namespaced issuer selects only Let's Encrypt's exact staging or
 production directory, the `shortlived` ACME profile, a generated account-key

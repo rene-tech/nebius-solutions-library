@@ -454,7 +454,13 @@ def test_admin_console_renders_digest_bound_workload_route_and_network_boundary(
             "kind": "Gateway",
             "name": "public",
             "sectionName": "public-https",
-        }
+        },
+        {
+            "group": "gateway.networking.k8s.io",
+            "kind": "Gateway",
+            "name": "public",
+            "sectionName": "acme-http",
+        },
     ]
     public_edge = next(
         document
@@ -1835,6 +1841,7 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
         "fs2-serve-control-plane-public-envoy",
         "fs2-serve-control-plane-acme-solver",
         "fs2-serve-control-plane-envoy-controller-xds",
+        "fs2-serve-control-plane-envoy-rate-limit",
         "fs2-serve-control-plane-maintenance",
         "fs2-serve-control-plane-migration",
     }
@@ -1962,6 +1969,36 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
             "ports": [{"port": 18000, "protocol": "TCP"}],
         }
     ]
+    rate_limit = policies["fs2-serve-control-plane-envoy-rate-limit"]
+    assert rate_limit["metadata"]["namespace"] == "envoy-gateway-system"
+    assert rate_limit["spec"]["podSelector"]["matchLabels"] == {
+        "fs2.nebius.ai/edge-rate-limit-service": "true"
+    }
+    store_egress = next(
+        rule
+        for rule in rate_limit["spec"]["egress"]
+        if rule["to"][0].get("podSelector", {}).get("matchLabels", {}).get("app.kubernetes.io/component")
+        == "edge-rate-limit-store"
+    )
+    assert store_egress == {
+        "to": [
+            {
+                "namespaceSelector": {
+                    "matchLabels": {"kubernetes.io/metadata.name": "envoy-gateway-system"}
+                },
+                "podSelector": {
+                    "matchLabels": {
+                        "app.kubernetes.io/name": "fs2-edge-rate-limit-redis",
+                        "app.kubernetes.io/component": "edge-rate-limit-store",
+                    }
+                },
+            }
+        ],
+        "ports": [
+            {"port": 6379, "protocol": "TCP"},
+            {"port": 26379, "protocol": "TCP"},
+        ],
+    }
 
 
 def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() -> None:

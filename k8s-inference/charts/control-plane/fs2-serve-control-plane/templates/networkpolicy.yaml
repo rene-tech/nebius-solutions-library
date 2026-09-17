@@ -367,6 +367,8 @@ spec:
       ports:
         - port: {{ $network.rateLimitStore.port }}
           protocol: TCP
+        - port: {{ $network.rateLimitStore.sentinelPort }}
+          protocol: TCP
 {{- end }}
 ---
 apiVersion: networking.k8s.io/v1

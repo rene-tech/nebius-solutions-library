@@ -79,8 +79,15 @@ unproven trusted hop. Its successor,
 `678c3606d33c05388559063f51df1b3620933451` (tree
 `f1b8fd9820409953c59156146281b09450075043`), corrected the store, count,
 listener, and stream issues but still trusted caller-asserted XFF booleans,
-hop count, and digest. Both commits remain rejected evidence; this document now
-describes their direct additive authenticated-receipt successor.
+hop count, and digest. The authenticated-receipt successor,
+`243cf47a73776e1c0f38091b34a4503fd36206c2` (tree
+`ff97ee4f2eb3705a4c5b8a8d0d1e6c63d291c147`), removed that assertion path but
+left the RLS NetworkPolicy unable to reach its configured Sentinel discovery
+port, retained a stale one-listener regression expectation, and left the
+operator runbook describing fail-open/two-hour behavior. All three commits
+remain rejected evidence; this document describes their direct additive
+successor, which admits only ports 6379 and 26379 from RLS to the selected store
+Pods and aligns the source contracts without enrolling a production issuer.
 
 ### Receipt and issuer custody
 
