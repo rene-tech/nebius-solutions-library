@@ -642,6 +642,7 @@ variable "deployment" {
       request_debug_enabled    = optional(bool, false)
       grafana = optional(object({
         publish_external = optional(bool, false)
+        allowed_source_cidrs = optional(set(string), [])
       }), {})
       alertmanager = optional(object({
         enabled   = optional(bool, false)
@@ -1771,6 +1772,25 @@ variable "deployment" {
       )
     )
     error_message = "Public edge mode requires one to eight IPv4 source CIDRs, an ACME email, and a staging or production ACME environment; internal-only mode requires neither CIDRs nor email."
+  }
+
+  validation {
+    condition = var.deployment.observability.grafana.publish_external ? (
+      var.deployment.edge.mode == "public" &&
+      length(var.deployment.observability.grafana.allowed_source_cidrs) >= 1 &&
+      length(var.deployment.observability.grafana.allowed_source_cidrs) <= 8 &&
+      alltrue([
+        for cidr in var.deployment.observability.grafana.allowed_source_cidrs : try(
+          can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$", cidr)) &&
+          can(cidrhost(cidr, 0)) &&
+          tonumber(split("/", cidr)[1]) >= 8,
+          false,
+        )
+      ])
+      ) : (
+      length(var.deployment.observability.grafana.allowed_source_cidrs) == 0
+    )
+    error_message = "External Grafana publication requires one to eight explicit IPv4 operator CIDRs with prefix length /8 or narrower; 0.0.0.0/0 and stale allow-lists on disabled publication are rejected."
   }
 
   validation {

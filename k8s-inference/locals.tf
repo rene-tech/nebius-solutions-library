@@ -1134,6 +1134,7 @@ locals {
     enable_cold_start_keepers       = var.deployment.models.cold_start_keepers
     enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
     request_debug_enabled           = var.deployment.observability.request_debug_enabled
+    grafana_allowed_source_cidrs     = sort(tolist(var.deployment.observability.grafana.allowed_source_cidrs))
     # core_pool_capacity is declared inside the workloads stage's scheduling
     # object and read as var.scheduling.core_pool_capacity, so it must travel
     # inside that object. Emitted as a sibling it was an undeclared variable:

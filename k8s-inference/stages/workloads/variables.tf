@@ -1380,6 +1380,27 @@ variable "enable_dcgm_cold_start_campaign" {
   }
 }
 
+variable "grafana_allowed_source_cidrs" {
+  description = "Explicit operator IPv4 CIDRs allowed to reach the externally published Grafana HTTPRoute. Empty is valid only while publication is disabled."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition = (
+      length(var.grafana_allowed_source_cidrs) <= 8 &&
+      alltrue([
+        for cidr in var.grafana_allowed_source_cidrs : try(
+          can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$", cidr)) &&
+          can(cidrhost(cidr, 0)) &&
+          tonumber(split("/", cidr)[1]) >= 8,
+          false,
+        )
+      ])
+    )
+    error_message = "grafana_allowed_source_cidrs accepts at most eight IPv4 CIDRs with prefix length /8 or narrower; universal or malformed networks are forbidden."
+  }
+}
+
 variable "public_edge_contract" {
   description = "Exact typed infra-disposable public_edge_contract output. Internal-only mode carries null public identities and a bounded loopback port-forward contract."
   type = object({

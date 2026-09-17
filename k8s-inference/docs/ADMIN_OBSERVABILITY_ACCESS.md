@@ -101,3 +101,60 @@ Rollback is a reviewed Terraform change that restores the previous application
 digests and/or sets `deployment.observability.alertmanager.enabled = false`,
 then applies foundation before workloads. The StatefulSet claim remains
 retained; rollback must not delete the namespace or PVC.
+
+## Grafana edge authorization
+
+External Grafana publication is fail closed. The abbreviated Grafana setting in
+the earlier Alertmanager example is not sufficient for an apply: operators must
+provide a dedicated allow-list that is independent of the broader public edge
+CIDRs. The allow-list accepts one to eight IPv4 networks, rejects networks
+broader than `/8`, and rejects `0.0.0.0/0`.
+
+```hcl
+deployment = {
+  # ...target, pools, models, applications, and public edge settings...
+  observability = {
+    grafana = {
+      publish_external     = true
+      allowed_source_cidrs = ["192.0.2.0/24"]
+    }
+  }
+}
+```
+
+The workloads stage attaches two Envoy Gateway v1.8 policies directly to the
+`fs2-system/fs2-admin-grafana` HTTPRoute:
+
+- `SecurityPolicy/fs2-admin-grafana-client-cidrs` denies by default and allows
+  only the configured operator CIDRs;
+- `BackendTrafficPolicy/fs2-admin-grafana-edge-limit` applies the same bounded
+  200-request/second local edge limit used by the platform routes.
+
+The policies do not change Grafana authentication, dashboards, datasource
+access, or the private Prometheus, Loki, Tempo, and Alertmanager services.
+Before promotion, inspect both policy status conditions and prove from an
+address outside the allow-list that
+`/admin/observability/grafana/login` returns `403`. Then prove from an allowed
+operator address that native login, dashboards, Explore, and Alerting still
+work. A `401` or login form from the outside probe is a failure because it means
+the request reached Grafana.
+
+Rollback removes only these two route-targeted policy resources by reverting
+the source commit and reapplying the workloads stage. Preserve the Grafana
+HTTPRoute, ReferenceGrant, credentials, dashboards, datasources, and all raw
+telemetry backends. Record the pre-apply workloads state identity and review the
+rollback plan before either action.
+
+Run the denial probe from a network not covered by
+`allowed_source_cidrs`; do not send an admin token, Grafana credentials, or a
+cookie:
+
+```bash
+test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+  "${GRAFANA_ORIGIN}/admin/observability/grafana/login")" = "403"
+```
+
+Envoy Gateway evaluates the original downstream client address. Do not add an
+`X-Forwarded-For` trust rule as a rollout shortcut. If the real outside and
+inside probes do not prove the expected addresses and status codes, stop the
+rollout and inspect the load-balancer source-IP path before changing policy.

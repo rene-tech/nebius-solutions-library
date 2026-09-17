@@ -524,6 +524,9 @@ class DeploymentContractTests(unittest.TestCase):
                 "acme_email": "operator@example.invalid",
             },
         }
+        deployment["observability"]["grafana"]["allowed_source_cidrs"] = [
+            "192.0.2.0/24"
+        ]
         variable_file = self._write_configuration("alertmanager-contract", deployment)
         outputs = self._planned_outputs(variable_file, "alertmanager-contract")
 
@@ -541,6 +544,63 @@ class DeploymentContractTests(unittest.TestCase):
                 "storage_size_gib": 20,
             },
         )
+        self.assertEqual(
+            outputs["deployment_contract"]["stages"]["workloads"][
+                "grafana_allowed_source_cidrs"
+            ],
+            ["192.0.2.0/24"],
+        )
+        self.assertEqual(
+            outputs["effective_configuration"]["observability"][
+                "grafana_allowed_source_cidrs"
+            ],
+            ["192.0.2.0/24"],
+        )
+
+    def test_external_grafana_without_an_operator_allowlist_is_rejected(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-grafana-missing-allowlist",
+            "target": self.catalog_target(),
+            "observability": {"grafana": {"publish_external": True}},
+            "edge": {
+                "mode": "public",
+                "source_cidrs": ["0.0.0.0/0"],
+                "acme_email": "operator@example.invalid",
+            },
+        }
+        variable_file = self._write_configuration(
+            "grafana-missing-allowlist", deployment
+        )
+        result, _ = self._plan_file(variable_file, "grafana-missing-allowlist")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("External Grafana publication requires", result.stderr)
+
+    def test_external_grafana_rejects_a_universal_allowlist(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-grafana-universal-allowlist",
+            "target": self.catalog_target(),
+            "observability": {
+                "grafana": {
+                    "publish_external": True,
+                    "allowed_source_cidrs": ["0.0.0.0/0"],
+                }
+            },
+            "edge": {
+                "mode": "public",
+                "source_cidrs": ["0.0.0.0/0"],
+                "acme_email": "operator@example.invalid",
+            },
+        }
+        variable_file = self._write_configuration(
+            "grafana-universal-allowlist", deployment
+        )
+        result, _ = self._plan_file(variable_file, "grafana-universal-allowlist")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("External Grafana publication requires", result.stderr)
 
     def test_request_debug_capture_is_an_opt_in_tfvars_workload_setting(self) -> None:
         for enabled in (False, True):

@@ -153,6 +153,7 @@ output "effective_configuration" {
         storage_size_gib   = var.deployment.observability.alertmanager.storage.size_gib
       }
       grafana_publish_external = var.deployment.observability.grafana.publish_external
+      grafana_allowed_source_cidrs = sort(tolist(var.deployment.observability.grafana.allowed_source_cidrs))
       dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
       request_debug_enabled    = var.deployment.observability.request_debug_enabled
     }

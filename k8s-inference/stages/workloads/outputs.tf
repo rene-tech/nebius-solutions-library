@@ -427,6 +427,8 @@ output "managed_resource_count" {
     (local.model_controller_bootstrap_enabled ? 3 : 0) +
     (local.admin_configuration_enabled ? 1 : 0) +
     (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +
+    # Grafana authorization and rate-limit policies are distinct managed addresses.
+    (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +
     (var.run_acceptance_job ? 4 : 0) +
     (var.run_acceptance_job && var.deployment_profile == "full_catalog" ? 1 : 0)
     + (var.model_express.enabled ? 1 : 0)
