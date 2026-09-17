@@ -26,14 +26,17 @@ if os.fspath(SECURITY_ROOT) not in sys.path:
 
 from rbac_authority import CONTROLLER_ROLES, verify_subject_inventory  # noqa: E402
 from verify_controller_audit import verify_live_controller_audit  # noqa: E402
+from verify_daemonset_admission_fence import (  # noqa: E402
+    verify_live_daemonset_admission_fence,
+)
 
 REGISTRY_PATH = Path("/etc/fs2-security-ro/authority/customer-storage-egress-authority.json")
 PRIOR_HEAD_PATH = Path(
     "/var/lib/fs2-security-checkpoints-ro/customer-storage-egress-prior-head.json"
 )
-REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v8"
+REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v9"
 PRIOR_HEAD_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-prior-head/v5"
-MANIFEST_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-ledger/v7"
+MANIFEST_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-ledger/v8"
 MAX_BYTES = 1024 * 1024
 NEBIUS_TERRAFORM_PROVIDER_VERSION = "0.5.232"
 LANE_CUSTODY_ADAPTER = Path("/usr/libexec/fs2-security/lane-provisioning-custody")
@@ -93,13 +96,18 @@ PROTECTED_LANE_V4_GENERATION_FIELDS = PROTECTED_LANE_V3_GENERATION_FIELDS | {
     "protected_node_attestations",
     "protected_node_attestation_sha256",
 }
-GENERATION_FIELDS = PROTECTED_LANE_V4_GENERATION_FIELDS | {
+PROTECTED_LANE_V5_GENERATION_FIELDS = PROTECTED_LANE_V4_GENERATION_FIELDS | {
     "controller_audit_receipt_sha256",
     "daemonset_inventory_sha256",
     "daemonset_list_resource_version",
     "node_health_mutation",
 }
-PROVISIONING_FIELDS = {
+GENERATION_FIELDS = PROTECTED_LANE_V5_GENERATION_FIELDS | {
+    "daemonset_admission_fence_receipt_sha256",
+    "daemonset_snapshot_ledger_head_sha256",
+    "node_lifecycle_mode",
+}
+PROVISIONING_V2_FIELDS = {
     "lane_id",
     "scheduling_key",
     "cluster_id",
@@ -119,6 +127,7 @@ PROVISIONING_FIELDS = {
     "min_node_count",
     "max_node_count",
 }
+PROVISIONING_FIELDS = PROVISIONING_V2_FIELDS | {"node_lifecycle_mode"}
 UID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
@@ -287,9 +296,14 @@ def protected_observers(value: object, lane_id: str) -> dict[str, dict[str, Any]
             "daemonset_spec",
             "daemonset_spec_sha256",
         }
+        critical_fields = base_fields | {
+            "maintenance_audit_sha256",
+            "snapshot_generation",
+            "snapshot_sha256",
+        }
         if not isinstance(observer, dict) or frozenset(observer) not in {
             frozenset(base_fields),
-            frozenset(base_fields | {"maintenance_audit_sha256"}),
+            frozenset(critical_fields),
         }:
             raise ValueError(f"{role} protected-observer fields differ")
         observer_class = observer.get("class")
@@ -339,11 +353,20 @@ def protected_observers(value: object, lane_id: str) -> dict[str, dict[str, Any]
             )
             or (
                 observer_class == "critical-blanket-agent"
-                and "maintenance_audit_sha256" not in observer
+                and (
+                    "maintenance_audit_sha256" not in observer
+                    or not re.fullmatch(
+                        r"s[0-9]{14}-[a-f0-9]{12}",
+                        str(observer.get("snapshot_generation", "")),
+                    )
+                    or not re.fullmatch(
+                        r"[a-f0-9]{64}", str(observer.get("snapshot_sha256", ""))
+                    )
+                )
             )
             or (
                 observer_class != "critical-blanket-agent"
-                and "maintenance_audit_sha256" in observer
+                and frozenset(observer) != frozenset(base_fields)
             )
         ):
             raise ValueError(f"{role} protected-observer identity or spec is invalid")
@@ -534,7 +557,12 @@ def protected_node_attestations(
 
 
 def provisioning_generation(entry: dict[str, Any]) -> str:
-    payload = {field: entry[field] for field in sorted(PROVISIONING_FIELDS)}
+    fields = (
+        PROVISIONING_FIELDS
+        if "node_lifecycle_mode" in entry
+        else PROVISIONING_V2_FIELDS
+    )
+    payload = {field: entry[field] for field in sorted(fields)}
     observed = entry.get("provisioning_generation")
     payload_sha256 = hashlib.sha256(canonical(payload)).hexdigest()
     if (
@@ -544,6 +572,178 @@ def provisioning_generation(entry: dict[str, Any]) -> str:
     ):
         raise ValueError("stable provider provisioning generation is not content-bound")
     return observed
+
+
+def expected_lane_managed_addresses(provisioning_ids: set[str]) -> list[str]:
+    resources = (
+        "terraform_data.signed_provisioning",
+        "nebius_vpc_v1_security_group.lane",
+        "nebius_vpc_v1_security_rule.private_ingress",
+        "nebius_vpc_v1_security_rule.dns_egress",
+        "nebius_vpc_v1_security_rule.database_egress",
+        "nebius_vpc_v1_security_rule.provider_egress",
+        "nebius_mk8s_v1_node_group.lane",
+    )
+    return sorted(
+        f"{resource}[{json.dumps(generation)}]"
+        for generation in sorted(provisioning_ids)
+        for resource in resources
+    )
+
+
+def expected_lane_labels(entry: dict[str, Any], provisioning_id: str) -> dict[str, str]:
+    return {
+        "managed-by": "fs2-lane-security-owner",
+        "security-boundary": "customer-storage-egress",
+        "provisioning-generation": provisioning_id,
+        "lane-id": entry["lane_id"],
+    }
+
+
+def expected_lane_rules(
+    entry: dict[str, Any], provisioning_id: str
+) -> list[dict[str, Any]]:
+    labels = expected_lane_labels(entry, provisioning_id)
+    provider_cidrs = sorted(
+        set(
+            entry["provider_api_cidrs"]
+            + entry["kubernetes_api_cidrs"]
+            + entry["bootstrap_https_cidrs"]
+        )
+    )
+    common = {"access": "ALLOW", "type": "STATEFUL", "priority": 100}
+    rules = [
+        {
+            **common,
+            "name": f"fs2-storage-private-{provisioning_id}",
+            "labels": {**labels, "purpose": "private-ingress"},
+            "protocol": "ANY",
+            "direction": "INGRESS",
+            "source_cidrs": entry["private_cidrs"],
+            "destination_cidrs": [],
+            "destination_ports": [],
+        },
+        {
+            **common,
+            "name": f"fs2-storage-dns-{provisioning_id}",
+            "labels": {**labels, "purpose": "dns-egress"},
+            "protocol": "ANY",
+            "direction": "EGRESS",
+            "source_cidrs": [],
+            "destination_cidrs": entry["private_cidrs"],
+            "destination_ports": [53],
+        },
+        {
+            **common,
+            "name": f"fs2-storage-db-{provisioning_id}",
+            "labels": {**labels, "purpose": "database-egress"},
+            "protocol": "TCP",
+            "direction": "EGRESS",
+            "source_cidrs": [],
+            "destination_cidrs": entry["private_cidrs"],
+            "destination_ports": [5432],
+        },
+        {
+            **common,
+            "name": f"fs2-storage-provider-{provisioning_id}",
+            "labels": {**labels, "purpose": "provider-egress"},
+            "protocol": "TCP",
+            "direction": "EGRESS",
+            "source_cidrs": [],
+            "destination_cidrs": provider_cidrs,
+            "destination_ports": [443],
+        },
+    ]
+    return sorted(rules, key=lambda item: item["name"])
+
+
+def verify_lane_network_contract(
+    receipt: dict[str, Any], entry: dict[str, Any], provisioning_ids: set[str]
+) -> None:
+    provisioning_id = str(receipt["provisioning_generation"])
+    backend = receipt.get("backend_custody")
+    provider = receipt.get("provider_inventory")
+    security_group = provider.get("security_group") if isinstance(provider, dict) else None
+    node_group = provider.get("node_group") if isinstance(provider, dict) else None
+    if (
+        not isinstance(backend, dict)
+        or not isinstance(security_group, dict)
+        or not isinstance(node_group, dict)
+    ):
+        raise ValueError("lane semantic provider/backend custody is absent")
+    expected_addresses = expected_lane_managed_addresses(provisioning_ids)
+    labels = expected_lane_labels(entry, provisioning_id)
+    expected_rules = expected_lane_rules(entry, provisioning_id)
+    live_rules = security_group.get("rules")
+    normalized_rules: list[dict[str, Any]] = []
+    rule_ids: list[str] = []
+    if isinstance(live_rules, list):
+        for rule in live_rules:
+            if (
+                not isinstance(rule, dict)
+                or set(rule)
+                != {
+                    "id",
+                    "name",
+                    "labels",
+                    "access",
+                    "protocol",
+                    "type",
+                    "priority",
+                    "direction",
+                    "source_cidrs",
+                    "destination_cidrs",
+                    "destination_ports",
+                }
+                or not isinstance(rule.get("id"), str)
+                or not rule["id"]
+            ):
+                raise ValueError("lane security-group rule shape differs")
+            rule_ids.append(rule["id"])
+            normalized_rules.append(
+                {key: value for key, value in rule.items() if key != "id"}
+            )
+    normalized_rules.sort(key=lambda item: item["name"])
+    network_contract = {
+        "security_group_labels": labels,
+        "security_group_rules": expected_rules,
+        "node_group_labels": labels,
+        "node_group_strategy": {
+            "max_surge": 0,
+            "max_unavailable": 0,
+            "drain_timeout": "30m",
+        },
+    }
+    if (
+        backend.get("managed_addresses") != expected_addresses
+        or receipt.get("expected_managed_addresses_sha256")
+        != hashlib.sha256(canonical(expected_addresses)).hexdigest()
+        or security_group.get("labels") != labels
+        or len(rule_ids) != len(set(rule_ids))
+        or normalized_rules != expected_rules
+        or node_group.get("labels") != labels
+        or node_group.get("strategy") != network_contract["node_group_strategy"]
+        or node_group.get("template_labels")
+        != {
+            entry["scheduling_key"]: entry["lane_id"],
+            "fs2.nebius.ai/provisioning-generation": provisioning_id,
+        }
+        or node_group.get("template_taints")
+        != [
+            {
+                "key": entry["scheduling_key"],
+                "value": entry["lane_id"],
+                "effect": "NO_SCHEDULE",
+            }
+        ]
+        or node_group.get("security_group_ids") != [security_group.get("id")]
+        or len(node_group.get("members", [])) != 1
+        or receipt.get("network_contract_sha256")
+        != hashlib.sha256(canonical(network_contract)).hexdigest()
+        or receipt.get("node_lifecycle_mode")
+        != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
+    ):
+        raise ValueError("lane SG, exact egress, state, or singleton contract differs")
 
 
 def require_fresh_timestamp(value: object, label: str) -> None:
@@ -615,7 +815,7 @@ def verify_live_lane_custody(
         if len(lane_labels) != 1 or not isinstance(security_group, dict):
             raise ValueError("signed live lane identity is ambiguous")
         request = {
-            "schema": "fs2-serve.nebius.ai/protected-lane-provisioning-custody-request/v1",
+            "schema": "fs2-serve.nebius.ai/protected-lane-provisioning-custody-request/v2",
             "manifest_sha256": receipt["manifest_sha256"],
             "provisioning_generation": receipt["provisioning_generation"],
             "authority_project_id": receipt["authority_project_id"],
@@ -650,7 +850,7 @@ def verify_live_lane_custody(
         set(live)
         != {"schema", "observed_at", "backend_custody", "provider_inventory"}
         or live.get("schema")
-        != "fs2-serve.nebius.ai/protected-lane-provisioning-custody/v1"
+        != "fs2-serve.nebius.ai/protected-lane-provisioning-custody/v2"
         or live.get("backend_custody") != receipt.get("backend_custody")
         or live.get("provider_inventory") != receipt.get("provider_inventory")
     ):
@@ -713,6 +913,7 @@ def verify(manifest_json: str) -> dict[str, str]:
         "kubernetes_system_subject_inventory",
         "kubernetes_controller_identities",
         "kubernetes_controller_audit_receipt",
+        "kubernetes_daemonset_admission_fence_receipt",
         "lane_provisioning_receipts",
         "lane_provisioning_custody_adapter_sha256",
         "kubernetes_rbac_inventory_receipt",
@@ -1077,7 +1278,7 @@ def verify(manifest_json: str) -> dict[str, str]:
             "payload_sha256",
             "signature",
         }
-        current_fields = {
+        v2_fields = {
             "schema",
             "provisioning_generation",
             "manifest_sha256",
@@ -1094,16 +1295,27 @@ def verify(manifest_json: str) -> dict[str, str]:
             "payload_sha256",
             "signature",
         }
+        v3_fields = v2_fields | {
+            "expected_managed_addresses_sha256",
+            "network_contract_sha256",
+            "daemonset_admission_fence_receipt_sha256",
+            "node_lifecycle_mode",
+        }
         legacy = isinstance(receipt, dict) and set(receipt) == legacy_fields
-        current = isinstance(receipt, dict) and set(receipt) == current_fields
+        v2 = isinstance(receipt, dict) and set(receipt) == v2_fields
+        v3 = isinstance(receipt, dict) and set(receipt) == v3_fields
         if (
             not isinstance(receipt, dict)
-            or not (legacy or current)
+            or not (legacy or v2 or v3)
             or receipt.get("schema")
             != (
                 "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v1"
                 if legacy
-                else "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v2"
+                else (
+                    "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v2"
+                    if v2
+                    else "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v3"
+                )
             )
             or receipt.get("provisioning_generation") != provisioning_id
             or not re.fullmatch(r"p[0-9]{14}-[a-f0-9]{12}", provisioning_id)
@@ -1148,6 +1360,12 @@ def verify(manifest_json: str) -> dict[str, str]:
                 or node_group.get("max_node_count") != 1
                 or not isinstance(node_group.get("members"), list)
                 or not node_group["members"]
+                or (v3 and len(node_group["members"]) != 1)
+                or (
+                    v3
+                    and receipt.get("node_lifecycle_mode")
+                    != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
+                )
             ):
                 raise ValueError("lane provisioning live provider/backend custody differs")
             for field in (
@@ -1157,6 +1375,19 @@ def verify(manifest_json: str) -> dict[str, str]:
                 "custody_adapter_sha256",
             ):
                 digest(receipt.get(field), f"lane provisioning {field}")
+            if v3:
+                digest(
+                    receipt.get("expected_managed_addresses_sha256"),
+                    "lane exact managed addresses",
+                )
+                digest(
+                    receipt.get("network_contract_sha256"),
+                    "lane network contract",
+                )
+                digest(
+                    receipt.get("daemonset_admission_fence_receipt_sha256"),
+                    "lane DaemonSet admission fence",
+                )
             if (
                 receipt.get("custody_adapter_sha256")
                 != registry["lane_provisioning_custody_adapter_sha256"]
@@ -1305,7 +1536,7 @@ def verify(manifest_json: str) -> dict[str, str]:
         "payload_sha256",
         "signature",
     } or rbac_receipt.get("schema") != (
-        "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v5"
+        "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v6"
     ):
         raise ValueError("Kubernetes RBAC inventory receipt fields or schema differ")
     blanket_tolerating_agents = rbac_receipt.get("blanket_tolerating_agents")
@@ -1318,12 +1549,21 @@ def verify(manifest_json: str) -> dict[str, str]:
                 "namespace",
                 "name",
                 "uid",
+                "snapshot_generation",
+                "snapshot_sha256",
                 "daemonset_spec",
                 "daemonset_spec_sha256",
                 "maintenance_identity",
                 "maintenance_audit_sha256",
             }
             or not UID_RE.fullmatch(str(agent.get("uid", "")))
+            or not re.fullmatch(
+                r"s[0-9]{14}-[a-f0-9]{12}",
+                str(agent.get("snapshot_generation", "")),
+            )
+            or not re.fullmatch(
+                r"[a-f0-9]{64}", str(agent.get("snapshot_sha256", ""))
+            )
             or hashlib.sha256(canonical(agent.get("daemonset_spec"))).hexdigest()
             != agent.get("daemonset_spec_sha256")
             or not isinstance(agent.get("maintenance_identity"), dict)
@@ -1362,6 +1602,28 @@ def verify(manifest_json: str) -> dict[str, str]:
         raise ValueError("blanket-agent maintainers differ from authenticated audit evidence")
     digest(rbac_receipt.get("inventory_sha256"), "Kubernetes RBAC inventory")
     require_fresh_timestamp(rbac_receipt.get("observed_at"), "Kubernetes RBAC inventory")
+    declared_daemonset_fence = registry[
+        "kubernetes_daemonset_admission_fence_receipt"
+    ]
+    if not isinstance(declared_daemonset_fence, dict):
+        raise ValueError("continuous DaemonSet admission fence receipt is absent")
+    daemonset_fence, daemonset_fence_sha256 = (
+        verify_live_daemonset_admission_fence(
+            str(rbac_receipt.get("cluster_id", "")),
+            expected_inventory_sha256=str(
+                rbac_receipt["daemonset_inventory_sha256"]
+            ),
+            expected_list_resource_version=str(
+                rbac_receipt["daemonset_list_resource_version"]
+            ),
+            expected_agents=blanket_tolerating_agents,
+        )
+    )
+    if daemonset_fence != declared_daemonset_fence:
+        raise ValueError("live DaemonSet admission fence differs from authority registry")
+    daemonset_snapshot_ledger_head_sha256 = str(
+        daemonset_fence["snapshot_ledger_head_sha256"]
+    )
     rbac_subjects = rbac_receipt.get("subjects")
     if (
         not isinstance(rbac_subjects, list)
@@ -1610,6 +1872,7 @@ def verify(manifest_json: str) -> dict[str, str]:
                 frozenset(PROTECTED_LANE_V2_GENERATION_FIELDS),
                 frozenset(PROTECTED_LANE_V3_GENERATION_FIELDS),
                 frozenset(PROTECTED_LANE_V4_GENERATION_FIELDS),
+                frozenset(PROTECTED_LANE_V5_GENERATION_FIELDS),
                 frozenset(GENERATION_FIELDS),
             }
             or retained.get("generation") != generation
@@ -1631,6 +1894,7 @@ def verify(manifest_json: str) -> dict[str, str]:
             frozenset(PROTECTED_LANE_V2_GENERATION_FIELDS),
             frozenset(PROTECTED_LANE_V3_GENERATION_FIELDS),
             frozenset(PROTECTED_LANE_V4_GENERATION_FIELDS),
+            frozenset(PROTECTED_LANE_V5_GENERATION_FIELDS),
             frozenset(GENERATION_FIELDS),
         }:
             lane_id = retained.get("lane_id")
@@ -1657,6 +1921,7 @@ def verify(manifest_json: str) -> dict[str, str]:
                 in {
                     frozenset(PROTECTED_LANE_V3_GENERATION_FIELDS),
                     frozenset(PROTECTED_LANE_V4_GENERATION_FIELDS),
+                    frozenset(PROTECTED_LANE_V5_GENERATION_FIELDS),
                     frozenset(GENERATION_FIELDS),
                 }
                 else None
@@ -1676,6 +1941,7 @@ def verify(manifest_json: str) -> dict[str, str]:
             )
             if frozenset(retained) in {
                 frozenset(PROTECTED_LANE_V4_GENERATION_FIELDS),
+                frozenset(PROTECTED_LANE_V5_GENERATION_FIELDS),
                 frozenset(GENERATION_FIELDS),
             }:
                 retained_provisioning_id = provisioning_generation(retained)
@@ -1692,11 +1958,22 @@ def verify(manifest_json: str) -> dict[str, str]:
                     != retained_provisioning_receipt.get("node_group_id")
                 ):
                     raise ValueError("retained stable lane provisioning receipt differs")
-                if set(retained) == GENERATION_FIELDS:
-                    if retained_provisioning_receipt.get("schema") != (
-                        "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v2"
+                if frozenset(retained) in {
+                    frozenset(PROTECTED_LANE_V5_GENERATION_FIELDS),
+                    frozenset(GENERATION_FIELDS),
+                }:
+                    expected_receipt_schema = (
+                        "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v3"
+                        if frozenset(retained) == frozenset(GENERATION_FIELDS)
+                        else "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v2"
+                    )
+                    if (
+                        retained_provisioning_receipt.get("schema")
+                        != expected_receipt_schema
                     ):
-                        raise ValueError("current lane requires provider/backend custody v2")
+                        raise ValueError(
+                            "retained lane provider/backend custody schema differs"
+                        )
                     node_attestations = protected_node_attestations(
                         retained.get("protected_node_attestations"),
                         node_names=node_names,
@@ -1707,6 +1984,18 @@ def verify(manifest_json: str) -> dict[str, str]:
                         provisioning_receipt_sha256=retained.get(
                             "provisioning_receipt_sha256"
                         ),
+                    )
+                if (
+                    frozenset(retained)
+                    == frozenset(PROTECTED_LANE_V5_GENERATION_FIELDS)
+                    and any(
+                        observer.get("class") == "critical-blanket-agent"
+                        for observer in observers.values()
+                    )
+                ):
+                    raise ValueError(
+                        "retained pre-fence protected-lane policy cannot be "
+                        "composed without destructive retirement"
                     )
             if (
                 retained.get("scheduling_key") != expected_scheduling_key
@@ -1738,7 +2027,15 @@ def verify(manifest_json: str) -> dict[str, str]:
                     if identity["category"] == "release"
                 }
                 or retained.get("min_node_count")
-                != (1 if set(retained) == GENERATION_FIELDS else 0)
+                != (
+                    1
+                    if frozenset(retained)
+                    in {
+                        frozenset(PROTECTED_LANE_V5_GENERATION_FIELDS),
+                        frozenset(GENERATION_FIELDS),
+                    }
+                    else 0
+                )
                 or retained.get("max_node_count") != 1
             ):
                 raise ValueError("provider retained protected-lane custody differs")
@@ -2145,6 +2442,8 @@ def verify(manifest_json: str) -> dict[str, str]:
             "provisioning_receipt_sha256",
             "controller_audit_receipt_sha256",
             "daemonset_inventory_sha256",
+            "daemonset_admission_fence_receipt_sha256",
+            "daemonset_snapshot_ledger_head_sha256",
         ):
             value = entry.get(field)
             if (
@@ -2213,15 +2512,20 @@ def verify(manifest_json: str) -> dict[str, str]:
         if (
             not isinstance(provisioning_receipt, dict)
             or provisioning_receipt.get("schema")
-            != "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v2"
+            != "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v3"
         ):
-            raise ValueError("current generation requires a v2 lane custody receipt")
+            raise ValueError("current generation requires semantic lane custody v3")
         require_fresh_timestamp(
             provisioning_receipt.get("observed_at"), "lane provisioning receipt"
         )
         verify_live_lane_custody(
             provisioning_receipt,
             registry["lane_provisioning_custody_adapter_sha256"],
+        )
+        verify_lane_network_contract(
+            provisioning_receipt,
+            entry,
+            set(provisioning_receipts),
         )
         node_attestations = protected_node_attestations(
             entry.get("protected_node_attestations"),
@@ -2233,19 +2537,20 @@ def verify(manifest_json: str) -> dict[str, str]:
             provisioning_receipt_sha256=entry.get("provisioning_receipt_sha256"),
         )
         signed_blanket_agents = {
-            key: {
-                field: observer[field]
-                for field in (
-                    "namespace",
-                    "name",
-                    "uid",
-                    "daemonset_spec",
-                    "daemonset_spec_sha256",
-                    "maintenance_identity",
-                    "maintenance_audit_sha256",
-                )
+            f"{observer['namespace']}/{observer['name']}": {
+                "namespace": observer["namespace"],
+                "name": observer["name"],
+                "uid": observer["uid"],
+                "snapshot_generation": observer["snapshot_generation"],
+                "snapshot_sha256": observer["snapshot_sha256"],
+                "daemonset_spec": observer["daemonset_spec"],
+                "daemonset_spec_sha256": observer["daemonset_spec_sha256"],
+                "maintenance_identity": observer["owner_identity"],
+                "maintenance_audit_sha256": observer[
+                    "maintenance_audit_sha256"
+                ],
             }
-            for key, observer in observers.items()
+            for observer in observers.values()
             if observer["class"] == "critical-blanket-agent"
         }
         if (
@@ -2272,7 +2577,17 @@ def verify(manifest_json: str) -> dict[str, str]:
             != rbac_receipt.get("daemonset_inventory_sha256")
             or entry.get("daemonset_list_resource_version")
             != rbac_receipt.get("daemonset_list_resource_version")
+            or entry.get("daemonset_admission_fence_receipt_sha256")
+            != daemonset_fence_sha256
+            or provisioning_receipt.get(
+                "daemonset_admission_fence_receipt_sha256"
+            )
+            != daemonset_fence_sha256
+            or entry.get("daemonset_snapshot_ledger_head_sha256")
+            != daemonset_snapshot_ledger_head_sha256
             or entry.get("node_health_mutation") != node_health_mutation
+            or entry.get("node_lifecycle_mode")
+            != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
             or not all(
                 observer["owner_identity"]
                 in [
@@ -2397,6 +2712,10 @@ def verify(manifest_json: str) -> dict[str, str]:
         "daemonset_list_resource_version": rbac_receipt[
             "daemonset_list_resource_version"
         ],
+        "daemonset_admission_fence_receipt_sha256": daemonset_fence_sha256,
+        "daemonset_snapshot_ledger_head_sha256": (
+            daemonset_snapshot_ledger_head_sha256
+        ),
         "provider_project_iam_inventory_receipt_sha256": iam_receipt_sha256,
         "provider_effective_authority_graph_receipt_sha256": authority_graph_sha256,
         "provider_authority_adapter_sha256": registry["provider_authority_adapter_sha256"],

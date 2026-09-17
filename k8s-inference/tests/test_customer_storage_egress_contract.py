@@ -572,6 +572,56 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert "customer_storage_integration_dependencies" in workloads
 
 
+def test_v12_fence_singleton_and_semantic_provider_custody_are_source_bound() -> None:
+    authority = (PROVIDER_AUTHORITY_ROOT / "verify_authority_ledger.py").read_text(
+        encoding="utf-8"
+    )
+    fence = (
+        PROVIDER_AUTHORITY_ROOT / "verify_daemonset_admission_fence.py"
+    ).read_text(encoding="utf-8")
+    boundary = (SECURITY_ROOT / "main.tf").read_text(encoding="utf-8")
+    provisioning = (
+        Path(__file__).parents[1]
+        / "security/customer-storage-lane-provisioning/main.tf"
+    ).read_text(encoding="utf-8")
+    capture = (
+        Path(__file__).parents[1]
+        / "security/customer-storage-lane-provisioning/capture_provisioning_receipt.py"
+    ).read_text(encoding="utf-8")
+
+    assert "POLICY_SPEC" in fence
+    assert "_validate_binding" in fence
+    assert "_validate_snapshot_ledger" in fence
+    assert '"policy_spec": receipt["policy_spec"]' in fence
+    assert '"binding_spec": receipt["binding_spec"]' in fence
+    assert '"snapshot_ledger": receipt["snapshot_ledger"]' in fence
+    assert "live != expected_live" in fence
+    assert 'receipt.get("continuous_enforcement") is not True' in fence
+    assert '"snapshot_ledger_head_sha256"' in fence
+    assert 'resource "terraform_data" "daemonset_admission_fence"' in boundary
+    assert "terraform_data.daemonset_admission_fence" in boundary
+    assert "Both reads occur before binding" in boundary
+    assert "terraform_data.protected_node_post_guard_attestation" in boundary
+    assert "retained pre-fence protected-lane policy cannot be" in authority
+    assert "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR" in authority
+    assert "expected_lane_managed_addresses" in authority
+    assert "expected_lane_rules" in authority
+    assert 'operations  = ["CREATE", "UPDATE", "DELETE"]' in boundary
+    assert "cannot be created, replaced or deleted" in boundary
+    assert "max_surge       = { count = 0 }" in provisioning
+    assert "max_unavailable = { count = 0 }" in provisioning
+    assert 'backend.get("managed_addresses") != expected_managed_addresses' in capture
+    assert "normalized_rules != expected_rules" in capture
+    assert "len(members) != 1" in capture
+    assert 'node_group.get("security_group_ids") != [security_group.get("id")]' in capture
+    attestation = (
+        SECURITY_ROOT / "capture_protected_lane_attestation.py"
+    ).read_text(encoding="utf-8")
+    assert "protected-lane-provisioning-receipt/v3" in attestation
+    assert 'receipt.get("node_lifecycle_mode")' in attestation
+    assert "len(members) != 1" in attestation
+
+
 def test_predecessor_vap_compatibility_is_signed_and_selector_disjoint() -> None:
     authority = (PROVIDER_AUTHORITY_ROOT / "verify_authority_ledger.py").read_text(
         encoding="utf-8"

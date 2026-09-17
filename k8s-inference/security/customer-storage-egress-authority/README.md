@@ -129,7 +129,7 @@ The v11 source supersedes the v10 zero-minimum bootstrap without removing the
 v10 record. A newly signed provider-only `p...` generation is fixed at one
 bootstrap node (`min=1`, `max=1`); it no longer depends on a DaemonSet to wake a
 zero-sized NodeGroup. `capture_provisioning_receipt.py` invokes only the pinned,
-root-owned read-only custody adapter. The resulting externally signed v2
+root-owned read-only custody adapter. The resulting externally signed v3
 receipt binds the fresh remote backend lineage, serial, version and full address
 set to a fresh provider read of the exact security group, NodeGroup and member
 provider IDs. The authority verifier re-invokes that exact digest-pinned adapter
@@ -150,6 +150,51 @@ forbidden.
 
 DaemonSet discovery records a complete list resourceVersion and full-list
 digest, then repeats the read at that exact resourceVersion. The admission root
-repeats the complete double read both before and after its Deny binding. This
-closes missing, newly added and single-read blanket-agent gaps while preserving
-all inventoried CNI, kube-proxy, GPU, storage and telemetry agents.
+repeats the complete double read at the activation boundary. The v12 successor
+below moves both reads ahead of binding activation and relies on continuous
+external enforcement afterward. This closes missing, newly added and
+single-read blanket-agent gaps while preserving all inventoried CNI,
+kube-proxy, GPU, storage and telemetry agents.
+
+## v12 continuous-agent fence and retained generation overlap
+
+The v12 source removes the false claim that a generation-local exact
+DaemonSet spec can support upgrades while every retained Deny binding remains
+active. Before an ordinary boundary binding may be created, a separately
+owned, continuously enforced admission fence must already be live. A
+root-owned read-only registry pins its adapter, enforcer artifact and prior
+snapshot-ledger anchor. Source code defines the exact policy and binding
+semantics. A fresh signed receipt carries their full live normalized specs,
+UIDs and resourceVersions plus the complete double-read DaemonSet inventory
+and full append-only ledger. The verifier recomputes both spec digests, every
+snapshot digest, predecessor link, content generation and the final head, then
+requires the adapter's independent live read to return the same objects. Each critical DaemonSet
+and controller-created Pod carries a content generation and snapshot digest;
+the external fence, not a generation-local exact-spec predicate, decides
+whether the transition is present in that ledger. Retained fence-aware
+policies therefore compose across old and new snapshots. The verifier rejects
+any retained pre-fence generation that would conjunctively deadlock such an
+upgrade. That rejection is intentional: this branch must be transplanted onto
+an accepted pre-activation lineage rather than weakening, editing, or removing
+an existing Deny binding.
+
+The provisioning receipt is now semantic, not merely a byte-equal echo. Its
+remote-state managed-address set must equal the seven expected addresses for
+every retained provisioning generation. The live security group must have the
+exact signed labels and exactly four uniquely identified rules, with the exact
+private ingress, DNS, database, and provider/API CIDRs, protocols, directions,
+ports, priorities, and no extra route. The NodeGroup must carry only that
+security group, exact labels/template label/taint, and one exact member.
+
+Each provisioning generation is a one-member NodeGroup declared
+`GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR`: `min=1`, `max=1`,
+`max_surge=0`, `max_unavailable=0`. Admission denies an in-place second member,
+replacement or deletion for that generation. The only permitted source action
+is to prepare a new content-bound provisioning generation with a new lane ID,
+security group, NodeGroup, attested Node and admission generation while the
+predecessor stays retained. Preparation is not repair, cutover or retirement.
+A customer-safe quiesce and drain must precede application cutover. The active
+no-delete rule does not authorize Pod eviction, workload teardown or
+predecessor retirement, so execution stops at source preparation until an
+independently reviewed lifecycle protocol exists. Provider behavior that cannot
+honor frozen per-generation membership is a deployment blocker.

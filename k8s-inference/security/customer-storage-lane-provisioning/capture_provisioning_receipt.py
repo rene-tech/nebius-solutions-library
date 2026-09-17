@@ -31,8 +31,8 @@ from verify_provisioning_manifest import (
 )
 
 CUSTODY_ADAPTER = Path("/usr/libexec/fs2-security/lane-provisioning-custody")
-RECEIPT_SCHEMA = "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v2"
-ADAPTER_SCHEMA = "fs2-serve.nebius.ai/protected-lane-provisioning-custody/v1"
+RECEIPT_SCHEMA = "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v3"
+ADAPTER_SCHEMA = "fs2-serve.nebius.ai/protected-lane-provisioning-custody/v2"
 MAX_OUTPUT_BYTES = 8 * MAX_BYTES
 
 
@@ -136,6 +136,105 @@ def _generation(manifest: dict[str, Any], generation: str) -> dict[str, Any]:
     return matches[0]
 
 
+def _expected_managed_addresses(manifest: dict[str, Any]) -> list[str]:
+    generations = manifest.get("generations")
+    if not isinstance(generations, list) or not generations:
+        raise ValueError("signed provisioning generations are absent")
+    resources = (
+        "terraform_data.signed_provisioning",
+        "nebius_vpc_v1_security_group.lane",
+        "nebius_vpc_v1_security_rule.private_ingress",
+        "nebius_vpc_v1_security_rule.dns_egress",
+        "nebius_vpc_v1_security_rule.database_egress",
+        "nebius_vpc_v1_security_rule.provider_egress",
+        "nebius_mk8s_v1_node_group.lane",
+    )
+    generation_ids = [
+        item.get("provisioning_generation")
+        for item in generations
+        if isinstance(item, dict)
+    ]
+    if (
+        len(generation_ids) != len(generations)
+        or any(not isinstance(item, str) or not item for item in generation_ids)
+        or generation_ids != list(dict.fromkeys(generation_ids))
+    ):
+        raise ValueError("provisioning generation address keys are ambiguous")
+    return sorted(
+        f"{resource}[{json.dumps(generation)}]"
+        for generation in generation_ids
+        for resource in resources
+    )
+
+
+def _expected_labels(generation: dict[str, Any]) -> dict[str, str]:
+    return {
+        "managed-by": "fs2-lane-security-owner",
+        "security-boundary": "customer-storage-egress",
+        "provisioning-generation": generation["provisioning_generation"],
+        "lane-id": generation["lane_id"],
+    }
+
+
+def _expected_rules(generation: dict[str, Any]) -> list[dict[str, Any]]:
+    labels = _expected_labels(generation)
+    provider_cidrs = sorted(
+        set(
+            generation["provider_api_cidrs"]
+            + generation["kubernetes_api_cidrs"]
+            + generation["bootstrap_https_cidrs"]
+        )
+    )
+    common = {
+        "access": "ALLOW",
+        "type": "STATEFUL",
+        "priority": 100,
+    }
+    values = [
+        {
+            **common,
+            "name": f"fs2-storage-private-{generation['provisioning_generation']}",
+            "labels": {**labels, "purpose": "private-ingress"},
+            "protocol": "ANY",
+            "direction": "INGRESS",
+            "source_cidrs": generation["private_cidrs"],
+            "destination_cidrs": [],
+            "destination_ports": [],
+        },
+        {
+            **common,
+            "name": f"fs2-storage-dns-{generation['provisioning_generation']}",
+            "labels": {**labels, "purpose": "dns-egress"},
+            "protocol": "ANY",
+            "direction": "EGRESS",
+            "source_cidrs": [],
+            "destination_cidrs": generation["private_cidrs"],
+            "destination_ports": [53],
+        },
+        {
+            **common,
+            "name": f"fs2-storage-db-{generation['provisioning_generation']}",
+            "labels": {**labels, "purpose": "database-egress"},
+            "protocol": "TCP",
+            "direction": "EGRESS",
+            "source_cidrs": [],
+            "destination_cidrs": generation["private_cidrs"],
+            "destination_ports": [5432],
+        },
+        {
+            **common,
+            "name": f"fs2-storage-provider-{generation['provisioning_generation']}",
+            "labels": {**labels, "purpose": "provider-egress"},
+            "protocol": "TCP",
+            "direction": "EGRESS",
+            "source_cidrs": [],
+            "destination_cidrs": provider_cidrs,
+            "destination_ports": [443],
+        },
+    ]
+    return sorted(values, key=lambda item: item["name"])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, required=True)
@@ -143,7 +242,23 @@ def main() -> int:
     args = parser.parse_args()
 
     registry = strict_json(safe_root_read(REGISTRY))
-    if registry.get("schema") != "fs2-serve.nebius.ai/protected-lane-provisioning-registry/v2":
+    if (
+        set(registry)
+        != {
+            "schema",
+            "approved_manifest_sha256",
+            "manifest_public_key_pem",
+            "checkpoint_public_key_pem",
+            "custody_adapter_sha256",
+            "daemonset_admission_fence_receipt_sha256",
+        }
+        or registry.get("schema")
+        != "fs2-serve.nebius.ai/protected-lane-provisioning-registry/v3"
+        or not re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(registry.get("daemonset_admission_fence_receipt_sha256", "")),
+        )
+    ):
         raise ValueError("provisioning registry schema differs")
     manifest = strict_json(_safe_input(args.manifest))
     if manifest.get("schema") != SCHEMA:
@@ -158,7 +273,7 @@ def main() -> int:
     )
     descriptor, before = _open_adapter(CUSTODY_ADAPTER, adapter_sha256)
     request = {
-        "schema": "fs2-serve.nebius.ai/protected-lane-provisioning-custody-request/v1",
+        "schema": "fs2-serve.nebius.ai/protected-lane-provisioning-custody-request/v2",
         "manifest_sha256": manifest_sha256,
         "provisioning_generation": args.generation,
         "authority_project_id": generation["authority_project_id"],
@@ -200,6 +315,7 @@ def main() -> int:
     observed_at = _fresh(custody["observed_at"], "lane provider custody")
 
     backend = custody.get("backend_custody")
+    expected_managed_addresses = _expected_managed_addresses(manifest)
     backend_fields = {
         "backend_config_sha256",
         "backend_lineage",
@@ -218,9 +334,7 @@ def main() -> int:
         or not backend["state_lineage"]
         or not isinstance(backend.get("state_version_id"), str)
         or not backend["state_version_id"]
-        or not isinstance(backend.get("managed_addresses"), list)
-        or not backend["managed_addresses"]
-        or backend["managed_addresses"] != sorted(set(backend["managed_addresses"]))
+        or backend.get("managed_addresses") != expected_managed_addresses
     ):
         raise ValueError("lane remote-state custody is incomplete")
     for field in ("backend_config_sha256", "backend_lineage", "state_snapshot_sha256"):
@@ -236,42 +350,91 @@ def main() -> int:
         raise ValueError("lane live provider inventory is incomplete")
     security_group = provider.get("security_group")
     node_group = provider.get("node_group")
+    expected_labels = _expected_labels(generation)
+    expected_rules = _expected_rules(generation)
+    rules = security_group.get("rules") if isinstance(security_group, dict) else None
+    normalized_rules: list[dict[str, Any]] = []
+    rule_ids: list[str] = []
+    if isinstance(rules, list):
+        for rule in rules:
+            if (
+                not isinstance(rule, dict)
+                or set(rule)
+                != {
+                    "id",
+                    "name",
+                    "labels",
+                    "access",
+                    "protocol",
+                    "type",
+                    "priority",
+                    "direction",
+                    "source_cidrs",
+                    "destination_cidrs",
+                    "destination_ports",
+                }
+                or not isinstance(rule.get("id"), str)
+                or not rule["id"]
+            ):
+                raise ValueError("live lane security-group rule shape differs")
+            rule_ids.append(rule["id"])
+            normalized_rules.append(
+                {key: value for key, value in rule.items() if key != "id"}
+            )
+    normalized_rules.sort(key=lambda item: item["name"])
     if (
         provider.get("authority_project_id") != generation["authority_project_id"]
         or provider.get("cluster_id") != generation["cluster_id"]
         or not isinstance(security_group, dict)
         or set(security_group) != {"id", "network_id", "labels", "rules"}
         or security_group.get("network_id") != generation["network_id"]
+        or security_group.get("labels") != expected_labels
+        or len(rule_ids) != len(set(rule_ids))
+        or normalized_rules != expected_rules
         or not isinstance(node_group, dict)
         or set(node_group)
         != {
             "id",
             "cluster_id",
+            "labels",
             "security_group_ids",
             "min_node_count",
             "max_node_count",
+            "strategy",
             "template_labels",
             "template_taints",
             "members",
         }
         or node_group.get("cluster_id") != generation["cluster_id"]
+        or node_group.get("labels") != expected_labels
         or node_group.get("security_group_ids") != [security_group.get("id")]
         or node_group.get("min_node_count") != 1
         or node_group.get("max_node_count") != 1
-        or node_group.get("template_labels", {}).get(generation["scheduling_key"])
-        != generation["lane_id"]
-        or {
-            "key": generation["scheduling_key"],
-            "value": generation["lane_id"],
-            "effect": "NO_SCHEDULE",
+        or node_group.get("strategy")
+        != {"max_surge": 0, "max_unavailable": 0, "drain_timeout": "30m"}
+        or node_group.get("template_labels")
+        != {
+            generation["scheduling_key"]: generation["lane_id"],
+            "fs2.nebius.ai/provisioning-generation": generation[
+                "provisioning_generation"
+            ],
         }
-        not in node_group.get("template_taints", [])
+        or node_group.get("template_taints")
+        != [
+            {
+                "key": generation["scheduling_key"],
+                "value": generation["lane_id"],
+                "effect": "NO_SCHEDULE",
+            }
+        ]
+        or generation.get("node_lifecycle_mode")
+        != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
     ):
         raise ValueError("live lane resources differ from the signed provisioning contract")
     members = node_group.get("members")
     if (
         not isinstance(members, list)
-        or not members
+        or len(members) != 1
         or any(
             not isinstance(member, dict)
             or set(member) != {"instance_id", "provider_id", "node_group_id"}
@@ -297,8 +460,29 @@ def main() -> int:
         "node_group_id": node_group["id"],
         "backend_custody": backend,
         "backend_custody_sha256": hashlib.sha256(canonical(backend)).hexdigest(),
+        "expected_managed_addresses_sha256": hashlib.sha256(
+            canonical(expected_managed_addresses)
+        ).hexdigest(),
         "provider_inventory": provider,
         "provider_inventory_sha256": hashlib.sha256(canonical(provider)).hexdigest(),
+        "network_contract_sha256": hashlib.sha256(
+            canonical(
+                {
+                    "security_group_labels": expected_labels,
+                    "security_group_rules": expected_rules,
+                    "node_group_labels": expected_labels,
+                    "node_group_strategy": {
+                        "max_surge": 0,
+                        "max_unavailable": 0,
+                        "drain_timeout": "30m",
+                    },
+                }
+            )
+        ).hexdigest(),
+        "daemonset_admission_fence_receipt_sha256": registry[
+            "daemonset_admission_fence_receipt_sha256"
+        ],
+        "node_lifecycle_mode": "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR",
         "custody_adapter_sha256": adapter_sha256,
         "observed_at": observed_at,
     }

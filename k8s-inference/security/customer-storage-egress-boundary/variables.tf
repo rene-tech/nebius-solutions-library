@@ -336,6 +336,7 @@ variable "provider_authority" {
   type = object({
     schema                                 = string
     generation                             = string
+    cluster_id                             = string
     provisioning_generation                = string
     provisioning_receipt_sha256             = string
     lane_id                                = string
@@ -370,6 +371,8 @@ variable "provider_authority" {
       daemonset_spec        = any
       daemonset_spec_sha256 = string
       maintenance_audit_sha256 = optional(string)
+      snapshot_generation      = optional(string)
+      snapshot_sha256          = optional(string)
     }))
     protected_observer_inventory_sha256               = string
     protected_node_names                              = list(string)
@@ -395,6 +398,9 @@ variable "provider_authority" {
     })
     daemonset_inventory_sha256                        = string
     daemonset_list_resource_version                   = string
+    daemonset_admission_fence_receipt_sha256          = string
+    daemonset_snapshot_ledger_head_sha256             = string
+    node_lifecycle_mode                               = string
     kubernetes_rbac_inventory_sha256                  = string
     kubernetes_rbac_effective_authority_sha256        = string
     kubernetes_rbac_inventory_receipt_sha256          = string
@@ -448,7 +454,8 @@ variable "provider_authority" {
 
   validation {
     condition = (
-      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v11" &&
+      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v12" &&
+      var.provider_authority.cluster_id != "" &&
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.generation)) &&
       can(regex("^p[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.provisioning_generation)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.provisioning_receipt_sha256)) &&
@@ -517,7 +524,11 @@ variable "provider_authority" {
         can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", observer.owner_identity.uid)) &&
         observer.owner_identity.groups == ["system:authenticated", "system:serviceaccounts", "system:serviceaccounts:${try(split(":", observer.owner_identity.username)[2], "")}"] &&
         can(regex("^[a-f0-9]{64}$", observer.daemonset_spec_sha256)) &&
-        (observer.class != "critical-blanket-agent" || can(regex("^[a-f0-9]{64}$", try(observer.maintenance_audit_sha256, "")))) &&
+        (observer.class != "critical-blanket-agent" || (
+          can(regex("^[a-f0-9]{64}$", try(observer.maintenance_audit_sha256, ""))) &&
+          can(regex("^s[0-9]{14}-[a-f0-9]{12}$", try(observer.snapshot_generation, ""))) &&
+          can(regex("^[a-f0-9]{64}$", try(observer.snapshot_sha256, "")))
+        )) &&
         sha256(jsonencode(observer.daemonset_spec)) == observer.daemonset_spec_sha256 &&
         try(observer.daemonset_spec.selector.matchLabels, {}) == try(observer.daemonset_spec.template.metadata.labels, {}) &&
         try(observer.daemonset_spec.template.metadata.labels["app.kubernetes.io/component"], "") != "" &&
@@ -570,6 +581,8 @@ variable "provider_authority" {
           var.provider_authority.protected_node_attestation_sha256,
           var.provider_authority.controller_audit_receipt_sha256,
           var.provider_authority.daemonset_inventory_sha256,
+          var.provider_authority.daemonset_admission_fence_receipt_sha256,
+          var.provider_authority.daemonset_snapshot_ledger_head_sha256,
           var.provider_authority.provisioning_receipt_sha256,
           var.provider_authority.retained_admission_custody_sha256,
           var.provider_authority.workloads_service_account_sha256,
@@ -577,6 +590,7 @@ variable "provider_authority" {
         ] : can(regex("^[a-f0-9]{64}$", digest))
       ]) &&
       var.provider_authority.daemonset_list_resource_version != "" &&
+      var.provider_authority.node_lifecycle_mode == "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR" &&
       var.provider_authority.node_health_mutation.identity_role == "node_health" &&
       var.provider_authority.node_health_mutation.mutable_label_keys == sort(distinct(var.provider_authority.node_health_mutation.mutable_label_keys)) &&
       length(var.provider_authority.node_health_mutation.mutable_taint_keys) > 0 &&

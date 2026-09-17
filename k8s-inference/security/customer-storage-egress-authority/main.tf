@@ -104,6 +104,8 @@ resource "terraform_data" "external_authority" {
     controller_audit_receipt      = data.external.authority.result.controller_audit_receipt_sha256
     daemonset_inventory           = data.external.authority.result.daemonset_inventory_sha256
     daemonset_list_resource_version = data.external.authority.result.daemonset_list_resource_version
+    daemonset_admission_fence     = data.external.authority.result.daemonset_admission_fence_receipt_sha256
+    daemonset_snapshot_ledger     = data.external.authority.result.daemonset_snapshot_ledger_head_sha256
     kubernetes_rbac_inventory     = data.external.authority.result.kubernetes_rbac_inventory_sha256
     kubernetes_rbac_receipt       = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256
     accepted_sai10_commit         = data.external.authority.result.accepted_sai10_commit
@@ -303,7 +305,7 @@ resource "nebius_mk8s_v1_node_group" "generation" {
   }
 
   strategy = {
-    max_surge       = { count = 1 }
+    max_surge       = { count = 0 }
     max_unavailable = { count = 0 }
     drain_timeout   = "30m"
   }
@@ -475,7 +477,7 @@ resource "nebius_mk8s_v1_node_group" "stable_lane" {
     max_node_count = each.value.max_node_count
   }
   strategy = {
-    max_surge       = { count = 1 }
+    max_surge       = { count = 0 }
     max_unavailable = { count = 0 }
     drain_timeout   = "30m"
   }

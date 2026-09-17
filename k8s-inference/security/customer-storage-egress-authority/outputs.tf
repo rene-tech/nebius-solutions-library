@@ -1,8 +1,9 @@
 output "current_handoff" {
   description = "Non-secret provider-enforced egress handoff for the additive compatibility-v3 reconciler."
   value = {
-    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v11"
+    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v12"
     generation                                        = local.authority.current_generation
+    cluster_id                                        = local.generations[local.authority.current_generation].cluster_id
     provisioning_generation                           = local.generations[local.authority.current_generation].provisioning_generation
     provisioning_receipt_sha256                       = local.generations[local.authority.current_generation].provisioning_receipt_sha256
     lane_id                                           = local.generations[local.authority.current_generation].lane_id
@@ -44,6 +45,9 @@ output "current_handoff" {
     node_health_mutation                              = jsondecode(data.external.authority.result.node_health_mutation_json)
     daemonset_inventory_sha256                        = data.external.authority.result.daemonset_inventory_sha256
     daemonset_list_resource_version                   = data.external.authority.result.daemonset_list_resource_version
+    daemonset_admission_fence_receipt_sha256          = data.external.authority.result.daemonset_admission_fence_receipt_sha256
+    daemonset_snapshot_ledger_head_sha256             = data.external.authority.result.daemonset_snapshot_ledger_head_sha256
+    node_lifecycle_mode                               = local.generations[local.authority.current_generation].node_lifecycle_mode
     kubernetes_rbac_inventory_sha256                  = data.external.authority.result.kubernetes_rbac_inventory_sha256
     kubernetes_rbac_effective_authority_sha256        = data.external.authority.result.kubernetes_rbac_effective_authority_sha256
     kubernetes_rbac_inventory_receipt_sha256          = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256

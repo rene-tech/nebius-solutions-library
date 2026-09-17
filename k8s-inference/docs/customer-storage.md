@@ -357,7 +357,9 @@ the live provider and backend response to equal the signed custody receipt.
 Controller identities and critical DaemonSet maintainers are accepted only
 from fresh signed audit events containing the actual authenticated username,
 UID and groups. Complete DaemonSet discovery uses an exact resourceVersion
-double read and is repeated before and after admission installation. Exact
+double read at the admission boundary. The v12 successor performs both reads
+before activation and delegates the continuing invariant to the external
+fence. Exact
 resourceName-fenced update/patch authority preserves inventoried CNI,
 kube-proxy, GPU, storage and telemetry agents without granting generic
 DaemonSet mutation.
@@ -368,3 +370,37 @@ labels, health taints or `unschedulable`; routine status updates with unchanged
 scheduling metadata remain available. This source is still NO-GO: accepted
 SAI-10 ancestry and external dependency receipts are unresolved, and no live
 action is authorized under the no-delete constraint.
+
+## Protected-lane handoff (v12 successor, source only)
+
+The v12 source adds a separately owned continuous DaemonSet admission fence.
+Its root-owned registry pins the verifier adapter, enforcer artifact and prior
+ledger anchor. Source defines the exact policy/binding semantics; verification
+parses their full normalized live specs and ledger, recomputes spec digests,
+entry hashes, predecessor links, content generations and head, and independently
+re-reads the same live objects. Critical agents and their child Pods carry snapshot
+generation/digest annotations. Upgrade authorization comes from the external
+ledger, so every retained fence-aware Deny policy can accept the same
+authorized transition without fixing all old and new specs to one snapshot.
+Any pre-fence exact-spec generation is rejected as non-composable; no existing
+binding is edited or removed to manufacture success. Both ordinary Deny
+bindings are ordered after two pre-activation inventory reads and the final
+Node equality gate. The workload binding additionally waits for trust,
+contract, NetworkPolicy and RBAC prerequisites; there is no failing
+post-activation equality condition.
+
+Provider custody now requires the exact retained remote-state address set and
+the exact live security-group and NodeGroup semantics, including labels,
+unique rules, CIDRs, protocols, ports, template label/taint, attached security
+group, strategy, and exactly one member per generation. Source may prepare a
+new content-bound lane/security-group/NodeGroup/Node generation while retaining
+the predecessor; it does not classify preparation as repair or authorize a
+cutover. Kubernetes admission denies in-place replacement or a second
+same-generation member. A separately reviewed customer-safe
+quiesce/drain/retirement protocol remains required, and the no-delete
+instruction currently forbids that live transition.
+
+This remains SOURCE/INTEGRATION/LIVE NO-GO. The branch still preserves rejected
+SAI-10 ancestry, accepted dependency receipts are absent, pre-fence live
+admission may be non-composable, and the no-delete instruction forbids any
+plan, apply, rollout, credential action, or resource transition.

@@ -224,8 +224,46 @@ without allowing a different Node or security group into the credential lane.
 
 Every live DaemonSet is read twice at one exact list resourceVersion. The full
 list digest and all blanket-tolerating agents are signed, then the boundary
-repeats that complete check before and after the Deny binding. Critical-agent
-updates require an audit-proven ServiceAccount plus namespace-scoped
+repeats that complete check at the activation boundary. The v12 successor
+makes both reads pre-activation and delegates the continuing invariant to the
+external fence. Critical-agent updates require an audit-proven ServiceAccount plus namespace-scoped
 `resourceNames` RBAC for only the recorded DaemonSet names; wildcard update or
 patch authority is rejected. The provider-only bootstrap uses one node rather
 than relying on a DaemonSet to scale a zero-node group.
+
+## v12 continuous fence and race-free activation
+
+The v12 handoff requires a separately owned continuous DaemonSet admission
+fence before this root can create an ordinary generation binding. The fixed
+read-only registry pins the external adapter, enforcer artifact and prior
+ledger anchor. Source defines the canonical semantics; verification parses the
+full policy/binding specs and ledger, recomputes their digests and hash chain,
+and requires an independent adapter read of the same live objects. A receipt
+echo is not accepted. The ordinary root has no authority to create, alter,
+disable, or delete that fence.
+
+Critical-agent upgrades first append an authorized old/new snapshot transition
+to that external ledger, then carry its content generation and digest on the
+DaemonSet and child Pods. Fence-aware retained policies constrain exact
+namespace/name/UID, authenticated owner and controller owner-reference, but
+delegate snapshot authenticity to the continuous fence instead of pinning one
+spec forever. Consequently an authorized update and its replacement Pods can
+satisfy every retained fence-aware Deny policy. A pre-fence exact-spec policy
+cannot be made composable additively; the authority verifier refuses that
+state rather than pretending a later allow can override an earlier Deny.
+
+The fence is live-equal before two ordinary inventory reads. The historically
+named `post_guard` is now the second pre-activation gate. Both ordinary Deny
+bindings are ordered after both reads and the final Node equality gate. The
+workload binding additionally waits for trust, contract, NetworkPolicy and
+RBAC objects, so no post-binding precondition can fail and strand a newly
+active gate. Continuous external enforcement closes the interval between the
+final read and binding creation.
+
+Each lane generation has one attested provider member. CREATE of a second
+same-generation lane Node and replacement/deletion of the attested Node are
+denied. A distinct lane generation may be prepared while retaining the
+predecessor, but the source does not call that repair or authorize cutover.
+Cutover still requires a separately reviewed quiesce/drain/retirement protocol.
+Under the active no-delete rule no eviction, teardown or retirement may run, so
+this remains source-only and fail-closed.

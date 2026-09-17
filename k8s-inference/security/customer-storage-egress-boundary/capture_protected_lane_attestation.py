@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,7 +57,13 @@ def main() -> int:
     if (
         not isinstance(receipt, dict)
         or receipt.get("schema")
-        != "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v2"
+        != "fs2-serve.nebius.ai/protected-lane-provisioning-receipt/v3"
+        or receipt.get("node_lifecycle_mode")
+        != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
+        or not re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(receipt.get("daemonset_admission_fence_receipt_sha256", "")),
+        )
     ):
         raise ValueError("fresh signed provisioning receipt is absent")
     receipt_sha256 = verify_signed_object(
@@ -72,6 +79,7 @@ def main() -> int:
     members = node_group.get("members") if isinstance(node_group, dict) else None
     if (
         not isinstance(members, list)
+        or len(members) != 1
         or receipt.get("provisioning_generation") != args.provisioning_generation
         or node_group.get("id") != receipt.get("node_group_id")
     ):
