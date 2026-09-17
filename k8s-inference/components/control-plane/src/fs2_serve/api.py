@@ -1,6 +1,8 @@
 """FastAPI public/admin surface for durable fs2-serve admission."""
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import math
@@ -197,6 +199,31 @@ class NativeInvocation(StrictModel):
 
 class TokenCreateRequest(TokenCreate):
     pass
+
+
+class CustomerStorageCredentialWrite(StrictModel):
+    project_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
+    credential_base64: str = Field(min_length=4, max_length=131072)
+
+    def credential(self) -> bytes:
+        try:
+            decoded = base64.b64decode(self.credential_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("credential_base64 is not canonical base64") from exc
+        if not decoded or len(decoded) > 65536:
+            raise ValueError("decoded customer storage credential is outside the size bound")
+        return decoded
+
+
+class CustomerStorageCredentialGenerationView(StrictModel):
+    generation: int = Field(ge=1)
+    cipher_key_id: str = Field(min_length=1, max_length=64)
+    name_key_id: str = Field(min_length=1, max_length=64)
+    migration_from_generation: int | None = Field(default=None, ge=1)
 
 
 class AdminContextParameters(StrictModel):
@@ -1025,6 +1052,84 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             identity.require(Scope.CATALOG_READ)
             return {"object": "list", "data": []}
         return runtime.scientific_batches.discover(identity, surface="http")
+
+    @app.put(
+        "/v1/customer-storage/credential",
+        response_model=CustomerStorageCredentialGenerationView,
+    )
+    async def put_customer_storage_credential(
+        payload: CustomerStorageCredentialWrite,
+        identity: Annotated[Principal, Depends(principal)],
+    ) -> CustomerStorageCredentialGenerationView:
+        """Append a credential generation for this exact tenant/principal."""
+
+        identity.require(Scope.CUSTOMER_STORAGE_CREDENTIALS_WRITE)
+        reconciler = runtime.customer_storage_reconciler
+        if reconciler is None:
+            raise HTTPException(status_code=503, detail="customer storage credentials are unavailable")
+        try:
+            credential = payload.credential()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="customer storage credential is invalid") from exc
+        generation = await reconciler.write(
+            project_id=payload.project_id,
+            tenant_id=identity.tenant_id,
+            principal_id=identity.principal_id,
+            credential=credential,
+        )
+        await runtime.store.append_audit_event(
+            actor=identity.principal_id,
+            tenant_id=identity.tenant_id,
+            token_id=identity.token_id,
+            action="customer_storage_credential.append",
+            target_type="customer_storage_credential",
+            target_id=identity.principal_id,
+            outcome="succeeded",
+            detail={"generation": generation.generation},
+        )
+        return CustomerStorageCredentialGenerationView(
+            generation=generation.generation,
+            cipher_key_id=generation.cipher_key_id,
+            name_key_id=generation.name_key_id,
+            migration_from_generation=generation.migration_from_generation,
+        )
+
+    @app.get("/v1/customer-storage/credential")
+    async def get_customer_storage_credential(
+        identity: Annotated[Principal, Depends(principal)],
+        generation: Annotated[int | None, Query(ge=1)] = None,
+    ) -> Response:
+        """Disclose only this exact authenticated tenant/principal's value."""
+
+        identity.require(Scope.CUSTOMER_STORAGE_CREDENTIALS_READ)
+        disclosure = runtime.customer_storage_disclosure
+        if disclosure is None:
+            raise HTTPException(status_code=503, detail="customer storage credentials are unavailable")
+        try:
+            credential = await disclosure.disclose_to_same_principal(
+                authenticated_tenant_id=identity.tenant_id,
+                authenticated_principal_id=identity.principal_id,
+                tenant_id=identity.tenant_id,
+                principal_id=identity.principal_id,
+                generation=generation,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="customer storage credential is absent") from exc
+        await runtime.store.append_audit_event(
+            actor=identity.principal_id,
+            tenant_id=identity.tenant_id,
+            token_id=identity.token_id,
+            action="customer_storage_credential.disclose",
+            target_type="customer_storage_credential",
+            target_id=identity.principal_id,
+            outcome="succeeded",
+            detail={"generation": generation or 0},
+        )
+        return Response(
+            content=credential,
+            media_type="application/octet-stream",
+            headers={"cache-control": "no-store"},
+        )
 
     async def invoke(
         *,

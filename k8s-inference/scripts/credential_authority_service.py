@@ -32,6 +32,12 @@ CONFIG_PATH = Path("/etc/fs2-credential-authority/config.json")
 SOCKET_PATH = Path("/run/fs2-credential-authority/v1.sock")
 AUDIT_ROOT = Path("/var/lib/fs2-credential-authority/audit")
 MAX_MESSAGE_BYTES = 4 * 1024 * 1024
+AUTHORITATIVE_ARTIFACT_ROOTS = {
+    "operator-receipts": "/srv/fs2-credential-custody/operator-receipts",
+    "secure-handoff": "/srv/fs2-credential-custody/secure-handoff",
+    "task-run-roots": "/srv/fs2-credential-custody/task-run-roots",
+    "terraform-workdirs": "/srv/fs2-credential-custody/terraform-workdirs",
+}
 READ_ONLY_OPERATIONS = frozenset(
     {
         "custody-snapshot",
@@ -49,7 +55,15 @@ CLIENT_FIELDS: dict[str, frozenset[str]] = {
     "custody-snapshot": frozenset(),
     "planned-generation-admission": frozenset({"phase"}),
     "artifact-inventory": frozenset(),
-    "consumer-readiness": frozenset({"credential_class", "generation", "phase"}),
+    "consumer-readiness": frozenset(
+        {
+            "credential_class",
+            "generation",
+            "phase",
+            "bindings_sha256",
+            "credential_bindings",
+        }
+    ),
     "credential-inventory": frozenset(),
     "rotation-readiness": frozenset(
         {"credential_class", "predecessor_id", "successor_id"}
@@ -159,7 +173,7 @@ def _validate_policy(policy: Any) -> None:
     required = {
         "schema",
         "project_id",
-        "profile",
+        "automation_identity",
         "cluster_id",
         "kubeconfig",
         "handoff_kubeconfig",
@@ -178,7 +192,7 @@ def _validate_policy(policy: Any) -> None:
         != "fs2-serve.nebius.ai/credential-authority-policy/v2"
         or not all(
             isinstance(policy.get(field), str) and policy[field]
-            for field in ("project_id", "profile", "cluster_id")
+            for field in ("project_id", "cluster_id")
         )
         or not isinstance(policy.get("namespaces"), list)
         or not policy["namespaces"]
@@ -186,6 +200,49 @@ def _validate_policy(policy: Any) -> None:
         or len(policy["namespaces"]) != len(set(policy["namespaces"]))
     ):
         raise AuthorityServiceError("authority production policy is incomplete")
+    automation = policy.get("automation_identity")
+    if (
+        not isinstance(automation, dict)
+        or set(automation)
+        != {
+            "config_path",
+            "profile",
+            "service_account_id",
+            "credential_kind",
+            "credential_id",
+            "expires_at",
+            "interactive_login_allowed",
+        }
+        or automation.get("interactive_login_allowed") is not False
+        or not all(
+            isinstance(automation.get(field), str) and automation[field]
+            for field in (
+                "config_path",
+                "profile",
+                "service_account_id",
+                "credential_kind",
+                "credential_id",
+                "expires_at",
+            )
+        )
+        or automation.get("credential_kind")
+        not in {"access_keys", "auth_public_keys"}
+    ):
+        raise AuthorityServiceError("release automation identity is incomplete")
+    config_path = Path(automation["config_path"])
+    if not config_path.is_absolute():
+        raise AuthorityServiceError("release automation config path must be absolute")
+    try:
+        automation_expiry = datetime.fromisoformat(
+            automation["expires_at"].replace("Z", "+00:00")
+        ).astimezone(UTC)
+    except ValueError as error:
+        raise AuthorityServiceError("release automation identity expiry is invalid") from error
+    remaining = automation_expiry - datetime.now(UTC)
+    if remaining <= timedelta(0) or remaining > timedelta(hours=24):
+        raise AuthorityServiceError(
+            "release automation identity must have a provider-enforced expiry within 24 hours"
+        )
     cidrs = policy.get("approved_control_plane_cidrs")
     if not isinstance(cidrs, list) or not cidrs or len(cidrs) != len(set(cidrs)):
         raise AuthorityServiceError("authority approved CIDR set is incomplete")
@@ -213,7 +270,14 @@ def _validate_policy(policy: Any) -> None:
                 f"authority policy {field} must be root-owned and immutable to clients"
             )
     roots = policy.get("terraform_roots")
-    required_roots = {"foundation", "infrastructure", "reference-data", "workloads"}
+    required_roots = {
+        "configuration",
+        "foundation",
+        "infrastructure",
+        "model-artifacts",
+        "reference-data",
+        "workloads",
+    }
     if not isinstance(roots, dict) or set(roots) != required_roots:
         raise AuthorityServiceError("authority must own every Terraform state root")
     for name, root in roots.items():
@@ -322,14 +386,16 @@ def _validate_policy(policy: Any) -> None:
         if expiry.tzinfo is None:
             raise AuthorityServiceError("artifact inventory expiry needs a timezone")
         scope_roots.add(scope["root"])
-    if {scope["category"] for scope in scopes} != {
-        "operator-receipts",
-        "secure-handoff",
-        "task-run-roots",
-        "terraform-workdirs",
-    }:
+    if (
+        len(scopes) != len(AUTHORITATIVE_ARTIFACT_ROOTS)
+        or {
+            scope["category"]: scope["root"]
+            for scope in scopes
+        }
+        != AUTHORITATIVE_ARTIFACT_ROOTS
+    ):
         raise AuthorityServiceError(
-            "authority artifact scopes must cover every required storage family"
+            "authority artifact scopes must equal every source-owned custody mount"
         )
 
 
@@ -354,12 +420,9 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
         or not isinstance(document.get("configuration_id"), str)
         or not document["configuration_id"]
         or not isinstance(document.get("allowed_client_uids"), list)
-        or not document["allowed_client_uids"]
-        or not all(
-            isinstance(uid, int) and uid >= 0 for uid in document["allowed_client_uids"]
-        )
-        or len(document["allowed_client_uids"])
-        != len(set(document["allowed_client_uids"]))
+        or len(document["allowed_client_uids"]) != 1
+        or not isinstance(document["allowed_client_uids"][0], int)
+        or document["allowed_client_uids"][0] < 1
         or not isinstance(document.get("operations"), dict)
         or set(document["operations"]) != READ_ONLY_OPERATIONS
         or not isinstance(document.get("evidence_producer_key_id"), str)
@@ -424,9 +487,12 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
     if set(request) != expected or FORBIDDEN_CLIENT_FIELDS.intersection(request):
         raise AuthorityServiceError("credential authority request schema is invalid")
     parameters = {field: request[field] for field in sorted(allowed)}
-    if any(not isinstance(value, (str, int)) for value in parameters.values()):
+    scalar_parameters = {
+        key: value for key, value in parameters.items() if key != "credential_bindings"
+    }
+    if any(not isinstance(value, (str, int)) for value in scalar_parameters.values()):
         raise AuthorityServiceError("credential authority parameters must be scalar")
-    if any(isinstance(value, str) and (not value or len(value) > 256) for value in parameters.values()):
+    if any(isinstance(value, str) and (not value or len(value) > 256) for value in scalar_parameters.values()):
         raise AuthorityServiceError("credential authority parameter is invalid")
     if "generation" in parameters and (
         not isinstance(parameters["generation"], int)
@@ -444,6 +510,42 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
         "current-write-ready",
     }:
         raise AuthorityServiceError("consumer readiness phase is invalid")
+    if operation == "consumer-readiness":
+        bindings = parameters.get("credential_bindings")
+        binding_fields = {
+            "namespace",
+            "name",
+            "uid",
+            "resource_version",
+            "content_sha256",
+            "authority_evidence_id",
+            "authority_observed_at",
+            "credential_class",
+            "generation",
+            "immutable",
+        }
+        if (
+            not isinstance(bindings, dict)
+            or not bindings
+            or len(bindings) > 256
+            or not isinstance(parameters.get("bindings_sha256"), str)
+            or len(parameters["bindings_sha256"]) != 64
+            or canonical_sha256(bindings) != parameters["bindings_sha256"]
+        ):
+            raise AuthorityServiceError("consumer readiness bindings are incomplete")
+        for address, binding in bindings.items():
+            if (
+                not isinstance(address, str)
+                or not address.startswith("kubernetes_secret_v1.")
+                or not isinstance(binding, dict)
+                or set(binding) != binding_fields
+                or not all(isinstance(value, str) and value for value in binding.values())
+                or len(binding["content_sha256"]) != 64
+                or binding["immutable"] not in {"true", "false"}
+            ):
+                raise AuthorityServiceError(
+                    "consumer readiness binding identity is malformed"
+                )
     registry = json.loads(
         Path(config["policy"]["credential_registry_path"]).read_text(encoding="utf-8")
     )
@@ -727,7 +829,10 @@ def audit_event(
 
 def handle(connection: socket.socket, config: dict[str, Any]) -> None:
     uid, envelope = receive_request(connection)
-    if uid not in config["allowed_client_uids"]:
+    if (
+        len(config["allowed_client_uids"]) != 1
+        or uid != config["allowed_client_uids"][0]
+    ):
         raise AuthorityServiceError("client uid is not authorized by root policy")
     request = envelope["request"]
     parameters = normalized_parameters(request, config)

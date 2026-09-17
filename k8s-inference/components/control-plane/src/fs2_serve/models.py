@@ -42,6 +42,8 @@ class Scope(StrEnum):
     OPERATIONS_READ = "operations.read"
     OPERATIONS_RESULT = "operations.result"
     ARTIFACTS_WRITE = "artifacts.write"
+    CUSTOMER_STORAGE_CREDENTIALS_READ = "customer-storage.credentials.read"
+    CUSTOMER_STORAGE_CREDENTIALS_WRITE = "customer-storage.credentials.write"
     OPERATIONS_CANCEL = "operations.cancel"
     OPERATIONS_ACKNOWLEDGE = "operations.acknowledge"
     TOKENS_MANAGE = "tokens.manage"

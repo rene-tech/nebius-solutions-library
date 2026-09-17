@@ -1,9 +1,9 @@
 terraform {
   required_version = ">= 1.11.0, < 2.0.0"
 
-  # Every lifecycle supplies a run-scoped path with -backend-config. The
-  # retained fs2-serve backend is never opened by this root.
-  backend "local" {}
+  # Root-owned release automation supplies the isolated object/key/workspace
+  # configuration.  State must remain encrypted and access logged remotely.
+  backend "s3" {}
 
   required_providers {
     external = {

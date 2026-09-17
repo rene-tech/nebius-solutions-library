@@ -157,8 +157,8 @@ resource "kubernetes_secret_v1" "grafana_admin_versioned" {
       "fs2.nebius.ai/credential-class"      = "grafana-admin"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        (var.grafana_admin_secret_ref.user_key)     = var.grafana_credentials[each.key].username
-        (var.grafana_admin_secret_ref.password_key) = var.grafana_credentials[each.key].password
+        (var.grafana_admin_secret_ref.user_key)     = sha256(var.grafana_credentials[each.key].username)
+        (var.grafana_admin_secret_ref.password_key) = sha256(var.grafana_credentials[each.key].password)
       }))
     }
   }

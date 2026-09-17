@@ -237,12 +237,12 @@ resource "kubernetes_secret_v1" "database_consumer_versioned" {
       "fs2.nebius.ai/credential-class"      = "database-logins"
       "fs2.nebius.ai/credential-generation" = tostring(each.value.generation)
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        url = format(
+        url = sha256(format(
           "postgresql://%s:%s@fs2-control-db-rw.fs2-data.svc.cluster.local:5432/fs2serve?sslmode=verify-full&sslrootcert=/tls/ca.crt",
           "${local.database_accounts[each.value.definition.account].username}_v${each.value.generation}",
           urlencode(var.database_passwords[tostring(each.value.generation)][each.value.definition.account]),
-        )
-        "ca.crt" = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
+        ))
+        "ca.crt" = sha256(data.kubernetes_secret_v1.database_ca.data["ca.crt"])
       }))
     }
   }
@@ -356,7 +356,7 @@ resource "kubernetes_secret_v1" "grafana_datasource_versioned" {
     annotations = {
       "fs2.nebius.ai/credential-class"      = "grafana-datasource"
       "fs2.nebius.ai/credential-generation" = each.key
-      "fs2.nebius.ai/content-sha256"        = sha256(jsonencode(each.value))
+      "fs2.nebius.ai/content-sha256"        = sha256(jsonencode({ for key, value in each.value : key => sha256(value) }))
     }
   }
 

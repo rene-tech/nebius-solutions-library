@@ -1,6 +1,10 @@
 terraform {
   required_version = ">= 1.11.0, < 2.0.0"
 
+  # Standalone deployments are subject to the same encrypted remote-state
+  # custody boundary as the staged platform roots.
+  backend "s3" {}
+
   required_providers {
     external = {
       source  = "hashicorp/external"

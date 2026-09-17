@@ -1823,6 +1823,27 @@ variable "storage_name_keyrings_json" {
   default     = {}
 }
 
+variable "customer_storage_credentials_enabled" {
+  description = "Enable the tenant/principal-bound customer-storage credential API only after accepted integration and exact live Secret readiness evidence exist."
+  type        = bool
+  default     = false
+
+  validation {
+    condition = (
+      !var.customer_storage_credentials_enabled ||
+      (
+        var.keyring_generations.storage.active > 1 &&
+        var.keyring_generations.storage_name.active > 1 &&
+        length(var.credential_consumer_bindings) > 0 &&
+        can(regex("^[0-9a-f]{64}$", var.credential_consumer_binding_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", var.credential_consumer_readiness_receipt_sha256)) &&
+        var.credential_consumer_rollout_step == "current-write"
+      )
+    )
+    error_message = "Customer-storage credentials require independent post-v1 key generations and an exact current-write readiness receipt bound to live Secrets."
+  }
+}
+
 variable "credential_consumer_bindings" {
   description = "Value-free phase-two bindings keyed by Terraform Secret address. Every consumer rollout pins the created Secret name, UID, resourceVersion, generation and committed content hash."
   type = map(object({

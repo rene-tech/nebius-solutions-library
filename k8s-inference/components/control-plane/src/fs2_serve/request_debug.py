@@ -532,6 +532,7 @@ class DebugCaptureMiddleware:
             scope["type"] != "http"
             or path == "/v1/tokens"
             or path.startswith("/v1/tokens/")
+            or path == "/v1/customer-storage/credential"
             or not (path.startswith("/v1/") or path in {"/mcp", "/mcp/"})
         ):
             await self.app(scope, receive, send)

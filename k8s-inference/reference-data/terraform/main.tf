@@ -521,8 +521,8 @@ resource "kubernetes_secret_v1" "object_storage_versioned" {
       "fs2.nebius.ai/credential-class"      = "reference-data-s3-secret"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        "access-key-id"     = each.value.access_key_id
-        "secret-access-key" = ephemeral.nebius_mysterybox_v1_secret_payload_entry.object_storage_versioned[each.key].data.string_value
+        "access-key-id"     = sha256(each.value.access_key_id)
+        "secret-access-key" = sha256(ephemeral.nebius_mysterybox_v1_secret_payload_entry.object_storage_versioned[each.key].data.string_value)
       }))
     }
   }

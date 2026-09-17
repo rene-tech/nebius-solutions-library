@@ -17,6 +17,7 @@
     "federation",
     "secrets",
     "secretRollout",
+    "customerStorageCredentials",
     "config",
     "adminReadAdapters",
     "migration",
@@ -1400,6 +1401,14 @@
         "bindingSha256": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$"},
         "readinessReceiptSha256": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$"},
         "rolloutStep": {"type": "string", "enum": ["", "dual-read", "current-write"]}
+      },
+      "additionalProperties": false
+    },
+    "customerStorageCredentials": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"}
       },
       "additionalProperties": false
     },

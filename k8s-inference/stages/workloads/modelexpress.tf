@@ -200,7 +200,7 @@ resource "kubernetes_secret_v1" "modelexpress_nvcrio_versioned" {
       "fs2.nebius.ai/credential-class"      = "registry-credentials"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        ".dockerconfigjson" = var.registry_nvcrio_dockerconfigs[each.key]
+        ".dockerconfigjson" = sha256(var.registry_nvcrio_dockerconfigs[each.key])
       }))
     }
   }

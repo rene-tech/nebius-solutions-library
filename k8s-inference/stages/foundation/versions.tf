@@ -1,7 +1,9 @@
 terraform {
   required_version = ">= 1.11.0, < 2.0.0"
 
-  backend "local" {}
+  # Root-owned, encrypted and access-logged backend configuration is injected
+  # by release automation.  Never fall back to local state.
+  backend "s3" {}
 
   required_providers {
     external = {

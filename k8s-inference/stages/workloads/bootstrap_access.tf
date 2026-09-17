@@ -264,7 +264,7 @@ resource "kubernetes_secret_v1" "bootstrap_access_versioned" {
       "fs2.nebius.ai/credential-class"      = "pat-bootstrap"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        token = var.bootstrap_access_tokens[each.key]
+        token = sha256(var.bootstrap_access_tokens[each.key])
       }))
     }
   }
@@ -331,7 +331,7 @@ resource "kubernetes_secret_v1" "scientific_access_versioned" {
       "fs2.nebius.ai/credential-class"      = "pat-scientific"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        token = var.scientific_access_tokens[each.key]
+        token = sha256(var.scientific_access_tokens[each.key])
       }))
     }
   }
@@ -398,7 +398,7 @@ resource "kubernetes_secret_v1" "website_access_versioned" {
       "fs2.nebius.ai/credential-class"      = "pat-website"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        token = var.website_access_tokens[each.key]
+        token = sha256(var.website_access_tokens[each.key])
       }))
     }
   }

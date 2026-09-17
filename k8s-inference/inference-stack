@@ -45,6 +45,13 @@ SECRET_MIGRATION_GUARD = SOLUTION_ROOT / "scripts" / "secret_migration_guard.py"
 DURABLE_CREDENTIAL_REGISTRY = (
     SOLUTION_ROOT / "security" / "durable-credential-registry.json"
 )
+TERRAFORM_BACKEND_CONFIG_ROOT = Path("/etc/fs2-serve/terraform-backends")
+TERRAFORM_ROOT_NAMES = {
+    DEPLOY_ROOT.resolve(): "configuration",
+    INFRA_ROOT.resolve(): "infrastructure",
+    FOUNDATION_ROOT.resolve(): "foundation",
+    WORKLOADS_ROOT.resolve(): "workloads",
+}
 STAGE_COMPLETION_OUTPUTS = {
     "infrastructure": "accelerator_pool_contract",
     "foundation": "cluster_contract",
@@ -254,12 +261,34 @@ def validate_versioned_access_pat_ids(
 def terraform_init(
     terraform: str,
     root: Path,
-    backend: Path,
+    legacy_backend: Path,
     environment: Mapping[str, str],
 ) -> None:
-    if backend.is_symlink():
+    """Initialize only the root-owned encrypted remote backend.
+
+    ``legacy_backend`` remains in the call contract so existing state can be
+    inventoried and migrated under a separately authorized procedure.  It is
+    deliberately never passed to Terraform and must not be repurposed as a
+    local backend.
+    """
+
+    if legacy_backend.is_symlink():
         raise DeploymentError(
-            f"Terraform backend path must not be a symlink: {backend}"
+            f"legacy Terraform state path must not be a symlink: {legacy_backend}"
+        )
+    root_name = TERRAFORM_ROOT_NAMES.get(root.resolve())
+    if root_name is None:
+        raise DeploymentError(f"Terraform root is not registered for remote state: {root}")
+    backend_config = TERRAFORM_BACKEND_CONFIG_ROOT / f"{root_name}.s3.hcl"
+    if (
+        not backend_config.is_file()
+        or backend_config.is_symlink()
+        or backend_config.parent.is_symlink()
+        or stat.S_IMODE(backend_config.stat().st_mode) & 0o077
+    ):
+        raise DeploymentError(
+            "root-owned mode-0600 remote backend configuration is required at "
+            f"{backend_config}; local state fallback is forbidden"
         )
     run(
         [
@@ -268,7 +297,7 @@ def terraform_init(
             "init",
             "-input=false",
             "-reconfigure",
-            f"-backend-config=path={backend}",
+            f"-backend-config={backend_config}",
         ],
         env=environment,
     )

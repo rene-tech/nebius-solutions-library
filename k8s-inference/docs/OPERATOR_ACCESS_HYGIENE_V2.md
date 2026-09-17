@@ -6,29 +6,46 @@ revocation, replacement, force, history rewrite, state removal, credential
 creation, live rollout, or cleanup. Historical generation 1, evidence, customer
 data, and predecessor credentials remain retained.
 
+## Source status (2026-09-17)
+
+This document is a fail-closed target procedure, not readiness or deployment
+evidence. No test, Terraform initialization, state migration, provider read,
+cluster read, credential action, or deployment was performed for this source
+successor. The checked-in source trust policy has
+`deployment_authorized=false`; no independent anchor/witness keys, genesis
+checkpoint, production endpoint, or consistency proof has been accepted. The
+authority therefore cannot admit evidence. SAI-06 has static SOURCE GO only;
+SAI-08 and SAI-09 remain without an accepted source successor, and none of the
+three is integration/live accepted.
+
 ## Production authority boundary
 
 `scripts/credential_authority_service.py` is the only production evidence
 authority. It runs as root on a fixed Unix socket, authenticates clients with
 kernel peer credentials, and loads provider commands only from a root-owned
 mode-0600 configuration. Every executable or absolute command file is pinned by
-SHA-256. Responses carry a detached Ed25519 producer signature and an
-independent mTLS evidence-log anchor; clients verify both pinned public keys,
-freshness, nonce, request digest, payload digest, sequence, checkpoint, and
-retention without a producer-side verify RPC. The service exposes read
+SHA-256. The proposed response contract includes a detached Ed25519 producer
+signature and an independent mTLS evidence-log anchor. This repository does
+not yet contain or operate that independent service, accepted source-owned
+pins, a prior-head/Merkle consistency verifier, or independent witnesses. A
+local configuration cannot authorize them: the source trust policy blocks the
+client until those identities are committed and independently accepted. The service exposes read
 operations only and writes one lifetime, crash-recoverable, write-once,
 hash-chained audit stream. The client cannot select a provider,
 profile, project, kubeconfig, state root, or evidence file.
 
 The authority is a mandatory deployment prerequisite. If its configuration,
-socket ownership, complete artifact scope, provider adapters, or 21 consumer
+socket ownership, complete artifact scope, provider adapters, or 19 active consumer
 probes have not been independently accepted, migration and rollout remain
 blocked. Do not replace it with JSON fixtures or an operator-selected command.
 
 ## Unbypassable Terraform gate
 
-`security/durable-credential-registry.json` registers all 60 durable Terraform
-resource addresses across the four roots. The guard requires the plan's exact
+`security/durable-credential-registry.json` records the currently known durable
+Terraform addresses. It is not a claim that live provider inventory is
+complete. The authority rejects any cluster Secret or project IAM object that
+is neither state-bound nor source-registered; the empty exception registry
+cannot be populated by caller input. The guard requires the plan's exact
 embedded configuration to equal that inventory and requires every address to
 match at least one credential class (the imported combined storage Secret is
 intentionally protected by both independent storage lineages). It rejects unregistered credential-shaped
@@ -40,8 +57,11 @@ The production authority does not accept a state path. It runs `terraform state
 pull` from each fixed, root-owned configuration and exact workspace, refuses to
 start unless that private deployment configuration declares a `remote` or `s3`
 backend, and binds the returned lineage, serial, and canonical state digest.
-The checked-in local-backend roots therefore cannot be admitted until a
-separately reviewed, non-destructive backend migration is authorized. Planning
+All six deployable roots now declare a partial `s3` backend and the platform
+wrapper accepts only fixed root-owned backend configuration files. Existing
+local state still contains generation-1 material and has not been migrated;
+admission remains blocked until a separately reviewed, non-destructive,
+encrypted and access-logged backend migration is authorized. Planning
 and saved-plan state are sent to the guard in
 one in-memory JSON envelope. The wrapper does not create then remove temporary
 state or Secret files. A saved-plan receipt binds:
@@ -84,7 +104,7 @@ The only allowed source sequence is:
 1. Import and bind every existing generation and live Secret.
 2. Plan only additive immutable versioned Secrets in `secret-stage`.
 3. After a separately authorized apply, capture new authority bindings.
-4. Capture `predecessor-ready` evidence from all 21 class adapters.
+4. Capture `predecessor-ready` evidence from all 19 integrated class adapters.
 5. Plan the `dual-read` consumer rollout, binding the exact readiness receipt.
 6. After independently observed readiness, capture `dual-read-ready` evidence.
 7. Plan `current-write` with that later receipt.
@@ -96,13 +116,17 @@ scripts/secret_migration_guard.py capture-consumer-readiness \
   --phase predecessor-ready
 ```
 
-The readiness receipt must cover exactly the 21 contracts in
-`security/credential-consumer-contracts.json`. Each result names its reviewed
+The readiness receipt must cover exactly the 19 active contracts in
+`security/credential-consumer-contracts.json`. The two PostgreSQL backup
+contracts remain recorded but pending SAI-06 integration. Each result must name its reviewed
 adapter, authority, consumers, readiness probe, exact live-binding hash, unique
 provider evidence ID, and observation time. A generic ready flag cannot
 authorize a rollout.
 
-Exact binding, authority evidence, receipt hash, and rollout step are hashed
+The request now sends the complete value-free live Secret bindings
+(namespace/name/UID/resourceVersion/content commitment/generation/immutability)
+and their canonical hash to each adapter. No production class adapter is
+accepted yet, so readiness capture intentionally fails. Once accepted, exact binding, authority evidence, receipt hash, and rollout step are hashed
 into the affected Pod templates alongside per-class generation metadata. Helm
 is atomic and waits for Jobs and workload readiness. Database, admin, PAT,
 cryptographic, registry, ModelExpress, DCGM, Grafana, object-storage, and backup
@@ -120,9 +144,12 @@ keys have independent keyrings and active generations. Old and new generation
 decrypt, rollback decrypt, and tenant/principal cross-binding failures are
 required tests.
 
-The accepted storage implementation must invoke this boundary for real settings
-reads/writes and migration. Source scaffolding or duplicated AAD literals are
-not integration evidence. No payload or storage predecessor may be removed
+The source now wires opt-in same-principal append/disclosure request paths and
+conditional keyring mounts through this boundary. The chart defaults the
+feature off and Terraform refuses enablement without post-v1 key generations
+and an exact current-write receipt. These changes were not dynamically tested,
+are not SAI-08 integration evidence, and are not deployable until an accepted
+SAI-08 successor is semantically reconciled. No payload or storage predecessor may be removed
 until deployed customer-storage and request-debug ciphertext inventories are
 readable and usage-zero evidence exists; under this procedure they are retained
 even after that proof.
@@ -136,7 +163,10 @@ project, service account, group, sole membership, exact viewer permit, lineage,
 generation, public-key fingerprint, and expiry from complete provider
 inventory. Delivery has a recipient, key ID, expiry, and write-once receipt.
 Issuance stays blocked until a separately reviewed externally journaled service
-exists.
+exists. Authority reads additionally require one non-root automation client UID
+and a provider-observed service account, credential, group, membership, and sole
+project-viewer permit whose enforceable expiry is no more than 24 hours away.
+No such production identity was issued or inspected here.
 
 Verification permits inventory and comprehensively rejects mutation,
 escalation, impersonation, exec/attach/port-forward, and Secret

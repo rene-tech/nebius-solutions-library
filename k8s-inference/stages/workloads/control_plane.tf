@@ -49,6 +49,9 @@ locals {
       readinessReceiptSha256  = var.credential_consumer_readiness_receipt_sha256
       rolloutStep             = var.credential_consumer_rollout_step
     }
+    customerStorageCredentials = {
+      enabled = var.customer_storage_credentials_enabled
+    }
     secrets = {
       database = {
         name  = local.active_database_consumer_secret_names["runtime"]

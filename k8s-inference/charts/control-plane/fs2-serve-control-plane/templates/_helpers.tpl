@@ -243,7 +243,10 @@ app.kubernetes.io/component: model-controller
 {{ include "fs2-serve.databaseEnv" . }}
 {{ include "fs2-serve.cryptoEnv" . }}
 - name: FS2_CUSTOMER_STORAGE_CREDENTIALS_ENABLED
-  value: "false"
+  value: {{ .Values.customerStorageCredentials.enabled | quote }}
+{{- if .Values.customerStorageCredentials.enabled }}
+{{ include "fs2-serve.storageCryptoEnv" . }}
+{{- end }}
 {{ include "fs2-serve.payloadEnv" . }}
 {{- include "fs2-serve.scientificArtifactsEnv" . }}
 - name: FS2_CATALOG_DIR
@@ -491,6 +494,9 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumeMounts" -}}
 {{ include "fs2-serve.cryptoVolumeMounts" . }}
+{{- if .Values.customerStorageCredentials.enabled }}
+{{ include "fs2-serve.storageCryptoVolumeMounts" . }}
+{{- end }}
 {{- include "fs2-serve.scientificArtifactsVolumeMounts" . }}
 {{ include "fs2-serve.databaseCaVolumeMount" . }}
 {{- if eq .Values.catalog.delivery "pvc" }}
@@ -594,6 +600,9 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumes" -}}
 {{ include "fs2-serve.cryptoVolumes" . }}
+{{- if .Values.customerStorageCredentials.enabled }}
+{{ include "fs2-serve.storageCryptoVolumes" . }}
+{{- end }}
 {{- include "fs2-serve.scientificArtifactsVolumes" . }}
 {{ include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) }}
 {{- if eq .Values.catalog.delivery "pvc" }}

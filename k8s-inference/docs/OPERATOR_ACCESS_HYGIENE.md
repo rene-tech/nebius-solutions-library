@@ -4,6 +4,11 @@
 > irreversible transition examples that are not authorized. The canonical
 > additive/no-irreversible-action procedure is
 > `docs/OPERATOR_ACCESS_HYGIENE_V2.md`. Do not execute commands from this file.
+>
+> Current source is not accepted or rollout-ready: remote-state migration,
+> independent anchor/witness trust, complete provider inventory, production
+> adapters, SAI-08/09 integration, tests, and live proof remain outstanding.
+> SAI-06 has static SOURCE GO only, not integration/live acceptance.
 
 Operator handoff, durable-key rotation, and legacy-state retirement are gated
 migrations. A named credential generation is immutable: advance by creating a

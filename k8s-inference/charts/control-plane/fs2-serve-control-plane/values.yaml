@@ -369,6 +369,11 @@ secretRollout:
   readinessReceiptSha256: ""
   rolloutStep: ""
 
+# Source wiring exists, but production enablement remains dependency-gated on
+# accepted customer-storage integration and exact live binding evidence.
+customerStorageCredentials:
+  enabled: false
+
 config:
   # Required public HTTPS origins; empty defaults fail validation.
   publicBaseUrl: ""

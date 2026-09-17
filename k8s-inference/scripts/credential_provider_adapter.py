@@ -29,6 +29,9 @@ from credential_evidence import (
 
 AUTHORITY_SOCKET = Path("/run/fs2-credential-authority/v1.sock")
 CLIENT_POLICY = Path("/etc/fs2-credential-authority/client-policy.json")
+SOURCE_TRUST_POLICY = Path(
+    "/usr/share/fs2-credential-authority/credential-evidence-source-trust.json"
+)
 MAX_MESSAGE_BYTES = 4 * 1024 * 1024
 READ_ONLY_OPERATIONS = frozenset(
     {
@@ -78,6 +81,51 @@ def load_client_policy() -> dict[str, str]:
             or any(character not in "0123456789abcdef" for character in value)
         ):
             raise AuthorityError("credential authority client key pin is malformed")
+    if SOURCE_TRUST_POLICY.is_symlink() or not SOURCE_TRUST_POLICY.is_file():
+        raise AuthorityError("source-owned external evidence trust policy is absent")
+    trust = json.loads(SOURCE_TRUST_POLICY.read_text(encoding="utf-8"))
+    trust_fields = {
+        "schema",
+        "deployment_authorized",
+        "authorization_blocker",
+        "log_id",
+        "endpoint",
+        "producer_public_key_sha256",
+        "anchor_public_key_sha256",
+        "witness_public_key_sha256",
+        "genesis_checkpoint_sha256",
+        "minimum_witnesses",
+    }
+    if (
+        not isinstance(trust, dict)
+        or set(trust) != trust_fields
+        or trust.get("schema")
+        != "fs2-serve.nebius.ai/credential-evidence-source-trust/v1"
+        or trust.get("deployment_authorized") is not True
+        or trust.get("minimum_witnesses") != 2
+        or not isinstance(trust.get("witness_public_key_sha256"), list)
+        or len(trust["witness_public_key_sha256"]) < 2
+        or len(set(trust["witness_public_key_sha256"]))
+        != len(trust["witness_public_key_sha256"])
+        or any(
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in (
+                trust.get("producer_public_key_sha256"),
+                trust.get("anchor_public_key_sha256"),
+                trust.get("genesis_checkpoint_sha256"),
+                *trust["witness_public_key_sha256"],
+            )
+        )
+        or document["evidence_public_key_sha256"]
+        != trust["producer_public_key_sha256"]
+        or document["anchor_public_key_sha256"]
+        != trust["anchor_public_key_sha256"]
+    ):
+        raise AuthorityError(
+            "external evidence trust is not source-authorized; local pins cannot authorize it"
+        )
     return document
 
 

@@ -210,8 +210,8 @@ resource "kubernetes_secret_v1" "database_account_versioned" {
       "fs2.nebius.ai/credential-class"      = "database-logins"
       "fs2.nebius.ai/credential-generation" = tostring(each.value.generation)
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        username = each.value.username
-        password = var.database_passwords[tostring(each.value.generation)][each.value.account]
+        username = sha256(each.value.username)
+        password = sha256(var.database_passwords[tostring(each.value.generation)][each.value.account])
       }))
     }
   }
@@ -359,7 +359,7 @@ resource "kubernetes_secret_v1" "admin_versioned" {
       "fs2.nebius.ai/credential-class"      = "admin-token"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        token = var.admin_tokens[each.key]
+        token = sha256(var.admin_tokens[each.key])
       }))
     }
   }
@@ -393,7 +393,7 @@ resource "kubernetes_secret_v1" "payload_keyring_versioned" {
       "fs2.nebius.ai/credential-class"      = "payload-keyring"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        "keyring.json" = var.payload_keyrings_json[each.key]
+        "keyring.json" = sha256(var.payload_keyrings_json[each.key])
       }))
     }
   }
@@ -431,7 +431,7 @@ resource "kubernetes_secret_v1" "ledger_keyring_versioned" {
       "fs2.nebius.ai/credential-class"      = "ledger-keyring"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        "keyring.json" = var.ledger_keyrings_json[each.key]
+        "keyring.json" = sha256(var.ledger_keyrings_json[each.key])
       }))
     }
   }
@@ -469,7 +469,7 @@ resource "kubernetes_secret_v1" "token_pepper_versioned" {
       "fs2.nebius.ai/credential-class"      = "pat-pepper-keyring"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        "keyring.json" = var.token_pepper_keyrings_json[each.key]
+        "keyring.json" = sha256(var.token_pepper_keyrings_json[each.key])
       }))
     }
   }
@@ -507,7 +507,7 @@ resource "kubernetes_secret_v1" "route_attestors_versioned" {
       "fs2.nebius.ai/credential-class"      = "route-attestors"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        "attestors.json" = var.route_attestors_sets_json[each.key]
+        "attestors.json" = sha256(var.route_attestors_sets_json[each.key])
       }))
     }
   }
@@ -545,7 +545,7 @@ resource "kubernetes_secret_v1" "storage_keyring_versioned" {
       "fs2.nebius.ai/credential-class"      = "customer-storage-cipher-keyring"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        "keyring.json" = var.storage_keyrings_json[each.key]
+        "keyring.json" = sha256(var.storage_keyrings_json[each.key])
       }))
     }
   }
@@ -591,7 +591,7 @@ resource "kubernetes_secret_v1" "storage_name_keyring_versioned" {
       "fs2.nebius.ai/credential-class"      = "customer-storage-name-keyring"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        "name-keyring.json" = var.storage_name_keyrings_json[each.key]
+        "name-keyring.json" = sha256(var.storage_name_keyrings_json[each.key])
       }))
     }
   }
@@ -661,7 +661,7 @@ resource "kubernetes_secret_v1" "ngc_api_key_versioned" {
       "fs2.nebius.ai/credential-class"      = "registry-credentials"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        NGC_API_KEY = var.registry_ngc_api_keys[each.key]
+        NGC_API_KEY = sha256(var.registry_ngc_api_keys[each.key])
       }))
     }
   }
@@ -715,7 +715,7 @@ resource "kubernetes_secret_v1" "nvcrio_cred_versioned" {
       "fs2.nebius.ai/credential-class"      = "registry-credentials"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        ".dockerconfigjson" = var.registry_nvcrio_dockerconfigs[each.key]
+        ".dockerconfigjson" = sha256(var.registry_nvcrio_dockerconfigs[each.key])
       }))
     }
   }
@@ -769,7 +769,7 @@ resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio_versioned" {
       "fs2.nebius.ai/credential-class"      = "registry-credentials"
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
-        ".dockerconfigjson" = var.registry_nvcrio_dockerconfigs[each.key]
+        ".dockerconfigjson" = sha256(var.registry_nvcrio_dockerconfigs[each.key])
       }))
     }
   }

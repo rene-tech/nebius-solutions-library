@@ -1,7 +1,9 @@
 terraform {
   required_version = ">= 1.11.0, < 2.0.0"
 
-  # This state contains only the normalized, non-secret deployment contract.
-  # The orchestrator supplies a deployment-scoped local backend path.
-  backend "local" {}
+  # Partial configuration is supplied from the root-owned release-automation
+  # backend file.  Local/default-local state is forbidden even for the
+  # normalized deployment contract because it contains resource identities
+  # used by the credential custody fence.
+  backend "s3" {}
 }

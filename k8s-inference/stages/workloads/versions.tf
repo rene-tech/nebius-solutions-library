@@ -1,7 +1,9 @@
 terraform {
   required_version = ">= 1.11.0, < 2.0.0"
 
-  backend "local" {}
+  # This root contains durable credential history and therefore has no local
+  # backend mode.  Release automation supplies a root-owned partial S3 config.
+  backend "s3" {}
 
   required_providers {
     external = {

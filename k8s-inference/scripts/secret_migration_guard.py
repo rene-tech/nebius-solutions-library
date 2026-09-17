@@ -89,10 +89,13 @@ def load_consumer_contracts(
         raise GuardError("credential consumer contracts are absent or unsafe")
     document = json.loads(path.read_text(encoding="utf-8"))
     contracts = document.get("contracts") if isinstance(document, dict) else None
+    pending = document.get("pending_contract_ids") if isinstance(document, dict) else None
     if (
         document.get("schema") != "fs2-serve.nebius.ai/credential-consumer-contracts/v1"
         or not isinstance(contracts, dict)
         or len(contracts) != 21
+        or pending
+        != ["postgresql-backup-s3", "postgresql-backup-s3-secret"]
     ):
         raise GuardError("credential consumer contract inventory is incomplete")
     for credential_class, contract in contracts.items():
@@ -116,7 +119,11 @@ def load_consumer_contracts(
             raise GuardError(
                 f"credential consumer contract is malformed: {credential_class}"
             )
-    return contracts
+    return {
+        credential_class: contract
+        for credential_class, contract in contracts.items()
+        if credential_class not in pending
+    }
 
 
 def utc_now() -> datetime:
@@ -1640,12 +1647,21 @@ def validate_consumer_readiness_payload(
     if (
         not isinstance(payload, dict)
         or set(payload)
-        != {"schema", "phase", "contracts_sha256", "bindings_sha256", "classes"}
+        != {
+            "schema",
+            "phase",
+            "contracts_sha256",
+            "bindings",
+            "bindings_sha256",
+            "classes",
+        }
         or payload.get("schema")
         != "fs2-serve.nebius.ai/credential-consumer-readiness/v2"
         or payload.get("phase") != expected_phase
         or payload.get("contracts_sha256") != canonical_sha256(contracts)
         or payload.get("bindings_sha256") != expected_bindings_sha256
+        or not isinstance(payload.get("bindings"), dict)
+        or canonical_sha256(payload["bindings"]) != expected_bindings_sha256
         or not isinstance(payload.get("classes"), dict)
         or set(payload["classes"]) != set(contracts)
     ):
@@ -1668,6 +1684,9 @@ def validate_consumer_readiness_payload(
             or not isinstance(item.get("generation"), int)
             or item["generation"] < 1
             or not isinstance(item.get("consumer_bindings"), list)
+            or item.get("credential_bindings") != payload["bindings"]
+            or item.get("credential_bindings_sha256")
+            != expected_bindings_sha256
             or not isinstance(item.get("observed_at"), str)
         ):
             raise GuardError(
@@ -1702,6 +1721,8 @@ def validate_consumer_readiness_payload(
                 }
                 or binding.get("generation") != item["generation"]
                 or binding.get("ready") is not True
+                or binding.get("credential_identity")
+                != expected_bindings_sha256
                 or not all(
                     isinstance(binding.get(field), str) and binding[field]
                     for field in (
@@ -1761,12 +1782,15 @@ def write_consumer_readiness_receipt(
                 "credential_class": credential_class,
                 "generation": generation,
                 "phase": phase,
+                "bindings_sha256": bindings_sha256,
+                "credential_bindings": bindings,
             }
         )
     payload = {
         "schema": "fs2-serve.nebius.ai/credential-consumer-readiness/v2",
         "phase": phase,
         "contracts_sha256": canonical_sha256(contracts),
+        "bindings": bindings,
         "bindings_sha256": bindings_sha256,
         "classes": classes,
     }

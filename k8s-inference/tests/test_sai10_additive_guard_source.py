@@ -240,3 +240,103 @@ def test_integration_and_retirement_are_fail_closed() -> None:
     assert 'operation": "artifact-inventory"' in guard_source
     assert "caller-supplied live Secret inventories are forbidden" in guard_source
     assert 'DISPOSITION_ACTIONS = frozenset({"encrypted-rewrap"})' in guard_source
+
+
+def test_every_deployable_terraform_root_forbids_local_state() -> None:
+    roots = (
+        ROOT,
+        ROOT / "stages/foundation",
+        ROOT / "stages/infrastructure",
+        ROOT / "stages/workloads",
+        ROOT / "reference-data/terraform",
+        ROOT / "model-artifacts/terraform",
+    )
+    for root in roots:
+        source = (root / "versions.tf").read_text()
+        assert 'backend "s3" {}' in source
+        assert 'backend "local"' not in source
+    wrapper = (ROOT / "inference-stack").read_text()
+    assert 'Path("/etc/fs2-serve/terraform-backends")' in wrapper
+    assert 'f"-backend-config={backend_config}"' in wrapper
+    assert 'f"-backend-config=path={legacy_backend}"' not in wrapper
+
+
+def test_secret_commitments_hash_each_decoded_value_before_the_map() -> None:
+    sources = "\n".join(
+        path.read_text()
+        for path in (
+            ROOT / "stages/foundation/cluster_contract.tf",
+            ROOT / "stages/workloads/bootstrap_access.tf",
+            ROOT / "stages/workloads/database.tf",
+            ROOT / "stages/workloads/modelexpress.tf",
+            ROOT / "stages/workloads/scientific_artifacts.tf",
+            ROOT / "stages/workloads/secrets.tf",
+            ROOT / "reference-data/terraform/main.tf",
+        )
+    )
+    assert sources.count('"fs2.nebius.ai/content-sha256"') == 19
+    for block in sources.split('"fs2.nebius.ai/content-sha256"')[1:]:
+        assert "sha256(jsonencode(" in block[:180]
+        assert "sha256(" in block[block.index("sha256(jsonencode(") + 18 : 800]
+
+
+def test_storage_runtime_is_request_wired_but_dependency_gated() -> None:
+    helpers = (
+        ROOT / "charts/control-plane/fs2-serve-control-plane/templates/_helpers.tpl"
+    ).read_text()
+    api = (ROOT / "components/control-plane/src/fs2_serve/api.py").read_text()
+    debug = (
+        ROOT / "components/control-plane/src/fs2_serve/request_debug.py"
+    ).read_text()
+    variables = (ROOT / "stages/workloads/variables.tf").read_text()
+    assert 'value: {{ .Values.customerStorageCredentials.enabled | quote }}' in helpers
+    assert '"/v1/customer-storage/credential"' in api
+    assert "customer_storage_reconciler" in api
+    assert "customer_storage_disclosure" in api
+    assert 'path == "/v1/customer-storage/credential"' in debug
+    assert "var.keyring_generations.storage.active > 1" in variables
+    assert 'var.credential_consumer_rollout_step == "current-write"' in variables
+
+
+def test_authority_requires_source_trust_and_exact_automation_identity() -> None:
+    trust = json.loads(
+        (ROOT / "security/credential-evidence-source-trust.json").read_text()
+    )
+    service = (ROOT / "scripts/credential_authority_service.py").read_text()
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    client = (ROOT / "scripts/credential_provider_adapter.py").read_text()
+    assert trust["deployment_authorized"] is False
+    assert trust["minimum_witnesses"] == 2
+    assert "source-authorized; local pins cannot authorize it" in client
+    assert 'len(config["allowed_client_uids"]) != 1' in service
+    assert "timedelta(hours=24)" in service
+    assert "automation_identity_proof" in provider
+    assert '"credential-release-automation"' in provider
+    assert '(policy["project_id"], "viewer")' in provider
+    assert 'policy["profile"]' not in provider
+
+
+def test_readiness_and_inventory_fail_closed_on_exact_live_bindings() -> None:
+    service = (ROOT / "scripts/credential_authority_service.py").read_text()
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    guard_source = (ROOT / "scripts/secret_migration_guard.py").read_text()
+    registry = json.loads(
+        (ROOT / "security/durable-credential-registry.json").read_text()
+    )
+    contracts = json.loads(
+        (ROOT / "security/credential-consumer-contracts.json").read_text()
+    )
+    assert '"credential_bindings"' in service
+    assert 'canonical_sha256(bindings) != parameters["bindings_sha256"]' in service
+    assert '"credential_bindings": bindings' in guard_source
+    assert "reconcile_global_provider_inventory" in provider
+    assert "all-cluster-secrets-and-all-project-iam" in provider
+    assert registry["provider_inventory_exemptions"] == {
+        "kubernetes_secrets": [],
+        "nebius_iam": [],
+    }
+    assert registry["pending_credential_ids"] == [
+        "postgresql-backup-s3",
+        "postgresql-backup-s3-secret",
+    ]
+    assert contracts["pending_contract_ids"] == registry["pending_credential_ids"]

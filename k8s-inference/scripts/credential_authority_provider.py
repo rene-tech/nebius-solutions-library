@@ -388,9 +388,10 @@ def normalize_nebius_items(document: Any, *, kind: str) -> list[dict[str, Any]]:
 
 
 def nebius_inventory(policy: dict[str, Any]) -> dict[str, Any]:
+    automation = policy["automation_identity"]
     common = [
         "--profile",
-        policy["profile"],
+        automation["profile"],
         "--parent-id",
         policy["project_id"],
         "--all",
@@ -398,19 +399,92 @@ def nebius_inventory(policy: dict[str, Any]) -> dict[str, Any]:
         "json",
     ]
     binary = executable(policy, "nebius")
+    prefix = [binary, "--config", automation["config_path"]]
     commands = {
-        "service_accounts": [binary, "iam", "service-account", "list", *common],
-        "access_keys": [binary, "iam", "access-key", "list", *common],
-        "auth_public_keys": [binary, "iam", "auth-public-key", "list", *common],
-        "groups": [binary, "iam", "group", "list", *common],
-        "group_memberships": [binary, "iam", "group-membership", "list", *common],
-        "access_permits": [binary, "iam", "access-permit", "list", *common],
+        "service_accounts": [*prefix, "iam", "service-account", "list", *common],
+        "access_keys": [*prefix, "iam", "access-key", "list", *common],
+        "auth_public_keys": [*prefix, "iam", "auth-public-key", "list", *common],
+        "groups": [*prefix, "iam", "group", "list", *common],
+        "group_memberships": [*prefix, "iam", "group-membership", "list", *common],
+        "access_permits": [*prefix, "iam", "access-permit", "list", *common],
     }
     return {
         kind: normalize_nebius_items(
             command_json(command, label=f"Nebius {kind} inventory"), kind=kind
         )
         for kind, command in commands.items()
+    }
+
+
+def automation_identity_proof(
+    policy: dict[str, Any], inventory: dict[str, Any]
+) -> dict[str, Any]:
+    """Bind every provider read to one expiring viewer-only automation lineage."""
+
+    configured = policy["automation_identity"]
+    accounts = [
+        item
+        for item in inventory["service_accounts"]
+        if item["id"] == configured["service_account_id"]
+    ]
+    if len(accounts) != 1 or accounts[0].get("parent_id") != policy["project_id"]:
+        raise ProviderError("release automation service account is absent or ambiguous")
+    labels = accounts[0].get("labels", {})
+    if labels.get("purpose") != "credential-release-automation":
+        raise ProviderError("release automation service account has the wrong purpose")
+    credentials = [
+        item
+        for item in inventory[configured["credential_kind"]]
+        if item["id"] == configured["credential_id"]
+    ]
+    if (
+        len(credentials) != 1
+        or credentials[0].get("parent_id") != policy["project_id"]
+        or credentials[0].get("service_account_id")
+        != configured["service_account_id"]
+        or credentials[0].get("expires_at") != configured["expires_at"]
+    ):
+        raise ProviderError("release automation credential lineage or expiry differs")
+    memberships = [
+        item
+        for item in inventory["group_memberships"]
+        if item.get("member_id") == configured["service_account_id"]
+    ]
+    if len(memberships) != 1:
+        raise ProviderError("release automation identity has an ambiguous group set")
+    groups = [
+        item
+        for item in inventory["groups"]
+        if item["id"] == memberships[0].get("group_id")
+    ]
+    if (
+        len(groups) != 1
+        or groups[0].get("parent_id") != policy["project_id"]
+        or groups[0].get("labels", {}).get("purpose")
+        != "credential-release-automation"
+    ):
+        raise ProviderError("release automation viewer group is not exact")
+    permits = [
+        item
+        for item in inventory["access_permits"]
+        if item.get("group_id") == groups[0]["id"]
+    ]
+    if len(permits) != 1 or (
+        permits[0].get("resource_id"), permits[0].get("role")
+    ) != (policy["project_id"], "viewer"):
+        raise ProviderError("release automation identity is not viewer-only")
+    return {
+        "service_account_id": configured["service_account_id"],
+        "credential_kind": configured["credential_kind"],
+        "credential_id": configured["credential_id"],
+        "expires_at": configured["expires_at"],
+        "group_id": groups[0]["id"],
+        "membership_id": memberships[0]["id"],
+        "permit_id": permits[0]["id"],
+        "role": "viewer",
+        "provider_identity_sha256": canonical_sha256(
+            [accounts[0], credentials[0], groups[0], memberships[0], permits[0]]
+        ),
     }
 
 
@@ -426,9 +500,11 @@ def load_registry(policy: dict[str, Any]) -> dict[str, Any]:
 def classes_for_address(
     registry: dict[str, Any], root: str, address: str
 ) -> list[dict[str, Any]]:
+    pending = set(registry.get("pending_credential_ids", []))
     return [
         item
         for item in registry["credentials"]
+        if item.get("id") not in pending
         if item.get("terraform_root") == root
         and any(re.fullmatch(pattern, address) for pattern in item.get("address_regexes", []))
     ]
@@ -447,6 +523,127 @@ def provider_kind(terraform_type: str) -> str | None:
         "nebius_iam_v1_access_permit": "access_permits",
         "nebius_iam_v2_access_key": "access_keys",
     }.get(terraform_type)
+
+
+def base_address(address: str) -> str:
+    return re.sub(r"\[.*\]$", "", address)
+
+
+def reconcile_global_provider_inventory(
+    *,
+    states: list[dict[str, Any]],
+    secrets: list[dict[str, Any]],
+    provider_inventory: dict[str, Any],
+    registry: dict[str, Any],
+    automation_identity: dict[str, Any],
+) -> dict[str, Any]:
+    """Reject any cluster Secret or project IAM object without exact custody."""
+
+    declared = {
+        (item["root"], item["address"])
+        for item in registry.get("terraform_resource_addresses", [])
+    }
+    exemptions = registry.get("provider_inventory_exemptions")
+    if not isinstance(exemptions, dict) or set(exemptions) != {
+        "kubernetes_secrets",
+        "nebius_iam",
+    }:
+        raise ProviderError("provider inventory classification registry is malformed")
+    exemption_fields = {
+        "id",
+        "owner",
+        "purpose",
+        "expires_at",
+        "readers",
+        "source",
+    }
+    for family in ("kubernetes_secrets", "nebius_iam"):
+        entries = exemptions[family]
+        if (
+            not isinstance(entries, list)
+            or any(
+                not isinstance(item, dict)
+                or set(item) != exemption_fields
+                or not all(
+                    isinstance(item.get(field), str) and item[field]
+                    for field in ("id", "owner", "purpose", "expires_at", "source")
+                )
+                or not isinstance(item.get("readers"), list)
+                or not item["readers"]
+                or not all(isinstance(reader, str) and reader for reader in item["readers"])
+                for item in entries
+            )
+            or len({item["id"] for item in entries}) != len(entries)
+        ):
+            raise ProviderError(
+                f"provider inventory classification is incomplete: {family}"
+            )
+    state_secret_ids: set[str] = set()
+    state_nebius_ids: set[str] = set()
+    for state in states:
+        root = state["root"]
+        for resource in state["resources"]:
+            if (root, base_address(resource["address"])) not in declared:
+                continue
+            provider_id = resource.get("provider_id")
+            if not isinstance(provider_id, str) or not provider_id:
+                continue
+            if resource.get("type") == "kubernetes_secret_v1":
+                state_secret_ids.add(provider_id)
+            elif provider_kind(str(resource.get("type", ""))) is not None:
+                state_nebius_ids.add(provider_id)
+    live_secret_ids = {
+        f"{item['metadata']['namespace']}/{item['metadata']['name']}"
+        for item in secrets
+    }
+    live_nebius_ids = {
+        item["id"]
+        for kind in (
+            "service_accounts",
+            "access_keys",
+            "auth_public_keys",
+            "groups",
+            "group_memberships",
+            "access_permits",
+        )
+        for item in provider_inventory[kind]
+    }
+    automation_ids = {
+        automation_identity["service_account_id"],
+        automation_identity["credential_id"],
+        automation_identity["group_id"],
+        automation_identity["membership_id"],
+        automation_identity["permit_id"],
+    }
+    classified_secret_ids = {
+        item["id"] for item in exemptions["kubernetes_secrets"]
+    }
+    classified_nebius_ids = {item["id"] for item in exemptions["nebius_iam"]}
+    if not classified_secret_ids <= live_secret_ids or not classified_nebius_ids <= live_nebius_ids:
+        raise ProviderError("provider classification names an absent live object")
+    unmanaged_secrets = sorted(
+        live_secret_ids - state_secret_ids - classified_secret_ids
+    )
+    unmanaged_nebius = sorted(
+        live_nebius_ids - state_nebius_ids - automation_ids - classified_nebius_ids
+    )
+    if unmanaged_secrets or unmanaged_nebius:
+        raise ProviderError(
+            "global provider inventory is not fully reconciled: "
+            f"{len(unmanaged_secrets)} Kubernetes Secrets and "
+            f"{len(unmanaged_nebius)} Nebius IAM objects lack exact custody"
+        )
+    return {
+        "scope": "all-cluster-secrets-and-all-project-iam",
+        "kubernetes_secret_count": len(live_secret_ids),
+        "nebius_iam_count": len(live_nebius_ids),
+        "unmanaged_kubernetes_secret_count": 0,
+        "unmanaged_nebius_iam_count": 0,
+        "classified_inventory_sha256": canonical_sha256(exemptions),
+        "inventory_sha256": canonical_sha256(
+            [sorted(live_secret_ids), sorted(live_nebius_ids)]
+        ),
+    }
 
 
 def credential_inventory(
@@ -494,7 +691,12 @@ def credential_inventory(
                         "provider_binding": binding,
                     }
                 )
-    policies = {item["id"]: item for item in registry["credentials"]}
+    pending = set(registry.get("pending_credential_ids", []))
+    policies = {
+        item["id"]: item
+        for item in registry["credentials"]
+        if item["id"] not in pending
+    }
     items: list[dict[str, Any]] = []
     for (credential_class, generation), resources in sorted(grouped.items()):
         resources = sorted(resources, key=lambda item: (item["terraform_root"], item["terraform_address"]))
@@ -526,7 +728,7 @@ def credential_inventory(
             }
         )
     classes: dict[str, dict[str, Any]] = {}
-    for policy_entry in registry["credentials"]:
+    for policy_entry in policies.values():
         matches = [item for item in items if item["credential_class"] == policy_entry["id"]]
         if not matches:
             raise ProviderError(
@@ -958,15 +1160,18 @@ def normalized_host_cidrs(values: Any) -> list[str]:
 
 
 def cluster_cidrs(policy: dict[str, Any]) -> list[str]:
+    automation = policy["automation_identity"]
     document = command_json(
         [
             executable(policy, "nebius"),
+            "--config",
+            automation["config_path"],
             "mk8s",
             "v1",
             "cluster",
             "get",
             "--profile",
-            policy["profile"],
+            automation["profile"],
             "--id",
             policy["cluster_id"],
             "--format",
@@ -994,14 +1199,24 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
         return artifact_inventory(policy)
     secrets = kubernetes_secrets(policy)
     provider_inventory = nebius_inventory(policy)
+    automation_identity = automation_identity_proof(policy, provider_inventory)
     registry = load_registry(policy)
     registry_sha256 = canonical_sha256(registry)
+    provider_reconciliation = reconcile_global_provider_inventory(
+        states=states,
+        secrets=secrets,
+        provider_inventory=provider_inventory,
+        registry=registry,
+        automation_identity=automation_identity,
+    )
     if operation == "custody-snapshot":
         return {
             "registry_sha256": registry_sha256,
             "terraform_states": states,
             "kubernetes_secrets": secrets,
             "nebius_inventory": provider_inventory,
+            "automation_identity": automation_identity,
+            "provider_inventory_reconciliation": provider_reconciliation,
             "credential_inventory": credential_inventory(
                 policy, states, provider_inventory
             ),
@@ -1010,6 +1225,8 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
         return {
             **credential_inventory(policy, states, provider_inventory),
             "registry_sha256": registry_sha256,
+            "automation_identity": automation_identity,
+            "provider_inventory_reconciliation": provider_reconciliation,
         }
     if operation == "planned-generation-admission":
         return plan_admission(
