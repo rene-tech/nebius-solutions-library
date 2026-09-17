@@ -275,10 +275,11 @@ The upload-session and artifact-claim triggers are followed by committed,
 idempotent catch-up passes, closing the predecessor commit window between the
 initial snapshot and trigger installation.
 
-Expired finalization ownership is never cleanup authority. The runtime-owned
-`artifact-finalization` CronJob renews expired leases and either completes the
-still-valid server-owned multipart session or recovers its immutable provider
-VersionId before atomically publishing the artifact. Remover and verifier jobs
+Expired finalization ownership is never cleanup authority. The
+`artifact-finalization` CronJob is owned by the dedicated, autonomous finalizer
+identity. It renews expired leases and either completes the still-valid
+server-owned multipart session or recovers its immutable provider VersionId
+before atomically publishing the artifact. Remover and verifier jobs
 exclude every active finalization lease, including an expired one. Provider
 session creation is write-ahead fenced too: only the exact durable claim owner
 may bind the external upload ID, and a crashed owner requires bounded aborts

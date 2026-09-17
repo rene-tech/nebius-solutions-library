@@ -428,9 +428,9 @@ encrypted storage and the absence of automatic retention/deletion.
 ### Scientific result artifact store
 
 `storage.scientific_artifacts` provisions a dedicated same-region versioned
-bucket, a dedicated service account and group, a bucket policy granting only
-`storage.object-editor` on `scientific/v1/*`, and an S3 access key delivered
-exclusively through Nebius MysteryBox. It is a separate store from
+bucket, four dedicated service accounts and groups, prefix-scoped bucket policy
+rules, and four S3 access keys delivered exclusively through Nebius MysteryBox.
+It is a separate store from
 `storage.reference_data`: results and immutable public science inputs never
 share a bucket, a policy, a key or a retention decision, and the facade refuses
 a configuration in which the two bucket names collide.
@@ -445,17 +445,21 @@ so tenant prefixes are disjoint and a retry that reproduces identical bytes
 writes the identical key.
 
 Terraform propagates only each access-key ID, opaque MysteryBox reference and
-revision for three disjoint identities: runtime writer, delete-capable remover,
-and read-only absence verifier. The workloads stage resolves the secrets
-ephemerally and writes them with provider write-only arguments into distinct
-`fs2-system` Secrets; the values are absent from state, plans, generated tfvars,
-Helm values, outputs and receipts. The remover cannot release quota. The
-verifier independently re-fetches exact-key absence and alone receives the
-narrow database routine that appends release evidence. A rotated writer key
-moves the revision, which rewrites the Secret and the non-secret
-`fs2.nebius.ai/artifact-store-credential-revision` pod annotation so the control
-plane restarts. Workers receive short-lived signed handles, never a static
-credential.
+revision for four disjoint identities: runtime writer, delete-capable remover,
+read-only absence verifier, and multipart finalization recovery. The workloads
+stage resolves the secrets ephemerally and writes them with provider write-only
+arguments into distinct `fs2-system` Secrets; the values are absent from state,
+plans, generated tfvars, Helm values, outputs and receipts. The remover cannot
+release quota. The verifier independently re-fetches exact-key absence and
+alone receives the narrow database routine that appends release evidence. The
+finalizer mounts only its isolated `fs2-serve-artifact-finalizer-store` and
+`fs2-serve-database-artifact-finalizer` Secrets; it can complete or recover a
+server-owned multipart upload only after claiming the exact expired lease
+generation, without runtime authority or access to unrelated tenant rows. A
+rotated writer key moves the revision, which rewrites the Secret and the
+non-secret `fs2.nebius.ai/artifact-store-credential-revision` pod annotation so
+the control plane restarts. Workers receive short-lived signed handles, never a
+static credential.
 
 Storage-side lifecycle rules abort incomplete multipart uploads and expire
 noncurrent versions after one day and remove expired delete markers. Nothing

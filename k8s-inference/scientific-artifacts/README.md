@@ -7,7 +7,7 @@ expensive to rebuild, this one holds tenant result bytes with a different
 retention window and a different blast radius. Neither store's bucket, policy
 or key is ever widened to serve the other.
 
-The store is independently deployable. Enabling it creates a bucket and three
+The store is independently deployable. Enabling it creates a bucket and four
 purpose-specific identities and keys and configures the control plane; it does
 not require, and does not enable, staged batch execution or academic execution.
 
@@ -19,10 +19,10 @@ not require, and does not enable, staged batch execution or academic execution.
 | Resource | Purpose |
 | --- | --- |
 | `nebius_storage_v1_bucket` | Versioned, capacity-bounded, standard-class bucket in the cluster region |
-| three `nebius_iam_v1_service_account` resources | Separate runtime writer, expiry remover, and independent absence verifier |
-| three groups + memberships | Carry disjoint bucket-scoped grants |
-| bucket policy rules | Writer/remover `storage.object-editor`; verifier `storage.object-viewer`; all on `scientific/v1/*` only |
-| three `nebius_iam_v2_access_key` resources | Purpose-specific S3 keys, all `secret_delivery_mode = "MYSTERY_BOX"` |
+| four `nebius_iam_v1_service_account` resources | Separate runtime writer, expiry remover, independent absence verifier, and finalization recovery controller |
+| four groups + memberships | Carry disjoint bucket-scoped grants |
+| bucket policy rules | Writer/remover/finalizer `storage.object-editor`; verifier `storage.object-viewer`; all on `scientific/v1/*` only |
+| four `nebius_iam_v2_access_key` resources | Purpose-specific S3 keys, all `secret_delivery_mode = "MYSTERY_BOX"` |
 
 Retention is two mutually exclusive resources rather than one flag, because
 Terraform's `prevent_destroy` takes a literal and not an expression. The
