@@ -1782,11 +1782,12 @@ def load_bound_receipt(
     return receipt
 
 
-INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v5"
+INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v6"
 COLLECTOR_METHOD = "fs2-live-enumeration/v1"
 INVENTORY_CHECKPOINT_SCHEMA = "fs2-serve.nebius.ai/inventory-checkpoint/v1"
-SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v7"
-ROLLOUT_AUTHORIZATION_SCHEMA = "fs2-serve.nebius.ai/rollout-authorization/v1"
+SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v8"
+ROLLOUT_AUTHORIZATION_SCHEMA = "fs2-serve.nebius.ai/rollout-authorization/v2"
+PROVIDER_ATTESTATION_SCHEMA = "fs2-serve.nebius.ai/provider-attestation/v1"
 RECOVERY_SCHEMA = "fs2-serve.nebius.ai/admission-recovery/v2"
 GUARD_PARAMS_NAME = "fs2-security-guard-params"
 PROTECTED_POLICY_NAMES = (
@@ -1828,10 +1829,11 @@ SCOPE_FIELDS = (
     "verification_key_sha256",
     "policy_sha256",
     "iam_exempt_subjects",
-    "provider_attested_masters",
+    "token_audience",
     "stage_binding_authority",
     "tooling",
 )
+TOKEN_AUDIENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:/._-]{1,127}$")
 BINARY_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9/._-]{1,255}$")
 WORKLOAD_REF_PATTERN = re.compile(
     r"^(deployment|statefulset)/[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$"
@@ -1841,9 +1843,8 @@ WORKLOAD_REF_PATTERN = re.compile(
 # groups, and Group:system:masters are NEVER exemptible — a wildcard human
 # cluster-admin cannot be signed back into validity. The single bootstrap
 # cluster-admin -> system:masters binding is recognized only through the
-# separate provider_attested_masters attestation (the owner attesting that
-# system:masters CERTIFICATE issuance is provider-held, outside cluster-admin
-# reach on managed mk8s).
+# OWNER-SIGNED provider attestation (masters_certificate_issuance:
+# provider-held — outside cluster-admin reach on managed mk8s).
 BOOTSTRAP_EXEMPTIBLE_SUBJECTS = frozenset(
     {
         "User:system:kube-controller-manager",
@@ -1898,12 +1899,19 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool"], ...] = (
         "verbs": {"create"},
         "why": "ServiceAccount token minting",
     },
-    # Privilege delegation through RBAC itself.
+    # Privilege delegation through RBAC itself — including MUTATING the
+    # bindings/roles (writing RBAC is granting RBAC).
     {
         "apiGroups": {"rbac.authorization.k8s.io"},
         "resources": {"roles", "clusterroles"},
         "verbs": {"bind", "escalate"},
         "why": "RBAC bind/escalate delegation",
+    },
+    {
+        "apiGroups": {"rbac.authorization.k8s.io"},
+        "resources": {"roles", "clusterroles", "rolebindings", "clusterrolebindings"},
+        "verbs": {"create", "update", "patch", "delete", "deletecollection"},
+        "why": "RBAC mutation delegation",
     },
     # Stored-credential delegation: reading Secrets in the protected
     # namespaces can expose ServiceAccount credentials, and WRITING one of
@@ -1939,7 +1947,8 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool"], ...] = (
     },
     # Workload/ServiceAccount writes in the SECURITY identity's namespaces:
     # creating a workload there mounts the security ServiceAccount, and
-    # recreating the ServiceAccount substitutes the identity.
+    # recreating the ServiceAccount substitutes the identity. NOBODY is
+    # permitted here.
     {
         "apiGroups": {"", "apps", "batch"},
         "resources": {
@@ -1956,6 +1965,28 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool"], ...] = (
         "verbs": {"create", "update", "patch"},
         "why": "workload/ServiceAccount write in a security namespace",
         "security_namespaces_only": True,
+    },
+    # Workload creation in the SCOPE namespaces mounts the RELEASE
+    # ServiceAccount (deploy-identity theft). Deploying releases is the
+    # deploy identity's FUNCTION, so it alone is permitted — everyone else
+    # (humans included) is a violation.
+    {
+        "apiGroups": {"", "apps", "batch"},
+        "resources": {
+            "pods",
+            "deployments",
+            "daemonsets",
+            "statefulsets",
+            "replicasets",
+            "replicationcontrollers",
+            "jobs",
+            "cronjobs",
+            "serviceaccounts",
+        },
+        "verbs": {"create", "update", "patch"},
+        "why": "workload write in a protected namespace (deploy-identity theft)",
+        "namespaced_to_scope": True,
+        "permitted_role": "deploy",
     },
 )
 # NOTE: external (provider) IAM paths — cloud-console access to the managed
@@ -2087,12 +2118,11 @@ def _validated_scope(value, context: str) -> dict:
             "masters in particular — are NEVER exemptible, so a human "
             "cluster-admin cannot be signed back into validity"
         )
-    if not isinstance(value.get("provider_attested_masters"), bool):
+    if not TOKEN_AUDIENCE_PATTERN.match(str(value.get("token_audience", ""))):
         raise ProvenanceError(
-            f"{context} needs provider_attested_masters (bool): the owner's "
-            "explicit attestation that system:masters certificate issuance "
-            "is provider-held; without it the bootstrap cluster-admin "
-            "binding refuses rendering"
+            f"{context} needs token_audience: the EXACT audience every "
+            "automation-identity token projection must carry; any-nonempty "
+            "audiences are not a contract"
         )
     tooling = value.get("tooling")
     if (
@@ -2658,11 +2688,32 @@ def _read_chained_records(path: Path) -> list[dict]:
         previous = hashlib.sha256(line).hexdigest()
         records.append(record)
     checkpoint_path = _ledger_checkpoint_path(path)
+
+    def write_checkpoint_forward() -> None:
+        # ADDITIVE adoption/repair: the checkpoint only ever moves FORWARD to
+        # match a fully chain-verified file; nothing is deleted or rewound.
+        payload = json.dumps(
+            {"count": len(lines), "head": previous}, sort_keys=True
+        ).encode("utf-8")
+        descriptor, temp_name = tempfile.mkstemp(
+            dir=path.parent, prefix="." + checkpoint_path.name + "-"
+        )
+        try:
+            os.write(descriptor, payload)
+            os.fchmod(descriptor, 0o600)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.replace(temp_name, checkpoint_path)
+        _fsync_dir(path.parent)
+
     if not checkpoint_path.exists():
         if lines:
-            raise ProvenanceError(
-                f"ledger {path} has no head checkpoint; fails closed"
-            )
+            # LEGACY ADOPTION: pre-checkpoint ledgers (preserved evidence
+            # under the no-delete constraint) whose chain fully verifies are
+            # adopted by writing their checkpoint forward — never rejected,
+            # never rewritten.
+            write_checkpoint_forward()
         return records
     try:
         checkpoint = json.loads(_read_evidence_bytes(checkpoint_path))
@@ -2670,16 +2721,33 @@ def _read_chained_records(path: Path) -> list[dict]:
         raise ProvenanceError(
             f"ledger checkpoint is malformed: {checkpoint_path}"
         ) from error
-    if (
-        not isinstance(checkpoint, dict)
-        or checkpoint.get("count") != len(lines)
-        or checkpoint.get("head") != previous
-    ):
+    if not isinstance(checkpoint, dict):
         raise ProvenanceError(
-            f"ledger {path} does not match its head checkpoint (count/head); "
-            "truncated or rewritten history fails closed"
+            f"ledger checkpoint is malformed: {checkpoint_path}"
         )
-    return records
+    if checkpoint.get("count") == len(lines) and checkpoint.get("head") == previous:
+        return records
+    # CRASH ROLL-FORWARD: an append fsyncs the JSONL before replacing the
+    # checkpoint, so a crash between the two leaves the file exactly ONE
+    # verified record ahead of the checkpoint — recognized and repaired
+    # forward. Anything else (checkpoint ahead, mismatched head) is
+    # truncation or rewriting and fails closed.
+    if (
+        len(lines) >= 1
+        and checkpoint.get("count") == len(lines) - 1
+        and checkpoint.get("head")
+        == (
+            hashlib.sha256(lines[-2]).hexdigest()
+            if len(lines) >= 2
+            else GENESIS_HASH
+        )
+    ):
+        write_checkpoint_forward()
+        return records
+    raise ProvenanceError(
+        f"ledger {path} does not match its head checkpoint (count/head); "
+        "truncated or rewritten history fails closed"
+    )
 
 
 def _append_chained_record(path: Path, record: dict) -> None:
@@ -2867,13 +2935,134 @@ def load_recovery_authorization(
     return document, document_sha256
 
 
+def load_provider_attestation(
+    attestation_path: Path,
+    public_key_path: str,
+    verifier=None,
+) -> dict:
+    """Verify the OWNER-SIGNED provider attestation — evidence, not comments.
+
+    The provider-held arm of the boundary (system:masters certificate
+    issuance, apiserver/static admission control, etcd/node access) cannot
+    be observed through the Kubernetes API, so it enters the system as a
+    SIGNED, cluster-pinned, time-bounded document. It also embeds the latest
+    off-host anchored-heads snapshot (plus the WORM store URI), which the
+    renderer enforces against the local chains — anchor verification is no
+    longer optional, manual, or unsigned. The shipped repository carries NO
+    attestation: rendering fails closed until the owner issues and signs
+    one.
+    """
+    signature_path = attestation_path.parent / (attestation_path.name + ".sig")
+    if not attestation_path.is_file() or attestation_path.is_symlink():
+        raise ProvenanceError(
+            f"missing provider attestation: {attestation_path}; rendering "
+            "fails closed until the owner signs the provider-held facts"
+        )
+    if not signature_path.is_file() or signature_path.is_symlink():
+        raise ProvenanceError(
+            f"provider attestation at {attestation_path} is UNSIGNED; "
+            "rendering fails closed"
+        )
+    payload = _read_evidence_bytes(attestation_path, private=False)
+    signature = _read_evidence_bytes(signature_path, private=False)
+    _verify_blob_bytes(
+        public_key_path,
+        payload,
+        signature,
+        verifier,
+        f"provider attestation {attestation_path}",
+    )
+    try:
+        document = json.loads(payload)
+    except json.JSONDecodeError as error:
+        raise ProvenanceError(
+            f"provider attestation is malformed: {attestation_path}"
+        ) from error
+    if (
+        not isinstance(document, dict)
+        or document.get("schema") != PROVIDER_ATTESTATION_SCHEMA
+    ):
+        raise ProvenanceError(
+            f"{attestation_path} is not a {PROVIDER_ATTESTATION_SCHEMA} "
+            "document"
+        )
+    for fact in (
+        "masters_certificate_issuance",
+        "apiserver_control",
+        "etcd_access",
+    ):
+        if str(document.get(fact, "")) != "provider-held":
+            raise ProvenanceError(
+                f"{attestation_path} does not attest {fact} as "
+                "provider-held; rendering fails closed"
+            )
+    if not CLUSTER_PATTERN.match(str(document.get("cluster", ""))):
+        raise ProvenanceError(
+            f"{attestation_path} must pin the cluster (kube-system UID)"
+        )
+    if not str(document.get("worm_store", "")).strip():
+        raise ProvenanceError(
+            f"{attestation_path} must name the off-host WORM store"
+        )
+    anchored = document.get("anchored_heads")
+    if not isinstance(anchored, dict) or not isinstance(
+        anchored.get("chains"), dict
+    ):
+        raise ProvenanceError(
+            f"{attestation_path} must embed the anchored-heads snapshot"
+        )
+    issued_at = _parse_rfc3339(
+        str(document.get("issued_at", "")), f"{attestation_path} issued_at"
+    )
+    expires_at = _parse_rfc3339(
+        str(document.get("expires_at", "")), f"{attestation_path} expires_at"
+    )
+    validity = (expires_at - issued_at).total_seconds()
+    if not 0 < validity <= 30 * 24 * 3600:
+        raise ProvenanceError(
+            f"{attestation_path} validity must be positive and at most 30 days"
+        )
+    now = datetime.now(UTC)
+    if (issued_at - now).total_seconds() > _CLOCK_SKEW_SECONDS:
+        raise ProvenanceError(f"{attestation_path} is not yet valid")
+    if now > expires_at:
+        raise ProvenanceError(f"{attestation_path} has expired")
+    return document
+
+
+def _assert_anchored_heads(run_root: Path, anchored: dict) -> None:
+    """Local chains must never be BEHIND the signed off-host anchor."""
+    current = _anchor_snapshot(run_root)
+    problems: list[str] = []
+    for name, anchored_state in (anchored.get("chains") or {}).items():
+        live_state = (current.get("chains") or {}).get(name)
+        if live_state is None:
+            problems.append(f"{name}: chain MISSING locally")
+            continue
+        if int(live_state["count"]) < int(anchored_state["count"]):
+            problems.append(
+                f"{name}: local count {live_state['count']} is BEHIND "
+                f"anchored {anchored_state['count']} (truncation/deletion)"
+            )
+        elif (
+            int(live_state["count"]) == int(anchored_state["count"])
+            and live_state["head"] != anchored_state["head"]
+        ):
+            problems.append(f"{name}: head diverged from the anchor")
+    if problems:
+        raise ProvenanceError(
+            "anchored-heads verification failed: " + "; ".join(problems)
+        )
+
+
 def load_rollout_authorization(
     authorization_path: Path,
     public_key_path: str,
     expected_cluster: str,
-    expected_plan_sha256: str,
+    expected_plan_sha256: str | None,
     run_root: Path,
     verifier=None,
+    allow_consumed: bool = False,
 ) -> tuple[dict, str]:
     """Verify an OWNER-SIGNED, single-use, plan-bound rollout authorization.
 
@@ -2924,11 +3113,35 @@ def load_rollout_authorization(
             f"{document.get('cluster')!r}, not the live cluster "
             f"{expected_cluster!r}"
         )
-    if str(document.get("plan_sha256", "")) != expected_plan_sha256:
+    plan = document.get("plan")
+    if not isinstance(plan, list) or not all(
+        isinstance(entry, dict)
+        and isinstance(entry.get("argv"), list)
+        and all(isinstance(part, str) for part in entry["argv"])
+        and (
+            entry.get("stdin_sha256") is None
+            or SHA256_PATTERN.match(str(entry.get("stdin_sha256")))
+        )
+        for entry in plan
+    ):
         raise ProvenanceError(
-            f"{authorization_path} authorizes plan "
-            f"{document.get('plan_sha256')!r}, not the computed plan "
-            f"{expected_plan_sha256!r}; the owner signs the EXACT actions"
+            f"{authorization_path} must EMBED the byte-bound plan (argv + "
+            "stdin digests); executed commands come only from the signed "
+            "document, never from a local journal"
+        )
+    embedded_sha = hashlib.sha256(
+        json.dumps(plan, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    if str(document.get("plan_sha256", "")) != embedded_sha:
+        raise ProvenanceError(
+            f"{authorization_path} plan_sha256 does not match its own "
+            "embedded plan; the owner signs the EXACT actions"
+        )
+    if expected_plan_sha256 is not None and embedded_sha != expected_plan_sha256:
+        raise ProvenanceError(
+            f"{authorization_path} authorizes plan {embedded_sha}, not the "
+            f"freshly recomputed plan {expected_plan_sha256!r}; live state "
+            "moved since the owner signed — obtain a fresh authorization"
         )
     if not DRAIN_REASON_PATTERN.match(str(document.get("reason", ""))):
         raise ProvenanceError(
@@ -2951,10 +3164,16 @@ def load_rollout_authorization(
     if now > expires_at:
         raise ProvenanceError(f"{authorization_path} has expired")
     document_sha256 = hashlib.sha256(payload).hexdigest()
-    if _is_consumed(run_root, document_sha256):
+    consumed = _is_consumed(run_root, document_sha256)
+    if consumed and not allow_consumed:
         raise ProvenanceError(
             f"{authorization_path} was already consumed; rollout "
             "authorizations are SINGLE-USE"
+        )
+    if allow_consumed and not consumed:
+        raise ProvenanceError(
+            f"{authorization_path} was never consumed; --resume only "
+            "completes a post-consume crash — run --execute instead"
         )
     return document, document_sha256
 
@@ -3444,12 +3663,21 @@ STAGE_BINDING_DUMP_SCRIPT = (
     "    conn = await asyncpg.connect(dsn=dsn)\n"
     "    try:\n"
     "        database = await conn.fetchval('SELECT current_database()')\n"
+    "        role = await conn.fetchval('SELECT current_user')\n"
+    "        search_path = await conn.fetchval('SHOW search_path')\n"
+    "        server_version = await conn.fetchval('SELECT version()')\n"
     "        migration = await conn.fetchrow(\n"
     "            'SELECT version, sha256 FROM fs2_schema_migrations '\n"
     "            'ORDER BY applied_at DESC, version DESC LIMIT 1'\n"
     "        )\n"
-    "        trigger = await conn.fetchval(\n"
-    "            \"SELECT count(*) FROM pg_trigger WHERE tgname = \"\n"
+    "        trigger = await conn.fetchrow(\n"
+    "            \"SELECT tgenabled::text AS enabled, \"\n"
+    "            \"tgrelid::regclass::text AS relation, \"\n"
+    "            \"tgrelid::oid::text AS table_oid, \"\n"
+    "            \"tgfoid::regproc::text AS function, \"\n"
+    "            \"pg_get_triggerdef(oid) AS definition, \"\n"
+    "            \"pg_get_functiondef(tgfoid) AS function_definition \"\n"
+    "            \"FROM pg_trigger WHERE tgname = \"\n"
     "            \"'fs2_scientific_batch_state_immutable_trigger'\"\n"
     "        )\n"
     "        rows = await conn.fetch(\n"
@@ -3462,20 +3690,57 @@ STAGE_BINDING_DUMP_SCRIPT = (
     "    finally:\n"
     "        await conn.close()\n"
     "    out_rows = []\n"
-    "    for row in rows:\n"
+    "    digests = []\n"
+    "    for row in sorted(rows, key=lambda r: (r['batch_id'], r['revision'])):\n"
     "        digest = hashlib.sha256("
-    "row['bindings'].encode('utf-8')).hexdigest()[:12]\n"
+    "row['bindings'].encode('utf-8')).hexdigest()\n"
+    "        digests.append([row['batch_id'], row['revision'], digest])\n"
     "        for binding in json.loads(row['bindings']):\n"
     "            out_rows.append([row['batch_id'], row['revision'],"
     " binding.get('image'), digest])\n"
     "    print(json.dumps({\n"
     "        'database': database,\n"
+    "        'role': role,\n"
+    "        'search_path': search_path,\n"
+    "        'server_version_sha256': hashlib.sha256("
+    "str(server_version).encode('utf-8')).hexdigest(),\n"
     "        'migration_version': migration['version'] if migration else None,\n"
     "        'migration_sha256': migration['sha256'] if migration else None,\n"
-    "        'trigger': bool(trigger),\n"
+    "        'trigger_enabled': trigger['enabled'] if trigger else None,\n"
+    "        'trigger_relation': trigger['relation'] if trigger else None,\n"
+    "        'table_oid': trigger['table_oid'] if trigger else None,\n"
+    "        'trigger_function': trigger['function'] if trigger else None,\n"
+    "        'trigger_definition_sha256': hashlib.sha256("
+    "trigger['definition'].encode('utf-8')).hexdigest() if trigger else None,\n"
+    "        'trigger_function_sha256': hashlib.sha256("
+    "trigger['function_definition'].encode('utf-8')).hexdigest()"
+    " if trigger else None,\n"
+    "        'rows_sha256': hashlib.sha256(json.dumps(digests,"
+    " sort_keys=True).encode('utf-8')).hexdigest(),\n"
     "        'rows': out_rows,\n"
     "    }))\n"
     "asyncio.run(main())\n"
+)
+
+AUTHORITY_FIELDS = (
+    "workload_uid",
+    "workload_resource_version",
+    "pod_name",
+    "pod_uid",
+    "image",
+    "database",
+    "role",
+    "search_path",
+    "server_version_sha256",
+    "migration_version",
+    "migration_sha256",
+    "table_oid",
+    "trigger_relation",
+    "trigger_function",
+    "trigger_definition_sha256",
+    "trigger_function_sha256",
+    "trigger_enabled",
+    "rows_sha256",
 )
 
 
@@ -3519,14 +3784,13 @@ def _verify_frozen_bindings(
                 ]
             )
         )
-        workload_uid = str((workload.get("metadata") or {}).get("uid", ""))
-        containers = (
-            (workload.get("spec") or {})
-            .get("template", {})
-            .get("spec", {})
-            .get("containers")
-            or []
+        workload_metadata = workload.get("metadata") or {}
+        workload_uid = str(workload_metadata.get("uid", ""))
+        workload_rv = str(workload_metadata.get("resourceVersion", ""))
+        template_spec = (
+            (workload.get("spec") or {}).get("template", {}).get("spec", {})
         )
+        containers = template_spec.get("containers") or []
         workload_image = str(containers[0].get("image", "")) if containers else ""
         # The authority workload itself must run verified platform code: a
         # same-name replacement changes its UID, and its image must be a
@@ -3537,6 +3801,47 @@ def _verify_frozen_bindings(
                 "platform image; rendering fails closed"
             )
         validate_digest_reference(workload_image)
+        # Racing-exec closure: resolve ONE exact pod (name + UID) first, exec
+        # into that pod — never the deployment alias, whose target can change
+        # between resolution and exec — and re-check the pod's UID afterwards.
+        selector = (
+            (workload.get("spec") or {}).get("selector", {}).get("matchLabels")
+            or {}
+        )
+        selector_text = ",".join(
+            f"{key}={value}" for key, value in sorted(selector.items())
+        )
+        pods = json.loads(
+            runner(
+                [
+                    "kubectl",
+                    "get",
+                    "pods",
+                    "-n",
+                    str(authority["namespace"]),
+                    "-l",
+                    selector_text,
+                    "-o",
+                    "json",
+                ]
+            )
+        )
+        running = sorted(
+            (
+                pod
+                for pod in pods.get("items") or []
+                if str((pod.get("status") or {}).get("phase", "")) == "Running"
+            ),
+            key=lambda pod: str((pod.get("metadata") or {}).get("name", "")),
+        )
+        if not running:
+            raise ProvenanceError(
+                "no Running pod backs the stage-binding authority workload; "
+                "rendering fails closed"
+            )
+        pod_metadata = running[0].get("metadata") or {}
+        pod_name = str(pod_metadata.get("name", ""))
+        pod_uid = str(pod_metadata.get("uid", ""))
         dump = json.loads(
             runner(
                 [
@@ -3544,7 +3849,7 @@ def _verify_frozen_bindings(
                     "exec",
                     "-n",
                     str(authority["namespace"]),
-                    str(authority["workload"]),
+                    f"pod/{pod_name}",
                     "--",
                     "python",
                     "-c",
@@ -3552,27 +3857,69 @@ def _verify_frozen_bindings(
                 ]
             )
         )
-        if not dump.get("trigger"):
+        after = json.loads(
+            runner(
+                [
+                    "kubectl",
+                    "get",
+                    "pods",
+                    "-n",
+                    str(authority["namespace"]),
+                    "-l",
+                    selector_text,
+                    "-o",
+                    "json",
+                ]
+            )
+        )
+        after_uids = {
+            str((pod.get("metadata") or {}).get("uid", ""))
+            for pod in after.get("items") or []
+        }
+        if pod_uid not in after_uids:
+            raise ProvenanceError(
+                "the authority pod changed identity during the dump; "
+                "rendering fails closed"
+            )
+        if str(dump.get("trigger_enabled") or "") not in ("O", "A"):
             raise ProvenanceError(
                 "the database immutability trigger "
-                "(fs2_scientific_batch_state_immutable_trigger) is ABSENT; "
-                "the frozen authority is unprotected — rendering fails closed"
+                "(fs2_scientific_batch_state_immutable_trigger) is absent or "
+                "disabled; the frozen authority is unprotected — rendering "
+                "fails closed"
             )
         live_authority = {
             "workload_uid": workload_uid,
+            "workload_resource_version": workload_rv,
+            "pod_name": pod_name,
+            "pod_uid": pod_uid,
             "image": workload_image,
             "database": str(dump.get("database", "")),
+            "role": str(dump.get("role", "")),
+            "search_path": str(dump.get("search_path", "")),
+            "server_version_sha256": str(dump.get("server_version_sha256", "")),
             "migration_version": str(dump.get("migration_version", "")),
             "migration_sha256": str(dump.get("migration_sha256", "")),
-            "trigger": True,
+            "table_oid": str(dump.get("table_oid", "")),
+            "trigger_relation": str(dump.get("trigger_relation", "")),
+            "trigger_function": str(dump.get("trigger_function", "")),
+            "trigger_definition_sha256": str(
+                dump.get("trigger_definition_sha256", "")
+            ),
+            "trigger_function_sha256": str(
+                dump.get("trigger_function_sha256", "")
+            ),
+            "trigger_enabled": str(dump.get("trigger_enabled", "")),
+            "rows_sha256": str(dump.get("rows_sha256", "")),
         }
         if recorded_authority != live_authority:
             raise ProvenanceError(
                 f"{inventory_path} frozen_scientific_bindings authority does "
-                "not equal the live workload/database identity (workload "
-                "UID, image, database, latest migration, trigger); a "
-                "same-name authority replacement or schema drift never "
-                "renders"
+                "not equal the live workload/pod/database identity "
+                "(UID/resourceVersion/pod, database/role/search_path/server, "
+                "migration, trigger relation/function/DEFINITION/enabled, "
+                "aggregate rows digest); a same-name authority replacement "
+                "or schema drift never renders"
             )
         for batch_id, revision, image, row_digest in dump.get("rows") or []:
             image_text = str(image or "")
@@ -3622,7 +3969,7 @@ def _security_namespaces(scope: dict) -> set[str]:
 
 def _rbac_rule_is_forbidden(
     rule: dict, binding_namespace: str | None, scope: dict
-) -> str | None:
+) -> dict | None:
     """Return the reason when an RBAC rule grants a forbidden identity path.
 
     `binding_namespace` is None for cluster-wide grants. Rules marked
@@ -3657,7 +4004,7 @@ def _rbac_rule_is_forbidden(
             continue
         if not (verbs & forbidden_verbs or "*" in verbs):
             continue
-        return str(forbidden["why"])
+        return forbidden
     return None
 
 
@@ -3674,7 +4021,7 @@ def _binding_subjects(binding: dict) -> list[str]:
     return subjects
 
 
-def _assert_iam_boundary(owner_scope: dict, live_runner) -> None:
+def _assert_iam_boundary(owner_scope: dict, live_runner, attestation: dict | None = None) -> None:
     """ENFORCE the external identity boundary at render time, read-only.
 
     The external provider/IAM control is not prose: this audit walks every
@@ -3685,7 +4032,7 @@ def _assert_iam_boundary(owner_scope: dict, live_runner) -> None:
     kube-system controller ServiceAccounts only) plus the security
     principals holds a forbidden identity path. The single bootstrap
     cluster-admin -> Group:system:masters binding is tolerated ONLY under
-    the owner's explicit provider_attested_masters attestation. Until the
+    the owner's SIGNED provider attestation. Until the
     owner executes the IAM closure at the authorized rollout window,
     rendering fails closed; afterwards, any regression re-opens the refusal.
     """
@@ -3745,12 +4092,23 @@ def _assert_iam_boundary(owner_scope: dict, live_runner) -> None:
             "rendering fails closed"
         ) from error
 
+    deploy_subjects: set[str] = set()
+    for principal in owner_scope["deploy_principals"]:
+        deploy_subjects.add(f"User:{principal}")
+        if principal.startswith("system:serviceaccount:"):
+            deploy_subjects.add(
+                "ServiceAccount:" + principal[len("system:serviceaccount:"):]
+            )
+
     def is_attested_bootstrap_masters(binding: dict) -> bool:
         # The one recognized bootstrap binding — and ONLY under the owner's
-        # explicit provider attestation that system:masters certificate
+        # SIGNED provider attestation that system:masters certificate
         # issuance is provider-held. Nothing else touching system:masters is
         # ever tolerated, and the group itself is not exemptible.
-        if not owner_scope["provider_attested_masters"]:
+        if attestation is None or (
+            str(attestation.get("masters_certificate_issuance", ""))
+            != "provider-held"
+        ):
             return False
         role_ref = binding.get("roleRef") or {}
         return (
@@ -3766,19 +4124,27 @@ def _assert_iam_boundary(owner_scope: dict, live_runner) -> None:
         if binding_namespace is None and is_attested_bootstrap_masters(binding):
             return
         for rule in rules or []:
-            reason = _rbac_rule_is_forbidden(
+            forbidden = _rbac_rule_is_forbidden(
                 rule, binding_namespace, owner_scope
             )
-            if reason is None:
+            if forbidden is None:
                 continue
             for subject in _binding_subjects(binding):
-                if subject not in allowed:
-                    binding_name = str(
-                        binding.get("metadata", {}).get("name", "?")
-                    )
-                    violations.append(
-                        f"{subject} holds '{reason}' via {binding_name}"
-                    )
+                if subject in allowed:
+                    continue
+                if (
+                    forbidden.get("permitted_role") == "deploy"
+                    and subject in deploy_subjects
+                ):
+                    # The deploy identity's own function, never an exemption
+                    # from a genuinely forbidden verb.
+                    continue
+                binding_name = str(
+                    binding.get("metadata", {}).get("name", "?")
+                )
+                violations.append(
+                    f"{subject} holds '{forbidden['why']}' via {binding_name}"
+                )
 
     for binding in cluster_bindings:
         role_ref = binding.get("roleRef") or {}
@@ -3890,13 +4256,15 @@ def _assert_identity_hygiene(owner_scope: dict, live_runner) -> None:
                         if (
                             not isinstance(expiration, int)
                             or expiration > 3600
-                            or not audience
+                            or audience != owner_scope["token_audience"]
                         ):
                             raise ProvenanceError(
                                 f"pod {namespace}/{pod_name} mounts a token "
-                                f"for {principal!r} without an explicit "
-                                "audience and <=3600s expiry; short-lived "
-                                "bound tokens are the only permitted form"
+                                f"for {principal!r} that is not bound to the "
+                                "scope's EXACT token_audience with <=3600s "
+                                "expiry; pod-bound short-lived audience-"
+                                "bound projections are the only permitted "
+                                "form"
                             )
     except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
         raise ProvenanceError(
@@ -4252,6 +4620,7 @@ def verified_allowlist(
     receipts_root: Path,
     inventory_path: Path,
     scope_path: Path,
+    attestation_path: Path | None = None,
     deploy_principals: Sequence[str] = (),
     key_path: str | None = None,
     verifier=None,
@@ -4290,6 +4659,16 @@ def verified_allowlist(
         _acceptance_chain_lock(receipts_root),
     ):
         owner_scope = load_owner_scope(Path(scope_path), pinned.path, verifier)
+        if attestation_path is None:
+            raise ProvenanceError(
+                "allow-list rendering requires --attestation: the "
+                "provider-held boundary facts and the off-host anchored-heads "
+                "snapshot enter only as an owner-SIGNED document"
+            )
+        attestation = load_provider_attestation(
+            Path(attestation_path), pinned.path, verifier
+        )
+        _assert_anchored_heads(receipts_root, attestation["anchored_heads"])
         if live_runner is None:
             live_runner = _pinned_live_runner(owner_scope)
         if pinned.sha256 != owner_scope["verification_key_sha256"]:
@@ -4340,6 +4719,11 @@ def verified_allowlist(
         # and the frozen bindings re-fetched from the exact resources they
         # claim. Signed resource identities are compared, not trusted.
         observation = collect_authoritative_observation(owner_scope, live_runner)
+        if str(attestation.get("cluster")) != observation["cluster"]:
+            raise ProvenanceError(
+                "the provider attestation pins a different cluster than the "
+                "live kube-system UID; rendering fails closed"
+            )
         sources = inventory["sources"]
         recorded_live = {
             validate_digest_reference(str(ref))
@@ -4436,7 +4820,7 @@ def verified_allowlist(
                 ) from error
             digests.append(reference.rsplit("@", 1)[1])
         _assert_policy_matches_scope(owner_scope, live_runner)
-        _assert_iam_boundary(owner_scope, live_runner)
+        _assert_iam_boundary(owner_scope, live_runner, attestation)
         _assert_identity_hygiene(owner_scope, live_runner)
         manifest = render_allowlist(
             owner_scope["registry_prefixes"],
@@ -4469,7 +4853,7 @@ def verified_allowlist(
         # END of the render too, so a mutation racing the earlier checks
         # cannot ride out with a freshly rendered artifact.
         _assert_policy_matches_scope(owner_scope, live_runner)
-        _assert_iam_boundary(owner_scope, live_runner)
+        _assert_iam_boundary(owner_scope, live_runner, attestation)
         if not already_accepted:
             _append_acceptance_head(
                 receipts_root,
@@ -4595,6 +4979,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     render.add_argument(
+        "--attestation",
+        required=True,
+        type=Path,
+        help=(
+            "owner-SIGNED provider attestation (masters/apiserver/etcd "
+            "provider-held facts + the off-host anchored-heads snapshot); "
+            "rendering fails closed without it"
+        ),
+    )
+    render.add_argument(
         "--scope",
         required=True,
         type=Path,
@@ -4690,6 +5084,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="private run root holding the chained journals and ledgers",
     )
     reconcile.add_argument(
+        "--attestation",
+        type=Path,
+        help=(
+            "owner-signed provider attestation; required to recognize the "
+            "attested bootstrap masters binding during the IAM re-audit"
+        ),
+    )
+    reconcile.add_argument(
         "--recovery",
         type=Path,
         help=(
@@ -4773,6 +5175,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.run_root,
             args.inventory,
             args.scope,
+            args.attestation,
             args.deploy_principal,
             key_path=args.key,
             max_age_hours=args.max_inventory_age_hours,
@@ -4810,9 +5213,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.command == "reconcile-boundary":
         with _PinnedPublicKey(args.public_key) as pinned:
             owner_scope = load_owner_scope(args.scope, pinned.path)
+            attestation = None
+            if args.attestation is not None:
+                attestation = load_provider_attestation(
+                    args.attestation, pinned.path
+                )
             runner = _pinned_live_runner(owner_scope)
             journal = args.run_root / "release-reconcile-journal.jsonl"
             policy_path = Path(__file__).resolve().parent / "policy.yaml"
+            inputs_store = args.run_root / "plan-inputs"
 
             def authenticate_caller() -> str:
                 whoami = json.loads(
@@ -4831,124 +5240,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                 return caller
 
-            def run_plan(plan: list[dict], stdin_payloads: dict[str, bytes]) -> None:
-                for entry in plan:
-                    stdin_sha = entry.get("stdin_sha256")
-                    input_text: str | None = None
-                    if stdin_sha:
-                        payload = stdin_payloads.get(str(stdin_sha))
-                        if (
-                            payload is None
-                            or hashlib.sha256(payload).hexdigest() != stdin_sha
-                        ):
-                            raise ProvenanceError(
-                                "plan input bytes no longer match the signed "
-                                f"digest {stdin_sha}; execution fails closed"
-                            )
-                        input_text = payload.decode("utf-8")
-                    runner(list(entry["argv"]), input_text)
-
-            if args.resume:
-                # Complete a crashed execution: the CONSUMED authorization in
-                # the journaled intent is the authority; no new document is
-                # accepted, so an intent can never run under two.
-                with _exclusive_lock(args.run_root, "release-reconcile.lock"):
-                    caller = authenticate_caller()
-                    intents = [
-                        record
-                        for record in _read_chained_records(journal)
-                        if record.get("phase") == "intent"
-                    ]
-                    completes = {
-                        record.get("plan_sha256")
-                        for record in _read_chained_records(journal)
-                        if record.get("phase") == "complete"
-                    }
-                    pending = [
-                        record
-                        for record in intents
-                        if record.get("plan_sha256") not in completes
-                    ]
-                    if not pending:
-                        print("PLAN: nothing to resume")
-                        return 0
-                    intent = pending[-1]
-                    if not _is_consumed(
-                        args.run_root, str(intent.get("authorization_sha256"))
-                    ):
-                        raise ProvenanceError(
-                            "the pending intent's authorization was never "
-                            "consumed; resume is only for post-consume "
-                            "crashes — run a fresh plan/execute instead"
-                        )
-                    stdin_payloads: dict[str, bytes] = {}
-                    for entry in intent.get("plan") or []:
-                        if entry.get("stdin_sha256"):
-                            payload = _read_evidence_bytes(
-                                policy_path, private=False
-                            )
-                            stdin_payloads[
-                                hashlib.sha256(payload).hexdigest()
-                            ] = payload
-                    run_plan(list(intent.get("plan") or []), stdin_payloads)
-                    _assert_policy_matches_scope(owner_scope, runner)
-                    _append_chained_record(
-                        journal,
-                        {
-                            "phase": "complete",
-                            "plan_sha256": intent.get("plan_sha256"),
-                            "authorization_sha256": intent.get(
-                                "authorization_sha256"
-                            ),
-                            "resumed": True,
-                            "caller": caller,
-                            "at": datetime.now(UTC).isoformat(),
-                        },
-                    )
-                return 0
-
-            plan: list[dict] = []
-            stdin_payloads = {}
-            try:
-                _assert_policy_matches_scope(owner_scope, runner)
-            except ProvenanceError as drift:
-                print(f"# policy drift detected: {drift}", file=sys.stderr)
-                # The plan binds the EXACT policy BYTES, not a pathname: the
-                # apply streams the verified content on stdin, so nothing can
-                # swap the file between signing and kubectl's read.
-                policy_bytes = _read_evidence_bytes(policy_path, private=False)
-                policy_sha = hashlib.sha256(policy_bytes).hexdigest()
-                if policy_sha != owner_scope["policy_sha256"]:
-                    raise ProvenanceError(
-                        "committed policy bytes do not match the owner-signed "
-                        "scope pin; refusing to plan an apply"
-                    ) from drift
-                stdin_payloads[policy_sha] = policy_bytes
-                plan.append(
-                    {
-                        "argv": ["kubectl", "apply", "-f", "-"],
-                        "stdin_sha256": policy_sha,
-                    }
-                )
-            violations: str | None = None
-            try:
-                _assert_iam_boundary(owner_scope, runner)
-            except ProvenanceError as violation:
-                violations = str(violation)
-                print(f"# identity-path violation: {violations}", file=sys.stderr)
-                print(
-                    "# IAM closure is an owner action executed through "
-                    "provider IAM/RBAC (see the README identity-path list); "
-                    "--execute is REFUSED while violations exist",
-                    file=sys.stderr,
-                )
-            recovery_sha = None
-            document = None
-            if args.recovery is not None:
-                document, recovery_sha = load_recovery_authorization(
-                    args.recovery, pinned.path, run_root=args.run_root
-                )
-                live_cluster = runner(
+            def live_cluster_uid() -> str:
+                return runner(
                     [
                         "kubectl",
                         "get",
@@ -4958,174 +5251,337 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "jsonpath={.metadata.uid}",
                     ]
                 ).strip()
-                if str(document.get("cluster")) != live_cluster:
-                    raise ProvenanceError(
-                        "the recovery authorization pins cluster "
-                        f"{document.get('cluster')!r}, but the LIVE "
-                        f"kube-system UID is {live_cluster!r}; a document for "
-                        "another cluster never authorizes here"
+
+            def persist_input(payload: bytes) -> str:
+                digest = hashlib.sha256(payload).hexdigest()
+                inputs_store.mkdir(mode=0o700, exist_ok=True)
+                final = inputs_store / digest
+                if not final.exists():
+                    descriptor, temp_name = tempfile.mkstemp(
+                        dir=inputs_store, prefix=".input-"
                     )
-                live_target = json.loads(
+                    try:
+                        os.write(descriptor, payload)
+                        os.fchmod(descriptor, 0o600)
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
+                    _link_no_replace_or_adopt(Path(temp_name), final, payload)
+                return digest
+
+            def load_input(digest: str) -> bytes:
+                payload = _read_evidence_bytes(
+                    inputs_store / digest, allow_hardlinks=True
+                )
+                if hashlib.sha256(payload).hexdigest() != digest:
+                    raise ProvenanceError(
+                        f"stored plan input {digest} no longer matches its "
+                        "content address; execution fails closed"
+                    )
+                return payload
+
+            def compute_plan() -> tuple[list[dict], dict | None, str | None]:
+                plan: list[dict] = []
+                recovery_document = None
+                recovery_sha = None
+                try:
+                    _assert_policy_matches_scope(owner_scope, runner)
+                except ProvenanceError as drift:
+                    print(f"# policy drift detected: {drift}", file=sys.stderr)
+                    policy_bytes = _read_evidence_bytes(
+                        policy_path, private=False
+                    )
+                    policy_sha = hashlib.sha256(policy_bytes).hexdigest()
+                    if policy_sha != owner_scope["policy_sha256"]:
+                        raise ProvenanceError(
+                            "committed policy bytes do not match the "
+                            "owner-signed scope pin; refusing to plan an "
+                            "apply"
+                        ) from drift
+                    persist_input(policy_bytes)
+                    plan.append(
+                        {
+                            "argv": ["kubectl", "apply", "-f", "-"],
+                            "stdin_sha256": policy_sha,
+                            "verify": None,
+                        }
+                    )
+                if args.recovery is not None:
+                    recovery_document, recovery_sha = (
+                        load_recovery_authorization(
+                            args.recovery, pinned.path, run_root=args.run_root
+                        )
+                    )
+                    if str(recovery_document.get("cluster")) != live_cluster_uid():
+                        raise ProvenanceError(
+                            "the recovery authorization pins a different "
+                            "cluster than the LIVE kube-system UID; a "
+                            "document for another cluster never authorizes "
+                            "here"
+                        )
+                    live_target = json.loads(
+                        runner(
+                            [
+                                "kubectl",
+                                "get",
+                                "validatingadmissionpolicybinding",
+                                recovery_document["target"],
+                                "-o",
+                                "json",
+                            ]
+                        )
+                    )
+                    live_metadata = live_target.get("metadata") or {}
+                    if (
+                        str(live_metadata.get("uid", ""))
+                        != recovery_document["target_uid"]
+                        or str(live_metadata.get("resourceVersion", ""))
+                        != recovery_document["target_resource_version"]
+                        or sorted(
+                            live_target.get("spec", {}).get(
+                                "validationActions"
+                            )
+                            or []
+                        )
+                        != sorted(recovery_document["prior_actions"])
+                    ):
+                        raise ProvenanceError(
+                            "the live target does not match the recovery "
+                            "authorization's pinned UID/resourceVersion/"
+                            "prior state; the owner must issue a fresh "
+                            "authorization against the CURRENT state"
+                        )
+                    patch = json.dumps(
+                        {
+                            "metadata": {
+                                "uid": recovery_document["target_uid"],
+                                "resourceVersion": recovery_document[
+                                    "target_resource_version"
+                                ],
+                                "annotations": {
+                                    "security.fs2.nebius.ai/recovery-authorization": recovery_sha
+                                },
+                            },
+                            "spec": {
+                                "validationActions": recovery_document[
+                                    "actions"
+                                ]
+                            },
+                        }
+                    )
+                    plan.append(
+                        {
+                            "argv": [
+                                "kubectl",
+                                "patch",
+                                "validatingadmissionpolicybinding",
+                                recovery_document["target"],
+                                "--type=merge",
+                                "-p",
+                                patch,
+                            ],
+                            "stdin_sha256": None,
+                            "verify": {
+                                "kind": "binding-actions",
+                                "target": recovery_document["target"],
+                                "actions": list(recovery_document["actions"]),
+                            },
+                        }
+                    )
+                return plan, recovery_document, recovery_sha
+
+            def entry_satisfied(entry: dict) -> bool:
+                verify = entry.get("verify")
+                if not verify or verify.get("kind") != "binding-actions":
+                    return False
+                live = json.loads(
                     runner(
                         [
                             "kubectl",
                             "get",
                             "validatingadmissionpolicybinding",
-                            document["target"],
+                            str(verify["target"]),
                             "-o",
                             "json",
                         ]
                     )
                 )
-                live_metadata = live_target.get("metadata") or {}
-                if (
-                    str(live_metadata.get("uid", "")) != document["target_uid"]
-                    or str(live_metadata.get("resourceVersion", ""))
-                    != document["target_resource_version"]
-                    or sorted(
-                        live_target.get("spec", {}).get("validationActions")
-                        or []
+                return sorted(
+                    live.get("spec", {}).get("validationActions") or []
+                ) == sorted(verify["actions"])
+
+            def run_plan(plan: list[dict]) -> None:
+                for entry in plan:
+                    if entry_satisfied(entry):
+                        # Idempotent completion: a crash after a successful
+                        # patch never reruns it against a stale RV.
+                        continue
+                    input_text = None
+                    if entry.get("stdin_sha256"):
+                        input_text = load_input(
+                            str(entry["stdin_sha256"])
+                        ).decode("utf-8")
+                    runner(list(entry["argv"]), input_text)
+
+            def postcheck(recovery_document: dict | None) -> None:
+                _assert_policy_matches_scope(owner_scope, runner)
+                if recovery_document is not None:
+                    applied = json.loads(
+                        runner(
+                            [
+                                "kubectl",
+                                "get",
+                                "validatingadmissionpolicybinding",
+                                recovery_document["target"],
+                                "-o",
+                                "json",
+                            ]
+                        )
                     )
-                    != sorted(document["prior_actions"])
-                ):
-                    raise ProvenanceError(
-                        "the live target does not match the recovery "
-                        "authorization's pinned UID/resourceVersion/prior "
-                        "state; the owner must issue a fresh authorization "
-                        "against the CURRENT state"
-                    )
-                patch = json.dumps(
-                    {
-                        "metadata": {
-                            "uid": document["target_uid"],
-                            "resourceVersion": document[
-                                "target_resource_version"
-                            ],
-                            "annotations": {
-                                "security.fs2.nebius.ai/recovery-authorization": recovery_sha
-                            },
-                        },
-                        "spec": {"validationActions": document["actions"]},
-                    }
-                )
-                plan.append(
-                    {
-                        "argv": [
-                            "kubectl",
-                            "patch",
-                            "validatingadmissionpolicybinding",
-                            document["target"],
-                            "--type=merge",
-                            "-p",
-                            patch,
-                        ],
-                        "stdin_sha256": None,
-                    }
-                )
-            plan_payload = json.dumps(plan, sort_keys=True).encode("utf-8")
-            plan_sha256 = hashlib.sha256(plan_payload).hexdigest()
-            for entry in plan:
-                print("PLAN: " + " ".join(entry["argv"]))
-            print(f"PLAN-SHA256: {plan_sha256}")
-            if not plan and not violations:
-                print("PLAN: nothing to reconcile — live state matches")
-            if args.execute:
-                if violations is not None:
-                    raise ProvenanceError(
-                        "reconcile-boundary --execute is REFUSED while "
-                        "identity-path violations exist; the owner closes "
-                        "them through provider IAM first"
-                    )
-                if os.environ.get("FS2_ROLLOUT_AUTHORIZED") != "1":
-                    raise ProvenanceError(
-                        "reconcile-boundary --execute requires the rollout "
-                        "window (FS2_ROLLOUT_AUTHORIZED=1) in addition to "
-                        "the owner-signed authorization"
-                    )
+                    if sorted(
+                        applied.get("spec", {}).get("validationActions") or []
+                    ) != sorted(recovery_document["actions"]):
+                        raise ProvenanceError(
+                            "post-check failed: the applied validationActions "
+                            "do not equal the authorized recovery actions"
+                        )
+
+            if args.resume:
                 if args.authorization is None:
                     raise ProvenanceError(
-                        "reconcile-boundary --execute requires "
-                        "--authorization: execution authority is an "
-                        "OWNER-SIGNED, plan-bound, single-use document, "
-                        "never an environment flag"
+                        "--resume requires the ORIGINAL --authorization: "
+                        "executed commands come only from the re-verified "
+                        "signed document, never from a local journal"
                     )
                 with _exclusive_lock(args.run_root, "release-reconcile.lock"):
                     caller = authenticate_caller()
-                    live_cluster = runner(
-                        [
-                            "kubectl",
-                            "get",
-                            "namespace",
-                            "kube-system",
-                            "-o",
-                            "jsonpath={.metadata.uid}",
-                        ]
-                    ).strip()
                     authorization, authorization_sha = (
                         load_rollout_authorization(
                             args.authorization,
                             pinned.path,
-                            live_cluster,
-                            plan_sha256,
+                            live_cluster_uid(),
+                            None,
                             args.run_root,
+                            allow_consumed=True,
                         )
                     )
-                    # ONE-TIME + CRASH-RESUMABLE ordering: journal the full
-                    # intent (including the byte-bound plan), CONSUME the
-                    # authorization, then execute. A crash after consume is
-                    # completed via --resume from the journaled intent — the
-                    # document can never authorize a second, different run.
-                    _append_chained_record(
-                        journal,
-                        {
-                            "phase": "intent",
-                            "plan_sha256": plan_sha256,
-                            "plan": plan,
-                            "authorization_sha256": authorization_sha,
-                            "recovery_sha256": recovery_sha,
-                            "caller": caller,
-                            "at": datetime.now(UTC).isoformat(),
-                        },
-                    )
-                    _record_consumed(
-                        args.run_root, authorization_sha, "rollout-authorization"
-                    )
-                    if recovery_sha is not None:
-                        _record_consumed(args.run_root, recovery_sha, "recovery")
-                    run_plan(plan, stdin_payloads)
-                    _assert_policy_matches_scope(owner_scope, runner)
-                    if document is not None:
-                        applied = json.loads(
-                            runner(
-                                [
-                                    "kubectl",
-                                    "get",
-                                    "validatingadmissionpolicybinding",
-                                    document["target"],
-                                    "-o",
-                                    "json",
-                                ]
-                            )
+                    completes = {
+                        record.get("authorization_sha256")
+                        for record in _read_chained_records(journal)
+                        if record.get("phase") == "complete"
+                    }
+                    if authorization_sha in completes:
+                        print("PLAN: nothing to resume — already complete")
+                        return 0
+                    intents = {
+                        record.get("authorization_sha256")
+                        for record in _read_chained_records(journal)
+                        if record.get("phase") == "intent"
+                    }
+                    if authorization_sha not in intents:
+                        raise ProvenanceError(
+                            "no journaled intent exists for this "
+                            "authorization; --resume only completes a "
+                            "post-consume crash"
                         )
-                        if sorted(
-                            applied.get("spec", {}).get("validationActions")
-                            or []
-                        ) != sorted(document["actions"]):
-                            raise ProvenanceError(
-                                "post-check failed: the applied "
-                                "validationActions do not equal the "
-                                "authorized recovery actions"
-                            )
+                    _assert_iam_boundary(owner_scope, runner, attestation)
+                    run_plan(list(authorization["plan"]))
+                    recovery_document = None
+                    if args.recovery is not None:
+                        recovery_document, _ = load_recovery_authorization(
+                            args.recovery, pinned.path
+                        )
+                    postcheck(recovery_document)
                     _append_chained_record(
                         journal,
                         {
                             "phase": "complete",
-                            "plan_sha256": plan_sha256,
                             "authorization_sha256": authorization_sha,
+                            "resumed": True,
                             "caller": caller,
                             "at": datetime.now(UTC).isoformat(),
                         },
                     )
+                return 0
+
+            if not args.execute:
+                plan, _, _ = compute_plan()
+                violations = None
+                try:
+                    _assert_iam_boundary(owner_scope, runner, attestation)
+                except ProvenanceError as violation:
+                    violations = str(violation)
+                    print(
+                        f"# identity-path violation: {violations}",
+                        file=sys.stderr,
+                    )
+                plan_sha256 = hashlib.sha256(
+                    json.dumps(plan, sort_keys=True).encode("utf-8")
+                ).hexdigest()
+                for entry in plan:
+                    print("PLAN: " + " ".join(entry["argv"]))
+                print("PLAN-DOCUMENT: " + json.dumps(plan, sort_keys=True))
+                print(f"PLAN-SHA256: {plan_sha256}")
+                if not plan and not violations:
+                    print("PLAN: nothing to reconcile — live state matches")
+                return 0
+
+            # EXECUTE: everything observed and re-verified UNDER the lock —
+            # plan recomputation, recovery fences, IAM re-audit — so nothing
+            # signed refers to pre-lock state.
+            if os.environ.get("FS2_ROLLOUT_AUTHORIZED") != "1":
+                raise ProvenanceError(
+                    "reconcile-boundary --execute requires the rollout "
+                    "window (FS2_ROLLOUT_AUTHORIZED=1) in addition to the "
+                    "owner-signed authorization"
+                )
+            if args.authorization is None:
+                raise ProvenanceError(
+                    "reconcile-boundary --execute requires --authorization: "
+                    "execution authority is an OWNER-SIGNED, plan-bound, "
+                    "single-use document, never an environment flag"
+                )
+            with _exclusive_lock(args.run_root, "release-reconcile.lock"):
+                caller = authenticate_caller()
+                plan, recovery_document, recovery_sha = compute_plan()
+                plan_sha256 = hashlib.sha256(
+                    json.dumps(plan, sort_keys=True).encode("utf-8")
+                ).hexdigest()
+                _assert_iam_boundary(owner_scope, runner, attestation)
+                authorization, authorization_sha = load_rollout_authorization(
+                    args.authorization,
+                    pinned.path,
+                    live_cluster_uid(),
+                    plan_sha256,
+                    args.run_root,
+                )
+                _append_chained_record(
+                    journal,
+                    {
+                        "phase": "intent",
+                        "plan_sha256": plan_sha256,
+                        "authorization_sha256": authorization_sha,
+                        "recovery_sha256": recovery_sha,
+                        "caller": caller,
+                        "at": datetime.now(UTC).isoformat(),
+                    },
+                )
+                _record_consumed(
+                    args.run_root, authorization_sha, "rollout-authorization"
+                )
+                if recovery_sha is not None:
+                    _record_consumed(args.run_root, recovery_sha, "recovery")
+                run_plan(list(authorization["plan"]))
+                postcheck(recovery_document)
+                _append_chained_record(
+                    journal,
+                    {
+                        "phase": "complete",
+                        "authorization_sha256": authorization_sha,
+                        "caller": caller,
+                        "at": datetime.now(UTC).isoformat(),
+                    },
+                )
     elif args.command == "export-anchored-heads":
         print(json.dumps(_anchor_snapshot(args.run_root), indent=2, sort_keys=True))
     elif args.command == "verify-anchored-heads":

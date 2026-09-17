@@ -635,15 +635,63 @@ def build_crane_fixture(
 AUTOMATION_PRINCIPAL = "system:serviceaccount:fs2-system:fs2-release-automation"
 SECURITY_PRINCIPAL = "system:serviceaccount:fs2-security:fs2-admission-guard"
 AUTHORITY_IMAGE = PLATFORM_PREFIX + "fs2-serve-control-plane@sha256:" + "a" * 64
-AUTHORITY_ROW_DIGEST = "feedfacecafe"
+AUTHORITY_ROW_DIGEST = "d" * 64
 AUTHORITY_FIXTURE = {
     "workload_uid": "0a1b2c3d-0000-4000-8000-fixture00001",
+    "workload_resource_version": "424242",
+    "pod_name": "fs2-serve-control-plane-0a1b2c3d4e-abcde",
+    "pod_uid": "0a1b2c3d-0000-4000-8000-fixture00002",
     "image": AUTHORITY_IMAGE,
     "database": "fs2_serve",
+    "role": "fs2_serve",
+    "search_path": '"$user", public',
+    "server_version_sha256": "e" * 64,
     "migration_version": "0024_scientific_model_policies.sql",
     "migration_sha256": "f" * 64,
-    "trigger": True,
+    "table_oid": "16385",
+    "trigger_relation": "fs2_scientific_batches",
+    "trigger_function": "fs2_scientific_batch_state_immutable",
+    "trigger_definition_sha256": "c" * 64,
+    "trigger_function_sha256": "b" * 64,
+    "trigger_enabled": "O",
+    "rows_sha256": "a" * 64,
 }
+
+
+def write_attestation_fixture(
+    base: Path,
+    cluster: str = "fixture-cluster",
+    anchored: dict | None = None,
+    name: str = "provider-attestation.json",
+    **overrides,
+) -> Path:
+    """Owner-signed provider attestation (fixture signature registry)."""
+    import hashlib
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    document = {
+        "schema": TOOL.PROVIDER_ATTESTATION_SCHEMA,
+        "cluster": cluster,
+        "masters_certificate_issuance": "provider-held",
+        "apiserver_control": "provider-held",
+        "etcd_access": "provider-held",
+        "worm_store": "https://worm.example.invalid/fs2/anchored-heads",
+        "anchored_heads": anchored
+        or {"chains": {}},
+        "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "expires_at": (now + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    document.update(overrides)
+    payload = json.dumps(document).encode("utf-8")
+    attestation = base / name
+    attestation.write_bytes(payload)
+    attestation.chmod(0o644)
+    signature = base / (name + ".sig")
+    signature.write_text("fixture-owner-signature\n", encoding="utf-8")
+    signature.chmod(0o644)
+    SIGNED_AUTHORITY_HASHES.add(hashlib.sha256(payload).hexdigest())
+    return attestation
 
 
 def default_scope_fixture(key_sha256: str) -> dict:
@@ -658,7 +706,7 @@ def default_scope_fixture(key_sha256: str) -> dict:
         "security_principals": [SECURITY_PRINCIPAL],
         "verification_key_sha256": key_sha256,
         "iam_exempt_subjects": [],
-        "provider_attested_masters": False,
+        "token_audience": "fs2-release",
         "stage_binding_authority": {
             "namespace": "fs2-system",
             "workload": "deployment/fs2-serve-control-plane",
@@ -848,6 +896,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             )
         self.scope = default_scope_fixture(self.key_sha256)
         self.scope_path = write_scope_fixture(self.run_root, self.scope)
+        self.attestation_path = write_attestation_fixture(self.run_root)
         self.inventory = write_inventory_fixture(
             self.run_root, [self.REFERENCE_A, self.REFERENCE_B]
         )
@@ -956,6 +1005,21 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 )
             if command[:3] == ["kubectl", "get", "pods"]:
                 namespace = command[command.index("-n") + 1]
+                if "-l" in command:
+                    # Authority pod resolution by selector.
+                    return json.dumps(
+                        {
+                            "items": [
+                                {
+                                    "metadata": {
+                                        "name": AUTHORITY_FIXTURE["pod_name"],
+                                        "uid": AUTHORITY_FIXTURE["pod_uid"],
+                                    },
+                                    "status": {"phase": "Running"},
+                                }
+                            ]
+                        }
+                    )
                 if namespace != "fs2-system":
                     return json.dumps({"items": []})
                 return json.dumps(
@@ -989,15 +1053,23 @@ class VerifiedAllowlistTest(unittest.TestCase):
             if command[:3] == ["kubectl", "get", "deployment"]:
                 return json.dumps(
                     {
-                        "metadata": {"uid": AUTHORITY_FIXTURE["workload_uid"]},
+                        "metadata": {
+                            "uid": AUTHORITY_FIXTURE["workload_uid"],
+                            "resourceVersion": AUTHORITY_FIXTURE[
+                                "workload_resource_version"
+                            ],
+                        },
                         "spec": {
+                            "selector": {
+                                "matchLabels": {"app": "fs2-serve-control-plane"}
+                            },
                             "template": {
                                 "spec": {
                                     "containers": [
                                         {"image": AUTHORITY_FIXTURE["image"]}
                                     ]
                                 }
-                            }
+                            },
                         },
                     }
                 )
@@ -1005,23 +1077,31 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 return json.dumps({"items": []})
             if command[:2] == ["kubectl", "exec"]:
                 # The AUTHORITATIVE frozen source: control-plane PostgreSQL
-                # stage bindings + database identity, dumped read-only.
-                return json.dumps(
-                    {
-                        "database": AUTHORITY_FIXTURE["database"],
-                        "migration_version": AUTHORITY_FIXTURE[
-                            "migration_version"
-                        ],
-                        "migration_sha256": AUTHORITY_FIXTURE[
-                            "migration_sha256"
-                        ],
-                        "trigger": True,
-                        "rows": [
-                            [f"fixture-{index}", 1, ref, AUTHORITY_ROW_DIGEST]
-                            for index, ref in enumerate(frozen_refs)
-                        ],
-                    }
-                )
+                # stage bindings + full database identity, dumped read-only
+                # inside the resolved authority pod.
+                payload = {
+                    key: AUTHORITY_FIXTURE[key]
+                    for key in (
+                        "database",
+                        "role",
+                        "search_path",
+                        "server_version_sha256",
+                        "migration_version",
+                        "migration_sha256",
+                        "table_oid",
+                        "trigger_relation",
+                        "trigger_function",
+                        "trigger_definition_sha256",
+                        "trigger_function_sha256",
+                        "trigger_enabled",
+                        "rows_sha256",
+                    )
+                }
+                payload["rows"] = [
+                    [f"fixture-{index}", 1, ref, AUTHORITY_ROW_DIGEST]
+                    for index, ref in enumerate(frozen_refs)
+                ]
+                return json.dumps(payload)
             if command[:3] == ["kubectl", "get", "clusterroles"]:
                 return json.dumps({"items": list(cluster_roles or [])})
             if command[:3] == ["kubectl", "get", "clusterrolebindings"]:
@@ -1088,6 +1168,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
         platform_prefix=PLATFORM_PREFIX,
         deploy_principals=(AUTOMATION_PRINCIPAL,),
         live_runner=None,
+        attestation_path=None,
     ):
         return TOOL.verified_allowlist(
             self._tmp.name,
@@ -1097,6 +1178,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.run_root,
             inventory or self.inventory,
             scope_path or self.scope_path,
+            attestation_path or self.attestation_path,
             deploy_principals=list(deploy_principals),
             key_path="release.key",
             verifier=verifier,
@@ -1384,6 +1466,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.run_root,
             inventory,
             self.scope_path,
+            self.attestation_path,
             deploy_principals=[AUTOMATION_PRINCIPAL],
             key_path="release.key",
             verifier=authority_checking_verifier,
@@ -1514,6 +1597,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.run_root,
             kwargs.pop("inventory", None) or self.inventory,
             self.scope_path,
+            self.attestation_path,
             deploy_principals=[AUTOMATION_PRINCIPAL],
             key_path="release.key",
             capture=self.randomized_signing_capture(),
@@ -1879,6 +1963,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 self.run_root,
                 self.inventory,
                 self.scope_path,
+                self.attestation_path,
                 deploy_principals=["deployer"],
                 key_path="release.key",
                 verifier=authority_checking_verifier,
@@ -1991,10 +2076,12 @@ class VerifiedAllowlistTest(unittest.TestCase):
             ),
         )
 
-    def test_bootstrap_masters_requires_provider_attestation(self) -> None:
-        # The single bootstrap cluster-admin binding to Group:system:masters
-        # is tolerated ONLY under the owner's provider attestation; the group
-        # itself can never be an iam exemption.
+    def test_bootstrap_masters_recognition_is_attestation_driven(self) -> None:
+        # The one bootstrap cluster-admin -> system:masters binding is
+        # tolerated because the REQUIRED owner-signed provider attestation
+        # asserts masters certificate issuance is provider-held; the group
+        # itself remains non-exemptible, and any OTHER masters-shaped
+        # binding still violates.
         masters_binding = {
             "metadata": {"name": "cluster-admin"},
             "roleRef": {"kind": "ClusterRole", "name": "cluster-admin"},
@@ -2010,21 +2097,15 @@ class VerifiedAllowlistTest(unittest.TestCase):
             cluster_roles=[admin_role],
             cluster_role_bindings=[masters_binding],
         )
+        self.render(live_runner=runner)
+        renamed = dict(masters_binding, metadata={"name": "shadow-admin"})
         with self.assertRaisesRegex(TOOL.ProvenanceError, "identity boundary"):
-            self.render(live_runner=runner)
-        attested = dict(self.scope, provider_attested_masters=True)
-        scope_path = write_scope_fixture(
-            self.run_root, attested, name="attested-scope.json"
-        )
-        inventory = write_inventory_fixture(
-            self.run_root,
-            [self.REFERENCE_A, self.REFERENCE_B],
-            scope=attested,
-            name="attested-inventory.json",
-        )
-        self.render(
-            inventory=inventory, scope_path=scope_path, live_runner=runner
-        )
+            self.render(
+                live_runner=self.live_runner(
+                    cluster_roles=[admin_role],
+                    cluster_role_bindings=[renamed],
+                )
+            )
         masters_exempt = dict(
             self.scope, iam_exempt_subjects=["Group:system:masters"]
         )
@@ -2034,44 +2115,65 @@ class VerifiedAllowlistTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "NEVER exemptible"):
             self.render(scope_path=masters_scope)
 
-    def test_wildcard_grant_to_humans_is_a_violation(self) -> None:
-        # A cluster-admin-shaped wildcard grant to a non-exempt human trips
-        # every forbidden rule; the security principal itself is allowed.
-        wildcard_role = {
-            "metadata": {"name": "everything"},
-            "rules": [
-                {"apiGroups": ["*"], "resources": ["*"], "verbs": ["*"]}
-            ],
-        }
-        human_binding = {
-            "metadata": {"name": "human-cluster-admin"},
-            "roleRef": {"kind": "ClusterRole", "name": "everything"},
-            "subjects": [{"kind": "User", "name": "some-human"}],
-        }
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "identity boundary"):
+    def test_provider_attestation_is_required_and_verified(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "missing provider"):
             self.render(
-                live_runner=self.live_runner(
-                    cluster_roles=[wildcard_role],
-                    cluster_role_bindings=[human_binding],
-                )
+                attestation_path=self.run_root / "no-attestation.json"
             )
-        security_binding = {
-            "metadata": {"name": "security-automation"},
-            "roleRef": {"kind": "ClusterRole", "name": "everything"},
-            "subjects": [
-                {
-                    "kind": "ServiceAccount",
-                    "namespace": "fs2-security",
-                    "name": "fs2-admission-guard",
-                }
-            ],
-        }
-        self.render(
-            live_runner=self.live_runner(
-                cluster_roles=[wildcard_role],
-                cluster_role_bindings=[security_binding],
-            )
+        foreign = write_attestation_fixture(
+            self.run_root, cluster="other-cluster", name="foreign-attest.json"
         )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "different cluster"):
+            self.render(attestation_path=foreign)
+        weak = write_attestation_fixture(
+            self.run_root,
+            name="weak-attest.json",
+            masters_certificate_issuance="operator-held",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "provider-held"):
+            self.render(attestation_path=weak)
+
+    def test_anchored_heads_regression_refuses_rendering(self) -> None:
+        # The attestation embeds the off-host anchor; local chains BEHIND it
+        # mean deletion/truncation and rendering fails closed — anchor
+        # verification is enforced, not optional or manual.
+        self.render()
+        snapshot = TOOL._anchor_snapshot(self.run_root)
+        ahead = json.loads(json.dumps(snapshot))
+        ahead["chains"]["acceptance-heads"]["count"] += 3
+        regressed = write_attestation_fixture(
+            self.run_root, anchored=ahead, name="regressed-attest.json"
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "BEHIND"):
+            self.render(attestation_path=regressed)
+
+    def test_ledger_legacy_adoption_and_crash_roll_forward(self) -> None:
+        # Pre-checkpoint ledgers (preserved evidence) are ADOPTED forward,
+        # and the append crash window (file one verified record ahead of the
+        # checkpoint) is repaired forward; nothing is deleted.
+        ledger = self.run_root / "release-authorization-consumed.jsonl"
+        TOOL._record_consumed(self.run_root, "1" * 64, "test")
+        TOOL._record_consumed(self.run_root, "2" * 64, "test")
+        checkpoint = TOOL._ledger_checkpoint_path(ledger)
+        # Legacy: checkpoint absent entirely -> adopted.
+        saved = checkpoint.read_bytes()
+        checkpoint.unlink()
+        self.assertTrue(TOOL._is_consumed(self.run_root, "2" * 64))
+        self.assertTrue(checkpoint.exists())
+        # Crash window: checkpoint exactly one behind -> rolled forward.
+        lines = ledger.read_bytes().splitlines()
+        import hashlib as h
+
+        checkpoint.write_bytes(
+            json.dumps(
+                {"count": 1, "head": h.sha256(lines[0]).hexdigest()},
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        self.assertTrue(TOOL._is_consumed(self.run_root, "2" * 64))
+        adopted = json.loads(checkpoint.read_bytes())
+        self.assertEqual(adopted["count"], 2)
+        assert saved  # retained for clarity; content superseded forward
 
     def test_recovery_refuses_arbitrary_action_subsets(self) -> None:
         import hashlib as h

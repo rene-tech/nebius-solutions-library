@@ -1,14 +1,25 @@
 {
-  "schema": "fs2-serve.nebius.ai/release-scope/v7",
+  "schema": "fs2-serve.nebius.ai/release-scope/v8",
   "scope": {
     "cluster": "<kube-system-namespace-uid>",
-    "namespaces": ["fs2-models", "fs2-system"],
-    "registry_prefixes": ["cr.example-region.example.invalid/registryid/"],
+    "namespaces": [
+      "fs2-models",
+      "fs2-system"
+    ],
+    "registry_prefixes": [
+      "cr.example-region.example.invalid/registryid/"
+    ],
     "platform_repository_prefix": "cr.example-region.example.invalid/registryid/fs2-platform/",
-    "deploy_principals": ["system:serviceaccount:fs2-system:fs2-release-automation"],
-    "security_principals": ["system:serviceaccount:fs2-security:fs2-admission-guard"],
-    "iam_exempt_subjects": ["ServiceAccount:kube-system:namespace-controller"],
-    "provider_attested_masters": false,
+    "deploy_principals": [
+      "system:serviceaccount:fs2-system:fs2-release-automation"
+    ],
+    "security_principals": [
+      "system:serviceaccount:fs2-security:fs2-admission-guard"
+    ],
+    "iam_exempt_subjects": [
+      "ServiceAccount:kube-system:namespace-controller"
+    ],
+    "token_audience": "fs2-release",
     "stage_binding_authority": {
       "namespace": "fs2-system",
       "workload": "deployment/fs2-serve-control-plane"

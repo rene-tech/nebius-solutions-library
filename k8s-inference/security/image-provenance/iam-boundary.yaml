@@ -16,7 +16,8 @@
 #         sole executor of reconcile-boundary under an owner-signed,
 #         plan-bound, single-use authorization.
 #   * NO human and NO release identity holds, directly or transitively:
-#     admissionregistration writes (any current or future kind),
+#     admissionregistration writes (any current or future kind), RBAC
+#     role/binding mutation,
 #     impersonation in any dimension (users/groups/serviceaccounts/uids/
 #     userextras/*), ServiceAccount token minting (serviceaccounts/token or
 #     legacy token-Secret writes), RBAC bind/escalate, CSR
@@ -92,8 +93,15 @@ subjects:
     namespace: fs2-security
     name: fs2-admission-guard
 ---
-# RELEASE identity: Helm release Secrets in fs2-system ONLY (the helm
-# governance policy additionally pins the principal), plus workload apply.
+# RELEASE identity: workload apply ONLY. It holds NO forbidden verb — in
+# particular NO Secret verbs at all: Helm release state moves out of Secrets
+# entirely (HELM_DRIVER=sql against the control-plane PostgreSQL; the DSN
+# reaches the deploy job as a pod-mounted credential provisioned by the
+# owner, never through Secret API access), application Secret PROVISIONING
+# is a separated security/owner duty (charts must not template Secrets —
+# integration requirement), and with an EMPTY deploy-principals list the
+# fs2-helm-release-governance policy then denies every helm.sh/release.v1
+# Secret write outright, strictly stronger than principal pinning.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -102,9 +110,6 @@ metadata:
   labels:
     security.fs2.nebius.ai/finding: sai-09
 rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["create", "update", "patch", "get", "list"]
   - apiGroups: ["", "apps", "batch"]
     resources:
       - pods

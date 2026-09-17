@@ -353,14 +353,29 @@ the right at all):
    patch and prints the canonical PLAN-SHA256 over the BYTE-BOUND plan (a
    policy apply streams the verified bytes on stdin — the plan pins content,
    never a pathname). Execution is `--execute` PLUS an owner-signed
-   `--authorization` document pinning that exact PLAN-SHA256 and the LIVE
-   kube-system UID (single-use via the chained consume ledger), the
-   authenticated caller must be a scope security principal, the rollout
-   window flag is only an ADDITIONAL guard, identity-path violations refuse
-   execution outright, and the sequence is crash-safe one-time: journal the
-   full intent, CONSUME the authorization, execute under an exclusive lock,
-   post-check, journal complete — a crash after consume is finished with
-   `--resume` from the journaled intent, never with a second authorization.
+   `--authorization` document that EMBEDS the full byte-bound plan (argv +
+   stdin digests; executed commands come only from the verified signed
+   document, never from a local journal) and pins its PLAN-SHA256 and the
+   LIVE kube-system UID (single-use via the chained consume ledger). Under
+   the exclusive lock the plan is RECOMPUTED, the recovery fences and the
+   IAM boundary are re-verified, and the authorization must match the
+   recomputed plan exactly — live drift means the owner re-signs. The
+   authenticated caller must be a scope security principal; the rollout
+   window flag is only an ADDITIONAL guard; identity-path violations refuse
+   execution outright. Sequence: journal intent, CONSUME, execute with
+   per-entry idempotence (an entry whose target state already holds is
+   skipped, so a crash after a successful patch never reruns a stale RV),
+   post-check, journal complete keyed by the AUTHORIZATION hash. A crash
+   after consume is finished with `--resume`, which requires RE-PRESENTING
+   the original signed authorization (re-verified; plan taken from the
+   document; stdin bytes from the content-addressed plan-inputs store
+   checked against the SIGNED digests; live cluster UID re-checked) — never
+   a second authorization and never journal-supplied commands. Ledgers and
+   journals are chain-verified with head checkpoints on every read; a
+   pre-checkpoint legacy ledger whose chain verifies is ADOPTED forward
+   (checkpoint written, nothing deleted), and the append crash window
+   (JSONL exactly one verified record ahead of the checkpoint) rolls the
+   checkpoint forward — truncation and rewrites still fail closed.
    Recovery documents are additionally LIVE-CLUSTER-BOUND: their pinned
    cluster must equal the live kube-system namespace UID at plan time.
 
@@ -428,7 +443,7 @@ policies; only new admissions are.
   only enumerated Kubernetes bootstrap identities and kube-system controller
   ServiceAccounts are exemptible, Group:system:masters never is, and the
   single bootstrap cluster-admin binding is tolerated only under the
-  explicit `provider_attested_masters` attestation. The security principals
+  OWNER-SIGNED provider attestation. The security principals
   themselves are verified LIVE: each ServiceAccount must exist and carry no
   long-lived token Secret (TokenRequest-only, so "short-lived automation
   identity" is checked against the cluster, not asserted). External
@@ -464,18 +479,39 @@ policies; only new admissions are.
   fs2_schema_migrations), and the presence of the immutability trigger, and
   every row identity carries a content digest
   (batch/<id>/rev/<n>/<sha12-of-bindings-jsonb>) — all compared against the
-  live dump on every render. The PREVENTIVE boundary is DEFINED in source
-  (`iam-boundary.yaml`: the fs2-security namespace, both automation
-  ServiceAccounts with automountServiceAccountToken: false, and their
-  minimal RBAC; `release-scope.example.json`: the fully populated scope
-  template) and is applied only at the authorized rollout window. Identity
-  hygiene is verified for BOTH automation identities (security and deploy):
-  existence, automount disabled, no legacy token Secret, and any pod running
-  as them may mount identity only through audience-bound projections with
-  expirationSeconds <= 3600. The wholesale kube-system ServiceAccount GROUP
-  is not exemptible (controllers are exempted individually by name), Secret
-  WRITES in protected namespaces are a forbidden identity path (legacy
-  token minting), and impersonation matching covers named userextras
+  live dump on every render — including the workload resourceVersion, the
+  exact resolved pod (name + UID; the dump execs into that pod, never the
+  deployment alias, and the pod's UID is re-checked afterwards), the
+  database name/role/search_path, a server-version digest, the latest
+  applied migration, the trigger's relation/function/full-DEFINITION
+  digests and enabled state, per-row FULL sha256 digests
+  (batch/<id>/rev/<n>/<sha256>), and an aggregate rows digest. The
+  boundary-definition files in this directory are exactly that —
+  DEFINITIONS, consistent with the residual note below: `iam-boundary.yaml`
+  carries the Kubernetes-applicable subset (namespace, both automation
+  ServiceAccounts with automountServiceAccountToken: false, minimal RBAC in
+  which the RELEASE identity holds NO forbidden verb — no Secret access at
+  all: Helm state uses HELM_DRIVER=sql and Secret provisioning is a
+  separated owner/security duty) which becomes PREVENTIVE only when applied
+  at the authorized rollout window, while the PROVIDER-HELD arm
+  (system:masters certificate issuance, apiserver/static admission, etcd)
+  enters as the OWNER-SIGNED provider attestation (`--attestation`,
+  required by every render): a signed, cluster-pinned, time-bounded
+  document that also embeds the latest off-host anchored-heads snapshot and
+  WORM store URI, which the renderer enforces against the local chains —
+  nothing here is a comment or a manual export, and nothing in this tree
+  claims source-applied prevention. Identity hygiene is verified for BOTH
+  automation identities (security and deploy): existence, automount
+  disabled, no legacy token Secret, and any pod running as them may mount
+  identity only through pod-bound projections carrying the scope's EXACT
+  `token_audience` with expirationSeconds <= 3600. The wholesale
+  kube-system ServiceAccount GROUP is not exemptible (controllers are
+  exempted individually by name), Secret READS AND WRITES in protected
+  namespaces are forbidden identity paths (exfiltration and legacy token
+  minting), RBAC role/binding MUTATION is a forbidden delegation path,
+  workload writes in the scope namespaces are permitted ONLY to the deploy
+  identity itself (anyone else creating a pod there could mount the release
+  ServiceAccount), and impersonation matching covers named userextras
   subresources. Remote verification is pinned END TO END, allowlist-style: the
   SOURCE-PINNED git binary (`/usr/bin/git`, never a PATH lookup) runs
   outside any repository with an environment built FROM SCRATCH (fixed
@@ -488,7 +524,8 @@ policies; only new admissions are.
   collector executes a READ-ONLY SELECT inside the owner-scope-pinned
   control-plane workload (its own asyncpg + DATABASE_URL; credentials never
   leave the pod) and the signed source's refs and `batch/<id>/rev/<n>`
-  identities must equal the database enumeration exactly — ConfigMaps are
+  identities (now digest-suffixed) must equal the database enumeration
+  exactly — ConfigMaps are
   at most a materialization, and a same-name ConfigMap swap changes nothing
   the database did not record. Crash remnants cannot wedge recovery and are
   DISTINGUISHABLE from attacker links: receipt publication writes a chained
