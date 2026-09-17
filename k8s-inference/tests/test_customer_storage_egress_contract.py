@@ -128,7 +128,7 @@ def test_workloads_root_only_reads_the_external_versioned_boundary() -> None:
         'data.kubernetes_config_map_v1.customer_storage_egress_trust[0].data["public-key.pem"]'
         in source
     )
-    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v4" in source
+    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v5" in source
     assert '"uv"' in source and '"--frozen"' in source
     assert "egress_contract_public_key_pem" not in source
 
@@ -153,7 +153,7 @@ def test_separate_security_owner_is_append_only_and_credential_isolated() -> Non
     assert 'resource "kubernetes_network_policy_v1" "contract"' in source
     assert 'failurePolicy = "Fail"' in source
     assert 'operations  = ["CREATE", "UPDATE", "DELETE"]' in source
-    assert "expression = \"request.operation == 'CREATE'\"" in source
+    assert "security generations are create-only" in source
     assert "request.userInfo.groups.exists" in source
     assert "security-owner-subject-sha256" in source
     assert "workloads-subject-sha256" in source
@@ -209,7 +209,9 @@ def test_provider_authority_is_external_content_bound_and_non_destructive() -> N
     assert 'destination_ports = [53]' in source
     assert 'destination_ports = [5432]' in source
     assert 'destination_cidrs = ["0.0.0.0/0"]' not in source
-    assert source.count("prevent_destroy = true") == 6
+    assert source.count("prevent_destroy = true") >= 8
+    assert source.count("for_each = local.all_generations") == 6
+    assert source.count("ignore_changes  = all") >= 7
     assert "/etc/fs2-security-ro/authority/customer-storage-egress-authority.json" in verifier
     assert "/var/lib/fs2-security-checkpoints-ro/customer-storage-egress-prior-head.json" in verifier
     assert "O_NOFOLLOW" in verifier
@@ -230,6 +232,7 @@ def test_provider_authority_is_external_content_bound_and_non_destructive() -> N
     assert '"generation_chain_anchor_sha256"' in verifier
     assert 'installed_predecessor != prior_head["head_generation_sha256"]' in verifier
     assert '"authority_gate_generations"' in verifier
+    assert '"retained_generations"' in verifier
     assert "boundary_policy_sha256" in verifier
     assert "nebius_terraform_provider_version" in verifier
     assert "predecessor_sha256" in verifier
@@ -418,12 +421,17 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert 'resource "kubernetes_manifest" "boundary_policy_v3"' in boundary
     assert 'resource "terraform_data" "security_generation_v4"' in boundary
     assert "successor_workload_policy_generations" in boundary
+    assert "protected_node_target_cel" in boundary
+    assert "current_release_helm_record_name" in boundary
+    assert 'data "kubernetes_resource" "retained_boundary_policy_v3"' in boundary
+    assert 'data "kubernetes_resource" "retained_workload_policy_v3"' in boundary
     assert "rbac_subjects" in owner
     assert "undeclared ServiceAccount subject" in owner
     assert '"pods/binding"' in owner
     assert '"nodes/proxy"' in owner
     assert '"impersonate-users": ("impersonate", "users")' in owner
     assert "effective_authority_sha256" in owner
+    assert "verify_subject_inventory" in owner
     assert '"state", "pull"' in provider_backend
     assert '"state", "pull"' in boundary_backend
     workloads = TERRAFORM.read_text(encoding="utf-8")
@@ -435,10 +443,16 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert "atomic           = false" in control_plane
     assert "cleanup_on_fail  = false" in control_plane
     apply_wrapper = (Path(__file__).parents[1] / "security/apply_custodied_additive_plan.py").read_text(encoding="utf-8")
-    assert 'SAFE_ACTIONS = {(), ("no-op",), ("read",), ("create",)}' in apply_wrapper
+    assert 'SAFE_ACTIONS = {("no-op",), ("read",), ("create",)}' in apply_wrapper
     assert '"apply", "-input=false"' in apply_wrapper
     assert "source_commit" in apply_wrapper and "successor_state_contract" in apply_wrapper
     assert "version_before != version_after" in apply_wrapper
+    assert "EXECUTION_PUBLIC_KEY" in apply_wrapper
+    assert 'parser.add_argument("--public-key"' not in apply_wrapper
+    assert '"TF_DATA_DIR"' in apply_wrapper
+    assert "Terraform backend descriptor" in apply_wrapper
+    assert "_verify_sai10_ancestry" in apply_wrapper
+    assert "customer_storage_integration_dependencies" in workloads
 
 
 def test_predecessor_vap_compatibility_is_signed_and_selector_disjoint() -> None:

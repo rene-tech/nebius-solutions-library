@@ -37,12 +37,22 @@ principals, accepted custody and complete Kubernetes credential inventory plus
 a fresh exact RBAC object/subject inventory. A
 second security-owner root adds immutable,
 generation-named contract, trust and NetworkPolicy objects as defense in depth.
+The signed RBAC inventory also binds each ServiceAccount and system User/Group
+to its direct-plus-group rule digest and fully expanded dangerous capability
+set; a matching cluster-wide hash without per-subject authority equality is
+rejected. Release ConfigMap create is admission-mediated to the exact Helm v1
+record, update/patch is RBAC-restricted to that name, and delete is forbidden.
 The reconciler verifies the signed bytes, freshness, live DNS, and the effective
 union of every NetworkPolicy selecting its full actual label set, including its
 controller-assigned `pod-template-hash`, before readiness.
 Admission continuously permits only the exact content-bound selecting policy;
 an additional signed policy constrains every Pod or workload-producing object
 to the exact Secret allowlist, image and provider-protected node target.
+The same retained policy denies non-system namespaces from using a protected
+generation's selector, taint (including blanket `Exists` tolerations), or
+direct `nodeName`. Every retained v3 policy and Deny binding is re-read and
+compared with the canonical separately signed prior checkpoint before a new
+generation is admitted.
 Public runtime NetworkPolicies do not contain a customer-storage HTTPS
 exception.
 
@@ -158,10 +168,16 @@ Both security roots verify actual remote state lineage, serial, snapshot bytes,
 non-empty exact managed addresses, and object-store version through fixed
 root-owned read-only adapters. The provider prior-state receipt carries an
 installed-generation hash chain ending at the separately anchored prior head.
+It also carries the complete payload for every retained or partially installed
+generation; all provider resources iterate retained-plus-new keys at their
+original addresses, so rotation cannot plan predecessor deletion and then fail
+at `prevent_destroy`.
 The only future apply path descriptor-binds an externally signed exact saved
-plan to a clean source commit/tree and predecessor state, permits only
-create/read/no-op, and verifies the actual successor state. It has no cleanup
-or state-forget mode.
+plan to a clean source commit/tree and predecessor state under fixed
+root-owned read-only key, binary, plugin/data, CLI-config, environment and
+backend custody. It rejects rejected-SAI-10 ancestry, permits only
+create/read/no-op, freezes the backend descriptor across execution, and
+verifies the actual successor state. It has no cleanup or state-forget mode.
 
 The two Secrets are supplied by the credential rotation system and each exposes
 only a `credentials.json` key to the reconciler. Do not manage their private
@@ -185,13 +201,13 @@ Use provider IDs obtained from a read-only inventory; never infer them from
 display names.
 
 The sixth historical resource, `tls_private_key.provisioner`, is deliberately
-not adopted. Back up the old state, rotate to an externally generated expiring
-key during the coordinated rollout, verify the new public-key identity, and
-then remove only that obsolete private-key address from the retired state. The
-pre-apply plan must show the five resources adopted without replacement, the
-resource provisioner permit changing from `admin` to `editor`, and only the new
-IAM-binder resources being created. Any bucket, customer identity, membership,
-or access-key deletion is a stop condition.
+not adopted. Under the active no-delete/no-revoke constraint it remains
+preserved: no state removal, key rotation, credential revocation, replacement,
+or live IAM change is authorized by this source task. A later separately
+approved security-owner window must supply an additive, reversible plan and
+fresh independent review before any credential transition. Any bucket,
+customer identity, membership, access-key, state-address, or existing resource
+deletion is a stop condition.
 
 ## API and audit contract
 

@@ -61,10 +61,29 @@ variable "customer_storage" {
         provider_authority_adapter_sha256                 = optional(string, "")
         provider_state_custody_sha256                     = optional(string, "")
         boundary_state_custody_sha256                     = optional(string, "")
-        workloads_service_account_sha256                  = optional(string, "")
-        accepted_sai10_commit                             = optional(string, "")
-        accepted_sai10_tree                               = optional(string, "")
-        sai10_independent_review_receipt_sha256           = optional(string, "")
+        retained_v3_boundary_policies = optional(map(object({
+          name          = string
+          policy_sha256 = string
+          policy_spec   = any
+          binding_spec = object({
+            policyName        = string
+            validationActions = list(string)
+          })
+        })), {})
+        retained_v3_workload_policies = optional(map(object({
+          name          = string
+          policy_sha256 = string
+          policy_spec   = any
+          binding_spec = object({
+            policyName        = string
+            validationActions = list(string)
+          })
+        })), {})
+        retained_v3_admission_custody_sha256    = optional(string, "")
+        workloads_service_account_sha256        = optional(string, "")
+        accepted_sai10_commit                   = optional(string, "")
+        accepted_sai10_tree                     = optional(string, "")
+        sai10_independent_review_receipt_sha256 = optional(string, "")
       }), {})
       predecessor_compatibility = optional(object({
         schema                 = optional(string, "")
@@ -108,7 +127,7 @@ variable "customer_storage" {
         timecmp(var.customer_storage.auth_key_expires_at, plantimestamp()) > 0 &&
         timecmp(var.customer_storage.auth_key_expires_at, timeadd(plantimestamp(), "2160h")) <= 0 &&
         var.customer_storage.egress_contract_json != "" &&
-        var.customer_storage.egress_boundary.schema == "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v4" &&
+        var.customer_storage.egress_boundary.schema == "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v5" &&
         can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.generation)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.contract_sha256)) &&
         endswith(var.customer_storage.egress_boundary.generation, substr(var.customer_storage.egress_boundary.contract_sha256, 0, 12)) &&
@@ -125,7 +144,7 @@ variable "customer_storage" {
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.workloads_subject_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.identity_inventory_sha256)) &&
         var.customer_storage.egress_boundary.security_owner_subject_sha256 != var.customer_storage.egress_boundary.workloads_subject_sha256 &&
-        var.customer_storage.egress_boundary.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v3" &&
+        var.customer_storage.egress_boundary.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v4" &&
         var.customer_storage.egress_boundary.provider_authority.contract_sha256 == var.customer_storage.egress_boundary.contract_sha256 &&
         can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.provider_authority.generation)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.authority_manifest_sha256)) &&
@@ -154,6 +173,11 @@ variable "customer_storage" {
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.provider_authority_adapter_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.provider_state_custody_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.boundary_state_custody_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.retained_v3_admission_custody_sha256)) &&
+        sha256(jsonencode({
+          retained_v3_boundary_policies = var.customer_storage.egress_boundary.provider_authority.retained_v3_boundary_policies
+          retained_v3_workload_policies = var.customer_storage.egress_boundary.provider_authority.retained_v3_workload_policies
+        })) == var.customer_storage.egress_boundary.provider_authority.retained_v3_admission_custody_sha256 &&
         var.customer_storage.egress_boundary.identity_inventory_sha256 == var.customer_storage.egress_boundary.provider_authority.kubernetes_identity_inventory_sha256 &&
         can(regex("^[a-f0-9]{40}$", var.customer_storage.egress_boundary.provider_authority.accepted_sai10_commit)) &&
         can(regex("^[a-f0-9]{40}$", var.customer_storage.egress_boundary.provider_authority.accepted_sai10_tree)) &&
@@ -206,6 +230,47 @@ data "external" "customer_storage_egress" {
   query = {
     contract_json  = var.customer_storage.egress_contract_json
     public_key_pem = data.kubernetes_config_map_v1.customer_storage_egress_trust[0].data["public-key.pem"]
+  }
+}
+
+# The ordinary workloads root must pass the same exact ancestry and custody
+# gate as the separately credentialed security roots. A digest-looking commit
+# string is not authority: the verifier resolves the Git objects, rejects the
+# rejected SAI-10 lineage as an ancestor of either custody or HEAD, and binds
+# every handoff digest to the independently accepted dependency record.
+data "external" "customer_storage_integration_dependencies" {
+  count = var.customer_storage.enabled ? 1 : 0
+  program = [
+    "uv",
+    "run",
+    "--frozen",
+    "--project",
+    "${path.module}/../../components/control-plane",
+    "python",
+    "${path.module}/../../security/verify_sai08_integration_dependencies.py",
+  ]
+  query = {
+    dependency_record_path = "${path.module}/../../security/sai-08-integration-dependencies.json"
+    expected_dependencies_json = jsonencode({
+      sai_10_accepted_commit                            = var.customer_storage.egress_boundary.provider_authority.accepted_sai10_commit
+      sai_10_accepted_tree                              = var.customer_storage.egress_boundary.provider_authority.accepted_sai10_tree
+      sai_10_independent_review_receipt_sha256          = var.customer_storage.egress_boundary.provider_authority.sai10_independent_review_receipt_sha256
+      provider_authority_manifest_sha256                = var.customer_storage.egress_boundary.provider_authority.authority_manifest_sha256
+      provider_authority_prior_head_receipt_sha256      = var.customer_storage.egress_boundary.provider_authority.prior_head_receipt_sha256
+      provider_project_iam_inventory_receipt_sha256     = var.customer_storage.egress_boundary.provider_authority.provider_project_iam_inventory_receipt_sha256
+      provider_effective_authority_graph_receipt_sha256 = var.customer_storage.egress_boundary.provider_authority.provider_effective_authority_graph_receipt_sha256
+      provider_authority_adapter_sha256                 = var.customer_storage.egress_boundary.provider_authority.provider_authority_adapter_sha256
+      provider_state_custody_sha256                     = var.customer_storage.egress_boundary.provider_authority.provider_state_custody_sha256
+      boundary_state_custody_sha256                     = var.customer_storage.egress_boundary.provider_authority.boundary_state_custody_sha256
+      retained_v3_admission_custody_sha256              = var.customer_storage.egress_boundary.provider_authority.retained_v3_admission_custody_sha256
+      kubernetes_rbac_inventory_receipt_sha256          = var.customer_storage.egress_boundary.provider_authority.kubernetes_rbac_inventory_receipt_sha256
+      kubernetes_rbac_effective_authority_sha256        = var.customer_storage.egress_boundary.provider_authority.kubernetes_rbac_effective_authority_sha256
+      kubernetes_service_account_inventory_sha256       = var.customer_storage.egress_boundary.provider_authority.kubernetes_service_account_inventory_sha256
+      kubernetes_system_subject_inventory_sha256        = var.customer_storage.egress_boundary.provider_authority.kubernetes_system_subject_inventory_sha256
+      workload_policy_sha256                            = var.customer_storage.egress_boundary.provider_authority.workload_policy_sha256
+      predecessor_state_custody_sha256                  = var.customer_storage.egress_boundary.provider_authority.predecessor_state_custody_sha256
+      live_predecessor_compatibility_handoff_sha256     = var.customer_storage.egress_boundary.predecessor_compatibility.receipt_sha256
+    })
   }
 }
 
@@ -303,6 +368,34 @@ data "kubernetes_resource" "customer_storage_workload_binding" {
   api_version = "admissionregistration.k8s.io/v1"
   kind        = "ValidatingAdmissionPolicyBinding"
   metadata { name = var.customer_storage.egress_boundary.workload_policy_name }
+}
+
+data "kubernetes_resource" "customer_storage_retained_boundary_policy" {
+  for_each    = var.customer_storage.enabled ? var.customer_storage.egress_boundary.provider_authority.retained_v3_boundary_policies : {}
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicy"
+  metadata { name = each.value.name }
+}
+
+data "kubernetes_resource" "customer_storage_retained_boundary_binding" {
+  for_each    = var.customer_storage.enabled ? var.customer_storage.egress_boundary.provider_authority.retained_v3_boundary_policies : {}
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicyBinding"
+  metadata { name = each.value.name }
+}
+
+data "kubernetes_resource" "customer_storage_retained_workload_policy" {
+  for_each    = var.customer_storage.enabled ? var.customer_storage.egress_boundary.provider_authority.retained_v3_workload_policies : {}
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicy"
+  metadata { name = each.value.name }
+}
+
+data "kubernetes_resource" "customer_storage_retained_workload_binding" {
+  for_each    = var.customer_storage.enabled ? var.customer_storage.egress_boundary.provider_authority.retained_v3_workload_policies : {}
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicyBinding"
+  metadata { name = each.value.name }
 }
 
 module "customer_storage_provisioner" {
@@ -439,6 +532,10 @@ resource "terraform_data" "customer_storage_external_egress_boundary" {
 
   lifecycle {
     precondition {
+      condition     = data.external.customer_storage_integration_dependencies[0].result.authorized == "true"
+      error_message = "Customer-storage workloads cannot consume rejected or unaccepted SAI-10/custody ancestry."
+    }
+    precondition {
       condition     = data.external.customer_storage_egress[0].result.contract_sha256 == var.customer_storage.egress_boundary.contract_sha256
       error_message = "The live/fresh signed contract digest differs from the external security-owner handoff."
     }
@@ -493,6 +590,24 @@ resource "terraform_data" "customer_storage_external_egress_boundary" {
         try(data.kubernetes_resource.customer_storage_workload_binding[0].object.spec.validationActions, []) == ["Deny"]
       )
       error_message = "The exhaustive content-bound successor workload admission boundary is absent."
+    }
+    precondition {
+      condition = alltrue([
+        for generation, expected in var.customer_storage.egress_boundary.provider_authority.retained_v3_boundary_policies :
+        try(data.kubernetes_resource.customer_storage_retained_boundary_policy[generation].object.spec, null) == expected.policy_spec &&
+        sha256(jsonencode(try(data.kubernetes_resource.customer_storage_retained_boundary_policy[generation].object.spec, null))) == expected.policy_sha256 &&
+        try(data.kubernetes_resource.customer_storage_retained_boundary_binding[generation].object.spec, null) == expected.binding_spec
+      ])
+      error_message = "A retained customer-storage boundary VAP or Deny binding drifted from signed custody."
+    }
+    precondition {
+      condition = alltrue([
+        for generation, expected in var.customer_storage.egress_boundary.provider_authority.retained_v3_workload_policies :
+        try(data.kubernetes_resource.customer_storage_retained_workload_policy[generation].object.spec, null) == expected.policy_spec &&
+        sha256(jsonencode(try(data.kubernetes_resource.customer_storage_retained_workload_policy[generation].object.spec, null))) == expected.policy_sha256 &&
+        try(data.kubernetes_resource.customer_storage_retained_workload_binding[generation].object.spec, null) == expected.binding_spec
+      ])
+      error_message = "A retained customer-storage workload VAP or Deny binding drifted from signed custody."
     }
   }
 

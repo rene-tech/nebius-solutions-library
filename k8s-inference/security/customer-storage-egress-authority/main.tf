@@ -42,8 +42,10 @@ data "external" "backend_custody" {
 }
 
 locals {
-  authority   = jsondecode(data.external.authority.result.manifest_json)
-  generations = jsondecode(data.external.authority.result.generations_json)
+  authority            = jsondecode(data.external.authority.result.manifest_json)
+  generations          = jsondecode(data.external.authority.result.generations_json)
+  retained_generations = jsondecode(data.external.authority.result.retained_generations_json)
+  all_generations      = merge(local.retained_generations, local.generations)
   retained_authority_gate_generations = setunion(
     toset(jsondecode(data.external.authority.result.prior_authority_gate_generations_json)),
     toset(keys(local.generations)),
@@ -119,7 +121,7 @@ resource "terraform_data" "external_authority_v4" {
 
   input = {
     generation                                 = each.key
-    generation_sha256                          = try(sha256(jsonencode(local.generations[each.key])), "retained-by-prior-state-custody")
+    generation_sha256                          = sha256(jsonencode(local.all_generations[each.key]))
     manifest_sha256                            = data.external.authority.result.manifest_sha256
     prior_head_receipt_sha256                  = data.external.authority.result.prior_head_receipt_sha256
     provider_identity_sha256                   = data.external.provider_identity.result.provider_identity_sha256
@@ -148,7 +150,7 @@ resource "terraform_data" "external_authority_v4" {
 }
 
 resource "nebius_vpc_v1_security_group" "generation" {
-  for_each = local.generations
+  for_each = local.all_generations
 
   parent_id  = local.authority.authority_project_id
   network_id = local.authority.network_id
@@ -157,13 +159,14 @@ resource "nebius_vpc_v1_security_group" "generation" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = all
   }
 
   depends_on = [terraform_data.external_authority_v4]
 }
 
 resource "nebius_vpc_v1_security_rule" "private_ingress" {
-  for_each = local.generations
+  for_each = local.all_generations
 
   parent_id = nebius_vpc_v1_security_group.generation[each.key].id
   name      = "fs2-storage-private-${each.key}"
@@ -179,11 +182,12 @@ resource "nebius_vpc_v1_security_rule" "private_ingress" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = all
   }
 }
 
 resource "nebius_vpc_v1_security_rule" "dns_egress" {
-  for_each = local.generations
+  for_each = local.all_generations
 
   parent_id = nebius_vpc_v1_security_group.generation[each.key].id
   name      = "fs2-storage-dns-${each.key}"
@@ -199,11 +203,12 @@ resource "nebius_vpc_v1_security_rule" "dns_egress" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = all
   }
 }
 
 resource "nebius_vpc_v1_security_rule" "database_egress" {
-  for_each = local.generations
+  for_each = local.all_generations
 
   parent_id = nebius_vpc_v1_security_group.generation[each.key].id
   name      = "fs2-storage-db-${each.key}"
@@ -219,11 +224,12 @@ resource "nebius_vpc_v1_security_rule" "database_egress" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = all
   }
 }
 
 resource "nebius_vpc_v1_security_rule" "provider_egress" {
-  for_each = local.generations
+  for_each = local.all_generations
 
   parent_id = nebius_vpc_v1_security_group.generation[each.key].id
   name      = "fs2-storage-provider-${each.key}"
@@ -243,11 +249,12 @@ resource "nebius_vpc_v1_security_rule" "provider_egress" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = all
   }
 }
 
 resource "nebius_mk8s_v1_node_group" "generation" {
-  for_each = local.generations
+  for_each = local.all_generations
 
   parent_id        = local.authority.cluster_id
   name             = "fs2-storage-egress-${each.key}"
@@ -295,6 +302,7 @@ resource "nebius_mk8s_v1_node_group" "generation" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = all
   }
 
   depends_on = [

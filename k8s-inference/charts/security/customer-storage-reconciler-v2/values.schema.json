@@ -20,7 +20,7 @@
       "additionalProperties": false,
       "required": ["schema", "generation", "manifestSha256", "priorHeadReceiptSha256", "iamInventoryReceiptSha256", "rbacInventoryReceiptSha256", "predecessorCompatibilitySha256", "boundaryPolicySha256", "workloadPolicySha256", "releaseValuesSha256", "providerIdentitySha256", "securityGroupId", "nodeGroupId", "nodeSelectorKey", "nodeSelectorValue", "taintKey", "taintValue", "taintEffect"],
       "properties": {
-        "schema": {"const": "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v3"},
+        "schema": {"const": "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v4"},
         "generation": {"type": "string", "pattern": "^g[0-9]{14}-[a-f0-9]{12}$"},
         "manifestSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "priorHeadReceiptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
