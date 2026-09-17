@@ -274,7 +274,7 @@ def validate(bundle: dict[str, Any], query: dict[str, str], trust: dict[str, str
         "v1",
         "Secret",
         "fs2-system",
-        f"fs2-pod-security-token-anchor-v3-{trust['custody_epoch_sha256']}",
+        f"fs2-pod-security-token-anchor-v4-{trust['custody_epoch_sha256']}",
     )
     token_manifest = entries[token_identity]["manifest"]
     if (

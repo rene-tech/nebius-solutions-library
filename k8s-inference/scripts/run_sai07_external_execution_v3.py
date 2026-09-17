@@ -22,6 +22,7 @@ import argparse
 import base64
 import binascii
 import datetime as dt
+import fcntl
 import hashlib
 import json
 import os
@@ -37,6 +38,7 @@ import audit_sai07_effective_authority_v2 as authority_audit
 import run_sai07_retained_state_custody_v3 as preflight
 import sai07_authoritative_evidence as evidence
 import sai07_custody_state_semantics as state_semantics
+import sai07_epoch_admission_v4 as epoch_admission
 import sai07_saved_plan_contract as saved_plan
 from sai07_owner_secret_transport_v3 import OwnerApi, OwnerTransportError, validate_owner_token
 import verify_sai07_custody_manifest_bundle as bundle_v1
@@ -44,12 +46,24 @@ import verify_sai07_custody_manifest_bundle_v2 as bundle_v2
 import verify_sai07_custody_trust_v3 as trust_v3
 
 ROOT = Path(__file__).resolve().parents[1]
-TRUST_LOCK = ROOT / "stages" / "pod-security-custody" / "custody-trust-lock-v3.json"
+TRUST_LOCK = Path("/opt/fs2-sai07/contracts/custody-trust-lock-v3.json")
+CAPSULE_CONTRACT = Path(
+    "/opt/fs2-sai07/contracts/execution-capsule-contract-v3.json"
+)
+CAPSULE_PLATFORM_AUTHORITY = Path(
+    "/opt/fs2-sai07/contracts/platform-authority-contract-v3.json"
+)
 SOURCE_LOCK = ROOT / "stages" / "pod-security-custody" / "custody-source-lock-v3.json"
 SCHEMA = "fs2-serve.nebius.ai/sai07-external-execution-acknowledgement/v3"
 INTENT_SCHEMA = "fs2-serve.nebius.ai/sai07-external-execution-intent/v3"
 PHASE_RE = re.compile(r"^[a-z][a-z0-9-]{2,63}$")
 ZERO_SHA256 = "0" * 64
+V4_TRUST_LOCK = Path("/proc/1/fd/181")
+V4_CAPSULE_CONTRACT = Path("/proc/1/fd/180")
+V4_PLATFORM_AUTHORITY = Path("/proc/1/fd/182")
+V4_SOURCE_LOCK = Path("/proc/1/fd/183")
+V4_RUNTIME_ATTESTATION = Path("/proc/1/fd/184")
+V4_EPOCH_ADMISSION = Path("/proc/1/fd/188")
 
 
 class ExecutionV3Error(ValueError):
@@ -63,11 +77,20 @@ def canonical(value: object) -> bytes:
 def read_regular(path: Path, label: str, maximum: int) -> bytes:
     if not path.is_absolute() or ".." in path.parts:
         raise ExecutionV3Error(f"{label} path must be absolute without traversal")
-    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    capsule_fd = re.fullmatch(r"/proc/1/fd/(?:18[0-8]|19[0-9])", str(path)) is not None
+    descriptor = os.open(
+        path, os.O_RDONLY | os.O_CLOEXEC | (0 if capsule_fd else os.O_NOFOLLOW)
+    )
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_size > maximum:
             raise ExecutionV3Error(f"{label} is not a bounded regular file")
+        if capsule_fd and fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & (
+            fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
+        ) != (
+            fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
+        ):
+            raise ExecutionV3Error(f"{label} capsule descriptor is not write sealed")
         chunks: list[bytes] = []
         remaining = before.st_size
         while remaining:
@@ -142,13 +165,41 @@ def write_exclusive(path: Path, payload: bytes, maximum: int) -> None:
 
 
 def repository_contract() -> tuple[
-    bytes, dict[str, Any], dict[str, Any], bytes, dict[str, Any]
+    bytes,
+    dict[str, Any],
+    dict[str, Any],
+    bytes,
+    dict[str, Any],
+    bytes,
+    dict[str, Any],
 ]:
+    # Retained predecessor parser for source archaeology only. The sealed v4
+    # dispatcher never calls it; fail before opening any filesystem path so a
+    # caller cannot revive the rejected self-referential v3 trust graph.
+    raise ExecutionV3Error(
+        "rejected filesystem-based v3 capsule entrypoint is permanently disabled"
+    )
     contract_bytes, contract = trust_v3.load_json(
         TRUST_LOCK, "v3 trust lock", 1024 * 1024, repository_document=True
     )
     if contract.get("activation") != "active":
         raise ExecutionV3Error("repository-pinned external custody is not active")
+    capsule_bytes, capsule = trust_v3.load_json(
+        CAPSULE_CONTRACT,
+        "execution capsule contract",
+        1024 * 1024,
+        repository_document=True,
+    )
+    capsule_sha256 = hashlib.sha256(capsule_bytes).hexdigest()
+    if (
+        capsule.get("activation") != "active"
+        or capsule.get("schema")
+        != "fs2-serve.nebius.ai/sai07-execution-capsule-contract/v3"
+        or os.environ.get("FS2_SAI07_CAPSULE_CONTRACT_SHA256") != capsule_sha256
+        or os.environ.get("FS2_SAI07_CAPSULE_IMAGE_DIGEST")
+        != capsule.get("image", {}).get("digest")
+    ):
+        raise ExecutionV3Error("immutable execution capsule identity is absent or differs")
     executor = evidence.exact(
         contract.get("executor"),
         {
@@ -157,7 +208,11 @@ def repository_contract() -> tuple[
             "acknowledgement_namespace",
             "authority_audit_path",
             "authority_audit_sha256",
+            "authorized_apply_path",
+            "authorized_apply_sha256",
             "dependency_lock_sha256",
+            "execution_capsule_contract_path",
+            "execution_capsule_contract_sha256",
             "field_manager",
             "kubectl_cli_path",
             "kubectl_cli_sha256",
@@ -178,7 +233,16 @@ def repository_contract() -> tuple[
         },
         "v3 executor pin",
     )
+    if (
+        executor["execution_capsule_contract_path"]
+        != "stages/pod-security-custody/execution-capsule-contract-v3.json"
+        or executor["execution_capsule_contract_sha256"] != capsule_sha256
+    ):
+        raise ExecutionV3Error("custody trust lock selects another execution capsule")
     source_relative = Path(evidence.nonempty(executor["source_path"], "executor source path"))
+    apply_relative = Path(
+        evidence.nonempty(executor["authorized_apply_path"], "authorized apply source path")
+    )
     verifier_relative = Path(
         evidence.nonempty(executor["verifier_path"], "ack verifier path")
     )
@@ -196,11 +260,13 @@ def repository_contract() -> tuple[
     )
     if (
         source_relative.is_absolute()
+        or apply_relative.is_absolute()
         or verifier_relative.is_absolute()
         or audit_relative.is_absolute()
         or transport_relative.is_absolute()
         or platform_authority_relative.is_absolute()
         or ".." in source_relative.parts
+        or ".." in apply_relative.parts
         or ".." in verifier_relative.parts
         or ".." in audit_relative.parts
         or ".." in transport_relative.parts
@@ -208,6 +274,7 @@ def repository_contract() -> tuple[
     ):
         raise ExecutionV3Error("executor source pins must be repository-relative without traversal")
     source = ROOT / source_relative
+    authorized_apply = ROOT / apply_relative
     verifier = ROOT / verifier_relative
     audit = ROOT / audit_relative
     transport = ROOT / transport_relative
@@ -216,6 +283,7 @@ def repository_contract() -> tuple[
         raise ExecutionV3Error("repository contract selects another executor")
     for path, expected, label in (
         (source, executor["source_sha256"], "executor"),
+        (authorized_apply, executor["authorized_apply_sha256"], "authorized apply"),
         (verifier, executor["verifier_sha256"], "ack verifier"),
         (audit, executor["authority_audit_sha256"], "authority audit"),
         (transport, executor["secret_transport_sha256"], "Secret transport"),
@@ -277,32 +345,53 @@ def repository_contract() -> tuple[
             raise ExecutionV3Error(
                 f"{label} differs from the repository-pinned dependency source"
             )
-    terraform_path = Path(
-        evidence.nonempty(executor["terraform_cli_path"], "Terraform CLI path")
+    capsule_runtime = evidence.exact(
+        capsule.get("runtime"),
+        {
+            "apply_entrypoint",
+            "external_executor_path",
+            "filesystem",
+            "kubectl_fd",
+            "kubectl_path",
+            "kubectl_sha256",
+            "openssl_fd",
+            "openssl_path",
+            "openssl_sha256",
+            "pid",
+            "platform_kubeconfig_fd",
+            "provider_bundle_path",
+            "provider_bundle_sha256",
+            "python_fd",
+            "python_path",
+            "python_sha256",
+            "saved_plan_fd",
+            "source_tree_path",
+            "source_tree_sha256",
+            "terraform_fd",
+            "terraform_path",
+            "terraform_sha256",
+            "terraform_version",
+            "verifier_path",
+        },
+        "execution capsule runtime",
     )
-    if not terraform_path.is_absolute() or ".." in terraform_path.parts:
-        raise ExecutionV3Error("Terraform CLI path must be absolute without traversal")
-    if hashlib.sha256(
-        read_regular(terraform_path, "Terraform CLI", saved_plan.MAX_TERRAFORM_BYTES)
-    ).hexdigest() != evidence.sha256(
-        executor["terraform_cli_sha256"], "Terraform CLI SHA-256"
+    if (
+        capsule_runtime["filesystem"] != "read-only-oci-rootfs"
+        or capsule_runtime["pid"] != 1
+        or capsule_runtime["saved_plan_fd"] != 197
+        or capsule_runtime["platform_kubeconfig_fd"] != 198
+        or capsule_runtime["openssl_fd"] != 192
+        or capsule_runtime["kubectl_fd"] != 193
+        or capsule_runtime["terraform_fd"] != 194
+        or os.environ.get("FS2_SAI07_OPENSSL_PATH") != "/proc/1/fd/192"
+        or os.environ.get("FS2_SAI07_KUBECTL_PATH") != "/proc/1/fd/193"
     ):
-        raise ExecutionV3Error("Terraform CLI differs from the repository pin")
-    evidence.nonempty(executor["terraform_cli_version"], "Terraform CLI version")
-    kubectl_path = Path(
-        evidence.nonempty(executor["kubectl_cli_path"], "kubectl CLI path")
-    )
-    if not kubectl_path.is_absolute() or ".." in kubectl_path.parts:
-        raise ExecutionV3Error("kubectl CLI path must be absolute without traversal")
-    if hashlib.sha256(
-        read_regular(kubectl_path, "kubectl CLI", 256 * 1024 * 1024)
-    ).hexdigest() != evidence.sha256(
-        executor["kubectl_cli_sha256"], "kubectl CLI SHA-256"
-    ):
-        raise ExecutionV3Error("kubectl CLI differs from the repository pin")
+        raise ExecutionV3Error("execution capsule descriptor contract differs")
 
     platform_authority_bytes = read_regular(
-        platform_authority_path, "platform authority contract", 32 * 1024 * 1024
+        CAPSULE_PLATFORM_AUTHORITY,
+        "platform authority contract",
+        32 * 1024 * 1024,
     )
     try:
         platform_authority = json.loads(platform_authority_bytes)
@@ -327,11 +416,13 @@ def repository_contract() -> tuple[
             "cluster_id",
             "exact_rule_closure",
             "exact_rule_closure_sha256",
+            "execution_capsule_contract_sha256",
             "groups",
             "kube_context",
             "kube_system_uid",
             "namespace_inventory",
             "persistent_volume_names",
+            "platform_kubeconfig_sha256",
             "schema",
             "username",
         },
@@ -356,6 +447,12 @@ def repository_contract() -> tuple[
         != contract["expected"]["namespace_inventory"]
         or platform_authority["persistent_volume_names"]
         != contract["expected"]["persistent_volume_names"]
+        or platform_authority["execution_capsule_contract_sha256"]
+        != capsule_sha256
+        or not isinstance(platform_authority["platform_kubeconfig_sha256"], str)
+        or not re.fullmatch(
+            r"[a-f0-9]{64}", platform_authority["platform_kubeconfig_sha256"]
+        )
         or not isinstance(platform_authority["kube_context"], str)
         or not platform_authority["kube_context"]
         or not isinstance(platform_authority["groups"], list)
@@ -388,6 +485,260 @@ def repository_contract() -> tuple[
         executor,
         platform_authority_bytes,
         platform_authority,
+        capsule_bytes,
+        capsule_runtime,
+    )
+
+
+def repository_contract_v4() -> tuple[
+    bytes,
+    dict[str, Any],
+    dict[str, Any],
+    bytes,
+    dict[str, Any],
+    bytes,
+    dict[str, Any],
+]:
+    """Load only descriptor-sealed contracts from the attested v4 capsule."""
+
+    contract_bytes, contract = trust_v3.load_json(
+        V4_TRUST_LOCK, "v3 trust lock", 1024 * 1024, repository_document=True
+    )
+    capsule_bytes, capsule = trust_v3.load_json(
+        V4_CAPSULE_CONTRACT,
+        "v4 execution capsule contract",
+        1024 * 1024,
+        repository_document=True,
+    )
+    if contract.get("activation") != "active" or capsule.get("activation") != "active":
+        raise ExecutionV3Error("external custody or execution capsule is blocked")
+    if capsule.get("schema") != "fs2-serve.nebius.ai/sai07-execution-capsule-contract/v4":
+        raise ExecutionV3Error("execution capsule schema differs")
+    capsule_sha256 = hashlib.sha256(capsule_bytes).hexdigest()
+    if os.environ.get("FS2_SAI07_CAPSULE_CONTRACT_SHA256") != capsule_sha256:
+        raise ExecutionV3Error("execution capsule digest differs from bootstrap")
+    capsule_runtime = evidence.exact(
+        capsule.get("runtime"),
+        {
+            "authority_keys",
+            "cluster_ca_fd",
+            "contract_files",
+            "filesystem",
+            "handoff_root",
+            "plan_variables_fd",
+            "platform_kubeconfig_fd",
+            "provider_bundle",
+            "runtime_files",
+            "saved_plan_fd",
+            "terraform_configuration_sha256",
+            "terraform_data_roots",
+            "terraform_data_tree_sha256",
+            "terraform_root_tree_sha256",
+            "terraform_roots",
+            "terraform_version",
+        },
+        "v4 capsule runtime",
+    )
+    runtime_files = evidence.exact(
+        capsule_runtime["runtime_files"],
+        {
+            "kubectl",
+            "openssl",
+            "python",
+            "source_bundle",
+            "terraform",
+            "terraform_cli_config",
+        },
+        "v4 runtime files",
+    )
+    if (
+        capsule_runtime["filesystem"] != "observed-read-only-mounts"
+        or capsule_runtime["saved_plan_fd"] != 197
+        or capsule_runtime["platform_kubeconfig_fd"] != 198
+        or capsule_runtime["cluster_ca_fd"] != 199
+        or runtime_files["source_bundle"].get("fd") != 190
+        or runtime_files["python"].get("fd") != 191
+        or runtime_files["openssl"].get("fd") != 192
+        or runtime_files["kubectl"].get("fd") != 193
+        or runtime_files["terraform"].get("fd") != 194
+        or runtime_files["terraform_cli_config"].get("fd") != 195
+        or os.environ.get("FS2_SAI07_SOURCE_BUNDLE_SHA256")
+        != runtime_files["source_bundle"].get("sha256")
+        or os.environ.get("FS2_SAI07_OPENSSL_PATH") != "/proc/1/fd/192"
+        or os.environ.get("FS2_SAI07_KUBECTL_PATH") != "/proc/1/fd/193"
+    ):
+        raise ExecutionV3Error("v4 capsule descriptor contract differs")
+    executor = evidence.exact(
+        contract.get("executor"),
+        {
+            "acknowledgement_max_bytes",
+            "acknowledgement_name_prefix",
+            "acknowledgement_namespace",
+            "dependency_lock_sha256",
+            "field_manager",
+            "kubectl_cli_path",
+            "kubectl_cli_sha256",
+            "owner_token_audience",
+            "owner_token_issuer",
+            "owner_token_max_seconds",
+            "platform_authority_contract_path",
+            "platform_authority_contract_sha256",
+            "source_bundle_sha256",
+            "terraform_cli_path",
+            "terraform_cli_sha256",
+            "terraform_cli_version",
+        },
+        "v4 executor pin",
+    )
+    if (
+        executor["source_bundle_sha256"] != runtime_files["source_bundle"]["sha256"]
+        or executor["kubectl_cli_path"] != "/proc/1/fd/193"
+        or executor["kubectl_cli_sha256"] != runtime_files["kubectl"]["sha256"]
+        or executor["terraform_cli_path"] != "/proc/1/fd/194"
+        or executor["terraform_cli_sha256"] != runtime_files["terraform"]["sha256"]
+        or executor["terraform_cli_version"] != capsule_runtime["terraform_version"]
+        or executor["owner_token_audience"] != "https://kubernetes.default.svc"
+        or executor["owner_token_max_seconds"] != 600
+        or not evidence.nonempty(executor["owner_token_issuer"], "owner token issuer")
+    ):
+        raise ExecutionV3Error("trust lock differs from the sealed v4 capsule")
+    authority_keys = evidence.exact(
+        capsule_runtime["authority_keys"],
+        {"backend", "manifest", "provider"},
+        "v4 authority keys",
+    )
+    for role, descriptor in (("manifest", 185), ("provider", 186), ("backend", 187)):
+        authority = evidence.exact(
+            contract.get("authorities", {}).get(
+                "provider_receipt" if role == "provider" else "backend_receipt" if role == "backend" else "manifest"
+            ),
+            {
+                "key_id",
+                "principal_id",
+                "protected_resource_ids",
+                "public_key_path",
+                "public_key_sha256",
+                "signing_resource_id",
+            },
+            f"{role} authority",
+        )
+        if (
+            authority["public_key_path"] != f"/proc/1/fd/{descriptor}"
+            or authority["public_key_sha256"] != authority_keys[role]["sha256"]
+            or authority_keys[role]["fd"] != descriptor
+        ):
+            raise ExecutionV3Error(f"{role} authority key is not descriptor sealed")
+    source_lock_bytes = read_regular(
+        V4_SOURCE_LOCK, "sealed source lock", 1024 * 1024
+    )
+    if hashlib.sha256(source_lock_bytes).hexdigest() != executor["dependency_lock_sha256"]:
+        raise ExecutionV3Error("sealed source lock differs from trust lock")
+    epoch_contract_bytes = read_regular(
+        V4_EPOCH_ADMISSION, "sealed epoch admission contract", 1024 * 1024
+    )
+    try:
+        epoch_contract = json.loads(epoch_contract_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ExecutionV3Error("epoch admission contract is not JSON") from error
+    if epoch_contract_bytes != canonical(epoch_contract) + b"\n":
+        raise ExecutionV3Error("epoch admission contract is not canonical")
+    contract_files = capsule_runtime["contract_files"]
+    epoch_pin = contract_files.get("epoch_admission") if isinstance(contract_files, dict) else None
+    if (
+        not isinstance(epoch_pin, dict)
+        or epoch_pin.get("fd") != 188
+        or epoch_pin.get("sha256") != hashlib.sha256(epoch_contract_bytes).hexdigest()
+    ):
+        raise ExecutionV3Error("epoch admission contract differs from capsule pin")
+    try:
+        epoch_admission.render(epoch_contract)
+    except epoch_admission.EpochAdmissionError as error:
+        raise ExecutionV3Error("epoch admission contract is invalid") from error
+    contract["_epoch_admission"] = epoch_contract
+    contract["_epoch_admission_sha256"] = hashlib.sha256(
+        epoch_contract_bytes
+    ).hexdigest()
+    platform_authority_bytes = read_regular(
+        V4_PLATFORM_AUTHORITY, "sealed platform authority", 32 * 1024 * 1024
+    )
+    if hashlib.sha256(platform_authority_bytes).hexdigest() != executor[
+        "platform_authority_contract_sha256"
+    ]:
+        raise ExecutionV3Error("platform authority differs from trust lock")
+    platform_authority = json.loads(platform_authority_bytes)
+    if (
+        not isinstance(platform_authority, dict)
+        or platform_authority_bytes != canonical(platform_authority) + b"\n"
+        or platform_authority.get("activation") != "active"
+    ):
+        raise ExecutionV3Error("platform authority is blocked or noncanonical")
+    evidence.exact(
+        platform_authority,
+        {
+            "activation",
+            "cluster_id",
+            "exact_rule_closure",
+            "exact_rule_closure_sha256",
+            "groups",
+            "kube_context",
+            "kube_system_uid",
+            "namespace_inventory",
+            "persistent_volume_names",
+            "platform_kubeconfig_sha256",
+            "schema",
+            "username",
+        },
+        "platform authority contract",
+    )
+    if (
+        platform_authority["schema"]
+        != "fs2-serve.nebius.ai/sai07-platform-authority-contract/v3"
+        or platform_authority["cluster_id"] != contract["expected"]["cluster_id"]
+        or platform_authority["kube_system_uid"]
+        != contract["expected"]["kube_system_uid"]
+        or platform_authority["username"]
+        != contract["expected"]["platform"]["username"]
+        or platform_authority["namespace_inventory"]
+        != contract["expected"]["namespace_inventory"]
+        or platform_authority["persistent_volume_names"]
+        != contract["expected"]["persistent_volume_names"]
+        or hashlib.sha256(
+            canonical(platform_authority["exact_rule_closure"])
+        ).hexdigest()
+        != platform_authority["exact_rule_closure_sha256"]
+    ):
+        raise ExecutionV3Error("platform authority differs from pinned custody facts")
+    attestation_bytes, attestation = trust_v3.load_json(
+        V4_RUNTIME_ATTESTATION,
+        "sealed runtime attestation",
+        8 * 1024 * 1024,
+        repository_document=True,
+    )
+    if hashlib.sha256(attestation_bytes).hexdigest() != os.environ.get(
+        "FS2_SAI07_RUNTIME_ATTESTATION_SHA256"
+    ):
+        raise ExecutionV3Error("runtime attestation differs from bootstrap")
+    claims = attestation.get("claims")
+    api = claims.get("api") if isinstance(claims, dict) else None
+    if (
+        not isinstance(api, dict)
+        or set(api) != {"ca_sha256", "context", "origin"}
+        or os.environ.get("FS2_SAI07_OWNER_API_SERVER") != api["origin"]
+        or os.environ.get("FS2_SAI07_OWNER_CA_PATH") != "/proc/1/fd/199"
+        or hashlib.sha256(
+            read_regular(Path("/proc/1/fd/199"), "sealed cluster CA", 8 * 1024 * 1024)
+        ).hexdigest()
+        != api["ca_sha256"]
+    ):
+        raise ExecutionV3Error("owner API endpoint or CA differs from signed attestation")
+    return (
+        contract_bytes,
+        contract,
+        executor,
+        platform_authority_bytes,
+        platform_authority,
+        capsule_bytes,
+        capsule_runtime,
     )
 
 
@@ -421,7 +772,7 @@ def full_snapshot(
         if (
             identity[0:3] == ("v1", "Secret", "fs2-system")
             and re.fullmatch(
-                r"fs2-pod-security-token-anchor-v3-[a-f0-9]{64}", identity[3]
+                r"fs2-pod-security-token-anchor-v4-[a-f0-9]{64}", identity[3]
             )
         ):
             continue
@@ -622,6 +973,68 @@ def validate_live_ack(
     }
 
 
+def ensure_epoch_admission(
+    owner_api: OwnerApi,
+    epoch_contract: dict[str, Any],
+    field_manager: str,
+) -> list[dict[str, str]]:
+    """Create only absent generation policies; never patch a retained object."""
+
+    try:
+        manifests = epoch_admission.render(epoch_contract)
+    except epoch_admission.EpochAdmissionError as error:
+        raise ExecutionV3Error("epoch admission generation is invalid") from error
+    identities: list[dict[str, str]] = []
+    for desired in manifests:
+        metadata = desired["metadata"]
+        identity = (
+            desired["apiVersion"],
+            desired["kind"],
+            "",
+            metadata["name"],
+        )
+        path = bundle_v2.api_path(identity)
+        live = owner_api.raw(path, allow_absent=True)
+        if live is None:
+            owner_api.server_side_apply(path, desired, field_manager)
+            live = owner_api.raw(path)
+        if live is None:
+            raise ExecutionV3Error("epoch admission object is absent after additive SSA")
+        live_metadata = live.get("metadata")
+        if (
+            live.get("apiVersion") != desired["apiVersion"]
+            or live.get("kind") != desired["kind"]
+            or not isinstance(live_metadata, dict)
+            or live_metadata.get("name") != metadata["name"]
+            or live_metadata.get("labels") != metadata["labels"]
+            or live_metadata.get("annotations") != metadata["annotations"]
+            or live_metadata.get("ownerReferences") not in (None, [])
+            or live_metadata.get("finalizers") not in (None, [])
+            or live.get("spec") != desired["spec"]
+        ):
+            raise ExecutionV3Error(
+                "retained epoch admission object differs; update is forbidden"
+            )
+        uid = live_metadata.get("uid")
+        resource_version = live_metadata.get("resourceVersion")
+        if not all(
+            isinstance(value, str) and value for value in (uid, resource_version)
+        ):
+            raise ExecutionV3Error("epoch admission identity is incomplete")
+        identities.append(
+            {
+                "api_version": desired["apiVersion"],
+                "kind": desired["kind"],
+                "name": metadata["name"],
+                "object_sha256": hashlib.sha256(canonical(live)).hexdigest(),
+                "resource_version": resource_version,
+                "uid": uid,
+            }
+        )
+    identities.sort(key=canonical)
+    return identities
+
+
 def consume_phase_receipt(
     args: argparse.Namespace,
     trust: dict[str, str],
@@ -664,10 +1077,11 @@ def consume_phase_receipt(
         "FS2_POD_SECURITY_QUERY": query_bytes.decode(),
     }
     completed = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "verify_pod_security_receipts.py")],
+        ["/proc/1/fd/191", "/proc/1/fd/190", "verify-receipt"],
         check=False,
         capture_output=True,
         env=environment,
+        pass_fds=(190, 191, 192, 193),
         timeout=600,
     )
     if completed.returncode != 0:
@@ -682,6 +1096,11 @@ def consume_phase_receipt(
 
 
 def sign(unsigned: dict[str, Any], private_key_fd: int) -> dict[str, str]:
+    openssl_path = os.environ.get("FS2_SAI07_OPENSSL_PATH")
+    if openssl_path != "/proc/1/fd/192":
+        raise ExecutionV3Error(
+            "acknowledgement signing requires the immutable capsule OpenSSL descriptor"
+        )
     if private_key_fd < 3:
         raise ExecutionV3Error(
             "execution signing key must arrive on a dedicated inherited descriptor"
@@ -698,7 +1117,7 @@ def sign(unsigned: dict[str, Any], private_key_fd: int) -> dict[str, str]:
         os.lseek(payload_fd, 0, os.SEEK_SET)
         completed = subprocess.run(
             [
-                "openssl",
+                openssl_path,
                 "pkeyutl",
                 "-sign",
                 "-inkey",
@@ -738,7 +1157,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         executor,
         platform_authority_bytes,
         platform_authority,
-    ) = repository_contract()
+        capsule_bytes,
+        capsule_runtime,
+    ) = repository_contract_v4()
     if args.phase != "prepare" and not PHASE_RE.fullmatch(args.phase):
         raise ExecutionV3Error("phase is malformed")
     if args.action not in {"authorize", "acknowledge"} or args.consumer_role not in {
@@ -763,9 +1184,19 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         != hashlib.sha256(str(args.ack_output).encode()).hexdigest()
         or prepared["platform_plan_contract"]["platform_kube_context"]
         != platform_authority["kube_context"]
+        or prepared["platform_plan_contract"]["platform_kubeconfig_path"]
+        != "/proc/1/fd/198"
+        or prepared["platform_plan_contract"]["platform_kubeconfig_sha256"]
+        != platform_authority["platform_kubeconfig_sha256"]
+        or prepared["platform_plan_contract"]["execution_capsule_contract_sha256"]
+        != hashlib.sha256(capsule_bytes).hexdigest()
+        or prepared["platform_plan_contract"][
+            "execution_external_runtime_attestation_sha256"
+        ]
+        != os.environ["FS2_SAI07_RUNTIME_ATTESTATION_SHA256"]
     ):
         raise ExecutionV3Error(
-            "saved platform plan phase, epoch, handoff path, or context differs"
+            "saved platform plan phase, epoch, handoff, capsule, or platform transport differs"
         )
     trust = preflight.run_verifier(
         "verify_sai07_custody_trust_v3.py", preflight.trust_query(args, "current")
@@ -786,7 +1217,11 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     )
     if hashlib.sha256(manifest_bytes).hexdigest() != prepared["manifest_bundle_sha256"]:
         raise ExecutionV3Error("manifest bundle changed after preflight verification")
-    owner_api = OwnerApi(args.owner_api_server, args.owner_ca_file, args.owner_token_fd)
+    owner_api_server = os.environ.get("FS2_SAI07_OWNER_API_SERVER")
+    owner_ca_path = os.environ.get("FS2_SAI07_OWNER_CA_PATH")
+    if not owner_api_server or owner_ca_path != "/proc/1/fd/199":
+        raise ExecutionV3Error("attested owner API endpoint/CA descriptors are absent")
+    owner_api = OwnerApi(owner_api_server, Path(owner_ca_path), args.owner_token_fd)
     owner_token_jti_sha256, owner_token_jti = validate_owner_token(
         owner_api.token,
         trust["owner_username"],
@@ -822,6 +1257,17 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         raise ExecutionV3Error(
             "epoch token does not authenticate the signed owner identity and JTI"
         )
+    epoch_contract = contract.get("_epoch_admission")
+    current_epoch = epoch_contract.get("current") if isinstance(epoch_contract, dict) else None
+    if (
+        not isinstance(current_epoch, dict)
+        or current_epoch.get("epoch_sha256") != prepared["custody_epoch_sha256"]
+        or current_epoch.get("owner_username") != trust["owner_username"]
+        or current_epoch.get("receipt_username") != trust["receipt_username"]
+    ):
+        raise ExecutionV3Error(
+            "epoch admission current identities differ from authoritative custody"
+        )
 
     receipt_bundle_sha256 = ZERO_SHA256
     if args.receipt_bundle is not None:
@@ -841,6 +1287,19 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "consumer": args.consumer_role,
                 "context_sha256": hashlib.sha256(context_bytes).hexdigest(),
                 "custody_epoch_sha256": prepared["custody_epoch_sha256"],
+                "execution_capsule_contract_sha256": hashlib.sha256(
+                    capsule_bytes
+                ).hexdigest(),
+                "execution_runtime_attestation_sha256": os.environ[
+                    "FS2_SAI07_RUNTIME_ATTESTATION_SHA256"
+                ],
+                "execution_plan_runtime_attestation_sha256": prepared[
+                    "platform_plan_contract"
+                ]["execution_runtime_attestation_sha256"],
+                "execution_source_bundle_sha256": executor["source_bundle_sha256"],
+                "epoch_admission_contract_sha256": contract[
+                    "_epoch_admission_sha256"
+                ],
                 "manifest_bundle_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
                 "owner_token_jti_sha256": owner_token_jti_sha256,
                 "phase": args.phase,
@@ -873,11 +1332,23 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         or kube_system.get("metadata", {}).get("uid") != trust["kube_system_uid"]
     ):
         raise ExecutionV3Error("external executor selected another cluster")
+    epoch_admission_objects = ensure_epoch_admission(
+        owner_api,
+        epoch_contract,
+        "fs2-sai07-epoch-admission-v4",
+    )
+    epoch_admission_objects_sha256 = hashlib.sha256(
+        canonical(epoch_admission_objects)
+    ).hexdigest()
     before = full_snapshot(owner_api, manifest_bundle, label="pre-SSA read")
     before_sha256 = hashlib.sha256(canonical(before)).hexdigest()
     token_anchor = owner_api.ensure_empty_immutable_anchor(
         prepared["custody_epoch_sha256"]
     )
+    anchor_inventory = owner_api.anchor_inventory(
+        epoch_contract["retained_anchor_names"]
+    )
+    anchor_inventory_sha256 = hashlib.sha256(canonical(anchor_inventory)).hexdigest()
     if args.token_anchor_uid is not None and args.token_anchor_uid != token_anchor["uid"]:
         raise ExecutionV3Error(
             "supplied token-anchor UID differs from metadata-only observation"
@@ -886,7 +1357,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         args,
         trust,
         context,
-        executor["kubectl_cli_path"],
+        "/proc/1/fd/193",
         token_anchor["name"],
         token_anchor["uid"],
     )
@@ -902,7 +1373,20 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "custody_epoch_id": prepared["custody_epoch_id"],
         "custody_epoch_principal_id": prepared["custody_epoch_principal_id"],
         "custody_epoch_sha256": prepared["custody_epoch_sha256"],
-        "executor_source_sha256": executor["source_sha256"],
+        "executor_source_sha256": executor["source_bundle_sha256"],
+        "execution_capsule_contract_sha256": hashlib.sha256(capsule_bytes).hexdigest(),
+        "execution_runtime_attestation_sha256": os.environ[
+            "FS2_SAI07_RUNTIME_ATTESTATION_SHA256"
+        ],
+        "execution_plan_runtime_attestation_sha256": prepared[
+            "platform_plan_contract"
+        ]["execution_runtime_attestation_sha256"],
+        "execution_source_bundle_sha256": executor["source_bundle_sha256"],
+        "anchor_inventory": anchor_inventory,
+        "epoch_admission_contract_sha256": contract["_epoch_admission_sha256"],
+        "epoch_admission_objects": epoch_admission_objects,
+        "epoch_admission_objects_sha256": epoch_admission_objects_sha256,
+        "anchor_inventory_sha256": anchor_inventory_sha256,
         "manifest_bundle_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "manifest_objects_sha256": prepared["manifest_objects_sha256"],
         "phase": args.phase,
@@ -937,6 +1421,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "metadata": {
             "annotations": {
                 "security.fs2.nebius.ai/contract-sha256": intent["contract_sha256"],
+                "security.fs2.nebius.ai/custody-epoch-sha256": prepared[
+                    "custody_epoch_sha256"
+                ],
                 "security.fs2.nebius.ai/execution-generation": generation,
             },
             "labels": {
@@ -974,12 +1461,24 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         for key in ("custody_epoch_sha256", "name", "resource_version", "uid")
     }:
         raise ExecutionV3Error("token anchor changed across acknowledgement SSA")
+    final_anchor_inventory = owner_api.anchor_inventory(
+        epoch_contract["retained_anchor_names"]
+    )
+    if final_anchor_inventory != anchor_inventory:
+        raise ExecutionV3Error("retained token-anchor inventory changed across SSA")
+    final_epoch_admission_objects = ensure_epoch_admission(
+        owner_api,
+        epoch_contract,
+        "fs2-sai07-epoch-admission-v4",
+    )
+    if final_epoch_admission_objects != epoch_admission_objects:
+        raise ExecutionV3Error("epoch admission identities changed across SSA")
     try:
         refreshed_plan_contract = saved_plan.inspect_saved_plan(
             args.platform_saved_plan,
-            Path(executor["terraform_cli_path"]),
-            executor["terraform_cli_sha256"],
-            executor["terraform_cli_version"],
+            Path("/proc/1/fd/194"),
+            capsule_runtime["runtime_files"]["terraform"]["sha256"],
+            capsule_runtime["terraform_version"],
         )
     except saved_plan.SavedPlanError as error:
         raise ExecutionV3Error("saved platform plan changed or became invalid") from error
@@ -1007,7 +1506,20 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "custody_epoch_id": prepared["custody_epoch_id"],
         "custody_epoch_principal_id": prepared["custody_epoch_principal_id"],
         "custody_epoch_sha256": prepared["custody_epoch_sha256"],
-        "executor_source_sha256": executor["source_sha256"],
+        "executor_source_sha256": executor["source_bundle_sha256"],
+        "execution_capsule_contract_sha256": hashlib.sha256(capsule_bytes).hexdigest(),
+        "execution_runtime_attestation_sha256": os.environ[
+            "FS2_SAI07_RUNTIME_ATTESTATION_SHA256"
+        ],
+        "execution_plan_runtime_attestation_sha256": prepared[
+            "platform_plan_contract"
+        ]["execution_runtime_attestation_sha256"],
+        "execution_source_bundle_sha256": executor["source_bundle_sha256"],
+        "anchor_inventory": final_anchor_inventory,
+        "epoch_admission_contract_sha256": contract["_epoch_admission_sha256"],
+        "epoch_admission_objects": final_epoch_admission_objects,
+        "epoch_admission_objects_sha256": epoch_admission_objects_sha256,
+        "anchor_inventory_sha256": anchor_inventory_sha256,
         "expires_at": (issued + dt.timedelta(minutes=10)).isoformat().replace("+00:00", "Z"),
         "issued_at": issued.isoformat().replace("+00:00", "Z"),
         "kube_system_uid": trust["kube_system_uid"],
@@ -1080,8 +1592,6 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--receipt-kubeconfig", type=Path)
     result.add_argument("--receipt-context")
     result.add_argument("--token-anchor-uid")
-    result.add_argument("--owner-api-server", required=True)
-    result.add_argument("--owner-ca-file", required=True, type=Path)
     result.add_argument("--owner-token-fd", required=True, type=int)
     result.add_argument("--signing-key-fd", required=True, type=int)
     result.add_argument("--ack-output", required=True, type=Path)
@@ -1094,7 +1604,6 @@ def main() -> int:
         for path in (
             args.expected_context,
             args.current_platform_state,
-            args.owner_ca_file,
             args.ack_output,
         ):
             if not path.is_absolute() or ".." in path.parts:

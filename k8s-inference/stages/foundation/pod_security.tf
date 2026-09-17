@@ -207,6 +207,17 @@ module "pod_security_rollout_gate" {
   platform_username                  = var.pod_security_rollout_receipt.platform_username
   platform_group                     = var.pod_security_rollout_receipt.platform_group
   custody_epoch_sha256               = var.pod_security_rollout_receipt.custody_epoch_sha256
+  execution_capsule_contract_sha256  = var.pod_security_rollout_receipt.execution_capsule_contract_sha256
+  execution_external_runtime_attestation_sha256 = var.pod_security_rollout_receipt.execution_external_runtime_attestation_sha256
+  execution_runtime_attestation_sha256 = var.pod_security_rollout_receipt.execution_runtime_attestation_sha256
+  execution_source_bundle_sha256       = var.pod_security_rollout_receipt.execution_source_bundle_sha256
+  execution_platform_kubeconfig_sha256 = var.pod_security_rollout_receipt.execution_platform_kubeconfig_sha256
+  execution_expected_context_sha256    = var.pod_security_rollout_receipt.execution_expected_context_sha256
+  execution_receipt_bundle_sha256      = var.pod_security_rollout_receipt.execution_receipt_bundle_sha256
+  execution_cluster_id                 = var.pod_security_rollout_receipt.execution_cluster_id
+  execution_kube_system_uid            = var.pod_security_rollout_receipt.execution_kube_system_uid
+  execution_action                     = var.pod_security_rollout_receipt.execution_action
+  execution_consumer                   = var.pod_security_rollout_receipt.execution_consumer
   phase                              = var.pod_security_rollout_phase
   receipt_bundle_path                = var.pod_security_rollout_receipt.bundle_path
   external_handoff_path              = var.pod_security_rollout_receipt.external_handoff_path

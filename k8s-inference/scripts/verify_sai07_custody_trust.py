@@ -122,6 +122,11 @@ def freshness(receipt: dict[str, Any], label: str) -> None:
 
 
 def verify_signature(value: dict[str, Any], key: bytes, key_id: str, label: str) -> None:
+    openssl_path = os.environ.get("FS2_SAI07_OPENSSL_PATH")
+    if openssl_path != "/proc/1/fd/192":
+        raise TrustError(
+            "custody receipt verification requires the immutable capsule OpenSSL descriptor"
+        )
     signature = exact(value.get("signature"), {"algorithm", "key_id", "value"}, f"{label}.signature")
     if signature["algorithm"] != "ed25519" or signature["key_id"] != key_id:
         raise TrustError(f"{label} signature authority differs from the trust lock")
@@ -147,7 +152,7 @@ def verify_signature(value: dict[str, Any], key: bytes, key_id: str, label: str)
             os.fsync(descriptor)
         completed = subprocess.run(
             [
-                "openssl", "pkeyutl", "-verify", "-pubin", "-inkey",
+                openssl_path, "pkeyutl", "-verify", "-pubin", "-inkey",
                 f"/proc/self/fd/{descriptors[2]}", "-rawin", "-in",
                 f"/proc/self/fd/{descriptors[0]}", "-sigfile",
                 f"/proc/self/fd/{descriptors[1]}",

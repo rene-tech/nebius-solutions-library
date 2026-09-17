@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import re
 import ssl
 import urllib.error
 import urllib.parse
@@ -291,6 +292,71 @@ class OwnerApi:
         if not selected:
             return None
         return self._anchor_identity(selected[0], expected_name)
+
+    def anchor_inventory(self, allowed_names: list[str]) -> list[dict[str, str]]:
+        """Inventory every generation anchor without retrieving Secret payloads."""
+
+        if (
+            allowed_names != sorted(set(allowed_names))
+            or not allowed_names
+            or any(
+                re.fullmatch(
+                    r"fs2-pod-security-token-anchor-v(?:3|4)-[a-f0-9]{64}", value
+                )
+                is None
+                for value in allowed_names
+            )
+        ):
+            raise OwnerTransportError("allowed anchor epochs are not canonical")
+        continuation = ""
+        observed: list[dict[str, str]] = []
+        for _page in range(100):
+            query = urllib.parse.urlencode(
+                {
+                    "limit": "500",
+                    **({"continue": continuation} if continuation else {}),
+                }
+            )
+            _, collection = self.request(
+                f"/api/v1/namespaces/{ANCHOR_NAMESPACE}/secrets?{query}",
+                method="GET",
+                accept=METADATA_LIST_MEDIA_TYPE,
+            )
+            if (
+                set(collection) != {"apiVersion", "items", "kind", "metadata"}
+                or collection.get("apiVersion") != "meta.k8s.io/v1"
+                or collection.get("kind") != "PartialObjectMetadataList"
+                or not isinstance(collection.get("metadata"), dict)
+                or not isinstance(collection.get("items"), list)
+            ):
+                raise OwnerTransportError("anchor inventory is not metadata-only")
+            for item in collection["items"]:
+                if (
+                    not isinstance(item, dict)
+                    or set(item) != {"apiVersion", "kind", "metadata"}
+                    or item.get("apiVersion") != "v1"
+                    or item.get("kind") != "Secret"
+                    or not isinstance(item.get("metadata"), dict)
+                ):
+                    raise OwnerTransportError(
+                        "anchor inventory contains Secret payload fields"
+                    )
+                name = item["metadata"].get("name")
+                if isinstance(name, str) and re.fullmatch(
+                    r"fs2-pod-security-token-anchor-v(?:3|4)-[a-f0-9]{64}", name
+                ):
+                    observed.append(self._anchor_identity(item["metadata"], name))
+            continuation = collection["metadata"].get("continue", "")
+            if not continuation:
+                break
+        else:
+            raise OwnerTransportError("anchor inventory exceeded its page bound")
+        observed.sort(key=lambda item: item["name"])
+        if [item["name"] for item in observed] != allowed_names:
+            raise OwnerTransportError(
+                "live generation anchors differ from signed current/retired inventory"
+            )
+        return observed
 
     @staticmethod
     def _anchor_identity(metadata: dict[str, Any], expected_name: str) -> dict[str, str]:

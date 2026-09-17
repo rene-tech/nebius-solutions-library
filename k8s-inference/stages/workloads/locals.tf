@@ -101,7 +101,13 @@ locals {
     false,
   )
 
-  expected_kubeconfig_path    = "${local.normalized_run_root}/kubeconfig"
+  pod_security_capsule_active = try(
+    var.pod_security_rollout_receipt.execution_capsule_contract_sha256 != strrep("0", 64),
+    false,
+  )
+  expected_kubeconfig_path = local.pod_security_capsule_active ? (
+    "/proc/1/fd/198"
+  ) : "${local.normalized_run_root}/kubeconfig"
   expected_foundation_state   = "${local.normalized_run_root}/foundation.tfstate"
   kubeconfig                  = yamldecode(file(var.kubeconfig_path))
   selected_context            = try(one([for context in local.kubeconfig.contexts : context if context.name == var.kube_context]), null)

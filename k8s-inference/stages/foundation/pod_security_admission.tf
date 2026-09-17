@@ -43,7 +43,6 @@ locals {
   pod_security_platform_group         = var.pod_security_rollout_receipt.platform_group
   pod_security_rollout_token_audience = "https://kubernetes.default.svc"
   pod_security_custody_epoch_sha256   = var.pod_security_rollout_receipt.custody_epoch_sha256
-  pod_security_token_anchor_name      = "fs2-pod-security-token-anchor-v3-${local.pod_security_custody_epoch_sha256}"
   pod_security_custody_protected_names = {
     serviceaccounts = [
       "fs2-pod-security-metadata-reader",
@@ -88,8 +87,9 @@ locals {
     ]
   }
   pod_security_external_ack_prefix = "fs2-sai07-custody-ack-v3-"
-  pod_security_custody_additive_object_match = "object.metadata.namespace == 'fs2-system' && ((object.kind == 'Secret' && (object.metadata.name == 'fs2-pod-security-token-anchor' || object.metadata.name.startsWith('fs2-pod-security-token-anchor-v3-'))) || (object.kind == 'ConfigMap' && object.metadata.name.startsWith('${local.pod_security_external_ack_prefix}')))"
-  pod_security_custody_additive_old_object_match = "oldObject.metadata.namespace == 'fs2-system' && ((oldObject.kind == 'Secret' && (oldObject.metadata.name == 'fs2-pod-security-token-anchor' || oldObject.metadata.name.startsWith('fs2-pod-security-token-anchor-v3-'))) || (oldObject.kind == 'ConfigMap' && oldObject.metadata.name.startsWith('${local.pod_security_external_ack_prefix}')))"
+  pod_security_custody_additive_object_match = "(object.metadata.namespace == 'fs2-system' && ((object.kind == 'Secret' && (object.metadata.name == 'fs2-pod-security-token-anchor' || object.metadata.name.startsWith('fs2-pod-security-token-anchor-v4-'))) || (object.kind == 'ConfigMap' && object.metadata.name.startsWith('${local.pod_security_external_ack_prefix}')))) || (object.kind in ['ValidatingAdmissionPolicy','ValidatingAdmissionPolicyBinding'] && (object.metadata.name.startsWith('fs2-pod-security-custody-epoch-v4-') || object.metadata.name.startsWith('fs2-pod-security-custody-retired-v4-')))"
+  pod_security_custody_additive_old_object_match = "(oldObject.metadata.namespace == 'fs2-system' && ((oldObject.kind == 'Secret' && (oldObject.metadata.name == 'fs2-pod-security-token-anchor' || oldObject.metadata.name.startsWith('fs2-pod-security-token-anchor-v4-'))) || (oldObject.kind == 'ConfigMap' && oldObject.metadata.name.startsWith('${local.pod_security_external_ack_prefix}')))) || (oldObject.kind in ['ValidatingAdmissionPolicy','ValidatingAdmissionPolicyBinding'] && (oldObject.metadata.name.startsWith('fs2-pod-security-custody-epoch-v4-') || oldObject.metadata.name.startsWith('fs2-pod-security-custody-retired-v4-')))"
+  pod_security_custody_generation_create_match = "(object.metadata.namespace == 'fs2-system' && ((object.kind == 'Secret' && object.metadata.name.startsWith('fs2-pod-security-token-anchor-v4-')) || (object.kind == 'ConfigMap' && object.metadata.name.startsWith('${local.pod_security_external_ack_prefix}')))) || (object.kind in ['ValidatingAdmissionPolicy','ValidatingAdmissionPolicyBinding'] && (object.metadata.name.startsWith('fs2-pod-security-custody-epoch-v4-') || object.metadata.name.startsWith('fs2-pod-security-custody-retired-v4-')))"
   pod_security_rollout_persistent_volumes = sort(distinct(concat(
     [
       "fs2-sai07-ref-bioir-boltz2",
@@ -280,16 +280,16 @@ resource "kubernetes_manifest" "pod_security_custody_boundary_policy" {
           message    = "Custody objects are retained and may not be deleted."
         },
         {
-          expression = "request.userInfo.username != '${local.pod_security_custody_owner_username}' || (${local.pod_security_custody_additive_object_match})"
-          message    = "The external execution identity may create only the exact token anchor or a generation-addressed acknowledgement."
+          expression = "request.userInfo.username != '${local.pod_security_custody_owner_username}' || (${local.pod_security_custody_generation_create_match})"
+          message    = "The external execution identity may create only an immutable generation-addressed token anchor or acknowledgement."
         },
         {
-          expression = "object.kind == 'Secret' && (object.metadata.name == 'fs2-pod-security-token-anchor' || object.metadata.name.startsWith('fs2-pod-security-token-anchor-v3-')) ? (request.operation == 'CREATE' && object.metadata.name == '${local.pod_security_token_anchor_name}' && object.metadata.namespace == 'fs2-system' && object.immutable == true && object.type == 'Opaque' && object.data == {} && !has(object.stringData) && object.metadata.labels == {'security.fs2.nebius.ai/custody-owner':'external','security.fs2.nebius.ai/role':'token-anchor'} && object.metadata.annotations == {'security.fs2.nebius.ai/custody-epoch-sha256':'${local.pod_security_custody_epoch_sha256}'} && (!has(object.metadata.ownerReferences) || object.metadata.ownerReferences.size() == 0) && (!has(object.metadata.finalizers) || object.metadata.finalizers.size() == 0)) : object.kind == 'ConfigMap' && object.metadata.name.startsWith('${local.pod_security_external_ack_prefix}') ? (request.operation == 'CREATE' && object.metadata.namespace == 'fs2-system' && object.immutable == true && object.data.size() == 1 && object.data['execution.json'].size() > 0 && object.data['execution.json'].size() <= 262144 && !has(object.binaryData) && object.metadata.labels == {'app.kubernetes.io/managed-by':'fs2-sai07-external-custody','security.fs2.nebius.ai/role':'external-execution-acknowledgement'} && object.metadata.annotations.size() == 2 && object.metadata.annotations['security.fs2.nebius.ai/contract-sha256'].matches('^[a-f0-9]{64}$') && object.metadata.annotations['security.fs2.nebius.ai/execution-generation'].matches('^[a-f0-9]{64}$') && (!has(object.metadata.ownerReferences) || object.metadata.ownerReferences.size() == 0) && (!has(object.metadata.finalizers) || object.metadata.finalizers.size() == 0)) : true"
+          expression = "object.kind == 'Secret' && (object.metadata.name == 'fs2-pod-security-token-anchor' || object.metadata.name.startsWith('fs2-pod-security-token-anchor-v4-')) ? (request.operation == 'CREATE' && object.metadata.name.startsWith('fs2-pod-security-token-anchor-v4-') && object.metadata.name == 'fs2-pod-security-token-anchor-v4-' + object.metadata.annotations['security.fs2.nebius.ai/custody-epoch-sha256'] && object.metadata.annotations['security.fs2.nebius.ai/custody-epoch-sha256'].matches('^[a-f0-9]{64}$') && object.metadata.namespace == 'fs2-system' && object.immutable == true && object.type == 'Opaque' && object.data == {} && !has(object.stringData) && object.metadata.labels == {'security.fs2.nebius.ai/custody-owner':'external','security.fs2.nebius.ai/role':'token-anchor'} && object.metadata.annotations.size() == 1 && (!has(object.metadata.ownerReferences) || object.metadata.ownerReferences.size() == 0) && (!has(object.metadata.finalizers) || object.metadata.finalizers.size() == 0)) : object.kind == 'ConfigMap' && object.metadata.name.startsWith('${local.pod_security_external_ack_prefix}') ? (request.operation == 'CREATE' && object.metadata.namespace == 'fs2-system' && object.immutable == true && object.data.size() == 1 && object.data['execution.json'].size() > 0 && object.data['execution.json'].size() <= 262144 && !has(object.binaryData) && object.metadata.labels == {'app.kubernetes.io/managed-by':'fs2-sai07-external-custody','security.fs2.nebius.ai/role':'external-execution-acknowledgement'} && object.metadata.annotations.size() == 3 && object.metadata.annotations['security.fs2.nebius.ai/contract-sha256'].matches('^[a-f0-9]{64}$') && object.metadata.annotations['security.fs2.nebius.ai/custody-epoch-sha256'].matches('^[a-f0-9]{64}$') && object.metadata.annotations['security.fs2.nebius.ai/execution-generation'].matches('^[a-f0-9]{64}$') && (!has(object.metadata.ownerReferences) || object.metadata.ownerReferences.size() == 0) && (!has(object.metadata.finalizers) || object.metadata.finalizers.size() == 0)) : object.kind in ['ValidatingAdmissionPolicy','ValidatingAdmissionPolicyBinding'] && (object.metadata.name.startsWith('fs2-pod-security-custody-epoch-v4-') || object.metadata.name.startsWith('fs2-pod-security-custody-retired-v4-')) ? (request.operation == 'CREATE' && object.metadata.annotations['security.fs2.nebius.ai/custody-epoch-sha256'].matches('^[a-f0-9]{64}$') && object.metadata.name.endsWith(object.metadata.annotations['security.fs2.nebius.ai/custody-epoch-sha256']) && object.metadata.labels['app.kubernetes.io/managed-by'] == 'fs2-sai07-external-custody' && object.metadata.labels['security.fs2.nebius.ai/role'] in ['current-epoch-admission','retired-epoch-deny']) : true"
           message    = "The additive token anchor and acknowledgement must match their exact immutable empty/content-bound profiles and can never be updated."
         },
         {
-          expression = "(${local.pod_security_custody_additive_object_match}) ? (request.userInfo.username == '${local.pod_security_custody_owner_username}' && !request.userInfo.username.startsWith('system:')) : (object.kind == 'ConfigMap' && object.metadata.namespace == 'fs2-system' && object.metadata.name == 'fs2-pod-security-rollout-ledger' && request.userInfo.username in ['${local.pod_security_rollout_manager_username}','${local.pod_security_rollout_custodian_username}'])"
-          message    = "Only the separately administered owner may create additive custody objects; only the two short-lived rollout identities may advance the exact ledger."
+          expression = "(${local.pod_security_custody_additive_object_match}) ? (!request.userInfo.username.startsWith('system:')) : (object.kind == 'ConfigMap' && object.metadata.namespace == 'fs2-system' && object.metadata.name == 'fs2-pod-security-rollout-ledger' && request.userInfo.username in ['${local.pod_security_rollout_manager_username}','${local.pod_security_rollout_custodian_username}'])"
+          message    = "Only a directly authenticated non-system custody identity may create additive generation objects; only the two rollout identities may advance the ledger."
         },
         {
           expression = "!(${local.pod_security_custody_additive_object_match}) || (request.userInfo.groups.exists(g, g == '${local.pod_security_custody_owner_group}') && !request.userInfo.groups.exists(g, g in ['system:masters','${local.pod_security_platform_group}','${local.pod_security_rollout_custodian_group}']))"
@@ -1002,8 +1002,8 @@ resource "kubernetes_manifest" "pod_security_rollout_token_policy" {
       }]
       validations = [
         {
-          expression = "request.userInfo.username == '${local.pod_security_rollout_custodian_external_username}'"
-          message    = "Only the exact current external receipt operator may request a bounded reader token."
+          expression = "!request.userInfo.username.startsWith('system:')"
+          message    = "Only a directly authenticated external receipt identity may request a bounded reader token; the additive epoch policy selects the exact current identity."
         },
         {
           expression = "request.userInfo.groups.exists(group, group == '${local.pod_security_rollout_custodian_group}')"
@@ -1018,8 +1018,8 @@ resource "kubernetes_manifest" "pod_security_rollout_token_policy" {
           message    = "The rollout token must be API-audience bound and expire within ten minutes."
         },
         {
-          expression = "has(object.spec.boundObjectRef) && object.spec.boundObjectRef.apiVersion == 'v1' && object.spec.boundObjectRef.kind == 'Secret' && object.spec.boundObjectRef.name == '${local.pod_security_token_anchor_name}' && object.spec.boundObjectRef.uid != ''"
-          message    = "Every bounded reader token must be bound to the exact immutable custody-epoch anchor Secret."
+          expression = "has(object.spec.boundObjectRef) && object.spec.boundObjectRef.apiVersion == 'v1' && object.spec.boundObjectRef.kind == 'Secret' && object.spec.boundObjectRef.name.matches('^fs2-pod-security-token-anchor-v4-[a-f0-9]{64}$') && object.spec.boundObjectRef.uid != ''"
+          message    = "Every bounded reader token must be bound to one immutable generation-addressed custody-epoch anchor Secret."
         },
       ]
     }

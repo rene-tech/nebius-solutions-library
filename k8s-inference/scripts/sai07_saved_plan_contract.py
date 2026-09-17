@@ -15,6 +15,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import fcntl
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -27,6 +29,10 @@ MAX_PLAN_BYTES = 512 * 1024 * 1024
 MAX_PLAN_JSON_BYTES = 512 * 1024 * 1024
 ALLOWED_ACTIONS = {("create",), ("no-op",), ("read",), ("update",)}
 SHA256_HEX = frozenset("0123456789abcdef")
+CAPSULE_FD_RE = re.compile(r"^/proc/1/fd/(?:19[1-4]|197|198)$")
+REQUIRED_MEMFD_SEALS = (
+    fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
+)
 
 
 class SavedPlanError(ValueError):
@@ -40,7 +46,11 @@ def canonical(value: object) -> bytes:
 def _open_regular(path: Path, label: str, maximum: int) -> tuple[int, os.stat_result]:
     if not path.is_absolute() or ".." in path.parts:
         raise SavedPlanError(f"{label} path must be absolute without traversal")
-    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    capsule_descriptor = CAPSULE_FD_RE.fullmatch(str(path)) is not None
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | os.O_CLOEXEC | (0 if capsule_descriptor else os.O_NOFOLLOW),
+    )
     metadata = os.fstat(descriptor)
     if not stat.S_ISREG(metadata.st_mode) or metadata.st_size <= 0 or metadata.st_size > maximum:
         os.close(descriptor)
@@ -98,6 +108,20 @@ def _digest_member(document: dict[str, Any], name: str) -> str:
     return hashlib.sha256(canonical(value)).hexdigest()
 
 
+def _digest_regular_file(path: Path, label: str, maximum: int) -> str:
+    descriptor, metadata = _open_regular(path, label, maximum)
+    try:
+        if (
+            str(path) == "/proc/1/fd/198"
+            and fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & REQUIRED_MEMFD_SEALS
+            != REQUIRED_MEMFD_SEALS
+        ):
+            raise SavedPlanError("capsule platform-kubeconfig descriptor is not write sealed")
+        return _hash_descriptor(descriptor, metadata, label)
+    finally:
+        os.close(descriptor)
+
+
 def _root_variable(plan: dict[str, Any], name: str) -> Any:
     variables = plan.get("variables")
     entry = variables.get(name) if isinstance(variables, dict) else None
@@ -111,12 +135,19 @@ def inspect_saved_plan(
     terraform_path: Path,
     expected_terraform_sha256: str,
     expected_terraform_version: str,
+    expected_platform_kubeconfig_sha256: str | None = None,
 ) -> dict[str, str]:
     terraform_fd, terraform_metadata = _open_regular(
         terraform_path, "Terraform executable", MAX_TERRAFORM_BYTES
     )
     plan_fd, plan_metadata = _open_regular(plan_path, "saved Terraform plan", MAX_PLAN_BYTES)
     try:
+        if (
+            str(plan_path) == "/proc/1/fd/197"
+            and fcntl.fcntl(plan_fd, fcntl.F_GET_SEALS) & REQUIRED_MEMFD_SEALS
+            != REQUIRED_MEMFD_SEALS
+        ):
+            raise SavedPlanError("capsule saved-plan descriptor is not write sealed")
         if _hash_descriptor(
             terraform_fd, terraform_metadata, "Terraform executable"
         ) != expected_terraform_sha256:
@@ -170,6 +201,42 @@ def inspect_saved_plan(
             raise SavedPlanError("saved plan platform identity/rollout variables are malformed")
         external_handoff_path = rollout_receipt.get("external_handoff_path")
         custody_epoch_sha256 = rollout_receipt.get("custody_epoch_sha256")
+        execution_capsule_contract_sha256 = rollout_receipt.get(
+            "execution_capsule_contract_sha256"
+        )
+        execution_runtime_attestation_sha256 = rollout_receipt.get(
+            "execution_runtime_attestation_sha256"
+        )
+        execution_external_runtime_attestation_sha256 = rollout_receipt.get(
+            "execution_external_runtime_attestation_sha256"
+        )
+        execution_source_bundle_sha256 = rollout_receipt.get(
+            "execution_source_bundle_sha256"
+        )
+        execution_platform_kubeconfig_sha256 = rollout_receipt.get(
+            "execution_platform_kubeconfig_sha256"
+        )
+        execution_context_sha256 = rollout_receipt.get(
+            "execution_expected_context_sha256"
+        )
+        execution_receipt_bundle_sha256 = rollout_receipt.get(
+            "execution_receipt_bundle_sha256"
+        )
+        execution_cluster_id = rollout_receipt.get("execution_cluster_id")
+        execution_kube_system_uid = rollout_receipt.get(
+            "execution_kube_system_uid"
+        )
+        execution_action = rollout_receipt.get("execution_action")
+        execution_consumer = rollout_receipt.get("execution_consumer")
+        execution_digests = (
+            execution_capsule_contract_sha256,
+            execution_runtime_attestation_sha256,
+            execution_external_runtime_attestation_sha256,
+            execution_source_bundle_sha256,
+            execution_platform_kubeconfig_sha256,
+            execution_context_sha256,
+            execution_receipt_bundle_sha256,
+        )
         if (
             not isinstance(external_handoff_path, str)
             or not external_handoff_path.startswith("/")
@@ -178,9 +245,25 @@ def inspect_saved_plan(
             or len(custody_epoch_sha256) != 64
             or any(character not in SHA256_HEX for character in custody_epoch_sha256)
             or custody_epoch_sha256 == ZERO_SHA256
+            or any(
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(character not in SHA256_HEX for character in value)
+                for value in execution_digests
+            )
+            or any(
+                value == ZERO_SHA256
+                for value in execution_digests[:-1]
+            )
+            or not isinstance(execution_cluster_id, str)
+            or not execution_cluster_id
+            or not isinstance(execution_kube_system_uid, str)
+            or not execution_kube_system_uid
+            or execution_action not in {"authorize", "acknowledge"}
+            or execution_consumer not in {"owner", "downstream"}
         ):
             raise SavedPlanError(
-                "saved plan omits the exact handoff path or active custody epoch"
+                "saved plan omits the exact context, handoff, custody epoch, or execution capsule session"
             )
         changes: list[dict[str, Any]] = plan["resource_changes"]
         addresses: set[str] = set()
@@ -214,10 +297,41 @@ def inspect_saved_plan(
             )
         normalized_changes.sort(key=lambda item: item["address"])
         canonical_plan = canonical(plan)
+        if expected_platform_kubeconfig_sha256 is None:
+            platform_kubeconfig_sha256 = _digest_regular_file(
+                Path(kubeconfig_path),
+                "platform kubeconfig",
+                4 * 1024 * 1024,
+            )
+        else:
+            if (
+                not isinstance(expected_platform_kubeconfig_sha256, str)
+                or len(expected_platform_kubeconfig_sha256) != 64
+                or any(
+                    character not in SHA256_HEX
+                    for character in expected_platform_kubeconfig_sha256
+                )
+            ):
+                raise SavedPlanError(
+                    "externally attested platform kubeconfig digest is malformed"
+                )
+            platform_kubeconfig_sha256 = expected_platform_kubeconfig_sha256
+        if platform_kubeconfig_sha256 != execution_platform_kubeconfig_sha256:
+            raise SavedPlanError(
+                "saved plan receipt does not bind the exact sealed platform kubeconfig"
+            )
         return {
             "change_count": str(len(normalized_changes)),
             "configuration_sha256": _digest_member(plan, "configuration"),
             "custody_epoch_sha256": custody_epoch_sha256,
+            "action": execution_action,
+            "cluster_id": execution_cluster_id,
+            "consumer": execution_consumer,
+            "context_sha256": execution_context_sha256,
+            "execution_capsule_contract_sha256": execution_capsule_contract_sha256,
+            "execution_runtime_attestation_sha256": execution_runtime_attestation_sha256,
+            "execution_external_runtime_attestation_sha256": execution_external_runtime_attestation_sha256,
+            "execution_source_bundle_sha256": execution_source_bundle_sha256,
             "external_handoff_path_sha256": hashlib.sha256(
                 external_handoff_path.encode()
             ).hexdigest(),
@@ -226,9 +340,13 @@ def inspect_saved_plan(
             "plan_json_sha256": hashlib.sha256(canonical_plan).hexdigest(),
             "planned_values_sha256": _digest_member(plan, "planned_values"),
             "platform_kube_context": kube_context,
+            "platform_kubeconfig_path": kubeconfig_path,
             "platform_kubeconfig_path_sha256": hashlib.sha256(
                 kubeconfig_path.encode()
             ).hexdigest(),
+            "platform_kubeconfig_sha256": platform_kubeconfig_sha256,
+            "execution_platform_kubeconfig_sha256": execution_platform_kubeconfig_sha256,
+            "kube_system_uid": execution_kube_system_uid,
             "prior_state_sha256": _digest_member(plan, "prior_state"),
             "resource_changes_sha256": hashlib.sha256(
                 canonical(normalized_changes)
@@ -238,6 +356,7 @@ def inspect_saved_plan(
             "schema": SCHEMA,
             "terraform_version": expected_terraform_version,
             "rollout_phase": rollout_phase,
+            "receipt_bundle_sha256": execution_receipt_bundle_sha256,
             "variables_sha256": _digest_member(plan, "variables"),
         }
     finally:

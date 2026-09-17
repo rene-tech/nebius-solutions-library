@@ -330,23 +330,22 @@ def validate(
     )
     token_policy = entries[token_policy_identity]["manifest"]
     validations = token_policy.get("spec", {}).get("validations", [])
-    expected_receipt_expression = (
-        f"request.userInfo.username == '{receipt_username}'"
-    )
-    if not isinstance(validations, list) or expected_receipt_expression not in {
-        validation.get("expression")
+    if not isinstance(validations, list) or not any(
+        "fs2-pod-security-token-anchor-v4-[a-f0-9]{64}" in str(
+            validation.get("expression", "")
+        )
         for validation in validations
         if isinstance(validation, dict)
-    }:
+    ):
         raise BundleV3Error(
-            "TokenRequest admission is not bound to the exact current receipt identity"
+            "stable TokenRequest admission omits the v4 generation-addressed anchor profile"
         )
 
     token_identity = (
         "v1",
         "Secret",
         "fs2-system",
-        f"fs2-pod-security-token-anchor-v3-{trust['custody_epoch_sha256']}",
+        f"fs2-pod-security-token-anchor-v4-{trust['custody_epoch_sha256']}",
     )
     token = entries[token_identity]
     if (

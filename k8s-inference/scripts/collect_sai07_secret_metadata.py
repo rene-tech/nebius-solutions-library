@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime as dt
+import fcntl
 import hashlib
 import json
 import os
@@ -30,7 +31,7 @@ SCHEMA = "fs2-serve.nebius.ai/sai07-secret-metadata/v1"
 MEDIA_TYPE = "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"
 AUDIENCE = "https://kubernetes.default.svc"
 ANCHOR_NAMESPACE = "fs2-system"
-ANCHOR_NAME_PREFIX = "fs2-pod-security-token-anchor-v3-"
+ANCHOR_NAME_PREFIX = "fs2-pod-security-token-anchor-v4-"
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 
@@ -117,7 +118,7 @@ def validate_token(
     if (
         kubernetes.get("namespace") != service_account_namespace
         or service_account != {"name": service_account_name, "uid": service_account_uid}
-        or not re.fullmatch(r"fs2-pod-security-token-anchor-v3-[a-f0-9]{64}", anchor_name)
+        or not re.fullmatch(r"fs2-pod-security-token-anchor-v4-[a-f0-9]{64}", anchor_name)
         or secret != {"name": anchor_name, "uid": anchor_uid}
         or claims.get("sub")
         != f"system:serviceaccount:{service_account_namespace}:{service_account_name}"
@@ -132,11 +133,32 @@ def validate_token(
 def read_ca(path: Path) -> bytes:
     if not path.is_absolute() or ".." in path.parts:
         raise MetadataError("CA path must be absolute without parent traversal")
-    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    capsule_descriptor = str(path) == "/proc/1/fd/199"
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | os.O_CLOEXEC | (0 if capsule_descriptor else os.O_NOFOLLOW),
+    )
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_size > 1024 * 1024:
             raise MetadataError("CA is not a bounded regular file")
+        if (
+            capsule_descriptor
+            and fcntl.fcntl(descriptor, fcntl.F_GET_SEALS)
+            & (
+                fcntl.F_SEAL_SEAL
+                | fcntl.F_SEAL_SHRINK
+                | fcntl.F_SEAL_GROW
+                | fcntl.F_SEAL_WRITE
+            )
+            != (
+                fcntl.F_SEAL_SEAL
+                | fcntl.F_SEAL_SHRINK
+                | fcntl.F_SEAL_GROW
+                | fcntl.F_SEAL_WRITE
+            )
+        ):
+            raise MetadataError("capsule CA descriptor is not write sealed")
         payload = os.read(descriptor, before.st_size + 1)
         if len(payload) != before.st_size:
             raise MetadataError("CA changed during its descriptor-fenced read")

@@ -68,12 +68,38 @@ variable "pod_security_rollout_receipt" {
     platform_username                  = optional(string)
     platform_group                     = optional(string, "fs2-platform-terraform")
     custody_epoch_sha256               = optional(string, "0000000000000000000000000000000000000000000000000000000000000000")
+    execution_capsule_contract_sha256  = optional(string, "0000000000000000000000000000000000000000000000000000000000000000")
+    execution_external_runtime_attestation_sha256 = optional(string, "0000000000000000000000000000000000000000000000000000000000000000")
+    execution_runtime_attestation_sha256 = optional(string, "0000000000000000000000000000000000000000000000000000000000000000")
+    execution_source_bundle_sha256       = optional(string, "0000000000000000000000000000000000000000000000000000000000000000")
+    execution_platform_kubeconfig_sha256 = optional(string, "0000000000000000000000000000000000000000000000000000000000000000")
+    execution_expected_context_sha256    = optional(string, "0000000000000000000000000000000000000000000000000000000000000000")
+    execution_receipt_bundle_sha256      = optional(string, "0000000000000000000000000000000000000000000000000000000000000000")
+    execution_cluster_id                 = optional(string)
+    execution_kube_system_uid            = optional(string)
+    execution_action                     = optional(string)
+    execution_consumer                   = optional(string)
     external_handoff_path              = optional(string)
     external_handoff_public_key_path   = optional(string)
     external_handoff_public_key_sha256 = optional(string)
     external_handoff_key_id            = optional(string)
   })
   default = {}
+
+  validation {
+    condition = alltrue([
+      for digest in [
+        var.pod_security_rollout_receipt.execution_capsule_contract_sha256,
+        var.pod_security_rollout_receipt.execution_external_runtime_attestation_sha256,
+        var.pod_security_rollout_receipt.execution_runtime_attestation_sha256,
+        var.pod_security_rollout_receipt.execution_source_bundle_sha256,
+        var.pod_security_rollout_receipt.execution_platform_kubeconfig_sha256,
+        var.pod_security_rollout_receipt.execution_expected_context_sha256,
+        var.pod_security_rollout_receipt.execution_receipt_bundle_sha256,
+      ] : can(regex("^[a-f0-9]{64}$", digest))
+    ])
+    error_message = "pod_security_rollout_receipt execution fields must carry lowercase SHA-256 values."
+  }
 }
 
 variable "pod_security_successor_storage" {

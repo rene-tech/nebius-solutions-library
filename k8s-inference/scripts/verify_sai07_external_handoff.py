@@ -151,6 +151,11 @@ def read_regular(path: Path, label: str, limit: int = MAX_FILE_SIZE) -> bytes:
 
 
 def verify_signature(bundle: dict[str, Any], key: bytes, expected_key_id: str) -> None:
+    openssl_path = os.environ.get("FS2_SAI07_OPENSSL_PATH")
+    if openssl_path != "/proc/1/fd/192":
+        raise HandoffError(
+            "handoff verification requires the immutable capsule OpenSSL descriptor"
+        )
     signature = exact_keys(bundle.get("signature"), {"algorithm", "key_id", "value"}, "signature")
     if signature["algorithm"] != "ed25519" or signature["key_id"] != expected_key_id:
         raise HandoffError("handoff signature authority differs")
@@ -176,7 +181,7 @@ def verify_signature(bundle: dict[str, Any], key: bytes, expected_key_id: str) -
             os.fsync(descriptor)
         completed = subprocess.run(
             [
-                "openssl",
+                openssl_path,
                 "pkeyutl",
                 "-verify",
                 "-pubin",

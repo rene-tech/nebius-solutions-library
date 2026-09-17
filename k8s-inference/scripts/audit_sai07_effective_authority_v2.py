@@ -12,10 +12,14 @@ read-only apart from Kubernetes review APIs, which do not mutate resources.
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
+import fcntl
 import hashlib
 import json
+import os
 import re
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +30,12 @@ from audit_sai07_effective_authority import Client, AuditError, canonical
 SCHEMA = "fs2-serve.nebius.ai/sai07-effective-authority-audit/v2"
 MATRIX_VERSION = "sai07-authority-matrix-2026-09-17-v4"
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
+REQUIRED_MEMFD_SEALS = (
+    fcntl.F_SEAL_SEAL
+    | fcntl.F_SEAL_SHRINK
+    | fcntl.F_SEAL_GROW
+    | fcntl.F_SEAL_WRITE
+)
 PROFILES = {
     "external-executor",
     "inactive-owner",
@@ -164,6 +174,22 @@ def expected_allowed(profile: str, namespaces: list[str], persistent_volume_name
             ("admissionregistration.k8s.io", "validatingadmissionpolicybindings"),
         ):
             result.add(check_id("get", group, resource, "", ""))
+        for resource in (
+            "validatingadmissionpolicies",
+            "validatingadmissionpolicybindings",
+        ):
+            # PATCH is the Kubernetes SSA authorization edge. Admission permits
+            # it only when the object is absent and the operation is CREATE;
+            # retained generation objects are immutable and cannot be patched.
+            result.add(
+                check_id(
+                    "patch",
+                    "admissionregistration.k8s.io",
+                    resource,
+                    "",
+                    "",
+                )
+            )
         for name in persistent_volume_names:
             result.add(check_id("get", "", "persistentvolumes", "", "", name))
         readable = {
@@ -508,13 +534,129 @@ def validate_unimpersonated_platform_transport(
     """
 
     if (
-        not kubeconfig.is_absolute()
+        kubeconfig != Path("/proc/1/fd/198")
         or ".." in kubeconfig.parts
         or not context
         or not kubectl_path.is_absolute()
         or ".." in kubectl_path.parts
     ):
         raise AuditError("platform kubeconfig/context transport is malformed")
+    descriptor = os.open(kubeconfig, os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_size <= 0
+            or metadata.st_size > 4 * 1024 * 1024
+            or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & REQUIRED_MEMFD_SEALS
+            != REQUIRED_MEMFD_SEALS
+        ):
+            raise AuditError("platform kubeconfig is not a sealed bounded descriptor")
+        payload = b""
+        remaining = metadata.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(65536, remaining))
+            if not chunk:
+                break
+            payload += chunk
+            remaining -= len(chunk)
+        after = os.fstat(descriptor)
+        if remaining or (
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_size,
+            metadata.st_mtime_ns,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+        ):
+            raise AuditError("platform kubeconfig changed during sealed read")
+    finally:
+        os.close(descriptor)
+    try:
+        sealed = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise AuditError("sealed platform kubeconfig is not JSON") from error
+    if not isinstance(sealed, dict) or payload != canonical(sealed) + b"\n":
+        raise AuditError("platform kubeconfig is not canonical self-contained JSON")
+    sealed_clusters = sealed.get("clusters")
+    sealed_contexts = sealed.get("contexts")
+    sealed_users = sealed.get("users")
+    sealed_cluster = (
+        sealed_clusters[0].get("cluster")
+        if isinstance(sealed_clusters, list)
+        and len(sealed_clusters) == 1
+        and isinstance(sealed_clusters[0], dict)
+        else None
+    )
+    sealed_context = (
+        sealed_contexts[0].get("context")
+        if isinstance(sealed_contexts, list)
+        and len(sealed_contexts) == 1
+        and isinstance(sealed_contexts[0], dict)
+        else None
+    )
+    sealed_user = (
+        sealed_users[0].get("user")
+        if isinstance(sealed_users, list)
+        and len(sealed_users) == 1
+        and isinstance(sealed_users[0], dict)
+        else None
+    )
+    if (
+        set(sealed) - {
+            "apiVersion",
+            "clusters",
+            "contexts",
+            "current-context",
+            "kind",
+            "preferences",
+            "users",
+        }
+        or sealed.get("apiVersion") != "v1"
+        or sealed.get("kind") != "Config"
+        or sealed.get("preferences", {}) != {}
+        or sealed.get("current-context") != context
+        or not isinstance(sealed_clusters, list)
+        or len(sealed_clusters) != 1
+        or not isinstance(sealed_contexts, list)
+        or len(sealed_contexts) != 1
+        or not isinstance(sealed_users, list)
+        or len(sealed_users) != 1
+        or not isinstance(sealed_clusters[0], dict)
+        or set(sealed_clusters[0]) != {"cluster", "name"}
+        or not isinstance(sealed_cluster, dict)
+        or set(sealed_cluster) != {"certificate-authority-data", "server"}
+        or not isinstance(sealed_cluster.get("server"), str)
+        or not sealed_cluster["server"]
+        or not sealed_cluster["server"].startswith("https://")
+        or not isinstance(sealed_contexts[0], dict)
+        or set(sealed_contexts[0]) != {"context", "name"}
+        or sealed_contexts[0].get("name") != context
+        or not isinstance(sealed_context, dict)
+        or set(sealed_context) != {"cluster", "user"}
+        or sealed_context.get("cluster") != sealed_clusters[0].get("name")
+        or sealed_context.get("user") != sealed_users[0].get("name")
+        or not isinstance(sealed_users[0], dict)
+        or set(sealed_users[0]) != {"name", "user"}
+        or not isinstance(sealed_user, dict)
+        or set(sealed_user) != {"token"}
+        or not isinstance(sealed_user.get("token"), str)
+        or not sealed_user["token"]
+    ):
+        raise AuditError(
+            "sealed platform kubeconfig contains an external transport reference"
+        )
+    try:
+        sealed_ca = base64.b64decode(
+            sealed_cluster["certificate-authority-data"], validate=True
+        )
+    except (TypeError, ValueError) as error:
+        raise AuditError("sealed platform kubeconfig CA is not strict base64") from error
+    if not sealed_ca:
+        raise AuditError("sealed platform kubeconfig CA is empty")
     completed = subprocess.run(
         [
             str(kubectl_path),
@@ -549,18 +691,40 @@ def validate_unimpersonated_platform_transport(
     }:
         raise AuditError("platform kubeconfig redacted projection has unknown fields")
     users = rendered.get("users")
+    clusters = rendered.get("clusters")
     contexts = rendered.get("contexts")
     if (
         rendered.get("current-context") != context
+        or rendered.get("apiVersion") != "v1"
+        or rendered.get("kind") != "Config"
+        or rendered.get("preferences", {}) != {}
+        or not isinstance(clusters, list)
+        or len(clusters) != 1
+        or not isinstance(clusters[0], dict)
+        or set(clusters[0]) != {"cluster", "name"}
+        or clusters[0].get("name") != sealed_clusters[0].get("name")
+        or not isinstance(clusters[0].get("cluster"), dict)
+        or set(clusters[0]["cluster"])
+        != {"certificate-authority-data", "server"}
+        or clusters[0]["cluster"].get("server") != sealed_cluster.get("server")
+        or clusters[0]["cluster"].get("certificate-authority-data")
+        != "DATA+OMITTED"
         or not isinstance(users, list)
         or len(users) != 1
         or not isinstance(users[0], dict)
         or set(users[0]) != {"name", "user"}
+        or users[0].get("name") != sealed_users[0].get("name")
         or not isinstance(users[0].get("user"), dict)
         or not isinstance(contexts, list)
         or len(contexts) != 1
         or not isinstance(contexts[0], dict)
         or contexts[0].get("name") != context
+        or set(contexts[0]) != {"context", "name"}
+        or not isinstance(contexts[0].get("context"), dict)
+        or set(contexts[0]["context"]) != {"cluster", "user"}
+        or contexts[0]["context"] != sealed_context
+        or contexts[0]["context"].get("cluster") != clusters[0].get("name")
+        or contexts[0]["context"].get("user") != users[0].get("name")
     ):
         raise AuditError("platform kubeconfig does not select one exact context/user")
     user = users[0]["user"]
@@ -573,9 +737,30 @@ def validate_unimpersonated_platform_transport(
         "impersonate-groups",
         "impersonate-uid",
         "impersonate-user-extra",
+        "auth-provider",
+        "client-certificate",
+        "client-certificate-data",
+        "client-key",
+        "client-key-data",
+        "exec",
+        "tokenFile",
     }
-    if forbidden.intersection(user):
-        raise AuditError("platform kubeconfig contains an impersonation directive")
+    cluster = clusters[0]["cluster"]
+    if (
+        forbidden.intersection(user)
+        or set(user) != {"token"}
+        or user.get("token") != "REDACTED"
+        or "certificate-authority" in cluster
+        or "proxy-url" in cluster
+        or "tls-server-name" in cluster
+        or "insecure-skip-tls-verify" in cluster
+    ):
+        raise AuditError(
+            "platform kubeconfig contains an external credential, CA, proxy, "
+            "or impersonation reference"
+        )
+    if not isinstance(cluster.get("server"), str) or not cluster["server"]:
+        raise AuditError("platform kubeconfig embedded API origin/CA is empty")
     return {
         "context": context,
         "impersonation_free": True,

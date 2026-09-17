@@ -6,9 +6,11 @@
 > imported or applied. Importing the same live objects into this state while
 > the platform state retains them would create dual Terraform ownership.
 
-The canonical successor is the non-state-forgetting v3 preflight plus external
-executor: `scripts/run_sai07_retained_state_custody_v3.py` and
-`scripts/run_sai07_external_execution_v3.py`. The v3 design leaves every
+The canonical source successor is the non-state-forgetting v3 evidence format
+executed only inside the blocked v4 capsule contract. Its entrypoints are
+`scripts/run_sai07_authorized_apply_v4.py`,
+`scripts/run_sai07_retained_state_custody_v3.py`, and
+`scripts/run_sai07_external_execution_v3.py`. The design leaves every
 existing address in the platform state, independently downloads the exact
 versioned state object read-only, and derives a complete per-instance
 projection: exact count/for_each address, API identity, Terraform attribute
@@ -17,6 +19,8 @@ security-relevant desired semantics. Dynamic keys must equal their raw object
 names. The signed bundle must bind that projection and immediate live reads
 must match the same desired semantics plus UID/resourceVersion/full-object
 hashes.
+The v3 capsule/apply prototype is committed only as explicit rejected
+predecessor evidence; its contract stays blocked and no runtime may select it.
 The external field manager owns no fields on those retained objects. It may
 only server-side apply a new immutable, content-bound acknowledgement object
 that raw platform state and the live pre-read both prove absent. Immediate
@@ -66,9 +70,14 @@ unique provider service-account epoch; the authenticator must expose the exact
 signed username/groups and JTI. No stable owner kubeconfig is accepted. Every
 live read, token-anchor operation and acknowledgement SSA uses that token. Secret reads
 use only PartialObjectMetadataList. Each custody epoch has its own retained,
-immutable `fs2-pod-security-token-anchor-v3-<epoch-sha256>` Secret; old epochs
+immutable `fs2-pod-security-token-anchor-v4-<epoch-sha256>` Secret; old epochs
 remain protected and a new epoch never updates or replaces an old anchor. The
-empty immutable current anchor is created
+current epoch's content-addressed ValidatingAdmissionPolicy and binding are
+created first. Each future epoch uses distinct owner and receipt usernames;
+retained identities receive an additive deny-all generation rather than an
+update or deletion. The complete current/retired anchor inventory and every
+epoch admission UID/resourceVersion/full-object hash are carried by the signed
+acknowledgement and reread after SSA. The empty immutable current anchor is created
 by atomic typed POST whose response must be PartialObjectMetadata, behind the
 signed fail-closed exact-shape admission policy. That policy evaluates every
 write by the external execution identity, so its namespace-wide CREATE/PATCH
@@ -81,15 +90,31 @@ and saved-plan/config contract are hashed, and it is absent from the complete ra
 rollout gate has a retained `terraform_data` freshness clock whose `timestamp()`
 input updates in place on every attempt. The acknowledgement data source
 depends on that pending update and therefore runs during apply even for an
-unchanged-phase saved plan. Planning never requires the acknowledgement file;
-the external executor signs the resulting plan first. Apply must export
-`FS2_SAI07_APPLY_PLAN_PATH` for that exact plan, and the apply-time verifier
+unchanged-phase saved plan. Planning never requires the acknowledgement file.
+The v4 PID-1 wrapper has two separately attested roles over one retained,
+generation-addressed handoff directory. `plan-apply` receives the platform
+kubeconfig but no owner token or signing key; it creates and applies the same
+sealed plan descriptor. `external-ack` receives the owner token and signing key
+but no platform kubeconfig and never runs Terraform plan/apply or providers.
+The saved plan binds both role-specific attestation digests; the external
+acknowledgement signs both, and the apply-time verifier rechecks the plan-role
+attestation from its sealed descriptor while matching the independently signed
+external-role digest.
+The apply-time verifier
 reconstructs the plan contract and rejects any byte/config/variable/semantic
 change. It also authenticates the actual platform kubeconfig with the
 repository-pinned kubectl executable,
 SelfSubjectReview, rejects kubectl impersonation, and exact-compares every
 SSRR resource and non-resource atom with the separately pinned platform
-authority artifact. The retained state-only gate updates in place and has no
+authority artifact. The sealed kubeconfig must be canonical JSON containing
+only one embedded token and embedded CA. The PID-1 bootstrap parses those bytes
+itself before launching kubectl; exec/auth-provider/token-file, client
+key/certificate/CA paths, proxies, extensions, TLS overrides, and impersonation
+are rejected before an authenticated read. Terraform uses a sealed CLI configuration, a fixed
+read-only configuration root with no `.terraform` directory, a distinct fixed
+read-only `TF_DATA_DIR`, and the exact hashed filesystem mirror. Both roots and
+the mirror are independently content-hashed, and direct provider installation
+is disabled. The retained state-only gate updates in place and has no
 replacement trigger or local-exec provisioner. Every baseline-label owner in the
 foundation, scientific, academic, ModelExpress, and reference-data paths is
 ordered after that verified output.
@@ -122,15 +147,20 @@ future deployment-bound commit must populate its complete atomic SSRR closure
 from separately reviewed authoritative evidence and pin its digest in the main
 lock before the executor or apply-time verifier can run.
 
-`custody-source-lock-v3.json` closes the executable dependency set used by the
-external executor: raw-state semantic reconstruction, v1/v2/v3 manifest
+`custody-source-lock-v3.json` inventories the outer PID-1 bootstrap, the
+deterministic bundle builder, and every source packaged in the sealed v4
+zipapp: raw-state semantic reconstruction, v1/v2/v3 manifest
 validation, v2/v3 trust verification, retained-state preflight, and the
 metadata-only Secret transport each have a fixed path and content digest. It
 also pins the receipt-transition verifier invoked as a child process and the
 v1 audit client imported by the v2 authority auditor, and the saved-plan
 contract module, closing those transitive execution edges. The
-main trust lock pins the source-lock digest. Runtime activation must therefore
-match this reviewed source graph as well as the deployment facts.
+main trust lock pins the source-lock digest, while the independently attested
+capsule pins the deterministic zipapp digest. The contract does not hash itself
+or its containing image; a separate short-lived Ed25519 attestation binds its
+digest, image/Pod/admission identities, API origin and CA, capsule role,
+handoff identity, nonce and expiry. Runtime activation must match this reviewed
+source graph as well as the deployment facts.
 
 The no-delete source contract retains both legacy and exception OTel, DCGM,
 node-exporter and GPU-observer generations in every phase. Their releases,

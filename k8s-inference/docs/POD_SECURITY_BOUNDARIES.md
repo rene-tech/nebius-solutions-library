@@ -313,11 +313,24 @@ custody-epoch-addressed anchor is an
 atomic typed POST whose response must be PartialObjectMetadata and whose signed
 admission policy rejects a non-empty/mutable/renamed or later rewritten form.
 Every prior epoch anchor is retained and protected; a new epoch creates a new
-`fs2-pod-security-token-anchor-v3-<epoch-sha256>` name, avoiding replacement or
+`fs2-pod-security-token-anchor-v4-<epoch-sha256>` name, avoiding replacement or
 deletion while preventing old credentials from minting a current token.
 The same fail-closed policy evaluates every write from the external execution
 identity and rejects any ConfigMap or Secret outside the exact anchor and
 generation-acknowledgement profiles.
+
+The platform kubeconfig is accepted only as canonical JSON and copied to a
+sealed descriptor before use. PID 1 parses those bytes before launching
+kubectl; the rendered context must then resolve to exactly one linked cluster
+and user with only embedded CA bytes and one embedded bearer token;
+exec/auth-provider/token-file,
+client certificate/key/CA paths, proxy/TLS overrides, extensions, and
+impersonation are rejected. Terraform receives a sealed CLI configuration that
+disables direct provider discovery, a fixed read-only configuration root with
+no `.terraform` directory, a distinct fixed read-only `TF_DATA_DIR`, and a
+content-hashed filesystem mirror. The configuration root, data root, mirror,
+CLI, providers, and saved plan are selected by the attested capsule, not by a
+caller's working directory or environment.
 
 The external field manager owns zero fields on Terraform-retained objects. It
 consumes the exact phase receipt, re-reads the retained set, and server-side
@@ -328,8 +341,11 @@ set, phase/action/consumer/context, custody epoch, complete state aggregate,
 the exact canonical saved-plan/config/variables/planned-values projection,
 owner authority audits, token-anchor metadata and ledger-consumption digest.
 The saved plan is created before the acknowledgement; planning does not read a
-handoff file. Apply must provide that exact plan through
-`FS2_SAI07_APPLY_PLAN_PATH`. The platform gate uses an in-place `timestamp()` freshness clock. Its pending
+handoff file. The v4 PID-1 `plan-apply` capsule creates and applies the same
+sealed descriptor, publishes a generation-addressed read-only copy for the
+separate `external-ack` capsule, and derives the verifier query from the plan
+rather than an environment override. The platform gate uses an in-place
+`timestamp()` freshness clock. Its pending
 update defers the exact acknowledgement data source until every apply attempt,
 where it re-runs the pinned read-only plan projection and rejects any different
 plan/config or expired acknowledgement before any dependent
@@ -338,9 +354,14 @@ academic-assets module, ModelExpress namespace, and reference-data namespace
 all depend on that verified output. The retained state-only gate updates in
 place and has no replacement trigger or local-exec provisioner.
 
-The apply-time verifier also uses the exact platform kubeconfig/context from
-the saved plan. A redacted `kubectl config view --minify` projection must show
-no impersonation directive; the kubectl executable itself is digest-pinned.
+The apply-time verifier also uses the exact sealed platform kubeconfig/context
+from the saved plan. Before any authenticated request, PID 1 parses the sealed
+canonical bytes and requires exactly one embedded bearer token and embedded
+CA; exec/auth-provider/token-file, client key/certificate/CA paths, proxies,
+extensions, TLS overrides and impersonation are rejected. A later minified
+kubectl projection must expose only its fixed token/CA redaction markers and
+the same server/context linkage. The kubectl executable itself is
+descriptor-sealed and digest-pinned.
 SelfSubjectReview must authenticate the separately
 pinned platform username and groups, and every atomic SSRR resource and
 non-resource rule in every frozen namespace must equal the repository-pinned
@@ -432,7 +453,7 @@ identity across one identical namespace inventory.
 The two short-lived automation identities are tokenless ServiceAccounts.
 Their distinct TokenRequest credentials use exactly the Kubernetes API
 audience, at most ten minutes, and `boundObjectRef` to the immutable empty
-generation-addressed `fs2-system/fs2-pod-security-token-anchor-v3-<epoch-sha256>`
+generation-addressed `fs2-system/fs2-pod-security-token-anchor-v4-<epoch-sha256>`
 Secret UID. JWT subject, audience,
 lifetime, ServiceAccount UID, bound Secret UID, and JTI are checked before each
 token is held in anonymous memory-backed storage. Fail-closed admission limits

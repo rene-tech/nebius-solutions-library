@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import fcntl
 import os
+import re
 import stat
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +28,9 @@ LOCK_SCHEMA = "fs2-serve.nebius.ai/sai07-evidence-collection-contract/v3"
 PROVIDER_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/sai07-provider-evidence-receipt/v5"
 BACKEND_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/sai07-backend-evidence-receipt/v5"
 MAX_KEY_BYTES = 64 * 1024
-ROOT = Path(__file__).resolve().parents[1]
-TRUST_LOCK = ROOT / "stages" / "pod-security-custody" / "custody-trust-lock-v3.json"
+ROOT = Path("/proc/1/fd/190")
+TRUST_LOCK = Path("/proc/1/fd/181")
+SOURCE_LOCK = Path("/proc/1/fd/183")
 
 
 class TrustV3Error(ValueError):
@@ -36,11 +40,20 @@ class TrustV3Error(ValueError):
 def read_regular(path: Path, label: str, maximum: int) -> bytes:
     if not path.is_absolute() or ".." in path.parts:
         raise TrustV3Error(f"{label} path must be absolute without traversal")
-    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    capsule_fd = re.fullmatch(r"/proc/1/fd/(?:18[0-8]|19[0-9])", str(path)) is not None
+    descriptor = os.open(
+        path, os.O_RDONLY | os.O_CLOEXEC | (0 if capsule_fd else os.O_NOFOLLOW)
+    )
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_size > maximum:
             raise TrustV3Error(f"{label} is not a bounded regular file")
+        if capsule_fd and fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & (
+            fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
+        ) != (
+            fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
+        ):
+            raise TrustV3Error(f"{label} capsule descriptor is not write sealed")
         chunks: list[bytes] = []
         remaining = before.st_size
         while remaining:
@@ -94,9 +107,14 @@ def authority(contract: dict[str, Any], name: str) -> tuple[bytes, str, str]:
         f"{name} authority",
     )
     configured_path = Path(evidence.nonempty(value["public_key_path"], f"{name} public-key path"))
-    if ".." in configured_path.parts:
-        raise TrustV3Error(f"{name} public-key path contains traversal")
-    key_path = configured_path if configured_path.is_absolute() else ROOT / configured_path
+    expected_descriptor = {
+        "manifest": Path("/proc/1/fd/185"),
+        "provider_receipt": Path("/proc/1/fd/186"),
+        "backend_receipt": Path("/proc/1/fd/187"),
+    }[name]
+    if configured_path != expected_descriptor:
+        raise TrustV3Error(f"{name} public key is not capsule-descriptor bound")
+    key_path = configured_path
     key = read_regular(key_path, f"{name} public key", MAX_KEY_BYTES)
     if hashlib.sha256(key).hexdigest() != evidence.sha256(
         value["public_key_sha256"], f"{name} public-key SHA-256"
@@ -186,11 +204,30 @@ def validate(query: dict[str, str]) -> dict[str, str]:
     source_path = Path(evidence.nonempty(collector["source_path"], "collector source path"))
     if source_path.is_absolute() or ".." in source_path.parts:
         raise TrustV3Error("collector source path must be repository-relative without traversal")
-    source = ROOT / source_path
-    if hashlib.sha256(read_regular(source, "collector source", 4 * 1024 * 1024)).hexdigest() != evidence.sha256(
+    _source_lock_bytes, source_lock = load_json(
+        SOURCE_LOCK,
+        "sealed custody source lock",
+        1024 * 1024,
+        repository_document=True,
+    )
+    source_entry = source_lock.get("sources", {}).get("authoritative_collector")
+    if (
+        source_lock.get("schema")
+        != "fs2-serve.nebius.ai/sai07-custody-source-lock/v3"
+        or not isinstance(source_entry, dict)
+        or source_entry.get("path") != str(source_path)
+        or source_entry.get("sha256") != collector["source_sha256"]
+    ):
+        raise TrustV3Error("collector source differs from the sealed source lock")
+    try:
+        with zipfile.ZipFile(ROOT) as archive:
+            source_bytes = archive.read(source_path.name)
+    except (KeyError, OSError, zipfile.BadZipFile) as error:
+        raise TrustV3Error("collector source is absent from the sealed bundle") from error
+    if hashlib.sha256(source_bytes).hexdigest() != evidence.sha256(
         collector["source_sha256"], "collector source SHA-256"
     ):
-        raise TrustV3Error("provider-native collector differs from the repository-pinned source")
+        raise TrustV3Error("provider-native collector differs from the sealed source bundle")
 
     provider_bytes, provider_artifact = load_json(
         Path(query["provider_evidence_path"]), "provider evidence", collector["max_evidence_bytes"]

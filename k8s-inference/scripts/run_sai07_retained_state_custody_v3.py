@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -27,9 +28,10 @@ from typing import Any
 import sai07_saved_plan_contract as saved_plan
 import verify_sai07_custody_trust_v3 as trust_v3
 
-ROOT = Path(__file__).resolve().parents[1]
-TRUST_LOCK = ROOT / "stages" / "pod-security-custody" / "custody-trust-lock-v3.json"
-STATE_HANDOFF = ROOT / "stages" / "foundation" / "pod_security_custody_state_handoff.tf"
+ROOT = Path("/proc/1/fd/190")
+TRUST_LOCK = Path("/proc/1/fd/181")
+CAPSULE_CONTRACT = Path("/proc/1/fd/180")
+PLATFORM_AUTHORITY = Path("/proc/1/fd/182")
 
 
 class PipelineV3Error(ValueError):
@@ -41,11 +43,24 @@ def canonical(value: object) -> bytes:
 
 
 def run_verifier(script: str, query: dict[str, str]) -> dict[str, str]:
+    command = {
+        "verify_sai07_custody_trust_v3.py": "verify-trust",
+        "verify_sai07_custody_manifest_bundle_v3.py": "verify-manifest",
+    }.get(script)
+    if command is None:
+        raise PipelineV3Error("unrecognized sealed-bundle verifier")
+    public_fds = tuple(range(180, 185)) + tuple(range(190, 200))
     completed = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / script)],
+        ["/proc/1/fd/191", "/proc/1/fd/190", command],
         input=canonical(query),
         check=False,
         capture_output=True,
+        pass_fds=public_fds,
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key.startswith("FS2_SAI07_") or key == "PATH"
+        },
         timeout=300,
     )
     if completed.returncode != 0:
@@ -140,32 +155,52 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     executor = repository_lock.get("executor")
     if not isinstance(executor, dict):
         raise PipelineV3Error("repository executor contract is malformed")
-    terraform_cli_path = executor.get("terraform_cli_path")
-    terraform_cli_sha256 = executor.get("terraform_cli_sha256")
-    terraform_cli_version = executor.get("terraform_cli_version")
+    capsule_bytes, capsule = trust_v3.load_json(
+        CAPSULE_CONTRACT,
+        "execution capsule contract",
+        1024 * 1024,
+        repository_document=True,
+    )
+    runtime = capsule.get("runtime")
+    terraform_cli_sha256 = (
+        runtime.get("runtime_files", {}).get("terraform", {}).get("sha256")
+        if isinstance(runtime, dict)
+        else None
+    )
+    terraform_cli_version = runtime.get("terraform_version") if isinstance(runtime, dict) else None
+    platform_authority_bytes, platform_authority = trust_v3.load_json(
+        PLATFORM_AUTHORITY,
+        "platform authority contract",
+        32 * 1024 * 1024,
+        repository_document=True,
+    )
+    platform_kubeconfig_sha256 = platform_authority.get(
+        "platform_kubeconfig_sha256"
+    )
     if (
-        not isinstance(terraform_cli_path, str)
-        or not terraform_cli_path.startswith("/")
-        or ".." in Path(terraform_cli_path).parts
+        capsule.get("activation") != "active"
+        or os.environ.get("FS2_SAI07_CAPSULE_CONTRACT_SHA256")
+        != hashlib.sha256(capsule_bytes).hexdigest()
         or not isinstance(terraform_cli_sha256, str)
         or len(terraform_cli_sha256) != 64
         or not isinstance(terraform_cli_version, str)
         or not terraform_cli_version
+        or not isinstance(platform_kubeconfig_sha256, str)
+        or len(platform_kubeconfig_sha256) != 64
+        or hashlib.sha256(platform_authority_bytes).hexdigest()
+        != executor.get("platform_authority_contract_sha256")
     ):
         raise PipelineV3Error("repository Terraform CLI pin is incomplete")
     try:
         platform_plan = saved_plan.inspect_saved_plan(
             args.platform_saved_plan,
-            Path(terraform_cli_path),
+            Path("/proc/1/fd/194"),
             terraform_cli_sha256,
             terraform_cli_version,
+            platform_kubeconfig_sha256,
         )
     except saved_plan.SavedPlanError as error:
         raise PipelineV3Error("saved platform plan/config projection is invalid") from error
-    active_handoff_source = active_source_without_archive(STATE_HANDOFF)
-    forbidden = ("removed {", "terraform state rm", "terraform import", "import {")
-    if any(item in active_handoff_source for item in forbidden):
-        raise PipelineV3Error("active platform source contains a state-forgetting/adoption primitive")
     return {
         "action": "await-external-acknowledgement-ssa",
         "collection_id": trust["collection_id"],

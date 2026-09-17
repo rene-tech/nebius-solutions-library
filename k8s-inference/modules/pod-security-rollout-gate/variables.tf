@@ -182,6 +182,100 @@ variable "custody_epoch_sha256" {
   }
 }
 
+variable "execution_capsule_contract_sha256" {
+  description = "Exact active immutable execution-capsule contract digest bound into the saved plan."
+  type        = string
+  validation {
+    condition = (
+      can(regex("^[a-f0-9]{64}$", var.execution_capsule_contract_sha256)) &&
+      var.execution_capsule_contract_sha256 != strrep("0", 64)
+    )
+    error_message = "execution_capsule_contract_sha256 must be a nonzero lowercase SHA-256."
+  }
+}
+
+variable "execution_runtime_attestation_sha256" {
+  type = string
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.execution_runtime_attestation_sha256)) && var.execution_runtime_attestation_sha256 != strrep("0", 64)
+    error_message = "execution_runtime_attestation_sha256 must be a nonzero lowercase SHA-256."
+  }
+}
+
+variable "execution_external_runtime_attestation_sha256" {
+  description = "Exact external-ack role runtime-attestation digest bound into the plan and acknowledgement."
+  type        = string
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.execution_external_runtime_attestation_sha256)) && var.execution_external_runtime_attestation_sha256 != strrep("0", 64)
+    error_message = "execution_external_runtime_attestation_sha256 must be a nonzero lowercase SHA-256."
+  }
+}
+
+variable "execution_source_bundle_sha256" {
+  type = string
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.execution_source_bundle_sha256)) && var.execution_source_bundle_sha256 != strrep("0", 64)
+    error_message = "execution_source_bundle_sha256 must be a nonzero lowercase SHA-256."
+  }
+}
+
+variable "execution_platform_kubeconfig_sha256" {
+  type      = string
+  sensitive = true
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.execution_platform_kubeconfig_sha256)) && var.execution_platform_kubeconfig_sha256 != strrep("0", 64)
+    error_message = "execution_platform_kubeconfig_sha256 must be a nonzero lowercase SHA-256."
+  }
+}
+
+variable "execution_expected_context_sha256" {
+  type = string
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.execution_expected_context_sha256)) && var.execution_expected_context_sha256 != strrep("0", 64)
+    error_message = "execution_expected_context_sha256 must be a nonzero lowercase SHA-256."
+  }
+}
+
+variable "execution_receipt_bundle_sha256" {
+  type = string
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.execution_receipt_bundle_sha256))
+    error_message = "execution_receipt_bundle_sha256 must be a lowercase SHA-256."
+  }
+}
+
+variable "execution_cluster_id" {
+  type = string
+  validation {
+    condition     = length(var.execution_cluster_id) > 0
+    error_message = "execution_cluster_id must be nonempty."
+  }
+}
+
+variable "execution_kube_system_uid" {
+  type = string
+  validation {
+    condition     = length(var.execution_kube_system_uid) > 0
+    error_message = "execution_kube_system_uid must be nonempty."
+  }
+}
+
+variable "execution_action" {
+  type = string
+  validation {
+    condition     = contains(["authorize", "acknowledge"], var.execution_action)
+    error_message = "execution_action must be authorize or acknowledge."
+  }
+}
+
+variable "execution_consumer" {
+  type = string
+  validation {
+    condition     = contains(["owner", "downstream"], var.execution_consumer)
+    error_message = "execution_consumer must be owner or downstream."
+  }
+}
+
 variable "token_audience" {
   description = "Exact Kubernetes API audience for the ten-minute rollout-custodian TokenRequest."
   type        = string

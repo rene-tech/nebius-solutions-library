@@ -8,6 +8,7 @@ import binascii
 import datetime as dt
 import hashlib
 import json
+import fcntl
 import os
 import re
 import stat
@@ -207,11 +208,20 @@ def canonical(value: object) -> bytes:
 def read_regular(path: Path, label: str, limit: int = MAX_SIZE) -> bytes:
     if not path.is_absolute() or ".." in path.parts:
         raise BundleError(f"{label} path must be absolute without parent traversal")
-    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    capsule_fd = re.fullmatch(r"/proc/1/fd/(?:18[0-8]|19[0-9])", str(path)) is not None
+    descriptor = os.open(
+        path, os.O_RDONLY | os.O_CLOEXEC | (0 if capsule_fd else os.O_NOFOLLOW)
+    )
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_size > limit:
             raise BundleError(f"{label} is not a bounded regular file")
+        if capsule_fd and fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & (
+            fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
+        ) != (
+            fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
+        ):
+            raise BundleError(f"{label} capsule descriptor is not write sealed")
         payload = os.read(descriptor, before.st_size + 1)
         after = os.fstat(descriptor)
         if len(payload) != before.st_size or (before.st_dev, before.st_ino, before.st_size) != (
@@ -232,6 +242,11 @@ def exact(value: object, keys: set[str], label: str) -> dict[str, Any]:
 
 
 def verify_signature(bundle: dict[str, Any], public_key: bytes, key_id: str) -> None:
+    openssl_path = os.environ.get("FS2_SAI07_OPENSSL_PATH")
+    if openssl_path != "/proc/1/fd/192":
+        raise BundleError(
+            "signature verification requires the immutable capsule OpenSSL descriptor"
+        )
     signature = exact(bundle.get("signature"), {"algorithm", "key_id", "value"}, "signature")
     if signature["algorithm"] != "ed25519" or signature["key_id"] != key_id:
         raise BundleError("manifest signature authority differs")
@@ -257,7 +272,7 @@ def verify_signature(bundle: dict[str, Any], public_key: bytes, key_id: str) -> 
             os.fsync(descriptor)
         completed = subprocess.run(
             [
-                "openssl",
+                openssl_path,
                 "pkeyutl",
                 "-verify",
                 "-pubin",
@@ -373,7 +388,7 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
                 != {"security.fs2.nebius.ai/custody-epoch-sha256"}
                 or not SHA256_RE.fullmatch(str(epoch_sha256))
                 or namespace != "fs2-system"
-                or name != f"fs2-pod-security-token-anchor-v3-{epoch_sha256}"
+                or name != f"fs2-pod-security-token-anchor-v4-{epoch_sha256}"
                 or manifest.get("immutable") is not True
                 or manifest.get("type") != "Opaque"
                 or manifest.get("data", {}) != {}
@@ -612,7 +627,7 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
         if isinstance(item, dict) and isinstance(item.get("expression"), str)
     ]
     anchor_fragments = (
-        "fs2-pod-security-token-anchor-v3-",
+        "fs2-pod-security-token-anchor-v4-",
         "request.operation == 'CREATE'",
         "request.userInfo.username !=",
         "object.metadata.namespace == 'fs2-system'",
@@ -668,7 +683,6 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
     validation_expressions = {
         item.get("expression") for item in validations or [] if isinstance(item, dict)
     }
-    token_anchor_name = token_anchor_identities[0][3]
     required_fragments = (
         "fs2-pod-security-receipt-custodians",
         "authentication.kubernetes.io/credential-id",
@@ -677,7 +691,7 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
         "has(object.spec.boundObjectRef)",
         "object.spec.boundObjectRef.apiVersion == 'v1'",
         "object.spec.boundObjectRef.kind == 'Secret'",
-        f"object.spec.boundObjectRef.name == '{token_anchor_name}'",
+        "object.spec.boundObjectRef.name.matches('^fs2-pod-security-token-anchor-v4-[a-f0-9]{64}$')",
         "object.spec.boundObjectRef.uid != ''",
     )
     if not validation_expressions or any(

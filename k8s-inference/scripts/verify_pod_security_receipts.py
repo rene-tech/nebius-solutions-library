@@ -690,6 +690,11 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _verify_signature(bundle: dict[str, Any], public_key_bytes: bytes, expected_key_id: str) -> None:
+    openssl_path = os.environ.get("FS2_SAI07_OPENSSL_PATH")
+    if openssl_path != "/proc/1/fd/192":
+        raise ReceiptError(
+            "receipt verification requires the immutable capsule OpenSSL descriptor"
+        )
     signature = _object(bundle.get("signature"), "signature")
     _exact_keys(signature, {"algorithm", "key_id", "value"}, "signature")
     if signature["algorithm"] != "ed25519" or signature["key_id"] != expected_key_id:
@@ -723,7 +728,7 @@ def _verify_signature(bundle: dict[str, Any], public_key_bytes: bytes, expected_
         # filesystem object is created, unlinked, or exposed to pathname swaps.
         completed = subprocess.run(
             [
-                "openssl",
+                openssl_path,
                 "pkeyutl",
                 "-verify",
                 "-pubin",
@@ -3953,7 +3958,7 @@ class KubectlClient:
         if audience != "https://kubernetes.default.svc":
             raise ReceiptError("rollout token audience differs from the reviewed API audience")
         if not re.fullmatch(
-            r"fs2-pod-security-token-anchor-v3-[a-f0-9]{64}", token_anchor_name
+            r"fs2-pod-security-token-anchor-v4-[a-f0-9]{64}", token_anchor_name
         ):
             raise ReceiptError("rollout TokenRequest anchor name is malformed")
         if not IDENTIFIER_RE.fullmatch(token_anchor_uid):

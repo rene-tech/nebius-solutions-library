@@ -225,7 +225,13 @@ locals {
   expected_bundle_sha256 = local.receipt_required ? local.receipt_bundle_sha256 : strrep("0", 64)
   external_acknowledgement_query = {
     ack_path                      = var.external_handoff_path
-    trust_lock_path               = "${path.module}/../../stages/pod-security-custody/custody-trust-lock-v3.json"
+    trust_lock_path               = "/proc/1/fd/181"
+    actual_saved_plan_path        = "/proc/1/fd/197"
+    execution_capsule_contract_path = "/proc/1/fd/180"
+    execution_capsule_contract_sha256 = var.execution_capsule_contract_sha256
+    execution_external_runtime_attestation_sha256 = var.execution_external_runtime_attestation_sha256
+    execution_runtime_attestation_sha256 = var.execution_runtime_attestation_sha256
+    execution_source_bundle_sha256 = var.execution_source_bundle_sha256
     receipt_bundle_sha256         = local.expected_bundle_sha256
     expected_context_sha256       = sha256(jsonencode(var.expected_context))
     expected_custody_epoch_sha256 = var.custody_epoch_sha256
@@ -234,7 +240,7 @@ locals {
     expected_action               = var.action
     cluster_id                    = var.expected_context.cluster_id
     kube_system_uid               = var.expected_context.kube_system_uid
-    platform_kubeconfig_path      = var.kubeconfig_path
+    platform_kubeconfig_path      = "/proc/1/fd/198"
     platform_context              = var.kube_context
   }
 }
@@ -244,10 +250,10 @@ locals {
 # on a pending clock update, Terraform defers the read until apply even when
 # phase and context are unchanged. A delayed saved plan therefore evaluates the
 # acknowledgement, exact saved-plan bytes and ten-minute expiry at apply time.
-# Planning does not read an acknowledgement: the external executor receives
-# that saved plan, signs its full projection, and writes the generation file
-# before apply. The apply process must export FS2_SAI07_APPLY_PLAN_PATH pointing
-# at the exact saved plan it is executing.
+# Planning does not read an acknowledgement. The retained immutable capsule
+# copies the actual plan to write-sealed PID-1 fd 197, creates the acknowledgement
+# against that descriptor, and invokes Terraform apply with the same descriptor.
+# No environment variable or caller-selected second plan path is accepted.
 resource "terraform_data" "apply_freshness_clock" {
   input = {
     attempted_at         = timestamp()
@@ -272,7 +278,11 @@ resource "terraform_data" "apply_freshness_clock" {
 # SelfSubjectReview/SSRR/SSAR reads for the actual platform transport; it has no
 # mutation path.
 data "external" "verified_execution_acknowledgement" {
-  program = ["python3", "${path.module}/../../scripts/verify_sai07_external_execution_ack_v3.py"]
+  program = [
+    "/proc/1/fd/191",
+    "/proc/1/fd/190",
+    "verify-ack",
+  ]
 
   query = local.external_acknowledgement_query
 
@@ -290,13 +300,31 @@ resource "terraform_data" "verified" {
     precondition {
       condition = (
         var.external_handoff_path != null &&
+        var.kubeconfig_path == "/proc/1/fd/198" &&
         var.custody_epoch_sha256 != strrep("0", 64) &&
+        var.execution_capsule_contract_sha256 != strrep("0", 64) &&
+        var.execution_external_runtime_attestation_sha256 != strrep("0", 64) &&
+        var.execution_runtime_attestation_sha256 != strrep("0", 64) &&
+        var.execution_source_bundle_sha256 != strrep("0", 64) &&
         data.external.verified_execution_acknowledgement.result.valid == "true" &&
         data.external.verified_execution_acknowledgement.result.bundle_sha256 == local.expected_bundle_sha256 &&
         data.external.verified_execution_acknowledgement.result.custody_epoch_sha256 == var.custody_epoch_sha256 &&
+        data.external.verified_execution_acknowledgement.result.execution_capsule_contract_sha256 == var.execution_capsule_contract_sha256 &&
+        data.external.verified_execution_acknowledgement.result.execution_plan_runtime_attestation_sha256 == var.execution_runtime_attestation_sha256 &&
+        data.external.verified_execution_acknowledgement.result.execution_runtime_attestation_sha256 == var.execution_external_runtime_attestation_sha256 &&
+        data.external.verified_execution_acknowledgement.result.execution_source_bundle_sha256 == var.execution_source_bundle_sha256 &&
         data.external.verified_execution_acknowledgement.result.phase == var.phase &&
         data.external.verified_execution_acknowledgement.result.consumer == var.consumer_role &&
-        data.external.verified_execution_acknowledgement.result.action == var.action
+        data.external.verified_execution_acknowledgement.result.action == var.action &&
+        data.external.verified_execution_acknowledgement.result.context_sha256 == sha256(jsonencode(var.expected_context)) &&
+        data.external.verified_execution_acknowledgement.result.cluster_id == var.expected_context.cluster_id &&
+        data.external.verified_execution_acknowledgement.result.kube_system_uid == var.expected_context.kube_system_uid &&
+        var.execution_expected_context_sha256 == sha256(jsonencode(var.expected_context)) &&
+        var.execution_cluster_id == var.expected_context.cluster_id &&
+        var.execution_kube_system_uid == var.expected_context.kube_system_uid &&
+        var.execution_action == var.action &&
+        var.execution_consumer == var.consumer_role &&
+        var.execution_receipt_bundle_sha256 == local.expected_bundle_sha256
       )
       error_message = "A fresh independently signed v3 external execution acknowledgement matching this exact phase, consumer, action, bundle and context is required."
     }

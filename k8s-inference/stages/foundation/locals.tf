@@ -286,5 +286,11 @@ locals {
   selected_cluster            = try(one([for cluster in local.kubeconfig.clusters : cluster if cluster.name == local.selected_kubeconfig_cluster]), null)
   selected_api_server         = try(local.selected_cluster.cluster.server, null)
   normalized_run_root         = trimsuffix(abspath(var.run_root), "/")
-  expected_kubeconfig_path    = "${local.normalized_run_root}/kubeconfig"
+  pod_security_capsule_active = try(
+    var.pod_security_rollout_receipt.execution_capsule_contract_sha256 != strrep("0", 64),
+    false,
+  )
+  expected_kubeconfig_path = local.pod_security_capsule_active ? (
+    "/proc/1/fd/198"
+  ) : "${local.normalized_run_root}/kubeconfig"
 }
