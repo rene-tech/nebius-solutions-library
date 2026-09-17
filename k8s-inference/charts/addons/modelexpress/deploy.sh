@@ -20,6 +20,20 @@ NAMESPACE="modelexpress"
 VALUES_FILE=""
 DRY_RUN=false
 UPGRADE=false
+CHART_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+SECURITY_DIR=$(cd "$CHART_DIR/../../.." && pwd)/security
+image_gate=(
+    --post-renderer /usr/bin/env
+    --post-renderer-args python3
+    --post-renderer-args "$SECURITY_DIR/helm_image_postrenderer.py"
+    --post-renderer-args=--lock
+    --post-renderer-args "$SECURITY_DIR/third-party-images.lock.json"
+    --post-renderer-args=--first-party-lock
+    --post-renderer-args "$SECURITY_DIR/first-party-images.lock.json"
+    --post-renderer-args=--trust
+    --post-renderer-args "$SECURITY_DIR/image-attestation-trust.json"
+)
+RELEASE_CLOSURE="${FS2_SAI24_RELEASE_CLOSURE:-}"
 
 # Function to print colored output
 print_status() {
@@ -42,6 +56,11 @@ print_error() {
 show_usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
+
+Required environment:
+    FS2_SAI24_RELEASE_CLOSURE
+                              Signed release closure whose source and values
+                              exactly authorize this invocation
 
 Options:
     -r, --release-name NAME    Release name (default: modelexpress)
@@ -147,6 +166,29 @@ create_namespace() {
     fi
 }
 
+# Verify source, trust, and exact selected values before any cluster or registry
+# prerequisite check can make a request or create a namespace.
+verify_release_evidence() {
+    local evidence_args=(
+        --root "$SECURITY_DIR/.."
+        --surfaces "$SECURITY_DIR/release-image-surfaces.json"
+        --trust "$SECURITY_DIR/image-attestation-trust.json"
+        --verify-direct-closure "$RELEASE_CLOSURE"
+        --surface-id charts/addons/modelexpress
+    )
+
+    if [ -z "$RELEASE_CLOSURE" ]; then
+        print_error "FS2_SAI24_RELEASE_CLOSURE must name the signed accepted release closure."
+        exit 1
+    fi
+
+    if [ -n "$VALUES_FILE" ]; then
+        evidence_args+=(--values-file "$VALUES_FILE")
+    fi
+
+    python3 "$SECURITY_DIR/release_image_closure.py" "${evidence_args[@]}"
+}
+
 # Function to deploy the chart
 deploy_chart() {
     local helm_args=()
@@ -164,10 +206,10 @@ deploy_chart() {
 
     if [ "$UPGRADE" = true ]; then
         print_status "Upgrading release: $RELEASE_NAME"
-        helm upgrade "${helm_args[@]}" "$RELEASE_NAME" .
+        helm upgrade "${helm_args[@]}" "${image_gate[@]}" "$RELEASE_NAME" "$CHART_DIR"
     else
         print_status "Installing release: $RELEASE_NAME"
-        helm install "${helm_args[@]}" "$RELEASE_NAME" .
+        helm install "${helm_args[@]}" "${image_gate[@]}" "$RELEASE_NAME" "$CHART_DIR"
     fi
 
     print_success "Deployment completed successfully"
@@ -236,6 +278,7 @@ main() {
         print_status "Values file: Using default values"
     fi
 
+    verify_release_evidence
     find_default_values
     check_prerequisites
     create_namespace

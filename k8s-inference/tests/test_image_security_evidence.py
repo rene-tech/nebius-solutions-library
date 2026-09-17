@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -16,8 +17,11 @@ from security.helm_image_postrenderer import rewrite
 from security.release_image_closure import (
     _production_reference,
     _release_declaration_hashes,
+    _validate_terraform_resource_closure,
     validate_source_surfaces,
+    verify_direct_invocation,
 )
+from security.yaml_image_references import YamlImageError, image_scalars
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -153,7 +157,9 @@ def test_postrenderer_accepts_reviewed_first_party_and_rejects_unlisted_digest(
     monkeypatch.setattr(
         postrenderer,
         "validate_first_party_inventory",
-        lambda _path, _trust: [{"digest_reference": first_party_reference}],
+        lambda _path, _trust, **_kwargs: [
+            {"digest_reference": first_party_reference}
+        ],
     )
     rendered, subjects = rewrite(
         "containers:\n"
@@ -172,6 +178,146 @@ def test_postrenderer_accepts_reviewed_first_party_and_rejects_unlisted_digest(
             tmp_path / "first-party.json",
             tmp_path / "trust.json",
         )
+
+
+@pytest.mark.parametrize(
+    "rendered",
+    [
+        "containers:\n  - image : registry.example/image:1.0\n",
+        "containers:\n  - 'image': 'registry.example/image:1.0'\n",
+        'containers: [{"image" : "registry.example/image:1.0", name: api}]\n',
+        "containers:\n  - {name: api, image: registry.example/image:1.0}\n",
+        "? image\n: registry.example/image:1.0\n",
+    ],
+)
+def test_yaml_image_lexer_closes_spacing_quoted_key_and_flow_mapping_bypasses(
+    rendered: str,
+) -> None:
+    scalars = image_scalars(rendered)
+    assert [scalar.reference for scalar in scalars] == [
+        "registry.example/image:1.0"
+    ]
+
+
+def test_yaml_image_lexer_ignores_comments_and_block_scalar_payloads() -> None:
+    rendered = (
+        "note: |\n"
+        "  image: registry.example/inside-text:1\n"
+        "# image: registry.example/comment:1\n"
+        "container: {image: registry.example/real:1}\n"
+    )
+    assert [scalar.reference for scalar in image_scalars(rendered)] == [
+        "registry.example/real:1"
+    ]
+
+
+def test_yaml_image_lexer_rejects_composite_or_multiline_image_values() -> None:
+    for rendered in (
+        "container: {image: {repository: example.invalid/repo}}\n",
+        "container:\n  image:\n    repository: example.invalid/repo\n",
+        "container: {image: *runtime_image}\n",
+        "defaults: &runtime\n  image: registry.example/image:1.0\n"
+        "container:\n  <<: *runtime\n",
+    ):
+        with pytest.raises(YamlImageError):
+            image_scalars(rendered)
+
+
+def test_direct_installer_rejects_values_absent_from_signed_closure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import security.release_image_closure as closure_module
+
+    trust = tmp_path / "trust.json"
+    surfaces = tmp_path / "surfaces.json"
+    values = tmp_path / "values.yaml"
+    closure = tmp_path / "closure.json"
+    signature = tmp_path / "closure.json.sig"
+    trust.write_text("trusted-source-policy")
+    surfaces.write_text("governed-surfaces")
+    values.write_text("replicaCount: 2\n")
+    signature.write_text("detached-signature")
+    source_execution = {"kind": "direct-installer", "script_sha256": "a" * 64}
+    closure.write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/release-image-closure/v2",
+                "source": {"commit": "b" * 40, "tree": "c" * 40},
+                "trust_policy_sha256": hashlib.sha256(trust.read_bytes()).hexdigest(),
+                "surface_manifest_sha256": hashlib.sha256(
+                    surfaces.read_bytes()
+                ).hexdigest(),
+                "surface_executions": {
+                    "charts/addons/modelexpress": {
+                        "source_execution": source_execution,
+                        "ordered_values_sha256": [
+                            hashlib.sha256(values.read_bytes()).hexdigest()
+                        ],
+                    }
+                },
+            }
+        )
+    )
+    monkeypatch.setattr(
+        closure_module, "validate_detached_signature", lambda *_args: None
+    )
+    monkeypatch.setattr(
+        closure_module,
+        "validate_attestation_identity",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        closure_module, "_git_identity", lambda _root: ("b" * 40, "c" * 40)
+    )
+    monkeypatch.setattr(
+        closure_module,
+        "validate_source_surfaces",
+        lambda _root, _manifest: {
+            "direct_render_surfaces": ["charts/addons/modelexpress"]
+        },
+    )
+    monkeypatch.setattr(
+        closure_module,
+        "_direct_execution_bindings",
+        lambda _root, _manifest, _path: {
+            "charts/addons/modelexpress": source_execution
+        },
+    )
+
+    verify_direct_invocation(
+        root=tmp_path,
+        manifest_path=surfaces,
+        trust_path=trust,
+        closure_path=closure,
+        surface_id="charts/addons/modelexpress",
+        values_paths=[values],
+    )
+    values.write_text("replicaCount: 99\n")
+    with pytest.raises(EvidenceError, match="selected values differ"):
+        verify_direct_invocation(
+            root=tmp_path,
+            manifest_path=surfaces,
+            trust_path=trust,
+            closure_path=closure,
+            surface_id="charts/addons/modelexpress",
+            values_paths=[values],
+        )
+
+
+def test_terraform_plan_closure_rejects_undeclared_helm_release() -> None:
+    manifest = {
+        "terraform_plan_owners": {
+            "stages/foundation/releases.tf::keda": "stages/foundation"
+        }
+    }
+    resources = {
+        "stages/foundation": {
+            "helm_release.keda": {},
+            "helm_release.unreviewed": {},
+        }
+    }
+    with pytest.raises(EvidenceError, match="ungoverned planned Helm resources"):
+        _validate_terraform_resource_closure(manifest, resources)
 
 
 def test_placeholder_images_require_authoritative_production_mapping() -> None:
@@ -194,6 +340,15 @@ def test_placeholder_images_require_authoritative_production_mapping() -> None:
     )
     assert used == {source}
 
+    customer_override = f"customer.registry.example/runtime@{DIGEST}"
+    assert _production_reference(
+        customer_override,
+        {customer_override: f"attacker.example/runtime@{DIGEST}"},
+        {"registry.example.invalid"},
+        used,
+        "unit",
+    ) == customer_override
+
 
 def test_source_surface_manifest_is_derived_from_actual_helm_consumers() -> None:
     manifest = validate_source_surfaces(
@@ -205,6 +360,10 @@ def test_source_surface_manifest_is_derived_from_actual_helm_consumers() -> None
     assert "stages/infrastructure/bootstrap/bootstrap.sh" in manifest[
         "direct_installer_scripts"
     ]
+    assert "charts/addons/modelexpress/deploy.sh" in manifest[
+        "direct_installer_scripts"
+    ]
+    assert "charts/addons/modelexpress" in manifest["direct_render_surfaces"]
     declaration_hashes = _release_declaration_hashes(ROOT, manifest)
     assert set(declaration_hashes) == set(manifest["terraform_helm_releases"]) | set(
         manifest["direct_render_surfaces"]

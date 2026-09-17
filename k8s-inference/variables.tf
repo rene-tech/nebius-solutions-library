@@ -1,3 +1,15 @@
+variable "catalog_image_map_path" {
+  description = "Reserved SAI-24 compatibility input. It must remain null: runtime catalog authority is pinned to the reviewed security/catalog-images.lock.json source file."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.catalog_image_map_path == null
+    error_message = "catalog_image_map_path cannot replace the reviewed source catalog image authority."
+  }
+}
+
 variable "deployment" {
   description = <<-EOT
     Complete customer-facing FS2 deployment configuration. Hardware and model

@@ -487,6 +487,36 @@ resource "terraform_data" "deployment_contract" {
 
     precondition {
       condition = (
+        length(local.selected_placeholder_model_images) == 0 ||
+        (
+          local.catalog_image_map_contract.schema == "fs2-serve.nebius.ai/catalog-image-map/v1" &&
+          local.catalog_image_map_contract.mapping_state == "production-mapped" &&
+          alltrue([
+            for source, production in local.catalog_image_mappings :
+            contains(local.catalog_placeholder_registries, split("/", source)[0]) &&
+            !contains(local.catalog_placeholder_registries, split("/", production)[0]) &&
+            try(split("@", source)[1] == split("@", production)[1], false)
+          ]) &&
+          alltrue([
+            for image in values(local.selected_placeholder_model_images) :
+            contains(keys(local.catalog_image_mappings), image) &&
+            can(regex("^[^[:space:]@]+@sha256:[0-9a-f]{64}$", lookup(local.catalog_image_mappings, image, ""))) &&
+            !contains(
+              local.catalog_placeholder_registries,
+              split("/", lookup(local.catalog_image_mappings, image, "registry.example.invalid/invalid"))[0],
+            ) &&
+            try(
+              split("@", lookup(local.catalog_image_mappings, image, ""))[1] == split("@", image)[1],
+              false,
+            )
+          ])
+        )
+      )
+      error_message = "Selected placeholder catalog images require a reviewed production-mapped security/catalog-images.lock.json source file with an exact same-digest mapping for every runtime."
+    }
+
+    precondition {
+      condition = (
         var.deployment.artifacts.registry_policy.mode != "regional-mirror" ||
         alltrue([
           for image in values(local.effective_model_images) :

@@ -1220,6 +1220,18 @@ variable "model_image_overrides" {
   }
 }
 
+variable "catalog_image_map_sha256" {
+  description = "SHA-256 of the protected catalog mapping that produced model_image_overrides."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.catalog_image_map_sha256 == null || can(regex("^[0-9a-f]{64}$", var.catalog_image_map_sha256))
+    error_message = "catalog_image_map_sha256 must be null or one SHA-256 digest."
+  }
+}
+
 variable "model_pool_overrides" {
   description = "Canonical model ID to exact accelerator pool ID. This tfvars-derived map replaces catalog-specific placement labels without changing model manifests or HCL."
   type        = map(string)

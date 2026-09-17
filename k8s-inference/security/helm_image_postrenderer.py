@@ -11,6 +11,8 @@ Unknown, tag-only, variable, or malformed references abort the release.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import os
 import re
 import sys
 from pathlib import Path
@@ -29,13 +31,41 @@ except ImportError:
         validate_first_party_inventory,
         validate_inventory,
     )
+try:
+    from .yaml_image_references import (
+        YamlImageError,
+        image_scalars,
+        rewrite_image_scalars,
+    )
+except ImportError:
+    from yaml_image_references import (
+        YamlImageError,
+        image_scalars,
+        rewrite_image_scalars,
+    )
 
 
-IMAGE_LINE = re.compile(
-    r"^(?P<prefix>[ \t]*(?:-[ \t]*)?image:[ \t]*)"
-    r"(?P<quote>['\"]?)(?P<ref>[^'\"# \t]+)(?P=quote)"
-    r"(?P<suffix>[ \t]*(?:#.*)?)(?P<newline>\n?)$"
-)
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _protected_path(argument: Path, variable: str) -> Path:
+    """Use a hash-bound out-of-tree release artifact when one is supplied."""
+
+    override = os.environ.get(variable)
+    expected = os.environ.get(f"{variable}_SHA256")
+    if override is None and expected is None:
+        return argument.resolve()
+    if not override or not expected or not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise EvidenceError(f"{variable} and {variable}_SHA256 must be supplied together")
+    path = Path(override).resolve()
+    if _sha256(path) != expected:
+        raise EvidenceError(f"{variable} hash differs from the protected release binding")
+    return path
 
 
 def rewrite(
@@ -46,7 +76,9 @@ def rewrite(
 ) -> tuple[str, set[str]]:
     images = validate_inventory(lock_path, trust_path)
     first_party_images = validate_first_party_inventory(
-        first_party_lock_path, trust_path
+        first_party_lock_path,
+        trust_path,
+        source_root=Path(__file__).resolve().parent.parent,
     )
     mappings = {
         image["source_reference"]: image["digest_reference"]
@@ -55,39 +87,33 @@ def rewrite(
     accepted_digests = {
         image["digest_reference"] for image in images + first_party_images
     }
-    output: list[str] = []
     subjects: set[str] = set()
-    found = 0
-    for line_number, line in enumerate(rendered.splitlines(keepends=True), start=1):
-        match = IMAGE_LINE.match(line)
-        if match is None:
-            output.append(line)
-            continue
-        found += 1
-        reference = match.group("ref")
+    replacements: dict[tuple[int, int], str] = {}
+    try:
+        scalars = image_scalars(rendered)
+    except YamlImageError as exc:
+        raise EvidenceError(str(exc)) from exc
+    for scalar in scalars:
+        reference = scalar.reference
         if DIGEST_REFERENCE.fullmatch(reference):
             digest_reference = reference
         else:
             digest_reference = mappings.get(reference)
             if digest_reference is None:
                 raise EvidenceError(
-                    f"render line {line_number}: image {reference!r} has no reviewed "
+                    f"render line {scalar.line}: image {reference!r} has no reviewed "
                     "tag-to-digest mapping"
                 )
         if digest_reference not in accepted_digests:
             raise EvidenceError(
-                f"render line {line_number}: digest {digest_reference!r} is absent "
+                f"render line {scalar.line}: digest {digest_reference!r} is absent "
                 "from the reviewed scan inventory"
             )
         subjects.add(digest_reference)
-        quote = match.group("quote")
-        output.append(
-            f"{match.group('prefix')}{quote}{digest_reference}{quote}"
-            f"{match.group('suffix')}{match.group('newline')}"
-        )
-    if found == 0:
+        replacements[(scalar.start, scalar.end)] = digest_reference
+    if not scalars:
         raise EvidenceError("render contains no image fields; refusing empty closure")
-    return "".join(output), subjects
+    return rewrite_image_scalars(rendered, replacements), subjects
 
 
 def main() -> int:
@@ -97,9 +123,14 @@ def main() -> int:
     parser.add_argument("--trust", required=True, type=Path)
     args = parser.parse_args()
     try:
+        lock = _protected_path(args.lock, "FS2_THIRD_PARTY_IMAGE_LOCK")
+        first_party_lock = _protected_path(
+            args.first_party_lock, "FS2_FIRST_PARTY_IMAGE_LOCK"
+        )
+        trust = args.trust.resolve()
         rendered = sys.stdin.read()
         rewritten, _ = rewrite(
-            rendered, args.lock, args.first_party_lock, args.trust
+            rendered, lock, first_party_lock, trust
         )
     except EvidenceError as exc:
         print(f"image post-render gate: {exc}", file=sys.stderr)

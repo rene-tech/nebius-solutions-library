@@ -15,7 +15,8 @@ import json
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone
+import tarfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -335,7 +336,10 @@ def validate_inventory(
 
 
 def validate_first_party_inventory(
-    path: Path, trust_path: Path
+    path: Path,
+    trust_path: Path,
+    *,
+    source_root: Path | None = None,
 ) -> list[dict[str, Any]]:
     inventory = _load_object(path)
     if inventory.get("schema") != "fs2-serve.nebius.ai/first-party-image-lock/v1":
@@ -345,8 +349,256 @@ def validate_first_party_inventory(
     images = inventory.get("images")
     if not isinstance(images, list) or not images:
         raise EvidenceError(f"{path}: first-party images must be non-empty")
+    source_identity = _git_identity(source_root.resolve()) if source_root else None
     identifiers: set[str] = set()
     references: set[str] = set()
+
+    def artifact(binding: Any, label: str) -> Path:
+        if not isinstance(binding, dict):
+            raise EvidenceError(f"{path}: {label} binding is missing")
+        relative = binding.get("path")
+        expected = binding.get("sha256")
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or Path(relative).is_absolute()
+            or not isinstance(expected, str)
+            or not HEX_SHA256.fullmatch(expected)
+        ):
+            raise EvidenceError(f"{path}: {label} binding is invalid")
+        resolved = (path.parent / relative).resolve()
+        try:
+            resolved.relative_to(path.parent.resolve())
+        except ValueError as exc:
+            raise EvidenceError(f"{path}: {label} escapes evidence root") from exc
+        if _sha256(resolved) != expected:
+            raise EvidenceError(f"{path}: {label} hash mismatch")
+        return resolved
+
+    def utc(value: Any, label: str) -> datetime:
+        if not isinstance(value, str):
+            raise EvidenceError(f"{path}: {label} timestamp is missing")
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise EvidenceError(f"{path}: {label} timestamp is invalid") from exc
+        if parsed.tzinfo is None:
+            raise EvidenceError(f"{path}: {label} timestamp has no timezone")
+        return parsed.astimezone(timezone.utc)
+
+    def validate_oci_archive(archive_path: Path, subject: str, label: str) -> None:
+        digest = subject.rsplit("@", 1)[1]
+        try:
+            with tarfile.open(archive_path, mode="r:*") as archive:
+                member = archive.getmember("index.json")
+                if not member.isfile() or member.size > 1024 * 1024:
+                    raise EvidenceError(f"{label}: OCI index is not one bounded file")
+                stream = archive.extractfile(member)
+                if stream is None:
+                    raise EvidenceError(f"{label}: OCI index cannot be read")
+                index = json.loads(stream.read().decode("utf-8"))
+                descriptors = index.get("manifests") if isinstance(index, dict) else None
+                matches = [
+                    item
+                    for item in descriptors or []
+                    if isinstance(item, dict) and item.get("digest") == digest
+                ]
+                if len(matches) != 1:
+                    raise EvidenceError(f"{label}: OCI index does not bind one subject")
+                blob_name = f"blobs/sha256/{digest.removeprefix('sha256:')}"
+                blob = archive.getmember(blob_name)
+                if not blob.isfile() or blob.size != matches[0].get("size"):
+                    raise EvidenceError(f"{label}: OCI subject blob size differs")
+                blob_stream = archive.extractfile(blob)
+                if blob_stream is None:
+                    raise EvidenceError(f"{label}: OCI subject blob cannot be read")
+                actual = hashlib.sha256(blob_stream.read()).hexdigest()
+                if actual != digest.removeprefix("sha256:"):
+                    raise EvidenceError(f"{label}: OCI subject blob hash differs")
+        except (KeyError, OSError, tarfile.TarError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise EvidenceError(f"{label}: invalid OCI archive: {exc}") from exc
+
+    def validate_referrers(
+        referrers_path: Path,
+        signature_path: Path,
+        registry_response_path: Path,
+        query_receipt_path: Path,
+        query_receipt_signature_path: Path,
+        subject: str,
+        label: str,
+        expected_payloads: dict[str, Path],
+        evidence_created_at: datetime,
+        evidence_retention_until: datetime,
+    ) -> None:
+        validate_detached_signature(referrers_path, signature_path, trust_path)
+        document = _load_object(referrers_path)
+        if document.get("schema") != "fs2-serve.nebius.ai/oci-referrer-set/v2":
+            raise EvidenceError(f"{label}: unsupported OCI referrer schema")
+        if document.get("subject") != subject:
+            raise EvidenceError(f"{label}: OCI referrer subject differs")
+        required = set(expected_payloads)
+        seen: set[str] = set()
+        registry_descriptors: dict[str, dict[str, Any]] = {}
+        entries = document.get("referrers")
+        if not isinstance(entries, list):
+            raise EvidenceError(f"{label}: OCI referrers are missing")
+        for referrer in entries:
+            media_type = (
+                referrer.get("artifact_type") if isinstance(referrer, dict) else None
+            )
+            payload = artifact(
+                referrer.get("payload") if isinstance(referrer, dict) else None,
+                f"{label} referrer payload",
+            )
+            signature = artifact(
+                referrer.get("payload_signature")
+                if isinstance(referrer, dict)
+                else None,
+                f"{label} referrer payload signature",
+            )
+            manifest_path = artifact(
+                referrer.get("manifest") if isinstance(referrer, dict) else None,
+                f"{label} referrer manifest",
+            )
+            descriptor = (
+                referrer.get("descriptor") if isinstance(referrer, dict) else None
+            )
+            if (
+                media_type not in required
+                or payload != expected_payloads[media_type]
+                or media_type in seen
+            ):
+                raise EvidenceError(f"{label}: OCI referrer payload is invalid")
+            validate_detached_signature(payload, signature, trust_path)
+            manifest = _load_object(manifest_path)
+            expected_descriptor = {
+                "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                "artifactType": media_type,
+                "digest": f"sha256:{_sha256(manifest_path)}",
+                "size": manifest_path.stat().st_size,
+            }
+            if descriptor != expected_descriptor:
+                raise EvidenceError(f"{label}: OCI referrer descriptor is invalid")
+            subject_digest = subject.rsplit("@", 1)[1]
+            subject_descriptor = manifest.get("subject")
+            if (
+                manifest.get("schemaVersion") != 2
+                or manifest.get("mediaType")
+                != "application/vnd.oci.image.manifest.v1+json"
+                or manifest.get("artifactType") != media_type
+                or not isinstance(subject_descriptor, dict)
+                or subject_descriptor.get("digest") != subject_digest
+            ):
+                raise EvidenceError(f"{label}: OCI referrer manifest subject is invalid")
+            layers = manifest.get("layers")
+            expected_blob = {
+                "mediaType": media_type,
+                "digest": f"sha256:{_sha256(payload)}",
+                "size": payload.stat().st_size,
+            }
+            if layers != [expected_blob]:
+                raise EvidenceError(f"{label}: OCI referrer manifest payload is invalid")
+            registry_descriptors[expected_descriptor["digest"]] = (
+                expected_descriptor
+            )
+            seen.add(media_type)
+        if seen != required:
+            raise EvidenceError(f"{label}: OCI referrer set is incomplete")
+
+        registry_response = _load_object(registry_response_path)
+        response_descriptors = registry_response.get("manifests")
+        if (
+            registry_response.get("schemaVersion") != 2
+            or registry_response.get("mediaType")
+            != "application/vnd.oci.image.index.v1+json"
+            or not isinstance(response_descriptors, list)
+        ):
+            raise EvidenceError(f"{label}: registry Referrers API response is invalid")
+        observed: dict[str, dict[str, Any]] = {}
+        for descriptor in response_descriptors:
+            if not isinstance(descriptor, dict):
+                raise EvidenceError(
+                    f"{label}: registry Referrers API descriptor is malformed"
+                )
+            normalized = {
+                field: descriptor.get(field)
+                for field in ("mediaType", "artifactType", "digest", "size")
+            }
+            digest = normalized["digest"]
+            if not isinstance(digest, str) or digest in observed:
+                raise EvidenceError(
+                    f"{label}: registry Referrers API descriptor identity is invalid"
+                )
+            observed[digest] = normalized
+        if observed != registry_descriptors:
+            raise EvidenceError(
+                f"{label}: registry Referrers API response differs from retained manifests"
+            )
+
+        validate_detached_signature(
+            query_receipt_path, query_receipt_signature_path, trust_path
+        )
+        query_receipt = _load_object(query_receipt_path)
+        queried_at = utc(query_receipt.get("queried_at"), f"{label} queried_at")
+        if not evidence_created_at <= queried_at <= evidence_retention_until:
+            raise EvidenceError(
+                f"{label}: registry Referrers API query is outside evidence custody"
+            )
+        repository, subject_digest = subject.rsplit("@", 1)
+        registry = repository.split("/", 1)[0]
+        repository_path = repository.split("/", 1)[1]
+        trust = _load_object(trust_path)
+        resolver_policy = trust.get("registry_resolution")
+        referrers_policy = (
+            resolver_policy.get("referrers_api")
+            if isinstance(resolver_policy, dict)
+            else None
+        )
+        if referrers_policy != {
+            "required_accept": "application/vnd.oci.image.index.v1+json",
+            "required_response_status": 200,
+            "required_image_signature_artifact_type": (
+                "application/vnd.dev.cosign.simplesigning.v1+json"
+            ),
+        }:
+            raise EvidenceError(f"{label}: registry Referrers API trust is incomplete")
+        if (
+            query_receipt.get("schema")
+            != "fs2-serve.nebius.ai/registry-referrers-query-receipt/v1"
+            or query_receipt.get("subject") != subject
+            or query_receipt.get("registry") != registry
+            or query_receipt.get("repository") != repository
+            or query_receipt.get("request")
+            != {
+                "method": "GET",
+                "path": f"/v2/{repository_path}/referrers/{subject_digest}",
+                "accept": "application/vnd.oci.image.index.v1+json",
+            }
+            or query_receipt.get("response")
+            != {
+                "status": 200,
+                "body_sha256": _sha256(registry_response_path),
+            }
+        ):
+            raise EvidenceError(f"{label}: registry Referrers API receipt is invalid")
+        resolver = query_receipt.get("resolver")
+        authorized_resolvers = (
+            resolver_policy.get("authorized_resolver_identities")
+            if isinstance(resolver_policy, dict)
+            else None
+        )
+        if (
+            not isinstance(resolver, dict)
+            or not isinstance(authorized_resolvers, list)
+            or resolver.get("identity") not in authorized_resolvers
+        ):
+            raise EvidenceError(f"{label}: registry query resolver is not authorized")
+        validate_attestation_identity(
+            query_receipt.get("attestation"),
+            trust_path,
+            purpose=f"{label} registry Referrers API query",
+        )
+
     for index, image in enumerate(images):
         if not isinstance(image, dict):
             raise EvidenceError(f"{path}: images[{index}] must be an object")
@@ -377,6 +629,13 @@ def validate_first_party_inventory(
             for field in ("commit", "tree")
         ):
             raise EvidenceError(f"{path}: {identifier} build source is invalid")
+        if source_identity is not None and build_source != {
+            "commit": source_identity[0],
+            "tree": source_identity[1],
+        }:
+            raise EvidenceError(
+                f"{path}: {identifier} build source differs from current checkout"
+            )
         attestation = image.get("build_attestation")
         if not isinstance(attestation, dict):
             raise EvidenceError(f"{path}: {identifier} build attestation is missing")
@@ -393,7 +652,9 @@ def validate_first_party_inventory(
             or not isinstance(signature_sha256, str)
             or not HEX_SHA256.fullmatch(signature_sha256)
         ):
-            raise EvidenceError(f"{path}: {identifier} build attestation binding is invalid")
+            raise EvidenceError(
+                f"{path}: {identifier} build attestation binding is invalid"
+            )
         attestation_path = (path.parent / attestation_value).resolve()
         signature_path = (path.parent / signature_value).resolve()
         try:
@@ -418,29 +679,151 @@ def validate_first_party_inventory(
             "dockerfile"
         ) or not HEX_SHA256.fullmatch(str(dockerfile.get("sha256", ""))):
             raise EvidenceError(f"{path}: {identifier} Dockerfile attestation is invalid")
+        if source_root is not None:
+            dockerfile_path = (source_root / image["dockerfile"]).resolve()
+            try:
+                dockerfile_path.relative_to(source_root.resolve())
+            except ValueError as exc:
+                raise EvidenceError(
+                    f"{path}: {identifier} Dockerfile escapes source root"
+                ) from exc
+            if _sha256(dockerfile_path) != dockerfile["sha256"]:
+                raise EvidenceError(
+                    f"{path}: {identifier} Dockerfile differs from current checkout"
+                )
         retained = document.get("retained_evidence")
         if not isinstance(retained, dict):
             raise EvidenceError(f"{path}: {identifier} retained evidence is missing")
-        for field in (
-            "buildkit_provenance_sha256",
-            "oci_archive_sha256",
-            "sbom_sha256",
-            "report_sha256",
-            "scan_receipt_sha256",
-            "evidence_archive_sha256",
+        artifact_id = retained.get("artifact_id")
+        created_at = utc(retained.get("created_at"), f"{identifier} created_at")
+        retention_until = utc(
+            retained.get("retention_until"), f"{identifier} retention_until"
+        )
+        if (
+            not isinstance(artifact_id, str)
+            or not artifact_id.isdigit()
+            or retained.get("retention_days") != 90
+            or retention_until - created_at < timedelta(days=90)
+            or retention_until <= datetime.now(timezone.utc)
         ):
-            if not HEX_SHA256.fullmatch(str(retained.get(field, ""))):
-                raise EvidenceError(
-                    f"{path}: {identifier} retained evidence {field} is invalid"
-                )
-        if retained.get("oci_manifest_sha256") != digest_reference.rsplit(":", 1)[1]:
-            raise EvidenceError(f"{path}: {identifier} manifest hash differs")
-        if not isinstance(retained.get("artifact_id"), str) or not retained[
-            "artifact_id"
-        ].isdigit() or not isinstance(retained.get("retention_until"), str) or not retained[
-            "retention_until"
-        ]:
-            raise EvidenceError(f"{path}: {identifier} retained artifact identity is invalid")
+            raise EvidenceError(
+                f"{path}: {identifier} has no verified 90-day retained artifact"
+            )
+        artifacts = retained.get("artifacts")
+        if not isinstance(artifacts, dict):
+            raise EvidenceError(f"{path}: {identifier} retained artifacts are missing")
+        evidence_archive = artifact(
+            artifacts.get("evidence_archive"), f"{identifier} evidence archive"
+        )
+        oci_archive = artifact(
+            artifacts.get("oci_archive"), f"{identifier} OCI archive"
+        )
+        build_metadata = artifact(
+            artifacts.get("build_metadata"), f"{identifier} build metadata"
+        )
+        provenance_path = artifact(
+            artifacts.get("buildkit_provenance"), f"{identifier} provenance"
+        )
+        sbom_path = artifact(artifacts.get("sbom"), f"{identifier} SBOM")
+        report_path = artifact(artifacts.get("report"), f"{identifier} report")
+        receipt_path = artifact(
+            artifacts.get("scan_receipt"), f"{identifier} scan receipt"
+        )
+        receipt_signature = artifact(
+            artifacts.get("scan_receipt_signature"),
+            f"{identifier} scan receipt signature",
+        )
+        referrers_path = artifact(
+            artifacts.get("oci_referrers"), f"{identifier} OCI referrers"
+        )
+        referrers_signature = artifact(
+            artifacts.get("oci_referrers_signature"),
+            f"{identifier} OCI referrers signature",
+        )
+        registry_referrers_response = artifact(
+            artifacts.get("registry_referrers_response"),
+            f"{identifier} registry Referrers API response",
+        )
+        registry_referrers_receipt = artifact(
+            artifacts.get("registry_referrers_query_receipt"),
+            f"{identifier} registry Referrers API receipt",
+        )
+        registry_referrers_receipt_signature = artifact(
+            artifacts.get("registry_referrers_query_receipt_signature"),
+            f"{identifier} registry Referrers API receipt signature",
+        )
+        image_signature_payload = artifact(
+            artifacts.get("image_signature_payload"),
+            f"{identifier} image signature payload",
+        )
+        image_signature = artifact(
+            artifacts.get("image_signature_payload_signature"),
+            f"{identifier} image signature",
+        )
+        if retained.get("evidence_archive_sha256") != _sha256(evidence_archive):
+            raise EvidenceError(f"{path}: {identifier} evidence archive identity differs")
+        validate_oci_archive(oci_archive, digest_reference, identifier)
+        metadata = _load_object(build_metadata)
+        if metadata.get("containerimage.digest") != digest_reference.rsplit("@", 1)[1]:
+            raise EvidenceError(f"{path}: {identifier} build output digest differs")
+        provenance = _load_object(provenance_path)
+        serialized_provenance = json.dumps(provenance, sort_keys=True)
+        if not all(value in serialized_provenance for value in build_source.values()):
+            raise EvidenceError(f"{path}: {identifier} provenance lacks source identity")
+        if dockerfile["sha256"] not in serialized_provenance:
+            raise EvidenceError(f"{path}: {identifier} provenance lacks Dockerfile hash")
+        sbom = _load_object(sbom_path)
+        if not isinstance(sbom.get("packages"), list):
+            raise EvidenceError(f"{path}: {identifier} SBOM has no package closure")
+        enforce_report(report_path)
+        if receipt_signature != Path(f"{receipt_path}.sig"):
+            raise EvidenceError(f"{path}: {identifier} scan receipt signature is detached")
+        validate_receipt(receipt_path, trust_path)
+        receipt = _load_object(receipt_path)
+        if receipt.get("source") != build_source or receipt.get("subject") != {
+            "kind": "image",
+            "identity": digest_reference,
+        }:
+            raise EvidenceError(f"{path}: {identifier} scan receipt subject differs")
+        validate_detached_signature(
+            image_signature_payload, image_signature, trust_path
+        )
+        image_signature_document = _load_object(image_signature_payload)
+        repository, manifest_digest = digest_reference.rsplit("@", 1)
+        if (
+            image_signature_document.get("schema")
+            != "fs2-serve.nebius.ai/image-signature/v1"
+            or image_signature_document.get("critical")
+            != {
+                "identity": {"docker_reference": repository},
+                "image": {"docker_manifest_digest": manifest_digest},
+            }
+            or image_signature_document.get("source") != build_source
+            or image_signature_document.get("dockerfile_sha256")
+            != dockerfile["sha256"]
+        ):
+            raise EvidenceError(
+                f"{path}: {identifier} image signature payload is invalid"
+            )
+        validate_referrers(
+            referrers_path,
+            referrers_signature,
+            registry_referrers_response,
+            registry_referrers_receipt,
+            registry_referrers_receipt_signature,
+            digest_reference,
+            identifier,
+            {
+                "application/spdx+json": sbom_path,
+                "application/vnd.in-toto+json": provenance_path,
+                "application/vnd.fs2.image-scan-receipt.v2+json": receipt_path,
+                "application/vnd.dev.cosign.simplesigning.v1+json": (
+                    image_signature_payload
+                ),
+            },
+            created_at,
+            retention_until,
+        )
         validate_attestation_identity(
             document.get("attestation"), trust_path, purpose=str(attestation_path)
         )

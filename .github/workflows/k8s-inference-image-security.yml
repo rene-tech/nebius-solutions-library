@@ -224,6 +224,7 @@ jobs:
       RENDER_EVIDENCE_ARTIFACT_ID: ${{ inputs.render_evidence_artifact_id || vars.SAI24_RENDER_EVIDENCE_ARTIFACT_ID }}
       RENDER_EVIDENCE_ARCHIVE_SHA256: ${{ inputs.render_evidence_archive_sha256 || vars.SAI24_RENDER_EVIDENCE_ARCHIVE_SHA256 }}
       ATTESTATION_BROKER_URL: ${{ vars.SAI24_ATTESTATION_BROKER_URL }}
+      REGISTRY_AUTH_BROKER_URL: ${{ vars.SAI24_REGISTRY_AUTH_BROKER_URL }}
       ATTESTATION_AUDIENCE: 'fs2-sai24-release-attestation'
       ATTESTATION_ENVIRONMENT: 'sai24-release-attestation'
     steps:
@@ -264,9 +265,19 @@ jobs:
                   target.relative_to(root)
               bundle.extractall(root)
           PY
-          test -f "${bundle}/production-render-packet.json"
-          printf 'RENDER_PACKET=%s\n' \
-            "${bundle}/production-render-packet.json" >> "$GITHUB_ENV"
+          for required in \
+            production-render-packet.json \
+            third-party-images.lock.json \
+            first-party-images.lock.json \
+            catalog-images.lock.json; do
+            test -f "${bundle}/${required}"
+          done
+          {
+            printf 'RENDER_PACKET=%s\n' "${bundle}/production-render-packet.json"
+            printf 'THIRD_PARTY_INVENTORY=%s\n' "${bundle}/third-party-images.lock.json"
+            printf 'FIRST_PARTY_INVENTORY=%s\n' "${bundle}/first-party-images.lock.json"
+            printf 'CATALOG_IMAGE_MAP=%s\n' "${bundle}/catalog-images.lock.json"
+          } >> "$GITHUB_ENV"
 
       - name: Materialize protected OIDC attestation identity
         shell: bash
@@ -293,7 +304,7 @@ jobs:
           printf '%s\n' "${RUNNER_TEMP}/trivy-bin" >> "${GITHUB_PATH}"
           "${RUNNER_TEMP}/trivy-bin/trivy" --version > "${RUNNER_TEMP}/sai-24-third-party/trivy-binary-version.txt"
 
-      - name: Derive and scan every exact release-closure subject
+      - name: Derive exact release-closure subjects
         shell: bash
         run: |
           set -euo pipefail
@@ -301,15 +312,15 @@ jobs:
           source_tree=$(git rev-parse HEAD^{tree})
           python3 k8s-inference/security/image_security_evidence.py inventory \
             --trust k8s-inference/security/image-attestation-trust.json \
-            k8s-inference/security/third-party-images.lock.json
+            "$THIRD_PARTY_INVENTORY"
           python3 k8s-inference/security/release_image_closure.py \
             --root k8s-inference \
             --surfaces k8s-inference/security/release-image-surfaces.json \
             --render-packet "$RENDER_PACKET" \
             --trust k8s-inference/security/image-attestation-trust.json \
-            --inventory k8s-inference/security/third-party-images.lock.json \
-            --first-party-inventory k8s-inference/security/first-party-images.lock.json \
-            --catalog-image-map k8s-inference/security/catalog-images.lock.json \
+            --inventory "$THIRD_PARTY_INVENTORY" \
+            --first-party-inventory "$FIRST_PARTY_INVENTORY" \
+            --catalog-image-map "$CATALOG_IMAGE_MAP" \
             --attestation-identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
             --output "${evidence}/release-image-closure.json"
           python3 k8s-inference/security/oidc_attestation_broker.py sign \
@@ -320,6 +331,58 @@ jobs:
             "${evidence}/release-image-closure.json"
           jq -er '.subjects[]' "${evidence}/release-image-closure.json" \
             > "${RUNNER_TEMP}/release-image-digests.txt"
+
+      - name: Acquire short-lived authentication for every protected registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$REGISTRY_AUTH_BROKER_URL"
+          auth_dir="${RUNNER_TEMP}/sai-24-registry-auth"
+          mkdir -p "$auth_dir"
+          jq -r '.subjects[] | split("/")[0]' \
+            "${RUNNER_TEMP}/sai-24-third-party/release-image-closure.json" | \
+            sort -u > "${RUNNER_TEMP}/release-registries.txt"
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          trust = json.loads(pathlib.Path(
+              "k8s-inference/security/image-attestation-trust.json"
+          ).read_text())
+          policy = trust.get("registry_authentication", {})
+          authenticated = set(policy.get("allowed_registries", []))
+          anonymous = set(policy.get("anonymous_registries", []))
+          actual = set(pathlib.Path(
+              os.environ["RUNNER_TEMP"] + "/release-registries.txt"
+          ).read_text().splitlines())
+          if actual - authenticated - anonymous:
+              raise SystemExit("release closure contains a registry with no auth policy")
+          if "nvcr.io" in actual and "nvcr.io" not in authenticated:
+              raise SystemExit("NVCR subjects require protected short-lived authentication")
+          selected = sorted(actual & authenticated)
+          if not selected:
+              raise SystemExit("release closure has no authenticated registry subjects")
+          pathlib.Path(
+              os.environ["RUNNER_TEMP"] + "/authenticated-registries.txt"
+          ).write_text("".join(f"--registry\n{value}\n" for value in selected))
+          PY
+          mapfile -t registry_args < "${RUNNER_TEMP}/authenticated-registries.txt"
+          python3 k8s-inference/security/oidc_attestation_broker.py registry-auth \
+            --broker-url "$REGISTRY_AUTH_BROKER_URL" \
+            --audience "$ATTESTATION_AUDIENCE" \
+            --identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
+            --trust k8s-inference/security/image-attestation-trust.json \
+            "${registry_args[@]}" \
+            --output "${auth_dir}/config.json"
+          printf 'DOCKER_CONFIG=%s\n' "$auth_dir" >> "$GITHUB_ENV"
+
+      - name: Scan every authenticated exact release-closure subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/sai-24-third-party"
+          source_tree=$(git rev-parse HEAD^{tree})
           while IFS= read -r image_ref; do
             artifact_id=$(printf '%s' "${image_ref}" | sha256sum | cut -c1-16)
             trivy image "${image_ref}" --scanners vuln,secret --format json \

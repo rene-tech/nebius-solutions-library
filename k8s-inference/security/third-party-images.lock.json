@@ -110,6 +110,20 @@
       "consumers": ["stages/foundation/values/otel-cluster.yaml", "observability/versions.lock.yaml"]
     },
     {
+      "id": "modelexpress-server",
+      "source_reference": "nvcr.io/nvidia/ai-dynamo/modelexpress-server:0.5.1",
+      "digest_reference": null,
+      "resolution_provenance": null,
+      "consumers": ["charts/addons/modelexpress/values.yaml"]
+    },
+    {
+      "id": "grpc-health-probe",
+      "source_reference": "ghcr.io/grpc-ecosystem/grpc-health-probe:v0.4.35",
+      "digest_reference": null,
+      "resolution_provenance": null,
+      "consumers": ["charts/addons/modelexpress/templates/tests/test-connection.yaml"]
+    },
+    {
       "id": "dcgm-exporter",
       "source_reference": "nvcr.io/nvidia/k8s/dcgm-exporter:4.6.0-4.8.3-distroless",
       "digest_reference": "nvcr.io/nvidia/k8s/dcgm-exporter@sha256:b4df763de9558e5b3f1f1d79bc65b772fcf65b8a9c3664ea7173e47153112b4a",

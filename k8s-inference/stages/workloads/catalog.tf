@@ -6,6 +6,7 @@ resource "kubernetes_config_map_v1" "serving_bindings" {
     annotations = {
       "fs2.nebius.ai/catalog-sha256"   = local.catalog_digest
       "fs2.nebius.ai/inventory-sha256" = sha256(jsonencode(local.inventory))
+      "fs2.nebius.ai/catalog-image-map-sha256" = coalesce(var.catalog_image_map_sha256, "not-required")
     }
   }
   immutable = true
@@ -25,6 +26,7 @@ resource "kubernetes_config_map_v1" "lean_routes" {
     annotations = {
       "fs2.nebius.ai/catalog-sha256"   = local.catalog_digest
       "fs2.nebius.ai/inventory-sha256" = sha256(jsonencode(local.inventory))
+      "fs2.nebius.ai/catalog-image-map-sha256" = coalesce(var.catalog_image_map_sha256, "not-required")
     }
   }
   immutable = true

@@ -18,6 +18,18 @@
     "authorized_builder_ids": []
   },
   "registry_resolution": {
-    "authorized_resolver_identities": []
+    "authorized_resolver_identities": [],
+    "referrers_api": {
+      "required_accept": "application/vnd.oci.image.index.v1+json",
+      "required_response_status": 200,
+      "required_image_signature_artifact_type": "application/vnd.dev.cosign.simplesigning.v1+json"
+    }
+  },
+  "registry_authentication": {
+    "broker_url": null,
+    "audience": "fs2-sai24-release-attestation",
+    "maximum_ttl_seconds": 3600,
+    "allowed_registries": [],
+    "anonymous_registries": []
   }
 }

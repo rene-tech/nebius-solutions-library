@@ -17,6 +17,7 @@ import os
 import sys
 import urllib.parse
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -162,6 +163,90 @@ def sign(
         Path(f"{subject}.sig").write_bytes(signature)
 
 
+def registry_auth(
+    registries: list[str],
+    broker_url: str,
+    audience: str,
+    identity_path: Path,
+    trust_path: Path,
+    output: Path,
+) -> None:
+    """Exchange protected OIDC for a bounded, registry-scoped Docker config."""
+
+    trust = json.loads(trust_path.read_text(encoding="utf-8"))
+    policy = trust.get("registry_authentication") if isinstance(trust, dict) else None
+    if not isinstance(policy, dict) or policy.get("broker_url") != broker_url:
+        raise BrokerError("registry authentication broker is not trusted")
+    if policy.get("audience") != audience:
+        raise BrokerError("registry authentication audience is not trusted")
+    allowed = policy.get("allowed_registries")
+    requested = sorted(set(registries))
+    if (
+        not requested
+        or not isinstance(allowed, list)
+        or any(registry not in allowed for registry in requested)
+        or any("/" in registry or registry.startswith(".") for registry in requested)
+    ):
+        raise BrokerError("registry authentication scope is not authorized")
+    expected_identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    if expected_identity != identity(
+        audience, expected_identity.get("environment", ""), trust_path
+    ):
+        raise BrokerError("registry authentication identity differs from the runner")
+    payload = json.dumps(
+        {
+            "schema": "fs2-serve.nebius.ai/oidc-registry-auth-request/v1",
+            "identity": expected_identity,
+            "registries": requested,
+            "oidc_token": _oidc_token(audience),
+            "credential_format": "docker-config-json",
+        }
+    ).encode("utf-8")
+    response = _json_response(
+        urllib.request.Request(
+            broker_url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+    )
+    if response.get("schema") != "fs2-serve.nebius.ai/oidc-registry-auth-response/v1":
+        raise BrokerError("registry authentication response schema is unsupported")
+    if response.get("identity") != expected_identity or response.get("registries") != requested:
+        raise BrokerError("registry authentication response scope differs")
+    expires_value = response.get("expires_at")
+    try:
+        expires_at = datetime.fromisoformat(str(expires_value).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise BrokerError("registry authentication expiry is invalid") from exc
+    now = datetime.now(timezone.utc)
+    maximum_ttl = policy.get("maximum_ttl_seconds")
+    if (
+        expires_at.tzinfo is None
+        or not isinstance(maximum_ttl, int)
+        or maximum_ttl < 60
+        or not now < expires_at.astimezone(timezone.utc) <= now + timedelta(seconds=maximum_ttl)
+    ):
+        raise BrokerError("registry authentication lifetime is not bounded")
+    encoded = response.get("docker_config_base64")
+    expected_sha256 = response.get("docker_config_sha256")
+    if not isinstance(encoded, str) or not isinstance(expected_sha256, str):
+        raise BrokerError("registry authentication payload is missing")
+    try:
+        docker_config = base64.b64decode(encoded, validate=True)
+        document = json.loads(docker_config)
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise BrokerError("registry authentication payload is malformed") from exc
+    if hashlib.sha256(docker_config).hexdigest() != expected_sha256:
+        raise BrokerError("registry authentication payload hash differs")
+    auths = document.get("auths") if isinstance(document, dict) else None
+    if not isinstance(auths, dict) or sorted(auths) != requested:
+        raise BrokerError("registry authentication Docker config scope differs")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(docker_config)
+    output.chmod(0o600)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
@@ -176,6 +261,13 @@ def main() -> int:
     sign_command.add_argument("--identity", required=True, type=Path)
     sign_command.add_argument("--trust", required=True, type=Path)
     sign_command.add_argument("subjects", nargs="+", type=Path)
+    registry_command = commands.add_parser("registry-auth")
+    registry_command.add_argument("--broker-url", required=True)
+    registry_command.add_argument("--audience", required=True)
+    registry_command.add_argument("--identity", required=True, type=Path)
+    registry_command.add_argument("--trust", required=True, type=Path)
+    registry_command.add_argument("--registry", action="append", required=True)
+    registry_command.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     try:
         if args.command == "identity":
@@ -188,13 +280,22 @@ def main() -> int:
                 + "\n",
                 encoding="utf-8",
             )
-        else:
+        elif args.command == "sign":
             sign(
                 args.subjects,
                 args.broker_url,
                 args.audience,
                 args.identity,
                 args.trust,
+            )
+        else:
+            registry_auth(
+                args.registry,
+                args.broker_url,
+                args.audience,
+                args.identity,
+                args.trust,
+                args.output,
             )
     except (BrokerError, OSError, json.JSONDecodeError) as exc:
         print(f"OIDC attestation broker: {exc}", file=sys.stderr)

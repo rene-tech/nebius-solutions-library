@@ -41,7 +41,10 @@
     "inventory": "security/first-party-images.lock.json",
     "promotion_status": "blocked_pending_protected_build_attestation",
     "requirements": [
-      "bind the production repository and digest to a signed build attestation containing exact hashes for retained build, SBOM, report, and scan-receipt evidence",
+      "bind the production repository and digest to the current clean checkout and current Dockerfile hash",
+      "validate the retained OCI archive, BuildKit provenance, SBOM, complete report, signed scan receipt, signed image identity, and signed OCI referrer contents rather than accepting asserted hashes",
+      "require an authorized signed registry Referrers API query receipt whose response contains every exact retained referrer manifest descriptor",
+      "verify the evidence artifact identity and a non-expired 90-day retention interval",
       "require the exact production digest in the rendered release",
       "scan the rendered production digest rather than treating a local source build as promotion evidence"
     ]
@@ -52,7 +55,8 @@
     "requirements": [
       "replace every placeholder registry subject with an authorized production reference",
       "preserve the exact manifest digest across the mapping",
-      "bind each mapping to a signed authorized-resolver receipt"
+      "bind each mapping to a signed authorized-resolver receipt",
+      "consume the protected mapping in Terraform before model workload and pre-pull manifests are rendered"
     ]
   },
   "evidence": {
@@ -62,7 +66,9 @@
       "spdx-json",
       "scan-receipt-json",
       "detached-scan-receipt-signature",
-      "attested-release-image-closure-json"
+      "attested-release-image-closure-json",
+      "signed-oci-referrer-set-json",
+      "signed-registry-referrers-query-receipt-json"
     ],
     "required_bindings": [
       "source_commit",
@@ -76,6 +82,14 @@
       "render_packet_signature_sha256",
       "release_declaration_sha256",
       "ordered_values_sha256",
+      "terraform_planned_helm_resource_sha256",
+      "direct_installer_command_sha256",
+      "dockerfile_sha256",
+      "oci_archive_subject_digest",
+      "oci_referrer_payload_and_signature_sha256",
+      "oci_referrer_manifest_and_registry_response_sha256",
+      "image_signature_subject_and_source_binding",
+      "evidence_artifact_id_and_retention_until",
       "registry_resolution_receipt_signature_sha256",
       "oidc_protected_environment_identity"
     ]

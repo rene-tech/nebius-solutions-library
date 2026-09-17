@@ -63,6 +63,12 @@ def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
     }
     assert policy["evidence"]["retention_days"] == 90
     assert "spdx-json" in policy["evidence"]["required_formats"]
+    assert "signed-registry-referrers-query-receipt-json" in policy["evidence"][
+        "required_formats"
+    ]
+    assert "image_signature_subject_and_source_binding" in policy["evidence"][
+        "required_bindings"
+    ]
 
     observability_lock = (ROOT / "observability/versions.lock.yaml").read_text()
     assert "deployment: official-chart-tags" in observability_lock
@@ -92,6 +98,8 @@ def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
     assert "environment: sai24-release-attestation" in workflow
     assert "id-token: write" in workflow
     assert "oidc_attestation_broker.py sign" in workflow
+    assert "oidc_attestation_broker.py registry-auth" in workflow
+    assert "NVCR subjects require protected short-lived authentication" in workflow
     assert "github.event_name != 'pull_request'" in workflow
     assert '--render-packet "$RENDER_PACKET"' in workflow
     assert "--render-packet k8s-inference/security/production-render-packet.json" not in workflow
@@ -151,3 +159,44 @@ def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
     )
     assert packet_template["status"] == "template_only_not_release_evidence"
     assert packet_template["source"] == {"commit": None, "tree": None}
+    assert packet_template["schema"].endswith("/v2")
+    assert set(packet_template["terraform_plans"]) == {
+        "stages/foundation",
+        "stages/workloads",
+    }
+
+
+def test_catalog_mapping_is_consumed_by_runtime_and_model_express_cannot_bypass_gate() -> None:
+    root_locals = (ROOT / "locals.tf").read_text()
+    root_variables = (ROOT / "variables.tf").read_text()
+    root_main = (ROOT / "main.tf").read_text()
+    assert 'variable "catalog_image_map_path"' in root_variables
+    assert "var.catalog_image_map_path == null" in root_variables
+    assert '"${path.module}/security/catalog-images.lock.json"' in root_locals
+    assert "catalog_image_mappings" in root_locals
+    assert "lookup(\n      local.catalog_image_mappings" in root_locals
+    assert "selected_placeholder_model_images" in root_main
+    assert "contains(local.catalog_placeholder_registries" in root_locals
+
+    deploy = (ROOT / "charts/addons/modelexpress/deploy.sh").read_text()
+    assert 'helm upgrade "${helm_args[@]}" "${image_gate[@]}"' in deploy
+    assert 'helm install "${helm_args[@]}" "${image_gate[@]}"' in deploy
+    assert "FS2_SAI24_RELEASE_CLOSURE" in deploy
+    assert "--verify-direct-closure" in deploy
+    assert '--values-file "$VALUES_FILE"' in deploy
+    assert "FS2_IMAGE_ATTESTATION_TRUST" not in deploy
+    main_body = deploy.split("main() {", maxsplit=1)[1]
+    assert main_body.index("verify_release_evidence") < main_body.index(
+        "check_prerequisites"
+    )
+    postrenderer = (ROOT / "security/helm_image_postrenderer.py").read_text()
+    assert "FS2_IMAGE_ATTESTATION_TRUST" not in postrenderer
+
+    evidence_validator = (ROOT / "security/image_security_evidence.py").read_text()
+    assert "registry-referrers-query-receipt/v1" in evidence_validator
+    assert "/referrers/{subject_digest}" in evidence_validator
+    assert "application/vnd.dev.cosign.simplesigning.v1+json" in evidence_validator
+    surfaces = json.loads((ROOT / "security/release-image-surfaces.json").read_text())
+    assert "charts/addons/modelexpress/deploy.sh" in surfaces[
+        "direct_installer_scripts"
+    ]

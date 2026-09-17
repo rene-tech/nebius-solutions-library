@@ -1,4 +1,16 @@
 locals {
+  catalog_image_map_path     = "${path.module}/security/catalog-images.lock.json"
+  catalog_image_map_contract = jsondecode(file(local.catalog_image_map_path))
+  catalog_image_mappings = {
+    for mapping in try(local.catalog_image_map_contract.mappings, []) :
+    mapping.source_reference => mapping.production_reference
+  }
+  catalog_placeholder_registries = toset(try(
+    local.catalog_image_map_contract.placeholder_registries,
+    [],
+  ))
+  catalog_image_map_sha256 = filesha256(local.catalog_image_map_path)
+
   approved_target_contract = jsondecode(file("${path.module}/catalog/profiles/approved-targets.json"))
   capacity_contract        = jsondecode(file("${path.module}/catalog/profiles/capacity-profiles.json"))
   accelerator_contract     = jsondecode(file("${path.module}/catalog/profiles/accelerator-pools.json"))
@@ -288,10 +300,21 @@ locals {
     }, {
     for model_id, candidate in local.selected_deployment_runtimes : model_id => candidate.record
   })
-  effective_model_images = {
+  catalog_model_images = {
     for model_id, model in local.selected_runtime_model_contracts : model_id => try(
       var.deployment.models.image_overrides[model_id],
       model.runtime.image.reference,
+    )
+  }
+  selected_placeholder_model_images = {
+    for model_id, image in local.catalog_model_images : model_id => image
+    if contains(local.catalog_placeholder_registries, split("/", image)[0])
+  }
+  effective_model_images = {
+    for model_id, image in local.catalog_model_images : model_id => (
+      contains(local.catalog_placeholder_registries, split("/", image)[0]) ?
+      lookup(local.catalog_image_mappings, image, image) :
+      image
     )
   }
   effective_model_gpu_counts = {
@@ -1123,6 +1146,7 @@ locals {
     deployment_profile              = local.model_profile
     enabled_model_ids               = local.selected_model_ids
     model_image_overrides           = local.effective_model_images
+    catalog_image_map_sha256        = local.catalog_image_map_sha256
     model_pool_overrides            = var.deployment.models.pool_overrides
     model_runtime_overrides         = var.deployment.models.runtime_overrides
     model_scaling_mode              = var.deployment.models.scaling.mode

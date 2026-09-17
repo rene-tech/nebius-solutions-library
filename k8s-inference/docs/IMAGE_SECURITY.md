@@ -38,6 +38,13 @@ independently reviewed Platform Security trust root. Local source-build scan
 subjects are explicitly not accepted as substitutes for rendered production
 digests.
 
+The protected scan derives the registry set from that exact closure. Every
+registry must be explicitly classified in the trust policy. Private production
+registries and `nvcr.io` use a protected-environment OIDC exchange for a
+short-lived, registry-scoped Docker config; PR jobs never receive it, and no
+static registry credential is inherited. An NVCR subject without that protected
+authentication classification fails before scanning.
+
 ## SAI-24 source changes
 
 - The control-plane runtime installs `libuuid=2.41.6-r0`, the fixed package
@@ -57,11 +64,29 @@ digests.
   `security/image-attestation-trust.json`. It rewrites reviewed third-party
   tags to digests, accepts exact attested first-party digests, and rejects every
   unknown tag or unlisted digest; observability is not removed.
+- The same source-derived installer discovery includes separate `helm install`
+  and `helm upgrade` forms. The shipped ModelExpress helper and its test hook
+  therefore pass through the post-render gate instead of retaining a tag-only
+  side path.
 - First-party locks reference small signed build attestations containing the
   exact source, Dockerfile, manifest, BuildKit provenance, OCI archive, SBOM,
   report, scan-receipt, retained-artifact hashes, and retention deadline. The
   large OCI archive remains in the 90-day evidence store rather than Git; the
   protected closure job independently scans the production digest again.
+  Validation opens the retained OCI archive, verifies the current checkout and
+  Dockerfile, verifies report/SBOM/receipt contents and signatures, verifies a
+  signed OCI referrer set points to those same payloads, requires a signed
+  image-identity payload, opens every retained OCI referrer manifest, and
+  matches the complete descriptor set to the body of an authorized, signed
+  registry Referrers API query receipt. A locally assembled descriptor list is
+  not registry-attachment evidence. The validator also checks the exact
+  artifact remains within a non-expired 90-day retention interval.
+  Each accepted first-party attestation therefore names retained
+  `registry_referrers_response`, `registry_referrers_query_receipt` and
+  detached receipt-signature artifacts, plus the signed image payload. The
+  receipt binds the exact registry, repository, digest-specific Referrers API
+  path, HTTP 200 response-body hash, authorized resolver, and protected OIDC
+  identity.
 - `security/release_image_closure.py` discovers the Terraform Helm resources
   from source, checks all direct installers, and requires an out-of-tree signed
   render packet. Every render provenance record binds an authorized builder,
@@ -71,12 +96,37 @@ digests.
   equal the checkout, but the packet is never checked into that tree, avoiding
   a self-referential Git identity. A checked-in boolean cannot assert
   completeness.
+  Terraform surfaces are additionally joined to the exact planned
+  `helm_release` address, planned values bytes, release name, namespace,
+  repository and version, and undeclared planned Helm resources are rejected.
+  Direct installers are joined to the source script and exact normalized
+  install command hashes. ModelExpress additionally verifies the signed
+  release closure before Helm and hashes the operator-selected values file in
+  the same order as the attested render. A caller may select signed evidence,
+  but cannot replace the source-pinned trust authority or use values absent
+  from that evidence. A signer cannot substitute an unrelated render bundle
+  for the HCL or shipped invocation.
 - `security/catalog-images.lock.json` maps `registry.example.invalid` source
   identities to real production repositories while preserving the manifest
   digest. Every mapping and every third-party tag resolution requires a signed
   semantic receipt whose manifest bytes hash to the OCI digest, whose registry
   matches the repository, and whose resolver identity is explicitly allowed by
   the trust policy.
+  Root Terraform consumes only the reviewed checked-in map before selected
+  runtime references reach workload, keeper, pre-pull, controller, or
+  CPU-runtime consumers; the compatibility path input cannot replace that
+  authority. An out-of-tree evidence copy must be byte-identical to the source
+  map. Missing mappings fail closed, and non-placeholder customer image
+  overrides are preserved rather than silently remapped. The checked-in
+  blocked template is never a production mapping.
+
+The post-renderer accepts protected out-of-tree inventories only when the
+operator supplies each path together with its SHA-256 through
+`FS2_THIRD_PARTY_IMAGE_LOCK` and `FS2_FIRST_PARTY_IMAGE_LOCK` (plus the
+corresponding `_SHA256` variables). The trust policy remains the reviewed
+source file and cannot be replaced by an environment variable. This keeps the
+source templates fail-closed while preserving the install path once the
+external evidence packet has been independently accepted.
 
 ## Required integration work
 
@@ -90,7 +140,9 @@ provenance and signed render/scan evidence; no rejected historical digest
 packet is reused. An authorized integration worker must render every exact
 chart+values surface, produce the structured render-provenance records and
 signed packet outside the Git tree, record signed registry-resolution and
-catalog-mapping provenance, populate the package and image locks, and configure
+catalog-mapping provenance, capture each production subject's registry
+Referrers API response plus authorized signed query receipt, populate the
+package and image locks, and configure
 the independently reviewed trust key, allowed builders/resolvers, protected
 workflow refs, evidence artifact identity, and OIDC broker. The protected
 workflow then scans every derived production closure subject and signs and
