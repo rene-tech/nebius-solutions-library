@@ -28,6 +28,12 @@ locals {
     "storage-disclosure",
     "storage-reconciler",
   ]
+
+  # SAI-08 successor 6eb13e345c8b17420d1217a70d83e4974497b2b0 uses a
+  # generation-bound storage-reconciler-v3 identity. It is deliberately kept
+  # out of the legacy component list above so that the two generation labels
+  # cannot be bypassed by matching only the component name.
+  sai20_storage_reconciler_v3_component = "storage-reconciler-v3"
 }
 
 resource "kubernetes_network_policy_v1" "control_database_ingress" {
@@ -35,6 +41,11 @@ resource "kubernetes_network_policy_v1" "control_database_ingress" {
     name      = "fs2-control-db-ingress"
     namespace = "fs2-data"
     labels    = local.common_labels
+    annotations = {
+      "security.fs2.nebius.ai/database-network-custody" = "sai20-v2"
+      "security.fs2.nebius.ai/custody-binding"          = kubernetes_manifest.sai20_database_object_custody_binding.manifest.metadata.name
+      "security.fs2.nebius.ai/review-receipt-sha256"    = terraform_data.sai20_database_network_custody.output.independent_review_receipt_sha256
+    }
   }
 
   spec {
@@ -65,6 +76,39 @@ resource "kubernetes_network_policy_v1" "control_database_ingress" {
             key      = "app.kubernetes.io/component"
             operator = "In"
             values   = local.sai20_database_client_components
+          }
+        }
+      }
+      ports {
+        port     = "5432"
+        protocol = "TCP"
+      }
+    }
+
+    # The additive SAI-08 customer-storage successor is a database client.
+    # Require both of its content-derived generation labels as well as the
+    # exact v3 component label so a legacy or partially labelled Pod cannot
+    # inherit this path.
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = "fs2-system"
+          }
+        }
+        pod_selector {
+          match_labels = {
+            "app.kubernetes.io/instance"  = "fs2-serve-control-plane"
+            "app.kubernetes.io/name"      = "fs2-serve-control-plane"
+            "app.kubernetes.io/component" = local.sai20_storage_reconciler_v3_component
+          }
+          match_expressions {
+            key      = "fs2.nebius.ai/storage-egress-generation"
+            operator = "Exists"
+          }
+          match_expressions {
+            key      = "fs2.nebius.ai/storage-rollout-generation"
+            operator = "Exists"
           }
         }
       }

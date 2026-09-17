@@ -1,0 +1,29 @@
+{
+  "schema": "fs2-serve.nebius.ai/sai20-sai08-database-client-cross-source/v1",
+  "source": {
+    "commit": "6eb13e345c8b17420d1217a70d83e4974497b2b0",
+    "tree": "bd55519891c3f653f11465bf59e997170ff8bf4a",
+    "reconciler_template": {
+      "path": "k8s-inference/charts/security/customer-storage-reconciler-v2/templates/reconciler.yaml",
+      "blob": "01966d2e3cc3caa72e70c7b0b96737fd0e5beac7"
+    },
+    "egress_boundary": {
+      "path": "k8s-inference/security/customer-storage-egress-boundary/main.tf",
+      "blob": "530c3a6ad53a871238aa1819ffa06f585aeaf86f"
+    }
+  },
+  "database_client": {
+    "namespace": "fs2-system",
+    "name": "fs2-serve-control-plane",
+    "instance": "fs2-serve-control-plane",
+    "component": "storage-reconciler-v3",
+    "required_generation_labels": [
+      "fs2.nebius.ai/storage-egress-generation",
+      "fs2.nebius.ai/storage-rollout-generation"
+    ],
+    "database_environment_variable": "FS2_DATABASE_URL",
+    "egress_destination_namespace": "fs2-data",
+    "egress_destination_cluster": "fs2-control-db",
+    "egress_tcp_port": 5432
+  }
+}

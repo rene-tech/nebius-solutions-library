@@ -281,6 +281,12 @@ resource "kubernetes_job_v1" "gpu_observability_acceptance" {
   timeouts { create = "20m" }
 
   depends_on = [helm_release.dcgm_exporter]
+  lifecycle {
+    precondition {
+      condition     = kubernetes_manifest.sai20_database_client_workload_custody_binding.manifest.metadata.name == "fs2-database-client-workload-custody-binding"
+      error_message = "SAI-20 database-client label custody must precede observability acceptance Pods."
+    }
+  }
 }
 
 resource "kubernetes_manifest" "kueue_admission_acceptance" {

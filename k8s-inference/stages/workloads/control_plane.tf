@@ -312,5 +312,7 @@ resource "helm_release" "control_plane" {
     kubernetes_manifest.additional_local_queue,
     kubernetes_manifest.general_cpu_local_queue,
     kubernetes_manifest.model_local_queue,
+    kubernetes_manifest.sai20_database_client_workload_custody_binding,
+    kubernetes_role_binding_v1.sai20_database_client_workload_writer,
   ]
 }

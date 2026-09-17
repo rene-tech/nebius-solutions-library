@@ -71,3 +71,48 @@ run at least:
 Rollback is the previous reviewed workloads Terraform/Helm revision, or a
 normal revert of the eventual integration commit. This candidate does not
 authorize a rollout and is not a GO decision.
+
+## Independent-review correction after `07faac62`
+
+Independent review rejected commit
+`07faac62c6854a7b7947f97f59b5b7b1030813fd` / tree
+`6d56efe1edf36bb60cd272f86e585433673d0229`. Preserve that candidate as
+negative evidence; its SAI-03 custody claim and SAI-08 compatibility statement
+are not promotion evidence.
+
+The exact SAI-08 source at
+`6eb13e345c8b17420d1217a70d83e4974497b2b0` / tree
+`bd55519891c3f653f11465bf59e997170ff8bf4a` labels the database-backed
+customer-storage Pod `storage-reconciler-v3`, injects `FS2_DATABASE_URL`, and
+allows egress to `fs2-data` on TCP 5432. The successor ingress rule now matches
+that component only when both its storage egress and rollout generation labels
+exist. The retained legacy `storage-reconciler` path is unchanged. The
+cross-source fixture records the exact source paths and Git blobs so a review
+cannot silently substitute another SAI-08 generation.
+
+The cited SAI-03 source at
+`cea63190aca6548d8be961a9432cc7cc1277721e` / tree
+`3b16346454d84fe2cd3dad7dc468b850615371a5` is explicitly rejected as a custody
+dependency: an object selector on top-level labels does not protect direct
+Pods or labels nested in controller templates. The successor therefore adds an
+API-server-native fail-closed policy with no object selector. It inspects the
+effective Pod labels on Pods, ReplicationControllers, Deployments, StatefulSets,
+DaemonSets, ReplicaSets, Jobs and CronJobs in both `fs2-system` and
+`fs2-observability`. A controller identity is accepted only for a Pod carrying
+a controller owner reference; controller templates require an exact release
+writer identity.
+
+The database NetworkPolicy now carries an explicit custody annotation. A
+separate exact-name policy denies deletion or unauthorized mutation of that
+NetworkPolicy, the two admission policies and bindings, and the namespace-local
+writer Roles and RoleBindings. Existing broad RBAC cannot bypass this admission
+deny. The workloads stage also requires a non-secret v2 handoff containing an
+independently accepted source commit/tree, review receipt, RBAC census receipt,
+impersonation-guard receipt, and exact writer/controller/custodian identities.
+The rejected SAI-03 commit cannot satisfy that input.
+
+This correction is still a source candidate, not proof that such a handoff has
+been accepted. Under the coordinator boundary no test, render, validation,
+plan, deployment, live inspection or negative connection probe was executed.
+Integration and live status remain **NO-GO** until a distinct reviewer accepts
+the exact successor and supplies the custody handoff.

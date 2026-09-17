@@ -416,6 +416,11 @@ output "managed_resource_count" {
     47 +
     # SAI-20 adds one Terraform-owned fs2-data database ingress policy.
     1 +
+    # SAI-20 custody adds two policies, two bindings and namespace-local
+    # writer Role/RoleBinding pairs in fs2-system and fs2-observability.
+    8 +
+    # The accepted custody handoff is retained as a plan-visible gate.
+    1 +
     (local.ngc_api_key_required ? 1 : 0) +
     (local.model_nvcr_credentials_required ? 1 : 0) +
     (local.dcgm_nvcr_credentials_required ? 1 : 0) +
