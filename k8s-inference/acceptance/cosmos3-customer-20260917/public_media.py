@@ -346,6 +346,16 @@ def payload(mode: str, reference: object) -> dict:
     return body
 
 
+def operation_id(value: dict) -> str:
+    # A direct OperationView uses `operation` for the method name, not an envelope.
+    candidate = value if value.get("id") or value.get("operation_id") else value.get("operation")
+    check(isinstance(candidate, dict), "operation_envelope_invalid")
+    try:
+        return str(old.UUID(str(candidate.get("id", candidate.get("operation_id")))))
+    except (TypeError, ValueError):
+        raise old.AcceptanceError("operation_id_invalid") from None
+
+
 async def run_case(args, public, tools, snapshot, token, source, reference, mode, transport, reference_kind):
     name = f"{args.phase}-{transport}-{reference_kind}-{mode}"
     path = args.output / (name + ".json")
@@ -372,7 +382,7 @@ async def run_case(args, public, tools, snapshot, token, source, reference, mode
 
     async def submit():
         if transport == "mcp":
-            return old.operation_id(await public.call(tool, body | controls))
+            return operation_id(await public.call(tool, body | controls))
         request = {
             "operation": "generate",
             "payload": body | {"mode": mode, "output_format": "mp4", "output_delivery": "artifact"},

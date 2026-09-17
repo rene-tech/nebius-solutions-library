@@ -25,6 +25,28 @@ def test_rendered_adapter_pin_differs_from_preview_only_by_one_terminal_newline(
     assert hashlib.sha256(source[:-1]).hexdigest() == runner.ADAPTER_SHA256
 
 
+@pytest.mark.parametrize("nested", [False, True])
+def test_operation_parser_accepts_actual_direct_view_method_string_and_nested_envelope(nested):
+    # Sanitized shape observed from the first real MCP response. `operation` is
+    # the model method string; it must not shadow the direct durable `id`.
+    value = {
+        "id": "00000000-0000-4000-8000-000000000123",
+        "status": "activating",
+        "operation": "generate-media",
+        "model_id": "cosmos3-nano",
+        "tenant_id": "robotics",
+        "principal_id": runner.PREFIX + "synthetic",
+        "protocol": "native",
+    }
+    assert runner.operation_id({"operation": value} if nested else value) == value["id"]
+
+
+@pytest.mark.parametrize("value", [{"operation": "generate-media"}, {"id": "invalid"}, {}])
+def test_operation_parser_refuses_non_durable_identifiers(value):
+    with pytest.raises((ValueError, runner.old.AcceptanceError)):
+        runner.operation_id(value)
+
+
 def canary():
     token = "synthetic-canary-for-offline-test"  # noqa: S105 - inert offline fixture, never a platform credential
     row = {
