@@ -599,19 +599,54 @@ def validate_native_gate(
     }
 
 
-def saved_plan_identity(path: Path) -> dict[str, Any]:
-    path = path.absolute()
-    if path.is_symlink() or not path.is_file():
-        raise GuardError("saved Terraform plan must be a real file")
-    metadata = path.stat()
+def descriptor_sha256(descriptor: int) -> str:
+    digest = hashlib.sha256()
+    offset = 0
+    while chunk := os.pread(descriptor, 1024 * 1024, offset):
+        digest.update(chunk)
+        offset += len(chunk)
+    return digest.hexdigest()
+
+
+def saved_plan_identity(
+    path: Path, *, original_path: Path | None = None
+) -> dict[str, Any]:
+    """Identify a named plan or an inherited, descriptor-pinned plan exactly."""
+
+    descriptor_match = re.fullmatch(r"/proc/self/fd/([0-9]+)", str(path))
+    if descriptor_match is not None:
+        descriptor = int(descriptor_match.group(1))
+        if descriptor < 3 or original_path is None or not original_path.is_absolute():
+            raise GuardError(
+                "descriptor-pinned saved plan requires its exact absolute original path"
+            )
+        try:
+            metadata = os.fstat(descriptor)
+        except OSError as error:
+            raise GuardError("saved Terraform plan descriptor is not open") from error
+        plan_sha256 = descriptor_sha256(descriptor)
+        identity_path = original_path
+    else:
+        path = path.absolute()
+        if (
+            path.is_symlink()
+            or any(parent.is_symlink() for parent in path.parents)
+            or not path.is_file()
+        ):
+            raise GuardError("saved Terraform plan must be a real file")
+        metadata = path.stat()
+        plan_sha256 = file_sha256(path)
+        identity_path = path.resolve()
     if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
         raise GuardError("saved Terraform plan must be owner-owned and owner-only")
+    if not stat.S_ISREG(metadata.st_mode):
+        raise GuardError("saved Terraform plan must be a regular file")
     return {
-        "realpath_sha256": hashlib.sha256(str(path.resolve()).encode()).hexdigest(),
+        "realpath_sha256": hashlib.sha256(str(identity_path).encode()).hexdigest(),
         "device": metadata.st_dev,
         "inode": metadata.st_ino,
         "size": metadata.st_size,
-        "sha256": file_sha256(path),
+        "sha256": plan_sha256,
     }
 
 
@@ -789,6 +824,7 @@ def validate_saved_plan_gate(
     receipt_path: Path,
     plan_document: dict[str, Any],
     saved_plan: Path,
+    saved_plan_original_path: Path | None = None,
     live_secret_document: dict[str, Any] | None,
     raw_state_document: dict[str, Any] | None,
     terraform_configuration: Path,
@@ -810,7 +846,9 @@ def validate_saved_plan_gate(
         "source_commit": source_commit,
         "registry_sha256": registry_sha256(registry),
         "configuration_sha256": configuration_sha256(terraform_configuration),
-        "saved_plan": saved_plan_identity(saved_plan),
+        "saved_plan": saved_plan_identity(
+            saved_plan, original_path=saved_plan_original_path
+        ),
         "plan_json_sha256": canonical_sha256(plan_document),
     }
     if any(receipt.get(key) != value for key, value in expected.items()):
@@ -953,13 +991,16 @@ def validate_saved_plan_gate(
     }
 
 
-def command_json(command: Sequence[str], *, label: str) -> dict[str, Any]:
+def command_json(
+    command: Sequence[str], *, label: str, pass_fds: tuple[int, ...] = ()
+) -> dict[str, Any]:
     try:
         result = subprocess.run(
             list(command),
             text=True,
             capture_output=True,
             check=True,
+            pass_fds=pass_fds,
         )
         document = json.loads(result.stdout)
     except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
@@ -1132,6 +1173,9 @@ def validate_saved_plan_gate_from_environment(
 
     receipt_value = os.environ.get("FS2_TERRAFORM_APPLY_GATE_RECEIPT", "")
     plan_value = os.environ.get("FS2_TERRAFORM_SAVED_PLAN", "")
+    original_plan_value = os.environ.get(
+        "FS2_TERRAFORM_SAVED_PLAN_ORIGINAL_PATH", ""
+    )
     terraform = PRODUCTION_TERRAFORM_COMMAND
     if not receipt_value or not plan_value:
         raise GuardError(
@@ -1139,6 +1183,16 @@ def validate_saved_plan_gate_from_environment(
         )
     receipt_path = Path(receipt_value)
     saved_plan = Path(plan_value)
+    descriptor_match = re.fullmatch(r"/proc/self/fd/([0-9]+)", plan_value)
+    plan_descriptor = (
+        int(descriptor_match.group(1)) if descriptor_match is not None else None
+    )
+    if plan_descriptor is not None and plan_descriptor < 3:
+        raise GuardError("saved Terraform plan descriptor is not a private inherited file")
+    plan_descriptors = (plan_descriptor,) if plan_descriptor is not None else ()
+    original_plan = Path(original_plan_value) if original_plan_value else None
+    if descriptor_match is not None and original_plan is None:
+        raise GuardError("descriptor-pinned apply omitted the original saved-plan path")
     receipt = load_private_document(receipt_path, label="saved-plan apply receipt")
     plan_document = command_json(
         [
@@ -1149,6 +1203,7 @@ def validate_saved_plan_gate_from_environment(
             str(saved_plan),
         ],
         label="saved Terraform plan inspection",
+        pass_fds=plan_descriptors,
     )
     raw_state_document = (
         None
@@ -1163,6 +1218,7 @@ def validate_saved_plan_gate_from_environment(
         receipt_path=receipt_path,
         plan_document=plan_document,
         saved_plan=saved_plan,
+        saved_plan_original_path=original_plan,
         live_secret_document=live_document,
         raw_state_document=raw_state_document,
         terraform_configuration=terraform_configuration,
@@ -2984,6 +3040,47 @@ def load_identity_receipt(
     return receipt
 
 
+def validate_identity_receipt_state(
+    state_document: dict[str, Any],
+    path: Path,
+    *,
+    registry: dict[str, Any] | None = None,
+    terraform_root: str,
+) -> dict[str, Any]:
+    """Re-observe state/live bindings for an existing write-once receipt."""
+
+    registry = registry or load_registry()
+    receipt = load_identity_receipt(
+        path, registry=registry, terraform_root=terraform_root
+    )
+    if receipt is None:
+        raise GuardError("durable identity receipt is absent")
+    fingerprints = protected_state_fingerprints(
+        state_document, registry=registry, terraform_root=terraform_root
+    )
+    bindings = live_secret_bindings(
+        state_document,
+        live_secret_inventory_for_state(
+            state_document, registry=registry, terraform_root=terraform_root
+        ),
+        registry=registry,
+        terraform_root=terraform_root,
+    )
+    if (
+        receipt.get("address_fingerprints") != fingerprints
+        or receipt.get("live_secret_bindings") != bindings
+    ):
+        raise GuardError(
+            "durable identity receipt differs from authoritative state or live Secrets"
+        )
+    return {
+        "status": "pass",
+        "receipt_sha256": file_sha256(path),
+        "protected_identities": len(fingerprints),
+        "live_secret_bindings": len(bindings),
+    }
+
+
 def inspect_plan(
     document: dict[str, Any],
     *,
@@ -3153,10 +3250,10 @@ def inspect_configuration_plan(
 ) -> dict[str, int]:
     """Prove the deployment-contract root cannot carry durable credentials.
 
-    The top-level configuration root intentionally has no credential registry
-    or native credential apply-gate variables. It is still inspected instead
-    of bypassed: any managed credential-shaped address, moved address, unknown
-    mode, or data-source mutation fails closed.
+    The top-level configuration root intentionally has no durable credential.
+    It still carries the same append-only native apply-gate generation as each
+    stage: any missing/stale gate, managed credential-shaped address, moved
+    address, unknown mode, or data-source mutation fails closed.
     """
 
     configured = configuration_resource_addresses(document.get("configuration"))
@@ -3201,6 +3298,7 @@ def inspect_configuration_plan(
             ["no-op"],
         ):
             raise GuardError("greenfield configuration plan is not additive")
+    require_additive_apply_gate_generation(document)
     return {
         "protected_addresses": 0,
         "verified_identities": 0,
@@ -4115,6 +4213,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=("configuration", "infrastructure", "foundation", "workloads", "reference-data"),
         required=True,
     )
+    validate_state = subparsers.add_parser("validate-state")
+    validate_state.add_argument("state_json", type=Path)
+    validate_state.add_argument("receipt", type=Path)
+    validate_state.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
+    validate_state.add_argument(
+        "--terraform-root",
+        choices=("configuration", "infrastructure", "foundation", "workloads", "reference-data"),
+        required=True,
+    )
     apply_gate = subparsers.add_parser("capture-apply-gate")
     apply_gate.add_argument("state_json", type=Path)
     apply_gate.add_argument("receipt", type=Path)
@@ -4266,7 +4373,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             "expires_at": receipt["expires_at"],
             "plan_sha256": receipt["saved_plan"]["sha256"],
         }
-    elif args.command in {"plan", "capture-state", "capture-apply-gate"}:
+    elif args.command in {
+        "plan",
+        "capture-state",
+        "validate-state",
+        "capture-apply-gate",
+    }:
         document_path = args.plan_json if args.command == "plan" else args.state_json
         encoded = (
             os.sys.stdin.read()
@@ -4325,6 +4437,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "protected_identities": len(receipt["address_fingerprints"]),
                 "live_secret_bindings": len(receipt["live_secret_bindings"]),
             }
+        elif args.command == "validate-state":
+            result = validate_identity_receipt_state(
+                document,
+                args.receipt,
+                registry=load_registry(args.registry),
+                terraform_root=args.terraform_root,
+            )
         else:
             registry = load_registry(args.registry)
             receipt = write_apply_gate_receipt(

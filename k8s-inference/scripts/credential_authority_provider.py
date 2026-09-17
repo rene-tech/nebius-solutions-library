@@ -31,6 +31,51 @@ class ProviderError(RuntimeError):
     pass
 
 
+READ_ONLY_OPERATIONS = frozenset(
+    {
+        "custody-snapshot",
+        "planned-generation-admission",
+        "artifact-inventory",
+        "consumer-readiness",
+        "credential-inventory",
+        "rotation-readiness",
+        "viewer-handoff-inventory",
+        "ciphertext-migration",
+        "authentication-continuity",
+        "release-identity",
+        "operator-read-context",
+        "operator-proxy-context",
+        "scoped-credential-context",
+        "backend-custody",
+        "state-migration-readiness",
+        "greenfield-bootstrap-readiness",
+        "greenfield-lineage-transition-readiness",
+    }
+)
+CALLER_PURPOSES = frozenset(
+    {
+        "release-automation",
+        "operator-read",
+        "operator-proxy",
+        "credential-delivery-general",
+        "credential-delivery-scientific",
+    }
+)
+OPERATION_PURPOSES = {
+    **{
+        operation: frozenset({"release-automation"})
+        for operation in READ_ONLY_OPERATIONS
+    },
+    "operator-read-context": frozenset({"operator-read"}),
+    "operator-proxy-context": frozenset({"operator-proxy"}),
+    "scoped-credential-context": frozenset(
+        {"credential-delivery-general", "credential-delivery-scientific"}
+    ),
+    "backend-custody": CALLER_PURPOSES,
+    "state-migration-readiness": CALLER_PURPOSES,
+}
+
+
 def canonical_sha256(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
@@ -4548,43 +4593,13 @@ def main() -> int:
         "policy_sha256",
     }
     caller = request.get("caller_authorization") if isinstance(request, dict) else None
-    release_only = {
-        "custody-snapshot",
-        "planned-generation-admission",
-        "artifact-inventory",
-        "consumer-readiness",
-        "credential-inventory",
-        "rotation-readiness",
-        "viewer-handoff-inventory",
-        "ciphertext-migration",
-        "authentication-continuity",
-        "release-identity",
-    }
-    all_purposes = {
-        "release-automation",
-        "operator-read",
-        "operator-proxy",
-        "credential-delivery-general",
-        "credential-delivery-scientific",
-    }
-    operation_purposes = {
-        **{operation: {"release-automation"} for operation in release_only},
-        "release-identity": {"release-automation"},
-        "operator-read-context": {"operator-read"},
-        "operator-proxy-context": {"operator-proxy"},
-        "scoped-credential-context": {
-            "credential-delivery-general",
-            "credential-delivery-scientific",
-        },
-        "backend-custody": all_purposes,
-        "state-migration-readiness": all_purposes,
-        "greenfield-bootstrap-readiness": {"release-automation"},
-    }
     if (
         not isinstance(request, dict)
         or set(request) != required
         or request.get("schema")
         != "fs2-serve.nebius.ai/credential-provider-read/v2"
+        or set(OPERATION_PURPOSES) != READ_ONLY_OPERATIONS
+        or request.get("operation") not in READ_ONLY_OPERATIONS
         or not isinstance(request.get("parameters"), dict)
         or not isinstance(caller, dict)
         or set(caller)
@@ -4600,7 +4615,7 @@ def main() -> int:
         }
         or caller.get("id") != caller.get("purpose")
         or caller.get("purpose")
-        not in operation_purposes.get(request.get("operation"), set())
+        not in OPERATION_PURPOSES[request["operation"]]
         or not isinstance(request.get("policy"), dict)
         or request.get("policy_sha256") != canonical_sha256(request["policy"])
     ):

@@ -1,5 +1,6 @@
 resource "terraform_data" "deployment_contract" {
-  input = local.deployment_contract
+  input      = local.deployment_contract
+  depends_on = [terraform_data.credential_migration_gate]
 
   lifecycle {
     precondition {

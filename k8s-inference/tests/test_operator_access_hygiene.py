@@ -612,9 +612,10 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             self.assertIn('data "external" "credential_migration_gate"', gate)
             self.assertIn("secret_migration_guard.py", gate)
             self.assertIn(
-                "triggers_replace = [data.external.credential_migration_gate.result.receipt_sha256, timestamp()]",
+                "for_each = setunion(var.credential_migration_gate_history, toset([var.credential_migration_gate_receipt_sha256]))",
                 gate,
             )
+            self.assertIn("prevent_destroy = true", gate)
             self.assertIn("apply-saved-plan-gate", gate)
 
         with (
@@ -848,9 +849,8 @@ class OperatorAccessHygieneTests(unittest.TestCase):
     def test_wrapper_guards_both_generated_and_saved_plans(self) -> None:
         source = (ROOT / "inference-stack").read_text(encoding="utf-8")
         self.assertIn("fixed-v1-identity.receipt.json", source)
-        self.assertIn(
-            "guard_saved_plan(terraform, root, plan_path, environment)", source
-        )
+        self.assertIn('Path(f"/proc/self/fd/{plan_descriptor}")', source)
+        self.assertIn("pass_fds=(plan_descriptor,)", source)
         unsafe = json.dumps(
             {
                 "resource_changes": [
@@ -867,7 +867,14 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             plan.chmod(0o600)
             calls: list[list[str]] = []
 
-            def fake_run(command, *, env=None, capture=False, input_text=None):
+            def fake_run(
+                command,
+                *,
+                env=None,
+                capture=False,
+                input_text=None,
+                pass_fds=(),
+            ):
                 calls.append(list(command))
                 if "show" in command:
                     return subprocess.CompletedProcess(command, 0, stdout=unsafe)

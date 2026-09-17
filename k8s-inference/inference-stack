@@ -88,6 +88,7 @@ def run(
     env: Mapping[str, str] | None = None,
     capture: bool = False,
     input_text: str | None = None,
+    pass_fds: tuple[int, ...] = (),
 ) -> subprocess.CompletedProcess[str]:
     print(f"+ {command_text(arguments)}", file=sys.stderr)
     try:
@@ -99,6 +100,7 @@ def run(
             check=True,
             stdout=subprocess.PIPE if capture else sys.stderr,
             stderr=subprocess.PIPE if capture else None,
+            pass_fds=pass_fds,
         )
     except FileNotFoundError as exc:
         raise DeploymentError(f"required executable not found: {arguments[0]}") from exc
@@ -183,6 +185,17 @@ def file_sha256(path: Path) -> str:
             digest.update(chunk)
     finally:
         os.close(descriptor)
+    return digest.hexdigest()
+
+
+def descriptor_sha256(descriptor: int) -> str:
+    """Hash one already-open regular file without changing its shared offset."""
+
+    digest = hashlib.sha256()
+    offset = 0
+    while chunk := os.pread(descriptor, 1024 * 1024, offset):
+        digest.update(chunk)
+        offset += len(chunk)
     return digest.hexdigest()
 
 
@@ -827,6 +840,7 @@ def terraform_init(
         )
     initialization_mode = observation["initialization_mode"]
     initialization: dict[str, Any]
+    sealed_greenfield_transition: dict[str, Any] | None = None
     if initialization_mode == "legacy-copy":
         migration = authority_observation(
             "state-migration-readiness", terraform_root_name=root_name
@@ -861,41 +875,36 @@ def terraform_init(
     elif initialization_mode == "greenfield-empty":
         transition = load_greenfield_transition(environment, root_name)
         if transition is not None:
-            verified_transition = reobserve_greenfield_transition(
+            sealed_greenfield_transition = reobserve_greenfield_transition(
                 transition, root_name=root_name
             )
-            raise DeploymentError(
-                "greenfield lineage is sealed but authority policy still declares "
-                f"greenfield-empty for {root_name}; publish an additive root-owned "
-                "remote-established policy revision bound to transition "
-                f"{verified_transition['transition_evidence_id']} and lineage "
-                f"{verified_transition['lineage']} before any later Terraform command"
+            initialization = sealed_greenfield_transition
+        else:
+            bootstrap = authority_observation(
+                "greenfield-bootstrap-readiness", terraform_root_name=root_name
             )
-        bootstrap = authority_observation(
-            "greenfield-bootstrap-readiness", terraform_root_name=root_name
-        )
-        if (
-            bootstrap.get("terraform_root_name") != root_name
-            or bootstrap.get("authorizedCallerPurpose") != "release-automation"
-            or ACTIVE_BACKEND_IDENTITY.get("purpose") != "release-automation"
-            or bootstrap.get("status")
-            != "greenfield-empty-provider-attested"
-            or bootstrap.get("initialization_mode") != "greenfield-empty"
-            or bootstrap.get("backend_object_present") is not False
-            or bootstrap.get("backend_object_version_ids") != []
-            or bootstrap.get("backend_lock_present") is not False
-            or bootstrap.get("terraform_managed_credential_addresses") != []
-            or bootstrap.get("kubernetes_secret_identities") != []
-            or bootstrap.get("nebius_credential_identities") != []
-            or not isinstance(bootstrap.get("bootstrap_evidence_id"), str)
-            or not bootstrap["bootstrap_evidence_id"]
-            or bootstrap.get("backend_access_identity", {}).get("binding_sha256")
-            != ACTIVE_BACKEND_IDENTITY.get("binding_sha256")
-        ):
-            raise DeploymentError(
-                "greenfield initialization requires provider-attested empty backend and live credential inventories"
-            )
-        initialization = bootstrap
+            if (
+                bootstrap.get("terraform_root_name") != root_name
+                or bootstrap.get("authorizedCallerPurpose") != "release-automation"
+                or ACTIVE_BACKEND_IDENTITY.get("purpose") != "release-automation"
+                or bootstrap.get("status")
+                != "greenfield-empty-provider-attested"
+                or bootstrap.get("initialization_mode") != "greenfield-empty"
+                or bootstrap.get("backend_object_present") is not False
+                or bootstrap.get("backend_object_version_ids") != []
+                or bootstrap.get("backend_lock_present") is not False
+                or bootstrap.get("terraform_managed_credential_addresses") != []
+                or bootstrap.get("kubernetes_secret_identities") != []
+                or bootstrap.get("nebius_credential_identities") != []
+                or not isinstance(bootstrap.get("bootstrap_evidence_id"), str)
+                or not bootstrap["bootstrap_evidence_id"]
+                or bootstrap.get("backend_access_identity", {}).get("binding_sha256")
+                != ACTIVE_BACKEND_IDENTITY.get("binding_sha256")
+            ):
+                raise DeploymentError(
+                    "greenfield initialization requires provider-attested empty backend and live credential inventories"
+                )
+            initialization = bootstrap
     else:
         initialization = {
             "initialization_mode": "remote-established",
@@ -924,6 +933,20 @@ def terraform_init(
         ],
         env=environment,
     )
+    if sealed_greenfield_transition is not None:
+        capture_greenfield_durable_identity(
+            terraform,
+            root,
+            environment,
+            expected_transition=sealed_greenfield_transition,
+        )
+        raise DeploymentError(
+            "greenfield lineage and durable identities are sealed but authority policy "
+            f"still declares greenfield-empty for {root_name}; publish an additive "
+            "root-owned remote-established policy revision bound to transition "
+            f"{sealed_greenfield_transition['transition_evidence_id']} and lineage "
+            f"{sealed_greenfield_transition['lineage']} before any later Terraform command"
+        )
 
 
 def greenfield_transition_run_root(environment: Mapping[str, str]) -> Path:
@@ -1111,7 +1134,7 @@ def reobserve_greenfield_transition(
 
 def capture_greenfield_transition(
     root: Path,
-    plan_path: Path,
+    saved_plan_sha256: str,
     environment: Mapping[str, str],
     initialization: Mapping[str, Any],
 ) -> None:
@@ -1134,7 +1157,7 @@ def capture_greenfield_transition(
     transition = authority_observation(
         "greenfield-lineage-transition-readiness",
         terraform_root_name=root_name,
-        saved_plan_sha256=file_sha256(plan_path),
+        saved_plan_sha256=saved_plan_sha256,
         apply_receipt_sha256=file_sha256(apply_receipt),
         bootstrap_evidence_id=initialization["bootstrap_evidence_id"],
     )
@@ -1143,7 +1166,7 @@ def capture_greenfield_transition(
         != "greenfield-lineage-established-provider-attested"
         or transition.get("initialization_mode") != "remote-established"
         or transition.get("terraform_root_name") != root_name
-        or transition.get("saved_plan_sha256") != file_sha256(plan_path)
+        or transition.get("saved_plan_sha256") != saved_plan_sha256
         or transition.get("apply_receipt_sha256") != file_sha256(apply_receipt)
         or transition.get("bootstrap_evidence_id")
         != initialization["bootstrap_evidence_id"]
@@ -1161,6 +1184,59 @@ def capture_greenfield_transition(
     )
     write_once_private_json(receipt_path, transition)
     ACTIVE_TERRAFORM_INITIALIZATIONS[root_name] = dict(transition)
+
+
+def capture_greenfield_durable_identity(
+    terraform: str,
+    root: Path,
+    environment: Mapping[str, str],
+    *,
+    expected_transition: Mapping[str, Any],
+) -> None:
+    """Automatically seal first-state identities before policy promotion.
+
+    Configuration owns no durable credential, so it has no identity receipt.
+    Every credential-bearing root captures its provider-bound state and live
+    Secret identities immediately after the first apply.  Recovery may call
+    this again only when the write-once receipt is already present.
+    """
+
+    if root.resolve() == DEPLOY_ROOT.resolve():
+        return
+    run_root = greenfield_transition_run_root(environment)
+    receipt = durable_identity_receipt(run_root, root)
+    raw_state = json.loads(authoritative_state_json(terraform, root, environment))
+    if (
+        raw_state.get("lineage") != expected_transition.get("lineage")
+        or raw_state.get("serial") != expected_transition.get("serial")
+        or canonical_sha256(raw_state)
+        != expected_transition.get("state_json_sha256")
+    ):
+        raise DeploymentError(
+            "greenfield durable identity state differs from the provider-attested genesis"
+        )
+    state_document = normalized_remote_state(raw_state)
+    command_name = "validate-state" if receipt.exists() else "capture-state"
+    run(
+        [
+            sys.executable,
+            str(SECRET_MIGRATION_GUARD),
+            command_name,
+            "-",
+            str(receipt),
+            "--registry",
+            str(DURABLE_CREDENTIAL_REGISTRY),
+            "--terraform-root",
+            terraform_root_name(root),
+        ]
+        + (
+            ["--source-commit", source_commit()]
+            if command_name == "capture-state"
+            else []
+        ),
+        input_text=json.dumps(state_document, separators=(",", ":")),
+        capture=True,
+    )
 
 
 def terraform_root_name(root: Path) -> str:
@@ -1330,22 +1406,31 @@ def guard_secret_migration_plan(
 def guard_saved_plan(
     terraform: str,
     root: Path,
-    plan_path: Path,
+    pinned_plan_path: Path,
+    original_plan_path: Path,
     environment: Mapping[str, str],
+    *,
+    plan_descriptor: int,
 ) -> None:
-    """Reinspect the exact saved plan immediately before Terraform applies it."""
+    """Reinspect the same open saved-plan object Terraform will apply."""
 
-    if plan_path.is_symlink() or not plan_path.is_file():
-        raise DeploymentError(f"saved plan is absent or unsafe: {plan_path}")
+    metadata = os.fstat(plan_descriptor)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or stat.S_IMODE(metadata.st_mode) & 0o077
+    ):
+        raise DeploymentError("pinned saved plan is not an owner-only regular file")
     result = run(
-        [terraform, f"-chdir={root}", "show", "-json", str(plan_path)],
+        [terraform, f"-chdir={root}", "show", "-json", str(pinned_plan_path)],
         env=environment,
         capture=True,
+        pass_fds=(plan_descriptor,),
     )
     root_name = terraform_root_name(root)
     initialization = terraform_initialization(root)
     greenfield = initialization["initialization_mode"] == "greenfield-empty"
-    identity_receipt = durable_identity_receipt(plan_path.parent, root)
+    identity_receipt = durable_identity_receipt(original_plan_path.parent, root)
     if greenfield or not identity_receipt.exists():
         identity_receipt = None
     guard_secret_migration_plan(
@@ -1617,7 +1702,19 @@ def validate_credential_migration_gate(
     )
 
 
-def validate_saved_plan_apply_gate(root: Path, environment: Mapping[str, str]) -> None:
+def validate_saved_plan_apply_gate(
+    root: Path,
+    environment: Mapping[str, str],
+    *,
+    pinned_plan_path: Path,
+    original_plan_path: Path,
+    plan_descriptor: int,
+) -> None:
+    validation_environment = dict(environment)
+    validation_environment["FS2_TERRAFORM_SAVED_PLAN"] = str(pinned_plan_path)
+    validation_environment["FS2_TERRAFORM_SAVED_PLAN_ORIGINAL_PATH"] = str(
+        original_plan_path
+    )
     run(
         [
             sys.executable,
@@ -1632,8 +1729,9 @@ def validate_saved_plan_apply_gate(root: Path, environment: Mapping[str, str]) -
             "--registry",
             str(DURABLE_CREDENTIAL_REGISTRY),
         ],
-        env=environment,
+        env=validation_environment,
         capture=True,
+        pass_fds=(plan_descriptor,),
     )
 
 
@@ -3629,16 +3727,59 @@ def apply_plan(
     environment: Mapping[str, str],
 ) -> bool:
     initialization = terraform_initialization(root)
-    if (root / "credential_migration_gate.tf").is_file() or root == DEPLOY_ROOT:
-        validate_credential_migration_gate(root, environment)
-        validate_saved_plan_apply_gate(root, environment)
-        guard_saved_plan(terraform, root, plan_path, environment)
-    run(
-        [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)],
-        env=environment,
+    original_plan_path = plan_path.resolve(strict=True)
+    plan_descriptor = os.open(
+        plan_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     )
+    try:
+        metadata = os.fstat(plan_descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) & 0o077
+        ):
+            raise DeploymentError("saved plan must be an owner-only regular file")
+        pinned_plan_path = Path(f"/proc/self/fd/{plan_descriptor}")
+        validate_credential_migration_gate(root, environment)
+        validate_saved_plan_apply_gate(
+            root,
+            environment,
+            pinned_plan_path=pinned_plan_path,
+            original_plan_path=original_plan_path,
+            plan_descriptor=plan_descriptor,
+        )
+        guard_saved_plan(
+            terraform,
+            root,
+            pinned_plan_path,
+            original_plan_path,
+            environment,
+            plan_descriptor=plan_descriptor,
+        )
+        saved_plan_sha256 = descriptor_sha256(plan_descriptor)
+        run(
+            [
+                terraform,
+                f"-chdir={root}",
+                "apply",
+                "-input=false",
+                str(pinned_plan_path),
+            ],
+            env=environment,
+            pass_fds=(plan_descriptor,),
+        )
+    finally:
+        os.close(plan_descriptor)
     if initialization["initialization_mode"] == "greenfield-empty":
-        capture_greenfield_transition(root, plan_path, environment, initialization)
+        capture_greenfield_transition(
+            root, saved_plan_sha256, environment, initialization
+        )
+        capture_greenfield_durable_identity(
+            terraform,
+            root,
+            environment,
+            expected_transition=terraform_initialization(root),
+        )
         return True
     return False
 

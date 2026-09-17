@@ -6,4 +6,11 @@ terraform {
   # normalized deployment contract because it contains resource identities
   # used by the credential custody fence.
   backend "s3" {}
+
+  required_providers {
+    external = {
+      source  = "hashicorp/external"
+      version = "= 2.3.5"
+    }
+  }
 }

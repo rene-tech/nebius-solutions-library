@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import re
@@ -8,6 +9,8 @@ from pathlib import Path
 import pytest
 
 from scripts.credential_authority_provider import (
+    OPERATION_PURPOSES,
+    READ_ONLY_OPERATIONS,
     ProviderError,
     base_address,
     classes_for_address,
@@ -434,6 +437,7 @@ def test_apply_gate_is_additive_and_authority_is_not_caller_selected() -> None:
     guard_source = (ROOT / "scripts/secret_migration_guard.py").read_text()
     wrapper_source = (ROOT / "inference-stack").read_text()
     for root in (
+        ROOT,
         ROOT / "stages/infrastructure",
         ROOT / "stages/foundation",
         ROOT / "stages/workloads",
@@ -1142,6 +1146,7 @@ def test_greenfield_bootstrap_is_distinct_provider_attested_and_reobserved() -> 
         "fresh_reobservation_required_at_plan_and_apply": True,
         "post_first_apply_mode": "remote-established",
         "post_first_apply_transition": "provider-observed-plan-and-apply-receipt-bound-lineage-version-state-and-credential-genesis",
+        "post_first_apply_identity_receipt": "automatic-provider-observed-write-once-before-policy-promotion",
         "post_apply_crash_recovery": "reconcile-immutable-saved-plan-gate-receipts-with-provider-observed-applied-plan",
         "policy_promotion_required_before_next_root_command": True,
         "execution_authorized": False,
@@ -1168,12 +1173,70 @@ def test_wrapper_uses_registered_roots_bootstrap_mode_and_every_identity_receipt
 
 def test_configuration_root_has_an_explicit_zero_credential_plan_guard() -> None:
     guard = (ROOT / "scripts/secret_migration_guard.py").read_text()
+    gate = (ROOT / "credential_migration_gate.tf").read_text()
+    main = (ROOT / "main.tf").read_text()
     assert 'if terraform_root == "configuration":' in guard
     assert "def inspect_configuration_plan(" in guard
+    assert "require_additive_apply_gate_generation(document)" in guard
     assert "configuration root contains a durable credential resource" in guard
     assert "configuration plan may not move a resource address" in guard
     assert "configuration data source has a mutating action" in guard
     assert '"configuration",\n            "infrastructure"' in guard
+    assert 'terraform_root          = "configuration"' in gate
+    assert 'resource "terraform_data" "credential_apply_gate_generation"' in gate
+    assert "apply-saved-plan-gate" in gate
+    assert "depends_on = [terraform_data.credential_migration_gate]" in main
+
+
+def test_saved_plan_validation_and_apply_share_one_open_descriptor() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    guard = (ROOT / "scripts/secret_migration_guard.py").read_text()
+    apply_source = wrapper[
+        wrapper.index("def apply_plan(") : wrapper.index(
+            "\ndef workload_endpoint_outputs", wrapper.index("def apply_plan(")
+        )
+    ]
+    assert "os.open(" in apply_source
+    assert "O_NOFOLLOW" in apply_source
+    assert 'Path(f"/proc/self/fd/{plan_descriptor}")' in apply_source
+    assert "pass_fds=(plan_descriptor,)" in apply_source
+    assert "str(pinned_plan_path)" in apply_source
+    assert "str(plan_path)" not in apply_source
+    assert "descriptor_sha256(plan_descriptor)" in apply_source
+    assert "FS2_TERRAFORM_SAVED_PLAN_ORIGINAL_PATH" in wrapper
+    assert 're.fullmatch(r"/proc/self/fd/([0-9]+)"' in guard
+    assert "os.fstat(descriptor)" in guard
+    assert "descriptor_sha256(descriptor)" in guard
+    assert "pass_fds=plan_descriptors" in guard
+
+
+def test_greenfield_transition_auto_seals_durable_identity_before_promotion() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    capture = wrapper[
+        wrapper.index("def capture_greenfield_durable_identity(") : wrapper.index(
+            "\ndef terraform_root_name(",
+            wrapper.index("def capture_greenfield_durable_identity("),
+        )
+    ]
+    initialize = wrapper[
+        wrapper.index("def terraform_init(") : wrapper.index(
+            "\ndef greenfield_transition_run_root", wrapper.index("def terraform_init(")
+        )
+    ]
+    apply_source = wrapper[
+        wrapper.index("def apply_plan(") : wrapper.index(
+            "\ndef workload_endpoint_outputs", wrapper.index("def apply_plan(")
+        )
+    ]
+    assert '"capture-state"' in capture
+    assert "authoritative_state_json(terraform, root, environment)" in capture
+    assert 'raw_state.get("lineage") != expected_transition.get("lineage")' in capture
+    assert "canonical_sha256(raw_state)" in capture
+    assert "capture_greenfield_durable_identity(" in initialize
+    assert "capture_greenfield_durable_identity(" in apply_source
+    assert initialize.index("capture_greenfield_durable_identity(") < initialize.index(
+        "publish an additive"
+    )
 
 
 def test_backend_sessions_require_exact_provider_permission_closure() -> None:
@@ -1242,3 +1305,75 @@ def test_external_anchor_accepts_every_purpose_scoped_read_operation() -> None:
         "greenfield-lineage-transition-readiness",
     ):
         assert f'"{operation}"' in anchor
+
+
+def _frozenset_assignment(path: Path, name: str) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    matches = [
+        node.value.args[0]
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == name
+            for target in node.targets
+        )
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "frozenset"
+        and len(node.value.args) == 1
+    ]
+    assert len(matches) == 1
+    value = ast.literal_eval(matches[0])
+    assert isinstance(value, set) and all(isinstance(item, str) for item in value)
+    return value
+
+
+def _provider_dispatch_operations() -> set[str]:
+    path = ROOT / "scripts/credential_authority_provider.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "operation_result"
+    ]
+    assert len(functions) == 1
+    handled: set[str] = set()
+    for node in ast.walk(functions[0]):
+        if not isinstance(node, ast.Compare) or len(node.ops) != 1:
+            continue
+        if not isinstance(node.left, ast.Name) or node.left.id != "operation":
+            continue
+        comparator = node.comparators[0]
+        if isinstance(node.ops[0], ast.Eq) and isinstance(comparator, ast.Constant):
+            if isinstance(comparator.value, str):
+                handled.add(comparator.value)
+        elif isinstance(node.ops[0], ast.In) and isinstance(comparator, ast.Set):
+            values = ast.literal_eval(comparator)
+            assert isinstance(values, set)
+            handled.update(values)
+    return handled
+
+
+def test_all_authority_operation_registries_and_purpose_maps_are_exact() -> None:
+    expected = set(READ_ONLY_OPERATIONS)
+    assert set(OPERATION_PURPOSES) == expected
+    assert OPERATION_PURPOSES["greenfield-lineage-transition-readiness"] == {
+        "release-automation"
+    }
+    assert _provider_dispatch_operations() == expected
+    for source in (
+        "credential_authority_service.py",
+        "credential_provider_adapter.py",
+        "credential_external_anchor_client.py",
+    ):
+        assert (
+            _frozenset_assignment(
+                ROOT / "scripts" / source, "READ_ONLY_OPERATIONS"
+            )
+            == expected
+        )
+    schema = json.loads(
+        (ROOT / "security/credential-authority-config.schema.json").read_text()
+    )
+    assert set(schema["properties"]["operation_callers"]["required"]) == expected
+    assert set(schema["properties"]["operations"]["required"]) == expected

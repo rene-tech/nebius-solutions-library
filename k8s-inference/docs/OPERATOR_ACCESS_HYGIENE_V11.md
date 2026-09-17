@@ -72,6 +72,40 @@ that the genesis state is exact and that later serials descend from it. It
 never changes an established root back to greenfield or aliases this evidence
 to legacy migration/adoption.
 
+## Operation registry parity
+
+The greenfield lineage transition is a release-automation-only read operation.
+The provider's purpose map names it explicitly and refuses to start unless its
+map covers exactly the complete read-only operation registry. The authority,
+local client, external anchor and configuration schema carry the same operation
+set. A source regression derives the provider dispatch set and requires exact
+equality across all five registries, including the transition operation's exact
+`release-automation` purpose.
+
+## Saved-plan object pinning
+
+Release automation opens an owner-only saved plan once with `O_NOFOLLOW` and
+keeps that descriptor open across execution-time receipt validation, the
+second plan inspection, and `terraform apply`. Those subprocesses receive the
+same descriptor and use `/proc/self/fd/<n>`; the original canonical path is
+retained only to match the write-once receipt. Replacing the pathname cannot
+change the bytes Terraform applies. The top-level configuration root now has
+the same append-only native gate generation as infrastructure, foundation and
+workloads, and its deployment contract depends on that gate. A direct plan or
+saved-plan apply without the exact short-lived gate therefore fails closed.
+
+## Greenfield durable identity handoff
+
+The first greenfield apply is not complete when only its lineage transition is
+sealed. Before policy promotion, the wrapper pulls the new remote state,
+requires its lineage, serial and canonical state digest to equal the
+provider-attested genesis, and automatically creates the root's write-once
+durable-identity receipt using the fixed authority's live Secret observations.
+If the process stopped after the apply, the next greenfield initialization
+re-observes the immutable transition, initializes only that remote backend,
+creates the missing receipt, and still stops for additive policy promotion.
+No manual `capture-state` step is part of the supported lifecycle.
+
 ## Current authorization boundary
 
 Checked production trust, configuration and adapters are not present, and
