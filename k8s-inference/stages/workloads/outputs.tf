@@ -477,6 +477,10 @@ output "managed_resource_count" {
     # principal/resource/name grant.
     + 7
     + (2 * length(local.sai20_authority_v3_release_grants))
+    # SAI-20 v4 owns plan/identity/apply gates and two apply-time nonces, one
+    # immutable exact-ingress contract ConfigMap, and four fail-closed
+    # admission policy/binding pairs (including the transition freeze).
+    + 14
   )
 }
 
@@ -495,6 +499,25 @@ output "sai20_database_authority" {
     workload_custody              = kubernetes_manifest.sai20_database_workload_custody_v3.manifest.metadata.name
     authority_object_custody      = kubernetes_manifest.sai20_database_authority_object_custody_v3.manifest.metadata.name
     authorized_writer_role_count  = length(local.sai20_authority_v3_release_grants)
+  }
+}
+
+output "sai20_database_authority_v4" {
+  description = "Non-secret source-rooted, apply-reobserved SAI-20 v4 activation identity."
+  value = {
+    schema                   = "fs2-serve.nebius.ai/sai20-database-authority/v4"
+    bundle_sha256            = terraform_data.sai20_database_authority_v4_apply.output.bundle_sha256
+    payload_sha256           = terraform_data.sai20_database_authority_v4_apply.output.payload_sha256
+    source_commit            = terraform_data.sai20_database_authority_v4_apply.output.source_commit
+    source_tree              = terraform_data.sai20_database_authority_v4_apply.output.source_tree
+    legacy_v3_packet_sha256  = terraform_data.sai20_database_authority_v4_apply.output.legacy_v3_packet_sha256
+    ingress_spec_sha256      = local.sai20_authority_v4_ingress_spec_sha256
+    executor_principal_id    = terraform_data.sai20_database_authority_v4_apply.output.executor_principal_id
+    authorized_parents_json  = terraform_data.sai20_database_authority_v4_apply.output.authorized_parents_json
+    authority_object_custody = kubernetes_manifest.sai20_database_authority_object_custody_v4.manifest.metadata.name
+    transition_policy_freeze = kubernetes_manifest.sai20_database_policy_freeze_v4.manifest.metadata.name
+    exact_ingress_policy     = kubernetes_manifest.sai20_database_ingress_exact_spec_v4.manifest.metadata.name
+    exact_owner_policy       = kubernetes_manifest.sai20_database_exact_owner_v4.manifest.metadata.name
   }
 }
 

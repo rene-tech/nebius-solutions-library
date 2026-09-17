@@ -62,6 +62,18 @@ resource "terraform_data" "sai20_database_authority_v3" {
       )
       error_message = "SAI-20 activation requires a current Ed25519-signed, Git-bound, complete policy/workload/RBAC authority packet."
     }
+    precondition {
+      condition = try(
+        terraform_data.sai20_database_authority_v4_apply.output.verified == "true" &&
+        terraform_data.sai20_database_authority_v4_apply.output.apply_reobserved == "true" &&
+        terraform_data.sai20_database_authority_v4_apply.output.legacy_v3_packet_sha256 == data.external.sai20_database_authority_v3.result.handoff_sha256 &&
+        terraform_data.sai20_database_authority_v4_apply.output.executor_principal_id == local.sai20_authority_v3_custodian.id &&
+        terraform_data.sai20_database_authority_v4_apply.output.executor_username == local.sai20_authority_v3_custodian.username &&
+        jsondecode(terraform_data.sai20_database_authority_v4_apply.output.executor_groups_json) == sort(local.sai20_authority_v3_custodian.groups),
+        false,
+      )
+      error_message = "SAI-20 v3 objects remain inert until v4 re-observes the actual Terraform executor as the exact signed custodian."
+    }
   }
 }
 

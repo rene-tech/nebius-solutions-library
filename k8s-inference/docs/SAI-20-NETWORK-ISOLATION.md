@@ -190,3 +190,85 @@ credential inspection, deployment and live connection probes. The newly
 authored regression module was not executed. A separate security owner and
 integration worker must collect and sign the authoritative inventories, and a
 distinct reviewer must accept the exact successor before any plan or rollout.
+
+## Independent-review correction after `ffd86740`
+
+Independent review rejected commit
+`ffd8674063314f876b1e0b00b73a76fdb4ea27af` / tree
+`bdd56f295a629cb79d6f34113c2945fda3a04953`. Preserve it as negative
+evidence. Its authority key remained caller-selected; list receipts and review
+digests were signed assertions rather than reconstructions from authenticated
+raw responses; the planned ingress digest was not enforced against the
+Terraform object; verification happened only while planning; the release
+executor was not proven to be the custodian; and a controller could spoof an
+owner kind without matching a live parent name and UID.
+
+The additive v4 successor changes that trust boundary:
+
+- `security/sai20/authority-roots-v1.json` is the only accepted root registry.
+  It is committed in source and initially has status `ENROLLMENT_REQUIRED`
+  with no keys, so this candidate cannot activate. A later additive,
+  independently reviewed commit must enroll distinct collector and reviewer
+  roots with immutable Git-object provenance and a content-derived acceptance
+  record. Terraform has no public-key, fingerprint or key-ID input for v4.
+- The dual-signed v4 bundle carries raw request and response bytes and hashes,
+  endpoint/CA/TLS identities, API audit/request IDs, observation times and the
+  collector credential identity. It has an exact request-name closure for all
+  workload, NetworkPolicy and RBAC lists; collector and admitted-principal
+  SelfSubjectReview/RulesReview/AccessReview requests; and the authoritative
+  provider group-membership request. The verifier rebuilds list receipts,
+  workload labels, storage generations, NetworkPolicy overlap, RBAC content,
+  effective permissions and impersonation decisions from those bytes. The
+  RBAC closure includes namespace Roles/RoleBindings in `fs2-system`,
+  `fs2-observability` and `fs2-data` plus cluster Roles/RoleBindings; any
+  subject granted sensitive workload, NetworkPolicy, admission or RBAC
+  mutation through a RoleBinding in those three namespaces is either an exact
+  admitted User/ServiceAccount or the provider-proven empty legacy group.
+  Cluster RBAC remains fully content-digested and independently reviewed;
+  exact admitted principals additionally carry raw SSRR and impersonation
+  SSAR evidence.
+- `contracts/sai20-control-db-ingress-v4.json` is the normalized ingress spec.
+  The verifier recomputes its digest, an immutable ConfigMap publishes it, and
+  a fail-closed admission policy requires the canonical NetworkPolicy's entire
+  `spec` plus digest annotation to match. This preserves the legacy, v2 and v3
+  storage peers, CNPG/operator/status paths, Grafana, Prometheus and run-bound
+  acceptance while preventing an admitted custodian from widening ingress.
+- Two `timestamp()`-backed unknown nonces defer identity and inventory checks
+  to apply. The identity call first rechecks bundle expiry, exact Git source,
+  kubectl digest, kubeconfig context/API server/CA and the actual executor
+  SelfSubjectReview. That proven executor installs the self-protecting custody
+  policy and a transition policy that freezes the complete `fs2-data`
+  NetworkPolicy set to the raw, signed specs. The exact-parent workload policy
+  is also bound before the second read: non-database controller traffic keeps
+  the existing kind checks, while every database-labelled child requires its
+  signed live parent and exact controller identity. Only then does the second
+  call re-read every safe GET inventory and the executor's
+  permission/impersonation decisions. This closes the gap in which an
+  alternate additive NetworkPolicy could otherwise appear after planning.
+  The signed source closure includes `providers.tf`, `variables.tf`,
+  `locals.tf` and `cluster_contract.tf`, proving that the Kubernetes and Helm
+  providers consume that same bounded kubeconfig path and context.
+  The v3 gate and all protected objects remain inert unless this apply-time
+  result is identical to the signed plan identity and exact v3 custodian.
+- The v4 authority-object custody policy is installed by that freshly proven
+  custodian, its binding is installed next, and every remaining v4 object
+  depends on the binding. It protects all v3 and v4 policy/binding names, the
+  exact-ingress ConfigMap and exact per-principal Roles/RoleBindings. This is
+  the explicit bootstrap transition; no group-wide mutation authority is
+  added.
+- Controller-created database clients must carry an owner reference matching
+  the exact signed live parent API version, kind, name and UID, and the request
+  must come from that parent's exact controller username. The signed parent
+  set equals every pre-existing database-labelled controller reconstructed
+  from the raw lists. A new or replaced parent therefore uses two reviewed
+  passes: create it without producing children, collect/sign its assigned UID,
+  then activate children with the refreshed bundle.
+
+The current empty root registry is deliberate fail-closed staging, not
+acceptance evidence. No root, authority bundle, kubeconfig, identity, resource
+or credential was created or inspected. Under the coordinator boundary the v4
+regression suite was authored but not executed; no parser, test, formatter,
+Terraform, Helm, build, package manager, scanner, cluster command, live probe,
+deployment or cleanup ran. This successor is a candidate for independent
+static review only and makes no SOURCE GO, integration, deployment or live
+claim.

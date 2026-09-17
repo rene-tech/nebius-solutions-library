@@ -1,0 +1,27 @@
+{
+  "schema": "fs2-serve.nebius.ai/sai20-authority-root-registry/v1",
+  "status": "ENROLLMENT_REQUIRED",
+  "required_roles": [
+    "evidence-collector",
+    "independent-reviewer"
+  ],
+  "minimum_distinct_signatures": 2,
+  "roots": [],
+  "enrollment": {
+    "mode": "source-owned-additive-independent-review",
+    "required_provenance": [
+      "accepted_source_commit",
+      "accepted_source_tree",
+      "public_key_source_path",
+      "public_key_source_blob",
+      "independent_review_receipt_sha256"
+    ],
+    "forbidden": [
+      "terraform-input-root",
+      "environment-root",
+      "packet-embedded-unregistered-root",
+      "same-principal-cross-role-root"
+    ],
+    "note": "Activation is intentionally impossible until Platform Security adds independently accepted collector and reviewer public roots in a later additive source commit."
+  }
+}

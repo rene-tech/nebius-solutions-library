@@ -1,0 +1,259 @@
+{
+  "podSelector": {
+    "matchLabels": {
+      "cnpg.io/cluster": "fs2-control-db"
+    }
+  },
+  "policyTypes": [
+    "Ingress"
+  ],
+  "ingress": [
+    {
+      "from": [
+        {
+          "namespaceSelector": {
+            "matchLabels": {
+              "kubernetes.io/metadata.name": "fs2-system"
+            }
+          },
+          "podSelector": {
+            "matchLabels": {
+              "app.kubernetes.io/instance": "fs2-serve-control-plane",
+              "app.kubernetes.io/name": "fs2-serve-control-plane"
+            },
+            "matchExpressions": [
+              {
+                "key": "app.kubernetes.io/component",
+                "operator": "In",
+                "values": [
+                  "bootstrap-access",
+                  "bootstrap-scientific-access",
+                  "bootstrap-website-access",
+                  "gateway",
+                  "maintenance",
+                  "migration",
+                  "model-controller",
+                  "storage-disclosure",
+                  "storage-reconciler"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "ports": [
+        {
+          "port": "5432",
+          "protocol": "TCP"
+        }
+      ]
+    },
+    {
+      "from": [
+        {
+          "namespaceSelector": {
+            "matchLabels": {
+              "kubernetes.io/metadata.name": "fs2-system"
+            }
+          },
+          "podSelector": {
+            "matchLabels": {
+              "app.kubernetes.io/component": "storage-reconciler-v2",
+              "app.kubernetes.io/instance": "fs2-serve-control-plane",
+              "app.kubernetes.io/name": "fs2-serve-control-plane"
+            },
+            "matchExpressions": [
+              {
+                "key": "fs2.nebius.ai/storage-egress-generation",
+                "operator": "Exists"
+              }
+            ]
+          }
+        }
+      ],
+      "ports": [
+        {
+          "port": "5432",
+          "protocol": "TCP"
+        }
+      ]
+    },
+    {
+      "from": [
+        {
+          "namespaceSelector": {
+            "matchLabels": {
+              "kubernetes.io/metadata.name": "fs2-system"
+            }
+          },
+          "podSelector": {
+            "matchLabels": {
+              "app.kubernetes.io/component": "storage-reconciler-v3",
+              "app.kubernetes.io/instance": "fs2-serve-control-plane",
+              "app.kubernetes.io/name": "fs2-serve-control-plane"
+            },
+            "matchExpressions": [
+              {
+                "key": "fs2.nebius.ai/storage-egress-generation",
+                "operator": "Exists"
+              },
+              {
+                "key": "fs2.nebius.ai/storage-rollout-generation",
+                "operator": "Exists"
+              }
+            ]
+          }
+        }
+      ],
+      "ports": [
+        {
+          "port": "5432",
+          "protocol": "TCP"
+        }
+      ]
+    },
+    {
+      "from": [
+        {
+          "namespaceSelector": {
+            "matchLabels": {
+              "kubernetes.io/metadata.name": "fs2-observability"
+            }
+          },
+          "podSelector": {
+            "matchLabels": {
+              "app.kubernetes.io/name": "grafana"
+            }
+          }
+        }
+      ],
+      "ports": [
+        {
+          "port": "5432",
+          "protocol": "TCP"
+        }
+      ]
+    },
+    {
+      "from": [
+        {
+          "namespaceSelector": {
+            "matchLabels": {
+              "kubernetes.io/metadata.name": "fs2-system"
+            }
+          },
+          "podSelector": {
+            "matchLabels": {
+              "app.kubernetes.io/component": "acceptance",
+              "app.kubernetes.io/managed-by": "terraform",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2.nebius.ai/environment": "disposable",
+              "fs2.nebius.ai/run-id": "${run_id}"
+            }
+          }
+        }
+      ],
+      "ports": [
+        {
+          "port": "5432",
+          "protocol": "TCP"
+        }
+      ]
+    },
+    {
+      "from": [
+        {
+          "namespaceSelector": {
+            "matchLabels": {
+              "kubernetes.io/metadata.name": "fs2-observability"
+            }
+          },
+          "podSelector": {
+            "matchLabels": {
+              "app.kubernetes.io/component": "acceptance",
+              "app.kubernetes.io/managed-by": "terraform",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2.nebius.ai/environment": "disposable",
+              "fs2.nebius.ai/run-id": "${run_id}"
+            }
+          }
+        }
+      ],
+      "ports": [
+        {
+          "port": "5432",
+          "protocol": "TCP"
+        }
+      ]
+    },
+    {
+      "from": [
+        {
+          "podSelector": {
+            "matchLabels": {
+              "cnpg.io/cluster": "fs2-control-db"
+            }
+          }
+        }
+      ],
+      "ports": [
+        {
+          "port": "5432",
+          "protocol": "TCP"
+        },
+        {
+          "port": "8000",
+          "protocol": "TCP"
+        }
+      ]
+    },
+    {
+      "from": [
+        {
+          "namespaceSelector": {
+            "matchLabels": {
+              "kubernetes.io/metadata.name": "cnpg-system"
+            }
+          },
+          "podSelector": {
+            "matchLabels": {
+              "app.kubernetes.io/name": "cloudnative-pg"
+            }
+          }
+        }
+      ],
+      "ports": [
+        {
+          "port": "5432",
+          "protocol": "TCP"
+        },
+        {
+          "port": "8000",
+          "protocol": "TCP"
+        }
+      ]
+    },
+    {
+      "from": [
+        {
+          "namespaceSelector": {
+            "matchLabels": {
+              "kubernetes.io/metadata.name": "fs2-observability"
+            }
+          },
+          "podSelector": {
+            "matchLabels": {
+              "app.kubernetes.io/name": "prometheus"
+            }
+          }
+        }
+      ],
+      "ports": [
+        {
+          "port": "9187",
+          "protocol": "TCP"
+        }
+      ]
+    }
+  ]
+}

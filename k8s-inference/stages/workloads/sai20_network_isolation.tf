@@ -55,6 +55,11 @@ resource "kubernetes_network_policy_v1" "control_database_ingress" {
       "security.fs2.nebius.ai/policy-set-custody"       = kubernetes_manifest.sai20_database_policy_set_custody_v3.manifest.metadata.name
       "security.fs2.nebius.ai/policy-set-binding"       = kubernetes_manifest.sai20_database_policy_set_custody_binding_v3.manifest.metadata.name
       "security.fs2.nebius.ai/workload-custody"         = kubernetes_manifest.sai20_database_workload_custody_binding_v3.manifest.metadata.name
+      "security.fs2.nebius.ai/authority-bundle-v4"      = terraform_data.sai20_database_authority_v4_apply.output.bundle_sha256
+      "security.fs2.nebius.ai/ingress-spec-sha256"      = local.sai20_authority_v4_ingress_spec_sha256
+      "security.fs2.nebius.ai/ingress-spec-binding-v4"  = kubernetes_manifest.sai20_database_ingress_exact_spec_binding_v4.manifest.metadata.name
+      "security.fs2.nebius.ai/exact-owner-binding-v4"   = kubernetes_manifest.sai20_database_exact_owner_binding_v4.manifest.metadata.name
+      "security.fs2.nebius.ai/ingress-contract-v4"      = kubernetes_config_map_v1.sai20_database_ingress_contract_v4.metadata[0].name
     }
   }
 
