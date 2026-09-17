@@ -88,14 +88,14 @@ Secret and image-pull-secret allowlists; projected Secrets, host paths, PVCs,
 CSI volumes, `spec.nodeName`, and additional secret-backed environment sources
 are denied.
 The workload policy has no namespace exemption. It denies the generation's
-node selector or taint globally and evaluates blanket `Exists` tolerations on
-every Pod. The only blanket-toleration exception is an exact kube-system Pod
-created by the provider-bound DaemonSet controller, with a DaemonSet owner and
-no explicit protected selector, taint or `nodeName`. Pod binding subresources
+node selector or exact taint key globally. A keyless blanket `Exists`
+toleration does not by itself express protected-lane intent, so node-wide OTel,
+GPU allocation, and similar DaemonSet replacement Pods remain available. There
+is no kube-system or generic DaemonSet-child exception. Pod binding subresources
 are matched cluster-wide and accepted only from the provider-bound scheduler.
 Ordinary direct `nodeName` use is not globally rejected; direct Pod creators
 are instead closed by independently derived RBAC authority, while the exact
-storage and system-DaemonSet contracts both forbid `nodeName`. Retained
+storage contract forbids `nodeName`. Retained
 policies protect their own retained node groups without selecting later exact
 storage workloads.
 
@@ -126,7 +126,13 @@ through a fixed root-owned, read-only, digest-bound provider adapter. This root
 will add nothing unless both custody records name the same predecessor digest.
 The generation-named NetworkPolicy inventory Role and RoleBinding are created
 and retained by the security owner, not the Helm release identity, so that
-identity has neither `bind` nor `escalate` authority.
+identity has neither `bind` nor `escalate` authority. Because Kubernetes cannot
+resource-name-restrict create, every Role/RoleBinding request from the owner is
+admission-matched. Only a create-only `fs2-storage-v2-*` or
+`fs2-storage-v3-*` Role with exactly `get,list` on NetworkPolicies and a
+same-name binding to the same-name namespace ServiceAccount is admitted. No
+Role may delegate ConfigMap, Secret, Pod, workload, token, RBAC, or admission
+authority.
 `capture_predecessor_receipt.py` creates that receipt through exact read-only
 `kubectl get` calls and descriptor-bound kubeconfig access; it reads no Secret.
 The capture must occur before the provider ledger is independently signed.

@@ -84,6 +84,33 @@ locals {
     "contract.json"             = local.current_contract.contract_json
     "kubernetes-api-cidrs.json" = jsonencode(sort(tolist(local.current_contract.kubernetes_api_cidrs)))
   })
+  # Kubernetes cannot resource-name-restrict CREATE. The owner's broad create
+  # verb is safe only while admission accepts this exact nondelegatable role
+  # shape and a binding to the same generation-named ServiceAccount.
+  inventory_role_name_cel = join(" ", [
+    "object.metadata.name.matches('^fs2-storage-v[23]-[a-f0-9]{12}-[a-f0-9]{12}$') &&",
+    "has(object.metadata.labels) &&",
+    "'app.kubernetes.io/managed-by' in object.metadata.labels && object.metadata.labels['app.kubernetes.io/managed-by'] == 'fs2-security-owner' &&",
+    "'fs2.nebius.ai/security-owner' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/security-owner'] == 'customer-storage-egress' &&",
+    "'fs2.nebius.ai/release-generation' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/release-generation'].matches('^g[0-9]{14}-[a-f0-9]{12}$') &&",
+    "((object.metadata.name.startsWith('fs2-storage-v3-') && size(object.metadata.labels) == 4 &&",
+    "'fs2.nebius.ai/compatibility-epoch' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/compatibility-epoch'] == 'v3') ||",
+    "(object.metadata.name.startsWith('fs2-storage-v2-') && size(object.metadata.labels) == 3 &&",
+    "!('fs2.nebius.ai/compatibility-epoch' in object.metadata.labels)))",
+  ])
+  inventory_role_content_cel = join(" ", [
+    "size(object.rules) == 1 && object.rules[0].apiGroups == ['networking.k8s.io'] &&",
+    "object.rules[0].resources == ['networkpolicies'] && object.rules[0].verbs == ['get','list'] &&",
+    "(!has(object.rules[0].resourceNames) || size(object.rules[0].resourceNames) == 0) &&",
+    "(!has(object.rules[0].nonResourceURLs) || size(object.rules[0].nonResourceURLs) == 0)",
+  ])
+  inventory_binding_content_cel = join(" ", [
+    "size(object.subjects) == 1 && object.subjects[0].kind == 'ServiceAccount' &&",
+    "object.subjects[0].name == object.metadata.name && object.subjects[0].namespace == '${local.namespace}' &&",
+    "(!has(object.subjects[0].apiGroup) || object.subjects[0].apiGroup == '') &&",
+    "object.roleRef.apiGroup == 'rbac.authorization.k8s.io' && object.roleRef.kind == 'Role' &&",
+    "object.roleRef.name == object.metadata.name",
+  ])
   v3_selector_matches_object_cel = join(" ", [
     "(!has(object.spec.podSelector.matchLabels) ||",
     "object.spec.podSelector.matchLabels.all(key, value,",
@@ -186,7 +213,7 @@ locals {
         "(request.resource.group == 'admissionregistration.k8s.io' &&",
         "request.name in ['${local.successor_boundary_policy_names[var.current_boundary_generation]}','${local.successor_workload_policy_names[var.current_workload_policy_generation]}']) ||",
         "(request.resource.group == 'rbac.authorization.k8s.io' && request.namespace == '${local.namespace}' &&",
-        "request.name == '${local.current_release_name}') ||",
+        "request.userInfo.groups.exists(group, group == '${var.security_owner_group}')) ||",
         "(request.resource.group == '' && request.resource.resource == 'configmaps' && request.namespace == '${local.namespace}' &&",
         "(request.userInfo.username in ${local.accepted_non_owner_usernames_cel} ||",
         "request.userInfo.groups.exists(group, group == '${var.security_owner_group}'))) ||",
@@ -235,6 +262,16 @@ locals {
           "(!has(object.binaryData) || size(object.binaryData) == 0))",
         ])
         message = "The release identity may write only its exact Helm v1 bookkeeping ConfigMap."
+        reason  = "Forbidden"
+      },
+      {
+        expression = join(" ", [
+          "request.resource.group != 'rbac.authorization.k8s.io' ||",
+          "(request.operation == 'CREATE' && (${local.inventory_role_name_cel}) &&",
+          "((request.resource.resource == 'roles' && (${local.inventory_role_content_cel})) ||",
+          "(request.resource.resource == 'rolebindings' && (${local.inventory_binding_content_cel}))))",
+        ])
+        message = "The security owner may create only the nondelegatable generation-named NetworkPolicy inventory Role and matching ServiceAccount binding."
         reason  = "Forbidden"
       },
       {
@@ -423,15 +460,11 @@ locals {
     "has(toleration.key) && toleration.key == '${var.provider_authority.taint_key}' &&",
     "(!has(toleration.effect) || toleration.effect == '' || toleration.effect == '${var.provider_authority.taint_effect}'))))",
   ])
-  protected_node_blanket_toleration_cel = join(" ", [
-    "(has(POD.tolerations) && POD.tolerations.exists(toleration,",
-    "(!has(toleration.key) || toleration.key == '') &&",
-    "has(toleration.operator) && toleration.operator == 'Exists' &&",
-    "(!has(toleration.effect) || toleration.effect == '' || toleration.effect == '${var.provider_authority.taint_effect}')))"
-  ])
-  protected_node_pod_spec_cel = "((${local.protected_node_explicit_spec_cel}) || (${local.protected_node_blanket_toleration_cel}))"
+  # A keyless blanket Exists toleration is common on node telemetry agents and
+  # is not protected-lane intent. Only the exact selector or taint key enters
+  # this guard; no namespace or DaemonSet-child exception is needed.
   protected_node_pod_cel = replace(
-    local.protected_node_pod_spec_cel,
+    local.protected_node_explicit_spec_cel,
     "POD",
     "object.spec",
   )
@@ -449,19 +482,6 @@ locals {
     "(request.resource.resource == 'pods' && request.subResource == '' && (${local.protected_node_pod_cel})) ||",
     "(request.resource.resource in ['deployments','daemonsets','statefulsets','replicasets','jobs'] && (${local.protected_node_template_cel})) ||",
     "(request.resource.resource == 'cronjobs' && (${local.protected_node_cronjob_cel}))",
-  ])
-  kube_system_daemon_pod_cel = join(" ", [
-    "request.namespace == 'kube-system' && request.operation == 'CREATE' &&",
-    "request.userInfo.username == '${var.daemonset_controller_username}' &&",
-    "size(object.metadata.ownerReferences) == 1 &&",
-    "object.metadata.ownerReferences[0].apiVersion == 'apps/v1' &&",
-    "object.metadata.ownerReferences[0].kind == 'DaemonSet' &&",
-    "object.metadata.ownerReferences[0].name != '' &&",
-    "object.metadata.ownerReferences[0].controller == true &&",
-    "object.metadata.ownerReferences[0].blockOwnerDeletion == true &&",
-    "(!has(object.spec.nodeName) || object.spec.nodeName == '') &&",
-    "!(${replace(local.protected_node_explicit_spec_cel, "POD", "object.spec")}) &&",
-    "(${replace(local.protected_node_blanket_toleration_cel, "POD", "object.spec")})",
   ])
   workload_policy_spec = {
     failurePolicy = "Fail"
@@ -557,8 +577,7 @@ locals {
           "object.metadata.labels.all(key, value, (key in ${local.v3_pod_labels_cel} && ${local.v3_pod_labels_cel}[key] == value) || key == 'pod-template-hash') &&",
           "'pod-template-hash' in object.metadata.labels && object.metadata.labels['pod-template-hash'] != '' &&",
           "${local.v3_pod_labels_cel}.all(key, value, key in object.metadata.labels && object.metadata.labels[key] == value) &&",
-          "(${local.pod_spec_cel})) ||",
-          "(${local.kube_system_daemon_pod_cel})",
+          "(${local.pod_spec_cel}))",
         ])
         message = "A successor Pod differs from the signed generation, Secret allowlist, or protected scheduling contract."
         reason  = "Forbidden"
