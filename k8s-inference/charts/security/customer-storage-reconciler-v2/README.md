@@ -1,9 +1,10 @@
-# Additive customer-storage reconciler v2
+# Additive customer-storage compatibility-v3 reconciler
 
 This chart is deliberately separate from the shared control-plane release. It
 adds a generation-named reconciler beside the retained fixed predecessor and
 never updates the predecessor Deployment selector. Its component label is
-`storage-reconciler-v2`, which is outside the deployed fixed VAP match. Every
+`storage-reconciler-v3`, which is outside the deployed fixed and retained v2
+VAP matches. Every
 object carries Helm's `keep` policy; raw rollback or uninstall is not an
 authorized retirement mechanism.
 
@@ -13,10 +14,11 @@ contract and accepted commit/tree/review custody. Never upgrade an existing rele
 generation-named release and retain every predecessor Deployment and Pod until
 a separate deletion authority exists.
 
-The chart consumes the v2 Kubernetes handoff and the provider authority
+The chart consumes the v4 Kubernetes handoff and the provider authority
 handoff. The pod is pinned to the dedicated Nebius node group/security group,
 and its init container proves the effective union of every NetworkPolicy that
-selects its complete label set. A retained broad policy therefore prevents
+selects its complete label set, including the controller-assigned actual
+`pod-template-hash`. A retained broad policy therefore prevents
 readiness. Provider VPC enforcement remains authoritative after readiness.
 The chart creates only the generation-named ServiceAccount and Deployment;
 the NetworkPolicy inventory Role and RoleBinding are pre-created and retained

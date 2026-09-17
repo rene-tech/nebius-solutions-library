@@ -5,17 +5,17 @@
 {{- $rolloutSuffix := trunc 12 (last (splitList "-" $rolloutGeneration)) -}}
 {{- $rolloutPayload := dict "authority" .Values.authority.manifestSha256 "contract" .Values.contract.sha256 "custodyCommit" .Values.custody.acceptedSai10Commit "custodyTree" .Values.custody.acceptedSai10Tree "custodyReview" .Values.custody.independentReviewReceiptSha256 "image" .Values.image.digest "releaseValues" .Values.authority.releaseValuesSha256 -}}
 {{- if ne $rolloutSuffix (trunc 12 (sha256sum (toJson $rolloutPayload))) }}{{ fail "rollout generation must be content-bound to image, authority, contract and accepted custody" }}{{ end -}}
-{{- $expectedRelease := printf "fs2-storage-v2-%s-%s" $suffix $rolloutSuffix -}}
+{{- $expectedRelease := printf "fs2-storage-v3-%s-%s" $suffix $rolloutSuffix -}}
 {{- if ne .Release.Name $expectedRelease }}{{ fail "each additive rollout requires its exact generation-named Helm release" }}{{ end -}}
-{{- $name := printf "fs2-storage-v2-%s-%s" $suffix $rolloutSuffix -}}
-{{- if ne .Release.Namespace "fs2-system" }}{{ fail "customer-storage-reconciler-v2 is restricted to fs2-system" }}{{ end -}}
-{{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v2" }}{{ fail "provider authority handoff is required" }}{{ end -}}
+{{- $name := printf "fs2-storage-v3-%s-%s" $suffix $rolloutSuffix -}}
+{{- if ne .Release.Namespace "fs2-system" }}{{ fail "customer-storage compatibility-v3 reconciler is restricted to fs2-system" }}{{ end -}}
+{{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v3" }}{{ fail "provider authority handoff is required" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.releaseValuesSha256) }}{{ fail "externally signed release-values digest is required" }}{{ end -}}
 {{- if or (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.priorHeadReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.iamInventoryReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.rbacInventoryReceiptSha256)) }}{{ fail "separately anchored prior head and exact provider IAM/RBAC receipts are required" }}{{ end -}}
 {{- if ne .Values.authority.nodeSelectorValue $authorityGeneration }}{{ fail "authority node selector must equal its generation" }}{{ end -}}
 {{- if ne .Values.authority.taintValue $authorityGeneration }}{{ fail "authority taint must equal its generation" }}{{ end -}}
-{{- if ne .Values.contract.configMapName (printf "fs2-customer-storage-egress-contract-%s" $generation) }}{{ fail "contract ConfigMap must equal its generation" }}{{ end -}}
-{{- if ne .Values.contract.networkPolicyName (printf "fs2-customer-storage-egress-%s" $generation) }}{{ fail "NetworkPolicy must equal its generation" }}{{ end -}}
+{{- if ne .Values.contract.configMapName (printf "fs2-storage-v3-contract-%s" $generation) }}{{ fail "contract ConfigMap must equal its compatibility-v3 generation" }}{{ end -}}
+{{- if ne .Values.contract.networkPolicyName (printf "fs2-storage-v3-network-policy-%s" $generation) }}{{ fail "NetworkPolicy must equal its compatibility-v3 generation" }}{{ end -}}
 {{- if ne (last (splitList "-" $generation)) (trunc 12 .Values.contract.sha256) }}{{ fail "contract generation must be content-bound" }}{{ end -}}
 {{- if ne .Values.predecessor.schema "fs2-serve.nebius.ai/customer-storage-egress-predecessor/v1" }}{{ fail "fixed predecessor compatibility receipt is required" }}{{ end -}}
 {{- if ne .Values.predecessor.receiptSha256 .Values.authority.predecessorCompatibilitySha256 }}{{ fail "predecessor receipt must be bound by the external provider authority ledger" }}{{ end -}}
@@ -47,7 +47,7 @@ metadata:
   labels: &labels
     app.kubernetes.io/name: fs2-serve-control-plane
     app.kubernetes.io/instance: fs2-serve-control-plane
-    app.kubernetes.io/component: storage-reconciler-v2
+    app.kubernetes.io/component: storage-reconciler-v3
     fs2.nebius.ai/storage-egress-generation: {{ $generation | quote }}
     fs2.nebius.ai/storage-rollout-generation: {{ $rolloutGeneration | quote }}
 spec:
@@ -114,11 +114,19 @@ spec:
             - --pod-label
             - app.kubernetes.io/instance=fs2-serve-control-plane
             - --pod-label
-            - app.kubernetes.io/component=storage-reconciler-v2
+            - app.kubernetes.io/component=storage-reconciler-v3
             - --pod-label
             - {{ printf "fs2.nebius.ai/storage-egress-generation=%s" $generation | quote }}
             - --pod-label
             - {{ printf "fs2.nebius.ai/storage-rollout-generation=%s" $rolloutGeneration | quote }}
+            - --pod-label-from-env
+            - pod-template-hash=FS2_POD_TEMPLATE_HASH
+          env:
+            - name: FS2_POD_TEMPLATE_HASH
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.labels['pod-template-hash']
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

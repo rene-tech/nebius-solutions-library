@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/sai-08-integration-dependencies/v3",
+  "schema": "fs2-serve.nebius.ai/sai-08-integration-dependencies/v4",
   "status": "blocked",
   "dependencies": {
     "sai_10_accepted_commit": null,
@@ -9,9 +9,11 @@
     "provider_authority_prior_head_receipt_sha256": null,
     "provider_project_iam_inventory_receipt_sha256": null,
     "provider_effective_authority_graph_receipt_sha256": null,
+    "provider_authority_adapter_sha256": null,
     "provider_state_custody_sha256": null,
     "boundary_state_custody_sha256": null,
     "kubernetes_rbac_inventory_receipt_sha256": null,
+    "kubernetes_rbac_effective_authority_sha256": null,
     "kubernetes_service_account_inventory_sha256": null,
     "kubernetes_system_subject_inventory_sha256": null,
     "workload_policy_sha256": null,
@@ -27,6 +29,8 @@
     "exact admission contract for Pods, ServiceAccounts, Deployments, Jobs, CronJobs, DaemonSets, StatefulSets and ReplicaSets",
     "read-only live digest handoff for every fixed predecessor object",
     "retained predecessor state lineage with no forget action",
+    "descriptor-bound provider-native authority and remote-state version adapters",
+    "externally signed saved-plan execution approval binding clean source, exact plan bytes and predecessor/successor remote state",
     "create-only provider, Kubernetes security, and generation-named Helm plans with zero delete, replace, update, rollback, or uninstall"
   ]
 }

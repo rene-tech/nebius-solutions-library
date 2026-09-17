@@ -19,12 +19,15 @@ def main() -> int:
     args = parser.parse_args()
     if not args.cluster_id:
         parser.error("--cluster-id is required")
-    inventory_sha256, subjects = _rbac_inventory(args.kubeconfig, args.context)
+    inventory_sha256, subjects, effective_authority = _rbac_inventory(
+        args.kubeconfig, args.context
+    )
     receipt = {
-        "schema": "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v2",
+        "schema": "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v3",
         "cluster_id": args.cluster_id,
         "inventory_sha256": inventory_sha256,
         "subjects": subjects,
+        "effective_authority": effective_authority,
         "observed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }
     print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))

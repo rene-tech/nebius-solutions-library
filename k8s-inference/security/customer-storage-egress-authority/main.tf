@@ -44,6 +44,10 @@ data "external" "backend_custody" {
 locals {
   authority   = jsondecode(data.external.authority.result.manifest_json)
   generations = jsondecode(data.external.authority.result.generations_json)
+  retained_authority_gate_generations = setunion(
+    toset(jsondecode(data.external.authority.result.prior_authority_gate_generations_json)),
+    toset(keys(local.generations)),
+  )
   common_labels = {
     "managed-by"         = "fs2-security-owner"
     "security-boundary"  = "customer-storage-egress"
@@ -78,6 +82,8 @@ resource "terraform_data" "external_authority" {
   }
 
   lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
     precondition {
       condition     = data.external.authority.result.authorized == "true"
       error_message = "The root-owned external provider authority did not accept this exact signed ledger."
@@ -105,6 +111,42 @@ resource "terraform_data" "external_authority" {
   }
 }
 
+# Preserve the original singleton address without updating it. Every successor
+# gets a content-named custody gate of its own, so later manifests add state
+# instead of rewriting the authority record used by an earlier generation.
+resource "terraform_data" "external_authority_v4" {
+  for_each = local.retained_authority_gate_generations
+
+  input = {
+    generation                                 = each.key
+    generation_sha256                          = try(sha256(jsonencode(local.generations[each.key])), "retained-by-prior-state-custody")
+    manifest_sha256                            = data.external.authority.result.manifest_sha256
+    prior_head_receipt_sha256                  = data.external.authority.result.prior_head_receipt_sha256
+    provider_identity_sha256                   = data.external.provider_identity.result.provider_identity_sha256
+    provider_authority_graph_receipt_sha256    = data.external.authority.result.provider_effective_authority_graph_receipt_sha256
+    provider_authority_adapter_sha256          = data.external.authority.result.provider_authority_adapter_sha256
+    kubernetes_rbac_inventory_receipt_sha256   = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256
+    kubernetes_rbac_effective_authority_sha256 = data.external.authority.result.kubernetes_rbac_effective_authority_sha256
+    provider_backend_config_sha256             = data.external.backend_custody.result.backend_config_sha256
+    provider_backend_lineage                   = data.external.backend_custody.result.backend_lineage
+    provider_state_lineage                     = data.external.backend_custody.result.state_lineage
+    provider_state_serial                      = data.external.backend_custody.result.state_serial
+    provider_state_version_id                  = data.external.backend_custody.result.state_version_id
+    provider_state_snapshot_sha256             = data.external.backend_custody.result.state_snapshot_sha256
+    provider_state_managed_addresses_sha256    = data.external.backend_custody.result.managed_addresses_sha256
+    accepted_sai10_commit                      = data.external.authority.result.accepted_sai10_commit
+    accepted_sai10_tree                        = data.external.authority.result.accepted_sai10_tree
+    sai10_independent_review_receipt_sha256    = data.external.authority.result.sai10_independent_review_receipt_sha256
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.external_authority]
+}
+
 resource "nebius_vpc_v1_security_group" "generation" {
   for_each = local.generations
 
@@ -117,7 +159,7 @@ resource "nebius_vpc_v1_security_group" "generation" {
     prevent_destroy = true
   }
 
-  depends_on = [terraform_data.external_authority]
+  depends_on = [terraform_data.external_authority_v4]
 }
 
 resource "nebius_vpc_v1_security_rule" "private_ingress" {

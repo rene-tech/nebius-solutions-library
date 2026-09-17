@@ -38,7 +38,8 @@ a fresh exact RBAC object/subject inventory. A
 second security-owner root adds immutable,
 generation-named contract, trust and NetworkPolicy objects as defense in depth.
 The reconciler verifies the signed bytes, freshness, live DNS, and the effective
-union of every NetworkPolicy selecting its full label set before readiness.
+union of every NetworkPolicy selecting its full actual label set, including its
+controller-assigned `pod-template-hash`, before readiness.
 Admission continuously permits only the exact content-bound selecting policy;
 an additional signed policy constrains every Pod or workload-producing object
 to the exact Secret allowlist, image and provider-protected node target.
@@ -134,10 +135,13 @@ generations and rejects any widening policy in the effective selecting union.
 The first migration is compatibility-first. The fixed predecessor Deployment,
 NetworkPolicy, ConfigMap, VAP and binding remain unchanged and at their original
 Terraform addresses under `prevent_destroy` plus `ignore_changes = all`; no
-state-forget handoff exists. The additive chart
-`charts/security/customer-storage-reconciler-v2` creates a distinct,
-generation-named Deployment with component `storage-reconciler-v2`; the fixed
-VAP therefore does not match or reject its generation NetworkPolicy. The exact
+state-forget handoff exists. The retained first additive chart generation uses
+component `storage-reconciler-v2`. Its additive compatibility successor remains
+in `charts/security/customer-storage-reconciler-v2` for source compatibility
+but creates distinct `fs2-storage-v3-*` objects with component
+`storage-reconciler-v3`, a content-bound release identity, and generation-local
+canonical admission specs. Neither the fixed nor retained v2 VAPs match or
+reject the v3 generation. The exact
 fixed object UIDs and content digests form a compatibility receipt whose digest,
 workloads backend identity, state lineage and serial are committed by the
 separately signed prior-head checkpoint. Both reconcilers
@@ -149,6 +153,15 @@ generation and a separately named reconciler; never remove an older ledger/map
 entry or use target/replace. Every additive chart object carries Helm's `keep`
 policy. Rollback means adding a prior application version under a fresh retained
 authority generation, never uninstalling or deleting a generation.
+
+Both security roots verify actual remote state lineage, serial, snapshot bytes,
+non-empty exact managed addresses, and object-store version through fixed
+root-owned read-only adapters. The provider prior-state receipt carries an
+installed-generation hash chain ending at the separately anchored prior head.
+The only future apply path descriptor-binds an externally signed exact saved
+plan to a clean source commit/tree and predecessor state, permits only
+create/read/no-op, and verifies the actual successor state. It has no cleanup
+or state-forget mode.
 
 The two Secrets are supplied by the credential rotation system and each exposes
 only a `credentials.json` key to the reconciler. Do not manage their private

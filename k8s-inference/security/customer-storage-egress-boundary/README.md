@@ -32,7 +32,13 @@ canonical. The dependency gate also rejects the plan unless
 operator convention.
 The owner also hashes every live Role, RoleBinding, ClusterRole and
 ClusterRoleBinding, including subjects, rules, UIDs and resource versions; the
-result must equal the fresh independently signed target-cluster RBAC receipt.
+result and the derived binding-to-role effective-authority graph must equal the
+fresh independently signed target-cluster RBAC receipt. Namespace-scoped
+permission probes enumerate every observed namespace separately; they do not
+use `--all-namespaces` as an authority shortcut. Impersonation probes use the
+core `users`, `groups`, and `serviceaccounts` resources and also cover Pod
+binding/eviction, node proxy/status, TokenRequest, RBAC delegation, and
+workload-controller pivots.
 Every User and Group subject must resolve to an authenticated identity and its
 exact signed group set; every ServiceAccount subject must resolve to the signed
 ServiceAccount inventory. Provider access and mutation sets come from the
@@ -44,8 +50,10 @@ owner signs and installs it on the authority's read-only anchor.
 
 Admission matching evaluates empty, partial and negative selectors against the
 exact current Pod generation with Kubernetes semantics. The controller-added
-`pod-template-hash` is conservatively treated as present with an unknown
-value. The policy permits only the exact content-bound NetworkPolicy to be
+`pod-template-hash` is read from each actual Pod and supplied to both the
+readiness verifier and the post-rollout workloads proof; `Exists`, `In`,
+`NotIn`, and negative selectors therefore cannot hide a widening policy. The
+policy permits only the exact content-bound NetworkPolicy to be
 created by the security owner; updates, deletion, and later widening selecting
 policies are denied at admission, closing the post-init race. This
 admission layer remains defense in depth: the target-cluster node group's
@@ -54,23 +62,31 @@ boundary.
 
 A second content-bound policy covers Pods, ServiceAccounts, Deployments,
 ReplicaSets, DaemonSets, StatefulSets, Jobs and CronJobs. The release identity
-can create only the exact token-blind ServiceAccount and Deployment. Generated
+can create only the exact token-blind ServiceAccount and Deployment. Only the
+signed Deployment controller may create its exact ReplicaSet child, and only
+the signed ReplicaSet controller may create the corresponding Pods. Generated
 Pods must keep the signed image, generation labels, protected node target,
 Secret and image-pull-secret allowlists; projected Secrets, host paths, PVCs,
-CSI volumes and additional secret-backed environment sources are denied.
+CSI volumes, `spec.nodeName`, and additional secret-backed environment sources
+are denied.
 
-The first additive policy uses component `storage-reconciler-v2`. The deployed
-fixed predecessor VAP intentionally does not match that value, so its fixed
-Deployment, NetworkPolicy, ConfigMap, policy and binding can stay unchanged
-while the new generation is created. The v2 reconciler is a distinct resource;
-the fixed Deployment selector is never edited. The exact live UIDs and content
+The retained first additive policy uses component `storage-reconciler-v2`.
+Compatibility-v3 uses disjoint `fs2-storage-v3-*` names, the
+`storage-reconciler-v3` component, and a content-derived release identity. The
+fixed predecessor and retained v2 VAPs therefore do not select or authorize v3
+objects. Each v3 boundary and workload policy map entry stores its own exact
+canonical policy spec and digest, so retained generations protect themselves
+without matching a later rotation. The fixed Deployment selector is never
+edited. The exact live UIDs and content
 digests form a predecessor receipt. A separately mounted prior-head checkpoint
 also commits the workloads backend identity, state lineage/serial, Helm release
 ID/revision/manifest, predecessor Deployment and NetworkPolicy UIDs/specs, and
 the four retained Terraform addresses including `helm_release.control_plane`.
-Both Terraform roots compare initialized S3 backend metadata to this signed
-custody with descriptor-relative `O_NOFOLLOW` reads. This root will add nothing
-unless both custody records name the same predecessor digest.
+Both Terraform roots compare initialized S3 backend metadata plus the actual
+remote state lineage, serial, snapshot bytes, exact non-empty address set, and
+object-store version ID to signed custody. The object version is obtained only
+through a fixed root-owned, read-only, digest-bound provider adapter. This root
+will add nothing unless both custody records name the same predecessor digest.
 The generation-named NetworkPolicy inventory Role and RoleBinding are created
 and retained by the security owner, not the Helm release identity, so that
 identity has neither `bind` nor `escalate` authority.
@@ -84,6 +100,14 @@ control-plane Helm release with `prevent_destroy`; the direct objects also use
 or post-forget custody. Do not target resources, remove state entries, use `-replace`, or apply a plan
 that destroys or replaces any existing generation. The current remediation is
 source-only; no live action is authorized.
+
+The only future execution entry point is
+`security/apply_custodied_additive_plan.py`. It descriptor-binds the exact
+root-owned saved-plan bytes, externally signed approval, public key, clean
+source commit/tree and predecessor state; rejects every action other than
+create/read/no-op; applies those same bytes; then proves the expected successor
+lineage, minimum serial and exact address set. It has no plan-generation or
+cleanup mode.
 
 The dependency verifier rejects the rejected SAI-10 commit as an ancestor, not
 only as an exact value, for both accepted custody and integration `HEAD`. This

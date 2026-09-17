@@ -484,13 +484,18 @@ def verify_effective_network_policies(
         "app.kubernetes.io/component",
         "fs2.nebius.ai/storage-egress-generation",
         "fs2.nebius.ai/storage-rollout-generation",
+        "pod-template-hash",
     }
     if set(pod_labels) != required_label_keys:
-        raise ValueError("effective NetworkPolicy verification needs the complete v2 Pod labels")
+        raise ValueError("effective NetworkPolicy verification needs the complete v3 Pod labels")
     canonical_selector_labels = {
         key: value
         for key, value in pod_labels.items()
-        if key != "fs2.nebius.ai/storage-rollout-generation"
+        if key
+        not in {
+            "fs2.nebius.ai/storage-rollout-generation",
+            "pod-template-hash",
+        }
     }
     canonical = _canonical_egress_rules(expected_cidrs, expected_kubernetes_api_cidrs)
     canonical_by_digest = {_canonical(rule): rule for rule in canonical}
@@ -599,6 +604,7 @@ def main() -> int:
     parser.add_argument("--kubernetes-network-policy", nargs=2, metavar=("NAMESPACE", "NAME"))
     parser.add_argument("--kubernetes-network-policy-set", metavar="NAMESPACE")
     parser.add_argument("--pod-label", action="append", default=[])
+    parser.add_argument("--pod-label-from-env", action="append", default=[])
     parser.add_argument("--terraform-external", action="store_true")
     args = parser.parse_args()
     try:
@@ -619,16 +625,22 @@ def main() -> int:
             result = verify_contract(contract, _public_key(query["public_key_pem"]))
             if "network_policies_json" in query:
                 policies = json.loads(query["network_policies_json"])
-                pod_labels = json.loads(query["pod_labels_json"])
+                pod_label_sets = json.loads(query["pod_label_sets_json"])
                 kubernetes_api_cidrs = json.loads(query["kubernetes_api_cidrs_json"])
-                if not isinstance(policies, list) or not isinstance(pod_labels, dict):
+                if (
+                    not isinstance(policies, list)
+                    or not isinstance(pod_label_sets, list)
+                    or not pod_label_sets
+                    or any(not isinstance(labels, dict) for labels in pod_label_sets)
+                ):
                     raise ValueError("Terraform effective-policy inputs are malformed")
-                verify_effective_network_policies(
-                    policies,
-                    pod_labels,
-                    contract["cidrs"],
-                    kubernetes_api_cidrs,
-                )
+                for pod_labels in pod_label_sets:
+                    verify_effective_network_policies(
+                        policies,
+                        pod_labels,
+                        contract["cidrs"],
+                        kubernetes_api_cidrs,
+                    )
                 result["effective_policy_verified"] = "true"
             print(json.dumps(result, sort_keys=True))
             return 0
@@ -673,6 +685,16 @@ def main() -> int:
                 key, value = item.split("=", 1)
                 if not key or not value or key in pod_labels:
                     raise ValueError("--pod-label entries must be unique non-empty key=value pairs")
+                pod_labels[key] = value
+            for item in args.pod_label_from_env:
+                if "=" not in item:
+                    raise ValueError("--pod-label-from-env requires key=ENVIRONMENT_VARIABLE")
+                key, environment_name = item.split("=", 1)
+                value = os.environ.get(environment_name, "")
+                if not key or not environment_name or not value or key in pod_labels:
+                    raise ValueError(
+                        "--pod-label-from-env entries must resolve unique non-empty labels"
+                    )
                 pod_labels[key] = value
             verify_effective_network_policies(
                 _cluster_network_policies(args.kubernetes_network_policy_set),
