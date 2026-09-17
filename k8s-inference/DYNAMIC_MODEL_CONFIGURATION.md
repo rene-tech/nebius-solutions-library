@@ -307,14 +307,18 @@ dynamic_models = {
 Secret name must be exactly `fs2-release-model-bootstrap-<generation>`.
 `bootstrap_retained_assertions` is a deprecated compatibility field and must
 remain empty. Before each plan the Kubernetes provider inventories every
-generation-prefixed immutable ConfigMap and terminal Job, verifies each key
-against its complete retained payload/implementation/image/assertion/Job
-identity, compares the Job spec, and imports that history into Terraform state.
+generation-prefixed immutable ConfigMap, terminal Job, and public retention
+receipt. It imports only an externally signed generation whose receipt binds
+the ConfigMap UID/full-object digest and, for terminal history, the Job UID plus
+the entire observed Job object. Provider-discovered
+self-consistency is not authority; unsigned injection or delete/recreate UID
+drift fails closed.
 A failed, expired, or consumed assertion is recovered by supplying a new
 generation, never by copying an output to input. Generation-keyed Jobs are
-additive and `prevent_destroy` refuses a history-removing plan. The admission
-policy requires assertion Secrets to be immutable, generation-labeled,
-uniquely named and single-key.
+additive and `prevent_destroy` refuses a history-removing plan. Admission also
+denies history/trust/receipt update or deletion, permits trust and receipt
+creation only to the automation-only release ServiceAccount, and requires assertion Secrets to be
+immutable, generation-labeled, uniquely named and single-key.
 
 The exact retained H100 qualification for those two models is recorded in
 [`h100-qwen-cosmos-elasticity-qualification-20260902.json`](catalog/profiles/evidence/h100-qwen-cosmos-elasticity-qualification-20260902.json).

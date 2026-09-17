@@ -1593,6 +1593,7 @@
       "type": "object",
       "required": [
         "activeDeadlineSeconds",
+        "compatibilityImage",
         "reportingDatabaseRole",
         "runtimeDatabaseRole",
         "maintenanceDatabaseRole",
@@ -1605,6 +1606,28 @@
           "type": "integer",
           "minimum": 30,
           "maximum": 3600
+        },
+        "compatibilityImage": {
+          "type": "object",
+          "required": ["repository", "digest"],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "maxLength": 512,
+              "not": {"pattern": "(^|[/._-])(replace-me|placeholder)([/._-]|$)"}
+            },
+            "digest": {
+              "oneOf": [
+                {"const": ""},
+                {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$",
+                  "not": {"const": "sha256:0000000000000000000000000000000000000000000000000000000000000000"}
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
         },
         "reportingDatabaseRole": {
           "type": "string",
@@ -1643,11 +1666,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "cc6cf95284135b4dd94396f8dc5116756810e00dd894c3a3ddb13e51050a8342"},
-            "migrationSetSha256": {"const": "6db59f99747ad837a7b53137d9d1df7983eacc48383b75ba2ecdcf359bff0fc6"},
-            "migrationCount": {"const": 31},
+            "contractPayloadSha256": {"const": "eb37ee6ba8a70b105ec77e7dd6d8eb06dc724a07a053d9281a891de15bd1f571"},
+            "migrationSetSha256": {"const": "31a94c628489cec61a8288b653b59c9eab96b7ba58e9642a5bb22e6f185efb92"},
+            "migrationCount": {"const": 34},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0031_release_identity_receipts.sql"},
+            "lastMigrationVersion": {"const": "0034_session_exchange_cutover_bridge.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false

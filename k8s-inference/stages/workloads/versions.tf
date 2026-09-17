@@ -8,6 +8,10 @@ terraform {
       source  = "hashicorp/helm"
       version = "= 3.2.0"
     }
+    external = {
+      source  = "hashicorp/external"
+      version = "= 2.3.5"
+    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "= 3.2.1"

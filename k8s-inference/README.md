@@ -547,13 +547,15 @@ The assertion generation is a signed claim and the immutable Secret name is
 exactly `fs2-release-model-bootstrap-<generation>`; neither is an assertion
 byte. Every retry or recovery uses a new generation, while
 `bootstrap_retained_assertions` remains empty. The Kubernetes provider
-discovers all retained generation-prefixed ConfigMaps and terminal Jobs,
-verifies each complete payload/implementation/image/assertion/Job identity,
-and imports them into Terraform state before creating the new zero-retry Job.
-No copied retention input is authoritative. Terraform refuses mismatched or
-one-sided history and refuses to destroy prior Jobs. A fail-closed admission
-policy accepts only immutable, generation-labeled, single-key assertion
-Secrets.
+discovers all retained generation-prefixed ConfigMaps, terminal Jobs, and
+public retention receipts. Discovery alone is not authority: Terraform imports
+only objects with a release-authority Ed25519 receipt binding the exact identity
+digest, ConfigMap UID/full-object digest, and terminal Job UID/entire observed
+object digest. UID replacement, unsigned injection, one-sided history, or a
+mismatched receipt fails closed. Admission makes history, trust, and receipts
+append-only and permits trust/receipt creation only to the automation-only
+release ServiceAccount. A separate policy accepts only immutable, generation-labeled,
+single-key assertion Secrets.
 
 Startup retention prevents already-requested capacity from being removed during
 initialization when a short request queue drains. It does not raise replica/node

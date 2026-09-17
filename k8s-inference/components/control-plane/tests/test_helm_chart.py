@@ -816,6 +816,7 @@ def test_workloads_are_nonroot_bounded_and_use_digest_pins_and_secret_references
     ]
     init = pod["initContainers"][0]
     assert init["args"] == ["wait-schema"]
+    assert init["image"] == f"{TEST_REPOSITORY}@{TEST_DIGEST}"
     assert {item["name"] for item in init["env"]} == {"FS2_DATABASE_URL", "FS2_SCHEMA_WAIT_SECONDS"}
     assert init["volumeMounts"] == [{"name": "database-ca", "mountPath": "/tls", "readOnly": True}]
     init_database = next(item for item in init["env"] if item["name"] == "FS2_DATABASE_URL")
@@ -853,6 +854,30 @@ def test_workloads_are_nonroot_bounded_and_use_digest_pins_and_secret_references
     assert all(document["kind"] != "Secret" for document in documents)
     assert "private-key" not in rendered.lower() and "private_key" not in rendered.lower()
     assert "Kueue" not in rendered and "kueue" not in rendered
+
+
+def test_source_forward_rollback_keeps_successor_migration_and_schema_wait_image() -> None:
+    compatibility_repository = "registry.nebius.cloud/unit/fs2-schema-compatibility"
+    compatibility_digest = "sha256:" + "9" * 64
+    documents = render(
+        "--set",
+        f"migration.compatibilityImage.repository={compatibility_repository}",
+        "--set",
+        f"migration.compatibilityImage.digest={compatibility_digest}",
+    )
+    deployment = gateway_deployment(documents)
+    pod = deployment["spec"]["template"]["spec"]
+    assert pod["initContainers"][0]["image"] == f"{compatibility_repository}@{compatibility_digest}"
+    assert pod["containers"][0]["image"] == f"{TEST_REPOSITORY}@{TEST_DIGEST}"
+    migration = next(
+        document
+        for document in documents
+        if document["kind"] == "Job"
+        and document["metadata"]["labels"].get("app.kubernetes.io/component") == "migration"
+    )
+    assert migration["spec"]["template"]["spec"]["containers"][0]["image"] == (
+        f"{compatibility_repository}@{compatibility_digest}"
+    )
 
 
 def test_activation_controller_is_owned_by_the_separate_child_and_absent_from_the_gateway_chart() -> None:
@@ -3056,7 +3081,7 @@ def test_grafana_reporting_role_is_aggregate_only_and_provisioned_by_migration_j
     )
     assert (
         "GRANT EXECUTE ON FUNCTION fs2_consume_session_exchange(text,integer,integer,integer)"
-        not in store_source
+        in store_source
     )
     assert "GRANT SELECT ON fs2_session_exchange_source_buckets" not in store_source
     assert "GRANT SELECT ON fs2_session_exchange_aggregate_buckets" not in store_source

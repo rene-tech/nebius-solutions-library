@@ -499,6 +499,14 @@ class PostgresStore:
                 "SELECT version,sha256 FROM fs2_schema_migrations ORDER BY applied_at,version"
             )
             applied = [(str(row["version"]), str(row["sha256"])) for row in applied_rows]
+            # Additive migrations may need to distinguish a true fresh install
+            # from state created earlier in this same serialized transaction.
+            # The value is transaction-local and defaults fail closed when a
+            # different migration runner does not publish provenance.
+            await connection.execute(
+                "SELECT set_config('fs2.preexisting_schema_version',$1,true)",
+                applied[-1][0] if applied else "__fresh__",
+            )
             expected = [(path.name, digest) for path, digest in manifest]
             if [version for version, _ in applied] != [version for version, _ in expected[: len(applied)]]:
                 raise RuntimeError("applied migration set is missing, extra, or reordered")
@@ -550,7 +558,7 @@ class PostgresStore:
                     f"fs2_operator_principals,fs2_operator_credentials,fs2_operator_sessions,"
                     f"fs2_session_exchange_source_buckets,fs2_session_exchange_aggregate_buckets,"
                     f"fs2_session_exchange_sliding_state,fs2_session_exchange_admissions,"
-                    f"fs2_session_exchange_rejection_evidence,"
+                    f"fs2_session_exchange_rejection_evidence,fs2_session_exchange_cutover_state,"
                     f"fs2_release_identity_receipts,"
                     f"fs2_configuration_revisions,fs2_configuration_plans,"
                     f"fs2_configuration_reconciliation_events,"
@@ -595,6 +603,8 @@ class PostgresStore:
                     f"fs2_scientific_dispatch_hold(text,text),"
                     f"fs2_consume_session_exchange(text,integer,integer,integer),"
                     f"fs2_consume_session_exchange_sliding(text,integer,integer,integer),"
+                    f"fs2_consume_session_exchange_bridge(text,integer,integer,integer),"
+                    f"fs2_consume_session_exchange_exact_v2(text,integer,integer,integer),"
                     f"fs2_reject_telemetry_mutation() FROM {role}"
                 )
             await connection.execute(
@@ -612,6 +622,13 @@ class PostgresStore:
             )
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_consume_session_exchange_sliding(text,integer,integer,integer) "
+                f"TO {quoted_runtime}"
+            )
+            # The legacy signature is intentionally retained through the
+            # bridge so old replicas and source-forward rollback replicas make
+            # the same fail-closed/exact decision during a rolling release.
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_consume_session_exchange(text,integer,integer,integer) "
                 f"TO {quoted_runtime}"
             )
             await connection.execute(
@@ -860,9 +877,9 @@ class PostgresStore:
                             "'public.fs2_consume_session_exchange_sliding(text,integer,integer,integer)','EXECUTE')"
                             " AND has_function_privilege(current_user,"
                             "'public.fs2_consume_session_exchange_sliding(text,integer,integer,integer)','EXECUTE')"
-                            " AND NOT has_function_privilege('fs2_serve_runtime',"
+                            " AND has_function_privilege('fs2_serve_runtime',"
                             "'public.fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE')"
-                            " AND NOT has_function_privilege(current_user,"
+                            " AND has_function_privilege(current_user,"
                             "'public.fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE')"
                             " AND NOT has_table_privilege('fs2_serve_runtime',"
                             "'public.fs2_session_exchange_source_buckets','SELECT')"
@@ -884,6 +901,10 @@ class PostgresStore:
                             "'public.fs2_session_exchange_admissions','SELECT')"
                             " AND NOT has_table_privilege(current_user,"
                             "'public.fs2_session_exchange_rejection_evidence','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_session_exchange_cutover_state','SELECT')"
+                            " AND NOT has_table_privilege(current_user,"
+                            "'public.fs2_session_exchange_cutover_state','SELECT')"
                             " AND has_function_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
                             " AND has_function_privilege(current_user,"

@@ -1115,6 +1115,61 @@ async def test_migration_and_schema_wait_entrypoints_need_only_database_credenti
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+async def test_legacy_and_exact_callers_share_full_window_fail_closed_cutover(
+    postgres_store: PostgresStore,
+) -> None:
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            UPDATE fs2_session_exchange_cutover_state
+            SET cutover_required=true,
+                migration_started_at=clock_timestamp(),
+                prior_schema_version='0033_session_exchange_sliding_window.sql',
+                window_seconds=60,
+                maximum_source_attempts=5,
+                maximum_aggregate_attempts=200,
+                cutover_not_before=clock_timestamp()+interval '60 seconds'
+            WHERE singleton=1
+            """
+        )
+        legacy = await connection.fetchrow(
+            "SELECT * FROM fs2_consume_session_exchange($1,60,5,200)",
+            "7" * 64,
+        )
+        exact = await connection.fetchrow(
+            "SELECT * FROM fs2_consume_session_exchange_sliding($1,60,5,200)",
+            "8" * 64,
+        )
+        assert legacy["admission"] == exact["admission"] == "aggregate_throttled"
+        assert legacy["emit_audit"] is exact["emit_audit"] is False
+        cutover_before = await connection.fetchrow(
+            "SELECT xmin::text AS xmin,* FROM fs2_session_exchange_cutover_state WHERE singleton=1"
+        )
+        for _ in range(100):
+            assert await connection.fetchval(
+                "SELECT admission FROM fs2_consume_session_exchange_sliding($1,60,5,200)",
+                "8" * 64,
+            ) == "aggregate_throttled"
+        assert await connection.fetchrow(
+            "SELECT xmin::text AS xmin,* FROM fs2_session_exchange_cutover_state WHERE singleton=1"
+        ) == cutover_before
+
+        await connection.execute(
+            "UPDATE fs2_session_exchange_cutover_state "
+            "SET cutover_not_before=clock_timestamp()-interval '1 millisecond' WHERE singleton=1"
+        )
+        assert await connection.fetchval(
+            "SELECT admission FROM fs2_consume_session_exchange($1,60,5,200)",
+            "7" * 64,
+        ) == "admitted"
+        assert await connection.fetchval(
+            "SELECT admission FROM fs2_consume_session_exchange_sliding($1,60,5,200)",
+            "8" * 64,
+        ) == "admitted"
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
 async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_effective_acl(
     postgres_store: PostgresStore,
 ) -> None:
@@ -1216,7 +1271,7 @@ async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_
                     "'fs2_consume_session_exchange_sliding(text,integer,integer,integer)','EXECUTE')",
                     role,
                 )
-                assert not await migrated.fetchval(
+                assert await migrated.fetchval(
                     "SELECT has_function_privilege($1,"
                     "'fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE')",
                     role,
@@ -1227,6 +1282,7 @@ async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_
                     "fs2_session_exchange_sliding_state",
                     "fs2_session_exchange_admissions",
                     "fs2_session_exchange_rejection_evidence",
+                    "fs2_session_exchange_cutover_state",
                 ):
                     assert not await migrated.fetchval(
                         "SELECT has_table_privilege($1,$2,'SELECT')",
@@ -1554,6 +1610,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_pending_
                 "fs2_session_exchange_sliding_state",
                 "fs2_session_exchange_admissions",
                 "fs2_session_exchange_rejection_evidence",
+                "fs2_session_exchange_cutover_state",
             ):
                 assert (
                     await upgraded_connection.fetchval(

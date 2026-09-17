@@ -122,8 +122,8 @@ def test_model_bootstrap_recovery_is_generation_keyed_and_retains_job_history() 
     assert 'data "kubernetes_resources" "model_controller_bootstrap_configmaps"' in inventory
     assert 'data "kubernetes_resources" "model_controller_bootstrap_jobs"' in inventory
     assert inventory.count("import {") == 2
-    assert "model_controller_bootstrap_discovered_specs" in inventory
-    assert "model_controller_bootstrap_discovered_job_specs" in inventory
+    assert "model_controller_bootstrap_verified_specs" in inventory
+    assert "model_controller_bootstrap_verified_job_specs" in inventory
     assert "model-bootstrap-identity/v2" in bootstrap
     assert "model-bootstrap-job/v1" in bootstrap
     assert "base_labels                 = local.common_labels" in bootstrap
@@ -142,11 +142,11 @@ def test_model_bootstrap_recovery_is_generation_keyed_and_retains_job_history() 
     assert "ValidatingAdmissionPolicy" in bootstrap
     assert "object.immutable == true" in bootstrap
     assert 'name      = "fs2-model-bootstrap-${each.key}"' in bootstrap
-    assert "provider-discovered immutable ConfigMap/Job history is authoritative" in variables
+    assert "release-signed UID/full-object-bound Kubernetes receipts" in variables
     assert "length(var.release_identity_model_bootstrap_retained_assertions) == 0" in variables
     assert "bootstrap_managed_generations" in outputs
     assert "bootstrap_retained_generations" in outputs
-    assert 'bootstrap_inventory_authority   = "kubernetes-provider-discovery-v1"' in outputs
+    assert 'bootstrap_inventory_authority   = "release-signed-uid-bound-kubernetes-inventory-v2"' in outputs
 
 
 def test_postgres_session_exchange_uses_exact_bounded_sliding_state() -> None:
@@ -181,6 +181,54 @@ def test_postgres_session_exchange_uses_exact_bounded_sliding_state() -> None:
     assert "CREATE INDEX fs2_session_exchange_rejection_evidence_forensics_idx" in migration
     assert "SECURITY DEFINER SET search_path = pg_catalog, public" in normalized_migration
     assert "DELETE FROM fs2_session_exchange" not in migration
+
+
+def test_postgres_session_exchange_cutover_is_shared_fail_closed_and_rollback_compatible() -> None:
+    migration = (
+        REPOSITORY_ROOT
+        / "components/control-plane/migrations/0034_session_exchange_cutover_bridge.sql"
+    ).read_text(encoding="utf-8")
+    store = (REPOSITORY_ROOT / "components/control-plane/src/fs2_serve/postgres.py").read_text(encoding="utf-8")
+    normalized = " ".join(migration.split())
+    assert "fs2.preexisting_schema_version" in migration
+    assert "<> '__fresh__'" in migration
+    assert ">= '0032_session_exchange_buckets.sql'" not in migration
+    assert "cutover_required" in migration
+    assert "state.migration_started_at + make_interval(secs => p_window_seconds)" in normalized
+    assert "v_now < v_state.cutover_not_before" in migration
+    assert "cutover_quiescence" in migration
+    assert "fs2_consume_session_exchange_bridge($1,$2,$3,$4)" in migration
+    assert "CREATE OR REPLACE FUNCTION fs2_consume_session_exchange(" in migration
+    assert "CREATE FUNCTION fs2_consume_session_exchange_sliding(" in migration
+    assert migration.count("GRANT EXECUTE ON FUNCTION fs2_consume_session_exchange") >= 2
+    assert "REVOKE EXECUTE ON FUNCTION fs2_consume_session_exchange(" not in migration
+    assert "set_config('fs2.preexisting_schema_version',$1,true)" in store
+    assert "legacy signature is intentionally retained" in store
+
+
+def test_model_bootstrap_history_requires_signed_uid_bound_full_object_receipts() -> None:
+    bootstrap = (REPOSITORY_ROOT / "stages/workloads/model_controller.tf").read_text(encoding="utf-8")
+    inventory = (REPOSITORY_ROOT / "stages/workloads/model_bootstrap_inventory.tf").read_text(encoding="utf-8")
+    verifier = (
+        REPOSITORY_ROOT / "stages/workloads/scripts/verify_model_bootstrap_receipt.py"
+    ).read_text(encoding="utf-8")
+    assert 'data "external" "model_controller_bootstrap_receipt"' in inventory
+    assert "model_controller_bootstrap_verified_specs" in inventory
+    assert "observed_object_sha256 = sha256(jsonencode" in bootstrap
+    assert bootstrap.count("observed_object_sha256 = sha256(jsonencode(item))") == 2
+    assert "config_map_uid" in bootstrap
+    assert "job_uid" in bootstrap
+    assert "release_assertion_fingerprint" in verifier
+    assert "public_key.verify" in verifier
+    assert "fs2-model-bootstrap-retention+jws" in verifier
+    assert "request.operation == 'CREATE'" in bootstrap
+    assert "system:serviceaccount:fs2-system:fs2-release-identity" in bootstrap
+    assert "model_controller_bootstrap_history_policy_binding" in bootstrap
+    assert "model_controller_bootstrap_trust_policy_binding" in bootstrap
+    assert "model_controller_bootstrap_receipt_policy_binding" in bootstrap
+    assert "fs2-serve-release-identity-trust" in bootstrap
+    assert "request.name.startsWith('fs2-model-bootstrap-')" in bootstrap
+    assert "for_each = local.model_controller_bootstrap_verified_specs" in inventory
 
 
 def test_trusted_proxy_source_is_canonical_and_untrusted_forwarding_is_ignored() -> None:

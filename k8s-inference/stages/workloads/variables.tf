@@ -1066,7 +1066,7 @@ variable "release_identity_model_bootstrap_assertion_generation" {
 }
 
 variable "release_identity_model_bootstrap_retained_assertions" {
-  description = "Deprecated rejected caller-copy surface. Must remain empty; retained generations are discovered from Kubernetes and imported into Terraform state."
+  description = "Deprecated rejected caller-copy surface. Must remain empty; retained generations require release-signed UID/full-object-bound Kubernetes receipts before import."
   type = map(object({
     assertion_generation = string
     secret_name          = string
@@ -1078,7 +1078,7 @@ variable "release_identity_model_bootstrap_retained_assertions" {
 
   validation {
     condition     = length(var.release_identity_model_bootstrap_retained_assertions) == 0
-    error_message = "release_identity_model_bootstrap_retained_assertions is deprecated and must be empty; provider-discovered immutable ConfigMap/Job history is authoritative."
+    error_message = "release_identity_model_bootstrap_retained_assertions is deprecated and must be empty; self-authenticating provider inventory is refused in favor of release-signed UID/full-object-bound receipts."
   }
 }
 

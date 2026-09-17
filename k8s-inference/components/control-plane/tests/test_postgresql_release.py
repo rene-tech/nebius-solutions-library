@@ -37,9 +37,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0033_session_exchange_sliding_window.sql",
-        "migration_count": 33,
-        "migration_set_sha256": "06e7982e4de5fb6ec60272aae85e79da1c73b1bbf1d0ec97fe66ee5643bbe6f2",
+        "last_migration_version": "0034_session_exchange_cutover_bridge.sql",
+        "migration_count": 34,
+        "migration_set_sha256": "31a94c628489cec61a8288b653b59c9eab96b7ba58e9642a5bb22e6f185efb92",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -76,6 +76,9 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     assert wait_source.count(
         "fs2_consume_session_exchange_sliding(text,integer,integer,integer)','EXECUTE'"
     ) == 2
+    assert wait_source.count(
+        "fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE'"
+    ) == 2
     assert "fs2_session_exchange_source_buckets','SELECT'" in wait_source
     assert "fs2_session_exchange_aggregate_buckets','SELECT'" in wait_source
     assert wait_source.count("fs2_session_exchange_source_buckets','SELECT'") == 2
@@ -84,6 +87,7 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
         "fs2_session_exchange_sliding_state",
         "fs2_session_exchange_admissions",
         "fs2_session_exchange_rejection_evidence",
+        "fs2_session_exchange_cutover_state",
     ):
         assert wait_source.count(f"{limiter_table}','SELECT'") == 2
     assert "SELECT,INSERT" not in wait_source

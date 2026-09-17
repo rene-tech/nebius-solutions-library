@@ -24,6 +24,9 @@
 {{- if le (.Values.config.adminSessionExchangeAggregateAttempts | int) (.Values.config.adminSessionExchangeAttempts | int) }}
 {{- fail "config.adminSessionExchangeAggregateAttempts must exceed the per-source attempt limit" }}
 {{- end }}
+{{- if ne (empty .Values.migration.compatibilityImage.repository) (empty .Values.migration.compatibilityImage.digest) }}
+{{- fail "migration.compatibilityImage repository and digest must be configured together" }}
+{{- end }}
 {{- if and .Values.publicGateway.enabled (eq (len .Values.config.adminSessionTrustedProxyCidrs) 0) }}
 {{- fail "public Gateway releases require an exact adminSessionTrustedProxyCidrs boundary" }}
 {{- end }}
@@ -63,7 +66,7 @@
 {{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "cc6cf95284135b4dd94396f8dc5116756810e00dd894c3a3ddb13e51050a8342") (ne .Values.migration.releaseContract.migrationSetSha256 "6db59f99747ad837a7b53137d9d1df7983eacc48383b75ba2ecdcf359bff0fc6") (ne (int .Values.migration.releaseContract.migrationCount) 31) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0031_release_identity_receipts.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "eb37ee6ba8a70b105ec77e7dd6d8eb06dc724a07a053d9281a891de15bd1f571") (ne .Values.migration.releaseContract.migrationSetSha256 "31a94c628489cec61a8288b653b59c9eab96b7ba58e9642a5bb22e6f185efb92") (ne (int .Values.migration.releaseContract.migrationCount) 34) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0034_session_exchange_cutover_bridge.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}
@@ -283,7 +286,7 @@ spec:
       {{- end }}
       initContainers:
         - name: wait-schema
-          image: {{ include "fs2-serve.image" . }}
+          image: {{ include "fs2-serve.compatibilityImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["wait-schema"]
           env:

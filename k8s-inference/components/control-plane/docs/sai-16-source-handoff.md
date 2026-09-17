@@ -3,10 +3,12 @@
 This document describes a static source candidate. It is not integration,
 deployment, live verification, or security acceptance evidence.
 
-The exact parent `0f875be76e3f2497b46348d0ecbbb0b4ea680ce6` / tree
-`f3d2d060ca17adf924cd59ceafa2c72aebfbea0a` is preserved as SOURCE NO-GO:
-its aligned fixed windows, partitioned aggregate quotas, and caller-copied
-bootstrap retention are negative evidence corrected additively here.
+The exact parent `375a88e363f13c8f80e96c2abf4a3f58e109a93e` / tree
+`59b235e3fe5e5cb65bb9ad6c8342a79e7380a817` is preserved as SOURCE NO-GO.
+It corrected the earlier aligned-window, quota, and copied-history defects, but
+its empty-ring migration was not mixed-version safe and its provider inventory
+remained self-authenticating. Every prior rejected commit remains provenance;
+this successor is additive.
 
 ## Session-exchange admission
 
@@ -28,6 +30,28 @@ changing them without a separately reviewed state transition fails closed,
 because a bounded ledger cannot reconstruct events discarded under a shorter
 historical window.
 
+Migration `0034` repairs the `0032`/`0033` rollout boundary without rewriting
+either rejected migration. The migration runner publishes the schema version
+which existed before its serialized transaction. If any prior migration
+pre-existed—or provenance is absent—both the legacy and exact-v2 function
+signatures enter one shared bridge and refuse every exchange for one complete
+configured window. The refusal is read-only after the first settings bind.
+Only then can the exact ring admit. Only a transaction-proven empty installation
+can start immediately; a pre-limiter upgrade also quiesces because its earlier
+audit-backed or process-era budget cannot be reconstructed exactly. Both
+function signatures retain runtime `EXECUTE`, so old
+rolling replicas and source-forward rollback replicas make the same decision.
+Rollback keeps the successor migration/schema-wait image through
+`migration.compatibilityImage` while selecting the prior application image;
+it never reverses schema or discards limiter state.
+
+Read-only source identities for this isolated lineage are: migration `0034`
+SHA-256 `3b7e2df9858857afdb3a99c32aa3e73e205a63f30614122604eb2269b4b1eb10`,
+34-entry ordered migration-set SHA-256
+`31a94c628489cec61a8288b653b59c9eab96b7ba58e9642a5bb22e6f185efb92`,
+and release-contract payload SHA-256
+`eb37ee6ba8a70b105ec77e7dd6d8eb06dc724a07a053d9281a891de15bd1f571`.
+
 The first rejection transition may write one bounded evidence slot and one
 audit event saying only `one_or_more`; it never claims an exact rejection
 count. Once established, every DB-reached rejection is a read-only fast path:
@@ -46,26 +70,42 @@ Secret name is exactly `fs2-release-model-bootstrap-<generation>`.
 Every generation's immutable ConfigMap retains canonical payload JSON, exact
 runner source, and a v2 identity containing the digest-pinned image, assertion
 identity, public endpoint and complete immutable Job security/resource spec.
-The workloads stage inventories all generation-prefixed ConfigMaps and Jobs
-through the Kubernetes provider, requires one-to-one terminal history, verifies
-the key as the digest of that complete identity, compares the live Job to the
-stored contract, and declaratively imports discovered objects to recover lost
-Terraform state. The legacy caller-copied retention map is refused unless
-empty. A matching current ConfigMap with a missing Job is the sole partial-
-apply exception, allowing Terraform to create that exact missing Job.
+Provider discovery is evidence, not authority. Before an object becomes an
+import target, the external automation-only release identity publishes an
+immutable public compact-JWS receipt. The receipt binds the generation and
+identity digest, ConfigMap UID and canonical full-object digest; a terminal
+receipt additionally binds the Job UID and a digest over the entire observed
+Job object. It also binds the already consumed release
+assertion receipt. A ConfigMap-only partial-apply receipt is permitted before
+assertion consumption, but cannot attest a Job.
+
+Terraform verifies Ed25519 against the same immutable public trust document
+used by the control plane and imports only receipt-verified objects.
+Fail-closed admission admits trust and receipt creation only from
+`system:serviceaccount:fs2-system:fs2-release-identity`; trust, receipt,
+ConfigMap, and Job updates/deletes are denied. Delete/recreate changes the
+Kubernetes UID and
+invalidates the signed chain. An injected self-consistent pair without the
+external receipt fails planning. The legacy caller-copied retention map remains
+empty.
 
 ConfigMaps and zero-retry, non-root, tokenless Jobs remain generation-keyed and
-protected with `prevent_destroy`. A fail-closed ValidatingAdmissionPolicy,
-installed before Secret creation, admits only immutable, generation-labeled,
-uniquely named Secrets containing exactly the `assertion` key.
+protected with `prevent_destroy` plus cluster admission. A separate fail-closed
+ValidatingAdmissionPolicy, installed before Secret creation, admits only
+immutable, generation-labeled, uniquely named Secrets containing exactly the
+`assertion` key.
 
 ## Parent integration dependencies
 
 - SAI-10 independently owns `0030_customer_storage_credentials.sql`. SAI-16
-  retains `0032_session_exchange_buckets.sql` and adds only its `0033` exact-
-  sliding successor; parent integration must retain both exact sibling
-  histories and regenerate the combined immutable migration manifest. This
-  branch does not copy or modify SAI-10.
+  retains `0032_session_exchange_buckets.sql`, its `0033` exact-sliding
+  successor, and additive `0034` mixed-version bridge; parent integration must
+  retain all exact sibling histories and regenerate the combined immutable
+  migration manifest. This branch does not copy or modify SAI-10.
+- Before integration, security-owned release automation must independently pin
+  the initial trust ConfigMap UID/digest and signer custody, then install the
+  trust/history/receipt policies before it publishes any retained-history
+  receipt. This source candidate does not manufacture that external authority.
 - SAI-01 independently owns request-capture exclusions and the 90-day debug
   expiry/purge contract. This isolated SAI-16 lineage still predates those
   changes, so it must not be integrated alone over accepted SAI-01 work. This

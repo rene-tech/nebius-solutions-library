@@ -62,24 +62,34 @@ retries because an ambiguous response must not replay a single-use assertion.
 Existing model identities are preserved; new proposals still pass the ordinary
 preview, qualification, persistence, and projection services.
 
-Bootstrap recovery is append-only and inventory-driven. Before each plan,
-Terraform's Kubernetes provider discovers all generation-prefixed ConfigMaps
-and Jobs in `fs2-system`. The immutable ConfigMap contains the payload, exact
-runner, digest-pinned image, assertion identity, public endpoint, and complete
-Job execution/security contract. Terraform verifies that the generation key is
-the digest of that identity, compares the retained Job to it, and declaratively
-imports both resources if state was lost. The deprecated
+Bootstrap recovery is append-only and receipt-driven. Before each plan,
+Terraform's Kubernetes provider exhaustively discovers all generation-prefixed
+ConfigMaps, Jobs, and retention receipts in `fs2-system`. Discovery is not
+authority. The automation-only release identity signs a public durable compact
+JWS only after observing the exact generation. It binds the identity digest,
+ConfigMap UID/full-object digest, and—for terminal history—the Job UID, entire
+observed Job-object digest, and consumed assertion receipt.
+Terraform verifies that signature against the immutable release trust document
+before a discovered object enters declarative import. A replaced object has a
+new UID and cannot reuse the receipt. The deprecated
 `release_identity_model_bootstrap_retained_assertions` input must be empty.
+The workloads runner must execute Terraform with the control-plane's pinned
+Python verifier dependencies (including `cryptography==50.0.1`); a missing
+verifier or provider dependency fails planning and has no unsigned fallback.
 
 To rotate or recover, supply a new assertion generation and its exact
 `fs2-release-model-bootstrap-<generation>` Secret; never copy history into
 tfvars. Terraform creates a new immutable ConfigMap and zero-retry Job while
 `prevent_destroy` protects prior terminal generations. Missing, mismatched,
-nonterminal, or one-sided historical inventory fails closed; the one allowed
-partial-apply recovery is the current digest-matching ConfigMap whose Job has
-not yet been created. A fail-closed ValidatingAdmissionPolicy must be installed before
-the release authority creates the Secret; it admits only immutable,
-generation-labeled, single-`assertion`-key Secrets. This is the supported
+nonterminal, one-sided, unsigned, or UID-mismatched history fails closed. A
+current ConfigMap-only partial apply requires its own authority-signed
+ConfigMap-phase receipt before import and Job creation; it cannot self-attest.
+Fail-closed ValidatingAdmissionPolicies deny ConfigMap/Job/trust/receipt mutation
+or deletion, restrict trust and receipt creation to the exact release
+ServiceAccount, and
+admit only immutable generation-labeled single-`assertion`-key Secrets. The
+receipt controller and policies must exist before assertion Secret creation.
+This is the supported
 fresh-install and recovery path; a mutable Secret behind a fixed Job name is
 not.
 
@@ -92,8 +102,18 @@ control plane from starting; an absent or expired bootstrap assertion prevents
 the seed Job from running. Neither condition falls back to the historical
 shared secret.
 
-Rollback is source-forward and data-preserving: retain the release assertion
+Limiter rollout is also source-forward. Migration `0034` keeps both old and
+new SQL entry points behind one fail-closed bridge. Every preexisting database
+quiesces session exchange for a full configured window before the exact ring
+can admit; only a transaction-proven empty installation starts immediately.
+During application rollback,
+keep the successor image in Helm `migration.compatibilityImage` for the
+migration Job and schema-wait init container, and change only the application
+image. This preserves forward schema checks and the legacy wrapper.
+
+Rollback is otherwise data-preserving: retain the release assertion
 receipts, operator principals, credential verifier rows, sessions, audit rows,
 trust material, and deprecated Terraform Secret. Select the prior reviewed
-application/chart revision without deleting or rewriting those records. This
+application image through the current compatibility-aware chart without
+deleting or rewriting those records. This
 source candidate contains no deployment or live-verification evidence.

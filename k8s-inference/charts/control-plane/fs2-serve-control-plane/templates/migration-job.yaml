@@ -46,7 +46,7 @@ spec:
       {{- end }}
       containers:
         - name: migrate
-          image: {{ include "fs2-serve.image" . }}
+          image: {{ include "fs2-serve.compatibilityImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["migrate"]
           env:

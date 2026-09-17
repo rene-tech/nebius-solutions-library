@@ -260,11 +260,15 @@ rollback contract is in
 Model-bootstrap assertion rotation is generation-keyed and append-only. Supply
 a new signed public assertion generation whose Secret is exactly
 `fs2-release-model-bootstrap-<generation>`; do not copy prior specs into input.
-The Kubernetes provider inventories, verifies and imports retained immutable
-ConfigMap/Job generations before planning the new one. Install the fail-closed
-assertion-Secret admission policy before Secret creation. The new immutable Job
-runs once; prior terminal Jobs remain protected by `prevent_destroy` as
-recovery and forensic history.
+The Kubernetes provider inventories retained ConfigMap/Job generations, but
+imports only generations carrying a release-authority-signed receipt bound to
+their exact ConfigMap/Job UIDs and full observed object digests. Install the
+append-only history/receipt policies and assertion-Secret policy before Secret
+creation. Only the automation-only `fs2-release-identity` ServiceAccount may
+create the trust root or receipts; no identity may update or delete them or
+their bound history.
+The new immutable Job runs once; prior terminal Jobs remain protected by both
+admission and `prevent_destroy`.
 
 Sessions have both the configured absolute TTL and a 30-minute default idle
 timeout. No principal may hold more than four active, non-idle sessions by
@@ -280,7 +284,16 @@ Envoy proxy population is the only public-route peer; otherwise it keys on the
 direct peer. The fingerprint is an HMAC under the active pepper, not a reversible IP
 or an unkeyed hash. A separate, much larger aggregate ceiling bounds total
 password work without collapsing normal administrators into a shared
-per-source bucket. An admin
+per-source bucket.
+
+Every preexisting database upgrade intentionally returns
+429 for one complete configured exchange window. Migration `0034` routes old
+and new replicas through the same bridge during that quiescence, then through
+the same exact sliding ledger. Do not bypass the gate or revoke the legacy SQL
+signature during rollout. For source-forward rollback, retain the successor
+repository/digest under `migration.compatibilityImage` and change only the
+application `image`; the migration and schema-wait containers must understand
+the newest additive schema. An admin
 can invalidate every session for an in-scope principal with
 `DELETE /admin/api/v1/principals/{principal_id}/sessions`.
 The bounded settings are `FS2_ADMIN_SESSION_IDLE_TIMEOUT_SECONDS`,
